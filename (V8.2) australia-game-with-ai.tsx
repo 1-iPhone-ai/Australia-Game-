@@ -124835,7 +124835,7 @@ export interface LivingRegionsWorldView {
 }
 
 export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview' | 'national';
-export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery; nationalDev?: NationalDevelopmentQuery }
+export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery; nationalDev?: NationalDevelopmentQuery; capability?: CapabilityQuery }
 
 function lrRegionInText(q: string, v: LivingRegionsWorldView): string | null {
   const regs = Object.values(v.state.regions);
@@ -124855,6 +124855,9 @@ export function detectLivingRegionsQuery(raw: string, gw: GIWorld): LRQuery | nu
   // V10.0: interregional network questions (only when a National Systems view exists).
   // V10.3: national program questions (only when a megaproject view exists; generic phrasings need an open program).
   // V10.4: "what kind of Australia" questions (specific phrasings only; needs a national development view).
+  // V10.5: capability questions (need a capability name or the word "capability").
+  const cq = detectCapabilityQuery(raw, gw);
+  if (cq) return mk('national', { capability: cq, regionId: cq.regionId });
   const ndq = detectNationalDevelopmentQuery(raw, gw);
   if (ndq) return mk('national', { nationalDev: ndq, regionId: ndq.regionId });
   const mq = detectMegaprojectQuery(raw, gw);
@@ -124896,6 +124899,7 @@ function lrScorecard(reg: DynamicRegionalState): string {
 }
 
 export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  if (query.topic === 'national' && query.capability && gw.national?.innovation) return composeCapabilityAnswer(query.capability, gw);
   if (query.topic === 'national' && query.nationalDev && gw.national?.development) return composeNationalDevelopmentAnswer(query.nationalDev, gw);
   if (query.topic === 'national' && query.megaproject && gw.national?.megaprojects) return composeMegaprojectAnswer(query.megaproject, gw);
   if (query.topic === 'national' && query.infra && gw.national?.infra) return composeInfraNetworkAnswer(query.infra, gw);
@@ -128890,6 +128894,9 @@ export interface LearningContext {
   /** V10.4: the first clearly emerged national direction, and the leading strategic tension. */
   nationalDirection?: string | null;
   nationalTension?: string | null;
+  /** V10.5: the first capability to emerge, and the first to become operational. */
+  capabilityEmerging?: string | null;
+  capabilityOperational?: string | null;
 }
 
 export interface LearningLesson { headline: string; lines: string[]; action?: { label: string; nav?: IntentNavAction | null; ask?: string | null } | null; asks?: string[]; target?: LearningCoachTarget; surface?: LearningSurface }
@@ -128987,6 +128994,12 @@ export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
   { id: 'infra_resilience', title: 'Network resilience', category: 'advanced', tier: 'interaction', priority: 6, minLevel: 3, requires: ['infra_networks'], directoryId: 'infrastructure', askPrompt: 'How can I make this network more resilient?', related: ['infra_networks'],
     relevant: c => (c.infraCriticalPoint ? 'a network has a single point of failure' : null),
     lesson: c => ({ headline: 'Network resilience', lines: [c.infraCriticalPoint || '', 'A second route costs capital but keeps the network working when one corridor fails.'], asks: ['How can I make this network more resilient?'], surface: 'inline' }) },
+  { id: 'emerging_capabilities', title: 'Emerging capabilities', category: 'advanced', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'regions', askPrompt: 'Which capability is closest to emerging?', related: ['national_direction'],
+    relevant: c => (c.capabilityEmerging ? 'a new national capability is emerging' : null),
+    lesson: c => ({ headline: 'Emerging capabilities', lines: [c.capabilityEmerging || '', 'Advanced capabilities appear when Australia develops the right combination of research, infrastructure, industry, and national networks.', 'There is no separate research tree.'], asks: ['Which capability is closest to emerging?'], surface: 'inline' }) },
+  { id: 'capability_maturity', title: 'Capability maturity', category: 'advanced', tier: 'interaction', priority: 6, minLevel: 3, requires: ['emerging_capabilities'], directoryId: 'regions', askPrompt: 'Which regions are driving this capability?', related: ['emerging_capabilities'],
+    relevant: c => (c.capabilityOperational ? 'a capability has become operational' : null),
+    lesson: c => ({ headline: 'Capability maturity', lines: [c.capabilityOperational || '', 'Emerging means the foundations exist.', 'Operational means the capability can now materially affect the economy.', 'Scaling it requires broader adoption.'], asks: ['Which regions are driving this capability?'], surface: 'inline' }) },
   { id: 'national_direction', title: 'National direction', category: 'advanced', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'regions', askPrompt: 'What kind of Australia am I building?', related: ['megaprojects'],
     relevant: c => (c.nationalDirection ? 'a national development direction has clearly emerged' : null),
     lesson: c => ({ headline: 'National direction', lines: [c.nationalDirection || '', 'This is descriptive, not a locked class.', 'Future decisions can strengthen it, diversify it, or change direction.'], asks: ['What kind of Australia am I building?'], surface: 'inline' }) },
@@ -129583,7 +129596,8 @@ export function runV9GuidedLearningSelfTests(): V9SelfTestResult[] {
   });
   check('gl_perf', 'Selector is cheap (bounded registry; 2,000 selections well under a frame budget each)', () => {
     const st = started(); const c = fx(); const t0 = Date.now(); for (let k = 0; k < 2000; k++) sel(c, st); const ms = Date.now() - t0;
-    return (LEARNING_CONCEPTS.length <= 40 && ms < 1500) || `${ms}ms`;
+    // Registry stays bounded (V10.4/V10.5 each add two concepts; the cap is a sanity bound, not a feature limit).
+    return (LEARNING_CONCEPTS.length <= 48 && ms < 1500) || `${LEARNING_CONCEPTS.length} concepts, ${ms}ms`;
   });
   return results;
 }
@@ -132315,6 +132329,8 @@ export interface FeelSnapshot {
   megaprojects?: Record<string, string>;
   /** V10.4: JSON {p: primary, b: confidence band, r: defining regions} (optional). */
   nationalDirection?: string;
+  /** V10.5: capability id → national maturity (optional). */
+  capabilities?: Record<string, string>;
 }
 
 let V94_SEQ = 0;
@@ -132395,6 +132411,14 @@ export function deriveFeedbackEvents(prev: FeelSnapshot | null, next: FeelSnapsh
     icCount += 1;
     out.push(v94Event('region_state_changed', 'minor', `ic_${key}`, `${REGION_NAME(code)} ${INDUSTRY_LABEL[ind as StrategicIndustryKind] || ind}: ${pb} → ${band}`, [], { now, turn, icon: UI_ICON.region, tone: bad(band) ? 'negative' : 'positive', regions: [code] }));
   });
+  // V10.5: capability milestones — first emergence and becoming operational (non-blocking, capped at one per update).
+  {
+    const rk: Record<string, number> = { unavailable: 0, emerging: 1, demonstrated: 2, operational: 3, scaled: 4, nationally_integrated: 5 };
+    const moved = Object.entries(next.capabilities || {}).filter(([id, m]) => prev.capabilities && prev.capabilities[id] !== undefined && rk[m] > rk[prev.capabilities[id]] && (m === 'emerging' || m === 'operational'));
+    moved.slice(0, 1).forEach(([id, m]) => { const def = CAPABILITY_DEF_BY_ID[id as EmergingCapabilityId]; if (!def) return;
+      out.push(v94Event('strategy_phase', 'major', `cap_${id}_${m}`, m === 'emerging' ? 'NEW CAPABILITY EMERGING' : 'CAPABILITY OPERATIONAL',
+        m === 'emerging' ? [def.label.toUpperCase(), def.emergenceText, 'This is not yet full maturity.'] : [def.label.toUpperCase(), def.operationalText, `It can affect: ${def.effects.map(e => e.label).slice(0, 2).join('; ')}.`], { now, turn, tone: 'positive' })); });
+  }
   // V10.4: national transformation moments — Emerging → Established, and a completed change of direction (non-blocking).
   if (next.nationalDirection && prev.nationalDirection && next.nationalDirection !== prev.nationalDirection) {
     let a: any = null, b: any = null; try { a = JSON.parse(next.nationalDirection); b = JSON.parse(prev.nationalDirection); } catch { a = null; }
@@ -137297,6 +137321,8 @@ export interface NationalSystemsWorldView {
   megaprojects?: MegaprojectWorldView | null;
   /** V10.4 National Development (null when off). */
   development?: NationalDevelopmentWorldView | null;
+  /** V10.5 Innovation & Capabilities (null when off). */
+  innovation?: InnovationWorldView | null;
 }
 export type NationalQueryTopic = 'overview' | 'bottlenecks' | 'region_network' | 'dependency' | 'resilience' | 'what_if';
 export interface NationalQuery { topic: NationalQueryTopic; regionId: string | null; network: NationalNetworkKind | null; projectType: string | null }
@@ -142068,7 +142094,7 @@ export function nationalDevelopmentInputHash(i: NationalDevelopmentInputs): stri
 
 /** Builds inputs from canonical/derived system snapshots (pure). */
 export function buildNationalDevelopmentInputs(src: { turn: number; totalDays?: number; lr: LivingRegionsState | null; national: NationalSystemsState | null; industries: IndustriesSupplyChainsState | null; networks: StrategicInfrastructureState | null; megaprojects: MegaprojectsPersisted | null;
-  projects: Record<string, any> | any[] | null | undefined; contracts?: Array<{ contractType: string; regionId: string | null; status: string; assignedActorId: string | null }> | null; owners?: Record<string, 'you' | 'rival' | 'neutral'> | null; viewer?: NationalDevelopmentInputs['viewer'] }): NationalDevelopmentInputs {
+  projects: Record<string, any> | any[] | null | undefined; contracts?: Array<{ contractType: string; regionId: string | null; status: string; assignedActorId: string | null }> | null; owners?: Record<string, 'you' | 'rival' | 'neutral'> | null; viewer?: NationalDevelopmentInputs['viewer']; capabilities?: NationalDevelopmentInputs['capabilities'] }): NationalDevelopmentInputs {
   const list: any[] = Array.isArray(src.projects) ? src.projects : Object.values(src.projects || {});
   return {
     turn: Number(src.turn) || 1, totalDays: Number(src.totalDays) || 30,
@@ -142076,7 +142102,7 @@ export function buildNationalDevelopmentInputs(src: { turn: number; totalDays?: 
     national: src.national, industries: src.industries, networks: src.networks, megaprojects: src.megaprojects,
     projects: list.filter(p => p && typeof p.id === 'string').map(p => ({ id: p.id, title: String(p.title || p.id), regionId: p.regionId || null, projectType: String(p.projectType || ''), status: String(p.status || ''), totalCost: Number(p.totalCost || 0), contributions: p.contributions })).sort((a, b) => a.id.localeCompare(b.id)),
     completedContracts: (src.contracts || []).filter(c => c && /complet|fulfil/.test(String(c.status))).map(c => ({ contractType: c.contractType, regionId: c.regionId, assignedActorId: c.assignedActorId })),
-    owners: { ...(src.owners || {}) }, viewer: src.viewer || null
+    owners: { ...(src.owners || {}) }, viewer: src.viewer || null, ...(src.capabilities && Object.keys(src.capabilities).length ? { capabilities: src.capabilities } : {})
   };
 }
 
@@ -143699,6 +143725,14 @@ export function innovationDirectionEvidence(s: InnovationCapabilitiesState | nul
   Object.values(s.capabilities).forEach(c => { const r = CAPABILITY_MATURITY_RANK[c.maturity]; if (r < 3) return; CAPABILITY_DEF_BY_ID[c.id].directions.forEach(d => { out[d] = Math.min(1, (out[d] || 0) + (r >= 4 ? 0.6 : 0.4)); }); });
   return out;
 }
+/** Same evidence read from the PERSISTED memory (previous stable snapshot) — what V10.4 consumes live, so V10.4 never waits on
+ *  this turn's V10.5 pass and V10.5 readiness never depends on V10.4 (relevance only): no cycle, no runaway. */
+export function innovationDirectionEvidenceFromPersisted(p: InnovationPersisted | null): Partial<Record<NationalDevelopmentDirectionId, number>> {
+  const out: Partial<Record<NationalDevelopmentDirectionId, number>> = {};
+  if (!p) return out;
+  CAPABILITY_IDS.forEach(id => { const r = CAPABILITY_MATURITY_RANK[p.current.caps[id]?.maturity || 'unavailable']; if (r < 3) return; CAPABILITY_DEF_BY_ID[id].directions.forEach(d => { out[d] = Math.min(1, (out[d] || 0) + (r >= 4 ? 0.6 : 0.4)); }); });
+  return out;
+}
 /** What-If: isolated readiness projection (caller recomputes V10.0–V10.2 for the changed world). */
 export function projectInnovationCapabilities(before: InnovationCapabilitiesState, alt: InnovationInputs, persisted: InnovationPersisted | null): { after: InnovationCapabilitiesState; lines: string[] } {
   const p = persisted ? JSON.parse(JSON.stringify(persisted)) as InnovationPersisted : null;
@@ -144017,6 +144051,17 @@ export function runV105InnovationCapabilitiesSelfTests(): V9SelfTestResult[] {
     const r = seq(steps);
     return (r.persisted.history.length <= V105_LIMITS.history && CAPABILITY_IDS.every(id => r.persisted.current.caps[id].history.length <= V105_LIMITS.perCapabilityHistory) && J(r.persisted).length < 60000 && valid(r.last.state, r.persisted) === true) || J({ h: r.persisted.history.length, size: J(r.persisted).length, v: valid(r.last.state, r.persisted) });
   });
+  check('ic41', 'Ask the Game: the 10 capability questions route here with Fact / Calculated / Inference / Projection; unrelated questions do not', () => {
+    const r = seq(10, tech); const inputs = tech(10);
+    const gw: any = { national: { innovation: { state: r.last.state, persisted: r.persisted, inputs, ctx: { nsInputs: null, scInputs: null }, strategy: { label: 'Build a technology economy', goals: [] } } } };
+    const qs: Array<[string, CapabilityQueryTopic]> = [["Why don't I have AI Compute yet?", 'why_not_yet'], ['What do I need for Automated Mining?', 'what_needed'], ['Which capability is closest to emerging?', 'closest'], ['Why did AI Compute become operational?', 'why_operational'],
+      ['Which regions are driving Advanced Manufacturing?', 'driving_regions'], ['How can I spread this capability to Queensland?', 'spread_to'], ['What happens if the data center is damaged?', 'damage_what_if'], ['Which capability best supports my strategy?', 'best_for_strategy'],
+      ['Why is this capability weakening?', 'why_weakening'], ['What did I build that enabled Advanced Logistics?', 'what_enabled']];
+    const bad: string[] = []; const kinds = new Set<string>(); const before = J(r.persisted);
+    qs.forEach(([q, topic]) => { const d = detectCapabilityQuery(q, gw); if (!d || d.topic !== topic) { bad.push(`${q} → ${d?.topic}`); return; } const a = composeCapabilityAnswer(d, gw); if (!a.sections.length) bad.push(`${q}: empty`); a.sections.forEach(s => s.claims.forEach(c => kinds.add(String((c as any).kind)))); });
+    const unrelated = [detectCapabilityQuery('How much money do I have?', gw), detectCapabilityQuery('What kind of Australia am I building?', gw)].filter(Boolean);
+    return (!bad.length && kinds.has('fact') && kinds.has('inference') && kinds.has('projection') && !unrelated.length && J(r.persisted) === before) || J({ bad, kinds: Array.from(kinds), unrelated });
+  });
   check('ic40', 'TEST 40 — performance: repeated evaluation is cheap', () => {
     const i = tech(5); let p: InnovationPersisted | null = null; const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
     for (let k = 0; k < 40; k++) p = computeInnovationCapabilities({ ...i, turn: 5 + k }, p).persisted;
@@ -144025,6 +144070,255 @@ export function runV105InnovationCapabilitiesSelfTests(): V9SelfTestResult[] {
   });
   return results;
 }
+
+// ---- V10.5 What-If helpers (isolated; never touch live state) --------------------------------------------------------
+/** Recompute V10.0 → V10.1 → V10.2 with project statuses overridden, then project capability readiness. */
+export function innovationWhatIfProjects(base: InnovationInputs, ctx: { nsInputs: NationalSystemsInputs | null; scInputs: IndustriesInputs | null }, overrides: Record<string, string>, persisted: InnovationPersisted | null, before: InnovationCapabilitiesState): { after: InnovationCapabilitiesState; lines: string[] } {
+  const flip = <X extends { id?: string; status?: string }>(xs: X[]) => xs.map(p => (p && overrides[String(p.id)] ? { ...p, status: overrides[String(p.id)] } : p));
+  const projects = flip(base.projects);
+  let national = base.national, industries = base.industries, networks = base.networks;
+  if (ctx.nsInputs) {
+    national = computeNationalSystems({ ...ctx.nsInputs, projects: flip(ctx.nsInputs.projects as any[]) as any }, null, { emit: false }).state;
+    if (ctx.scInputs) industries = computeIndustriesSupplyChains({ ...ctx.scInputs, projects: flip(ctx.scInputs.projects as any[]) as any, national }, null, { emit: false }).state;
+    networks = computeStrategicInfrastructureNetworks(buildInfraNetworkInputs({ turn: base.turn, projects, national, industries }), null).state;
+  }
+  return projectInnovationCapabilities(before, { ...base, projects, national, industries, networks }, persisted);
+}
+
+// ---- V10.5 Game Intelligence ------------------------------------------------------------------------------------------
+export interface InnovationWorldView { state: InnovationCapabilitiesState; persisted: InnovationPersisted | null; inputs: InnovationInputs; ctx: { nsInputs: NationalSystemsInputs | null; scInputs: IndustriesInputs | null }; strategy: { label: string; goals: Array<{ label: string }> } | null }
+export type CapabilityQueryTopic = 'why_not_yet' | 'what_needed' | 'closest' | 'why_operational' | 'driving_regions' | 'spread_to' | 'damage_what_if' | 'best_for_strategy' | 'why_weakening' | 'what_enabled' | 'overview';
+export interface CapabilityQuery { topic: CapabilityQueryTopic; capability: EmergingCapabilityId | null; regionId: string | null; projectType: string | null }
+const V105_NAME_WORDS: Array<[EmergingCapabilityId, RegExp]> = [
+  ['ai_compute_infrastructure', /\b(ai compute|compute infrastructure|ai infrastructure|national compute)\b/], ['automated_mining', /\b(automated mining|mining automation|autonomous mining)\b/],
+  ['advanced_manufacturing', /\badvanced manufactur\w*/], ['grid_scale_storage', /\b(grid[- ]scale storage|grid storage|energy storage|storage capability)\b/],
+  ['advanced_water_systems', /\b(advanced water|water systems?|water technology)\b/], ['precision_agriculture', /\b(precision ag\w*)\b/],
+  ['research_commercialization', /\b(research commerciali[sz]ation|commerciali[sz]\w*)\b/], ['advanced_logistics', /\badvanced logistics\b/]
+];
+const V105_PROJECT_WORDS: Array<[string, RegExp]> = [['data_center', /\bdata ?cent(er|re)s?\b/], ['research_campus', /\bresearch campus\b/], ['tech_innovation_park', /\btech(nology)? park\b/], ['renewable_grid', /\brenewable grid\b/], ['hydro_expansion', /\bhydro\b/], ['desalination_plant', /\bdesal\w*/], ['water_pipeline', /\bpipeline\b/], ['freight_rail_upgrade', /\b(freight rail|rail line)\b/], ['subsea_cable_hub', /\b(subsea|cable)\b/], ['advanced_manufacturing', /\bmanufacturing precinct\b/]];
+
+export function detectCapabilityQuery(raw: string, gw: GIWorld): CapabilityQuery | null {
+  const v = gw.national?.innovation; if (!v) return null;
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  const cap = V105_NAME_WORDS.find(([, re]) => re.test(q))?.[0] || null;
+  const damageQ = /\bwhat happens if\b.{0,50}\b(damaged|destroyed|lost|cancel\w*|closes?)\b/.test(q) && V105_PROJECT_WORDS.some(([, re]) => re.test(q));
+  const explicit = Boolean(cap) || /\bcapabilit(y|ies)\b/.test(q) || damageQ;
+  if (!explicit) return null;
+  const regionId = nsRegionInText(q);
+  const focus = cap || (Object.values(v.state.capabilities).filter(c => c.maturity !== 'unavailable').sort((a, b) => CAPABILITY_MATURITY_RANK[b.maturity] - CAPABILITY_MATURITY_RANK[a.maturity] || b.readiness.composite - a.readiness.composite)[0]?.id ?? null);
+  const mk = (topic: CapabilityQueryTopic, extra: Partial<CapabilityQuery> = {}): CapabilityQuery => ({ topic, capability: focus, regionId, projectType: null, ...extra });
+  if (/\bwhich capabilit(y|ies) (is|are) (closest|nearest)\b|\bclosest to emerg\w*/.test(q)) return mk('closest');
+  if (/\bwhich capabilit(y|ies) best (supports?|fits?)\b|\bbest supports? my strategy\b/.test(q)) return mk('best_for_strategy');
+  if (/\bwhy (don'?t|do not|can'?t) (i|we) have\b|\bwhy (is|isn'?t) .{0,30}(not yet|unavailable|blocked)\b/.test(q) && cap) return mk('why_not_yet');
+  if (/\bwhat do (i|we) need (for|to get)\b|\bwhat would it take\b|\bhow do (i|we) get\b/.test(q)) return mk('what_needed');
+  if (/\bwhy did .{1,40}\b(become|go|turn) operational\b|\bwhy is .{1,40} operational\b/.test(q)) return mk('why_operational');
+  if (/\bwhich regions? (are )?(driving|drive|lead\w*|power\w*)\b/.test(q)) return mk('driving_regions');
+  if (/\bhow (can|do) (i|we) spread\b|\bspread (this|it|the) capability\b|\bspread .{0,30} to\b/.test(q)) return mk('spread_to');
+  if (/\bwhat happens if\b.{0,50}\b(damaged|destroyed|lost|cancel\w*|closes?)\b/.test(q)) return mk('damage_what_if', { projectType: V105_PROJECT_WORDS.find(([, re]) => re.test(q))?.[0] || null });
+  if (/\bwhy is .{0,40}\b(weakening|declining|struggling)\b/.test(q)) return mk('why_weakening');
+  if (/\bwhat did (i|we) build that (enabled|made)\b|\bwhat enabled\b/.test(q)) return mk('what_enabled');
+  return mk('overview');
+}
+
+export function composeCapabilityAnswer(query: CapabilityQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  const v = gw.national!.innovation!; const s = v.state; const sections: GIAnswerSection[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const C = (t: string, k: LRClaim) => nsClaim(t, k);
+  const id = query.capability; const c = id ? s.capabilities[id] : null; const def = id ? CAPABILITY_DEF_BY_ID[id] : null;
+  const dimLine = (x: EmergingCapabilityState) => (Object.keys(CAPABILITY_DEF_BY_ID[x.id].readinessWeights) as CapabilityDimension[]).map(d => `${CAPABILITY_DIM_LABEL[d]} ${v105Band((x.readiness as any)[d]).toLowerCase()}`).join(', ');
+  let title = 'Innovation & capabilities'; let shape: GIAnswerShape = 'explanation';
+  switch (query.topic) {
+    case 'why_not_yet': case 'what_needed': {
+      if (!c || !def) break; title = query.topic === 'why_not_yet' ? `Why don't you have ${def.label} yet?` : `What would it take to get ${def.label}?`; shape = 'diagnosis';
+      const plan = capabilityPathPlan(s, c.id, v.inputs.projects);
+      say('f', 'Fact', [C(`${def.label} is ${CAPABILITY_MATURITY_LABEL[c.maturity].toLowerCase()} (knowledge: ${CAPABILITY_KNOWLEDGE_LABEL[c.knowledge].toLowerCase()}).`, 'fact'), ...c.evidence.slice(0, 2).map(e => C(`${e.label}${e.regionId ? ` (${e.regionId})` : ''} contributes.`, 'fact'))]);
+      say('c', 'Calculated', [plan.strong.length ? C(`Already strong: ${plan.strong.join(', ')}.`, 'calculated') : null, plan.improve.length ? C(`Needs improvement: ${plan.improve.join(', ')}.`, 'calculated') : null, plan.blocking.length ? C(`Blocking: ${plan.blocking.join('; ')}.`, 'calculated') : null]);
+      say('i', 'Inference', [C(CAPABILITY_MATURITY_RANK[c.maturity] >= 3 && query.topic === 'why_not_yet' ? `You already have it — ${def.label} is ${CAPABILITY_MATURITY_LABEL[c.maturity].toLowerCase()}.${c.nextStep ? ` Next (${CAPABILITY_MATURITY_LABEL[c.nextStep.maturity].toLowerCase()}): ${c.nextStep.missing.join('; ') || 'sustain current conditions'}.` : ''}` : c.mainBlocker ? `${c.mainBlocker} — that is the main barrier.` : c.nextStep ? `Next step (${CAPABILITY_MATURITY_LABEL[c.nextStep.maturity].toLowerCase()}) needs: ${c.nextStep.missing.join('; ') || 'more time at the current level'}.` : 'Nothing is blocking it.', 'inference')]);
+      if (plan.options.length) say('p', 'Projection', [C(`Existing projects that would likely help: ${plan.options.join(', ')} (normal funding actions; readiness is derived from the whole economy, not a checklist).`, 'projection')]);
+      break;
+    }
+    case 'closest': {
+      title = 'Which capability is closest to emerging?'; shape = 'status';
+      const cands = Object.values(s.capabilities).filter(x => x.maturity === 'unavailable').sort((a, b) => a.requirements.filter(r => r.met === 'blocking').length - b.requirements.filter(r => r.met === 'blocking').length || b.readiness.composite - a.readiness.composite);
+      const top = cands[0];
+      if (!top) { say('f', 'Fact', [C('Every capability has already emerged.', 'fact')]); break; }
+      say('c', 'Calculated', cands.slice(0, 3).map(x => C(`${CAPABILITY_DEF_BY_ID[x.id].label}: readiness ${v105Band(x.readiness.composite).toLowerCase()}, ${x.requirements.filter(r => r.met === 'blocking').length} blocking requirement(s).`, 'calculated')));
+      say('i', 'Inference', [C(`${CAPABILITY_DEF_BY_ID[top.id].label} is closest${top.mainBlocker ? ` — ${top.mainBlocker.toLowerCase()}` : ''}.`, 'inference')]);
+      break;
+    }
+    case 'why_operational': case 'what_enabled': {
+      if (!c || !def) break; title = query.topic === 'why_operational' ? `Why did ${def.label} become operational?` : `What enabled ${def.label}?`; shape = 'explanation';
+      say('f', 'Fact', [C(`Origin: ${c.originRegionIds.join(' + ') || '—'} · status ${CAPABILITY_MATURITY_LABEL[c.maturity].toLowerCase()}${c.operationalTurn !== null ? ` (operational since round ${c.operationalTurn})` : ''}.`, 'fact'),
+        c.enablingProjectIds.length ? C(`Enabling projects: ${c.enablingProjectIds.map(pid => v.inputs.projects.find(p => p.id === pid)?.title || pid).slice(0, 4).join(', ')}.`, 'fact') : null,
+        c.enablingMegaprojectIds.length ? C(`National programs: ${c.enablingMegaprojectIds.map(pid => MEGAPROJECT_DEF_BY_KIND[pid.replace(/^mp_/, '') as MegaprojectKind]?.title || pid).join(', ')}.`, 'fact') : null]);
+      say('c', 'Calculated', [C(`Readiness: ${dimLine(c)}.`, 'calculated'), C(`Strongest evidence: ${c.evidence.slice(0, 4).map(e => `${e.label}${e.regionId ? ` (${e.regionId})` : ''}`).join(' + ')}.`, 'calculated')]);
+      say('i', 'Inference', [C(`${def.label} exists because of the country you built — ${def.description}`, 'inference')]);
+      break;
+    }
+    case 'driving_regions': {
+      if (!c || !def) break; title = `Which regions drive ${def.label}?`; shape = 'explanation';
+      say('f', 'Fact', [C(`Origin: ${c.originRegionIds.join(' + ') || '—'}.`, 'fact'), ...c.adoption.filter(a => a.level !== 'none').map(a => C(`${a.regionId}: ${a.level} (local readiness ${v105Band(a.readiness).toLowerCase()}).`, 'fact'))]);
+      say('i', 'Inference', [C(c.adoption.some(a => a.level === 'operational') ? `${c.adoption.filter(a => a.level === 'operational').map(a => a.regionId).join(', ')} operate it today.` : 'No region operates it yet.', 'inference')]);
+      break;
+    }
+    case 'spread_to': {
+      if (!c || !def) break; const r = query.regionId || 'QLD'; const a = c.adoption.find(x => x.regionId === r);
+      title = `How can ${def.label} spread to ${REGIONS[r]?.name || r}?`; shape = 'plan';
+      say('f', 'Fact', [C(`${r} adoption: ${a?.level || 'none'} · local readiness ${v105Band(a?.readiness || 0).toLowerCase()} · absorptive capacity ${v105Band(a?.absorptive || 0).toLowerCase()}.`, 'fact')]);
+      say('c', 'Calculated', [C(`Adoption needs national maturity ≥ demonstrated, local absorptive capacity ≥ ${V105_THRESHOLDS.absorptiveMin} and local readiness ≥ ${V105_THRESHOLDS.adoptOperational} to operate.`, 'calculated')]);
+      say('i', 'Inference', [C(a?.blocker ? `Main local barrier: ${a.blocker}. Diffusion does not happen automatically — ${r} needs the industry and connectivity to absorb it.` : `${r} can absorb it; adoption advances one step per turn while conditions hold.`, 'inference')]);
+      say('p', 'Projection', [C('Digital and research connectivity speeds diffusion: national knowledge reaches a region in proportion to its digital links.', 'projection')]);
+      break;
+    }
+    case 'damage_what_if': {
+      const type = query.projectType || 'data_center'; const hit = v.inputs.projects.filter(p => p.projectType === type && (p.status === 'active' || p.status === 'upgraded'));
+      title = `What if the ${type.replace(/_/g, ' ')} ${hit.length > 1 ? 'assets are' : 'is'} damaged?`; shape = 'simulation';
+      if (!hit.length) { say('f', 'Fact', [C(`No active ${type.replace(/_/g, ' ')} exists right now.`, 'fact')]); break; }
+      const proj = innovationWhatIfProjects(v.inputs, v.ctx, Object.fromEntries(hit.map(p => [p.id, 'damaged'])), v.persisted, s);
+      say('f', 'Fact', [C(`Affected: ${hit.map(p => p.title).join(', ')}.`, 'fact')]);
+      say('p', 'Projection', proj.lines.map(l => C(l, 'projection')).concat([C('Knowledge would be retained; only operational capacity would weaken, and maturity falls only after sustained damage.', 'projection')]));
+      break;
+    }
+    case 'best_for_strategy': {
+      title = 'Which capability best supports your strategy?'; shape = 'recommendation';
+      const text = [v.strategy?.label || '', ...(v.strategy?.goals || []).map(g => g.label)].join(' ');
+      const implied = V104_STRATEGY_WORDS.filter(([, re]) => re.test(text)).map(([d]) => d);
+      const ranked = Object.values(s.capabilities).map(x => ({ x, fit: CAPABILITY_DEF_BY_ID[x.id].directions.filter(d => implied.includes(d)).length, rel: { LOW: 0, MODERATE: 1, HIGH: 2 }[x.relevance] })).sort((a, b) => b.fit - a.fit || b.rel - a.rel || b.x.readiness.composite - a.x.readiness.composite);
+      say('f', 'Fact', [C(v.strategy ? `Your strategy: ${v.strategy.label}.` : 'You have no active strategy; ranking by national relevance.', 'fact')]);
+      say('c', 'Calculated', ranked.slice(0, 3).map(r => C(`${CAPABILITY_DEF_BY_ID[r.x.id].label}: ${CAPABILITY_MATURITY_LABEL[r.x.maturity].toLowerCase()}, relevance ${r.x.relevance.toLowerCase()}${r.x.relevanceWhy.length ? ` (${r.x.relevanceWhy[0]})` : ''}.`, 'calculated')));
+      say('i', 'Inference', [C(`${CAPABILITY_DEF_BY_ID[ranked[0].x.id].label} fits best — relevance is advice, never a requirement; it does not force you to pursue it.`, 'inference')]);
+      break;
+    }
+    case 'why_weakening': {
+      if (!c || !def) break; title = `Why is ${def.label} weakening?`; shape = 'diagnosis';
+      say('f', 'Fact', [C(`Maturity ${CAPABILITY_MATURITY_LABEL[c.maturity].toLowerCase()} · operational capacity ${c.operationalCapacity} · knowledge ${CAPABILITY_KNOWLEDGE_LABEL[c.knowledge].toLowerCase()}.`, 'fact')]);
+      say('c', 'Calculated', c.bottlenecks.slice(0, 3).map(b => C(`${b.reason} (${b.severity}).`, 'calculated')));
+      say('i', 'Inference', [C(c.momentum === 'weakening' || c.operationalCapacity === 'reduced' ? 'The country still knows how to do it; enabling conditions have deteriorated, so it cannot operate at full scale.' : `${def.label} is not weakening (${c.momentum}).`, 'inference')]);
+      break;
+    }
+    case 'overview': default: {
+      title = c && def ? def.label : 'Innovation & capabilities'; shape = 'status';
+      if (c && def) {
+        say('f', 'Fact', [C(`${CAPABILITY_MATURITY_LABEL[c.maturity]} · momentum ${c.momentum} · origin ${c.originRegionIds.join(' + ') || '—'}.`, 'fact')]);
+        say('c', 'Calculated', [C(`Readiness: ${dimLine(c)}; demand ${v105Band(c.readiness.demand).toLowerCase()}.`, 'calculated')]);
+        if (c.mainBlocker) say('i', 'Inference', [C(`Main blocker: ${c.mainBlocker}.`, 'inference')]);
+      } else say('f', 'Fact', Object.values(s.capabilities).map(x => C(`${CAPABILITY_DEF_BY_ID[x.id].label}: ${CAPABILITY_MATURITY_LABEL[x.maturity].toLowerCase()}.`, 'fact')));
+    }
+  }
+  if (!sections.length) say('none', null, [C('No capability matches that question yet.', 'fact')]);
+  return { title, sections, buttons: [], shape };
+}
+
+// ---- V10.5 UI -----------------------------------------------------------------------------------------------------------
+/** PLAY: one compact line, only when a capability is relevant (no tech tree, no raw numbers). */
+export const EmergingCapabilityPlayLine: React.FC<{ state: InnovationCapabilitiesState | null; theme: any; onOpen: () => void; onAsk: (q: string) => void }> = ({ state, theme, onOpen, onAsk }) => {
+  const line = innovationPlayLine(state); if (!line) return null;
+  return (
+    <section aria-label="Emerging capability" className={`${theme.card} ${theme.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`} data-testid="ic-play-line">
+      <span className="font-bold uppercase tracking-wide opacity-70">{line.status === 'Unavailable' ? 'Capability within reach' : 'Emerging capability'}</span>
+      <button type="button" className="px-2 py-0.5 rounded border border-teal-500" onClick={onOpen}>{CAPABILITY_DEF_BY_ID[line.capabilityId].icon} {line.title}</button>
+      <span>Readiness <b>{line.readiness}</b> · Status <b>{line.status}</b></span>
+      {line.blocker && <span>Main blocker: <b>{line.blocker}</b></span>}
+      <button type="button" className="underline opacity-80" onClick={() => onAsk(`What do I need for ${line.title}?`)}>What's needed?</button>
+    </section>
+  );
+};
+
+const V105_MAT_CLASS: Record<CapabilityMaturity, string> = { unavailable: 'opacity-60', emerging: 'text-sky-300', demonstrated: 'text-cyan-300', operational: 'text-emerald-300', scaled: 'text-teal-200', nationally_integrated: 'text-teal-100 font-bold' };
+/** INTELLIGENCE › Innovation & Capabilities (9 views + detail + What-If). Bands, not raw scores. */
+export const InnovationCenter: React.FC<{ view: InnovationWorldView; theme: any; onAsk: (q: string) => void }> = ({ view, theme, onAsk }) => {
+  const tabs = ['overview', 'emerging', 'operational', 'nationally integrated', 'readiness', 'regional adoption', 'bottlenecks', 'capability dependencies', 'history'] as const;
+  const [tab, setTab] = useState<typeof tabs[number]>('overview');
+  const s = view.state; const caps = CAPABILITY_IDS.map(id => s.capabilities[id]);
+  const [sel, setSel] = useState<EmergingCapabilityId>(caps.slice().sort((a, b) => CAPABILITY_MATURITY_RANK[b.maturity] - CAPABILITY_MATURITY_RANK[a.maturity] || b.readiness.composite - a.readiness.composite)[0]?.id || 'ai_compute_infrastructure');
+  const [whatIf, setWhatIf] = useState<string[] | null>(null); const [proj, setProj] = useState('');
+  const c = s.capabilities[sel]; const def = CAPABILITY_DEF_BY_ID[sel];
+  const name = (x: EmergingCapabilityState) => `${CAPABILITY_DEF_BY_ID[x.id].icon} ${CAPABILITY_DEF_BY_ID[x.id].label}`;
+  const row = (x: EmergingCapabilityState) => <div key={x.id}><button type="button" className="underline" onClick={() => setSel(x.id)}>{name(x)}</button> <b className={V105_MAT_CLASS[x.maturity]}>{CAPABILITY_MATURITY_LABEL[x.maturity]}</b> <span className="opacity-70">· {x.momentum}{x.operationalCapacity === 'reduced' ? ' · capacity reduced' : ''}</span></div>;
+  const strongest = caps.slice().sort((a, b) => CAPABILITY_MATURITY_RANK[b.maturity] - CAPABILITY_MATURITY_RANK[a.maturity] || b.readiness.composite - a.readiness.composite)[0];
+  const blockers = caps.flatMap(x => x.bottlenecks.filter(b => b.severity === 'blocking' || b.severity === 'major').map(b => b.reason)); const topBlock = blockers.sort((a, b) => blockers.filter(x => x === b).length - blockers.filter(x => x === a).length)[0];
+  const candidates = view.inputs.projects.filter(p => p.status === 'unlocked' || p.status === 'under_construction' || p.status === 'damaged').slice(0, 40);
+  return (
+    <section aria-labelledby="ic-center-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} text-sm`} data-testid="ic-center">
+      <h3 id="ic-center-h" className="font-bold">🔬 Innovation & Capabilities</h3>
+      <div className="opacity-80 text-xs">Advanced capabilities appear when Australia develops the right combination of research, infrastructure, industry and national networks. There is no separate research tree.</div>
+      <div className="flex flex-wrap gap-1 mt-2 text-xs" role="tablist">{tabs.map(t => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-teal-400 font-bold' : theme.border}`} data-testid={`ic-tab-${t.replace(/ /g, '-')}`}>{t}</button>)}</div>
+      <div className="mt-2 text-xs space-y-1" data-testid="ic-center-body">
+        {tab === 'overview' && <div data-testid="ic-overview">
+          <div><span className="opacity-70">Operational+</span> {caps.filter(x => CAPABILITY_MATURITY_RANK[x.maturity] >= 3).map(x => CAPABILITY_DEF_BY_ID[x.id].label).join(', ') || '—'}</div>
+          <div><span className="opacity-70">Emerging / demonstrated</span> {caps.filter(x => x.maturity === 'emerging' || x.maturity === 'demonstrated').map(x => CAPABILITY_DEF_BY_ID[x.id].label).join(', ') || '—'}</div>
+          {strongest && strongest.maturity !== 'unavailable' && <div><span className="opacity-70">Strongest capability</span> <b>{CAPABILITY_DEF_BY_ID[strongest.id].label}</b></div>}
+          {topBlock && <div><span className="opacity-70">Biggest innovation blocker</span> <b>{topBlock}</b></div>}
+          <div><span className="opacity-70">Leading research region</span> <b>{s.leadingResearchRegion || '—'}</b> · <span className="opacity-70">Leading adoption region</span> <b>{s.leadingAdoptionRegion || '—'}</b></div>
+        </div>}
+        {tab === 'emerging' && (caps.some(x => x.maturity === 'emerging' || x.maturity === 'demonstrated' || (x.maturity === 'unavailable' && x.requirements.every(r => r.met !== 'blocking'))) ? (caps.filter(x => x.maturity === 'emerging' || x.maturity === 'demonstrated').map(row).concat(caps.filter(x => x.maturity === 'unavailable' && x.requirements.every(r => r.met !== 'blocking')).map(x => <div key={`n_${x.id}`} className="opacity-70">{name(x)} — foundations aligning</div>)) as any) : <div className="opacity-70">No capability is emerging yet — see Bottlenecks for what is missing.</div>)}
+        {tab === 'operational' && (caps.some(x => x.maturity === 'operational' || x.maturity === 'scaled') ? (caps.filter(x => x.maturity === 'operational' || x.maturity === 'scaled').map(row) as any) : <div className="opacity-70">No operational capability yet.</div>)}
+        {tab === 'nationally integrated' && (caps.filter(x => x.maturity === 'nationally_integrated').map(row).concat(caps.some(x => x.maturity === 'nationally_integrated') ? [] : [<div key="none" className="opacity-70">None yet — integration needs adoption in three regions on an integrated network.</div>]) as any)}
+        {tab === 'readiness' && caps.map(x => <div key={x.id}>{name(x)}: {(Object.keys(CAPABILITY_DEF_BY_ID[x.id].readinessWeights) as CapabilityDimension[]).map(d => `${CAPABILITY_DIM_LABEL[d]} ${v105Band((x.readiness as any)[d])}`).join(' · ')} · Demand {v105Band(x.readiness.demand)} · Relevance {x.relevance}</div>)}
+        {tab === 'regional adoption' && <div data-testid="ic-adoption">{caps.filter(x => x.adoption.some(a => a.level !== 'none') || x.maturity !== 'unavailable').map(x => <div key={x.id}>{name(x)}: {x.adoption.filter(a => a.level !== 'none').map(a => `${a.regionId} ${a.level}`).join(' · ') || 'no region yet'}{x.originRegionIds.length ? ` (origin ${x.originRegionIds.join(' + ')})` : ''}</div>)}{caps.every(x => x.maturity === 'unavailable') && <div className="opacity-70">No capability has emerged yet.</div>}</div>}
+        {tab === 'bottlenecks' && caps.map(x => <div key={x.id}>{name(x)}: {x.bottlenecks.slice(0, 2).map(b => `${b.reason} (${b.severity})`).join(' · ') || 'no bottleneck'}</div>)}
+        {tab === 'capability dependencies' && caps.map(x => <div key={x.id}>{name(x)}: depends on {CAPABILITY_DEF_BY_ID[x.id].relevantNetworks.join(', ')} networks + {CAPABILITY_DEF_BY_ID[x.id].relevantSectors.join(', ')}{CAPABILITY_DEF_BY_ID[x.id].supportingEvidence.filter(r => r.src.s === 'cap').map(r => ` · supported by ${CAPABILITY_DEF_BY_ID[(r.src as any).id as EmergingCapabilityId].label} (bounded)`).join('')} · creates: {CAPABILITY_DEF_BY_ID[x.id].tradeoffs.join('; ')}</div>)}
+        {tab === 'history' && <div data-testid="ic-history">{(view.persisted?.history || []).length ? [...view.persisted!.history].reverse().slice(0, 15).map(h => <div key={h.id}>R{h.turn}: {h.summary}</div>) : <div className="opacity-70">No capability milestones yet. History begins when it happens — never reconstructed.</div>}</div>}
+      </div>
+      <div className="mt-2 p-2 rounded border border-teal-700/40 text-xs" data-testid="ic-detail">
+        <div className="flex flex-wrap items-center gap-2"><b>{def.icon} {def.label.toUpperCase()}</b>
+          <select aria-label="Capability" className="bg-transparent border rounded px-1" value={sel} onChange={e => { setSel(e.target.value as EmergingCapabilityId); setWhatIf(null); }} data-testid="ic-select">{CAPABILITY_IDS.map(x => <option key={x} value={x}>{CAPABILITY_DEF_BY_ID[x].label}</option>)}</select></div>
+        <div>Maturity <b className={V105_MAT_CLASS[c.maturity]}>{CAPABILITY_MATURITY_LABEL[c.maturity]}</b> · Momentum <b>{c.momentum}</b> · Knowledge <b>{CAPABILITY_KNOWLEDGE_LABEL[c.knowledge]}</b>{CAPABILITY_MATURITY_RANK[c.maturity] >= 3 ? <> · Operational capacity <b>{c.operationalCapacity}</b></> : null}</div>
+        <div>{(Object.keys(def.readinessWeights) as CapabilityDimension[]).map(d => <span key={d} className="mr-2">{CAPABILITY_DIM_LABEL[d]} <b>{v105Band((c.readiness as any)[d]).toUpperCase()}</b></span>)}<span>Demand <b>{v105Band(c.readiness.demand).toUpperCase()}</b></span></div>
+        <div>Origin <b>{c.originRegionIds.join(' • ') || '—'}</b>{c.mainBlocker ? <> · Main blocker <b>{c.mainBlocker}</b></> : null}</div>
+        {c.nextStep && <div className="opacity-80">Next: {CAPABILITY_MATURITY_LABEL[c.nextStep.maturity]} — {c.nextStep.missing.join('; ') || 'sustain current conditions'}</div>}
+        {c.effects.length > 0 && <div className="opacity-80">Can affect: {c.effects.map(e => `${e.label}${e.dependency ? ' (new dependency)' : ''}`).join(' · ')}</div>}
+        <div className="opacity-70">{def.description}</div>
+        <div className="flex flex-wrap items-center gap-1 mt-1">
+          <select aria-label="Project" className="bg-transparent border rounded px-1 max-w-[14rem]" value={proj} onChange={e => setProj(e.target.value)} data-testid="ic-whatif-project"><option value="">What if this project were active…</option>{candidates.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}</select>
+          <button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} disabled={!proj} data-testid="ic-whatif-run" onClick={() => { const r = innovationWhatIfProjects(view.inputs, view.ctx, { [proj]: 'active' }, view.persisted, s); setWhatIf(['WHAT IF (isolated projection — nothing changes):', ...r.lines]); }}>Project</button>
+          <button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} data-testid="ic-path-run" onClick={() => { const pl = capabilityPathPlan(s, sel, view.inputs.projects); setWhatIf([`WHAT WOULD IT TAKE — ${def.label}`, `Already strong: ${pl.strong.map(x => `✓ ${x}`).join(' ') || '—'}`, `Needs improvement: ${pl.improve.map(x => `△ ${x}`).join(' ') || '—'}`, `Blocking: ${pl.blocking.map(x => `✕ ${x}`).join(' ') || '—'}`, pl.options.length ? `Existing options: ${pl.options.join(', ')}` : 'Readiness is derived from the whole economy — not a checklist.']); }}>What would it take?</button>
+        </div>
+        {whatIf && <div className="mt-1 p-2 rounded bg-slate-900/50" data-testid="ic-whatif">{whatIf.map((l, k) => <div key={k}>{l}</div>)}</div>}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2 text-xs">{[`Why don't I have ${def.label} yet?`, 'Which capability is closest to emerging?', 'Which capability best supports my strategy?', `What did I build that enabled ${def.label}?`].map(q => <button key={q} type="button" className="underline" onClick={() => onAsk(q)}>{q}</button>)}</div>
+    </section>
+  );
+};
+
+/** LAB › V10.5 Innovation & Capabilities Inspector (15 views). Observes only; raw readiness numbers live here. */
+export const InnovationInspector: React.FC<{ state: InnovationCapabilitiesState | null; persisted: InnovationPersisted | null; theme: any; enabled: boolean; modifiers: CapabilityModifiers; diag: { recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number } }> = ({ state, persisted, theme, enabled, modifiers, diag }) => {
+  const [open, setOpen] = useState(false); const [tab, setTab] = useState('catalog'); const [busy, setBusy] = useState(false); const [tests, setTests] = useState<V9SelfTestResult[] | null>(null);
+  const tabs = ['catalog', 'readiness', 'hard requirements', 'evidence', 'regional adoption', 'maturity', 'effects', 'bottlenecks', 'national direction integration', 'content unlocks', 'world reaction', 'history', 'recompute reason', 'performance', 'self tests'];
+  const s = state; const issues = s ? validateEmergingCapabilitiesState(s, persisted) : [];
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV105InnovationCapabilitiesSelfTests()); } catch (err) { console.error('[V10.5 self-tests]', err); } finally { setBusy(false); } };
+  const caps = s ? CAPABILITY_IDS.map(id => s.capabilities[id]) : [];
+  return (
+    <section aria-labelledby="ic-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="ic-inspector">
+      <div className="flex items-center justify-between"><h3 id="ic-lab-h" className="font-bold text-sm">🔬 V10.5 Innovation & Capabilities Inspector</h3><button type="button" className="underline" onClick={() => setOpen(o => !o)} data-testid="ic-inspector-toggle">{open ? 'Hide' : 'Inspect'}</button></div>
+      <div className="opacity-80">{enabled ? (s ? `rev ${s.revision} · ${caps.filter(c => c.maturity !== 'unavailable').length}/${CAPABILITY_IDS.length} emerged · validation ${issues.length ? `${issues.length} issue(s)` : 'OK'}` : 'not computed yet') : 'Innovation & Capabilities is OFF (V10.0–V10.4 continue unchanged)'}</div>
+      {open && (
+        <div className="mt-2">
+          <div className="flex flex-wrap gap-1">{tabs.map(t => <button key={t} type="button" onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-teal-400 font-bold' : theme.border}`} data-testid={`ic-lab-tab-${t.replace(/ /g, '-')}`}>{t}</button>)}</div>
+          <div className="mt-2 max-h-72 overflow-auto font-mono" data-testid="ic-inspector-body">
+            {tab === 'catalog' && CAPABILITY_DEFINITIONS.map(d => <div key={d.id}>{d.id} [{d.category}] weights {JSON.stringify(d.readinessWeights)} · thresholds {JSON.stringify(d.maturityThresholds)} · {d.supportingEvidence.length} evidence rules · content {d.contentTags.join('/')}</div>)}
+            {tab === 'readiness' && caps.map(c => <div key={c.id}><b>{c.id}</b> composite {c.readiness.composite} = K{c.readiness.knowledge} I{c.readiness.infrastructure} D{c.readiness.industry} N{c.readiness.network} S{c.readiness.supply} R{c.readiness.resilience} (demand {c.readiness.demand}, relevance {c.relevance})</div>)}
+            {tab === 'hard requirements' && caps.map(c => <div key={c.id}><b>{c.id}</b>: {c.requirements.map(r => `${r.label} ${r.value} (emerge ${r.emerge} / operate ${r.operate}${r.regionId ? ` @${r.regionId}` : ''}) → ${r.met.toUpperCase()}`).join(' | ')}</div>)}
+            {tab === 'evidence' && caps.map(c => <div key={c.id}><b>{c.id}</b>: {c.evidence.slice(0, 8).map(e => `+ ${e.label}${e.regionId ? ` ${e.regionId}` : ''} [${e.dim}] ${e.contribution}`).join(' ')}</div>)}
+            {tab === 'regional adoption' && caps.map(c => <div key={c.id}><b>{c.id}</b>: {c.adoption.map(a => `${a.regionId}:${a.level}(r${a.readiness}/abs${a.absorptive}${a.blocker ? `/${a.blocker}` : ''})`).join(' ')}</div>)}
+            {tab === 'maturity' && caps.map(c => { const m = persisted?.current.caps[c.id]; return <div key={c.id}><b>{c.id}</b> {c.maturity} (qualifies {c.qualifiesFor}) · knowledge {c.knowledge} · held {m?.held ?? 0} qualify {m?.qualify ?? 0} fail {m?.fail ?? 0} weakening {String(m?.weakening)} · prev {c.previousMaturity || '—'} · emerged R{c.emergedTurn ?? '—'} operational R{c.operationalTurn ?? '—'}</div>; })}
+            {tab === 'effects' && <>{caps.map(c => <div key={c.id}><b>{c.id}</b>: {c.effects.map(e => `${e.kind}:${e.target || '—'} ${e.magnitude} @${e.regionIds.join(',') || '—'}${e.dependency ? ' (dependency)' : ''}`).join(' | ') || 'none'}</div>)}<div>applied V10.0 modifiers {JSON.stringify(modifiers.national)} · V10.1 {JSON.stringify(modifiers.industries)}</div></>}
+            {tab === 'bottlenecks' && caps.map(c => <div key={c.id}><b>{c.id}</b>: {c.bottlenecks.map(b => `[${b.severity}] ${b.dimension}: ${b.reason}`).join(' | ') || 'none'}</div>)}
+            {tab === 'national direction integration' && <div>evidence handed to V10.4 (from the persisted snapshot): {JSON.stringify(innovationDirectionEvidenceFromPersisted(persisted))} · V10.4 → V10.5 is relevance only (no readiness feedback)</div>}
+            {tab === 'content unlocks' && <>{[...CONTRACT_TEMPLATE_REGISTRY, ...DILEMMA_TEMPLATE_REGISTRY].filter(t => JSON.stringify(t.requires).includes('"k":"capability"')).map(t => <div key={t.id}>{t.id} ({t.kind}) needs {t.requires.filter(q => q.k === 'capability').map(q => `${(q as any).capability} ≥ ${(q as any).min}${(q as any).regional ? ' (regional)' : ''}`).join(', ')}</div>)}<div>snapshot {JSON.stringify(innovationContentSnapshot(s))}</div></>}
+            {tab === 'world reaction' && <div>events emitted {diag.eventsEmitted} · kinds: capability_emerged, demonstrated, became_operational, scaled, nationally_integrated, adoption_expanded, operational_capacity_declined (maturity/adoption transitions only)</div>}
+            {tab === 'history' && ((persisted?.history || []).length ? persisted!.history.map(h => <div key={h.id}>{h.id} R{h.turn} {h.capabilityId} {h.kind} [{h.regionIds.join(',')}]: {h.summary}</div>) : <div>No history (none invented for older saves).</div>)}
+            {tab === 'recompute reason' && <div>recomputes {diag.recomputes} · last reason: {diag.lastReason} · input hash {persisted?.inputHash || '—'} · domain-hash keyed; maturity advances once per turn from the previous snapshot</div>}
+            {tab === 'performance' && <div>last {diag.lastMs} ms · state compute {s?.computeMs ?? '—'} ms · passes {s?.passes ?? 0} (max {V105_THRESHOLDS.maxPasses}) · bounds {JSON.stringify(V105_LIMITS)}</div>}
+            {tab === 'self tests' && <div><button type="button" className={`px-2 py-1 rounded border ${theme.border}`} onClick={runTests} disabled={busy} data-testid="ic-run-tests">{busy ? 'Running…' : 'Run V10.5 self-tests'}</button>
+              {tests && <div data-testid="ic-test-results">{tests.filter(t => t.passed).length}/{tests.length} passed{tests.filter(t => !t.passed).map(t => <div key={t.id} className="text-rose-300">{t.id}: {t.detail}</div>)}</div>}</div>}
+            {issues.map(x => <div key={x} className="text-rose-300">{x}</div>)}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
 
 // ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
@@ -151274,6 +151568,14 @@ function dispatchGameSettingsChange(
 	      const v102In = inStateRef.current;
 	      // V10.4: regions that define the PUBLIC national structure are slightly more worth contesting (≤ +5%). Public
       // world-state evidence only — never treated as the player's hidden plan; adds no action and no extra AI loop.
+      // V10.5: actual useful actions (fund infrastructure / invest) where a capability is close to emerging or adoption
+      // score slightly higher (≤ +6%, public structure only). No research action, no extra AI loop, no difficulty change.
+      const v105Ic = icStateRef.current;
+      if (v105Ic) decisions.forEach(decision => {
+        if (decision.type !== 'fund_infrastructure' && decision.type !== 'invest' && decision.type !== 'region_deposit') return;
+        const reg = String(decision.data?.region || (decision.type === 'fund_infrastructure' ? (gameStateLiveRef.current as any)?.infrastructureProjects?.[String(decision.data?.projectId || '')]?.regionId || '' : ''));
+        const o = innovationAiOutlook(v105Ic, reg); if (o.factor > 0) decision.score *= 1 + o.factor;
+      });
       const v104Nd = ndProfileRef.current;
       if (v104Nd) decisions.forEach(decision => { if (decision.type !== 'region_deposit' && decision.type !== 'invest') return; const o = nationalDirectionAiOutlook(v104Nd, String(decision.data?.region || '')); if (o.factor > 0) decision.score *= 1 + o.factor; });
       if (v102In) decisions.forEach(decision => { if (decision.type !== 'fund_infrastructure') return; const o = infraProjectNetworkOutlook(v102In, String(decision.data?.projectId || '')); if (o.factor > 0) decision.score *= 1 + o.factor; });
@@ -175601,10 +175903,20 @@ function dispatchGameSettingsChange(
     const sc: any = findActiveScenario(gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios);
     return sc && sc.nationalNetworks && typeof sc.nationalNetworks === 'object' ? sc.nationalNetworks as NationalSystemsInputs['modifiers'] : undefined;
   }, [gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios]);
+  // V10.5: capability effects reach V10.0 / V10.1 ONLY through their existing modifier hooks, read from the PERSISTED
+  // (previous stable) capability snapshot — never from this render's pass (no cascade, no runaway; small, capped values).
+  const icEnabled = Boolean(nsEnabled && gameSettings.innovationEnabled !== false);
+  const icStoredRaw = (gameState as any).innovation;
+  const icPersisted = useMemo(() => sanitizeInnovationPersisted(icStoredRaw), [icStoredRaw]);
+  const icPersistedRef = useRef<InnovationPersisted | null>(icPersisted); icPersistedRef.current = icPersisted;
+  const icSectorKey = JSON.stringify(Object.keys(lrState?.regions || {}).sort().map(k => [k, Math.round(Number((lrState as any)?.regions?.[k]?.sectors?.renewables || 0))]));
+  const icModifiers = useMemo<CapabilityModifiers>(() => (icEnabled ? innovationCapabilityModifiers(icPersisted, Object.fromEntries(Object.entries((lrState?.regions || {}) as Record<string, any>).map(([k, r]) => [k, r?.sectors || {}]))) : { national: {}, industries: {} }),
+    [icEnabled, icPersisted, icSectorKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const nsModifiersLive = useMemo(() => mergeCapabilityModifiers(nsScenarioModifiers, icModifiers.national), [nsScenarioModifiers, icModifiers]);
   const nsInputs = useMemo<NationalSystemsInputs>(() => buildNationalSystemsInputs({
     turn: lrInputs.turn, lr: lrState, projects: gameState.infrastructureProjects as any,
-    crises: ((gameState as any).crisisChainState?.activeCrisisChains || []) as any[], modifiers: nsScenarioModifiers
-  }), [lrInputs.turn, lrState, gameState.infrastructureProjects, (gameState as any).crisisChainState, nsScenarioModifiers]);
+    crises: ((gameState as any).crisisChainState?.activeCrisisChains || []) as any[], modifiers: nsModifiersLive
+  }), [lrInputs.turn, lrState, gameState.infrastructureProjects, (gameState as any).crisisChainState, nsModifiersLive]);
   const nsHash = useMemo(() => nationalSystemsInputHash(nsInputs), [nsInputs]);
   const nsState = useMemo<NationalSystemsState | null>(() => (nsEnabled ? computeNationalSystems(nsInputs, nsPersistedRef.current, { emit: false }).state : null),
     [nsEnabled, nsHash, nsPersisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -175658,8 +175970,9 @@ function dispatchGameSettingsChange(
     const sc: any = findActiveScenario(gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios);
     return sc && sc.industries && typeof sc.industries === 'object' ? sc.industries as IndustriesInputs['modifiers'] : undefined;
   }, [gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios]);
-  const scInputs = useMemo<IndustriesInputs>(() => buildIndustriesInputs({ turn: lrInputs.turn, lr: lrState, projects: gameState.infrastructureProjects as any, national: nsState, modifiers: scScenarioModifiers }),
-    [lrInputs.turn, lrState, gameState.infrastructureProjects, nsState, scScenarioModifiers]);
+  const scModifiersLive = useMemo(() => mergeCapabilityModifiers(scScenarioModifiers, icModifiers.industries), [scScenarioModifiers, icModifiers]);
+  const scInputs = useMemo<IndustriesInputs>(() => buildIndustriesInputs({ turn: lrInputs.turn, lr: lrState, projects: gameState.infrastructureProjects as any, national: nsState, modifiers: scModifiersLive }),
+    [lrInputs.turn, lrState, gameState.infrastructureProjects, nsState, scModifiersLive]);
   const scHash = useMemo(() => industriesInputHash(scInputs), [scInputs]);
   const scState = useMemo<IndustriesSupplyChainsState | null>(() => (scEnabled && nsState ? computeIndustriesSupplyChains(scInputs, scPersistedRef.current, { emit: false }).state : null),
     [scEnabled, scHash, scPersisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -175869,7 +176182,8 @@ function dispatchGameSettingsChange(
   const ndViewerId = String(player?.id || 'player');
   const ndCommitted = useMemo(() => Object.values(mpPersisted?.programs || {}).filter(p => !p.abandoned && p.status !== 'completed').reduce((a, p) => a + Number(p.contributorTotals?.[ndViewerId]?.capital || 0), 0), [mpPersisted, ndViewerId]);
   const ndInputs = useMemo<NationalDevelopmentInputs | null>(() => (ndEnabled && nsState ? buildNationalDevelopmentInputs({ turn: lrInputs.turn, totalDays: Number((gameSettings as any).totalDays) || 30, lr: lrState, national: nsState, industries: scState, networks: inState,
-    megaprojects: mpEnabled ? mpPersisted : null, projects: gameState.infrastructureProjects as any, contracts: lrInputs.contracts, owners: nsRegionOwners, viewer: { cash: Number(player?.money || 0), committedProgramCapital: ndCommitted } }) : null),
+    megaprojects: mpEnabled ? mpPersisted : null, projects: gameState.infrastructureProjects as any, contracts: lrInputs.contracts, owners: nsRegionOwners, viewer: { cash: Number(player?.money || 0), committedProgramCapital: ndCommitted },
+    capabilities: icEnabled ? innovationDirectionEvidenceFromPersisted(icPersisted) : null }) : null),
     [ndEnabled, nsState, lrInputs.turn, lrInputs.contracts, (gameSettings as any).totalDays, lrState, scState, inState, mpEnabled, mpPersisted, gameState.infrastructureProjects, nsRegionOwners, player?.money, ndCommitted]);
   const ndHash = useMemo(() => (ndInputs ? nationalDevelopmentInputHash(ndInputs) : ''), [ndInputs]);
   const ndProfile = useMemo<NationalDevelopmentProfile | null>(() => (ndInputs ? computeNationalDevelopment(ndInputs, ndPersistedRef.current, { emit: false }).profile : null),
@@ -175895,7 +176209,7 @@ function dispatchGameSettingsChange(
     ndPersistedRef.current = res.persisted;
     dispatchGameState({ type: 'LOAD_STATE', payload: { nationalDevelopment: res.persisted } as any });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ndHash, ndEnabled, ndInputs?.turn, gameState.gameMode]);
+  }, [icEnabled, icPersisted, ndHash, ndEnabled, ndInputs?.turn, gameState.gameMode]);
   const ndRivalId = aiPlayer?.id ? String(aiPlayer.id) : 'ai';
   const ndView = useMemo<NationalDevelopmentWorldView | null>(() => {
     if (!ndProfile || !ndInputs) return null;
@@ -175908,6 +176222,65 @@ function dispatchGameSettingsChange(
   }, [ndProfile, ndInputs, ndPersisted, gi3Live, (gameSettings as any).autoModeSettings, swrInputs.ownerNames, ndRivalId, aiPlayer?.name, ndViewerId, nsInputs, scInputs]);
   const ndViewRef = useRef(ndView); ndViewRef.current = ndView;
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, development: ndEnabled ? ndView : null };
+
+  // ---- V10.5 Innovation & Emerging Capabilities: live wiring ----------------------------------------------------
+  // Readiness is DERIVED from Living Regions + V10.0–V10.3 + projects/contracts (domain-hash keyed). Only maturity
+  // hysteresis, knowledge, adoption and bounded history are persisted. Maturity advances at most one step per turn from
+  // the previous snapshot. World Reaction gets maturity / adoption transitions only; LR + Factions decide what they mean.
+  const icInputs = useMemo<InnovationInputs | null>(() => (icEnabled && nsState ? buildInnovationInputs({ turn: lrInputs.turn, lr: lrState, national: nsState, industries: scState, networks: inState, megaprojects: mpEnabled ? mpPersisted : null,
+    projects: gameState.infrastructureProjects as any, contracts: lrInputs.contracts, direction: ndProfile ? { primary: ndProfile.primaryDirection, secondary: ndProfile.secondaryDirection } : null, applied: icModifiers }) : null),
+    [icEnabled, nsState, lrInputs.turn, lrInputs.contracts, lrState, scState, inState, mpEnabled, mpPersisted, gameState.infrastructureProjects, ndProfile?.primaryDirection, ndProfile?.secondaryDirection, icModifiers]);
+  const icHash = useMemo(() => (icInputs ? innovationInputHash(icInputs) : ''), [icInputs]);
+  const icState = useMemo<InnovationCapabilitiesState | null>(() => (icInputs ? computeInnovationCapabilities(icInputs, icPersistedRef.current, { emit: false }).state : null),
+    [icHash, icPersisted?.revision, icPersisted?.current.lastTurn]); // eslint-disable-line react-hooks/exhaustive-deps
+  const icStateRef = useRef<InnovationCapabilitiesState | null>(icState); icStateRef.current = icState;
+  const icContentRef = useRef<ReturnType<typeof innovationContentSnapshot>>(null); icContentRef.current = icEnabled ? innovationContentSnapshot(icState) : null;
+  const icDiagRef = useRef({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0 });
+  useEffect(() => {
+    if (!icEnabled || !icInputs || gameState.gameMode !== 'game') return;
+    const prev = icPersistedRef.current;
+    if (prev && prev.inputHash === icHash && prev.current.lastTurn === icInputs.turn) return;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    const res = computeInnovationCapabilities(icInputs, prev);
+    const d = icDiagRef.current;
+    d.recomputes += 1; d.lastMs = Math.round(((typeof performance !== 'undefined' ? performance.now() : 0) - t0) * 10) / 10;
+    d.lastReason = !prev ? 'first derivation (conservative; no history invented)' : prev.current.lastTurn !== icInputs.turn ? 'turn boundary (maturity may advance one step)' : 'enabling systems changed (input hash)';
+    if (res.events.length) {
+      d.eventsEmitted += res.events.length;
+      const day = Number(gameState.day || 1);
+      const lrBefore = lrStateRef.current ? sanitizeLivingRegionsState(lrStateRef.current) : null;
+      let lrWork: LivingRegionsState | null = lrBefore;
+      const rfBefore = rfStateRef.current ? sanitizeRegionalFactionsState(rfStateRef.current)! : null;
+      let rfWork: RegionalFactionsState | null = rfBefore;
+      const derive = {
+        living_regions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!lrWork) return []; const r = lrApplyWorldEvent(lrWork, e, lrInputsRef.current); lrWork = r.state; return r.derived.map(x => lrToWorldEvent(x, lrInputsRef.current, lrObservers, day)); },
+        factions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!rfWork || !lrWork) return []; const inp = { ...rfInputsRef.current, regions: lrWork }; const r = rfApplyWorldEvent(rfWork, e, inp); rfWork = r.state; return r.derived.map(x => rfToWorldEvent(x, inp, day)); }
+      };
+      const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), res.events.map(x => innovationToWorldEvent(x, lrObservers, day)), swrInputs, { handlers: swrHandlers, derive });
+      persistWorldReaction(out.state);
+      if (lrWork && lrWork !== lrBefore) { if (lrBefore) logRegionalShifts(out.events, lrBefore, lrWork); persistLivingRegions(lrWork); }
+      if (rfWork && rfWork !== rfBefore) { logFactionEvents(out.events); persistRegionalFactions(rfWork); }
+      res.events.filter(x => x.significance === 'major').slice(0, 2).forEach(x => appendGameActivityLedgerEvent('decision', { actorId: 'system', eventType: x.kind, summary: x.text } as any));
+    }
+    icPersistedRef.current = res.persisted;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { innovation: res.persisted } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [icHash, icEnabled, icInputs?.turn, gameState.gameMode]);
+  const icView = useMemo<InnovationWorldView | null>(() => {
+    if (!icState || !icInputs) return null;
+    const c = gi3Live?.active;
+    return { state: icState, persisted: icPersisted, inputs: icInputs, ctx: { nsInputs, scInputs }, strategy: c ? { label: c.mission?.label || 'Your strategy', goals: (c.goals || []).map((g: any) => ({ label: String(g.label || g.title || '') })) } : null };
+  }, [icState, icInputs, icPersisted, gi3Live, nsInputs, scInputs]);
+  if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, innovation: icEnabled ? icView : null };
+  /** Current Focus candidate: only when the ACTIVE GI3 strategy points at a capability's direction (GI3 owns the objective). */
+  const icFocus = useMemo(() => {
+    const c = gi3Live?.active; if (!icState || !c || c.status !== 'active') return null;
+    const text = [c.mission?.label || '', ...((c.goals || []) as any[]).map(g => String(g.label || ''))].join(' ');
+    const implied = V104_STRATEGY_WORDS.filter(([, re]) => re.test(text)).map(([d]) => d);
+    const cap = CAPABILITY_IDS.map(id => icState.capabilities[id]).find(x => (x.maturity === 'emerging' || x.maturity === 'demonstrated') && CAPABILITY_DEF_BY_ID[x.id].directions.some(d => implied.includes(d)));
+    if (!cap) return null;
+    return { id: `cap_focus_${cap.id}`, title: `Make ${CAPABILITY_DEF_BY_ID[cap.id].label} operational`, completed: CAPABILITY_MATURITY_RANK[cap.maturity], total: 3, next: cap.mainBlocker ? `Strengthen: ${cap.mainBlocker}` : cap.nextStep?.missing[0] || null, blocked: Boolean(cap.mainBlocker) };
+  }, [icState, gi3Live]);
 
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
@@ -175964,7 +176337,7 @@ function dispatchGameSettingsChange(
       critical: att && att.state === 'critical' ? { label: att.label, detail: att.detail } : null,
       objective: obj ? { id: String(obj.sourceId || obj.title), title: obj.title, completed: obj.progress.completed, total: obj.progress.total, next: obj.recommendedNextStep?.label || null, blocked: (obj.blockers || []).length > 0 }
         : (() => { const mf = mpEnabled ? megaprojectFocus(mpPersisted, mpWorld, pid) : null; const tp = mf ? mpPersisted!.programs[mpPersisted!.tracked[pid]] : null;
-          return mf && tp ? { id: `mp_focus_${tp.id}`, title: mf.title, completed: tp.stages.filter(s => s.status === 'completed').length, total: tp.stages.length, next: mf.risk, blocked: Boolean(mf.risk) } : null; })(),
+          return mf && tp ? { id: `mp_focus_${tp.id}`, title: mf.title, completed: tp.stages.filter(s => s.status === 'completed').length, total: tp.stages.length, next: mf.risk, blocked: Boolean(mf.risk) } : (icEnabled ? icFocus : null); })(),
       strategy: g3 ? { phases: g3Goals.map(g => g.label), phaseIndex: gi3Live.progress?.phaseIndex ?? g3.phaseIndex, locked: Boolean(g3.locks.mission || g3.locks.primaryGoal || g3.locks.ordering || g3Goals.some(g => g.locked)), onTrack: gi3Live.progress?.onTrack || null, nextMove: gi3Live.progress?.nextMove || null, cashTarget: gi3Live.progress?.resourceStatus.reserve ?? null, regions: g3Goals.map(g => g.regionId).filter(Boolean) as string[], notices: gi3Live.notices.filter(n => !n.dismissed).map(n => ({ id: n.id, text: n.text })) } : null,
       actions: { recommendedId: v9ActionSetView?.recommended?.id || null, ranked: (v9ActionSetView?.ranked || []).slice(0, 12) },
       background: bgLive?.enabled ? { nextMove: bgNext ? { label: bgNext.label, reason: bgNext.reason, actionId: bgNext.actionId || null } : null, intervention: iv ? { level: iv.level, message: iv.message, subjectKind: iv.subjectKind, query: iv.actionContext?.query || null, key: iv.cooldownKey, actionId: iv.actionContext?.actionId || null } : null } : null,
@@ -175982,7 +176355,7 @@ function dispatchGameSettingsChange(
       pendingApprovals: uiState.activeCoPilotProposal && !uiState.showCoPilotProposalModal ? 1 : 0,
       lastBriefTurn: v9BriefSeenTurn
     };
-  }, [mpEnabled, mpPersisted, mpWorld, nsState, scState, inState, player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
+  }, [icEnabled, icFocus, mpEnabled, mpPersisted, mpWorld, nsState, scState, inState, player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
   const v9CohesionSig = v9CohesionSignature(v9CohesionInputs);
   const v9CohesionInputsRef = useRef(v9CohesionInputs); v9CohesionInputsRef.current = v9CohesionInputs;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -176032,6 +176405,7 @@ function dispatchGameSettingsChange(
       national: nsStateRef.current,
       industries: scStateRef.current,
       infraNetworks: inStateRef.current,
+      capabilities: icContentRef.current,
       campaignVars: gs.campaignState?.campaignVariables || {},
       contractsEnabled: Boolean(gameSettings.regionalContractsEnabled), infraEnabled: (gameSettings as any).infrastructureEnabled !== false,
       projects: Object.values(gs.infrastructureProjects || {}).map((p: any) => ({ id: String(p?.id), regionId: String(p?.regionId), projectType: String(p?.projectType), status: String(p?.status) })),
@@ -176225,12 +176599,13 @@ function dispatchGameSettingsChange(
       controllers, rivalRegion: aiPlayer?.currentRegion ? String(aiPlayer.currentRegion) : null, rivalName: String(aiPlayer?.name || 'Rival'),
       contracts, projects, crises, momentum, factionBands, deals,
       infraNetworks: Object.fromEntries((inState?.networks || []).filter(n => n.memberRegionIds.length >= 2).map(n => [n.id, `${n.maturity}|${n.name}`])),
+      ...(icEnabled && icState ? { capabilities: Object.fromEntries(CAPABILITY_IDS.map(id => [id, icState.capabilities[id].maturity])) } : {}),
       ...(ndEnabled && ndProfile ? { nationalDirection: JSON.stringify({ p: ndProfile.primaryDirection, b: ndProfile.confidenceBand, r: ndProfile.definingRegions }) } : {}),
       megaprojects: Object.fromEntries(Object.values(mpPersisted?.programs || {}).map(p => { const st = megaprojectStageView(p); const done = st.filter(x => x.status === 'completed'); const def = MEGAPROJECT_DEF_BY_KIND[p.kind];
         return [p.id, JSON.stringify({ d: done.length, t: st.length, title: def.title, stage: done[done.length - 1]?.title || '', regions: done.length === st.length ? def.regionIds : done[done.length - 1]?.requiredRegionIds || [], c: Object.keys(p.contributorTotals).map(a => swrInputs.ownerNames[a] || a) })]; })),
       industries: Object.fromEntries(Object.values(scState?.regions || {}).flatMap(r => (Object.values(r.industries) as IndustryState[]).filter(x => x.strength >= 25).map(x => [`${r.regionId}:${x.industry}`, x.condition])))
     };
-  }, [scState, inState, mpPersisted, ndEnabled, ndProfile, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
+  }, [scState, inState, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
   const v94PrevRef = useRef<FeelSnapshot | null>(null);
   useEffect(() => {
     const prev = v94PrevRef.current; v94PrevRef.current = feelSnapshot;
@@ -176326,6 +176701,8 @@ function dispatchGameSettingsChange(
         const b = sc.bottlenecks.find(x => x.regionId === String(player.currentRegion || '') && x.input) || sc.bottlenecks.find(x => x.input);
         return b ? `${REGIONS[b.regionId]?.name || b.regionId}'s ${INDUSTRY_LABEL[b.industry].toLowerCase()} is currently short of ${SUPPLY_LABEL[b.input!].toLowerCase()} inputs.` : null;
       })(),
+      capabilityEmerging: (() => { if (!icEnabled || !icState) return null; const c = CAPABILITY_IDS.map(id => icState.capabilities[id]).find(x => x.maturity !== 'unavailable'); return c ? `${CAPABILITY_DEF_BY_ID[c.id].label} is ${CAPABILITY_MATURITY_LABEL[c.maturity].toLowerCase()} — made possible by ${c.originRegionIds.join(' + ') || 'the national system'}.` : null; })(),
+      capabilityOperational: (() => { if (!icEnabled || !icState) return null; const c = CAPABILITY_IDS.map(id => icState.capabilities[id]).find(x => CAPABILITY_MATURITY_RANK[x.maturity] >= 3); return c ? `${CAPABILITY_DEF_BY_ID[c.id].label} is now ${CAPABILITY_MATURITY_LABEL[c.maturity].toLowerCase()}.` : null; })(),
       nationalDirection: (() => {
         const p = ndProfile; if (!ndEnabled || !p?.primaryDirection || p.confidenceBand === 'unclear') return null;
         const l = NATIONAL_DIRECTION_LABEL[p.primaryDirection].replace(/ (Economy|Powerhouse|Hub)$/, '');
@@ -176358,7 +176735,7 @@ function dispatchGameSettingsChange(
         return d ? `Most of ${REGIONS[d.consumerRegionId]?.name || d.consumerRegionId}'s available ${SUPPLY_LABEL[d.supply].toLowerCase()} currently comes from ${REGIONS[d.providerRegionId]?.name || d.providerRegionId}.` : null;
       })()
     };
-  }, [nsState, scState, inState, mpEnabled, mpPersisted, mpWorld, ndEnabled, ndProfile, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
+  }, [nsState, scState, inState, mpEnabled, mpPersisted, mpWorld, ndEnabled, ndProfile, icEnabled, icState, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
   const glSelection = useMemo(() => (isLiveIntentMatch ? selectNextLearningMoment(glCtx, glLearning, gameSettings, glPresentation) : { moment: null, level: 0, mode: 'off' as LearningMode, eligible: [], suppressed: [{ id: '*', reason: 'no live match' }], budget: { thisTurn: 0, window: 0, max: LEARNING_LIMITS.perTurn } }), [glCtx, glLearning, gameSettings, glPresentation, isLiveIntentMatch]);
   // A new live match starts a fresh hint session (budget + active lesson reset; mastery persists).
   const glWasLiveRef = useRef(false);
@@ -192300,6 +192677,7 @@ function dispatchGameSettingsChange(
             coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
           />
 
+          {icEnabled && icState && <EmergingCapabilityPlayLine state={icState} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {ndEnabled && ndProfile && <NationalDirectionPlayLine profile={ndProfile} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {mpEnabled && mpPersisted && <MegaprojectPlayLine line={megaprojectPlayLine(mpPersisted, mpWorld, mpViewerId)} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {inState && <InfraPlayLine state={inState} focus={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={inShowOnMap} />}
@@ -192468,6 +192846,11 @@ function dispatchGameSettingsChange(
             {scState && (
               <OptionalSurfaceBoundary surface="Industries & Supply Chains">
                 <IndustriesIntelPanel state={scState} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={scShowOnMap} />
+              </OptionalSurfaceBoundary>
+            )}
+            {icEnabled && icView && (
+              <OptionalSurfaceBoundary surface="Innovation & Capabilities">
+                <InnovationCenter view={icView} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} />
               </OptionalSurfaceBoundary>
             )}
             {ndEnabled && ndView && (
@@ -192650,6 +193033,9 @@ function dispatchGameSettingsChange(
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10.1 Industries & Supply Chains Inspector">
           <IndustriesInspector state={scState} persisted={scPersisted} theme={themeStyles} diag={scDiagRef.current} enabled={scEnabled} />
+        </OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="V10.5 Innovation & Capabilities Inspector">
+          <InnovationInspector state={icState} persisted={icPersisted} theme={themeStyles} enabled={icEnabled} modifiers={icModifiers} diag={icDiagRef.current} />
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10.4 National Development Inspector">
           <NationalDevelopmentInspector profile={ndProfile} persisted={ndPersisted} theme={themeStyles} enabled={ndEnabled} diag={ndDiagRef.current} />
@@ -202977,6 +203363,12 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="ns-debrief">
 	              <span className="font-bold text-sky-300">National turning points: </span>
 	              {buildNationalDebrief(nsPersistedRef.current).join(' · ')}
+	            </div>
+	          )}
+	          {icEnabled && buildInnovationDebrief(icStateRef.current, icPersistedRef.current).length > 0 && (
+	            <div className="p-3 rounded-xl bg-black/20 border border-teal-700/40 text-xs leading-relaxed" data-testid="ic-debrief">
+	              <div className="font-bold text-teal-300 tracking-wide">CAPABILITIES BUILT</div>
+	              {buildInnovationDebrief(icStateRef.current, icPersistedRef.current).map(l => <div key={l}>{l}</div>)}
 	            </div>
 	          )}
 	          {ndEnabled && ndProfileRef.current && (
