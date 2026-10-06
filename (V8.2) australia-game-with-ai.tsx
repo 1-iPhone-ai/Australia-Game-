@@ -10816,6 +10816,7 @@ export function canonicalStateFromLiveRuntime(
     livingRegions: sanitizeLivingRegionsState((liveState as any).livingRegions || (gameState as any)?.livingRegions),
     regionalFactions: sanitizeRegionalFactionsState((liveState as any).regionalFactions || (gameState as any)?.regionalFactions),
     megaprojects: sanitizeMegaprojectsPersisted((liveState as any).megaprojects || (gameState as any)?.megaprojects),
+    nationalDevelopment: sanitizeNationalDevelopmentPersisted((liveState as any).nationalDevelopment || (gameState as any)?.nationalDevelopment),
     contentState: sanitizeMatchContentState((liveState as any).contentState || (gameState as any)?.contentState),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
@@ -14087,6 +14088,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   industriesEnabled: true,
   infraNetworksEnabled: true,
   megaprojectsEnabled: true,
+  nationalDevelopmentEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26434,6 +26436,8 @@ export type GameSettingsState = {
   infraNetworksEnabled?: boolean;
   /** V10.3 National Megaprojects (needs National Systems and state infrastructure; off = no programs, nothing else changes). */
   megaprojectsEnabled?: boolean;
+  /** V10.4 National Development Strategy (descriptive interpretation of the national structure; off = no profile, nothing else changes). */
+  nationalDevelopmentEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36176,6 +36180,8 @@ export const initialGameState = {
   infrastructureNetworks: null as any,
   /** V10.3: national program memory (non-derivable: proposals, contributions, choices, stage progress). */
   megaprojects: null as any,
+  /** V10.4: national development HISTORY only (hysteresis memory, transitions, milestones) — the profile itself is derived. */
+  nationalDevelopment: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -80138,6 +80144,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.infrastructureNetworks = sanitizeInfraNetworksPersisted(migrated.gameState.infrastructureNetworks);
   // V10.3: pre-V10.3 saves get an empty program registry (null) — never invented programs.
   if (migrated.gameState) migrated.gameState.megaprojects = sanitizeMegaprojectsPersisted(migrated.gameState.megaprojects);
+  // V10.4: pre-V10.4 saves start with NO national development history (null) — history begins when the match resumes, never invented.
+  if (migrated.gameState) migrated.gameState.nationalDevelopment = sanitizeNationalDevelopmentPersisted(migrated.gameState.nationalDevelopment);
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -122099,7 +122107,10 @@ export type SWRKind =
   | 'infrastructure_network_formed' | 'infrastructure_network_integrated' | 'infrastructure_network_fragmented' | 'infrastructure_network_restored'
   | 'critical_infrastructure_point_emerged' | 'critical_infrastructure_point_resolved' | 'network_redundancy_improved' | 'network_resilience_deteriorated' | 'national_gateway_became_critical'
   // V10.3 National Megaprojects (program transitions; the program layer never consumes these).
-  | 'megaproject_proposed' | 'megaproject_committed' | 'megaproject_stage_completed' | 'megaproject_partially_operational' | 'megaproject_stalled' | 'megaproject_resumed' | 'megaproject_completed' | 'megaproject_abandoned';
+  | 'megaproject_proposed' | 'megaproject_committed' | 'megaproject_stage_completed' | 'megaproject_partially_operational' | 'megaproject_stalled' | 'megaproject_resumed' | 'megaproject_completed' | 'megaproject_abandoned'
+  // V10.4 National Development Strategy (interpretation transitions only; no system derives state from these — cycle-safe).
+  | 'national_direction_emerged' | 'national_direction_strengthened' | 'national_direction_weakened' | 'national_strategy_transition_started' | 'national_strategy_transition_completed'
+  | 'national_dependency_became_defining' | 'national_diversification_improved' | 'national_concentration_increased';
 
 export type SWRSignificance = 'ignore' | 'minor' | 'meaningful' | 'major' | 'critical';
 export type SWRVisibility = 'public' | 'team_only' | 'actor_only' | 'observed_by' | 'hidden';
@@ -122605,22 +122616,23 @@ const SWR_RF_KINDS: SWRKind[] = ['faction_influence_shift', 'faction_relationshi
 const SWR_NS_KINDS: SWRKind[] = ['national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_resilience_improved', 'national_resilience_deteriorated', 'national_capacity_expanded'];
 const SWR_SC_KINDS: SWRKind[] = ['industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'industrial_output_accelerated', 'industrial_output_declined'];
 const SWR_IN_KINDS: SWRKind[] = ['infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'network_redundancy_improved', 'network_resilience_deteriorated', 'national_gateway_became_critical'];
+const SWR_ND_KINDS: SWRKind[] = ['national_direction_emerged', 'national_direction_strengthened', 'national_direction_weakened', 'national_strategy_transition_started', 'national_strategy_transition_completed', 'national_dependency_became_defining', 'national_diversification_improved', 'national_concentration_increased'];
 const SWR_MP_KINDS: SWRKind[] = ['megaproject_proposed', 'megaproject_committed', 'megaproject_stage_completed', 'megaproject_partially_operational', 'megaproject_stalled', 'megaproject_resumed', 'megaproject_completed', 'megaproject_abandoned'];
 const SWR_LR_KINDS: SWRKind[] = ['region_entered_boom', 'regional_growth_accelerated', 'regional_decline_started', 'regional_need_became_critical', 'specialization_established', 'core_region_emerged'];
 const swrGi3Regions = (s: SWRInputs) => new Set([...(s.gi3?.protectRegions || []), ...(s.gi3?.futureRegions || [])]);
 
 export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
-  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['megaproject_committed', 'megaproject_stalled', 'megaproject_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'national_gateway_became_critical', 'industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
+  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['national_direction_emerged', 'national_strategy_transition_completed', 'megaproject_committed', 'megaproject_stalled', 'megaproject_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'national_gateway_became_critical', 'industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
     // A rival reconsiders only when the change concerns someone else (never its own move).
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
-  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
-  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
-    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' || e.sourceSystem === 'infrastructure_networks' || e.sourceSystem === 'megaprojects' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
+  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
+  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_ND_KINDS, ...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
+    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' || e.sourceSystem === 'infrastructure_networks' || e.sourceSystem === 'megaprojects' || e.sourceSystem === 'national_development' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
     timing: 'immediate', cooldownTurns: 0, audience: 'gi3_owner',
     relevant: (e, s) => e.subjectType !== 'region' || swrGi3Regions(s).has(e.subjectId) },
   { system: 'background_ai', label: 'Background AI', kinds: '*', minSignificance: 'meaningful', evaluation: () => 'update_attention', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers',
     relevant: e => SWR_SIG_RANK[e.significance] >= 3 || e.tags.includes('gi3_relevant') || e.kind.startsWith('diplomatic_') || e.kind === 'cash_threshold_crossed' || e.kind === 'rival_target_reassessed' },
-  { system: 'diplomacy', label: 'Diplomacy', kinds: ['megaproject_committed', 'megaproject_completed', 'critical_infrastructure_point_emerged', 'critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'diplomacy', label: 'Diplomacy', kinds: ['national_dependency_became_defining', 'megaproject_committed', 'megaproject_completed', 'critical_infrastructure_point_emerged', 'critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'market', label: 'Markets', kinds: ['supply_shortage_formed', 'supply_surplus_formed', 'project_started', 'project_completed', 'resource_liquidation', 'crisis_escalated'], minSignificance: 'minor', evaluation: e => (e.kind === 'resource_liquidation' ? 'supply_pressure' : e.kind === 'crisis_escalated' ? 'volatility_pressure' : 'demand_pressure'), timing: 'day_end', cooldownTurns: 1, audience: 'global' },
   { system: 'contracts', label: 'Contracts', kinds: ['infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'industry_became_constrained', 'supply_shortage_formed', 'supply_surplus_formed', 'national_bottleneck_formed', 'national_capacity_expanded', 'liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'stability', label: 'Public Stability', kinds: ['crisis_resolved', 'project_completed', 'faction_conflict_escalated'], minSignificance: 'meaningful', evaluation: e => ((e.kind === 'crisis_resolved' && e.tags.includes('failed')) || e.kind === 'faction_conflict_escalated' ? 'stability_negative' : 'stability_positive'), timing: 'turn_end', cooldownTurns: 2, audience: 'global' },
@@ -123308,6 +123320,9 @@ export function pickPlayConsequenceChain(state: WorldReactionState, viewerId: st
 }
 
 const SWR_NODE_LABEL: Partial<Record<SWRKind, string>> = {
+  national_direction_emerged: 'National direction emerged', national_direction_strengthened: 'National direction strengthened', national_direction_weakened: 'National direction weakened',
+  national_strategy_transition_started: 'National transition began', national_strategy_transition_completed: 'National transition completed', national_dependency_became_defining: 'Defining national exposure',
+  national_diversification_improved: 'Diversification improved', national_concentration_increased: 'Concentration increased',
   megaproject_proposed: 'Program proposed', megaproject_committed: 'Program committed', megaproject_stage_completed: 'Program stage done', megaproject_partially_operational: 'Program partly operating',
   megaproject_stalled: 'Program stalled', megaproject_resumed: 'Program resumed', megaproject_completed: 'Program completed', megaproject_abandoned: 'Program abandoned',
   infrastructure_network_formed: 'Network formed', infrastructure_network_integrated: 'Network integrated', infrastructure_network_fragmented: 'Network fragmented', infrastructure_network_restored: 'Network restored',
@@ -124802,7 +124817,7 @@ export interface LivingRegionsWorldView {
 }
 
 export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview' | 'national';
-export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery }
+export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery; nationalDev?: NationalDevelopmentQuery }
 
 function lrRegionInText(q: string, v: LivingRegionsWorldView): string | null {
   const regs = Object.values(v.state.regions);
@@ -124821,6 +124836,9 @@ export function detectLivingRegionsQuery(raw: string, gw: GIWorld): LRQuery | nu
   const mk = (topic: LRQueryTopic, extra: Partial<LRQuery> = {}): LRQuery => ({ topic, regionId, actorKey, projectId: null, contractId: null, ...extra });
   // V10.0: interregional network questions (only when a National Systems view exists).
   // V10.3: national program questions (only when a megaproject view exists; generic phrasings need an open program).
+  // V10.4: "what kind of Australia" questions (specific phrasings only; needs a national development view).
+  const ndq = detectNationalDevelopmentQuery(raw, gw);
+  if (ndq) return mk('national', { nationalDev: ndq, regionId: ndq.regionId });
   const mq = detectMegaprojectQuery(raw, gw);
   if (mq) return mk('national', { megaproject: mq, regionId: mq.regionId });
   const xq = detectInfraNetworkQuery(raw, gw);
@@ -124860,6 +124878,7 @@ function lrScorecard(reg: DynamicRegionalState): string {
 }
 
 export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  if (query.topic === 'national' && query.nationalDev && gw.national?.development) return composeNationalDevelopmentAnswer(query.nationalDev, gw);
   if (query.topic === 'national' && query.megaproject && gw.national?.megaprojects) return composeMegaprojectAnswer(query.megaproject, gw);
   if (query.topic === 'national' && query.infra && gw.national?.infra) return composeInfraNetworkAnswer(query.infra, gw);
   if (query.topic === 'national' && query.industry && gw.national?.industries) return composeIndustryAnswer(query.industry, gw);
@@ -128850,6 +128869,9 @@ export interface LearningContext {
   /** V10.3: the first relevant national program (eligible / proposed), and committed capital at risk of suspension. */
   megaproject?: string | null;
   megaprojectSunk?: string | null;
+  /** V10.4: the first clearly emerged national direction, and the leading strategic tension. */
+  nationalDirection?: string | null;
+  nationalTension?: string | null;
 }
 
 export interface LearningLesson { headline: string; lines: string[]; action?: { label: string; nav?: IntentNavAction | null; ask?: string | null } | null; asks?: string[]; target?: LearningCoachTarget; surface?: LearningSurface }
@@ -128947,6 +128969,12 @@ export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
   { id: 'infra_resilience', title: 'Network resilience', category: 'advanced', tier: 'interaction', priority: 6, minLevel: 3, requires: ['infra_networks'], directoryId: 'infrastructure', askPrompt: 'How can I make this network more resilient?', related: ['infra_networks'],
     relevant: c => (c.infraCriticalPoint ? 'a network has a single point of failure' : null),
     lesson: c => ({ headline: 'Network resilience', lines: [c.infraCriticalPoint || '', 'A second route costs capital but keeps the network working when one corridor fails.'], asks: ['How can I make this network more resilient?'], surface: 'inline' }) },
+  { id: 'national_direction', title: 'National direction', category: 'advanced', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'regions', askPrompt: 'What kind of Australia am I building?', related: ['megaprojects'],
+    relevant: c => (c.nationalDirection ? 'a national development direction has clearly emerged' : null),
+    lesson: c => ({ headline: 'National direction', lines: [c.nationalDirection || '', 'This is descriptive, not a locked class.', 'Future decisions can strengthen it, diversify it, or change direction.'], asks: ['What kind of Australia am I building?'], surface: 'inline' }) },
+  { id: 'strategic_tension', title: 'Strategic tension', category: 'advanced', tier: 'interaction', priority: 6, minLevel: 3, requires: ['national_direction'], directoryId: 'regions', askPrompt: 'What is my biggest national weakness?', related: ['national_direction'],
+    relevant: c => (c.nationalTension ? 'your national model carries a real tradeoff' : null),
+    lesson: c => ({ headline: 'Strategic tension', lines: [c.nationalTension || '', 'Specialization can increase strength while also increasing exposure.'], asks: ['What is my biggest national weakness?'], surface: 'inline' }) },
   { id: 'megaprojects', title: 'National megaprojects', category: 'advanced', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'infrastructure', askPrompt: 'Can I afford the next stage?', related: ['infra_networks'],
     relevant: c => (c.megaproject ? 'a national program has become relevant' : null),
     lesson: c => ({ headline: 'National megaproject', lines: [c.megaproject || '', 'Megaprojects are multi-stage programs. You do not need to complete every stage immediately.', 'Completed stages can provide benefits before the full program finishes.'], asks: ['Can I afford the next stage?'], surface: 'inline' }) },
@@ -132190,6 +132218,8 @@ export interface FeelSnapshot {
   infraNetworks?: Record<string, string>;
   /** V10.3: program id → JSON {d, t, title, stage, regions, c} (optional). */
   megaprojects?: Record<string, string>;
+  /** V10.4: JSON {p: primary, b: confidence band, r: defining regions} (optional). */
+  nationalDirection?: string;
 }
 
 let V94_SEQ = 0;
@@ -132270,6 +132300,15 @@ export function deriveFeedbackEvents(prev: FeelSnapshot | null, next: FeelSnapsh
     icCount += 1;
     out.push(v94Event('region_state_changed', 'minor', `ic_${key}`, `${REGION_NAME(code)} ${INDUSTRY_LABEL[ind as StrategicIndustryKind] || ind}: ${pb} → ${band}`, [], { now, turn, icon: UI_ICON.region, tone: bad(band) ? 'negative' : 'positive', regions: [code] }));
   });
+  // V10.4: national transformation moments — Emerging → Established, and a completed change of direction (non-blocking).
+  if (next.nationalDirection && prev.nationalDirection && next.nationalDirection !== prev.nationalDirection) {
+    let a: any = null, b: any = null; try { a = JSON.parse(next.nationalDirection); b = JSON.parse(prev.nationalDirection); } catch { a = null; }
+    const rank: Record<string, number> = { unclear: 0, emerging: 1, established: 2, strongly_established: 3 };
+    if (a && b && a.p && b.p && a.p !== b.p) out.push(v94Event('strategy_phase', 'major', `nd_change_${a.p}`, 'NATIONAL DIRECTION CHANGED',
+      [`${NATIONAL_DIRECTION_LABEL[b.p as NationalDevelopmentDirectionId]}`, '↓', `${NATIONAL_DIRECTION_LABEL[a.p as NationalDevelopmentDirectionId]}`, 'Its structural evidence crossed the threshold; earlier strengths remain as a legacy foundation.'], { now, turn, tone: 'positive', regions: (a.r || []).filter((r: string) => REGIONS[r]) }));
+    else if (a && b && a.p && a.p === b.p && rank[a.b] > rank[b.b] && rank[a.b] >= 2) out.push(v94Event('strategy_phase', 'major', `nd_est_${a.p}_${a.b}`, 'NATIONAL TRANSFORMATION',
+      [`${NATIONAL_DIRECTION_LABEL[a.p as NationalDevelopmentDirectionId]}`, `${String(a.b).replace(/_/g, ' ').toUpperCase()}`, (a.r || []).length ? `Driven by: ${(a.r || []).join(' • ')}` : 'Driven by the national structure as a whole.'], { now, turn, tone: 'positive', regions: (a.r || []).filter((r: string) => REGIONS[r]) }));
+  }
   // V10.3: a national program stage completing is one of the strongest moments; full completion is a major one.
   Object.entries(next.megaprojects || {}).forEach(([pid, val]) => {
     const pv = prev.megaprojects?.[pid]; if (!pv) return;
@@ -132681,7 +132720,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled'
 ] as const;
 
 /**
@@ -133036,6 +133075,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         industries: sanitizeIndustriesPersisted(stateData.industries || raw.gameState?.industries),
         infrastructureNetworks: sanitizeInfraNetworksPersisted(stateData.infrastructureNetworks || raw.gameState?.infrastructureNetworks),
         megaprojects: sanitizeMegaprojectsPersisted(stateData.megaprojects || raw.gameState?.megaprojects),
+        nationalDevelopment: sanitizeNationalDevelopmentPersisted(stateData.nationalDevelopment || raw.gameState?.nationalDevelopment),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -135083,6 +135123,7 @@ function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: b
 export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
   { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
+  { id: 'v104', label: 'V10.4 National Development Strategy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV104NationalDevelopmentSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -137157,6 +137198,8 @@ export interface NationalSystemsWorldView {
   infra?: InfraNetworksWorldView | null;
   /** V10.3 National Megaprojects (null when off). */
   megaprojects?: MegaprojectWorldView | null;
+  /** V10.4 National Development (null when off). */
+  development?: NationalDevelopmentWorldView | null;
 }
 export type NationalQueryTopic = 'overview' | 'bottlenecks' | 'region_network' | 'dependency' | 'resilience' | 'what_if';
 export interface NationalQuery { topic: NationalQueryTopic; regionId: string | null; network: NationalNetworkKind | null; projectType: string | null }
@@ -141786,6 +141829,1137 @@ export function composeMegaprojectAnswer(query: MegaprojectQuery, gw: GIWorld): 
   if (!sections.length) say('none', null, [C('No megaproject matches that question yet.', 'fact')]);
   return { title, sections, buttons: [], shape };
 }
+
+// ============================================================================
+// SECTION 20W: V10.4 NATIONAL DEVELOPMENT STRATEGY
+// The INTERPRETATION of the national development pattern: what kind of Australia is emerging from the player's
+// decisions. Descriptive first — it reads Living Regions, V10.0 networks, V10.1 industries, V10.2 infrastructure
+// networks, V10.3 megaprojects, completed projects and contracts, and explains direction, strengths, exposures,
+// tensions and transformation history. It owns NO money, prices, production, capacity, contracts or win
+// conditions, grants NO bonuses (the economy creates the label; the label never creates the economy) and creates
+// NO actions. Only genuinely historical memory (hysteresis state, transitions, milestones) is persisted.
+// ============================================================================
+
+export type NationalDevelopmentDirectionId = 'resource_export_powerhouse' | 'advanced_manufacturing_economy' | 'technology_research_economy' | 'renewable_energy_powerhouse'
+  | 'trade_logistics_hub' | 'agricultural_export_economy' | 'tourism_experience_economy' | 'infrastructure_led_growth' | 'diversified_resilient_economy';
+export type DevelopmentDirectionMomentum = 'emerging' | 'strengthening' | 'stable' | 'weakening' | 'transitioning';
+export type NationalDirectionConfidence = 'unclear' | 'emerging' | 'established' | 'strongly_established';
+export type NationalDevBand = 'LOW' | 'MODERATE' | 'HIGH';
+export type ValueChainDepth = 'LOW' | 'MODERATE' | 'HIGH' | 'ADVANCED';
+
+export const NATIONAL_DIRECTIONS: NationalDevelopmentDirectionId[] = ['resource_export_powerhouse', 'advanced_manufacturing_economy', 'technology_research_economy', 'renewable_energy_powerhouse', 'trade_logistics_hub', 'agricultural_export_economy', 'tourism_experience_economy', 'infrastructure_led_growth', 'diversified_resilient_economy'];
+export const NATIONAL_DIRECTION_LABEL: Record<NationalDevelopmentDirectionId, string> = {
+  resource_export_powerhouse: 'Resource Export Powerhouse', advanced_manufacturing_economy: 'Advanced Manufacturing Economy', technology_research_economy: 'Technology & Research Economy',
+  renewable_energy_powerhouse: 'Renewable Energy Powerhouse', trade_logistics_hub: 'Trade & Logistics Hub', agricultural_export_economy: 'Agricultural Export Economy',
+  tourism_experience_economy: 'Tourism & Experience Economy', infrastructure_led_growth: 'Infrastructure-Led Development', diversified_resilient_economy: 'Diversified Resilient Economy'
+};
+export const NATIONAL_DIRECTION_SHORT: Record<NationalDevelopmentDirectionId, string> = {
+  resource_export_powerhouse: 'Resource-led', advanced_manufacturing_economy: 'Manufacturing-led', technology_research_economy: 'Technology-led', renewable_energy_powerhouse: 'Renewables-led',
+  trade_logistics_hub: 'Trade-led', agricultural_export_economy: 'Agriculture-led', tourism_experience_economy: 'Tourism-led', infrastructure_led_growth: 'Infrastructure-led', diversified_resilient_economy: 'Diversified'
+};
+export const NATIONAL_DIRECTION_ICON: Record<NationalDevelopmentDirectionId, string> = {
+  resource_export_powerhouse: '⛏', advanced_manufacturing_economy: '🏭', technology_research_economy: '🔬', renewable_energy_powerhouse: '🌬', trade_logistics_hub: '🚢',
+  agricultural_export_economy: '🌾', tourism_experience_economy: '🏖', infrastructure_led_growth: '🏗', diversified_resilient_economy: '🧩'
+};
+export const NATIONAL_CONFIDENCE_LABEL: Record<NationalDirectionConfidence, string> = { unclear: 'Still emerging', emerging: 'Emerging pattern', established: 'Established', strongly_established: 'Strongly established' };
+export const NATIONAL_MOMENTUM_LABEL: Record<DevelopmentDirectionMomentum, string> = { emerging: 'Emerging', strengthening: 'Strengthening', stable: 'Stable', weakening: 'Weakening', transitioning: 'Transitioning' };
+/** Hysteresis thresholds (game abstractions, documented and LAB-visible). */
+export const V104_THRESHOLDS = { entry: 50, exit: 42, entryMargin: 4, secondaryEntry: 46, secondaryExit: 40, secondaryRatio: 0.72, transitionLead: 5, transitionCompleteLead: 7, transitionTurns: 3, establishTurns: 3, strongTurns: 6, establishScore: 56, strongScore: 68, minStructuralEvidence: 3, diversifiedMinStrongSectors: 3 } as const;
+export const V104_LIMITS = { milestones: 40, scoreHistory: 12, legacy: 6, evidencePerDirection: 10, factors: 6, tensions: 4, opportunities: 4 } as const;
+
+export interface NationalDevelopmentEvidence { id: string; sourceSystem: 'living_regions' | 'national_systems' | 'industries' | 'infrastructure_networks' | 'megaprojects' | 'contracts' | 'canonical'; sourceId: string; factor: string; contribution: number; visibility: 'public' | 'actor_visible'; turn: number }
+export interface NationalDevelopmentDimensions {
+  resourceIntensity: number; manufacturingDepth: number; technologyIntensity: number; researchIntensity: number; renewableIntensity: number; tradeIntegration: number; infrastructureIntegration: number;
+  industrialDiversity: number; regionalDiversity: number; networkResilience: number; dependencyConcentration: number; capitalIntensity: number; valueChainDepth: number;
+}
+export interface NationalDevelopmentFactor { id: string; category: string; label: string; magnitude: 'minor' | 'meaningful' | 'major' | 'defining'; regionIds: string[]; evidence: NationalDevelopmentEvidence[] }
+export interface NationalStrategicTension { id: string; title: string; description: string; sideA: string; sideB: string; severity: 'minor' | 'meaningful' | 'major'; evidence: NationalDevelopmentEvidence[] }
+export interface RegionalDevelopmentContribution { regionId: string; contributionTags: NationalDevelopmentDirectionId[]; primaryContribution: string; role: 'core' | 'support' | 'emerging' | 'minor'; strength: number; evidence: NationalDevelopmentEvidence[] }
+export interface NationalTransformationMilestone {
+  id: string; turn: number;
+  kind: 'direction_emerged' | 'direction_established' | 'secondary_direction_emerged' | 'transition_started' | 'transition_completed' | 'major_vulnerability_formed' | 'major_vulnerability_resolved' | 'diversification_milestone' | 'national_structure_changed';
+  directionId?: NationalDevelopmentDirectionId; summary: string; evidenceIds: string[];
+}
+export interface NationalDirectionScore { directionId: NationalDevelopmentDirectionId; score: number; factors: Array<{ label: string; value: number; weight: number; contribution: number; source: NationalDevelopmentEvidence['sourceSystem']; sourceId: string; negative?: boolean }> }
+export interface NationalDevelopmentProfile {
+  version: number; revision: number;
+  primaryDirection: NationalDevelopmentDirectionId | null; secondaryDirection: NationalDevelopmentDirectionId | null;
+  directionConfidence: number; confidenceBand: NationalDirectionConfidence; directionMomentum: DevelopmentDirectionMomentum;
+  strongestPattern: NationalDevelopmentDirectionId | null;
+  transition: { from: NationalDevelopmentDirectionId; to: NationalDevelopmentDirectionId; sinceTurn: number } | null;
+  legacyStrengths: Array<{ directionId: NationalDevelopmentDirectionId; label: string; fromTurn: number; untilTurn: number }>;
+  dimensions: NationalDevelopmentDimensions; valueChainDepth: ValueChainDepth;
+  sectorConcentration: { band: NationalDevBand; sector: StrategicIndustryKind | null; share: number };
+  regionalConcentration: { band: NationalDevBand; regionIds: string[]; share: number };
+  resilience: { band: NationalResilienceBand | null; why: string[] };
+  scores: NationalDirectionScore[];
+  strengths: NationalDevelopmentFactor[]; vulnerabilities: NationalDevelopmentFactor[]; dependencies: NationalDevelopmentFactor[]; opportunities: NationalDevelopmentFactor[];
+  tensions: NationalStrategicTension[]; regionalContributions: RegionalDevelopmentContribution[];
+  definingRegions: string[]; mainStrength: string | null; mainExposure: string | null; mainOpportunity: string | null;
+  transformationHistory: NationalTransformationMilestone[]; evidence: NationalDevelopmentEvidence[];
+  structuralEvidence: number; lastUpdatedTurn: number; inputHash: string; computeMs: number;
+}
+export interface NationalDevelopmentMemory {
+  primary: { id: NationalDevelopmentDirectionId; since: number; heldTurns: number; band: NationalDirectionConfidence } | null;
+  secondary: { id: NationalDevelopmentDirectionId; since: number } | null;
+  transition: { from: NationalDevelopmentDirectionId; to: NationalDevelopmentDirectionId; since: number; aheadTurns: number } | null;
+  legacy: Array<{ directionId: NationalDevelopmentDirectionId; fromTurn: number; untilTurn: number }>;
+  scoreHistory: Array<{ turn: number; scores: Partial<Record<NationalDevelopmentDirectionId, number>> }>;
+  vulnerabilities: string[]; diversityBand: string | null; concentrationBand: NationalDevBand | null; lastTurn: number;
+}
+export interface NationalDevelopmentPersisted { schemaVersion: '10.4'; revision: number; initializedTurn: number | null; base: NationalDevelopmentMemory; current: NationalDevelopmentMemory; milestones: NationalTransformationMilestone[]; seq: number; inputHash: string }
+export interface NationalDevelopmentInputs {
+  turn: number; totalDays: number;
+  regions: Array<{ code: string; sectors: Partial<Record<LRSector, number>>; devScore: number; momentum: number; stability: number | null }>;
+  national: NationalSystemsState | null; industries: IndustriesSupplyChainsState | null; networks: StrategicInfrastructureState | null; megaprojects: MegaprojectsPersisted | null;
+  projects: Array<{ id: string; title: string; regionId: string | null; projectType: string; status: string; totalCost: number; contributions?: Record<string, number> }>;
+  completedContracts: Array<{ contractType: string; regionId: string | null; assignedActorId: string | null }>;
+  owners: Record<string, 'you' | 'rival' | 'neutral'>;
+  viewer: { cash: number; committedProgramCapital: number } | null;
+}
+export type NationalDevelopmentDerivedKind = 'national_direction_emerged' | 'national_direction_strengthened' | 'national_direction_weakened' | 'national_strategy_transition_started' | 'national_strategy_transition_completed'
+  | 'national_dependency_became_defining' | 'national_diversification_improved' | 'national_concentration_increased';
+export interface NationalDevelopmentDerivedEvent { id: string; turn: number; kind: NationalDevelopmentDerivedKind; directionId: NationalDevelopmentDirectionId | null; regionIds: string[]; text: string; significance: 'meaningful' | 'major'; evidence: string[] }
+
+// ---- Mappings (canonical structure → direction relevance) -------------------------------------------------
+const V104_PROJECT_DIRECTIONS: Record<string, NationalDevelopmentDirectionId[]> = {
+  automated_port: ['resource_export_powerhouse', 'trade_logistics_hub'], port_expansion: ['resource_export_powerhouse', 'trade_logistics_hub'], freight_rail_upgrade: ['resource_export_powerhouse', 'trade_logistics_hub'],
+  remote_logistics_base: ['resource_export_powerhouse'], inland_rail_hub: ['trade_logistics_hub', 'advanced_manufacturing_economy'], advanced_manufacturing: ['advanced_manufacturing_economy'],
+  data_center: ['technology_research_economy'], research_campus: ['technology_research_economy'], tech_innovation_park: ['technology_research_economy'], subsea_cable_hub: ['technology_research_economy', 'trade_logistics_hub'],
+  renewable_grid: ['renewable_energy_powerhouse'], offshore_wind_farm: ['renewable_energy_powerhouse'], hydro_expansion: ['renewable_energy_powerhouse'], green_hydrogen_terminal: ['renewable_energy_powerhouse'],
+  water_pipeline: ['agricultural_export_economy'], desalination_plant: ['agricultural_export_economy'], tourism_precinct: ['tourism_experience_economy'], high_speed_rail: ['tourism_experience_economy']
+};
+const V104_PROGRAM_DIRECTIONS: Record<MegaprojectKind, NationalDevelopmentDirectionId[]> = {
+  national_high_speed_rail: ['tourism_experience_economy', 'infrastructure_led_growth'], eastern_energy_supergrid: ['renewable_energy_powerhouse', 'advanced_manufacturing_economy'],
+  national_water_security: ['agricultural_export_economy'], australian_ai_compute_network: ['technology_research_economy'], northern_export_corridor: ['resource_export_powerhouse', 'trade_logistics_hub'],
+  green_hydrogen_export_network: ['renewable_energy_powerhouse', 'trade_logistics_hub'], continental_digital_backbone: ['technology_research_economy', 'trade_logistics_hub'], national_freight_modernization: ['trade_logistics_hub', 'resource_export_powerhouse']
+};
+const V104_SECTOR_DIRECTIONS: Partial<Record<LRSector, NationalDevelopmentDirectionId>> = {
+  mining: 'resource_export_powerhouse', manufacturing: 'advanced_manufacturing_economy', technology: 'technology_research_economy', research: 'technology_research_economy', renewables: 'renewable_energy_powerhouse', energy: 'renewable_energy_powerhouse',
+  trade: 'trade_logistics_hub', logistics: 'trade_logistics_hub', agriculture: 'agricultural_export_economy', tourism: 'tourism_experience_economy', infrastructure: 'infrastructure_led_growth'
+};
+const V104_INDUSTRY_DIRECTION: Record<StrategicIndustryKind, NationalDevelopmentDirectionId> = {
+  mining: 'resource_export_powerhouse', manufacturing: 'advanced_manufacturing_economy', technology: 'technology_research_economy', research: 'technology_research_economy', energy: 'renewable_energy_powerhouse',
+  trade: 'trade_logistics_hub', agriculture: 'agricultural_export_economy', tourism: 'tourism_experience_economy'
+};
+const V104_CONTRIBUTION_LABEL: Record<StrategicIndustryKind, string> = { mining: 'Mineral supply', manufacturing: 'Manufacturing core', technology: 'Technology base', research: 'Research support', energy: 'Energy support', trade: 'Trade gateway', agriculture: 'Agricultural supply', tourism: 'Visitor economy' };
+const v104R = (x: number, d = 1) => { const f = Math.pow(10, d); return Math.round((Number.isFinite(x) ? x : 0) * f) / f; };
+const v104C = (x: number, a = 0, b = 1) => Math.max(a, Math.min(b, Number.isFinite(x) ? x : 0));
+const v104Fn = (status: string) => status === 'active' || status === 'upgraded';
+const V104_MAT: Record<InfrastructureNetworkMaturity, number> = { fragmented: 0, emerging: 1, connected: 2, integrated: 3, national_backbone: 4 };
+
+export function createEmptyNationalDevelopmentMemory(): NationalDevelopmentMemory { return { primary: null, secondary: null, transition: null, legacy: [], scoreHistory: [], vulnerabilities: [], diversityBand: null, concentrationBand: null, lastTurn: 0 }; }
+export function createEmptyNationalDevelopmentPersisted(): NationalDevelopmentPersisted { return { schemaVersion: '10.4', revision: 0, initializedTurn: null, base: createEmptyNationalDevelopmentMemory(), current: createEmptyNationalDevelopmentMemory(), milestones: [], seq: 0, inputHash: '' }; }
+
+export function nationalDevelopmentInputHash(i: NationalDevelopmentInputs): string {
+  let h = 2166136261 >>> 0;
+  const mix = (s: string) => { for (let k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = Math.imul(h, 16777619) >>> 0; } };
+  mix(`${i.turn}|${i.totalDays}`);
+  i.regions.forEach(r => { mix(r.code); Object.keys(r.sectors).sort().forEach(k => mix(`${k}${Math.round((r.sectors as any)[k] / 2)}`)); mix(`${Math.round(r.devScore / 2)}|${Math.round(r.momentum * 10)}|${r.stability === null ? '-' : Math.round(r.stability / 5)}`); });
+  i.projects.forEach(p => mix(`${p.id}:${p.status}`));
+  mix(`ns${i.national?.revision ?? -1}|${i.national?.national?.resilienceScore ?? ''}`);
+  if (i.industries) Object.keys(i.industries.regions).sort().forEach(r => STRATEGIC_INDUSTRIES.forEach(k => mix(String(Math.round(v104C(i.industries!.regions[r]?.industries?.[k]?.strength ?? 0, 0, 100) / 3)))));
+  (i.networks?.networks || []).forEach(n => mix(`${n.id}${n.maturity}${n.redundancyBand}`));
+  Object.values(i.megaprojects?.programs || {}).forEach(p => mix(`${p.id}${p.status}${p.stages.filter(s => s.status === 'completed').length}${JSON.stringify(p.choices)}`));
+  mix(`c${i.completedContracts.length}`); Object.keys(i.owners).sort().forEach(k => mix(`${k}${i.owners[k]}`));
+  if (i.viewer) mix(`v${Math.round(i.viewer.cash / 2500)}|${Math.round(i.viewer.committedProgramCapital / 2500)}`);
+  return h.toString(36);
+}
+
+/** Builds inputs from canonical/derived system snapshots (pure). */
+export function buildNationalDevelopmentInputs(src: { turn: number; totalDays?: number; lr: LivingRegionsState | null; national: NationalSystemsState | null; industries: IndustriesSupplyChainsState | null; networks: StrategicInfrastructureState | null; megaprojects: MegaprojectsPersisted | null;
+  projects: Record<string, any> | any[] | null | undefined; contracts?: Array<{ contractType: string; regionId: string | null; status: string; assignedActorId: string | null }> | null; owners?: Record<string, 'you' | 'rival' | 'neutral'> | null; viewer?: NationalDevelopmentInputs['viewer'] }): NationalDevelopmentInputs {
+  const list: any[] = Array.isArray(src.projects) ? src.projects : Object.values(src.projects || {});
+  return {
+    turn: Number(src.turn) || 1, totalDays: Number(src.totalDays) || 30,
+    regions: Object.keys(REGIONS).sort().map(code => { const r = src.lr?.regions?.[code]; return { code, sectors: { ...(r?.sectors || {}) }, devScore: Number(r?.development?.score || 0), momentum: Number(r?.momentum?.value || 0), stability: r?.stability?.value ?? null }; }),
+    national: src.national, industries: src.industries, networks: src.networks, megaprojects: src.megaprojects,
+    projects: list.filter(p => p && typeof p.id === 'string').map(p => ({ id: p.id, title: String(p.title || p.id), regionId: p.regionId || null, projectType: String(p.projectType || ''), status: String(p.status || ''), totalCost: Number(p.totalCost || 0), contributions: p.contributions })).sort((a, b) => a.id.localeCompare(b.id)),
+    completedContracts: (src.contracts || []).filter(c => c && /complet|fulfil/.test(String(c.status))).map(c => ({ contractType: c.contractType, regionId: c.regionId, assignedActorId: c.assignedActorId })),
+    owners: { ...(src.owners || {}) }, viewer: src.viewer || null
+  };
+}
+
+// ---- Measurement helpers ------------------------------------------------------------------------------------
+interface V104Measure {
+  indTop3: Record<StrategicIndustryKind, number>; indMax: Record<StrategicIndustryKind, { v: number; r: string | null }>; outShare: Record<StrategicIndustryKind, number>;
+  secTop3: (s: LRSector) => number; netMat: (k: StrategicInfrastructureNetworkKind) => number; projCount: (d: NationalDevelopmentDirectionId) => { n: number; ids: string[] };
+  programProgress: (d: NationalDevelopmentDirectionId) => { v: number; ids: string[] }; contractCount: (d: NationalDevelopmentDirectionId) => number;
+  cond: (n: NationalNetworkKind) => number; strongSectors: StrategicIndustryKind[]; activeProjects: number; stagesCompleted: number;
+}
+function v104Measure(i: NationalDevelopmentInputs): V104Measure {
+  const regs = i.industries?.regions || {};
+  const indTop3 = {} as Record<StrategicIndustryKind, number>, indMax = {} as Record<StrategicIndustryKind, { v: number; r: string | null }>, outShare = {} as Record<StrategicIndustryKind, number>;
+  const out = i.industries?.national?.output || {};
+  const totalOut = STRATEGIC_INDUSTRIES.reduce((a, k) => a + Math.max(0, Number((out as any)[k] || 0)), 0);
+  STRATEGIC_INDUSTRIES.forEach(k => {
+    const vals = Object.keys(regs).map(r => ({ r, v: v104C(Number(regs[r]?.industries?.[k]?.strength || 0) / 100) })).sort((a, b) => b.v - a.v || a.r.localeCompare(b.r));
+    indTop3[k] = (vals.slice(0, 3).reduce((a, x) => a + x.v, 0)) / 3;
+    indMax[k] = vals[0] ? { v: vals[0].v, r: vals[0].r } : { v: 0, r: null };
+    outShare[k] = totalOut > 0 ? Math.max(0, Number((out as any)[k] || 0)) / totalOut : 0;
+  });
+  const secTop3 = (s: LRSector) => i.regions.map(r => v104C(Number((r.sectors as any)[s] || 0) / 100)).sort((a, b) => b - a).slice(0, 3).reduce((a, x) => a + x, 0) / 3;
+  const netMat = (k: StrategicInfrastructureNetworkKind) => (i.networks?.networks || []).filter(n => n.networkKind === k).reduce((m, n) => Math.max(m, V104_MAT[n.maturity] / 4), 0);
+  const active = i.projects.filter(p => v104Fn(p.status));
+  const projCount = (d: NationalDevelopmentDirectionId) => { const ids = active.filter(p => (V104_PROJECT_DIRECTIONS[p.projectType] || []).includes(d)).map(p => p.id); return { n: ids.length, ids }; };
+  const progs = Object.values(i.megaprojects?.programs || {});
+  const programProgress = (d: NationalDevelopmentDirectionId) => {
+    const rel = progs.filter(p => (V104_PROGRAM_DIRECTIONS[p.kind] || []).includes(d) || (d === 'diversified_resilient_economy' && Object.values(p.choices).some(c => MEGAPROJECT_DEF_BY_KIND[p.kind]?.choices.flatMap(ch => ch.options).find(o => o.id === c.optionId)?.effectTags.some(t => t === 'distributed' || t === 'redundancy'))));
+    return { v: v104C(rel.reduce((a, p) => a + p.stages.filter(s => s.status === 'completed').length / Math.max(1, p.stages.length), 0)), ids: rel.map(p => p.id) };
+  };
+  const contractCount = (d: NationalDevelopmentDirectionId) => i.completedContracts.filter(c => (LR_CONTRACT_SECTORS[c.contractType] || []).some(s => V104_SECTOR_DIRECTIONS[s] === d)).length;
+  const CR: Record<NationalNetworkCondition, number> = { surplus: 1, healthy: 0.75, strained: 0.45, bottlenecked: 0.2, critical: 0 };
+  const cond = (n: NationalNetworkKind) => { const c = i.national?.national?.[n]?.condition; return c ? CR[c] : 0.5; };
+  // A sector is "strong" when it leads somewhere (one region ≥ 50) or is broad-based (top-3 average ≥ 0.4).
+  const strongSectors = STRATEGIC_INDUSTRIES.filter(k => indMax[k].v >= 0.5 || indTop3[k] >= 0.4);
+  return { indTop3, indMax, outShare, secTop3, netMat, projCount, programProgress, contractCount, cond, strongSectors, activeProjects: active.length, stagesCompleted: progs.reduce((a, p) => a + p.stages.filter(s => s.status === 'completed').length, 0) };
+}
+
+/** Explainable direction scoring: every score is a weighted sum of named factors with their source system. */
+export function scoreNationalDirections(i: NationalDevelopmentInputs, m: V104Measure = v104Measure(i), dims?: NationalDevelopmentDimensions): NationalDirectionScore[] {
+  const D = dims || nationalDevelopmentDimensions(i, m);
+  type F = NationalDirectionScore['factors'][number];
+  const f = (label: string, value: number, weight: number, source: F['source'], sourceId: string, negative = false): F => ({ label, value: v104C(value), weight, contribution: 0, source, sourceId, negative });
+  const ind = (k: StrategicIndustryKind, w: number) => f(`${INDUSTRY_LABEL[k]} strength across the leading regions`, m.indTop3[k], w, 'industries', `industry:${k}`);
+  const share = (k: StrategicIndustryKind, w: number) => f(`${INDUSTRY_LABEL[k]} share of national industrial output`, v104C(m.outShare[k] * 3), w, 'industries', `output:${k}`);
+  const net = (k: StrategicInfrastructureNetworkKind, w: number) => f(`${INFRA_NETWORK_LABEL[k]} infrastructure network maturity`, m.netMat(k), w, 'infrastructure_networks', `network:${k}`);
+  const proj = (d: NationalDevelopmentDirectionId, w: number, per = 3) => { const pc = m.projCount(d); return f(`Completed infrastructure supporting this model (${pc.n})`, pc.n / per, w, 'canonical', pc.ids.join(',') || 'projects'); };
+  const prog = (d: NationalDevelopmentDirectionId, w: number) => { const pp = m.programProgress(d); return f('National megaproject stages completed', pp.v, w, 'megaprojects', pp.ids.join(',') || 'megaprojects'); };
+  const con = (d: NationalDevelopmentDirectionId, w: number) => f('Completed contracts in related sectors', m.contractCount(d) / 4, w, 'contracts', `contracts:${d}`);
+  const sec = (s: LRSector, w: number) => f(`Living Regions ${s} specialization across regions`, m.secTop3(s), w, 'living_regions', `sector:${s}`);
+  const ncond = (n: NationalNetworkKind, w: number, label: string) => f(label, m.cond(n), w, 'national_systems', `network:${n}`);
+  const minerals = i.industries ? Object.values(i.industries.supplies || {}).flat().filter(s => s.supply === 'minerals').reduce((a, s) => a + Math.max(0, s.exported + s.availableSurplus), 0) : 0;
+  const mfgInputs = i.industries ? Object.values(i.industries.regions).map(r => r.industries.manufacturing).filter(Boolean).map(x => x!.inputAvailability) : [];
+  const gateways = (i.networks?.networks || []).reduce((a, n) => a + n.gatewayProjectIds.length, 0);
+  const breadth = STRATEGIC_INDUSTRIES.map(k => m.indMax[k].v).sort((a, b) => b - a).slice(0, 5).reduce((a, x) => a + x, 0) / 5;
+  const avgStab = i.regions.filter(r => r.stability !== null).map(r => Number(r.stability)); const stab = avgStab.length ? avgStab.reduce((a, x) => a + x, 0) / avgStab.length / 100 : 0.5;
+  const defs: Record<NationalDevelopmentDirectionId, F[]> = {
+    resource_export_powerhouse: [ind('mining', 0.3), share('mining', 0.15), f('Mineral surplus available for export', v104C(minerals / 120), 0.15, 'industries', 'supply:minerals'), net('trade', 0.12), net('freight', 0.1), proj('resource_export_powerhouse', 0.08), prog('resource_export_powerhouse', 0.06), con('resource_export_powerhouse', 0.04),
+      f('Domestic value-chain depth (resources leave unprocessed)', D.valueChainDepth / 100, 0.08, 'industries', 'value_chain', true)],
+    advanced_manufacturing_economy: [ind('manufacturing', 0.3), share('manufacturing', 0.15), f('Mineral & energy input availability for manufacturing', mfgInputs.length ? Math.max(...mfgInputs) : 0, 0.12, 'industries', 'inputs:manufacturing'), ncond('energy', 0.1, 'National energy capacity condition'),
+      proj('advanced_manufacturing_economy', 0.1, 2), net('freight', 0.08), f('Domestic value-chain depth', D.valueChainDepth / 100, 0.07, 'industries', 'value_chain'), prog('advanced_manufacturing_economy', 0.05), con('advanced_manufacturing_economy', 0.03)],
+    technology_research_economy: [ind('technology', 0.2), ind('research', 0.2), share('technology', 0.08), share('research', 0.07), net('digital', 0.14), proj('technology_research_economy', 0.14), prog('technology_research_economy', 0.08), ncond('energy', 0.05, 'Energy headroom for compute'), con('technology_research_economy', 0.04)],
+    renewable_energy_powerhouse: [ind('energy', 0.22), sec('renewables', 0.18), share('energy', 0.1), net('energy', 0.15), ncond('energy', 0.1, 'National energy surplus'), proj('renewable_energy_powerhouse', 0.13), prog('renewable_energy_powerhouse', 0.08), con('renewable_energy_powerhouse', 0.04)],
+    trade_logistics_hub: [ind('trade', 0.22), sec('logistics', 0.12), share('trade', 0.08), net('trade', 0.15), net('freight', 0.13), f('Trade gateways in operation', gateways / 3, 0.1, 'infrastructure_networks', 'gateways'), proj('trade_logistics_hub', 0.1, 4), prog('trade_logistics_hub', 0.06), con('trade_logistics_hub', 0.04)],
+    agricultural_export_economy: [ind('agriculture', 0.34), share('agriculture', 0.18), ncond('water', 0.14, 'National water security'), net('freight', 0.1), proj('agricultural_export_economy', 0.1, 2), prog('agricultural_export_economy', 0.06), con('agricultural_export_economy', 0.08)],
+    tourism_experience_economy: [ind('tourism', 0.34), share('tourism', 0.16), net('mobility', 0.14), proj('tourism_experience_economy', 0.12, 2), f('Regional stability', stab, 0.12, 'living_regions', 'stability'), prog('tourism_experience_economy', 0.04), con('tourism_experience_economy', 0.08)],
+    infrastructure_led_growth: [f('Average infrastructure network maturity', D.infrastructureIntegration / 100, 0.3, 'infrastructure_networks', 'maturity'), f(`Completed canonical projects (${m.activeProjects})`, m.activeProjects / 10, 0.25, 'canonical', 'projects'),
+      f(`Megaproject stages completed (${m.stagesCompleted})`, m.stagesCompleted / 6, 0.2, 'megaprojects', 'stages'), f('Regional development level', i.regions.reduce((a, r) => a + r.devScore, 0) / Math.max(1, i.regions.length) / 100, 0.15, 'living_regions', 'development'), sec('infrastructure', 0.1)],
+    diversified_resilient_economy: [f(`Strong industries (${m.strongSectors.length})`, m.strongSectors.length / 6, 0.3, 'industries', 'strong_sectors'), f('Breadth of genuine strength (five strongest industries)', breadth, 0.2, 'industries', 'breadth'),
+      f('Industrial diversity', D.industrialDiversity / 100, 0.12, 'industries', 'diversity'), f('Regional diversity of the national model', D.regionalDiversity / 100, 0.14, 'living_regions', 'regional_diversity'),
+      f('National network resilience', D.networkResilience / 100, 0.1, 'national_systems', 'resilience'), f('Low dependency concentration', 1 - D.dependencyConcentration / 100, 0.08, 'industries', 'dependencies'), prog('diversified_resilient_economy', 0.06)]
+  };
+  return NATIONAL_DIRECTIONS.map(d => {
+    const fs = defs[d]; const pos = fs.filter(x => !x.negative); const wsum = pos.reduce((a, x) => a + x.weight, 0);
+    fs.forEach(x => { x.contribution = v104R((x.negative ? -1 : 1) * x.value * x.weight / wsum * 100, 1); x.value = v104R(x.value, 3); });
+    let score = fs.reduce((a, x) => a + x.contribution, 0);
+    // Diversification requires genuine breadth — "a bit of everything" at low strength is NOT diversified.
+    if (d === 'diversified_resilient_economy' && m.strongSectors.length < V104_THRESHOLDS.diversifiedMinStrongSectors) score = Math.min(score, 15 + m.strongSectors.length * 7);
+    return { directionId: d, score: v104R(v104C(score, 0, 100), 1), factors: fs };
+  }).sort((a, b) => b.score - a.score || a.directionId.localeCompare(b.directionId));
+}
+
+export function nationalDevelopmentDimensions(i: NationalDevelopmentInputs, m: V104Measure = v104Measure(i)): NationalDevelopmentDimensions {
+  const out = i.industries?.national?.output || {};
+  const o = (k: StrategicIndustryKind) => Math.max(0, Number((out as any)[k] || 0));
+  const raw = o('mining') + o('agriculture') + 1;
+  const vcd = v104C((o('manufacturing') + o('technology') * 0.7 + o('research') * 0.4) / raw / 2);
+  // Entropy-style diversity over national output shares and over regional industrial strength totals.
+  const shares = STRATEGIC_INDUSTRIES.map(k => m.outShare[k]).filter(x => x > 0);
+  const ent = (xs: number[]) => { const t = xs.reduce((a, x) => a + x, 0); if (t <= 0 || xs.length < 2) return 0; return -xs.reduce((a, x) => a + (x / t > 0 ? (x / t) * Math.log(x / t) : 0), 0) / Math.log(xs.length); };
+  const regTotals = Object.values(i.industries?.regions || {}).map(r => Object.values(r.industries).reduce((a, x: any) => a + Math.max(0, (x?.strength || 0) - 25), 0)).filter(x => x > 0);
+  const nets = (i.networks?.networks || []);
+  const crit = (i.industries?.dependencies || []).filter(d => d.importance === 'critical' || d.shareBand === 'dominant').length + (i.national?.national?.criticalDependencies?.length || 0);
+  const committed = Object.values(i.megaprojects?.programs || {}).reduce((a, p) => a + p.stages.reduce((b, s) => b + s.progressCapital, 0), 0);
+  const building = i.projects.filter(p => p.status === 'under_construction').reduce((a, p) => a + p.totalCost, 0);
+  return {
+    resourceIntensity: v104R(v104C(m.indTop3.mining * 0.7 + m.outShare.mining * 0.9) * 100), manufacturingDepth: v104R(v104C(m.indTop3.manufacturing * 0.7 + vcd * 0.3) * 100),
+    technologyIntensity: v104R(m.indTop3.technology * 100), researchIntensity: v104R(m.indTop3.research * 100), renewableIntensity: v104R(v104C(m.indTop3.energy * 0.5 + m.secTop3('renewables') * 0.5) * 100),
+    tradeIntegration: v104R(v104C(m.indTop3.trade * 0.5 + m.netMat('trade') * 0.25 + m.netMat('freight') * 0.25) * 100),
+    infrastructureIntegration: v104R(v104C(nets.length ? nets.reduce((a, n) => a + V104_MAT[n.maturity] / 4, 0) / Math.max(3, nets.length) + Math.min(0.3, nets.filter(n => V104_MAT[n.maturity] >= 2).length * 0.06) : 0) * 100),
+    industrialDiversity: v104R(v104C(ent(shares) * 0.6 + m.strongSectors.length / 8 * 0.4) * 100), regionalDiversity: v104R(v104C(ent(regTotals) * Math.min(1, regTotals.length / 5)) * 100),
+    networkResilience: v104R(v104C(Number(i.national?.national?.resilienceScore ?? 50) / 100) * 100), dependencyConcentration: v104R(v104C(crit / 6) * 100),
+    capitalIntensity: v104R(v104C((committed + building * 0.25) / 150000) * 100), valueChainDepth: v104R(vcd * 100)
+  };
+}
+const v104VcdBand = (x: number): ValueChainDepth => (x >= 75 ? 'ADVANCED' : x >= 45 ? 'HIGH' : x >= 22 ? 'MODERATE' : 'LOW');
+
+/** Regional roles in ONE national structure (core / support / emerging), from V10.1 industry strength + supply links. */
+export function nationalRegionalContributions(i: NationalDevelopmentInputs, primary: NationalDevelopmentDirectionId | null, turn: number): RegionalDevelopmentContribution[] {
+  const regs = i.industries?.regions || {};
+  return Object.keys(regs).sort().map(code => {
+    const r = regs[code];
+    const top = (Object.values(r.industries) as IndustryState[]).filter(x => x.strength >= 30).sort((a, b) => b.strength - a.strength || a.industry.localeCompare(b.industry)).slice(0, 2);
+    const tags = Array.from(new Set(top.map(x => V104_INDUSTRY_DIRECTION[x.industry])));
+    const suppliesPrimary = primary ? r.suppliesTo.some(d => V104_INDUSTRY_DIRECTION[d.consumerIndustry] === primary) : false;
+    const strength = v104R((top[0]?.strength || 0) / 100, 2);
+    const role: RegionalDevelopmentContribution['role'] = primary && tags.includes(primary) && strength >= 0.45 ? 'core' : suppliesPrimary || (strength >= 0.45) ? 'support' : top.length ? 'emerging' : 'minor';
+    const label = top.length ? `${top.map(x => V104_CONTRIBUTION_LABEL[x.industry]).join(' + ')}${suppliesPrimary && primary ? ` → supplies ${NATIONAL_DIRECTION_SHORT[primary].toLowerCase()} industry` : ''}` : 'Limited national role yet';
+    return { regionId: code, contributionTags: tags, primaryContribution: label, role, strength, evidence: top.map((x, k) => ({ id: `nde:${code}:${x.industry}`, sourceSystem: 'industries' as const, sourceId: `${code}:${x.industry}`, factor: `${INDUSTRY_LABEL[x.industry]} strength ${Math.round(x.strength)}`, contribution: v104R(x.strength / 100, 2), visibility: 'public' as const, turn })) };
+  }).sort((a, b) => ({ core: 3, support: 2, emerging: 1, minor: 0 }[b.role] - { core: 3, support: 2, emerging: 1, minor: 0 }[a.role]) || b.strength - a.strength || a.regionId.localeCompare(b.regionId));
+}
+
+// ---- Direction selection with hysteresis (memory advances once per turn) -----------------------------------
+export function selectNationalDirection(scores: NationalDirectionScore[], base: NationalDevelopmentMemory, turn: number, structural: number): { mem: NationalDevelopmentMemory; transitionStarted: boolean; transitionCompleted: { from: NationalDevelopmentDirectionId; to: NationalDevelopmentDirectionId } | null } {
+  const T = V104_THRESHOLDS; const sc = (d: NationalDevelopmentDirectionId | null | undefined) => (d ? scores.find(x => x.directionId === d)?.score ?? 0 : 0);
+  const mem: NationalDevelopmentMemory = JSON.parse(JSON.stringify(base)); const newTurn = turn > base.lastTurn;
+  let transitionStarted = false; let transitionCompleted: { from: NationalDevelopmentDirectionId; to: NationalDevelopmentDirectionId } | null = null;
+  const ranked = scores.filter(x => x.score > 0);
+  const best = ranked[0] || null, second = ranked[1] || null;
+  if (!mem.primary) {
+    if (best && best.score >= T.entry && best.score - (second?.score || 0) >= T.entryMargin && structural >= 1) mem.primary = { id: best.directionId, since: turn, heldTurns: 0, band: 'emerging' };
+  } else {
+    const cur = sc(mem.primary.id);
+    const challenger = ranked.find(x => x.directionId !== mem.primary!.id) || null;
+    if (cur < T.exit && !(challenger && challenger.score >= T.entry)) { mem.legacy = [...mem.legacy, { directionId: mem.primary.id, fromTurn: mem.primary.since, untilTurn: turn }].slice(-V104_LIMITS.legacy); mem.primary = null; mem.transition = null; }
+    else if (challenger && challenger.score - cur >= T.transitionLead && challenger.score >= T.entry) {
+      if (!mem.transition || mem.transition.to !== challenger.directionId) { mem.transition = { from: mem.primary.id, to: challenger.directionId, since: turn, aheadTurns: 0 }; transitionStarted = true; }
+      else if (newTurn) mem.transition.aheadTurns += 1;
+      if (mem.transition.aheadTurns >= T.transitionTurns && challenger.score - cur >= T.transitionCompleteLead) {
+        transitionCompleted = { from: mem.primary.id, to: challenger.directionId };
+        mem.legacy = [...mem.legacy, { directionId: mem.primary.id, fromTurn: mem.primary.since, untilTurn: turn }].slice(-V104_LIMITS.legacy);
+        mem.primary = { id: challenger.directionId, since: turn, heldTurns: 0, band: 'emerging' }; mem.transition = null;
+      }
+    } else if (mem.transition && (!challenger || challenger.directionId !== mem.transition.to || challenger.score - cur < 1)) mem.transition = null;
+  }
+  if (mem.primary) {
+    if (newTurn && mem.primary.since < turn) mem.primary.heldTurns += 1;
+    const s = sc(mem.primary.id);
+    mem.primary.band = structural < T.minStructuralEvidence ? 'emerging' : s >= T.strongScore && mem.primary.heldTurns >= T.strongTurns ? 'strongly_established' : s >= T.establishScore && mem.primary.heldTurns >= T.establishTurns ? 'established' : 'emerging';
+  }
+  // Secondary: strong in its own right (ratio to primary) with its own exit threshold.
+  const p = mem.primary?.id || null;
+  const sCand = ranked.find(x => x.directionId !== p) || null;
+  if (mem.secondary && (mem.secondary.id === p || sc(mem.secondary.id) < T.secondaryExit)) mem.secondary = null;
+  if (p && sCand && (!mem.secondary || (sCand.directionId !== mem.secondary.id && sCand.score - sc(mem.secondary.id) >= T.entryMargin)) && sCand.score >= T.secondaryEntry && sCand.score >= sc(p) * T.secondaryRatio) mem.secondary = { id: sCand.directionId, since: turn };
+  if (!p) mem.secondary = null;
+  if (newTurn) mem.scoreHistory = [...mem.scoreHistory, { turn, scores: Object.fromEntries(scores.map(x => [x.directionId, x.score])) }].slice(-V104_LIMITS.scoreHistory);
+  else mem.scoreHistory = [...mem.scoreHistory.filter(h => h.turn !== turn), { turn, scores: Object.fromEntries(scores.map(x => [x.directionId, x.score])) }].slice(-V104_LIMITS.scoreHistory);
+  mem.lastTurn = turn;
+  return { mem, transitionStarted, transitionCompleted };
+}
+function v104Momentum(mem: NationalDevelopmentMemory, d: NationalDevelopmentDirectionId | null, band: NationalDirectionConfidence): DevelopmentDirectionMomentum {
+  if (mem.transition) return 'transitioning';
+  if (!d || band === 'unclear') return 'emerging';
+  const h = mem.scoreHistory.map(x => Number(x.scores[d] ?? 0)); if (h.length < 3) return band === 'emerging' ? 'emerging' : 'stable';
+  const delta = h[h.length - 1] - h[Math.max(0, h.length - 4)];
+  return delta >= 3 ? 'strengthening' : delta <= -3 ? 'weakening' : band === 'emerging' ? 'emerging' : 'stable';
+}
+
+// ---- Factors, tensions, opportunities -------------------------------------------------------------------------
+function v104Ev(id: string, sourceSystem: NationalDevelopmentEvidence['sourceSystem'], sourceId: string, factor: string, contribution: number, turn: number): NationalDevelopmentEvidence { return { id, sourceSystem, sourceId, factor, contribution: v104R(contribution, 2), visibility: 'public', turn }; }
+const v104Mag = (x: number): NationalDevelopmentFactor['magnitude'] => (x >= 80 ? 'defining' : x >= 62 ? 'major' : x >= 45 ? 'meaningful' : 'minor');
+
+export function computeNationalDevelopment(i: NationalDevelopmentInputs, prevIn: NationalDevelopmentPersisted | null, opts: { emit?: boolean } = {}): { profile: NationalDevelopmentProfile; persisted: NationalDevelopmentPersisted; events: NationalDevelopmentDerivedEvent[] } {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+  const turn = i.turn; const prev = prevIn || createEmptyNationalDevelopmentPersisted();
+  // Memory advances once per turn: within a turn we always recompute from the previous turn's memory (deterministic).
+  const base = turn > prev.current.lastTurn ? prev.current : prev.base;
+  const m = v104Measure(i); const dims = nationalDevelopmentDimensions(i, m); const scores = scoreNationalDirections(i, m, dims);
+  const structural = m.activeProjects + m.stagesCompleted + Math.min(4, i.completedContracts.length);
+  const sel = selectNationalDirection(scores, base, turn, structural);
+  const mem = sel.mem; const primary = mem.primary?.id || null; const secondary = mem.secondary?.id || null;
+  const band: NationalDirectionConfidence = mem.primary ? mem.primary.band : 'unclear';
+  const ps = primary ? scores.find(x => x.directionId === primary)!.score : 0;
+  const runner = scores.find(x => x.directionId !== primary)?.score || 0;
+  const confidence = primary ? v104R(v104C((ps - 30) / 50 * 0.5 + v104C((ps - runner) / 20) * 0.2 + v104C(structural / 8) * 0.3), 2) : v104R(v104C((scores[0]?.score || 0) / 100) * 0.3, 2);
+  const momentum = v104Momentum(mem, primary, band);
+  const contributions = nationalRegionalContributions(i, primary, turn);
+  const defining = contributions.filter(c => c.role === 'core').map(c => c.regionId).concat(contributions.filter(c => c.role === 'support' && primary && c.contributionTags.includes(primary)).map(c => c.regionId)).slice(0, 4);
+  // Concentration (sector vs regional, tracked separately).
+  const topSector = STRATEGIC_INDUSTRIES.map(k => ({ k, s: m.outShare[k] })).sort((a, b) => b.s - a.s)[0];
+  const sectorConcentration = { band: (topSector.s >= 0.4 ? 'HIGH' : topSector.s >= 0.27 ? 'MODERATE' : 'LOW') as NationalDevBand, sector: topSector.s > 0 ? topSector.k : null, share: v104R(topSector.s, 2) };
+  const regTot = Object.entries(i.industries?.regions || {}).map(([r, x]) => ({ r, v: (Object.values(x.industries) as IndustryState[]).filter(y => !primary || V104_INDUSTRY_DIRECTION[y.industry] === primary).reduce((a, y) => a + y.effectiveOutput, 0) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+  const regSum = regTot.reduce((a, x) => a + x.v, 0); const topShare = regSum ? regTot[0].v / regSum : 0;
+  const regionalConcentration = { band: (topShare >= 0.6 ? 'HIGH' : topShare >= 0.4 ? 'MODERATE' : 'LOW') as NationalDevBand, regionIds: regTot.filter(x => x.v / Math.max(1, regSum) >= 0.2).map(x => x.r).slice(0, 3), share: v104R(topShare, 2) };
+  const ev: NationalDevelopmentEvidence[] = [];
+  const strengths: NationalDevelopmentFactor[] = [], vulns: NationalDevelopmentFactor[] = [], deps: NationalDevelopmentFactor[] = [], opps: NationalDevelopmentFactor[] = [];
+  const addF = (arr: NationalDevelopmentFactor[], id: string, category: string, label: string, mag: number, regionIds: string[], e: NationalDevelopmentEvidence[]) => { if (arr.some(x => x.label === label)) return; arr.push({ id, category, label, magnitude: v104Mag(mag), regionIds, evidence: e }); ev.push(...e); };
+  // Strengths (from dimensions + networks; regions from V10.1 leaders).
+  const lead = (k: StrategicIndustryKind) => Object.keys(i.industries?.regions || {}).filter(r => (i.industries!.regions[r].industries[k]?.strength || 0) >= 45).sort();
+  if (dims.resourceIntensity >= 45) addF(strengths, 'str:minerals', 'supply', `${dims.resourceIntensity >= 80 ? 'Defining' : 'Strong'} Mineral Supply`, dims.resourceIntensity, lead('mining'), [v104Ev('ev:str:minerals', 'industries', 'mining', 'Mining strength across leading regions', dims.resourceIntensity / 100, turn)]);
+  if (dims.manufacturingDepth >= 45) addF(strengths, 'str:industry', 'industry', 'Industrial Depth', dims.manufacturingDepth, lead('manufacturing'), [v104Ev('ev:str:mfg', 'industries', 'manufacturing', 'Manufacturing depth', dims.manufacturingDepth / 100, turn)]);
+  if (dims.technologyIntensity >= 45 || dims.researchIntensity >= 45) addF(strengths, 'str:research', 'capability', 'Strong Research & Technology Corridor', Math.max(dims.technologyIntensity, dims.researchIntensity), Array.from(new Set([...lead('technology'), ...lead('research')])), [v104Ev('ev:str:tech', 'industries', 'technology', 'Technology / research strength', Math.max(dims.technologyIntensity, dims.researchIntensity) / 100, turn)]);
+  if (dims.renewableIntensity >= 45) addF(strengths, 'str:energy', 'energy', lead('energy').length >= 3 ? 'Distributed Renewable Capacity' : 'Renewable Energy Capacity', dims.renewableIntensity, lead('energy'), [v104Ev('ev:str:energy', 'industries', 'energy', 'Energy & renewables strength', dims.renewableIntensity / 100, turn)]);
+  (i.networks?.networks || []).filter(n => V104_MAT[n.maturity] >= 3).slice(0, 2).forEach(n => addF(strengths, `str:net:${n.id}`, 'network', `Integrated ${INFRA_NETWORK_LABEL[n.networkKind]} Network`, 60 + V104_MAT[n.maturity] * 8, n.regionIds, [v104Ev(`ev:str:${n.id}`, 'infrastructure_networks', n.id, `${n.name}: ${INFRA_MATURITY_LABEL[n.maturity]}`, 0.7, turn)]));
+  if (dims.tradeIntegration >= 50) addF(strengths, 'str:trade', 'trade', 'Market Access & Trade Integration', dims.tradeIntegration, lead('trade'), [v104Ev('ev:str:trade', 'infrastructure_networks', 'trade', 'Trade + freight integration', dims.tradeIntegration / 100, turn)]);
+  // Vulnerabilities (actual evidence only).
+  if (sectorConcentration.band === 'HIGH' && sectorConcentration.sector) addF(vulns, `vul:conc:${sectorConcentration.sector}`, 'concentration', sectorConcentration.sector === 'mining' ? 'Commodity Concentration' : `${INDUSTRY_LABEL[sectorConcentration.sector]} Concentration`, 50 + sectorConcentration.share * 60, lead(sectorConcentration.sector), [v104Ev('ev:vul:conc', 'industries', `output:${sectorConcentration.sector}`, `${Math.round(sectorConcentration.share * 100)}% of national industrial output`, sectorConcentration.share, turn)]);
+  if (regionalConcentration.band === 'HIGH' && primary) addF(vulns, 'vul:regional', 'concentration', `${regionalConcentration.regionIds[0] || 'One region'} Carries the National Model`, 50 + topShare * 40, regionalConcentration.regionIds, [v104Ev('ev:vul:regional', 'industries', regionalConcentration.regionIds[0] || '', `${Math.round(topShare * 100)}% of ${NATIONAL_DIRECTION_SHORT[primary].toLowerCase()} output in one region`, topShare, turn)]);
+  (i.networks?.criticalPoints || []).filter(c => c.severity === 'critical').slice(0, 2).forEach(c => { const n = i.networks!.networks.find(x => x.id === c.networkId);
+    addF(vulns, `vul:cp:${c.id}`, 'network', n?.networkKind === 'trade' ? 'Single Export Gateway' : n?.networkKind === 'digital' ? 'Digital Single Point of Failure' : n?.networkKind === 'energy' ? 'Energy Concentration' : `${n ? INFRA_NETWORK_LABEL[n.networkKind] : 'Network'} Single Point of Failure`, 70, [c.subjectId, ...c.affectedRegions].filter(r => REGIONS[r]).slice(0, 4), [v104Ev(`ev:vul:${c.id}`, 'infrastructure_networks', c.id, c.reason.slice(0, 120), 0.7, turn)]); });
+  (i.industries?.dependencies || []).filter(d => (d.importance === 'critical' || d.shareBand === 'dominant') && (d.consumerIndustry === 'manufacturing' || d.consumerIndustry === 'technology')).slice(0, 1).forEach(d => addF(vulns, `vul:input:${d.id}`, 'dependency', `${INDUSTRY_LABEL[d.consumerIndustry]} Input Dependence`, 72, [d.consumerRegionId, d.providerRegionId], [v104Ev(`ev:vul:${d.id}`, 'industries', d.id, `${d.consumerRegionId} ${INDUSTRY_LABEL[d.consumerIndustry].toLowerCase()} relies on ${d.providerRegionId} ${SUPPLY_LABEL[d.supply].toLowerCase()} (${d.shareBand})`, d.share, turn)]));
+  if (i.national && (i.national.national.water.condition === 'bottlenecked' || i.national.national.water.condition === 'critical') && m.indTop3.agriculture >= 0.35) addF(vulns, 'vul:water', 'water', 'Water Exposure', 65, lead('agriculture'), [v104Ev('ev:vul:water', 'national_systems', 'water', `Water network ${i.national.national.water.condition}`, 0.6, turn)]);
+  if (i.viewer && i.viewer.committedProgramCapital > 0 && i.viewer.cash < i.viewer.committedProgramCapital * 0.5) addF(vulns, 'vul:liquidity', 'capital', 'Overinvestment / Liquidity Pressure', 60, [], [v104Ev('ev:vul:liq', 'megaprojects', 'capital', `$${Math.round(i.viewer.committedProgramCapital).toLocaleString()} committed vs $${Math.round(i.viewer.cash).toLocaleString()} cash`, 0.5, turn)]);
+  // Dependencies (V10.1 + V10.0 critical relationships).
+  (i.industries?.dependencies || []).filter(d => d.importance === 'critical' || d.importance === 'high').sort((a, b) => b.share - a.share || a.id.localeCompare(b.id)).slice(0, 4).forEach(d => addF(deps, `dep:${d.id}`, 'supply', `${d.consumerRegionId} ${INDUSTRY_LABEL[d.consumerIndustry]} ← ${d.providerRegionId} ${SUPPLY_LABEL[d.supply]}`, d.importance === 'critical' ? 82 : 62, [d.consumerRegionId, d.providerRegionId], [v104Ev(`ev:dep:${d.id}`, 'industries', d.id, d.reason.slice(0, 120), d.share, turn)]));
+  (i.national?.dependencies || []).filter(d => d.importance === 'critical').slice(0, 2).forEach(d => addF(deps, `dep:ns:${d.id}`, 'network', `${d.consumerRegionId} ${NATIONAL_NETWORK_LABEL[d.network]} ← ${d.providerRegionId}`, 70, [d.consumerRegionId, d.providerRegionId], [v104Ev(`ev:dep:ns:${d.id}`, 'national_systems', d.id, `${d.consumerRegionId} relies on ${d.providerRegionId} for ${NATIONAL_NETWORK_LABEL[d.network].toLowerCase()}`, 0.6, turn)]));
+  // Opportunities (explanatory; never objectives).
+  const vcBand = v104VcdBand(dims.valueChainDepth);
+  if (dims.resourceIntensity >= 50 && dims.manufacturingDepth < 40) addF(opps, 'opp:value_chain', 'value_chain', 'Move Up the Value Chain', 60, lead('mining'), [v104Ev('ev:opp:vc', 'industries', 'value_chain', `Value-chain depth ${vcBand} while mineral supply is strong`, 0.5, turn)]);
+  if (vulns.some(v => v.category === 'dependency')) addF(opps, 'opp:diversify_supply', 'supply', 'Diversify Mineral Supply', 62, [], [v104Ev('ev:opp:div', 'industries', 'dependencies', 'A dominant single provider feeds advanced industry', 0.5, turn)]);
+  if (dims.renewableIntensity >= 55 && m.cond('energy') >= 0.75 && dims.tradeIntegration >= 35) addF(opps, 'opp:energy_export', 'energy', 'Become an Energy Export Hub', 58, lead('energy'), [v104Ev('ev:opp:ee', 'national_systems', 'energy', 'Energy surplus + trade access', 0.5, turn)]);
+  if (dims.researchIntensity >= 45 && dims.manufacturingDepth >= 30 && dims.manufacturingDepth < 65) addF(opps, 'opp:research_mfg', 'capability', 'Connect Research to Manufacturing', 55, [...lead('research'), ...lead('manufacturing')], [v104Ev('ev:opp:rm', 'industries', 'research', 'Research capability with room for industrial uptake', 0.5, turn)]);
+  if (vulns.some(v => v.label === 'Single Export Gateway')) addF(opps, 'opp:gateway', 'trade', 'Create a Second Trade Gateway', 60, [], [v104Ev('ev:opp:gw', 'infrastructure_networks', 'gateway', 'One gateway carries national trade', 0.5, turn)]);
+  if (dims.infrastructureIntegration >= 55 && Math.max(dims.manufacturingDepth, dims.technologyIntensity) < 40) addF(opps, 'opp:convert', 'infrastructure', 'Convert Infrastructure Strength Into Industrial Growth', 55, [], [v104Ev('ev:opp:conv', 'infrastructure_networks', 'maturity', 'Networks are ahead of industry', 0.5, turn)]);
+  // Strategic tensions (identify tradeoffs — never apply penalties).
+  const tensions: NationalStrategicTension[] = [];
+  const tn = (id: string, title: string, description: string, sideA: string, sideB: string, severity: NationalStrategicTension['severity'], e: NationalDevelopmentEvidence[]) => { tensions.push({ id, title, description, sideA, sideB, severity, evidence: e }); };
+  const conc = vulns.find(v => v.category === 'concentration' || v.category === 'dependency');
+  if (primary && conc && (momentum === 'strengthening' || band !== 'emerging')) tn('ten:growth_resilience', 'Growth vs Resilience', `${NATIONAL_DIRECTION_LABEL[primary]} is ${NATIONAL_MOMENTUM_LABEL[momentum].toLowerCase()}, but ${conc.label.toLowerCase()} leaves it exposed.`, 'Growth', 'Resilience', conc.magnitude === 'defining' || conc.magnitude === 'major' ? 'major' : 'meaningful', conc.evidence);
+  const divPrev = base.diversityBand; const divNow = i.industries?.national?.diversityBand || null;
+  if (sectorConcentration.band === 'HIGH' && (divNow === 'highly_specialized' || divNow === 'specialized')) tn('ten:spec_div', 'Specialization vs Diversification', `${sectorConcentration.sector ? INDUSTRY_LABEL[sectorConcentration.sector] : 'One sector'} is highly productive, but national industrial diversity is ${divNow === 'highly_specialized' ? 'very low' : 'low'}${divPrev && divPrev !== divNow ? ' and falling' : ''}.`, 'Specialization', 'Diversification', 'meaningful', [v104Ev('ev:ten:div', 'industries', 'diversity', `Industrial diversity: ${String(divNow).replace(/_/g, ' ')}`, 0.5, turn)]);
+  const rivalDefining = defining.filter(r => i.owners[r] === 'rival');
+  if (defining.length && rivalDefining.length / defining.length >= 0.4) tn('ten:national_competitive', 'National Benefit vs Competitive Benefit', `Your national development model leans on ${rivalDefining.join(', ')} — regions where the rival holds influence.`, 'National benefit', 'Competitive benefit', 'meaningful', [v104Ev('ev:ten:rival', 'canonical', 'control', `${rivalDefining.length} of ${defining.length} defining regions rival-held`, 0.5, turn)]);
+  if (i.viewer && i.viewer.committedProgramCapital >= 10000 && i.viewer.cash < i.viewer.committedProgramCapital) tn('ten:capacity_liquidity', 'Capacity vs Liquidity', 'Megaproject commitments are building long-term capacity but reducing current cash flexibility.', 'Long-term capacity', 'Liquidity', i.viewer.cash < i.viewer.committedProgramCapital * 0.4 ? 'major' : 'meaningful', [v104Ev('ev:ten:liq', 'megaprojects', 'capital', `$${Math.round(i.viewer.committedProgramCapital).toLocaleString()} committed vs $${Math.round(i.viewer.cash).toLocaleString()} cash`, 0.5, turn)]);
+  // Resilience (interprets V10.0 / V10.2).
+  const why: string[] = [];
+  vulns.filter(v => v.category === 'network').forEach(v => why.push(v.label));
+  if (regionalConcentration.band === 'HIGH') why.push(`High ${regionalConcentration.regionIds[0] || ''} concentration`.trim());
+  if (dims.dependencyConcentration >= 50) why.push('Few alternative suppliers');
+  if (!why.length && i.national) why.push(`National network resilience ${NATIONAL_RESILIENCE_LABEL[i.national.national.resilienceBand].toLowerCase()}`);
+  // Events + milestones (major structural transitions only; cooldown via memory comparison).
+  const events: NationalDevelopmentDerivedEvent[] = []; const milestones = [...prev.milestones]; let seq = prev.seq;
+  const prevMem = prev.current;
+  const emitOk = opts.emit !== false && prev.initializedTurn !== null;
+  const ms = (kind: NationalTransformationMilestone['kind'], summary: string, directionId?: NationalDevelopmentDirectionId, evidenceIds: string[] = []) => {
+    if (milestones.some(x => x.kind === kind && x.directionId === directionId && x.turn === turn)) return;
+    seq += 1; milestones.push({ id: `ndm:${seq}`, turn, kind, ...(directionId ? { directionId } : {}), summary: summary.slice(0, 200), evidenceIds: evidenceIds.slice(0, 4) });
+  };
+  const evt = (kind: NationalDevelopmentDerivedKind, text: string, directionId: NationalDevelopmentDirectionId | null, regionIds: string[], significance: 'meaningful' | 'major', evidence: string[] = []) => { if (emitOk) events.push({ id: `nde:${kind}:${turn}:${events.length}`, turn, kind, directionId, regionIds: regionIds.filter(r => REGIONS[r]), text, significance, evidence: evidence.slice(0, 4) }); };
+  if (prev.initializedTurn !== null) {
+    const was = prevMem.primary, now = mem.primary;
+    if (sel.transitionCompleted) { const tc = sel.transitionCompleted; ms('transition_completed', `National direction changed: ${NATIONAL_DIRECTION_LABEL[tc.from]} → ${NATIONAL_DIRECTION_LABEL[tc.to]}`, tc.to); evt('national_strategy_transition_completed', `National direction changed: ${NATIONAL_DIRECTION_LABEL[tc.from]} → ${NATIONAL_DIRECTION_LABEL[tc.to]}.`, tc.to, defining, 'major'); }
+    else if (!was && now) { ms('direction_emerged', `${NATIONAL_DIRECTION_LABEL[now.id]} emerged as Australia's development pattern`, now.id); evt('national_direction_emerged', `A national development pattern is emerging: ${NATIONAL_DIRECTION_LABEL[now.id]}.`, now.id, defining, 'meaningful'); }
+    else if (was && !now) { ms('national_structure_changed', `${NATIONAL_DIRECTION_LABEL[was.id]} no longer defines the national structure`, was.id); evt('national_direction_weakened', `${NATIONAL_DIRECTION_LABEL[was.id]} no longer defines Australia's development.`, was.id, [], 'major'); }
+    if (was && now && was.id === now.id) {
+      const rank = { unclear: 0, emerging: 1, established: 2, strongly_established: 3 } as const;
+      if (rank[now.band] > rank[was.band] && now.band !== 'emerging') { ms('direction_established', `${NATIONAL_DIRECTION_LABEL[now.id]} became ${NATIONAL_CONFIDENCE_LABEL[now.band].toLowerCase()}`, now.id); evt('national_direction_strengthened', `${NATIONAL_DIRECTION_LABEL[now.id]} became ${NATIONAL_CONFIDENCE_LABEL[now.band].toLowerCase()}.`, now.id, defining, 'major'); }
+      else if (rank[now.band] < rank[was.band]) evt('national_direction_weakened', `${NATIONAL_DIRECTION_LABEL[now.id]} is weakening (${NATIONAL_CONFIDENCE_LABEL[now.band].toLowerCase()}).`, now.id, defining, 'meaningful');
+    }
+    if (sel.transitionStarted && mem.transition) { ms('transition_started', `Structural transition began: ${NATIONAL_DIRECTION_LABEL[mem.transition.from]} → ${NATIONAL_DIRECTION_LABEL[mem.transition.to]}`, mem.transition.to); evt('national_strategy_transition_started', `Australia is transitioning: ${NATIONAL_DIRECTION_LABEL[mem.transition.from]} → ${NATIONAL_DIRECTION_LABEL[mem.transition.to]}.`, mem.transition.to, defining, 'major'); }
+    if (mem.secondary && (!prevMem.secondary || prevMem.secondary.id !== mem.secondary.id)) ms('secondary_direction_emerged', `${NATIONAL_DIRECTION_LABEL[mem.secondary.id]} became a secondary national direction`, mem.secondary.id);
+    const majorV = vulns.filter(v => v.magnitude === 'major' || v.magnitude === 'defining').map(v => v.id);
+    majorV.filter(id => !prevMem.vulnerabilities.includes(id)).slice(0, 1).forEach(id => { const v = vulns.find(x => x.id === id)!; ms('major_vulnerability_formed', `${v.label} became a major national vulnerability`, primary || undefined, v.evidence.map(e => e.id)); if (v.category === 'dependency' || v.category === 'concentration') evt('national_dependency_became_defining', `${v.label} is now a defining national exposure.`, primary, v.regionIds, 'major', v.evidence.map(e => e.factor)); });
+    prevMem.vulnerabilities.filter(id => !majorV.includes(id)).slice(0, 1).forEach(id => ms('major_vulnerability_resolved', `A major national vulnerability eased (${id.replace(/^vul:/, '').replace(/[:_]/g, ' ')})`, primary || undefined));
+    const DR: Record<string, number> = { highly_specialized: 0, specialized: 1, mixed: 2, diversified: 3 };
+    if (prevMem.diversityBand && divNow && DR[divNow] > DR[prevMem.diversityBand]) { ms('diversification_milestone', `National industrial diversity improved to ${divNow.replace(/_/g, ' ')}`); evt('national_diversification_improved', `Australia's industrial base diversified (${prevMem.diversityBand.replace(/_/g, ' ')} → ${divNow.replace(/_/g, ' ')}).`, null, [], 'meaningful'); }
+    const CB: Record<NationalDevBand, number> = { LOW: 0, MODERATE: 1, HIGH: 2 };
+    if (prevMem.concentrationBand && CB[sectorConcentration.band] > CB[prevMem.concentrationBand] && sectorConcentration.band === 'HIGH') evt('national_concentration_increased', `National output is now highly concentrated in ${sectorConcentration.sector ? INDUSTRY_LABEL[sectorConcentration.sector].toLowerCase() : 'one sector'}.`, primary, lead(sectorConcentration.sector || 'mining'), 'meaningful');
+  }
+  mem.vulnerabilities = vulns.filter(v => v.magnitude === 'major' || v.magnitude === 'defining').map(v => v.id).slice(0, 8);
+  mem.diversityBand = divNow; mem.concentrationBand = sectorConcentration.band;
+  const inputHash = nationalDevelopmentInputHash(i);
+  // Revision advances only when the interpreted world actually changed (identical recomputes are idempotent).
+  const persisted: NationalDevelopmentPersisted = { schemaVersion: '10.4', revision: prev.revision + (inputHash !== prev.inputHash ? 1 : 0), initializedTurn: prev.initializedTurn ?? turn, base, current: mem, milestones: milestones.slice(-V104_LIMITS.milestones), seq, inputHash };
+  const topStrength = [...strengths].sort((a, b) => ({ defining: 3, major: 2, meaningful: 1, minor: 0 }[b.magnitude] - { defining: 3, major: 2, meaningful: 1, minor: 0 }[a.magnitude]))[0] || null;
+  const topVuln = [...vulns].sort((a, b) => ({ defining: 3, major: 2, meaningful: 1, minor: 0 }[b.magnitude] - { defining: 3, major: 2, meaningful: 1, minor: 0 }[a.magnitude]))[0] || null;
+  scores.forEach(s => s.factors.forEach(fx => ev.push(v104Ev(`ev:${s.directionId}:${fx.sourceId}`.slice(0, 120), fx.source, fx.sourceId.slice(0, 80), fx.label, fx.contribution / 100, turn))));
+  const profile: NationalDevelopmentProfile = {
+    version: 1, revision: persisted.revision, primaryDirection: primary, secondaryDirection: secondary, directionConfidence: confidence, confidenceBand: band, directionMomentum: momentum,
+    strongestPattern: scores[0] && scores[0].score > 0 ? scores[0].directionId : null,
+    transition: mem.transition ? { from: mem.transition.from, to: mem.transition.to, sinceTurn: mem.transition.since } : null,
+    legacyStrengths: mem.legacy.filter(l => l.directionId !== primary && (scores.find(s => s.directionId === l.directionId)?.score || 0) >= 35).map(l => ({ directionId: l.directionId, label: `${NATIONAL_DIRECTION_LABEL[l.directionId]} foundation`, fromTurn: l.fromTurn, untilTurn: l.untilTurn })),
+    dimensions: dims, valueChainDepth: vcBand, sectorConcentration, regionalConcentration, resilience: { band: i.national?.national?.resilienceBand || null, why: why.slice(0, 4) },
+    scores, strengths: strengths.slice(0, V104_LIMITS.factors), vulnerabilities: vulns.slice(0, V104_LIMITS.factors), dependencies: deps.slice(0, V104_LIMITS.factors), opportunities: opps.slice(0, V104_LIMITS.opportunities),
+    tensions: tensions.slice(0, V104_LIMITS.tensions), regionalContributions: contributions, definingRegions: defining,
+    mainStrength: topStrength?.label || null, mainExposure: topVuln?.label || null, mainOpportunity: opps[0]?.label || null,
+    transformationHistory: persisted.milestones, evidence: ev.slice(0, 120), structuralEvidence: structural, lastUpdatedTurn: turn, inputHash: persisted.inputHash,
+    computeMs: v104R((typeof performance !== 'undefined' ? performance.now() : 0) - t0, 2)
+  };
+  return { profile, persisted, events };
+}
+
+// ---- Persistence ----------------------------------------------------------------------------------------
+function v104SanMem(raw: any): NationalDevelopmentMemory {
+  const out = createEmptyNationalDevelopmentMemory(); if (!raw || typeof raw !== 'object') return out;
+  const dir = (x: any): NationalDevelopmentDirectionId | null => (NATIONAL_DIRECTIONS.includes(x) ? x : null);
+  const n = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : 0);
+  const bands: NationalDirectionConfidence[] = ['unclear', 'emerging', 'established', 'strongly_established'];
+  if (raw.primary && dir(raw.primary.id)) out.primary = { id: dir(raw.primary.id)!, since: n(raw.primary.since), heldTurns: Math.max(0, n(raw.primary.heldTurns)), band: bands.includes(raw.primary.band) ? raw.primary.band : 'emerging' };
+  if (raw.secondary && dir(raw.secondary.id)) out.secondary = { id: dir(raw.secondary.id)!, since: n(raw.secondary.since) };
+  if (raw.transition && dir(raw.transition.from) && dir(raw.transition.to)) out.transition = { from: dir(raw.transition.from)!, to: dir(raw.transition.to)!, since: n(raw.transition.since), aheadTurns: Math.max(0, n(raw.transition.aheadTurns)) };
+  out.legacy = (Array.isArray(raw.legacy) ? raw.legacy : []).filter((l: any) => l && dir(l.directionId)).slice(-V104_LIMITS.legacy).map((l: any) => ({ directionId: dir(l.directionId)!, fromTurn: n(l.fromTurn), untilTurn: n(l.untilTurn) }));
+  out.scoreHistory = (Array.isArray(raw.scoreHistory) ? raw.scoreHistory : []).filter((h: any) => h && h.scores && typeof h.scores === 'object').slice(-V104_LIMITS.scoreHistory).map((h: any) => ({ turn: n(h.turn), scores: Object.fromEntries(Object.entries(h.scores).filter(([k, v]) => dir(k) && typeof v === 'number' && Number.isFinite(v)).map(([k, v]) => [k, Math.max(0, Math.min(100, v as number))])) }));
+  out.vulnerabilities = (Array.isArray(raw.vulnerabilities) ? raw.vulnerabilities : []).filter((x: any) => typeof x === 'string').slice(0, 8).map((x: string) => x.slice(0, 80));
+  out.diversityBand = typeof raw.diversityBand === 'string' ? raw.diversityBand.slice(0, 30) : null;
+  out.concentrationBand = ['LOW', 'MODERATE', 'HIGH'].includes(raw.concentrationBand) ? raw.concentrationBand : null;
+  out.lastTurn = Math.max(0, n(raw.lastTurn));
+  return out;
+}
+export function sanitizeNationalDevelopmentPersisted(raw: unknown): NationalDevelopmentPersisted | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r: any = raw; const out = createEmptyNationalDevelopmentPersisted();
+  const n = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : 0);
+  out.revision = Math.max(0, n(r.revision)); out.seq = Math.max(0, n(r.seq)); out.initializedTurn = r.initializedTurn == null ? null : Math.max(0, n(r.initializedTurn));
+  out.base = v104SanMem(r.base); out.current = v104SanMem(r.current); out.inputHash = typeof r.inputHash === 'string' ? r.inputHash.slice(0, 20) : '';
+  const kinds = ['direction_emerged', 'direction_established', 'secondary_direction_emerged', 'transition_started', 'transition_completed', 'major_vulnerability_formed', 'major_vulnerability_resolved', 'diversification_milestone', 'national_structure_changed'];
+  const seen = new Set<string>();
+  out.milestones = (Array.isArray(r.milestones) ? r.milestones : []).filter((x: any) => x && typeof x.id === 'string' && kinds.includes(x.kind) && typeof x.summary === 'string' && !seen.has(x.id) && seen.add(x.id)).slice(-V104_LIMITS.milestones)
+    .map((x: any) => ({ id: x.id.slice(0, 40), turn: n(x.turn), kind: x.kind, ...(NATIONAL_DIRECTIONS.includes(x.directionId) ? { directionId: x.directionId } : {}), summary: x.summary.slice(0, 200), evidenceIds: (Array.isArray(x.evidenceIds) ? x.evidenceIds : []).filter((e: any) => typeof e === 'string').slice(0, 4) }));
+  return out;
+}
+
+// ---- Validation (spec checks + invariants) -----------------------------------------------------------------
+export function validateNationalDevelopmentProfile(p: NationalDevelopmentProfile, persisted?: NationalDevelopmentPersisted | null): string[] {
+  const issues: string[] = [];
+  if (p.primaryDirection && !NATIONAL_DIRECTIONS.includes(p.primaryDirection)) issues.push('invalid primary direction');
+  if (p.secondaryDirection && !NATIONAL_DIRECTIONS.includes(p.secondaryDirection)) issues.push('invalid secondary direction');
+  if (p.primaryDirection && p.primaryDirection === p.secondaryDirection) issues.push('primary equals secondary');
+  if (!p.primaryDirection && p.secondaryDirection) issues.push('secondary without primary');
+  Object.entries(p.dimensions).forEach(([k, v]) => { if (!Number.isFinite(v) || v < 0 || v > 100) issues.push(`dimension ${k} out of range: ${v}`); });
+  p.scores.forEach(s => { if (!Number.isFinite(s.score) || s.score < 0 || s.score > 100) issues.push(`score ${s.directionId} out of range`); if (!s.factors.length) issues.push(`score ${s.directionId} has no explaining factors`); });
+  p.regionalContributions.forEach(c => { if (!REGIONS[c.regionId]) issues.push(`unknown region ${c.regionId}`); });
+  [...p.strengths, ...p.vulnerabilities, ...p.dependencies, ...p.opportunities].forEach(f => { f.regionIds.forEach(r => { if (!REGIONS[r]) issues.push(`factor ${f.id}: unknown region ${r}`); }); if (!f.evidence.length) issues.push(`factor ${f.id} has no evidence`); });
+  p.tensions.forEach(t => { if (!t.evidence.length) issues.push(`tension ${t.id} has no evidence`); });
+  if (new Set(p.transformationHistory.map(m => m.id)).size !== p.transformationHistory.length) issues.push('duplicate milestones');
+  if (p.transformationHistory.length > V104_LIMITS.milestones) issues.push('unbounded history');
+  if (persisted && persisted.current.scoreHistory.length > V104_LIMITS.scoreHistory) issues.push('unbounded score history');
+  if ((p as any).bonuses || (p as any).money || (p as any).capacity) issues.push('profile must not carry bonuses / money / capacity');
+  return issues;
+}
+
+// ---- World Reaction adapter --------------------------------------------------------------------------------
+export function nationalDevelopmentToWorldEvent(d: NationalDevelopmentDerivedEvent, observers: string[], day = 0): StrategicWorldEvent {
+  return {
+    id: d.id, turn: d.turn, day, sourceSystem: 'national_development', sourceEventId: null, actorId: null, teamId: null, kind: d.kind as SWRKind,
+    subjectType: 'nation', subjectId: 'AUS', magnitude: d.significance === 'major' ? 3 : 2, significance: d.significance, visibility: 'public', observers,
+    evidence: d.evidence.slice(0, 3), before: {}, after: {}, delta: {}, strategicMeaning: d.text, affectedDomains: ['economy', 'regions'],
+    tags: ['national_development', ...(d.directionId ? [`direction:${d.directionId}`] : []), ...d.regionIds.map(r => `region:${r}`)], layer: 'world', confidence: 'high',
+    claimKind: 'inference', causedByEventId: null, contributingCauses: [], rootEventId: d.id, reactionDepth: 0, expiresTurn: d.turn + 4, dedupeKey: `nd:${d.kind}:${d.directionId || 'none'}:${d.turn}`
+  };
+}
+
+// ---- Consumers (read-only) ------------------------------------------------------------------------------------
+const V104_STRATEGY_WORDS: Array<[NationalDevelopmentDirectionId, RegExp]> = [
+  ['technology_research_economy', /\b(tech\w*|research|digital|ai|compute|innovation)\b/i], ['advanced_manufacturing_economy', /\b(manufactur\w*|industr\w*)\b/i], ['resource_export_powerhouse', /\b(mining|minerals?|resources?|export)\b/i],
+  ['renewable_energy_powerhouse', /\b(renewab\w*|energy|hydrogen|wind|solar|grid)\b/i], ['trade_logistics_hub', /\b(trade|logistics|ports?|freight)\b/i], ['agricultural_export_economy', /\b(agri\w*|farm\w*|food|water)\b/i],
+  ['tourism_experience_economy', /\b(touris\w*|visitor)\b/i], ['infrastructure_led_growth', /\b(infrastructure|build\w*)\b/i], ['diversified_resilient_economy', /\b(diversif\w*|resilien\w*|balanced)\b/i]
+];
+/** GI3 strategy = what the player WANTS; national direction = what Australia IS becoming. Never changes the strategy. */
+export function nationalStrategyAlignment(p: NationalDevelopmentProfile, strategy: { label: string; goals: Array<{ type: string; label: string; regionId?: string; projectId?: string }> } | null, projects?: Record<string, { projectType: string }>): { implied: NationalDevelopmentDirectionId[]; alignment: 'HIGH' | 'MODERATE' | 'LOW' | 'UNKNOWN'; explanation: string } {
+  if (!strategy) return { implied: [], alignment: 'UNKNOWN', explanation: 'No active strategy to compare.' };
+  const text = [strategy.label, ...strategy.goals.map(g => g.label)].join(' ');
+  const implied = new Set<NationalDevelopmentDirectionId>();
+  V104_STRATEGY_WORDS.forEach(([d, re]) => { if (re.test(text)) implied.add(d); });
+  strategy.goals.forEach(g => { const t = g.projectId && projects?.[g.projectId]?.projectType; (t ? V104_PROJECT_DIRECTIONS[t] || [] : []).forEach(d => implied.add(d)); if (g.regionId) p.regionalContributions.find(c => c.regionId === g.regionId)?.contributionTags.forEach(d => implied.add(d)); });
+  const imp = Array.from(implied);
+  if (!imp.length) return { implied: [], alignment: 'UNKNOWN', explanation: 'Your strategy does not target a particular economic structure (it is about cash, net worth or control), so it neither matches nor contradicts the national direction.' };
+  const score = (d: NationalDevelopmentDirectionId) => p.scores.find(s => s.directionId === d)?.score || 0;
+  const a: 'HIGH' | 'MODERATE' | 'LOW' = p.primaryDirection && imp.includes(p.primaryDirection) ? 'HIGH' : p.secondaryDirection && imp.includes(p.secondaryDirection) ? 'MODERATE' : imp.some(d => score(d) >= 40) ? 'MODERATE' : 'LOW';
+  const best = [...imp].sort((x, y) => score(y) - score(x))[0];
+  return { implied: imp, alignment: a, explanation: a === 'HIGH' ? `Your strategy and Australia's actual development agree: ${NATIONAL_DIRECTION_LABEL[p.primaryDirection!]}.` : `${NATIONAL_DIRECTION_LABEL[best]} has ${score(best) >= 60 ? 'strong' : score(best) >= 40 ? 'moderate' : 'weak'} structural evidence so far, but ${p.primaryDirection ? NATIONAL_DIRECTION_LABEL[p.primaryDirection].toLowerCase() : 'no single pattern'} still ${p.primaryDirection ? 'dominates' : 'defines'} the national structure.` };
+}
+/** Which development model an actor's own public infrastructure funding is reinforcing (self-awareness / contrast). */
+export function actorDevelopmentContribution(i: NationalDevelopmentInputs, actorId: string): { directionId: NationalDevelopmentDirectionId | null; weights: Partial<Record<NationalDevelopmentDirectionId, number>> } {
+  const w: Partial<Record<NationalDevelopmentDirectionId, number>> = {};
+  i.projects.forEach(p => { const amt = Number(p.contributions?.[actorId] || 0); if (amt <= 0) return; (V104_PROJECT_DIRECTIONS[p.projectType] || []).forEach(d => { w[d] = (w[d] || 0) + amt; }); });
+  i.completedContracts.filter(c => c.assignedActorId === actorId).forEach(c => (LR_CONTRACT_SECTORS[c.contractType] || []).forEach(s => { const d = V104_SECTOR_DIRECTIONS[s]; if (d) w[d] = (w[d] || 0) + 20000; }));
+  const top = (Object.entries(w) as Array<[NationalDevelopmentDirectionId, number]>).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  return { directionId: top ? top[0] : null, weights: w };
+}
+/** Bounded rival-AI context (0 … +0.05): regions that define the player's PUBLIC national structure are worth contesting. Never intent. */
+export function nationalDirectionAiOutlook(p: NationalDevelopmentProfile | null, regionId: string): { factor: number; reason: string | null } {
+  if (!p || !p.primaryDirection || p.confidenceBand === 'unclear' || p.confidenceBand === 'emerging') return { factor: 0, reason: null };
+  const c = p.regionalContributions.find(x => x.regionId === regionId);
+  if (!c || (c.role !== 'core' && c.role !== 'support')) return { factor: 0, reason: null };
+  return { factor: c.role === 'core' ? 0.05 : 0.025, reason: `${REGIONS[regionId]?.name || regionId} is ${c.role === 'core' ? 'a core region' : 'a supporting region'} of the visible ${NATIONAL_DIRECTION_LABEL[p.primaryDirection]} structure` };
+}
+/** Gaps toward a target direction (What-If pivot): weakest positive factors, with canonical candidate projects. */
+export function nationalPivotGaps(p: NationalDevelopmentProfile, target: NationalDevelopmentDirectionId, projects: NationalDevelopmentInputs['projects']): Array<{ label: string; band: 'Weak' | 'Moderate' | 'Strong'; candidates: string[] }> {
+  const s = p.scores.find(x => x.directionId === target); if (!s) return [];
+  const cands = projects.filter(x => (V104_PROJECT_DIRECTIONS[x.projectType] || []).includes(target) && (x.status === 'unlocked' || x.status === 'under_construction')).map(x => x.title).slice(0, 3);
+  return s.factors.filter(f => !f.negative).sort((a, b) => a.value - b.value).map(f => ({ label: f.label, band: (f.value >= 0.6 ? 'Strong' : f.value >= 0.35 ? 'Moderate' : 'Weak') as 'Weak' | 'Moderate' | 'Strong', candidates: f.source === 'canonical' || f.source === 'infrastructure_networks' ? cands : [] }));
+}
+/** What-If: isolated projection given alternative inputs (caller recomputes V10.0–V10.2 for changed project statuses). */
+export function projectNationalDevelopment(before: NationalDevelopmentProfile, altInputs: NationalDevelopmentInputs, persisted: NationalDevelopmentPersisted | null): { after: NationalDevelopmentProfile; lines: string[] } {
+  const after = computeNationalDevelopment({ ...altInputs }, persisted ? JSON.parse(JSON.stringify(persisted)) : null, { emit: false }).profile;
+  const lines: string[] = [];
+  const sc = (p: NationalDevelopmentProfile, d: NationalDevelopmentDirectionId) => p.scores.find(s => s.directionId === d)?.score || 0;
+  NATIONAL_DIRECTIONS.map(d => ({ d, delta: sc(after, d) - sc(before, d) })).filter(x => Math.abs(x.delta) >= 2).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 3)
+    .forEach(x => lines.push(`${NATIONAL_DIRECTION_LABEL[x.d]} evidence ${x.delta > 0 ? 'increases' : 'decreases'} ${x.delta > 8 ? 'significantly' : 'moderately'} (${Math.round(sc(before, x.d))} → ${Math.round(sc(after, x.d))}).`));
+  const top = after.scores[0];
+  if (top && top.directionId !== before.primaryDirection && top.score >= V104_THRESHOLDS.entry) lines.push(`Possible result: ${NATIONAL_DIRECTION_LABEL[top.directionId]} could become ${before.primaryDirection ? 'a secondary direction or, with sustained growth, the primary one' : 'the emerging direction'} — possible, not guaranteed.`);
+  if (!lines.length) lines.push('No meaningful change to the national development structure.');
+  return { after, lines };
+}
+export function nationalDevelopmentPlayLine(p: NationalDevelopmentProfile | null): { title: string; status: string; strength: string | null; exposure: string | null } | null {
+  if (!p) return null;
+  if (!p.primaryDirection) return { title: 'Still emerging', status: p.strongestPattern && (p.scores[0]?.score || 0) >= 35 ? `Strongest pattern: ${NATIONAL_DIRECTION_SHORT[p.strongestPattern]} growth` : 'No clear national pattern yet', strength: null, exposure: null };
+  if (p.transition) return { title: `${NATIONAL_DIRECTION_SHORT[p.transition.from]} → ${NATIONAL_DIRECTION_SHORT[p.transition.to]}`, status: 'Transitioning', strength: p.mainStrength, exposure: p.mainExposure };
+  return { title: `${NATIONAL_DIRECTION_LABEL[p.primaryDirection]}${p.secondaryDirection ? ` + ${NATIONAL_DIRECTION_SHORT[p.secondaryDirection]}` : ''}`, status: `${p.confidenceBand === 'emerging' ? 'Emerging' : NATIONAL_CONFIDENCE_LABEL[p.confidenceBand]} · ${NATIONAL_MOMENTUM_LABEL[p.directionMomentum]}`, strength: p.mainStrength, exposure: p.mainExposure };
+}
+/** Endgame "The Australia You Built" (descriptive; never changes the configured winner). */
+export function buildNationalDevelopmentDebrief(p: NationalDevelopmentProfile | null, persisted: NationalDevelopmentPersisted | null, megaprojects: MegaprojectsPersisted | null, contrast?: { you: NationalDevelopmentDirectionId | null; rival: NationalDevelopmentDirectionId | null; rivalName: string } | null): string[] {
+  if (!p) return [];
+  const lines: string[] = [];
+  lines.push(`Primary direction: ${p.primaryDirection ? NATIONAL_DIRECTION_LABEL[p.primaryDirection] : 'No single direction emerged'}${p.secondaryDirection ? ` · supported by ${NATIONAL_DIRECTION_LABEL[p.secondaryDirection]}` : ''}`);
+  const first = (persisted?.milestones || []).find(m => m.kind === 'direction_emerged');
+  if (first?.directionId && first.directionId !== p.primaryDirection) lines.push(`Early direction: ${NATIONAL_DIRECTION_LABEL[first.directionId]}`);
+  const tc = (persisted?.milestones || []).filter(m => m.kind === 'transition_completed');
+  const ts = (persisted?.milestones || []).filter(m => m.kind === 'transition_started');
+  if (tc.length) lines.push(`Major transition: turns ${ts[0]?.turn ?? tc[0].turn}–${tc[tc.length - 1].turn}`);
+  const best = Object.values(megaprojects?.programs || {}).map(x => ({ x, done: x.stages.filter(s => s.status === 'completed').length })).filter(y => y.done > 0).sort((a, b) => b.done - a.done || a.x.id.localeCompare(b.x.id))[0];
+  if (best) lines.push(`Defining megaproject: ${MEGAPROJECT_DEF_BY_KIND[best.x.kind].title} (${best.done}/${best.x.stages.length} stages)`);
+  if (p.definingRegions.length) lines.push(`Defining regions: ${p.definingRegions.join(' • ')}`);
+  if (p.mainStrength) lines.push(`National strength: ${p.mainStrength}`);
+  if (p.mainExposure) lines.push(`National vulnerability: ${p.mainExposure}`);
+  if (p.resilience.band) lines.push(`National resilience: ${NATIONAL_RESILIENCE_LABEL[p.resilience.band]}`);
+  if (p.legacyStrengths.length) lines.push(`Legacy strength: ${p.legacyStrengths.map(l => l.label).join(', ')}`);
+  const path = [first?.directionId, ...tc.map(m => m.directionId)].filter(Boolean) as NationalDevelopmentDirectionId[];
+  if (path.length >= 2) lines.push(`Transformation: ${path.map(d => NATIONAL_DIRECTION_SHORT[d]).join(' → ')}`);
+  if (contrast && (contrast.you || contrast.rival)) lines.push(`Your funding reinforced: ${contrast.you ? NATIONAL_DIRECTION_SHORT[contrast.you] : '—'} · ${contrast.rivalName}'s: ${contrast.rival ? NATIONAL_DIRECTION_SHORT[contrast.rival] : '—'} (a contrast, not a ranking — the winner is decided by the match's win condition)`);
+  return lines;
+}
+
+// ---- V10.4 National Development self-tests (pure, deterministic, bounded) ----------------------------------------
+/** Fixture: canonical project statuses + Living-Regions-style sectors → V10.0 → V10.1 → V10.2 → V10.4 inputs. */
+export function createNationalDevelopmentFixtureInputs(o: { statuses?: Record<string, string>; sectors?: Record<string, Partial<Record<LRSector, number>>>; turn?: number; corridors?: NationalCorridorDef[];
+  megaprojects?: MegaprojectsPersisted | null; contracts?: Array<{ contractType: string; regionId: string | null; status: string; assignedActorId: string | null }>; owners?: Record<string, 'you' | 'rival' | 'neutral'>;
+  viewer?: NationalDevelopmentInputs['viewer']; contributions?: Record<string, Record<string, number>> } = {}): NationalDevelopmentInputs {
+  const turn = o.turn ?? 5;
+  const w = createInfraNetworkFixtureWorld({ statuses: o.statuses, sectors: o.sectors, corridors: o.corridors, turn, contributions: o.contributions });
+  const ns = computeNationalSystems(w.nsi).state; const ind = computeIndustriesSupplyChains({ ...w.ii, national: ns }).state;
+  const net = computeStrategicInfrastructureNetworks({ ...w.xi, national: ns, industries: ind }).state;
+  const lr: any = { regions: Object.fromEntries(Object.keys(REGIONS).map(c => [c, { sectors: o.sectors?.[c] || {}, development: { score: 20 }, momentum: { value: 0 }, stability: { value: 60 } }])) };
+  const projects = [...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].map(p => ({ ...p, status: o.statuses?.[p.id] || (p.status === 'locked' ? 'locked' : 'unlocked'), contributions: o.contributions?.[p.id] || {} }));
+  return buildNationalDevelopmentInputs({ turn, lr, national: ns, industries: ind, networks: net, megaprojects: o.megaprojects ?? null, projects, contracts: o.contracts || [], owners: o.owners || {}, viewer: o.viewer ?? null });
+}
+
+export function runV104NationalDevelopmentSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const A = (...ids: string[]) => Object.fromEntries(ids.map(i => [i, 'active']));
+  type FO = Parameters<typeof createNationalDevelopmentFixtureInputs>[0];
+  const I = (o: FO = {}) => createNationalDevelopmentFixtureInputs(o);
+  const run = (i: NationalDevelopmentInputs, prev: NationalDevelopmentPersisted | null = null) => computeNationalDevelopment(i, prev);
+  const strip = (p: NationalDevelopmentProfile) => JSON.stringify({ ...p, computeMs: 0 });
+  const sc = (p: NationalDevelopmentProfile, d: NationalDevelopmentDirectionId) => p.scores.find(s => s.directionId === d)?.score ?? 0;
+  const valid = (p: NationalDevelopmentProfile, s?: NationalDevelopmentPersisted) => { const v = validateNationalDevelopmentProfile(p, s); return v.length ? v.join('; ') : true; };
+  // Archetype worlds (real canonical projects; Living Regions sectors drive V10.1 industry strength).
+  const RES_P = A('infra_v93_qld_port_automated', 'infra_v93_qld_port_partnership', 'infra_v93_wa_remote_logistics', 'infra_v93_wa_freight_rail', 'infra_v93_nt_gateway', 'infra_inland_rail_qld');
+  const RES_S = { WA: { mining: 85, logistics: 50 }, QLD: { mining: 70, trade: 40 }, NT: { mining: 65 } };
+  const MFG_P = A('infra_v93_vic_manufacturing', 'infra_v102_vic_freight_terminal', 'infra_v102_nsw_interstate_rail', 'infra_inland_rail_qld', 'infra_snowy_nsw', 'infra_v102_sa_freight_corridor');
+  const MFG_S = { VIC: { manufacturing: 85 }, NSW: { manufacturing: 70 }, SA: { manufacturing: 65, energy: 50 }, WA: { mining: 70 } };
+  const TECH_P = A('infra_tech_park_act', 'infra_v93_act_research_campus', 'infra_v93_vic_data_center', 'infra_subsea_nt', 'infra_snowy_nsw');
+  const TECH_S = { ACT: { technology: 80, research: 85 }, NSW: { technology: 75 }, VIC: { research: 70, technology: 60 } };
+  const REN_P = A('infra_v93_sa_renewable_grid', 'infra_v93_qld_renewable_grid', 'infra_wind_tas', 'infra_snowy_nsw', 'infra_hydrogen_wa');
+  const REN_S = { SA: { renewables: 85, energy: 75 }, TAS: { renewables: 80, energy: 70 }, QLD: { renewables: 60, energy: 55 } };
+  const TRD_P = A('infra_v93_nsw_port', 'infra_v93_qld_port_partnership', 'infra_v93_qld_port_automated', 'infra_inland_rail_qld', 'infra_v102_nsw_interstate_rail', 'infra_v102_vic_freight_terminal');
+  const TRD_S = { NSW: { trade: 80, logistics: 70 }, QLD: { trade: 70, logistics: 60 }, VIC: { trade: 65, logistics: 60 } };
+  const resW = (turn = 5) => I({ statuses: RES_P, sectors: RES_S, turn });
+  const mfgW = (turn = 5) => I({ statuses: MFG_P, sectors: MFG_S, turn });
+  /** After a manufacturing transformation: the resource base (sectors + export infrastructure) is still there. */
+  const pivotW = (turn: number) => I({ statuses: { ...RES_P, ...MFG_P }, sectors: { ...RES_S, VIC: { manufacturing: 90 }, NSW: { manufacturing: 85 }, SA: { manufacturing: 80, energy: 50 }, QLD: { mining: 55, manufacturing: 70, trade: 40 }, WA: { mining: 70, logistics: 50 } }, turn });
+  /** Runs a sequence of (turn, inputs) through the persisted memory; returns the last result + all events. */
+  const seq = (steps: Array<NationalDevelopmentInputs>, start: NationalDevelopmentPersisted | null = null) => {
+    let s = start; let last: ReturnType<typeof computeNationalDevelopment> | null = null; const events: NationalDevelopmentDerivedEvent[] = []; const profiles: NationalDevelopmentProfile[] = [];
+    steps.forEach(i => { last = computeNationalDevelopment(i, s); s = last.persisted; events.push(...last.events); profiles.push(last.profile); });
+    return { last: last!, events, profiles, persisted: s! };
+  };
+  const turns = (from: number, to: number, f: (t: number) => NationalDevelopmentInputs) => { const out: NationalDevelopmentInputs[] = []; for (let t = from; t <= to; t++) out.push(f(t)); return out; };
+  const mkScores = (o: Partial<Record<NationalDevelopmentDirectionId, number>>): NationalDirectionScore[] => NATIONAL_DIRECTIONS.map(d => ({ directionId: d, score: o[d] ?? 10, factors: [{ label: 'synthetic', value: 0.5, weight: 1, contribution: o[d] ?? 10, source: 'industries' as const, sourceId: 'test' }] })).sort((a, b) => b.score - a.score || a.directionId.localeCompare(b.directionId));
+
+  check('nd1', 'TEST 1 — empty / early match: no fake national identity (primary null or confidence unclear); PLAY says "Still emerging"', () => {
+    const p = run(I({ turn: 1 })).profile;
+    const line = nationalDevelopmentPlayLine(p);
+    return ((p.primaryDirection === null || p.confidenceBand === 'unclear') && line?.title === 'Still emerging' && valid(p) === true) || JSON.stringify({ prim: p.primaryDirection, band: p.confidenceBand, line, v: valid(p) });
+  });
+  check('nd2', 'TEST 2 — resource economy (mining + trade + freight + exports) → Resource Export direction emerges', () => {
+    const p = run(resW()).profile;
+    return (p.primaryDirection === 'resource_export_powerhouse' && p.scores[0].directionId === 'resource_export_powerhouse' && valid(p) === true) || JSON.stringify({ prim: p.primaryDirection, top: p.scores.slice(0, 3).map(s => [s.directionId, s.score]) });
+  });
+  check('nd3', 'TEST 3 — manufacturing (industry + inputs + energy + freight) → Manufacturing direction', () => {
+    const p = run(mfgW()).profile;
+    return (p.primaryDirection === 'advanced_manufacturing_economy' && valid(p) === true) || JSON.stringify({ prim: p.primaryDirection, top: p.scores.slice(0, 3).map(s => [s.directionId, s.score]) });
+  });
+  check('nd4', 'TEST 4 — technology (research + technology + digital + energy) → Technology & Research direction', () => {
+    const p = run(I({ statuses: TECH_P, sectors: TECH_S })).profile;
+    return (p.primaryDirection === 'technology_research_economy' && valid(p) === true) || JSON.stringify({ prim: p.primaryDirection, top: p.scores.slice(0, 3).map(s => [s.directionId, s.score]) });
+  });
+  check('nd5', 'TEST 5 — renewables + energy surplus + grid + hydrogen → Renewable direction', () => {
+    const p = run(I({ statuses: REN_P, sectors: REN_S })).profile;
+    return (p.primaryDirection === 'renewable_energy_powerhouse' && valid(p) === true) || JSON.stringify({ prim: p.primaryDirection, top: p.scores.slice(0, 3).map(s => [s.directionId, s.score]) });
+  });
+  check('nd6', 'TEST 6 — trade + ports + freight + gateways → Trade & Logistics direction', () => {
+    const p = run(I({ statuses: TRD_P, sectors: TRD_S })).profile;
+    return (p.primaryDirection === 'trade_logistics_hub' && valid(p) === true) || JSON.stringify({ prim: p.primaryDirection, top: p.scores.slice(0, 3).map(s => [s.directionId, s.score]) });
+  });
+  check('nd7', 'TEST 7 — multiple strong sectors + low dependency concentration + high regional diversity → Diversified Resilient becomes plausible', () => {
+    const p = run(I({ statuses: A('infra_tech_park_act', 'infra_v93_vic_manufacturing', 'infra_v93_sa_renewable_grid', 'infra_v93_qld_port_partnership', 'infra_v93_wa_freight_rail', 'infra_v93_tas_tourism_precinct'),
+      sectors: { WA: { mining: 70 }, ACT: { research: 70, technology: 60 }, VIC: { manufacturing: 70 }, SA: { renewables: 70, energy: 65 }, NSW: { trade: 60, finance: 70 }, QLD: { tourism: 70, agriculture: 60 }, TAS: { agriculture: 60, renewables: 50 } } })).profile;
+    const d = sc(p, 'diversified_resilient_economy');
+    return (d >= V104_THRESHOLDS.entry && p.scores[0].directionId === 'diversified_resilient_economy' && p.dimensions.regionalDiversity >= 60) || JSON.stringify({ d, top: p.scores.slice(0, 3).map(s => [s.directionId, s.score]), dims: p.dimensions });
+  });
+  check('nd8', 'TEST 8 — one extremely strong WA mining region scores weaker than a genuinely broad resource economy', () => {
+    const one = run(I({ statuses: RES_P, sectors: { WA: { mining: 100, logistics: 80 } } })).profile, broad = run(resW()).profile;
+    return (sc(one, 'resource_export_powerhouse') < sc(broad, 'resource_export_powerhouse') - 5) || `${sc(one, 'resource_export_powerhouse')} vs ${sc(broad, 'resource_export_powerhouse')}`;
+  });
+  check('nd9', 'TEST 9 — manufacturing dominant + renewables strong → Primary Manufacturing, Secondary Renewable', () => {
+    const p = run(I({ statuses: { ...MFG_P, ...A('infra_v93_sa_renewable_grid', 'infra_wind_tas') }, sectors: { ...MFG_S, SA: { manufacturing: 65, energy: 65, renewables: 70 }, TAS: { renewables: 65, energy: 55 } } })).profile;
+    return (p.primaryDirection === 'advanced_manufacturing_economy' && p.secondaryDirection === 'renewable_energy_powerhouse' && valid(p) === true) || JSON.stringify({ prim: p.primaryDirection, sec: p.secondaryDirection, top: p.scores.slice(0, 3).map(s => [s.directionId, s.score]) });
+  });
+  check('nd10', 'TEST 10 — hysteresis: two nearly tied, fluctuating directions do not flip every turn', () => {
+    let mem = createEmptyNationalDevelopmentMemory(); const prims: string[] = [];
+    for (let t = 1; t <= 12; t++) {
+      const sres = t === 1 ? 60 : t % 2 ? 61 : 58, strd = t === 1 ? 50 : t % 2 ? 58 : 61;
+      mem = selectNationalDirection(mkScores({ resource_export_powerhouse: sres, trade_logistics_hub: strd }), mem, t, 6).mem; prims.push(String(mem.primary?.id));
+    }
+    return (prims.every(x => x === 'resource_export_powerhouse') && !mem.transition) || prims.join(',');
+  });
+  check('nd11', 'TEST 11 — pivot: Resource established → sustained manufacturing transformation → transitioning, then Manufacturing established only after the structural threshold', () => {
+    const a = seq([...turns(1, 6, resW), ...turns(7, 18, pivotW)]);
+    const est = a.profiles[5];
+    const transIdx = a.profiles.findIndex(p => p.directionMomentum === 'transitioning');
+    const switchIdx = a.profiles.findIndex(p => p.primaryDirection === 'advanced_manufacturing_economy');
+    const estIdx = a.profiles.findIndex(p => p.primaryDirection === 'advanced_manufacturing_economy' && (p.confidenceBand === 'established' || p.confidenceBand === 'strongly_established'));
+    return (est.primaryDirection === 'resource_export_powerhouse' && est.confidenceBand === 'established' && transIdx >= 6 && switchIdx > transIdx + 2 && estIdx > switchIdx
+      && a.events.some(e => e.kind === 'national_strategy_transition_started') && a.events.some(e => e.kind === 'national_strategy_transition_completed'))
+      || JSON.stringify({ est: [est.primaryDirection, est.confidenceBand], transIdx, switchIdx, estIdx, seq: a.profiles.map(p => `${p.primaryDirection?.slice(0, 4)}:${p.confidenceBand.slice(0, 4)}:${p.directionMomentum.slice(0, 4)}:${sc(p, 'resource_export_powerhouse')}/${sc(p, 'advanced_manufacturing_economy')}`) });
+  });
+  check('nd12', 'TEST 12 — legacy strength: after the pivot the resource base remains a legacy / supporting strength', () => {
+    const p = seq([...turns(1, 6, resW), ...turns(7, 18, pivotW)]).last.profile;
+    return (p.primaryDirection === 'advanced_manufacturing_economy' && (p.legacyStrengths.some(l => l.directionId === 'resource_export_powerhouse') || p.secondaryDirection === 'resource_export_powerhouse')) || JSON.stringify({ prim: p.primaryDirection, sec: p.secondaryDirection, legacy: p.legacyStrengths });
+  });
+  check('nd13', 'TEST 13 — completed AI Compute Network megaproject raises the technology score but forces no classification', () => {
+    const mp = createEmptyMegaprojectsPersisted();
+    (mp.programs as any)['mp_ai'] = { id: 'mp_ai', kind: 'australian_ai_compute_network', status: 'completed', choices: {}, stages: [1, 2, 3].map(n => ({ status: 'completed', progressCapital: 20000, index: n })) };
+    const base = run(I({ turn: 6 })).profile, withMp = run(I({ turn: 6, megaprojects: mp })).profile;
+    return (sc(withMp, 'technology_research_economy') > sc(base, 'technology_research_economy') && withMp.primaryDirection !== 'technology_research_economy') || JSON.stringify({ b: sc(base, 'technology_research_economy'), w: sc(withMp, 'technology_research_economy'), prim: withMp.primaryDirection });
+  });
+  check('nd14', 'TEST 14 — manufacturing dependent on one mineral provider: direction stays Manufacturing, vulnerability highlights the dependence', () => {
+    const p = run(mfgW()).profile;
+    return (p.primaryDirection === 'advanced_manufacturing_economy' && p.vulnerabilities.some(v => v.category === 'dependency' && /Input Dependence/.test(v.label)) && p.dependencies.length > 0) || JSON.stringify({ prim: p.primaryDirection, vul: p.vulnerabilities.map(v => v.label), deps: p.dependencies.length });
+  });
+  check('nd15', 'TEST 15 — adding an alternative infrastructure route improves resilience without arbitrarily changing direction', () => {
+    const a = run(mfgW()).profile, b = run(I({ statuses: { ...MFG_P, ...A('infra_v93_wa_freight_rail', 'infra_hsr_nsw_vic', 'infra_v93_nsw_port') }, sectors: MFG_S })).profile;
+    const cp = (p: NationalDevelopmentProfile) => p.vulnerabilities.filter(v => v.category === 'network').length;
+    return (b.primaryDirection === a.primaryDirection && (b.dimensions.networkResilience > a.dimensions.networkResilience || cp(b) < cp(a) || b.dimensions.infrastructureIntegration > a.dimensions.infrastructureIntegration)) || JSON.stringify({ a: [a.primaryDirection, a.dimensions.networkResilience, cp(a)], b: [b.primaryDirection, b.dimensions.networkResilience, cp(b)] });
+  });
+  check('nd16', 'TEST 16 — win-condition boundary: a stronger national profile never changes the configured winner (rival wins on cash)', () => {
+    const strong = seq(turns(1, 8, resW));
+    const state: any = { teamsById: { team_player: { actorIds: ['player'] }, team_ai: { actorIds: ['ai'] } }, actorsById: { player: { money: 10000 }, ai: { money: 60000 } } };
+    const r1 = evaluateNeutralMatchVictory(state, { ...createDefaultGameSettings(), winCondition: 'money' } as any);
+    const r2 = evaluateNeutralMatchVictory({ ...state, nationalDevelopment: strong.persisted, nationalDevelopmentProfile: strong.last.profile }, { ...createDefaultGameSettings(), winCondition: 'money' } as any);
+    const deb = buildNationalDevelopmentDebrief(strong.last.profile, strong.persisted, null, { you: 'resource_export_powerhouse', rival: null, rivalName: 'Rival' });
+    return (r1.winner === 'team_opponent' && r2.winner === 'team_opponent' && r2.playerScore === r1.playerScore && deb.some(l => /win condition/.test(l))) || JSON.stringify({ r1: r1.winner, r2: r2.winner });
+  });
+  check('nd17', 'TEST 17 — GI3: Technology strategy vs Resource direction → mismatch reported, GI3 strategy unchanged', () => {
+    const p = run(resW()).profile; const strat = { label: 'Technology leadership', goals: [{ type: 'build_project', label: 'Build the research campus', regionId: 'ACT' }] };
+    const before = JSON.stringify(strat); const al = nationalStrategyAlignment(p, strat);
+    return ((al.alignment === 'LOW' || al.alignment === 'MODERATE') && al.implied.includes('technology_research_economy') && /dominates/.test(al.explanation) && JSON.stringify(strat) === before) || JSON.stringify(al);
+  });
+  check('nd18', 'TEST 18 — Auto Mode goal "Infrastructure Growth" does not make the direction Infrastructure-Led: direction stays derived', () => {
+    const i = resW(); const withGoal: any = { ...i, autoModeGoal: 'infrastructure_growth', gi3Goal: 'infrastructure' };
+    const a = run(i).profile, b = run(withGoal).profile;
+    return (strip(a) === strip(b) && b.primaryDirection !== 'infrastructure_led_growth') || `${a.primaryDirection} / ${b.primaryDirection}`;
+  });
+  check('nd19', 'TEST 19 — rival AI reads the PUBLIC direction: bounded candidate-score context only, no extra action', () => {
+    const p = seq(turns(1, 8, resW)).last.profile;
+    const core = p.regionalContributions.find(c => c.role === 'core');
+    const o = core ? nationalDirectionAiOutlook(p, core.regionId) : { factor: 0, reason: null };
+    const early = nationalDirectionAiOutlook(run(I({ turn: 1 })).profile, 'WA');
+    return (o.factor > 0 && o.factor <= 0.05 && Object.keys(o).sort().join(',') === 'factor,reason' && early.factor === 0) || JSON.stringify({ o, early, band: p.confidenceBand, core });
+  });
+  check('nd20', 'TEST 20 — human vs AI: recomputing the profile after each AI action does not change V9.6 turn termination', () => {
+    const rt = createSoloAiTurnRuntime('nd', 2, 0); let prev: NationalDevelopmentPersisted | null = null; let reason: string | null = null; let guard = 0;
+    while (!(reason = soloAiStopReason(rt)) && guard++ < 20) {
+      const a = { type: 'invest', data: { region: 'WA', amount: 1000 + guard } };
+      soloAiRecordDecision(rt, a, guard); soloAiRecordCommit(rt, a, `fp${guard}`, guard);
+      prev = computeNationalDevelopment(resW(5), prev).persisted;
+    }
+    return (reason === 'budget_exhausted' && rt.successfulActions === 2 && guard <= 3) || `${reason} after ${rt.successfulActions} (${guard})`;
+  });
+  check('nd21', 'TEST 21 — Emerging → Established produces ONE meaningful World Reaction event (valid SWR adapter)', () => {
+    const a = seq([...turns(1, 10, resW), resW(10), resW(10)]);
+    const st = a.events.filter(e => e.kind === 'national_direction_strengthened');
+    const swr = st[0] ? nationalDevelopmentToWorldEvent(st[0], ['player']) : null;
+    return (st.length === 1 && !!swr && swr.sourceSystem === 'national_development' && swr.kind === 'national_direction_strengthened' && swr.reactionDepth === 0 && /^nd:/.test(swr.dedupeKey)) || JSON.stringify(a.events.map(e => [e.turn, e.kind]));
+  });
+  check('nd22', 'TEST 22 — minor score movement produces no repeated national-direction notifications', () => {
+    const a = seq(turns(1, 14, t => I({ statuses: RES_P, sectors: { ...RES_S, WA: { mining: 85 + (t % 3) * 2, logistics: 50 - (t % 2) * 3 } }, turn: t })));
+    const counts: Record<string, number> = {}; a.events.forEach(e => { counts[e.kind] = (counts[e.kind] || 0) + 1; });
+    return (Object.values(counts).every(c => c <= 1) && a.events.length <= 3) || JSON.stringify(counts);
+  });
+  check('nd23', 'TEST 23 — What-If: a strategic pivot projection describes the direction change and leaves live state untouched', () => {
+    const live = seq(turns(1, 6, resW)); const before = JSON.stringify(live.persisted);
+    const proj = projectNationalDevelopment(live.last.profile, pivotW(7), live.persisted);
+    return (JSON.stringify(live.persisted) === before && proj.lines.some(l => /Manufacturing/.test(l)) && sc(proj.after, 'advanced_manufacturing_economy') > sc(live.last.profile, 'advanced_manufacturing_economy')) || JSON.stringify(proj.lines);
+  });
+  check('nd24', 'TEST 24 — save / load: persisted history round-trips; the current profile is reproduced; pivot state preserved', () => {
+    const a = seq([...turns(1, 6, resW), ...turns(7, 9, pivotW)]);
+    const loaded = sanitizeNationalDevelopmentPersisted(JSON.parse(JSON.stringify(a.persisted)));
+    const again = computeNationalDevelopment(pivotW(9), loaded).profile;
+    return (JSON.stringify(loaded) === JSON.stringify(a.persisted) && strip(again) === strip(a.last.profile) && (loaded!.current.transition !== null || a.last.profile.transition === null)) || JSON.stringify({ same: JSON.stringify(loaded) === JSON.stringify(a.persisted), trans: loaded?.current.transition });
+  });
+  check('nd25', 'TEST 25 — old save: profile derived from the current world, no fake history, no events on load', () => {
+    const mig = migrateSaveToV71Expansion({ version: '9.0', gameState: { turnCounter: 9 } } as any);
+    const r = computeNationalDevelopment(resW(9), sanitizeNationalDevelopmentPersisted((mig as any).migratedData?.gameState?.nationalDevelopment));
+    const garbage = sanitizeNationalDevelopmentPersisted({ current: { primary: { id: 'moon_economy' } }, milestones: 'x' });
+    return (sanitizeNationalDevelopmentPersisted(undefined) === null && r.profile.transformationHistory.length === 0 && r.events.length === 0 && r.profile.primaryDirection === 'resource_export_powerhouse' && garbage !== null && garbage.current.primary === null) || JSON.stringify({ h: r.profile.transformationHistory.length, e: r.events.length });
+  });
+  check('nd26', 'TEST 26 — replay: the same decisions produce the same direction milestones', () => {
+    const steps = () => [...turns(1, 6, resW), ...turns(7, 16, pivotW)];
+    const a = seq(steps()), b = seq(steps());
+    return (JSON.stringify(a.persisted.milestones) === JSON.stringify(b.persisted.milestones) && a.persisted.milestones.length >= 2) || JSON.stringify(a.persisted.milestones.map(m => m.kind));
+  });
+  check('nd27', 'TEST 27 — determinism: same inputs → identical profile (and same-turn recomputes do not advance memory)', () => {
+    const p1 = run(mfgW()), p2 = run(mfgW());
+    const s1 = seq(turns(1, 4, resW)); const again = computeNationalDevelopment(resW(4), s1.persisted); const again2 = computeNationalDevelopment(resW(4), again.persisted);
+    return (strip(p1.profile) === strip(p2.profile) && JSON.stringify(p1.persisted) === JSON.stringify(p2.persisted) && strip(again.profile) === strip(again2.profile) && JSON.stringify(again.persisted.current) === JSON.stringify(again2.persisted.current)) || 'differs';
+  });
+  check('nd28', 'TEST 28 — extreme specialization: strength AND exposure recognized, no arbitrary collapse', () => {
+    const a = seq(turns(1, 8, t => I({ statuses: RES_P, sectors: { WA: { mining: 100, logistics: 70 }, QLD: { mining: 95 }, NT: { mining: 95 }, SA: { mining: 80 } }, turn: t })));
+    const p = a.last.profile;
+    return (p.primaryDirection === 'resource_export_powerhouse' && p.strengths.some(s => /Mineral Supply/.test(s.label)) && p.vulnerabilities.some(v => v.category === 'concentration') && p.sectorConcentration.band === 'HIGH' && a.profiles.slice(1).every(x => x.primaryDirection === 'resource_export_powerhouse') && valid(p) === true)
+      || JSON.stringify({ prim: p.primaryDirection, str: p.strengths.map(s => s.label), vul: p.vulnerabilities.map(v => v.label), conc: p.sectorConcentration });
+  });
+  check('nd29', 'TEST 29 — balanced but weak: all sectors equally weak is NOT Diversified Resilient', () => {
+    const weak = Object.fromEntries(Object.keys(REGIONS).map(r => [r, { mining: 30, agriculture: 30, manufacturing: 30, technology: 30, research: 30, energy: 30, renewables: 30, trade: 30, tourism: 30 }]));
+    const p = run(I({ sectors: weak as any, statuses: A('infra_v93_vic_manufacturing', 'infra_v93_sa_renewable_grid', 'infra_tech_park_act') })).profile;
+    return (p.primaryDirection !== 'diversified_resilient_economy' && sc(p, 'diversified_resilient_economy') < V104_THRESHOLDS.entry) || JSON.stringify({ d: sc(p, 'diversified_resilient_economy'), prim: p.primaryDirection });
+  });
+  check('nd31', 'Ask the Game: the 12 national-development questions route here and answer with Fact / Calculated / Inference / Projection claims', () => {
+    const a = seq(turns(1, 6, mfgW)); const inputs = mfgW(6);
+    const gw: any = { national: { development: { profile: a.last.profile, persisted: a.persisted, inputs, strategy: { label: 'Technology leadership', goals: [] }, autoModeGoal: 'Infrastructure Growth', rivalName: 'Riley', you: null, rival: null, ctx: { nsInputs: null, scInputs: null } } } };
+    const qs: Array<[string, NationalDevelopmentQueryTopic]> = [['What kind of Australia am I building?', 'what_kind'], ['Why am I considered a manufacturing economy?', 'why_direction'], ['Which regions are driving my national strategy?', 'driving_regions'], ['What is my biggest national weakness?', 'weakness'],
+      ['Am I too dependent on Western Australia?', 'dependent_on_region'], ['How diversified is Australia?', 'diversified'], ['Is my technology strategy actually working?', 'strategy_working'], ['What would move Australia toward renewable energy?', 'move_toward'], ['Why is my national direction changing?', 'why_changing'],
+      ['What is the difference between my Strategy and National Direction?', 'strategy_vs_direction'], ['Which megaproject changed Australia the most?', 'megaproject_impact'], ['What would happen if VIC manufacturing declined?', 'region_decline']];
+    const bad: string[] = []; const kinds = new Set<string>(); const before = JSON.stringify(a.persisted);
+    qs.forEach(([q, topic]) => { const d = detectNationalDevelopmentQuery(q, gw); if (!d || d.topic !== topic) { bad.push(`${q} → ${d?.topic}`); return; } const ans = composeNationalDevelopmentAnswer(d, gw); if (!ans.sections.length) bad.push(`${q}: empty`); ans.sections.forEach(s => s.claims.forEach(c => kinds.add(String((c as any).kind)))); });
+    const unrelated = detectNationalDevelopmentQuery('How much money do I have?', gw);
+    return (!bad.length && kinds.has('fact') && kinds.has('inference') && kinds.has('projection') && !unrelated && JSON.stringify(a.persisted) === before) || JSON.stringify({ bad, kinds: Array.from(kinds), unrelated });
+  });
+  check('nd30', 'TEST 30 — performance: repeated derivation is cheap and bounded', () => {
+    const i = mfgW(); let s: NationalDevelopmentPersisted | null = null;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    for (let k = 0; k < 60; k++) { const r = computeNationalDevelopment({ ...i, turn: 5 + k }, s); s = r.persisted; }
+    const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+    return (ms / 60 < 25 && s!.milestones.length <= V104_LIMITS.milestones && s!.current.scoreHistory.length <= V104_LIMITS.scoreHistory && JSON.stringify(s).length < 40000) || `${(ms / 60).toFixed(2)}ms avg, ${JSON.stringify(s).length} bytes`;
+  });
+  return results;
+}
+
+// ---- V10.4 National Development: isolated What-If helpers (never touch live state) ---------------------------------
+/** Recomputes V10.0 → V10.1 → V10.2 with some canonical projects treated as active, then reads V10.4 (isolated). */
+export function nationalDevelopmentWhatIfProjects(base: NationalDevelopmentInputs, ctx: { nsInputs: NationalSystemsInputs | null; scInputs: IndustriesInputs | null }, projectIds: string[], persisted: NationalDevelopmentPersisted | null, before: NationalDevelopmentProfile, megaprojects?: MegaprojectsPersisted | null): { after: NationalDevelopmentProfile; lines: string[] } {
+  const ids = new Set(projectIds);
+  const flip = <T extends { id?: string; status?: string }>(xs: T[]) => xs.map(p => (p && ids.has(String(p.id)) ? { ...p, status: 'active' } : p));
+  const projects = flip(base.projects);
+  let national = base.national, industries = base.industries, networks = base.networks;
+  if (ctx.nsInputs) {
+    national = computeNationalSystems({ ...ctx.nsInputs, projects: flip(ctx.nsInputs.projects as any[]) as any }, null, { emit: false }).state;
+    if (ctx.scInputs) industries = computeIndustriesSupplyChains({ ...ctx.scInputs, projects: flip(ctx.scInputs.projects as any[]) as any, national }, null, { emit: false } as any).state;
+    networks = computeStrategicInfrastructureNetworks(buildInfraNetworkInputs({ turn: base.turn, projects, national, industries }), null).state;
+  }
+  return projectNationalDevelopment(before, { ...base, projects, national, industries, networks, megaprojects: megaprojects === undefined ? base.megaprojects : megaprojects }, persisted);
+}
+/** "What if I complete <program>?" — the program's component projects become active and its stages complete (isolated). */
+export function nationalDevelopmentWhatIfProgram(base: NationalDevelopmentInputs, ctx: { nsInputs: NationalSystemsInputs | null; scInputs: IndustriesInputs | null }, kind: MegaprojectKind, persisted: NationalDevelopmentPersisted | null, before: NationalDevelopmentProfile): { after: NationalDevelopmentProfile; lines: string[] } {
+  const def = MEGAPROJECT_DEF_BY_KIND[kind];
+  const existing = base.megaprojects?.programs?.[megaprojectIdFor(kind)];
+  const stages = megaprojectStageDefs(def, existing?.choices || {});
+  const mp: MegaprojectsPersisted = JSON.parse(JSON.stringify(base.megaprojects || createEmptyMegaprojectsPersisted()));
+  (mp.programs as any)[megaprojectIdFor(kind)] = { ...(existing ? JSON.parse(JSON.stringify(existing)) : { id: megaprojectIdFor(kind), kind, choices: {} }), status: 'completed', stages: stages.map(s => ({ ...(existing?.stages.find(x => x.id === s.id) || {}), id: s.id, status: 'completed', progressCapital: s.requiredCapital, requiredCapital: s.requiredCapital })) };
+  const r = nationalDevelopmentWhatIfProjects(base, ctx, stages.flatMap(s => s.requiredProjectIds), persisted, before, mp);
+  return { after: r.after, lines: [`WHAT IF ${def.title.toUpperCase()} WERE COMPLETE (isolated projection — nothing changes):`, ...r.lines] };
+}
+/** "What would happen if <region> <industry> declined?" — halves that regional industry in a copy of V10.1 (isolated). */
+export function nationalDevelopmentWhatIfDecline(base: NationalDevelopmentInputs, regionId: string, industry: StrategicIndustryKind, persisted: NationalDevelopmentPersisted | null, before: NationalDevelopmentProfile): { after: NationalDevelopmentProfile; lines: string[] } {
+  if (!base.industries || !base.industries.regions[regionId]?.industries?.[industry]) return { after: before, lines: [`${REGIONS[regionId]?.name || regionId} has no ${INDUSTRY_LABEL[industry].toLowerCase()} industry to decline.`] };
+  const ind: IndustriesSupplyChainsState = JSON.parse(JSON.stringify(base.industries));
+  const x = ind.regions[regionId].industries[industry]!; const lost = x.effectiveOutput * 0.5;
+  x.strength = x.strength * 0.5; x.effectiveOutput = x.effectiveOutput * 0.5;
+  (ind.national.output as any)[industry] = Math.max(0, Number((ind.national.output as any)[industry] || 0) - lost);
+  const r = projectNationalDevelopment(before, { ...base, industries: ind }, persisted);
+  return { after: r.after, lines: [`WHAT IF ${REGIONS[regionId]?.name.toUpperCase() || regionId} ${INDUSTRY_LABEL[industry].toUpperCase()} HALVED (isolated projection):`, ...r.lines] };
+}
+
+// ---- V10.4 Game Intelligence: "What kind of Australia am I building?" (Fact / Calculated / Inference / Projection) ----
+export interface NationalDevelopmentWorldView {
+  profile: NationalDevelopmentProfile; persisted: NationalDevelopmentPersisted | null; inputs: NationalDevelopmentInputs;
+  strategy: { label: string; goals: Array<{ type: string; label: string; regionId?: string; projectId?: string }> } | null;
+  autoModeGoal: string | null; rivalName: string; you: NationalDevelopmentDirectionId | null; rival: NationalDevelopmentDirectionId | null;
+  ctx: { nsInputs: NationalSystemsInputs | null; scInputs: IndustriesInputs | null };
+}
+export type NationalDevelopmentQueryTopic = 'what_kind' | 'why_direction' | 'driving_regions' | 'weakness' | 'dependent_on_region' | 'diversified' | 'strategy_working' | 'move_toward' | 'why_changing' | 'strategy_vs_direction' | 'megaproject_impact' | 'region_decline';
+export interface NationalDevelopmentQuery { topic: NationalDevelopmentQueryTopic; directionId: NationalDevelopmentDirectionId | null; regionId: string | null; industry: StrategicIndustryKind | null }
+const V104_INDUSTRY_WORDS: Array<[StrategicIndustryKind, RegExp]> = [['manufacturing', /\bmanufactur\w*/], ['mining', /\b(mining|minerals?|resources?)\b/], ['technology', /\btech\w*/], ['research', /\bresearch\b/], ['energy', /\b(energy|renewab\w*|power)\b/], ['agriculture', /\b(agri\w*|farm\w*)\b/], ['tourism', /\btouris\w*/], ['trade', /\b(trade|logistics|ports?)\b/]];
+const v104DirIn = (q: string): NationalDevelopmentDirectionId | null => V104_STRATEGY_WORDS.find(([, re]) => re.test(q))?.[0] || null;
+
+export function detectNationalDevelopmentQuery(raw: string, gw: GIWorld): NationalDevelopmentQuery | null {
+  const v = gw.national?.development; if (!v) return null;
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  const regionId = nsRegionInText(q);
+  const mk = (topic: NationalDevelopmentQueryTopic, extra: Partial<NationalDevelopmentQuery> = {}): NationalDevelopmentQuery => ({ topic, directionId: v104DirIn(q), regionId, industry: null, ...extra });
+  if (/\bdifference between (my )?strategy and (my )?national direction\b|\bstrategy (vs|versus) (my )?national direction\b/.test(q)) return mk('strategy_vs_direction');
+  if (/\bwhat kind of (australia|economy|country)\b|\bwhat (is|'s) my national (direction|development)\b|\bnational development (overview|status)\b/.test(q)) return mk('what_kind');
+  if (/\bwhy am i (considered|classed|classified|seen as)\b|\bwhy (is|am) (australia|i) an? .{1,40}\beconomy\b|\bwhy this (national )?direction\b/.test(q)) return mk('why_direction');
+  if (/\bwhich regions (are )?(driving|define|defining|shape|shaping)\b.{0,30}\b(national|strategy|direction|development)\b/.test(q)) return mk('driving_regions');
+  if (/\bbiggest national (weakness|vulnerability|exposure)\b|\bnational (weakness|vulnerability)\b/.test(q)) return mk('weakness');
+  if (/\btoo dependent on\b|\bover[- ]?dependent on\b|\btoo reliant on\b/.test(q) && regionId) return mk('dependent_on_region');
+  if (/\bhow diversified\b|\bis australia diversified\b|\bnational diversification\b/.test(q)) return mk('diversified');
+  if (/\bis my .{1,30}\bstrategy (actually )?working\b/.test(q)) return mk('strategy_working');
+  if (/\bwhat would (move|push|shift|take) (australia|us|me|the country)\b.{0,20}\b(toward|towards|to|into)\b|\bwhat would it take to (move|become|pivot)\b/.test(q)) return mk('move_toward');
+  if (/\bwhy is my national direction changing\b|\bwhy (is|has) (my |the )?national direction (changing|changed|shifting)\b|\bnational (pivot|transition)\b/.test(q)) return mk('why_changing');
+  if (/\bwhich megaproject (changed|shaped|defined)\b/.test(q)) return mk('megaproject_impact');
+  if (/\bwhat (would happen|happens) if\b.{1,40}\b(declined?|collapsed?|fell|shrank|halved)\b/.test(q) && regionId) return mk('region_decline', { industry: V104_INDUSTRY_WORDS.find(([, re]) => re.test(q))?.[0] || null });
+  return null;
+}
+
+export function composeNationalDevelopmentAnswer(query: NationalDevelopmentQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  const v = gw.national!.development!; const p = v.profile; const sections: GIAnswerSection[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const C = (t: string, k: LRClaim) => nsClaim(t, k);
+  const L = (d: NationalDevelopmentDirectionId | null) => (d ? NATIONAL_DIRECTION_LABEL[d] : 'no single direction');
+  const band = (x: number) => (x >= 60 ? 'strong' : x >= 40 ? 'moderate' : 'weak');
+  const sc = (d: NationalDevelopmentDirectionId) => p.scores.find(s => s.directionId === d)?.score ?? 0;
+  const prim = p.primaryDirection;
+  let title = 'National development'; let shape: GIAnswerShape = 'explanation';
+  const contrib = (r: string) => p.regionalContributions.find(c => c.regionId === r);
+  switch (query.topic) {
+    case 'what_kind': {
+      title = 'What kind of Australia are you building?'; shape = 'status';
+      say('f', 'Fact', [C(prim ? `Primary direction: ${L(prim)} (${NATIONAL_CONFIDENCE_LABEL[p.confidenceBand].toLowerCase()}, ${NATIONAL_MOMENTUM_LABEL[p.directionMomentum].toLowerCase()}).` : 'No national direction is established yet — the pattern is still emerging.', 'fact'),
+        p.secondaryDirection ? C(`Secondary direction: ${L(p.secondaryDirection)}.`, 'fact') : null, p.definingRegions.length ? C(`Defining regions: ${p.definingRegions.join(' • ')}.`, 'fact') : null]);
+      say('c', 'Calculated', [p.mainStrength ? C(`Main strength: ${p.mainStrength}.`, 'calculated') : null, p.mainExposure ? C(`Main exposure: ${p.mainExposure}.`, 'calculated') : null, C(`Value-chain depth ${p.valueChainDepth}; sector concentration ${p.sectorConcentration.band}; regional concentration ${p.regionalConcentration.band}.`, 'calculated')]);
+      say('i', 'Inference', [C(prim ? `Australia is developing toward ${L(prim).toLowerCase()}${p.secondaryDirection ? ` supported by ${NATIONAL_DIRECTION_SHORT[p.secondaryDirection].toLowerCase()} strength` : ''}. This is descriptive, not a locked class.` : `The strongest pattern so far is ${p.strongestPattern ? NATIONAL_DIRECTION_SHORT[p.strongestPattern].toLowerCase() : 'none'} growth — not enough structural evidence to call it a direction.`, 'inference')]);
+      if (p.mainOpportunity) say('p', 'Projection', [C(`Emerging opportunity: ${p.mainOpportunity} (explanatory — not an objective).`, 'projection')]);
+      break;
+    }
+    case 'why_direction': {
+      const d = query.directionId || prim; if (!d) { say('f', 'Fact', [C('No national direction is established yet.', 'fact')]); break; }
+      title = `Why ${L(d)}?`; shape = 'diagnosis';
+      const s = p.scores.find(x => x.directionId === d)!;
+      const pos = s.factors.filter(f => !f.negative && f.contribution > 0).sort((a, b) => b.contribution - a.contribution);
+      say('f', 'Strong evidence', pos.filter(f => f.value >= 0.5).slice(0, 5).map(f => C(`${f.label} (${band(f.value * 100)}).`, 'fact')));
+      say('c', 'Supporting evidence', pos.filter(f => f.value < 0.5 && f.value >= 0.2).slice(0, 4).map(f => C(`${f.label} (${band(f.value * 100)}).`, 'calculated')));
+      const counter = [...s.factors.filter(f => f.negative && f.value > 0.2).map(f => `${f.label}`), ...p.scores.filter(x => x.directionId !== d && x.score >= sc(d) * 0.75).slice(0, 2).map(x => `${L(x.directionId)} evidence remains substantial`)];
+      say('i', 'Counter-evidence', counter.length ? counter.map(t => C(t + '.', 'inference')) : [C('No strong counter-evidence.', 'inference')]);
+      if (d !== prim) say('p', 'Projection', [C(`${L(d)} is not the primary direction (${prim ? L(prim) : 'none established'}); it would need sustained structural growth to take over.`, 'projection')]);
+      break;
+    }
+    case 'driving_regions': {
+      title = 'Which regions drive the national strategy'; shape = 'explanation';
+      say('f', 'Fact', p.regionalContributions.filter(c => c.role !== 'minor').slice(0, 6).map(c => C(`${c.regionId}: ${c.primaryContribution} (${c.role}).`, 'fact')));
+      say('i', 'Inference', [C(p.definingRegions.length ? `${p.definingRegions.join(', ')} define the national structure today.` : 'No region defines a national direction yet.', 'inference')]);
+      break;
+    }
+    case 'weakness': {
+      title = 'Biggest national weakness'; shape = 'diagnosis';
+      const v0 = p.vulnerabilities[0];
+      say('f', 'Fact', v0 ? v0.evidence.slice(0, 2).map(e => C(e.factor + '.', 'fact')) : [C('No major national vulnerability is visible right now.', 'fact')]);
+      say('c', 'Calculated', p.vulnerabilities.slice(0, 3).map(x => C(`${x.label} (${x.magnitude})${x.regionIds.length ? ` — ${x.regionIds.join(', ')}` : ''}.`, 'calculated')));
+      if (p.tensions[0]) say('i', 'Inference', [C(`${p.tensions[0].title}: ${p.tensions[0].description}`, 'inference')]);
+      break;
+    }
+    case 'dependent_on_region': {
+      const r = query.regionId!; title = `Am I too dependent on ${REGIONS[r]?.name || r}?`; shape = 'diagnosis';
+      const c = contrib(r); const deps = p.dependencies.filter(d => d.regionIds.includes(r));
+      say('f', 'Fact', [c ? C(`${r}: ${c.primaryContribution} (${c.role} region).`, 'fact') : C(`${r} has no industrial role in the national structure yet.`, 'fact'), ...deps.slice(0, 3).map(d => C(`${d.label}.`, 'fact'))]);
+      say('c', 'Calculated', [C(`Regional concentration of the ${prim ? NATIONAL_DIRECTION_SHORT[prim].toLowerCase() : 'national'} model: ${p.regionalConcentration.band} (${Math.round(p.regionalConcentration.share * 100)}% in ${p.regionalConcentration.regionIds[0] || '—'}).`, 'calculated')]);
+      const heavy = p.regionalConcentration.regionIds[0] === r && p.regionalConcentration.band === 'HIGH';
+      say('i', 'Inference', [C(heavy ? `Yes — ${r} carries most of the national model; a disruption there would hit Australia's direction directly.` : deps.length ? `Partly — specific supply links run through ${r}, but the national model is not concentrated there.` : `No — ${r} is not a single point of national dependence.`, 'inference')]);
+      break;
+    }
+    case 'diversified': {
+      title = 'How diversified is Australia?'; shape = 'status';
+      say('f', 'Fact', [C(`Industrial diversity (V10.1): ${String(v.inputs.industries?.national?.diversityBand || 'unknown').replace(/_/g, ' ')}.`, 'fact')]);
+      say('c', 'Calculated', [C(`Industrial diversity ${band(p.dimensions.industrialDiversity)}, regional diversity ${band(p.dimensions.regionalDiversity)}, dependency concentration ${band(p.dimensions.dependencyConcentration)}.`, 'calculated'), C(`Sector concentration ${p.sectorConcentration.band}${p.sectorConcentration.sector ? ` (${INDUSTRY_LABEL[p.sectorConcentration.sector]} ${Math.round(p.sectorConcentration.share * 100)}% of output)` : ''}.`, 'calculated')]);
+      say('i', 'Inference', [C(prim === 'diversified_resilient_economy' ? 'Australia is a genuinely diversified economy — several industries are strong at once.' : sc('diversified_resilient_economy') >= 40 ? 'Diversification is plausible but not yet the defining pattern.' : 'Not diversified in the meaningful sense: diversification needs several genuinely strong industries, not a little of everything.', 'inference')]);
+      break;
+    }
+    case 'strategy_working': {
+      const al = nationalStrategyAlignment(p, v.strategy, Object.fromEntries(v.inputs.projects.map(x => [x.id, { projectType: x.projectType }])));
+      const d = query.directionId || al.implied[0] || null;
+      title = d ? `Is my ${NATIONAL_DIRECTION_SHORT[d].toLowerCase()} strategy working?` : 'Is my strategy working?'; shape = 'diagnosis';
+      say('f', 'Fact', [C(v.strategy ? `Your strategy: ${v.strategy.label}.` : 'You have no active strategy.', 'fact'), C(`National direction: ${L(prim)}.`, 'fact')]);
+      if (d) say('c', 'Calculated', [C(`${L(d)} evidence: ${band(sc(d))}${d === prim ? ' (primary)' : d === p.secondaryDirection ? ' (secondary)' : ''}.`, 'calculated')]);
+      say('i', 'Inference', [C(`Alignment ${al.alignment}: ${al.explanation}`, 'inference')]);
+      if (d) { const gaps = nationalPivotGaps(p, d, v.inputs.projects).filter(g => g.band === 'Weak').slice(0, 2); if (gaps.length) say('p', 'Projection', [C(`Main structural blocker${gaps.length > 1 ? 's' : ''}: ${gaps.map(g => g.label.toLowerCase()).join('; ')}.`, 'projection')]); }
+      break;
+    }
+    case 'move_toward': {
+      const d = query.directionId || 'renewable_energy_powerhouse'; title = `What would move Australia toward ${L(d)}?`; shape = 'plan';
+      const gaps = nationalPivotGaps(p, d, v.inputs.projects);
+      say('f', 'Fact', [C(`Current: ${L(prim)}${p.secondaryDirection ? ` + ${NATIONAL_DIRECTION_SHORT[p.secondaryDirection]}` : ''}.`, 'fact')]);
+      say('c', 'Current gaps', gaps.slice(0, 6).map(g => C(`${g.label}: ${g.band}.`, 'calculated')));
+      const cands = Array.from(new Set(gaps.flatMap(g => g.candidates))).slice(0, 3);
+      if (cands.length) say('i', 'Inference', [C(`Existing projects that would help: ${cands.join(', ')} (normal funding actions — not automatically the best move).`, 'inference')]);
+      say('p', 'Projection', [C('A change of direction needs sustained structural growth across several turns; it is possible, not guaranteed.', 'projection')]);
+      break;
+    }
+    case 'why_changing': {
+      title = 'Why is the national direction changing?'; shape = 'diagnosis';
+      if (!p.transition && p.directionMomentum !== 'weakening') { say('f', 'Fact', [C(`The national direction is not changing: ${L(prim)} is ${NATIONAL_MOMENTUM_LABEL[p.directionMomentum].toLowerCase()}.`, 'fact')]); break; }
+      if (p.transition) {
+        say('f', 'Fact', [C(`A structural transition began in round ${p.transition.sinceTurn}: ${L(p.transition.from)} → ${L(p.transition.to)}.`, 'fact')]);
+        const to = p.scores.find(s => s.directionId === p.transition!.to)!; say('c', 'Calculated', to.factors.filter(f => !f.negative).sort((a, b) => b.contribution - a.contribution).slice(0, 3).map(f => C(`${f.label}: ${band(f.value * 100)}.`, 'calculated')));
+        say('p', 'Projection', [C(`The new direction is confirmed only if it stays clearly ahead for ${V104_THRESHOLDS.transitionTurns} turns; ${L(p.transition.from).toLowerCase()} strengths would remain as a legacy foundation.`, 'projection')]);
+      } else say('i', 'Inference', [C(`${L(prim)} evidence is weakening: ${p.scores.find(s => s.directionId === prim)?.factors.filter(f => !f.negative).sort((a, b) => a.value - b.value)[0]?.label.toLowerCase() || 'its supporting structure'} is the weakest support.`, 'inference')]);
+      break;
+    }
+    case 'strategy_vs_direction': {
+      title = 'Strategy vs national direction'; shape = 'comparison';
+      const al = nationalStrategyAlignment(p, v.strategy);
+      say('f', 'Fact', [C(`Strategy = what you WANT (GI3${v.strategy ? `: ${v.strategy.label}` : ': none active'}). National direction = what Australia IS becoming (${L(prim)}).`, 'fact'), v.autoModeGoal ? C(`Auto Mode goal: ${v.autoModeGoal} — Auto Mode still owns its goal; it never sets the national direction.`, 'fact') : null]);
+      say('i', 'Inference', [C(`Alignment ${al.alignment}. ${al.explanation}`, 'inference'), C('Neither overrides the other, and the win condition stays whatever the match is configured for.', 'inference')]);
+      break;
+    }
+    case 'megaproject_impact': {
+      title = 'Which megaproject changed Australia the most?'; shape = 'explanation';
+      const progs = Object.values(v.inputs.megaprojects?.programs || {}).map(x => ({ x, done: x.stages.filter(s => s.status === 'completed').length })).filter(y => y.done > 0).sort((a, b) => b.done / b.x.stages.length - a.done / a.x.stages.length || a.x.id.localeCompare(b.x.id));
+      if (!progs.length) { say('f', 'Fact', [C('No national program has completed a stage yet.', 'fact')]); break; }
+      const top = progs[0]; const def = MEGAPROJECT_DEF_BY_KIND[top.x.kind];
+      say('f', 'Fact', progs.slice(0, 3).map(y => C(`${MEGAPROJECT_DEF_BY_KIND[y.x.kind].title}: ${y.done}/${y.x.stages.length} stages complete.`, 'fact')));
+      say('i', 'Inference', [C(`${def.title} reinforces ${(V104_PROGRAM_DIRECTIONS[top.x.kind] || []).map(d => NATIONAL_DIRECTION_SHORT[d].toLowerCase()).join(' and ')} development — but one program never forces a classification.`, 'inference')]);
+      break;
+    }
+    case 'region_decline': {
+      const r = query.regionId!; const k = query.industry || (p.regionalContributions.find(c => c.regionId === r)?.contributionTags[0] ? (Object.keys(V104_INDUSTRY_DIRECTION) as StrategicIndustryKind[]).find(x => V104_INDUSTRY_DIRECTION[x] === p.regionalContributions.find(c => c.regionId === r)!.contributionTags[0]) || null : null);
+      if (!k) { say('f', 'Fact', [C(`${r} has no significant industry to decline.`, 'fact')]); break; }
+      title = `What if ${r} ${INDUSTRY_LABEL[k].toLowerCase()} declined?`; shape = 'simulation';
+      const proj = nationalDevelopmentWhatIfDecline(v.inputs, r, k, v.persisted, p);
+      say('f', 'Fact', [C(`${r} ${INDUSTRY_LABEL[k].toLowerCase()} strength today: ${Math.round(v.inputs.industries?.regions[r]?.industries[k]?.strength || 0)}.`, 'fact')]);
+      say('p', 'Projection', proj.lines.slice(1).map(l => C(l, 'projection')).concat([C(`Projected direction: ${L(proj.after.scores[0]?.score >= V104_THRESHOLDS.entry ? proj.after.scores[0].directionId : null)} evidence leads (isolated — live state unchanged).`, 'projection')]));
+      break;
+    }
+  }
+  if (!sections.length) say('none', null, [C('National development has nothing to say about that yet.', 'fact')]);
+  return { title, sections, buttons: [], shape };
+}
+
+// ---- V10.4 UI ----------------------------------------------------------------------------------------------------
+const V104_BAND_WORD = (x: number) => (x >= 60 ? 'Strong' : x >= 40 ? 'Moderate' : x >= 20 ? 'Weak' : 'Minimal');
+/** PLAY: one compact line (no raw scores). Early game honestly says "Still emerging". */
+export const NationalDirectionPlayLine: React.FC<{ profile: NationalDevelopmentProfile | null; theme: any; onOpen: () => void; onAsk: (q: string) => void }> = ({ profile, theme, onOpen, onAsk }) => {
+  const line = nationalDevelopmentPlayLine(profile);
+  if (!line) return null;
+  return (
+    <section aria-label="National direction" className={`${theme.card} ${theme.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`} data-testid="nd-play-line">
+      <span className="font-bold uppercase tracking-wide opacity-70">National direction</span>
+      <button type="button" className="px-2 py-0.5 rounded border border-indigo-500" onClick={onOpen} data-testid="nd-play-title">{profile?.primaryDirection ? `${NATIONAL_DIRECTION_ICON[profile.primaryDirection]} ` : ''}{line.title}</button>
+      <span className="uppercase tracking-wide opacity-80">{line.status}</span>
+      {line.strength && <span>Main strength: <b>{line.strength}</b></span>}
+      {line.exposure && <span>Main exposure: <b>{line.exposure}</b></span>}
+      <button type="button" className="underline opacity-80" onClick={() => onAsk('What kind of Australia am I building?')}>What kind of Australia?</button>
+    </section>
+  );
+};
+
+/** INTELLIGENCE › National Development (10 views). Descriptive; bands not raw scores; What-If is isolated. */
+export const NationalDevelopmentCenter: React.FC<{ view: NationalDevelopmentWorldView; theme: any; onAsk: (q: string) => void }> = ({ view, theme, onAsk }) => {
+  const tabs = ['overview', 'direction', 'regional contributions', 'industry structure', 'networks', 'strengths', 'dependencies', 'resilience', 'strategic tensions', 'transformation history'] as const;
+  const [tab, setTab] = useState<typeof tabs[number]>('overview');
+  const [whatIf, setWhatIf] = useState<string[] | null>(null);
+  const [target, setTarget] = useState<NationalDevelopmentDirectionId>('technology_research_economy');
+  const p = view.profile; const prim = p.primaryDirection;
+  const al = nationalStrategyAlignment(p, view.strategy, Object.fromEntries(view.inputs.projects.map(x => [x.id, { projectType: x.projectType }])));
+  const factorList = (xs: NationalDevelopmentFactor[], empty: string) => (xs.length ? xs.map(f => <div key={f.id} data-testid="nd-factor">• <b>{f.label}</b> <span className="opacity-70">({f.magnitude}{f.regionIds.length ? ` · ${f.regionIds.join(', ')}` : ''})</span><div className="pl-3 opacity-70">{f.evidence.slice(0, 2).map(e => e.factor).join(' · ')}</div></div>) : <div className="opacity-70">{empty}</div>);
+  const candidates = view.inputs.projects.filter(x => x.status === 'unlocked' || x.status === 'under_construction').slice(0, 40);
+  const [proj, setProj] = useState<string>('');
+  const programs = MEGAPROJECT_DEFINITIONS.map(d => d.kind);
+  return (
+    <section aria-labelledby="nd-center-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} text-sm`} data-testid="nd-center">
+      <h3 id="nd-center-h" className="font-bold">🧭 National Development</h3>
+      <div className="opacity-80 text-xs">What kind of Australia is emerging from all of your decisions. Descriptive, not a locked class — it grants no bonuses and never changes the winner.</div>
+      <div className="flex flex-wrap gap-1 mt-2 text-xs" role="tablist">{tabs.map(t => <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-indigo-400 font-bold' : theme.border}`} data-testid={`nd-tab-${t.replace(/ /g, '-')}`}>{t}</button>)}</div>
+      <div className="mt-2 text-xs space-y-1" data-testid="nd-center-body">
+        {tab === 'overview' && <div data-testid="nd-overview">
+          <div><span className="opacity-70">Primary direction</span><div className="font-bold">{prim ? `${NATIONAL_DIRECTION_ICON[prim]} ${NATIONAL_DIRECTION_LABEL[prim]}` : 'Still emerging'}</div></div>
+          {p.secondaryDirection && <div><span className="opacity-70">Secondary direction</span><div className="font-bold">{NATIONAL_DIRECTION_ICON[p.secondaryDirection]} {NATIONAL_DIRECTION_LABEL[p.secondaryDirection]}</div></div>}
+          <div>Confidence <b>{NATIONAL_CONFIDENCE_LABEL[p.confidenceBand]}</b> · Momentum <b>{NATIONAL_MOMENTUM_LABEL[p.directionMomentum]}</b>{p.transition ? ` (${NATIONAL_DIRECTION_SHORT[p.transition.from]} → ${NATIONAL_DIRECTION_SHORT[p.transition.to]})` : ''}</div>
+          {p.definingRegions.length > 0 && <div>Defining regions <b>{p.definingRegions.join(' • ')}</b></div>}
+          {p.mainStrength && <div>Main strength <b>{p.mainStrength}</b></div>}
+          {p.mainExposure && <div>Main exposure <b>{p.mainExposure}</b></div>}
+          {p.mainOpportunity && <div>Emerging opportunity <b>{p.mainOpportunity}</b> <span className="opacity-60">(explanatory, not an objective)</span></div>}
+          {p.legacyStrengths.length > 0 && <div>Legacy strength <b>{p.legacyStrengths.map(l => l.label).join(', ')}</b></div>}
+          <div className="mt-1 p-2 rounded border border-indigo-700/40" data-testid="nd-alignment">Your strategy{view.strategy ? ` (${view.strategy.label})` : ''} vs national direction: <b>{al.alignment}</b> — {al.explanation}{view.autoModeGoal ? <div className="opacity-80">Auto Mode goal: {view.autoModeGoal} · Emerging national direction: {prim ? NATIONAL_DIRECTION_LABEL[prim] : 'still emerging'} (Auto Mode keeps its own goal)</div> : null}</div>
+        </div>}
+        {tab === 'direction' && <div data-testid="nd-direction">
+          {p.scores.slice(0, 5).map(s => <div key={s.directionId}>{NATIONAL_DIRECTION_ICON[s.directionId]} {NATIONAL_DIRECTION_LABEL[s.directionId]}: <b>{V104_BAND_WORD(s.score)}</b>{s.directionId === prim ? ' · primary' : s.directionId === p.secondaryDirection ? ' · secondary' : ''}
+            {(s.directionId === prim || (!prim && s === p.scores[0])) && <div className="pl-3 opacity-80">{s.factors.filter(f => !f.negative).sort((a, b) => b.contribution - a.contribution).slice(0, 4).map(f => `${f.label} (${V104_BAND_WORD(f.value * 100).toLowerCase()})`).join(' · ')}</div>}</div>)}
+          <div className="opacity-60">Bands summarise structural evidence; raw scores are LAB-only so the direction never becomes score-chasing.</div>
+        </div>}
+        {tab === 'regional contributions' && <div data-testid="nd-regions">{p.regionalContributions.map(c => <div key={c.regionId}><b>{c.regionId}</b> {c.primaryContribution} <span className="opacity-70">· {c.role}</span></div>)}</div>}
+        {tab === 'industry structure' && <div data-testid="nd-industry">
+          <div>Value-chain depth <b>{p.valueChainDepth}</b> · Sector concentration <b>{p.sectorConcentration.band}</b>{p.sectorConcentration.sector ? ` (${INDUSTRY_LABEL[p.sectorConcentration.sector]} ${Math.round(p.sectorConcentration.share * 100)}% of national output)` : ''} · Regional concentration <b>{p.regionalConcentration.band}</b>{p.regionalConcentration.regionIds.length ? ` (${p.regionalConcentration.regionIds.join(', ')})` : ''}</div>
+          <div>Industrial diversity {V104_BAND_WORD(p.dimensions.industrialDiversity)} · Regional diversity {V104_BAND_WORD(p.dimensions.regionalDiversity)} · Manufacturing depth {V104_BAND_WORD(p.dimensions.manufacturingDepth)} · Resource intensity {V104_BAND_WORD(p.dimensions.resourceIntensity)} · Technology {V104_BAND_WORD(p.dimensions.technologyIntensity)} · Research {V104_BAND_WORD(p.dimensions.researchIntensity)} · Renewables {V104_BAND_WORD(p.dimensions.renewableIntensity)}</div>
+        </div>}
+        {tab === 'networks' && <div data-testid="nd-networks">
+          <div>Trade integration {V104_BAND_WORD(p.dimensions.tradeIntegration)} · Infrastructure integration {V104_BAND_WORD(p.dimensions.infrastructureIntegration)} · Network resilience {V104_BAND_WORD(p.dimensions.networkResilience)} · Capital intensity {V104_BAND_WORD(p.dimensions.capitalIntensity)}</div>
+          {(view.inputs.networks?.networks || []).filter(n => n.regionIds.length >= 2).slice(0, 6).map(n => <div key={n.id}>{n.name}: {INFRA_MATURITY_LABEL[n.maturity]} · {n.regionIds.join('–')}</div>)}
+        </div>}
+        {tab === 'strengths' && <div data-testid="nd-strengths">{factorList(p.strengths, 'No defining national strength yet.')}{p.opportunities.length > 0 && <div className="mt-1"><b>Opportunities</b> (explanatory){factorList(p.opportunities, '')}</div>}</div>}
+        {tab === 'dependencies' && <div data-testid="nd-dependencies">{factorList(p.dependencies, 'No critical national dependency.')}</div>}
+        {tab === 'resilience' && <div data-testid="nd-resilience">
+          <div>National resilience <b>{p.resilience.band ? NATIONAL_RESILIENCE_LABEL[p.resilience.band] : '—'}</b></div>
+          {p.resilience.why.map(w => <div key={w}>• {w}</div>)}
+          {factorList(p.vulnerabilities, 'No major vulnerability.')}
+        </div>}
+        {tab === 'strategic tensions' && <div data-testid="nd-tensions">{p.tensions.length ? p.tensions.map(t => <div key={t.id} className="mb-1"><b>{t.title}</b> <span className="opacity-70">({t.severity})</span><div>{t.description}</div><div className="opacity-60">A tradeoff to understand — not a penalty.</div></div>) : <div className="opacity-70">No strategic tension right now.</div>}</div>}
+        {tab === 'transformation history' && <div data-testid="nd-history">{p.transformationHistory.length ? [...p.transformationHistory].reverse().slice(0, 15).map(m => <div key={m.id}>R{m.turn}: {m.summary}</div>) : <div className="opacity-70">No national milestones yet. History begins when it happens — never reconstructed.</div>}</div>}
+      </div>
+      <div className="mt-2 p-2 rounded border border-indigo-700/30 text-xs" data-testid="nd-whatif-panel">
+        <b>What-If (isolated — nothing changes)</b>
+        <div className="flex flex-wrap items-center gap-1 mt-1">
+          <select aria-label="Project" className="bg-transparent border rounded px-1 max-w-[14rem]" value={proj} onChange={e => setProj(e.target.value)} data-testid="nd-whatif-project"><option value="">Complete a project…</option>{candidates.map(x => <option key={x.id} value={x.id}>{x.title}</option>)}<optgroup label="National programs">{programs.map(k => <option key={k} value={`mp:${k}`}>{MEGAPROJECT_DEF_BY_KIND[k].title}</option>)}</optgroup></select>
+          <button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} disabled={!proj} data-testid="nd-whatif-run" onClick={() => { const r = proj.startsWith('mp:') ? nationalDevelopmentWhatIfProgram(view.inputs, view.ctx, proj.slice(3) as MegaprojectKind, view.persisted, p) : nationalDevelopmentWhatIfProjects(view.inputs, view.ctx, [proj], view.persisted, p); setWhatIf([`CURRENT: ${prim ? NATIONAL_DIRECTION_LABEL[prim] : 'still emerging'}${p.secondaryDirection ? ` + ${NATIONAL_DIRECTION_SHORT[p.secondaryDirection]}` : ''}`, ...r.lines]); }}>Project</button>
+          <span className="ml-2">Pivot toward</span>
+          <select aria-label="Target direction" className="bg-transparent border rounded px-1" value={target} onChange={e => setTarget(e.target.value as NationalDevelopmentDirectionId)} data-testid="nd-pivot-target">{NATIONAL_DIRECTIONS.map(d => <option key={d} value={d}>{NATIONAL_DIRECTION_LABEL[d]}</option>)}</select>
+          <button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} data-testid="nd-pivot-run" onClick={() => { const g = nationalPivotGaps(p, target, view.inputs.projects); setWhatIf([`WHAT WOULD IT TAKE: ${prim ? NATIONAL_DIRECTION_SHORT[prim] : 'Emerging'} → ${NATIONAL_DIRECTION_SHORT[target]}`, 'Current blockers:', ...g.slice(0, 6).map(x => `${x.label}: ${x.band}${x.candidates.length ? ` — existing options: ${x.candidates.join(', ')}` : ''}`), 'Possible, not guaranteed: a direction changes only after sustained structural growth.']); }}>Show gaps</button>
+        </div>
+        {whatIf && <div className="mt-1 p-2 rounded bg-slate-900/50" data-testid="nd-whatif">{whatIf.map((l, k) => <div key={k}>{l}</div>)}</div>}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2 text-xs">{['What kind of Australia am I building?', 'Why am I considered this kind of economy?', 'What is my biggest national weakness?', 'How diversified is Australia?', 'What is the difference between my strategy and national direction?'].map(q => <button key={q} type="button" className="underline" onClick={() => onAsk(q === 'Why am I considered this kind of economy?' ? `Why am I considered a ${prim ? NATIONAL_DIRECTION_SHORT[prim].toLowerCase().replace('-led', '') : 'resource'} economy?` : q)}>{q}</button>)}</div>
+    </section>
+  );
+};
+
+/** LAB › V10.4 National Development Inspector (17 views). Observes only; raw scores live here. */
+export const NationalDevelopmentInspector: React.FC<{ profile: NationalDevelopmentProfile | null; persisted: NationalDevelopmentPersisted | null; theme: any; enabled: boolean; diag: { recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number } }> = ({ profile, persisted, theme, enabled, diag }) => {
+  const [open, setOpen] = useState(false); const [tab, setTab] = useState('direction scores'); const [busy, setBusy] = useState(false); const [tests, setTests] = useState<V9SelfTestResult[] | null>(null);
+  const tabs = ['direction scores', 'primary', 'secondary', 'confidence', 'momentum', 'dimensions', 'regional contributions', 'strength factors', 'vulnerabilities', 'dependencies', 'strategic tensions', 'transformation history', 'hysteresis', 'evidence', 'recompute reason', 'performance', 'self tests'];
+  const p = profile; const issues = p ? validateNationalDevelopmentProfile(p, persisted) : [];
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV104NationalDevelopmentSelfTests()); } catch (err) { console.error('[V10.4 self-tests]', err); } finally { setBusy(false); } };
+  const fl = (xs: NationalDevelopmentFactor[]) => xs.map(f => <div key={f.id}>{f.id} [{f.category}] {f.label} · {f.magnitude} · regions {f.regionIds.join(',') || '—'} · evidence {f.evidence.map(e => `${e.sourceSystem}:${e.sourceId}`).join(', ')}</div>);
+  return (
+    <section aria-labelledby="nd-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="nd-inspector">
+      <div className="flex items-center justify-between"><h3 id="nd-lab-h" className="font-bold text-sm">🧭 V10.4 National Development Inspector</h3><button type="button" className="underline" onClick={() => setOpen(o => !o)} data-testid="nd-inspector-toggle">{open ? 'Hide' : 'Inspect'}</button></div>
+      <div className="opacity-80">{enabled ? (p ? `rev ${p.revision} · primary ${p.primaryDirection || '—'} · ${p.confidenceBand} · structural evidence ${p.structuralEvidence} · validation ${issues.length ? `${issues.length} issue(s)` : 'OK'}` : 'not computed yet') : 'National Development is OFF (V10.0–V10.3 continue)'}</div>
+      {open && (
+        <div className="mt-2">
+          <div className="flex flex-wrap gap-1">{tabs.map(t => <button key={t} type="button" onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-indigo-400 font-bold' : theme.border}`} data-testid={`nd-lab-tab-${t.replace(/ /g, '-')}`}>{t}</button>)}</div>
+          <div className="mt-2 max-h-72 overflow-auto font-mono" data-testid="nd-inspector-body">
+            {!p && <div>No profile.</div>}
+            {p && tab === 'direction scores' && p.scores.map(s => <div key={s.directionId}><b>{s.directionId} {s.score}</b> = {s.factors.map(f => `${f.negative ? '−' : ''}${f.label}[${f.source}] v${f.value}×w${f.weight}→${f.contribution}`).join(' + ')}</div>)}
+            {p && tab === 'primary' && <div>{p.primaryDirection || 'null'} · since R{persisted?.current.primary?.since ?? '—'} · held {persisted?.current.primary?.heldTurns ?? 0} turns · strongest pattern {p.strongestPattern || '—'}</div>}
+            {p && tab === 'secondary' && <div>{p.secondaryDirection || 'null'} · since R{persisted?.current.secondary?.since ?? '—'} · entry {V104_THRESHOLDS.secondaryEntry} / exit {V104_THRESHOLDS.secondaryExit} / ratio {V104_THRESHOLDS.secondaryRatio}</div>}
+            {p && tab === 'confidence' && <div>band {p.confidenceBand} · value {p.directionConfidence} · structural evidence {p.structuralEvidence} (min {V104_THRESHOLDS.minStructuralEvidence}) · establish ≥{V104_THRESHOLDS.establishScore} for {V104_THRESHOLDS.establishTurns} turns · strong ≥{V104_THRESHOLDS.strongScore} for {V104_THRESHOLDS.strongTurns}</div>}
+            {p && tab === 'momentum' && <div>{p.directionMomentum} · transition {p.transition ? JSON.stringify(p.transition) : '—'} · score history {(persisted?.current.scoreHistory || []).map(h => `R${h.turn}:${p.primaryDirection ? h.scores[p.primaryDirection] ?? '—' : '—'}`).join(' ')}</div>}
+            {p && tab === 'dimensions' && Object.entries(p.dimensions).map(([k, x]) => <div key={k}>{k}: {x}</div>)}
+            {p && tab === 'regional contributions' && p.regionalContributions.map(c => <div key={c.regionId}>{c.regionId} {c.role} {c.strength} [{c.contributionTags.join(',')}] {c.primaryContribution}</div>)}
+            {p && tab === 'strength factors' && fl(p.strengths)}
+            {p && tab === 'vulnerabilities' && fl(p.vulnerabilities)}
+            {p && tab === 'dependencies' && fl(p.dependencies)}
+            {p && tab === 'strategic tensions' && p.tensions.map(t => <div key={t.id}>{t.id} {t.title} ({t.severity}): {t.sideA} vs {t.sideB} · {t.evidence.map(e => e.factor).join('; ')}</div>)}
+            {p && tab === 'transformation history' && (persisted?.milestones.length ? persisted.milestones.map(m => <div key={m.id}>{m.id} R{m.turn} {m.kind} {m.directionId || ''}: {m.summary}</div>) : <div>No milestones (none invented for older saves).</div>)}
+            {p && tab === 'hysteresis' && <div>thresholds {JSON.stringify(V104_THRESHOLDS)} · base {JSON.stringify(persisted?.base.primary)} · current {JSON.stringify(persisted?.current.primary)} · transition {JSON.stringify(persisted?.current.transition)} · legacy {JSON.stringify(persisted?.current.legacy)}</div>}
+            {p && tab === 'evidence' && p.evidence.slice(0, 60).map((e, k) => <div key={`${e.id}_${k}`}>{e.sourceSystem}:{e.sourceId} · {e.factor} · {e.contribution} · {e.visibility}</div>)}
+            {tab === 'recompute reason' && <div>recomputes {diag.recomputes} · last reason: {diag.lastReason} · input hash {persisted?.inputHash || '—'} · domain-hash keyed, event-driven (no per-frame recompute)</div>}
+            {tab === 'performance' && <div>last {diag.lastMs} ms · profile compute {p?.computeMs ?? '—'} ms · events emitted {diag.eventsEmitted} · bounds {JSON.stringify(V104_LIMITS)}</div>}
+            {tab === 'self tests' && <div><button type="button" className={`px-2 py-1 rounded border ${theme.border}`} onClick={runTests} disabled={busy} data-testid="nd-run-tests">{busy ? 'Running…' : 'Run V10.4 self-tests'}</button>
+              {tests && <div data-testid="nd-test-results">{tests.filter(t => t.passed).length}/{tests.length} passed{tests.filter(t => !t.passed).map(t => <div key={t.id} className="text-rose-300">{t.id}: {t.detail}</div>)}</div>}</div>}
+            {p && issues.map(x => <div key={x} className="text-rose-300">{x}</div>)}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
 
 // ============================================================================
 // SECTION 21: MAIN AUSTRALIA GAME COMPONENT
@@ -149033,7 +150207,11 @@ function dispatchGameSettingsChange(
 	      const v10Ns = nsStateRef.current;
 	      // V10.2: infrastructure candidates that close a real missing link / relieve a critical point score a little higher.
 	      const v102In = inStateRef.current;
-	      if (v102In) decisions.forEach(decision => { if (decision.type !== 'fund_infrastructure') return; const o = infraProjectNetworkOutlook(v102In, String(decision.data?.projectId || '')); if (o.factor > 0) decision.score *= 1 + o.factor; });
+	      // V10.4: regions that define the PUBLIC national structure are slightly more worth contesting (≤ +5%). Public
+      // world-state evidence only — never treated as the player's hidden plan; adds no action and no extra AI loop.
+      const v104Nd = ndProfileRef.current;
+      if (v104Nd) decisions.forEach(decision => { if (decision.type !== 'region_deposit' && decision.type !== 'invest') return; const o = nationalDirectionAiOutlook(v104Nd, String(decision.data?.region || '')); if (o.factor > 0) decision.score *= 1 + o.factor; });
+      if (v102In) decisions.forEach(decision => { if (decision.type !== 'fund_infrastructure') return; const o = infraProjectNetworkOutlook(v102In, String(decision.data?.projectId || '')); if (o.factor > 0) decision.score *= 1 + o.factor; });
 	      if (v10Ns) {
 	        decisions.forEach(decision => {
 	          if (decision.type !== 'region_deposit' && decision.type !== 'invest' && decision.type !== 'travel') return;
@@ -173614,6 +174792,58 @@ function dispatchGameSettingsChange(
     return c.cmd ? c : null;
   };
 
+  // ---- V10.4 National Development Strategy: live wiring --------------------------------------------------------
+  // The profile is DERIVED from canonical/derived snapshots (LR, V10.0–V10.3, projects, contracts). Only history
+  // (hysteresis memory, transitions, milestones) is persisted. Recompute is keyed on the domain input hash (structure,
+  // turn boundary, banded viewer cash) — never per frame. Emits only major structural transitions to World Reaction;
+  // no system derives state from those events (cycle-safe). No bonuses, no actions, no win-condition effect.
+  const ndEnabled = Boolean(nsEnabled && gameSettings.nationalDevelopmentEnabled !== false);
+  const ndStoredRaw = (gameState as any).nationalDevelopment;
+  const ndPersisted = useMemo(() => sanitizeNationalDevelopmentPersisted(ndStoredRaw), [ndStoredRaw]);
+  const ndPersistedRef = useRef<NationalDevelopmentPersisted | null>(ndPersisted); ndPersistedRef.current = ndPersisted;
+  const ndViewerId = String(player?.id || 'player');
+  const ndCommitted = useMemo(() => Object.values(mpPersisted?.programs || {}).filter(p => !p.abandoned && p.status !== 'completed').reduce((a, p) => a + Number(p.contributorTotals?.[ndViewerId]?.capital || 0), 0), [mpPersisted, ndViewerId]);
+  const ndInputs = useMemo<NationalDevelopmentInputs | null>(() => (ndEnabled && nsState ? buildNationalDevelopmentInputs({ turn: lrInputs.turn, totalDays: Number((gameSettings as any).totalDays) || 30, lr: lrState, national: nsState, industries: scState, networks: inState,
+    megaprojects: mpEnabled ? mpPersisted : null, projects: gameState.infrastructureProjects as any, contracts: lrInputs.contracts, owners: nsRegionOwners, viewer: { cash: Number(player?.money || 0), committedProgramCapital: ndCommitted } }) : null),
+    [ndEnabled, nsState, lrInputs.turn, lrInputs.contracts, (gameSettings as any).totalDays, lrState, scState, inState, mpEnabled, mpPersisted, gameState.infrastructureProjects, nsRegionOwners, player?.money, ndCommitted]);
+  const ndHash = useMemo(() => (ndInputs ? nationalDevelopmentInputHash(ndInputs) : ''), [ndInputs]);
+  const ndProfile = useMemo<NationalDevelopmentProfile | null>(() => (ndInputs ? computeNationalDevelopment(ndInputs, ndPersistedRef.current, { emit: false }).profile : null),
+    [ndHash, ndPersisted?.revision, ndPersisted?.current.lastTurn]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ndProfileRef = useRef<NationalDevelopmentProfile | null>(ndProfile); ndProfileRef.current = ndProfile;
+  const ndDiagRef = useRef({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0 });
+  useEffect(() => {
+    if (!ndEnabled || !ndInputs || gameState.gameMode !== 'game') return;
+    const prev = ndPersistedRef.current;
+    if (prev && prev.inputHash === ndHash && prev.current.lastTurn === ndInputs.turn) return;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    const res = computeNationalDevelopment(ndInputs, prev);
+    const d = ndDiagRef.current;
+    d.recomputes += 1; d.lastMs = Math.round(((typeof performance !== 'undefined' ? performance.now() : 0) - t0) * 10) / 10;
+    d.lastReason = !prev ? 'first derivation (history begins now — none invented)' : prev.current.lastTurn !== ndInputs.turn ? 'turn boundary (memory advanced once)' : 'national structure changed (input hash)';
+    if (res.events.length) {
+      d.eventsEmitted += res.events.length;
+      const day = Number(gameState.day || 1);
+      const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), res.events.map(x => nationalDevelopmentToWorldEvent(x, lrObservers, day)), swrInputs, { handlers: swrHandlers });
+      persistWorldReaction(out.state);
+      res.events.filter(x => x.significance === 'major').slice(0, 2).forEach(x => appendGameActivityLedgerEvent('decision', { actorId: 'system', eventType: x.kind, summary: x.text } as any));
+    }
+    ndPersistedRef.current = res.persisted;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { nationalDevelopment: res.persisted } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ndHash, ndEnabled, ndInputs?.turn, gameState.gameMode]);
+  const ndRivalId = aiPlayer?.id ? String(aiPlayer.id) : 'ai';
+  const ndView = useMemo<NationalDevelopmentWorldView | null>(() => {
+    if (!ndProfile || !ndInputs) return null;
+    const c = gi3Live?.active;
+    const goalId = (gameSettings as any).autoModeSettings?.primaryGoal as AutoModePrimaryGoalId | undefined;
+    return { profile: ndProfile, persisted: ndPersisted, inputs: ndInputs,
+      strategy: c ? { label: c.mission?.label || 'Your strategy', goals: (c.goals || []).map((g: any) => ({ type: String(g.type || ''), label: String(g.label || g.title || ''), regionId: g.regionId || undefined, projectId: g.projectId || undefined })) } : null,
+      autoModeGoal: goalId && AUTO_MODE_PRIMARY_GOALS[goalId] ? AUTO_MODE_PRIMARY_GOALS[goalId].label : null, rivalName: swrInputs.ownerNames[ndRivalId] || aiPlayer?.name || 'Rival',
+      you: actorDevelopmentContribution(ndInputs, ndViewerId).directionId, rival: actorDevelopmentContribution(ndInputs, ndRivalId).directionId, ctx: { nsInputs, scInputs } };
+  }, [ndProfile, ndInputs, ndPersisted, gi3Live, (gameSettings as any).autoModeSettings, swrInputs.ownerNames, ndRivalId, aiPlayer?.name, ndViewerId, nsInputs, scInputs]);
+  const ndViewRef = useRef(ndView); ndViewRef.current = ndView;
+  if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, development: ndEnabled ? ndView : null };
+
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
 
@@ -173930,11 +175160,12 @@ function dispatchGameSettingsChange(
       controllers, rivalRegion: aiPlayer?.currentRegion ? String(aiPlayer.currentRegion) : null, rivalName: String(aiPlayer?.name || 'Rival'),
       contracts, projects, crises, momentum, factionBands, deals,
       infraNetworks: Object.fromEntries((inState?.networks || []).filter(n => n.memberRegionIds.length >= 2).map(n => [n.id, `${n.maturity}|${n.name}`])),
+      ...(ndEnabled && ndProfile ? { nationalDirection: JSON.stringify({ p: ndProfile.primaryDirection, b: ndProfile.confidenceBand, r: ndProfile.definingRegions }) } : {}),
       megaprojects: Object.fromEntries(Object.values(mpPersisted?.programs || {}).map(p => { const st = megaprojectStageView(p); const done = st.filter(x => x.status === 'completed'); const def = MEGAPROJECT_DEF_BY_KIND[p.kind];
         return [p.id, JSON.stringify({ d: done.length, t: st.length, title: def.title, stage: done[done.length - 1]?.title || '', regions: done.length === st.length ? def.regionIds : done[done.length - 1]?.requiredRegionIds || [], c: Object.keys(p.contributorTotals).map(a => swrInputs.ownerNames[a] || a) })]; })),
       industries: Object.fromEntries(Object.values(scState?.regions || {}).flatMap(r => (Object.values(r.industries) as IndustryState[]).filter(x => x.strength >= 25).map(x => [`${r.regionId}:${x.industry}`, x.condition])))
     };
-  }, [scState, inState, mpPersisted, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
+  }, [scState, inState, mpPersisted, ndEnabled, ndProfile, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
   const v94PrevRef = useRef<FeelSnapshot | null>(null);
   useEffect(() => {
     const prev = v94PrevRef.current; v94PrevRef.current = feelSnapshot;
@@ -174030,6 +175261,12 @@ function dispatchGameSettingsChange(
         const b = sc.bottlenecks.find(x => x.regionId === String(player.currentRegion || '') && x.input) || sc.bottlenecks.find(x => x.input);
         return b ? `${REGIONS[b.regionId]?.name || b.regionId}'s ${INDUSTRY_LABEL[b.industry].toLowerCase()} is currently short of ${SUPPLY_LABEL[b.input!].toLowerCase()} inputs.` : null;
       })(),
+      nationalDirection: (() => {
+        const p = ndProfile; if (!ndEnabled || !p?.primaryDirection || p.confidenceBand === 'unclear') return null;
+        const l = NATIONAL_DIRECTION_LABEL[p.primaryDirection].replace(/ (Economy|Powerhouse|Hub)$/, '');
+        return `Your decisions are beginning to shape Australia into ${/^[AEIOU]/.test(l) ? 'an' : 'a'} ${l} economy.`;
+      })(),
+      nationalTension: ndEnabled && ndProfile?.tensions[0] ? `${ndProfile.tensions[0].title}: ${ndProfile.tensions[0].description}` : null,
       megaproject: (() => {
         if (!mpEnabled) return null;
         const p = Object.values(mpPersisted?.programs || {}).find(x => !x.abandoned);
@@ -174056,7 +175293,7 @@ function dispatchGameSettingsChange(
         return d ? `Most of ${REGIONS[d.consumerRegionId]?.name || d.consumerRegionId}'s available ${SUPPLY_LABEL[d.supply].toLowerCase()} currently comes from ${REGIONS[d.providerRegionId]?.name || d.providerRegionId}.` : null;
       })()
     };
-  }, [nsState, scState, inState, mpEnabled, mpPersisted, mpWorld, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
+  }, [nsState, scState, inState, mpEnabled, mpPersisted, mpWorld, ndEnabled, ndProfile, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
   const glSelection = useMemo(() => (isLiveIntentMatch ? selectNextLearningMoment(glCtx, glLearning, gameSettings, glPresentation) : { moment: null, level: 0, mode: 'off' as LearningMode, eligible: [], suppressed: [{ id: '*', reason: 'no live match' }], budget: { thisTurn: 0, window: 0, max: LEARNING_LIMITS.perTurn } }), [glCtx, glLearning, gameSettings, glPresentation, isLiveIntentMatch]);
   // A new live match starts a fresh hint session (budget + active lesson reset; mastery persists).
   const glWasLiveRef = useRef(false);
@@ -178443,6 +179680,10 @@ function dispatchGameSettingsChange(
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v103-setting-megaprojects">
                     <input type="checkbox" checked={gameSettings.megaprojectsEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🏗 National Megaprojects', prev => ({ ...prev, megaprojectsEnabled: e.target.checked }))} />
                     National Megaprojects (V10.3): rare multi-stage national programs built from canonical projects — proposals, shared funding, design choices (needs National Systems and state infrastructure)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm mt-2" data-testid="v104-setting-national-development">
+                    <input type="checkbox" checked={gameSettings.nationalDevelopmentEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🧭 National Development', prev => ({ ...prev, nationalDevelopmentEnabled: e.target.checked }))} />
+                    National Development Strategy (V10.4): a descriptive reading of what kind of Australia is emerging — direction, strengths, exposures, tensions (no bonuses; needs National Systems)
                   </label>
                   {([
                     ['v93StartingPackage', 'Starting conditions', STARTING_CONDITION_PACKAGES.map(p => [p.id, `${p.label} — ${p.summary}`])],
@@ -189990,6 +191231,7 @@ function dispatchGameSettingsChange(
             coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
           />
 
+          {ndEnabled && ndProfile && <NationalDirectionPlayLine profile={ndProfile} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {mpEnabled && mpPersisted && <MegaprojectPlayLine line={megaprojectPlayLine(mpPersisted, mpWorld, mpViewerId)} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {inState && <InfraPlayLine state={inState} focus={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={inShowOnMap} />}
           {scState && <IndustryPlayStrip state={scState} focusRegions={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={scShowOnMap} />}
@@ -190157,6 +191399,11 @@ function dispatchGameSettingsChange(
             {scState && (
               <OptionalSurfaceBoundary surface="Industries & Supply Chains">
                 <IndustriesIntelPanel state={scState} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={scShowOnMap} />
+              </OptionalSurfaceBoundary>
+            )}
+            {ndEnabled && ndView && (
+              <OptionalSurfaceBoundary surface="National Development">
+                <NationalDevelopmentCenter view={ndView} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} />
               </OptionalSurfaceBoundary>
             )}
             {mpEnabled && (
@@ -190334,6 +191581,9 @@ function dispatchGameSettingsChange(
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10.1 Industries & Supply Chains Inspector">
           <IndustriesInspector state={scState} persisted={scPersisted} theme={themeStyles} diag={scDiagRef.current} enabled={scEnabled} />
+        </OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="V10.4 National Development Inspector">
+          <NationalDevelopmentInspector profile={ndProfile} persisted={ndPersisted} theme={themeStyles} enabled={ndEnabled} diag={ndDiagRef.current} />
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10.3 Megaproject Inspector">
           <MegaprojectInspector persisted={mpPersisted} world={mpWorld} theme={themeStyles} diag={mpDiagRef.current} enabled={mpEnabled} />
@@ -200658,6 +201908,12 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="ns-debrief">
 	              <span className="font-bold text-sky-300">National turning points: </span>
 	              {buildNationalDebrief(nsPersistedRef.current).join(' · ')}
+	            </div>
+	          )}
+	          {ndEnabled && ndProfileRef.current && (
+	            <div className="p-3 rounded-xl bg-black/20 border border-indigo-700/40 text-xs leading-relaxed" data-testid="nd-debrief">
+	              <div className="font-bold text-indigo-300 tracking-wide">THE AUSTRALIA YOU BUILT</div>
+	              {buildNationalDevelopmentDebrief(ndProfileRef.current, ndPersistedRef.current, mpPersistedRef.current, ndViewRef.current ? { you: ndViewRef.current.you, rival: ndViewRef.current.rival, rivalName: ndViewRef.current.rivalName } : null).map(l => <div key={l}>{l}</div>)}
 	            </div>
 	          )}
 	          {buildMegaprojectDebrief(mpPersistedRef.current).length > 0 && (
