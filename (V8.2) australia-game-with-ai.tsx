@@ -173557,6 +173557,16 @@ function dispatchGameSettingsChange(
     dispatchGameState({ type: 'LOAD_STATE', payload });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mpHash, mpEnabled]);
+  // Older saves predate the V10.3 capstone projects: add their canonical (locked, unfunded) definitions once — same engine,
+  // same costs/maintenance as a new match's content seeding. Never touches existing projects or progress.
+  useEffect(() => {
+    if (!mpEnabled || gameState.gameMode !== 'game') return;
+    const ip: any = gameState.infrastructureProjects; if (!ip || Array.isArray(ip) || !Object.keys(ip).length) return;
+    const missing = V93_INFRASTRUCTURE_PROJECTS.filter(p => p.id.startsWith('infra_v103_') && !ip[p.id]);
+    if (!missing.length) return;
+    const next = { ...ip }; missing.forEach(p => { next[p.id] = JSON.parse(JSON.stringify(p)); });
+    dispatchGameState({ type: 'LOAD_STATE', payload: { infrastructureProjects: next } as any });
+  }, [mpEnabled, gameState.gameMode, gameState.infrastructureProjects]);
   /** One command through the canonical reducer (validation + cash exactly once). The AI's AP is counted by executeAiAction. */
   const mpRunCommand = useCallback((who: 'human' | 'ai', cmd: MegaprojectCommand): { ok: boolean; reason: string | null } => {
     const human: any = playerRef.current; const ai: any = aiPlayerRef.current;
