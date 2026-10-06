@@ -10815,6 +10815,7 @@ export function canonicalStateFromLiveRuntime(
     worldReaction: sanitizeWorldReactionState((liveState as any).worldReaction || (gameState as any)?.worldReaction),
     livingRegions: sanitizeLivingRegionsState((liveState as any).livingRegions || (gameState as any)?.livingRegions),
     regionalFactions: sanitizeRegionalFactionsState((liveState as any).regionalFactions || (gameState as any)?.regionalFactions),
+    megaprojects: sanitizeMegaprojectsPersisted((liveState as any).megaprojects || (gameState as any)?.megaprojects),
     contentState: sanitizeMatchContentState((liveState as any).contentState || (gameState as any)?.contentState),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
@@ -11801,6 +11802,33 @@ export function reduceGameAction(
               }
               actionExecuted = true;
             }
+          }
+          break;
+        }
+
+        case 'megaproject_command': {
+          // V10.3: thin canonical program action (propose / commit / contribute / choose / suspend / resume). applyMegaprojectCommand
+          // validates turn ownership, authority, AP, cash, program + stage state, the stage-remainder cap and prerequisites; real cash
+          // moves HERE exactly once and AP is spent once by the shared post-switch rule. A rejected command executes nothing.
+          if (!actor) break;
+          const gsLive: any = (nextState as any).gameState || {};
+          const isAiActor = actorId === 'ai' || actor.kind === 'ai' || Boolean(actor.isAi);
+          const soloAiTurn = gsLive.gameMode === 'game' && isSoloRivalModeSelection(gsLive.selectedMode) && Boolean(gsLive.currentTurn);
+          const turnOwner = isAiActor ? !(soloAiTurn && gsLive.currentTurn !== 'ai') : !isHumanLockedOutForSoloRival(gsLive, 'human');
+          const limitsOn = gameSettings.actionLimitsEnabled !== false;
+          const apRemaining = limitsOn ? getRemainingActionPoints(actor, gameSettings) : Number.POSITIVE_INFINITY;
+          const apCost = limitsOn ? Math.max(1, getActionPointCost('megaproject_command', actor, gameSettings)) : 0;
+          // Derived (read-only) system snapshots are pure functions of canonical state; the caller passes the ones it already computed.
+          const derived: any = action.parameters?.derived || {};
+          const mpWorld = buildMegaprojectWorld({ turn: Number(nextState.turn) || 1, totalDays: (gameSettings as any).totalDays, enabled: (gameSettings as any).megaprojectsEnabled !== false && (gameSettings as any).nationalSystemsEnabled !== false,
+            infrastructureEnabled: Boolean((gameSettings as any).stateInfrastructureEnabled), gameOver: Boolean(gsLive.isGameOver) || (typeof gsLive.gameMode === 'string' && gsLive.gameMode !== 'game'), projects: nextState.infrastructureProjects, regionalDevLevels: nextState.regionalDevLevels,
+            national: derived.national || null, industries: derived.industries || null, networks: derived.networks || null, factions: (nextState as any).regionalFactions || null, flags: (nextState as any).contentState?.flags || gsLive.contentState?.flags || {} });
+          const mpRes = applyMegaprojectCommand((nextState as any).megaprojects || null, (action.parameters?.command || {}) as MegaprojectCommand,
+            { id: actorId, kind: isAiActor ? 'ai' : 'human', teamId: actor.teamId || null, money: Number(actor.money) || 0, currentRegion: actor.currentRegion || null, apRemaining, apCost, turnOwner }, mpWorld);
+          if (mpRes.ok) {
+            actor.money -= mpRes.moneySpent;
+            (nextState as any).megaprojects = mpRes.persisted;
+            actionExecuted = true;
           }
           break;
         }
@@ -14058,6 +14086,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   nationalSystemsEnabled: true,
   industriesEnabled: true,
   infraNetworksEnabled: true,
+  megaprojectsEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26403,6 +26432,8 @@ export type GameSettingsState = {
   industriesEnabled?: boolean;
   /** V10.2 Strategic Infrastructure Networks (requires National Systems; off = V10.0/V10.1 without network interpretation). */
   infraNetworksEnabled?: boolean;
+  /** V10.3 National Megaprojects (needs National Systems and state infrastructure; off = no programs, nothing else changes). */
+  megaprojectsEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36143,6 +36174,8 @@ export const initialGameState = {
   industries: null as any,
   /** V10.2: only non-derivable network memory (bands, bounded history); networks are always re-derived. */
   infrastructureNetworks: null as any,
+  /** V10.3: national program memory (non-derivable: proposals, contributions, choices, stage progress). */
+  megaprojects: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -46995,6 +47028,7 @@ export interface AIAction {
     | 'start_narrative_story_leg' | 'startNarrativeStoryLeg' | 'resolveExpeditionBeatChoice' | 'resolve_expedition_beat_choice' | 'buy_supplies' | 'BUY_SUPPLIES'
     | 'invest_infrastructure' | 'invest_infrastructure_project' | 'start_infrastructure_project' | 'startInfrastructure' | 'contribute_infrastructure_labor' | 'contributeInfrastructureLabor' | 'complete_infrastructure_project' | 'upgrade_regional_dev_level' | 'apply_regional_bonus'
     | 'resolve_crisis_choice' | 'resolveCrisisChoice' | 'mitigate_crisis' | 'mitigateCrisis' | 'work' | 'double_or_nothing' | 'support' | 'progress_contract_objective' | 'deliver_contract_objectives'
+    | 'megaproject_contribute'
     | 'create_replay_branch' | 'createReplayBranch' | 'switch_replay_branch' | 'switchReplayBranch' | 'switch_active_timeline' | 'simulate_alternative_action' | 'compute_branch_delta' | 'prune_replay_branch' | 'merge_timeline_outcomes';
   description: string;
   data?: any;
@@ -80102,6 +80136,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.industries = sanitizeIndustriesPersisted(migrated.gameState.industries);
   // V10.2: pre-V10.2 saves — networks are derived from current projects on load; no fake formation history.
   if (migrated.gameState) migrated.gameState.infrastructureNetworks = sanitizeInfraNetworksPersisted(migrated.gameState.infrastructureNetworks);
+  // V10.3: pre-V10.3 saves get an empty program registry (null) — never invented programs.
+  if (migrated.gameState) migrated.gameState.megaprojects = sanitizeMegaprojectsPersisted(migrated.gameState.megaprojects);
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -122061,7 +122097,9 @@ export type SWRKind =
   | 'critical_supply_dependency_formed' | 'critical_supply_dependency_reduced' | 'industrial_output_accelerated' | 'industrial_output_declined'
   // V10.2 Strategic Infrastructure Networks (derived structural transitions; the network layer never consumes these).
   | 'infrastructure_network_formed' | 'infrastructure_network_integrated' | 'infrastructure_network_fragmented' | 'infrastructure_network_restored'
-  | 'critical_infrastructure_point_emerged' | 'critical_infrastructure_point_resolved' | 'network_redundancy_improved' | 'network_resilience_deteriorated' | 'national_gateway_became_critical';
+  | 'critical_infrastructure_point_emerged' | 'critical_infrastructure_point_resolved' | 'network_redundancy_improved' | 'network_resilience_deteriorated' | 'national_gateway_became_critical'
+  // V10.3 National Megaprojects (program transitions; the program layer never consumes these).
+  | 'megaproject_proposed' | 'megaproject_committed' | 'megaproject_stage_completed' | 'megaproject_partially_operational' | 'megaproject_stalled' | 'megaproject_resumed' | 'megaproject_completed' | 'megaproject_abandoned';
 
 export type SWRSignificance = 'ignore' | 'minor' | 'meaningful' | 'major' | 'critical';
 export type SWRVisibility = 'public' | 'team_only' | 'actor_only' | 'observed_by' | 'hidden';
@@ -122567,21 +122605,22 @@ const SWR_RF_KINDS: SWRKind[] = ['faction_influence_shift', 'faction_relationshi
 const SWR_NS_KINDS: SWRKind[] = ['national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_resilience_improved', 'national_resilience_deteriorated', 'national_capacity_expanded'];
 const SWR_SC_KINDS: SWRKind[] = ['industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'industrial_output_accelerated', 'industrial_output_declined'];
 const SWR_IN_KINDS: SWRKind[] = ['infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'network_redundancy_improved', 'network_resilience_deteriorated', 'national_gateway_became_critical'];
+const SWR_MP_KINDS: SWRKind[] = ['megaproject_proposed', 'megaproject_committed', 'megaproject_stage_completed', 'megaproject_partially_operational', 'megaproject_stalled', 'megaproject_resumed', 'megaproject_completed', 'megaproject_abandoned'];
 const SWR_LR_KINDS: SWRKind[] = ['region_entered_boom', 'regional_growth_accelerated', 'regional_decline_started', 'regional_need_became_critical', 'specialization_established', 'core_region_emerged'];
 const swrGi3Regions = (s: SWRInputs) => new Set([...(s.gi3?.protectRegions || []), ...(s.gi3?.futureRegions || [])]);
 
 export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
-  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'national_gateway_became_critical', 'industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
+  { system: 'rival_strategy', label: 'Rival AI strategy', kinds: ['megaproject_committed', 'megaproject_stalled', 'megaproject_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'national_gateway_became_critical', 'industry_became_constrained', 'critical_supply_dependency_formed', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'region_entered_boom', 'regional_growth_accelerated', 'core_region_emerged', 'diplomatic_pact_started', 'diplomatic_pact_broken', 'diplomatic_pact_ended', 'liquidity_improved', 'actor_became_constrained', 'victory_pressure_changed'], minSignificance: 'meaningful', evaluation: () => 'reconsider_region_target', timing: 'immediate', cooldownTurns: 1, audience: 'observing_ai',
     // A rival reconsiders only when the change concerns someone else (never its own move).
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
-  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
-  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
-    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' || e.sourceSystem === 'infrastructure_networks' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
+  { system: 'team_os', label: 'Team Intelligence (Team OS)', kinds: [...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'faction_request_issued', 'faction_coalition_formed', 'rival_pressure_increased', 'team_resource_shortage', 'team_resource_surplus', 'actor_recovered', 'actor_became_constrained', 'contract_completed', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken'], minSignificance: 'meaningful', evaluation: () => 'reassess_task_priority', timing: 'immediate', cooldownTurns: 1, audience: 'observing_teams' },
+  { system: 'gi3', label: 'Your strategy (GI3)', kinds: [...SWR_MP_KINDS, ...SWR_IN_KINDS, ...SWR_SC_KINDS, ...SWR_NS_KINDS, 'cash_threshold_crossed', 'liquidity_deteriorated', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'project_completed', 'project_stalled', 'diplomatic_pact_started', 'diplomatic_pact_expiring', 'diplomatic_pact_broken', 'objective_blocked', 'objective_unblocked', 'objective_completed', 'strategy_phase_changed', 'rival_target_reassessed', ...SWR_LR_KINDS, 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_request_issued', 'faction_coalition_formed'], minSignificance: 'meaningful',
+    evaluation: (e, s) => (e.sourceSystem === 'living_regions' || e.sourceSystem === 'factions' || e.sourceSystem === 'national_systems' || e.sourceSystem === 'industries' || e.sourceSystem === 'infrastructure_networks' || e.sourceSystem === 'megaprojects' ? 'regional_context' : (e.kind === 'region_lost' && (s.gi3?.protectRegions || []).includes(e.subjectId)) || (e.kind === 'rival_pressure_increased' && SWR_SIG_RANK[e.significance] >= 3 && (s.gi3?.futureRegions || []).includes(e.subjectId)) ? 'evaluate_replan' : 'refresh_progress'),
     timing: 'immediate', cooldownTurns: 0, audience: 'gi3_owner',
     relevant: (e, s) => e.subjectType !== 'region' || swrGi3Regions(s).has(e.subjectId) },
   { system: 'background_ai', label: 'Background AI', kinds: '*', minSignificance: 'meaningful', evaluation: () => 'update_attention', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers',
     relevant: e => SWR_SIG_RANK[e.significance] >= 3 || e.tags.includes('gi3_relevant') || e.kind.startsWith('diplomatic_') || e.kind === 'cash_threshold_crossed' || e.kind === 'rival_target_reassessed' },
-  { system: 'diplomacy', label: 'Diplomacy', kinds: ['critical_infrastructure_point_emerged', 'critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
+  { system: 'diplomacy', label: 'Diplomacy', kinds: ['megaproject_committed', 'megaproject_completed', 'critical_infrastructure_point_emerged', 'critical_supply_dependency_formed', 'national_dependency_became_critical', 'region_reinforced', 'region_became_contested', 'rival_pressure_increased', 'actor_became_constrained', 'liquidity_deteriorated', 'liquidity_improved', 'diplomatic_pact_broken', 'victory_pressure_changed', 'core_region_emerged', 'regional_growth_accelerated', 'region_entered_boom', 'faction_influence_shift', 'faction_relationship_changed_major', 'faction_coalition_formed'], minSignificance: 'meaningful', evaluation: () => 'reassess_leverage', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'market', label: 'Markets', kinds: ['supply_shortage_formed', 'supply_surplus_formed', 'project_started', 'project_completed', 'resource_liquidation', 'crisis_escalated'], minSignificance: 'minor', evaluation: e => (e.kind === 'resource_liquidation' ? 'supply_pressure' : e.kind === 'crisis_escalated' ? 'volatility_pressure' : 'demand_pressure'), timing: 'day_end', cooldownTurns: 1, audience: 'global' },
   { system: 'contracts', label: 'Contracts', kinds: ['infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'industry_became_constrained', 'supply_shortage_formed', 'supply_surplus_formed', 'national_bottleneck_formed', 'national_capacity_expanded', 'liquidity_deteriorated', 'contract_expiring', 'contract_became_available', 'team_resource_shortage', 'project_completed', 'regional_need_became_critical', 'specialization_established', 'regional_growth_accelerated'], minSignificance: 'meaningful', evaluation: () => 'contract_relevance', timing: 'immediate', cooldownTurns: 1, audience: 'global' },
   { system: 'stability', label: 'Public Stability', kinds: ['crisis_resolved', 'project_completed', 'faction_conflict_escalated'], minSignificance: 'meaningful', evaluation: e => ((e.kind === 'crisis_resolved' && e.tags.includes('failed')) || e.kind === 'faction_conflict_escalated' ? 'stability_negative' : 'stability_positive'), timing: 'turn_end', cooldownTurns: 2, audience: 'global' },
@@ -122590,12 +122629,12 @@ export const SWR_SUBSCRIPTIONS: SWRSubscription[] = [
   { system: 'ai_memory', label: 'AI Memory', kinds: ['region_reinforced', 'region_secured'], minSignificance: 'meaningful', evaluation: () => 'record_pattern', timing: 'immediate', cooldownTurns: 2, audience: 'observing_ai',
     relevant: (e, s, t) => Boolean(t) && e.actorId !== t && swrActorTeam(s, t) !== (e.teamId ?? swrActorTeam(s, e.actorId)) },
   { system: 'objectives', label: 'Objectives', kinds: ['project_completed', 'liquidity_improved', 'cash_threshold_crossed', 'contract_completed', 'objective_unblocked'], minSignificance: 'meaningful', evaluation: () => 'refresh_objective', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
-  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'infrastructure_network_formed', 'industry_became_constrained', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
+  { system: 'contextual_actions', label: 'Contextual Actions', kinds: ['megaproject_proposed', 'megaproject_stalled', 'megaproject_stage_completed', 'infrastructure_network_fragmented', 'critical_infrastructure_point_emerged', 'infrastructure_network_formed', 'industry_became_constrained', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_dependency_became_critical', 'market_shift_major', 'rival_pressure_decreased', 'actor_became_constrained', 'diplomatic_pact_started', 'contract_expiring', 'region_became_contested', 'cash_threshold_crossed', 'regional_need_became_critical', 'regional_growth_accelerated', 'faction_request_issued'], minSignificance: 'meaningful', evaluation: () => 'relevance_update', timing: 'immediate', cooldownTurns: 0, audience: 'human_observers' },
   // Living Regions interprets structured world events into persistent regional condition (it owns no mechanics).
-  { system: 'living_regions', label: 'Living Regions', kinds: ['infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'living_regions', label: 'Living Regions', kinds: ['megaproject_committed', 'megaproject_stage_completed', 'megaproject_partially_operational', 'megaproject_stalled', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'infrastructure_network_restored', 'critical_infrastructure_point_emerged', 'critical_infrastructure_point_resolved', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'supply_shortage_resolved', 'supply_surplus_formed', 'critical_supply_dependency_formed', 'critical_supply_dependency_reduced', 'national_bottleneck_formed', 'national_bottleneck_resolved', 'national_dependency_became_critical', 'national_dependency_reduced', 'national_capacity_expanded', ...SWR_REGION_KINDS, 'rival_pressure_increased', 'rival_pressure_decreased', 'project_started', 'project_completed', 'project_stalled', 'contract_completed', 'contract_failed', 'market_shift_major', 'stability_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_region', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'living_regions' },
   // Regional Factions observe regional change (incl. Living Regions shifts); they own only faction state.
-  { system: 'factions', label: 'Regional Factions', kinds: ['infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
+  { system: 'factions', label: 'Regional Factions', kinds: ['megaproject_stage_completed', 'megaproject_completed', 'megaproject_abandoned', 'infrastructure_network_formed', 'infrastructure_network_integrated', 'infrastructure_network_fragmented', 'industry_became_constrained', 'industry_recovered', 'supply_shortage_formed', 'national_bottleneck_formed', 'national_capacity_expanded', ...SWR_REGION_KINDS, ...SWR_LR_KINDS, 'rival_pressure_increased', 'project_started', 'project_completed', 'contract_completed', 'contract_failed', 'market_shift_major', 'crisis_escalated', 'crisis_resolved'], minSignificance: 'minor', evaluation: () => 'update_factions', timing: 'immediate', cooldownTurns: 0, audience: 'global',
     relevant: e => e.sourceSystem !== 'factions' }
 ];
 
@@ -123269,6 +123308,8 @@ export function pickPlayConsequenceChain(state: WorldReactionState, viewerId: st
 }
 
 const SWR_NODE_LABEL: Partial<Record<SWRKind, string>> = {
+  megaproject_proposed: 'Program proposed', megaproject_committed: 'Program committed', megaproject_stage_completed: 'Program stage done', megaproject_partially_operational: 'Program partly operating',
+  megaproject_stalled: 'Program stalled', megaproject_resumed: 'Program resumed', megaproject_completed: 'Program completed', megaproject_abandoned: 'Program abandoned',
   infrastructure_network_formed: 'Network formed', infrastructure_network_integrated: 'Network integrated', infrastructure_network_fragmented: 'Network fragmented', infrastructure_network_restored: 'Network restored',
   critical_infrastructure_point_emerged: 'Single point', critical_infrastructure_point_resolved: 'Single point resolved', network_redundancy_improved: 'Redundancy ↑', network_resilience_deteriorated: 'Resilience ↓', national_gateway_became_critical: 'Gateway risk',
   industry_became_constrained: 'Industry constrained', industry_recovered: 'Industry recovered', supply_shortage_formed: 'Supply shortage', supply_shortage_resolved: 'Shortage eased',
@@ -124306,6 +124347,11 @@ export function lrApplyWorldEvent(stateIn: LivingRegionsState, e: StrategicWorld
       }
       // V10.1: industry signals — Living Regions decides the (bounded) regional meaning.
       // V10.2: infrastructure network structure — Living Regions decides the (bounded) regional meaning.
+      // V10.3: national programs — modest, explicit program-level momentum; Living Regions decides the regional meaning.
+      case 'megaproject_committed': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
+      case 'megaproject_stage_completed': case 'megaproject_partially_operational': { pulse(0.03); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
+      case 'megaproject_completed': { pulse(0.05); lrPushHistory(reg, { turn, kind: 'project', text: e.strategicMeaning.slice(0, 140), sourceEventId: e.id, significance: 'major' }); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
+      case 'megaproject_stalled': case 'megaproject_abandoned': { pulse(-0.02); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'national program', e.id); break; }
       case 'infrastructure_network_formed': case 'infrastructure_network_integrated': case 'infrastructure_network_restored': { pulse(0.03); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'infrastructure network', e.id); break; }
       case 'infrastructure_network_fragmented': { pulse(-0.05); lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'infrastructure network', e.id); break; }
       case 'critical_infrastructure_point_emerged': case 'critical_infrastructure_point_resolved': { lrPushEvidence(reg, turn, e.strategicMeaning.slice(0, 110), 'infrastructure network', e.id); break; }
@@ -124756,7 +124802,7 @@ export interface LivingRegionsWorldView {
 }
 
 export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview' | 'national';
-export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery }
+export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery }
 
 function lrRegionInText(q: string, v: LivingRegionsWorldView): string | null {
   const regs = Object.values(v.state.regions);
@@ -124774,6 +124820,9 @@ export function detectLivingRegionsQuery(raw: string, gw: GIWorld): LRQuery | nu
   const actorKey = actor ? actor.id : null;
   const mk = (topic: LRQueryTopic, extra: Partial<LRQuery> = {}): LRQuery => ({ topic, regionId, actorKey, projectId: null, contractId: null, ...extra });
   // V10.0: interregional network questions (only when a National Systems view exists).
+  // V10.3: national program questions (only when a megaproject view exists; generic phrasings need an open program).
+  const mq = detectMegaprojectQuery(raw, gw);
+  if (mq) return mk('national', { megaproject: mq, regionId: mq.regionId });
   const xq = detectInfraNetworkQuery(raw, gw);
   if (xq) return mk('national', { infra: xq, regionId: xq.regionId });
   const iq = detectIndustryQuery(raw, gw);
@@ -124811,6 +124860,7 @@ function lrScorecard(reg: DynamicRegionalState): string {
 }
 
 export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  if (query.topic === 'national' && query.megaproject && gw.national?.megaprojects) return composeMegaprojectAnswer(query.megaproject, gw);
   if (query.topic === 'national' && query.infra && gw.national?.infra) return composeInfraNetworkAnswer(query.infra, gw);
   if (query.topic === 'national' && query.industry && gw.national?.industries) return composeIndustryAnswer(query.industry, gw);
   if (query.topic === 'national' && query.national && gw.national) return composeNationalSystemsAnswer(query.national, gw);
@@ -125937,6 +125987,16 @@ export function rfApplyWorldEvent(stateIn: RegionalFactionsState, e: StrategicWo
         });
       });
     }
+  }
+  if (e.kind === 'megaproject_stage_completed' || e.kind === 'megaproject_completed') {
+    // V10.3: modest, explicit program-level consequence — contributors gain/lose standing with factions that prefer/oppose the program's project types.
+    const types = e.tags.filter(t => t.startsWith('ptype:')).map(t => t.slice(6)); const contributors = e.tags.filter(t => t.startsWith('contributor:')).map(t => t.slice(12));
+    const w = e.kind === 'megaproject_completed' ? 6 : 3;
+    attentive.forEach(def => {
+      const pref = types.some(t => def.preferredInfrastructure.includes(t)), opp = types.some(t => def.opposedInfrastructure.includes(t));
+      if (pref === opp) return;
+      contributors.forEach(a => relChange(def.id, a, pref ? w : -Math.round(w * 0.7), `${pref ? 'Backed' : 'Pushed'} a national program (${e.strategicMeaning.slice(0, 60)})`, true));
+    });
   }
   // Priorities / concerns respond to the regional change (Living Regions is read, never written).
   attentive.forEach(def => { st.factions[def.id] = rfUpdateAgenda(st.factions[def.id], def, s, st); });
@@ -128787,6 +128847,9 @@ export interface LearningContext {
   /** V10.2 (public): a newly meaningful infrastructure network, and a critical single point, as one sentence each. */
   infraNetwork?: string | null;
   infraCriticalPoint?: string | null;
+  /** V10.3: the first relevant national program (eligible / proposed), and committed capital at risk of suspension. */
+  megaproject?: string | null;
+  megaprojectSunk?: string | null;
 }
 
 export interface LearningLesson { headline: string; lines: string[]; action?: { label: string; nav?: IntentNavAction | null; ask?: string | null } | null; asks?: string[]; target?: LearningCoachTarget; surface?: LearningSurface }
@@ -128884,6 +128947,12 @@ export const LEARNING_CONCEPTS: LearningConceptDefinition[] = [
   { id: 'infra_resilience', title: 'Network resilience', category: 'advanced', tier: 'interaction', priority: 6, minLevel: 3, requires: ['infra_networks'], directoryId: 'infrastructure', askPrompt: 'How can I make this network more resilient?', related: ['infra_networks'],
     relevant: c => (c.infraCriticalPoint ? 'a network has a single point of failure' : null),
     lesson: c => ({ headline: 'Network resilience', lines: [c.infraCriticalPoint || '', 'A second route costs capital but keeps the network working when one corridor fails.'], asks: ['How can I make this network more resilient?'], surface: 'inline' }) },
+  { id: 'megaprojects', title: 'National megaprojects', category: 'advanced', tier: 'interaction', priority: 5, minLevel: 3, requires: ['travel'], directoryId: 'infrastructure', askPrompt: 'Can I afford the next stage?', related: ['infra_networks'],
+    relevant: c => (c.megaproject ? 'a national program has become relevant' : null),
+    lesson: c => ({ headline: 'National megaproject', lines: [c.megaproject || '', 'Megaprojects are multi-stage programs. You do not need to complete every stage immediately.', 'Completed stages can provide benefits before the full program finishes.'], asks: ['Can I afford the next stage?'], surface: 'inline' }) },
+  { id: 'sunk_cost', title: 'Committed capital', category: 'advanced', tier: 'interaction', priority: 6, minLevel: 3, requires: ['megaprojects'], directoryId: 'infrastructure', askPrompt: 'What happens if I stop funding it?', related: ['megaprojects'],
+    relevant: c => (c.megaprojectSunk ? 'a program you funded is paused' : null),
+    lesson: c => ({ headline: 'Committed capital', lines: [c.megaprojectSunk || '', 'Money already spent on completed stages is not automatically refunded.', 'Completed infrastructure remains active.'], asks: ['What happens if I stop funding it?'], surface: 'inline' }) },
   { id: 'factions', title: 'Stakeholders', category: 'advanced', tier: 'secondary', priority: 5, minLevel: 3, requires: [], directoryId: 'factions', askPrompt: 'Who matters in this region?', related: ['contracts'],
     relevant: c => (c.stakeholder ? 'a regional group has asked for something' : null),
     lesson: c => ({ headline: 'Regional stakeholders', lines: [c.stakeholder || '', 'Groups support or oppose moves based on what they want for their region — helping one can worry another.'], asks: ['Who matters in this region?'], surface: 'card' }) },
@@ -130482,6 +130551,14 @@ export const V93_INFRASTRUCTURE_PROJECTS: InfrastructureProject[] = [
   v93Project('infra_v102_nsw_interstate_rail', 'freight_rail_upgrade', 'NSW Interstate Freight Rail', 'Doubles interstate rail paths through NSW: 10% trade discount in NSW. Links Queensland and Victorian freight.', 'NSW', 100000, 3, [{ type: 'trade_discount', magnitude: 0.1, targetScope: 'region' }], 800),
   v93Project('infra_v102_sa_freight_corridor', 'freight_rail_upgrade', 'Adelaide Freight Corridor', 'Heavy freight through Adelaide: 8% trade discount in SA. Connects Western Australia to the east and offers an alternative to NSW routes.', 'SA', 95000, 3, [{ type: 'trade_discount', magnitude: 0.08, targetScope: 'region' }], 750),
   v93Project('infra_v102_vic_freight_terminal', 'inland_rail_hub', 'Melbourne Intermodal Freight Terminal', 'Rail-to-road freight terminal: 8% trade discount in VIC. Gives Victorian industry direct freight-network access.', 'VIC', 90000, 3, [{ type: 'trade_discount', magnitude: 0.08, targetScope: 'region' }], 700),
+  // V10.3 (minimal, canonical): one capstone per national program — locked until that program's final stage opens it.
+  { ...v93Project('infra_v103_hsr_brisbane_extension', 'high_speed_rail', 'Brisbane High-Speed Rail Extension', 'Carries fast passenger services north: travel costs −15% and +6% standing gains in QLD.', 'QLD', 170000, 4, [{ type: 'travel_cost_reduction', magnitude: 0.15, targetScope: 'region' }, { type: 'standing_multiplier', magnitude: 0.06, targetScope: 'region' }], 1400, 2, 'locked'), lockedReason: 'Opens with the national program: National High-Speed Rail (stage 3)' },
+  { ...v93Project('infra_v103_murray_water_grid', 'water_pipeline', 'Murray–Darling Water Grid', 'Inter-state water transfers: +5% investment income in NSW.', 'NSW', 160000, 4, [{ type: 'income_boost', magnitude: 0.05, targetScope: 'region' }], 1300, 2, 'locked'), lockedReason: 'Opens with the national program: National Water Security Program (stage 3)' },
+  { ...v93Project('infra_v103_sovereign_compute', 'data_center', 'Sovereign Compute Facility', 'National AI compute: +8% standing gains in ACT and +3% investment income.', 'ACT', 190000, 4, [{ type: 'standing_multiplier', magnitude: 0.08, targetScope: 'region' }, { type: 'income_boost', magnitude: 0.03, targetScope: 'region' }], 1600, 2, 'locked'), lockedReason: 'Opens with the national program: Australian AI Compute Network (stage 3)' },
+  { ...v93Project('infra_v103_darwin_export_port', 'port_expansion', 'Darwin Deep-Water Export Port', 'Northern export gateway: 12% trade discount in NT.', 'NT', 150000, 4, [{ type: 'trade_discount', magnitude: 0.12, targetScope: 'region' }], 1200, 2, 'locked'), lockedReason: 'Opens with the national program: Northern Export Corridor (stage 3)' },
+  { ...v93Project('infra_v103_gladstone_hydrogen_hub', 'green_hydrogen_terminal', 'Gladstone Hydrogen Export Hub', 'Hydrogen exports from Queensland: +6% investment income in QLD.', 'QLD', 200000, 4, [{ type: 'income_boost', magnitude: 0.06, targetScope: 'region' }], 1500, 2, 'locked'), lockedReason: 'Opens with the national program: Green Hydrogen Export Network (stage 3)' },
+  { ...v93Project('infra_v103_eastern_cable_landing', 'subsea_cable_hub', 'East-Coast Cable Landing', 'A second international cable landing: +6% standing gains in NSW.', 'NSW', 140000, 3, [{ type: 'standing_multiplier', magnitude: 0.06, targetScope: 'region' }], 1100, 2, 'locked'), lockedReason: 'Opens with the national program: Continental Digital Backbone (stage 3)' },
+  { ...v93Project('infra_v103_parkes_freight_hub', 'inland_rail_hub', 'Parkes National Freight Hub', 'National freight control: 10% trade discount in NSW.', 'NSW', 130000, 3, [{ type: 'trade_discount', magnitude: 0.1, targetScope: 'region' }], 1000, 2, 'locked'), lockedReason: 'Opens with the national program: National Freight Modernisation (stage 3)' },
   v93Project('infra_v93_national_grid', 'renewable_grid', 'National Grid Interconnector', 'A historic national project: +10% investment income nationally. Only opens when a historic infrastructure opportunity arises.', 'ACT', 240000, 5, [{ type: 'income_boost', magnitude: 0.1, targetScope: 'national' }], 1500, 2, 'locked')
 ];
 
@@ -130502,6 +130579,13 @@ export const V93_INFRA_META: InfrastructureContentMeta[] = [
   { projectId: 'infra_v102_nsw_interstate_rail', path: 'Freight network', competesWith: [], roles: ['infrastructure', 'trade'], themes: ['logistics', 'trade'] },
   { projectId: 'infra_v102_sa_freight_corridor', path: 'Freight network', competesWith: [], roles: ['infrastructure', 'trade'], themes: ['logistics', 'mining'] },
   { projectId: 'infra_v102_vic_freight_terminal', path: 'Freight network', competesWith: [], roles: ['infrastructure', 'economic_growth'], themes: ['logistics', 'manufacturing'] },
+  { projectId: 'infra_v103_hsr_brisbane_extension', path: 'National program', competesWith: [], roles: ['infrastructure', 'long_term_investment'], themes: ['logistics', 'tourism'] },
+  { projectId: 'infra_v103_murray_water_grid', path: 'National program', competesWith: [], roles: ['infrastructure', 'long_term_investment'], themes: ['water', 'agriculture'] },
+  { projectId: 'infra_v103_sovereign_compute', path: 'National program', competesWith: [], roles: ['infrastructure', 'long_term_investment'], themes: ['technology', 'research'] },
+  { projectId: 'infra_v103_darwin_export_port', path: 'National program', competesWith: [], roles: ['infrastructure', 'trade'], themes: ['trade', 'mining'] },
+  { projectId: 'infra_v103_gladstone_hydrogen_hub', path: 'National program', competesWith: [], roles: ['infrastructure', 'long_term_investment'], themes: ['renewables', 'energy'] },
+  { projectId: 'infra_v103_eastern_cable_landing', path: 'National program', competesWith: [], roles: ['infrastructure', 'development'], themes: ['technology', 'trade'] },
+  { projectId: 'infra_v103_parkes_freight_hub', path: 'National program', competesWith: [], roles: ['infrastructure', 'trade'], themes: ['logistics', 'trade'] },
   { projectId: 'infra_v93_national_grid', path: 'National', competesWith: [], roles: ['long_term_investment', 'infrastructure'], themes: ['energy', 'governance'] }
 ];
 export const V93_INFRA_META_BY_ID: Record<string, InfrastructureContentMeta> = Object.fromEntries(V93_INFRA_META.map(m => [m.projectId, m]));
@@ -132104,6 +132188,8 @@ export interface FeelSnapshot {
   industries?: Record<string, string>;
   /** V10.2: network id → 'maturity|name' (optional). */
   infraNetworks?: Record<string, string>;
+  /** V10.3: program id → JSON {d, t, title, stage, regions, c} (optional). */
+  megaprojects?: Record<string, string>;
 }
 
 let V94_SEQ = 0;
@@ -132183,6 +132269,16 @@ export function deriveFeedbackEvents(prev: FeelSnapshot | null, next: FeelSnapsh
     if (!pb || pb === band || icCount >= 1 || bad(pb) === bad(band)) return;
     icCount += 1;
     out.push(v94Event('region_state_changed', 'minor', `ic_${key}`, `${REGION_NAME(code)} ${INDUSTRY_LABEL[ind as StrategicIndustryKind] || ind}: ${pb} → ${band}`, [], { now, turn, icon: UI_ICON.region, tone: bad(band) ? 'negative' : 'positive', regions: [code] }));
+  });
+  // V10.3: a national program stage completing is one of the strongest moments; full completion is a major one.
+  Object.entries(next.megaprojects || {}).forEach(([pid, val]) => {
+    const pv = prev.megaprojects?.[pid]; if (!pv) return;
+    let a: any, b: any; try { a = JSON.parse(val); b = JSON.parse(pv); } catch { return; }
+    if (!(a.d > b.d)) return;
+    const full = a.d === a.t;
+    out.push(v94Event('infrastructure_completed', 'major', `mp_${pid}_${a.d}`, full ? `${String(a.title).toUpperCase()} COMPLETE` : `${String(a.title).toUpperCase()} · STAGE ${a.d} COMPLETE`,
+      full ? [`Regions connected: ${(a.regions || []).join(' • ')}`, `Contributors: ${(a.c || []).join(', ') || '—'}`, 'Program completed: its national networks now operate as one system.'] : [`${a.stage} is now operational.`, `${a.d} of ${a.t} stages working — benefits begin before the whole program finishes.`],
+      { now, turn, icon: UI_ICON.infrastructure, tone: 'positive', regions: (a.regions || []).filter((r: string) => REGIONS[r]) }));
   });
   // V10.2: a network changing maturity (EMERGING → CONNECTED, → FRAGMENTED …), capped at one per update.
   let inCount = 0;
@@ -132585,7 +132681,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled'
 ] as const;
 
 /**
@@ -132939,6 +133035,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         nationalSystems: sanitizeNationalSystemsPersisted(stateData.nationalSystems || raw.gameState?.nationalSystems),
         industries: sanitizeIndustriesPersisted(stateData.industries || raw.gameState?.industries),
         infrastructureNetworks: sanitizeInfraNetworksPersisted(stateData.infrastructureNetworks || raw.gameState?.infrastructureNetworks),
+        megaprojects: sanitizeMegaprojectsPersisted(stateData.megaprojects || raw.gameState?.megaprojects),
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -134985,6 +135082,7 @@ function v95NormalizeSuiteResults(raw: unknown): Array<{ name: string; passed: b
 
 export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v102', label: 'V10.2 Strategic Infrastructure Networks', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV102StrategicInfrastructureNetworksSelfTests() },
+  { id: 'v103', label: 'V10.3 National Megaprojects', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV103NationalMegaprojectSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -137057,6 +137155,8 @@ export interface NationalSystemsWorldView {
   industries?: IndustriesWorldView | null;
   /** V10.2 Strategic Infrastructure Networks (null when off). */
   infra?: InfraNetworksWorldView | null;
+  /** V10.3 National Megaprojects (null when off). */
+  megaprojects?: MegaprojectWorldView | null;
 }
 export type NationalQueryTopic = 'overview' | 'bottlenecks' | 'region_network' | 'dependency' | 'resilience' | 'what_if';
 export interface NationalQuery { topic: NationalQueryTopic; regionId: string | null; network: NationalNetworkKind | null; projectType: string | null }
@@ -140005,6 +140105,1686 @@ export function runV102StrategicInfrastructureNetworksSelfTests(): V9SelfTestRes
     return (b.length > 0 && b.some(x => /Bridge|Member|Hub|Gateway|Served/.test(x!.text)) && JSON.stringify(s) + JSON.stringify(w.xi) === before) || JSON.stringify(b);
   });
   return results;
+}
+
+// ============================================================================
+// SECTION 20V: V10.3 NATIONAL MEGAPROJECTS
+// The multi-project PROGRAM layer only: identity, stages, prerequisites, funding/contributors, milestones,
+// strategic choices, coordination, completion and national consequences. A program never builds, funds,
+// maintains, repairs or bonuses a project itself — every stage REFERENCES canonical InfrastructureProject ids and
+// reads their canonical status (never a duplicated progress counter). Capacity stays with V10.0, supply with V10.1,
+// topology with V10.2. Program memory (proposals, contributions, choices, stage progress, milestones) is NOT
+// derivable, so it is persisted in gameState.megaprojects; eligibility, views and assessments are re-derived.
+// Funding policy: current-stage funding only (no pre-funding), capped at the stage remainder. Capital committed to
+// an unfinished stage is strategically sunk: it stays with the program (kept if the program resumes) and is never
+// refunded automatically; completed stages and their canonical projects always remain.
+// Operations cost: none. Component maintenance is charged once by the Infrastructure Engine; the program layer adds
+// no separate per-turn cost (MEGAPROJECT_OPERATIONS_COST_PER_TURN = 0, documented and asserted in tests).
+// ============================================================================
+
+export type MegaprojectKind = 'national_high_speed_rail' | 'eastern_energy_supergrid' | 'national_water_security' | 'australian_ai_compute_network'
+  | 'northern_export_corridor' | 'green_hydrogen_export_network' | 'continental_digital_backbone' | 'national_freight_modernization';
+export type MegaprojectStatus = 'unavailable' | 'eligible' | 'proposed' | 'committed' | 'under_construction' | 'partially_operational' | 'completed' | 'stalled' | 'suspended' | 'damaged';
+/** Program-stage lifecycle (distinct from canonical InfrastructureStatus). A completed stage never becomes incomplete. */
+export type MegaprojectStageStatus = 'planned' | 'awaiting_choice' | 'active' | 'funded' | 'completed' | 'stalled' | 'suspended' | 'abandoned';
+export type MegaprojectPrerequisiteKind = 'network_condition' | 'industry_strength' | 'regional_development' | 'project_active' | 'capital' | 'faction_support' | 'scenario_flag';
+export type MegaprojectCommandOp = 'propose' | 'commit' | 'contribute' | 'choose' | 'suspend' | 'resume';
+
+export const MEGAPROJECT_KINDS: MegaprojectKind[] = ['national_high_speed_rail', 'eastern_energy_supergrid', 'national_water_security', 'australian_ai_compute_network', 'northern_export_corridor', 'green_hydrogen_export_network', 'continental_digital_backbone', 'national_freight_modernization'];
+export const MEGAPROJECT_STATUS_LABEL: Record<MegaprojectStatus, string> = { unavailable: 'Unavailable', eligible: 'Eligible', proposed: 'Proposed', committed: 'Committed', under_construction: 'Under construction', partially_operational: 'Partially operational', completed: 'Completed', stalled: 'Stalled', suspended: 'Suspended', damaged: 'Damaged' };
+export const MEGAPROJECT_STATUS_ICON: Record<MegaprojectStatus, string> = { unavailable: '▫', eligible: '◇', proposed: '✎', committed: '🤝', under_construction: '🏗', partially_operational: '◐', completed: '✓', stalled: '⏸', suspended: '⏹', damaged: '⚠' };
+export const MEGAPROJECT_STAGE_LABEL: Record<MegaprojectStageStatus, string> = { planned: 'Locked', awaiting_choice: 'Awaiting decision', active: 'Open for funding', funded: 'Funded — waiting on component projects', completed: 'Completed', stalled: 'Stalled', suspended: 'Suspended', abandoned: 'Abandoned' };
+export const MEGAPROJECT_STAGE_ICON: Record<MegaprojectStageStatus, string> = { planned: '○', awaiting_choice: '?', active: '●', funded: '◍', completed: '✓', stalled: '⏸', suspended: '⏹', abandoned: '✕' };
+/** No separate program operations cost — component maintenance is charged exactly once by the Infrastructure Engine. */
+export const MEGAPROJECT_OPERATIONS_COST_PER_TURN = 0;
+export const V103_LIMITS = { programs: 8, contributions: 60, programHistory: 40, history: 80, evidence: 6, proposalLapseTurns: 8, suspendAbandonTurns: 10, minContribution: 250, aiMaxShareOfCash: 0.25, aiReserve: 6000, aiMaxContribution: 5000 } as const;
+const V103_COND_RANK: Record<NationalNetworkCondition, number> = { surplus: 0, healthy: 1, strained: 2, bottlenecked: 3, critical: 4 };
+const V103_MAT_RANK: Record<InfrastructureNetworkMaturity, number> = { fragmented: 0, emerging: 1, connected: 2, integrated: 3, national_backbone: 4 };
+
+export interface MegaprojectPrerequisite {
+  id: string; kind: MegaprojectPrerequisiteKind; label: string;
+  /** Hard prerequisites sharing a group are alternatives (any one satisfies the group). */
+  group?: string;
+  /** Soft prerequisites never block — they inform risk and AI value (factions are an input, never a lock). */
+  soft?: boolean;
+  network?: NationalNetworkKind; atLeast?: NationalNetworkCondition; atMost?: NationalNetworkCondition;
+  infraKind?: StrategicInfrastructureNetworkKind; minMaturity?: InfrastructureNetworkMaturity;
+  industry?: StrategicIndustryKind; regionId?: string; minStrength?: number; minTier?: number;
+  projectId?: string; minProjectStatus?: 'under_construction' | 'active'; amount?: number; minSupport?: number; flag?: string;
+}
+export interface MegaprojectPrereqResult { id: string; kind: MegaprojectPrerequisiteKind; label: string; met: boolean; soft: boolean; group: string; detail: string }
+/**
+ * Explicit, modest effects. 'component_network' effects come from canonical projects through V10.0/V10.1/V10.2 — the program
+ * never applies them. 'program_coordination' effects are the ONLY program-level effects: delivered as World Reaction milestones
+ * that Living Regions (bounded momentum) and Factions (relationships with contributors) interpret.
+ */
+export interface MegaprojectNetworkEffect { kind: 'component_network' | 'program_coordination'; network: StrategicInfrastructureNetworkKind | null; regionIds: string[]; projectIds: string[]; label: string; magnitude: number }
+export interface MegaprojectStageDef {
+  id: string; title: string; description: string; requiredCapital: number; requiredLabor: number; requiredRegionIds: string[]; requiredProjectIds: string[];
+  prerequisites: MegaprojectPrerequisite[];
+  /** Canonical projects OPENED for funding (locked → unlocked) when this stage starts — the program never funds or builds them. */
+  unlocksProjectIds: string[];
+  /** Canonical projects this stage brings into program operation when it completes (its component projects). */
+  activatesProjectIds: string[];
+  partialEffects: MegaprojectNetworkEffect[];
+}
+export type MegaprojectStageOverride = Partial<Pick<MegaprojectStageDef, 'requiredCapital' | 'requiredLabor' | 'requiredRegionIds' | 'requiredProjectIds' | 'unlocksProjectIds' | 'description' | 'prerequisites'>>;
+export interface MegaprojectChoiceOption {
+  id: string; label: string; description: string; tradeoffs: string[]; effectTags: string[]; stageOverrides: Record<string, MegaprojectStageOverride>; resilience: 'lower' | 'similar' | 'higher';
+  /** Derived at load from canonical project costs / labour turns, V10.2 profiles and faction preferences (never hand-tuned). */
+  costDelta: number; timeDelta: number; networkModifiers: MegaprojectNetworkEffect[]; factionHooks: string[];
+}
+/** Decided before its stage opens for funding (so the stage's requirements are known) — therefore always before completion. */
+export interface MegaprojectChoice { id: string; stageId: string; title: string; description: string; options: MegaprojectChoiceOption[]; requiredBeforeStageCompletion: boolean }
+export interface MegaprojectDefinition {
+  kind: MegaprojectKind; title: string; icon: string; summary: string; focus: string[]; regionIds: string[]; primaryNetwork: NationalNetworkKind; infraKind: StrategicInfrastructureNetworkKind;
+  eligibility: MegaprojectPrerequisite[]; stages: MegaprojectStageDef[]; choices: MegaprojectChoice[]; risks: string[]; completionEffects: MegaprojectNetworkEffect[]; capstoneProjectId: string;
+}
+
+// ---- Persisted program memory -----------------------------------------------------------------------------
+export interface MegaprojectStage extends MegaprojectStageDef { status: MegaprojectStageStatus; progressCapital: number; progressLabor: number; startedTurn: number | null; completedTurn: number | null; stallReason: string | null }
+export interface MegaprojectStageProgress { id: string; status: MegaprojectStageStatus; progressCapital: number; progressLabor: number; startedTurn: number | null; completedTurn: number | null; stallReason: string | null }
+/** One executed contribution (provenance). Executes exactly once through the canonical action path. */
+export interface MegaprojectContributionRecord { id: string; turn: number; actorId: string; teamId: string | null; stageId: string; capital: number; labor: number; kind: 'commitment' | 'capital' | 'labor' | 'capital_and_labor' }
+/** Per-contributor aggregate (spec view). Contribution never implies ownership. */
+export interface MegaprojectContribution { actorId: string; capital: number; labor: number; projectContributionIds: string[]; contributionShare: number }
+export type MegaprojectHistoryKind = 'proposed' | 'committed' | 'stage_started' | 'stage_completed' | 'choice_made' | 'stalled' | 'resumed' | 'suspended' | 'completed' | 'abandoned';
+export interface MegaprojectHistoryEntry { id: string; turn: number; megaprojectId: string; kind: MegaprojectHistoryKind; stageId?: string; actorId?: string; summary: string; sourceEventIds: string[] }
+export interface MegaprojectEmitMemory { proposed: boolean; committed: boolean; stagesCompleted: number; partial: boolean; stalled: boolean; damaged: boolean; completed: boolean; abandoned: boolean }
+export interface NationalMegaproject {
+  id: string; kind: MegaprojectKind; status: MegaprojectStatus; proposedBy: string; proposedTeamId: string | null; proposedTurn: number; committedTurn: number | null; committedBy: string | null;
+  completedTurn: number | null; suspendedTurn: number | null; suspendedBy: string | null; abandoned: boolean; closedReason: string | null;
+  currentStageIndex: number; stages: MegaprojectStageProgress[];
+  choices: Record<string, { optionId: string; actorId: string; turn: number }>;
+  contributions: MegaprojectContributionRecord[]; contributorTotals: Record<string, { capital: number; labor: number; teamId: string | null }>; teamTotals: Record<string, number>;
+  stallReason: string | null; history: MegaprojectHistoryEntry[]; emitted: MegaprojectEmitMemory; revision: number;
+}
+export interface MegaprojectsPersisted { schemaVersion: '10.3'; revision: number; seq: number; programs: Record<string, NationalMegaproject>; history: MegaprojectHistoryEntry[]; tracked: Record<string, string>; lastEvaluatedTurn: number; lastWorldHash: string }
+
+export interface MegaprojectWorld {
+  turn: number; totalDays: number; enabled: boolean; infrastructureEnabled: boolean; gameOver: boolean;
+  projects: Record<string, { id: string; title: string; regionId: string | null; projectType: string; status: string; totalInvestedMoney: number; totalCost: number; laborTurnsRequired: number; maintenanceCostPerTurn: number; lockedReason?: string | null; contributions?: Record<string, number> }>;
+  devTiers: Record<string, number>;
+  national: NationalSystemsState | null; industries: IndustriesSupplyChainsState | null; networks: StrategicInfrastructureState | null;
+  factions: RegionalFactionsState | null; flags: Record<string, any>;
+}
+export type MegaprojectDerivedKind = 'megaproject_proposed' | 'megaproject_committed' | 'megaproject_stage_completed' | 'megaproject_partially_operational' | 'megaproject_stalled' | 'megaproject_resumed' | 'megaproject_completed' | 'megaproject_abandoned';
+export interface MegaprojectDerivedEvent { id: string; turn: number; kind: MegaprojectDerivedKind; programId: string; programKind: MegaprojectKind; regionIds: string[]; actorId: string | null; text: string; significance: 'meaningful' | 'major'; evidence: string[]; projectIds: string[]; projectTypes: string[]; contributorIds: string[] }
+export interface MegaprojectCommand { op: MegaprojectCommandOp; kind?: MegaprojectKind; programId?: string; amount?: number; labor?: number; choiceId?: string; optionId?: string }
+export interface MegaprojectActorContext { id: string; kind: 'human' | 'ai'; teamId: string | null; money: number; currentRegion: string | null; apRemaining: number; apCost: number; turnOwner: boolean }
+
+// ---- Curated catalog (8 distinct programs over canonical project ids) -------------------------------------
+const mpq = (id: string, kind: MegaprojectPrerequisiteKind, label: string, extra: Partial<MegaprojectPrerequisite> = {}): MegaprojectPrerequisite => ({ id, kind, label, ...extra });
+const mps = (id: string, title: string, description: string, requiredCapital: number, requiredLabor: number, requiredRegionIds: string[], requiredProjectIds: string[], extra: { prerequisites?: MegaprojectPrerequisite[]; unlocks?: string[]; coordination?: string } = {}): MegaprojectStageDef =>
+  ({ id, title, description, requiredCapital, requiredLabor, requiredRegionIds, requiredProjectIds, prerequisites: extra.prerequisites || [], unlocksProjectIds: extra.unlocks || [], activatesProjectIds: [...requiredProjectIds],
+    partialEffects: extra.coordination ? [{ kind: 'program_coordination', network: null, regionIds: [...requiredRegionIds], projectIds: [], label: extra.coordination, magnitude: 0.03 }] : [] });
+const mpo = (id: string, label: string, description: string, tradeoffs: string[], effectTags: string[], stageOverrides: Record<string, MegaprojectStageOverride>, resilience: MegaprojectChoiceOption['resilience']): MegaprojectChoiceOption =>
+  ({ id, label, description, tradeoffs, effectTags, stageOverrides, resilience, costDelta: 0, timeDelta: 0, networkModifiers: [], factionHooks: [] });
+const mpc = (id: string, stageId: string, title: string, description: string, options: MegaprojectChoiceOption[]): MegaprojectChoice => ({ id, stageId, title, description, options, requiredBeforeStageCompletion: true });
+const uc = (projectId: string, label: string, group = 'traction'): MegaprojectPrerequisite => mpq(`pre_${projectId}`, 'project_active', label, { projectId, minProjectStatus: 'under_construction', group });
+const fsSoft = mpq('factions', 'faction_support', 'Stakeholder support', { soft: true, minSupport: 0 });
+const co = (regionIds: string[], label: string, magnitude = 0.05): MegaprojectNetworkEffect => ({ kind: 'program_coordination', network: null, regionIds, projectIds: [], label, magnitude });
+const P_HSR = 'infra_hsr_nsw_vic', CAP_HSR = 'infra_v103_hsr_brisbane_extension', CAP_WATER = 'infra_v103_murray_water_grid', CAP_AI = 'infra_v103_sovereign_compute', CAP_NORTH = 'infra_v103_darwin_export_port';
+const CAP_H2 = 'infra_v103_gladstone_hydrogen_hub', CAP_DIG = 'infra_v103_eastern_cable_landing', CAP_FR = 'infra_v103_parkes_freight_hub', GRID = 'infra_v93_national_grid';
+
+export const MEGAPROJECT_DEFINITIONS: MegaprojectDefinition[] = [
+  {
+    kind: 'national_high_speed_rail', title: 'National High-Speed Rail Network', icon: '🚄', capstoneProjectId: CAP_HSR, focus: ['mobility', 'trade', 'east-coast integration'],
+    summary: 'Sydney–Melbourne core, Canberra integration, a Brisbane extension and network commissioning: fast east-coast mobility, very long build.',
+    regionIds: ['QLD', 'NSW', 'ACT', 'VIC'], primaryNetwork: 'freight', infraKind: 'mobility',
+    eligibility: [uc(P_HSR, 'Sydney–Melbourne HSR under construction'), mpq('pre_nsw_dev', 'regional_development', 'NSW development tier 2+', { regionId: 'NSW', minTier: 2, group: 'traction' }),
+      mpq('pre_freight', 'network_condition', 'Freight network under pressure (Strained or worse)', { network: 'freight', atLeast: 'strained', group: 'pressure' }), mpq('pre_mobility', 'network_condition', 'A mobility network exists', { infraKind: 'mobility', minMaturity: 'emerging', group: 'pressure' }),
+      mpq('pre_capital', 'capital', 'National capital base ($15K+ cash to propose)', { amount: 15000 }), fsSoft],
+    stages: [
+      mps('hsr_core', 'Sydney–Melbourne Core', 'The canonical Sydney–Melbourne HSR corridor carries the trunk; the program coordinates stations, signalling and timetables.', 10000, 2, ['NSW', 'VIC'], [P_HSR]),
+      mps('hsr_canberra', 'Canberra Integration', 'Brings Canberra into the south-east corridor through its technology base.', 12000, 2, ['ACT', 'NSW'], ['infra_tech_park_act']),
+      mps('hsr_brisbane', 'Brisbane Extension', 'A dedicated fast line north to Brisbane, fed by the Queensland freight hub.', 14000, 3, ['QLD', 'NSW'], ['infra_inland_rail_qld', CAP_HSR],
+        { unlocks: [CAP_HSR], prerequisites: [mpq('s3_qld_dev', 'regional_development', 'Queensland development tier 1+', { regionId: 'QLD', minTier: 1 })] }),
+      mps('hsr_commission', 'Network Commissioning', 'Integrated timetabling, signalling and resilience across the whole corridor.', 8000, 2, ['NSW', 'VIC', 'QLD', 'ACT'], [],
+        { prerequisites: [mpq('s4_mobility', 'network_condition', 'An operating mobility network', { infraKind: 'mobility', minMaturity: 'emerging' })], coordination: 'Integrated national timetabling' })
+    ],
+    choices: [
+      mpc('canberra_model', 'hsr_canberra', 'Canberra anchor', 'Integrate Canberra through the technology park or the national research campus? (shared ACT site — funding one closes the other)', [
+        mpo('tech_park', 'Technology park', 'Commercial technology anchor at the Canberra station precinct.', ['+ stronger commercial base (national standing gains)', '− costlier component project', '− closes the research-campus site'], ['commercial', 'technology'], {}, 'similar'),
+        mpo('research_campus', 'National research campus', 'Public research anchor with broad institutional support.', ['+ cheaper component project', '+ research accessibility', '− weaker commercial return', '− closes the tech-park site'], ['research', 'public_good'], { hsr_canberra: { requiredProjectIds: ['infra_v93_act_research_campus'] } }, 'similar')
+      ]),
+      mpc('service_model', 'hsr_brisbane', 'Service model', 'Passenger priority on a dedicated line, or mixed mobility / trade integration on upgraded freight paths?', [
+        mpo('passenger_priority', 'Passenger priority', 'A dedicated Brisbane HSR extension (a new canonical project opens).', ['+ full passenger speed and Queensland standing', '+ no conflict with freight', '− another large component project', '− longer build'], ['mobility', 'dedicated'], {}, 'higher'),
+        mpo('mixed_trade', 'Mixed mobility / trade', 'Passenger services share the upgraded NSW interstate freight rail.', ['+ cheaper: reuses freight infrastructure', '+ trade benefits on the shared corridor', '− slower passenger service', '− freight and passengers compete for paths'], ['trade', 'shared_corridor'],
+          { hsr_brisbane: { requiredProjectIds: ['infra_inland_rail_qld', 'infra_v102_nsw_interstate_rail'], unlocksProjectIds: [], requiredCapital: 11000 } }, 'lower')
+      ])
+    ],
+    risks: ['Very long build: the trunk alone is a $150K canonical project.', 'Rivals travelling the corridor benefit without contributing (free-riding is allowed).', 'The Canberra anchor closes the competing ACT site.'],
+    completionEffects: [co(['NSW', 'VIC', 'QLD', 'ACT'], 'East-coast fast rail commissioned')]
+  },
+  {
+    kind: 'eastern_energy_supergrid', title: 'Eastern Energy Supergrid', icon: '⚡', capstoneProjectId: GRID, focus: ['energy sharing', 'redundancy', 'renewables', 'technology/manufacturing support'],
+    summary: 'Firmed southern renewables, a Bass Strait link, an east-coast storage backbone and a national interconnector.',
+    regionIds: ['SA', 'VIC', 'NSW', 'TAS'], primaryNetwork: 'energy', infraKind: 'energy',
+    eligibility: [mpq('pre_energy', 'network_condition', 'Energy network under pressure (Strained or worse)', { network: 'energy', atLeast: 'strained', group: 'pressure' }), mpq('pre_energy_ind', 'industry_strength', 'Strong South Australian energy industry (55+)', { industry: 'energy', regionId: 'SA', minStrength: 55, group: 'pressure' }),
+      uc('infra_v93_sa_renewable_grid', 'SA grid firming under construction'), uc('infra_wind_tas', 'Bass Strait wind under construction'), uc('infra_snowy_nsw', 'Snowy 2.0 under construction'), mpq('pre_historic', 'scenario_flag', 'Historic infrastructure opportunity', { flag: 'historic_infra', group: 'traction' }), fsSoft],
+    stages: [
+      mps('grid_south', 'Southern Firming', 'Batteries and interconnectors firm South Australian renewables for Victorian industry.', 10000, 2, ['SA', 'VIC'], ['infra_v93_sa_renewable_grid']),
+      mps('grid_bass', 'Bass Strait Link', 'Tasmanian wind joins the mainland grid across Bass Strait.', 8000, 2, ['TAS', 'VIC'], ['infra_wind_tas']),
+      mps('grid_storage', 'Storage Backbone', 'Deep storage that carries the east coast through still nights.', 9000, 2, ['NSW'], ['infra_snowy_nsw']),
+      mps('grid_interconnector', 'National Interconnector', 'Opens the National Grid Interconnector for canonical funding and integrates the backbone.', 15000, 2, ['ACT', 'NSW', 'VIC'], [GRID], { unlocks: [GRID], coordination: 'Shared grid balancing' })
+    ],
+    choices: [
+      mpc('storage_strategy', 'grid_storage', 'Storage strategy', 'One large pumped-hydro site, or distributed grid storage across Queensland and NSW?', [
+        mpo('pumped_hydro', 'Pumped hydro (Snowy 2.0)', 'Deep long-duration storage at one site.', ['+ deep, cheap long-duration storage', '+ water storage benefits', '− one site is a single point of failure'], ['centralized', 'storage'], {}, 'lower'),
+        mpo('distributed', 'Distributed grid storage', 'North Queensland grid storage plus extra coordination across Queensland and NSW.', ['+ no single site can stop the backbone', '+ brings Queensland into the grid', '− more coordination labour and capital', '− less firm through long still periods'], ['distributed', 'redundancy'],
+          { grid_storage: { requiredProjectIds: ['infra_v93_qld_renewable_grid'], requiredRegionIds: ['QLD', 'NSW'], requiredCapital: 12000, requiredLabor: 4 } }, 'higher')
+      ])
+    ],
+    risks: ['Data centres and hydrogen compete for the same southern capacity.', 'The interconnector is a $240K canonical project.'],
+    completionEffects: [co(['SA', 'VIC', 'NSW', 'TAS'], 'National grid integrated')]
+  },
+  {
+    kind: 'national_water_security', title: 'National Water Security Program', icon: '💧', capstoneProjectId: CAP_WATER, focus: ['desalination', 'water pipelines', 'regional resilience', 'agricultural support'],
+    summary: 'SA desalination, interregional water infrastructure, an agricultural resilience program and national coordination.',
+    regionIds: ['SA', 'NSW', 'QLD', 'VIC'], primaryNetwork: 'water', infraKind: 'water',
+    eligibility: [mpq('pre_water', 'network_condition', 'Water network under pressure (Strained or worse)', { network: 'water', atLeast: 'strained', group: 'pressure' }), mpq('pre_agri', 'industry_strength', 'Strong agriculture (55+) anywhere', { industry: 'agriculture', minStrength: 55, group: 'pressure' }),
+      uc('infra_desal_sa', 'Adelaide desalination under construction'), uc('infra_v93_sa_water_pipeline', 'Murray pipeline under construction'), uc('infra_snowy_nsw', 'Snowy 2.0 under construction'), fsSoft],
+    stages: [
+      mps('water_desal', 'SA Desalination Expansion', 'A climate-independent base supply for Adelaide.', 8000, 2, ['SA'], ['infra_desal_sa']),
+      mps('water_interregional', 'Interregional Water Infrastructure', 'Moves water between states through a new inter-state water grid.', 12000, 2, ['NSW', 'SA'], [CAP_WATER], { unlocks: [CAP_WATER] }),
+      mps('water_agri', 'Agricultural Resilience Program', 'Drought-resilient allocations for the farming regions.', 9000, 2, ['NSW', 'QLD'], [],
+        { prerequisites: [mpq('s3_agri_nsw', 'industry_strength', 'NSW agriculture 40+', { industry: 'agriculture', regionId: 'NSW', minStrength: 40, group: 'agri' }), mpq('s3_agri_qld', 'industry_strength', 'Queensland agriculture 40+', { industry: 'agriculture', regionId: 'QLD', minStrength: 40, group: 'agri' }),
+          mpq('s3_water', 'network_condition', 'Water network no worse than Strained', { network: 'water', atMost: 'strained' })], coordination: 'Drought-resilient allocations' }),
+      mps('water_coord', 'National Coordination', 'A national water-sharing framework across all participating states.', 6000, 2, ['SA', 'NSW', 'VIC', 'QLD'], [],
+        { prerequisites: [mpq('s4_water_net', 'network_condition', 'An operating water network', { infraKind: 'water', minMaturity: 'emerging' })], coordination: 'Cross-region water coordination' })
+    ],
+    choices: [
+      mpc('water_architecture', 'water_interregional', 'Water architecture', 'Centralised capacity through one inter-state grid, or distributed regional resilience?', [
+        mpo('centralized_capacity', 'Centralised capacity', 'One large inter-state water grid (a new canonical project opens).', ['+ highest transfer capacity', '+ one integrated system', '− large new component project', '− the single grid is a single point of failure'], ['centralized', 'capacity'], {}, 'lower'),
+        mpo('distributed_resilience', 'Distributed regional resilience', 'Snowy storage plus regional coordination crews in NSW, Queensland and Victoria.', ['+ storage spread across regions', '+ reuses existing canonical storage', '− more labour across three states', '− lower peak transfer capacity'], ['distributed', 'redundancy'],
+          { water_interregional: { requiredProjectIds: ['infra_snowy_nsw'], requiredRegionIds: ['NSW', 'QLD', 'VIC'], unlocksProjectIds: [], requiredCapital: 13000, requiredLabor: 4 } }, 'higher')
+      ])
+    ],
+    risks: ['Desalination and the Murray pipeline share a site — funding the pipeline closes stage 1.', 'Agricultural resilience stalls while the water network is bottlenecked.'],
+    completionEffects: [co(['SA', 'NSW', 'VIC', 'QLD'], 'Water secured nationally')]
+  },
+  {
+    kind: 'australian_ai_compute_network', title: 'Australian AI Compute Network', icon: '🧠', capstoneProjectId: CAP_AI, focus: ['research', 'digital', 'energy', 'technology'],
+    summary: 'A research anchor, national compute capacity (centralised or distributed) and network commissioning.',
+    regionIds: ['ACT', 'NSW', 'VIC', 'SA'], primaryNetwork: 'digital', infraKind: 'digital',
+    eligibility: [mpq('pre_research', 'industry_strength', 'ACT research strong (50+)', { industry: 'research', regionId: 'ACT', minStrength: 50 }),
+      mpq('pre_tech_vic', 'industry_strength', 'VIC technology strong (50+)', { industry: 'technology', regionId: 'VIC', minStrength: 50, group: 'tech' }), mpq('pre_tech_nsw', 'industry_strength', 'NSW technology strong (50+)', { industry: 'technology', regionId: 'NSW', minStrength: 50, group: 'tech' }),
+      mpq('pre_digital', 'network_condition', 'Digital network at least Connected', { infraKind: 'digital', minMaturity: 'connected' }),
+      mpq('pre_power', 'network_condition', 'Energy not Critical (compute needs power headroom)', { network: 'energy', atMost: 'bottlenecked' }),
+      uc('infra_v93_vic_data_center', 'Melbourne data centre under construction'), uc('infra_tech_park_act', 'Canberra tech park under construction'), uc('infra_v93_act_research_campus', 'National research campus under construction'), fsSoft],
+    stages: [
+      mps('ai_research', 'Research Anchor', 'National research capability in Canberra.', 9000, 2, ['ACT'], ['infra_v93_act_research_campus']),
+      mps('ai_compute', 'Compute Capacity', 'Sovereign compute capacity in Canberra (a new canonical project opens).', 12000, 2, ['ACT', 'NSW'], [CAP_AI],
+        { unlocks: [CAP_AI], prerequisites: [mpq('s2_power', 'network_condition', 'Energy not Critical', { network: 'energy', atMost: 'bottlenecked' })] }),
+      mps('ai_commission', 'National Compute Commissioning', 'Connects compute to researchers and industry across the national network.', 8000, 2, ['ACT', 'NSW', 'VIC'], [],
+        { prerequisites: [mpq('s3_power', 'network_condition', 'Energy not Critical', { network: 'energy', atMost: 'bottlenecked' }), mpq('s3_digital', 'network_condition', 'An operating digital network', { infraKind: 'digital', minMaturity: 'emerging' })], coordination: 'National digital interoperability' })
+    ],
+    choices: [
+      mpc('research_model', 'ai_research', 'Research model', 'Public research campus or industry tech park? (shared ACT research budget — the other closes)', [
+        mpo('public_research', 'Public research campus', 'Broad national standing and institutional support.', ['+ broad faction support', '+ cheaper component', '− slower commercial return'], ['research', 'public_good'], {}, 'similar'),
+        mpo('industry_park', 'Industry tech park', 'A commercial technology base.', ['+ stronger commercial base', '− costlier component', '− narrower support'], ['commercial', 'technology'], { ai_research: { requiredProjectIds: ['infra_tech_park_act'], requiredCapital: 11000 } }, 'similar')
+      ]),
+      mpc('compute_architecture', 'ai_compute', 'Compute architecture', 'Centralised sovereign compute in Canberra, or distributed compute across Victoria and South Australia?', [
+        mpo('centralized', 'Centralised compute (ACT + NSW)', 'One sovereign facility in Canberra.', ['+ higher peak efficiency', '+ lower construction complexity (one site)', '− higher concentration risk', '− heavy draw on one grid region'], ['centralized', 'efficiency'], {}, 'lower'),
+        mpo('distributed', 'Distributed compute (ACT + NSW + VIC + SA)', 'The Melbourne data centre plus SA grid firming for clean power.', ['+ redundancy across regions', '+ stronger national connectivity', '− higher capital and energy requirements', '− slower completion'], ['distributed', 'redundancy'],
+          { ai_compute: { requiredProjectIds: ['infra_v93_vic_data_center', 'infra_v93_sa_renewable_grid'], requiredRegionIds: ['VIC', 'SA', 'NSW'], unlocksProjectIds: [], requiredCapital: 16000, requiredLabor: 4 } }, 'higher')
+      ])
+    ],
+    risks: ['The Melbourne data centre closes the Victorian manufacturing precinct (shared grid site).', 'Compute stages stall if the energy network becomes critical.'],
+    completionEffects: [co(['ACT', 'NSW', 'VIC'], 'Sovereign AI capability online')]
+  },
+  {
+    kind: 'northern_export_corridor', title: 'Northern Export Corridor', icon: '🚢', capstoneProjectId: CAP_NORTH, focus: ['resources', 'ports', 'remote logistics', 'trade'],
+    summary: 'Darwin gateway logistics, a Pilbara haul link, a Queensland export port and a deep-water Darwin port.',
+    regionIds: ['WA', 'NT', 'QLD'], primaryNetwork: 'trade', infraKind: 'trade',
+    eligibility: [mpq('pre_mining', 'industry_strength', 'Mining strength 55+', { industry: 'mining', minStrength: 55, group: 'pressure' }), mpq('pre_trade', 'network_condition', 'Trade network under pressure (Strained or worse)', { network: 'trade', atLeast: 'strained', group: 'pressure' }),
+      uc('infra_v93_nt_gateway', 'Darwin gateway under construction'), uc('infra_subsea_nt', 'Darwin cable hub under construction'), uc('infra_v93_wa_freight_rail', 'Pilbara freight rail under construction'), uc('infra_v93_qld_port_automated', 'Automated QLD port under construction'), uc('infra_v93_qld_port_partnership', 'Partnership QLD port under construction'), fsSoft],
+    stages: [
+      mps('north_gateway', 'Darwin Gateway', 'A frontier logistics base for northern trade.', 8000, 2, ['NT'], ['infra_v93_nt_gateway']),
+      mps('north_pilbara', 'Pilbara Haul Link', 'Heavy-haul rail from the Pilbara mines.', 9000, 2, ['WA'], ['infra_v93_wa_freight_rail'], { prerequisites: [mpq('s2_mining', 'industry_strength', 'WA mining 40+ (export demand)', { industry: 'mining', regionId: 'WA', minStrength: 40 })] }),
+      mps('north_qld_port', 'Queensland Export Port', 'Export berths for the north-east.', 10000, 2, ['QLD'], ['infra_v93_qld_port_automated']),
+      mps('north_darwin_port', 'Darwin Deep-Water Port', 'Opens the Darwin export port for canonical funding.', 12000, 2, ['NT', 'WA'], [CAP_NORTH], { unlocks: [CAP_NORTH], coordination: 'Northern export coordination' })
+    ],
+    choices: [
+      mpc('port_model', 'north_qld_port', 'Port model', 'Automated berths or a labour-partnership expansion? (same site — the other closes)', [
+        mpo('automated', 'Automated berths', 'High-productivity automated berths.', ['+ higher throughput and trade discount', '− labour groups oppose'], ['automation', 'throughput'], {}, 'similar'),
+        mpo('partnership', 'Labour partnership', 'A slower expansion built with the unions.', ['+ labour support and standing', '− slower and costlier'], ['labour', 'standing'], { north_qld_port: { requiredProjectIds: ['infra_v93_qld_port_partnership'], requiredCapital: 11000 } }, 'similar')
+      ])
+    ],
+    risks: ['The two Queensland port options share a site.', 'A single northern gateway is a critical point until the second port is built.'],
+    completionEffects: [co(['NT', 'QLD', 'WA'], 'Northern exports flowing')]
+  },
+  {
+    kind: 'green_hydrogen_export_network', title: 'Green Hydrogen Export Network', icon: '⚗', capstoneProjectId: CAP_H2, focus: ['renewables', 'energy', 'export infrastructure', 'trade'],
+    summary: 'Renewable feedstock, firmed generation and a Gladstone hydrogen export hub.',
+    regionIds: ['WA', 'SA', 'QLD'], primaryNetwork: 'energy', infraKind: 'energy',
+    eligibility: [mpq('pre_energy_ind', 'industry_strength', 'Energy industry strength 50+', { industry: 'energy', minStrength: 50 }),
+      uc('infra_hydrogen_wa', 'Pilbara hydrogen under construction'), uc('infra_v93_sa_renewable_grid', 'SA grid firming under construction'), uc('infra_v93_qld_renewable_grid', 'North Queensland grid under construction'),
+      mpq('pre_headroom', 'network_condition', 'Energy at most Strained (hydrogen needs spare power)', { network: 'energy', atMost: 'strained' }), fsSoft],
+    stages: [
+      mps('h2_feedstock', 'Renewable Feedstock', 'Electrolysis-grade renewable supply.', 10000, 2, ['WA'], ['infra_hydrogen_wa']),
+      mps('h2_firming', 'Firmed Generation', 'Queensland generation to firm the export chain.', 9000, 2, ['QLD'], ['infra_v93_qld_renewable_grid'], { prerequisites: [mpq('s2_headroom', 'network_condition', 'Energy not Critical', { network: 'energy', atMost: 'bottlenecked' })] }),
+      mps('h2_export', 'Gladstone Export Hub', 'Opens the Gladstone hydrogen export hub for canonical funding.', 14000, 2, ['QLD', 'WA'], [CAP_H2], { unlocks: [CAP_H2], coordination: 'Hydrogen export coordination' })
+    ],
+    choices: [
+      mpc('feedstock_region', 'h2_feedstock', 'Feedstock region', 'Pilbara hydrogen first, or South Australian renewables first?', [
+        mpo('pilbara_first', 'Pilbara first', 'A world-scale export terminal in the Pilbara.', ['+ world-scale export capacity', '− very large component project', '− closes the Pilbara logistics site'], ['export_scale'], {}, 'similar'),
+        mpo('southern_first', 'South Australia first', 'Builds on SA grid firming.', ['+ cheaper start', '+ firms the southern grid too', '− smaller export scale'], ['renewables', 'grid'], { h2_feedstock: { requiredProjectIds: ['infra_v93_sa_renewable_grid'], requiredRegionIds: ['SA'], requiredCapital: 8000 } }, 'similar')
+      ])
+    ],
+    risks: ['Hydrogen competes with data centres and industry for energy headroom.', 'The Pilbara terminal closes the remote logistics base.'],
+    completionEffects: [co(['WA', 'QLD', 'SA'], 'Hydrogen export network operating')]
+  },
+  {
+    kind: 'continental_digital_backbone', title: 'Continental Digital Backbone', icon: '🛰', capstoneProjectId: CAP_DIG, focus: ['digital resilience', 'research connectivity', 'technology'],
+    summary: 'A northern cable gateway, national data capacity, a second international landing and a western reach.',
+    regionIds: ['NT', 'ACT', 'NSW', 'VIC', 'WA'], primaryNetwork: 'digital', infraKind: 'digital',
+    eligibility: [mpq('pre_digital', 'network_condition', 'A digital network exists', { infraKind: 'digital', minMaturity: 'emerging', group: 'pressure' }), mpq('pre_tech', 'industry_strength', 'Technology industry strength 45+', { industry: 'technology', minStrength: 45, group: 'pressure' }),
+      uc('infra_subsea_nt', 'Darwin cable hub under construction'), uc('infra_v93_vic_data_center', 'Melbourne data centre under construction'), fsSoft],
+    stages: [
+      mps('dig_gateway', 'Northern Cable Gateway', 'International capacity through Darwin.', 8000, 2, ['NT'], ['infra_subsea_nt']),
+      mps('dig_capacity', 'National Data Capacity', 'A national data anchor for the backbone.', 9000, 2, ['VIC'], ['infra_v93_vic_data_center']),
+      mps('dig_landing', 'Second International Landing', 'Opens an east-coast cable landing — redundancy for the whole backbone.', 11000, 2, ['NSW'], [CAP_DIG], { unlocks: [CAP_DIG] }),
+      mps('dig_west', 'Western Reach', 'Brings Western Australia onto the backbone.', 7000, 2, ['WA', 'NT'], [], { prerequisites: [mpq('s4_wa_dev', 'regional_development', 'WA development tier 1+', { regionId: 'WA', minTier: 1 })], coordination: 'National digital interoperability' })
+    ],
+    choices: [
+      mpc('network_priority', 'dig_capacity', 'Network priority', 'Enterprise data capacity or a public research network?', [
+        mpo('enterprise', 'Enterprise capacity', 'Commercial data capacity in Melbourne.', ['+ stronger economic return', '− heavy power draw', '− closes the VIC manufacturing precinct'], ['commercial'], {}, 'similar'),
+        mpo('public_research', 'Public research network', 'Routes through the national research campus.', ['+ broad support', '+ research connectivity', '− lower commercial return', '− closes the ACT tech park'], ['research', 'public_good'], { dig_capacity: { requiredProjectIds: ['infra_v93_act_research_campus'], requiredRegionIds: ['ACT'], requiredCapital: 10000 } }, 'similar')
+      ])
+    ],
+    risks: ['Until the second landing, Darwin is a single international gateway.'],
+    completionEffects: [co(['NT', 'NSW', 'VIC', 'WA'], 'Redundant continental backbone')]
+  },
+  {
+    kind: 'national_freight_modernization', title: 'National Freight Modernisation Program', icon: '🚆', capstoneProjectId: CAP_FR, focus: ['freight continuity', 'supply-chain resilience', 'national trade'],
+    summary: 'A priority freight corridor, a northern freight hub and a national freight control hub. Useful long before every state is connected.',
+    regionIds: ['WA', 'SA', 'VIC', 'NSW', 'QLD', 'NT'], primaryNetwork: 'freight', infraKind: 'freight',
+    eligibility: [mpq('pre_freight', 'network_condition', 'Freight network under pressure (Strained or worse)', { network: 'freight', atLeast: 'strained', group: 'pressure' }), mpq('pre_freight_net', 'network_condition', 'A connected freight network exists', { infraKind: 'freight', minMaturity: 'connected', group: 'pressure' }),
+      uc('infra_v102_nsw_interstate_rail', 'NSW interstate rail under construction'), uc('infra_v102_sa_freight_corridor', 'Adelaide freight corridor under construction'), uc('infra_inland_rail_qld', 'Inland rail hub under construction'), uc('infra_v93_wa_freight_rail', 'Pilbara freight rail under construction'), fsSoft],
+    stages: [
+      mps('fr_corridor', 'Priority Corridor', 'Upgrade the priority interstate freight corridor.', 10000, 2, ['NSW', 'VIC'], ['infra_v102_nsw_interstate_rail', 'infra_v102_vic_freight_terminal']),
+      mps('fr_north', 'Northern Freight Hub', 'The inland rail hub ties Queensland into the corridor.', 8000, 2, ['QLD'], ['infra_inland_rail_qld'], { prerequisites: [mpq('s2_mining', 'industry_strength', 'Mining 40+ somewhere (freight demand)', { industry: 'mining', minStrength: 40 })] }),
+      mps('fr_parkes', 'National Freight Control Hub', 'Opens the Parkes freight control hub for canonical funding.', 12000, 2, ['NSW'], [CAP_FR], { unlocks: [CAP_FR], coordination: 'National freight network management' })
+    ],
+    choices: [
+      mpc('corridor_priority', 'fr_corridor', 'Corridor priority', 'East-coast spine first, or the trans-continental link?', [
+        mpo('east_coast', 'East-coast spine', 'Serves the densest freight demand first.', ['+ highest immediate demand', '− Western Australia stays on one route'], ['demand'], {}, 'similar'),
+        mpo('transcontinental', 'Trans-continental link', 'Links Western Australia through Adelaide.', ['+ an alternative to NSW routes', '+ WA mining access', '− longer, costlier corridor'], ['redundancy', 'mining'], { fr_corridor: { requiredRegionIds: ['SA', 'WA'], requiredProjectIds: ['infra_v102_sa_freight_corridor', 'infra_v93_wa_freight_rail'], requiredCapital: 11000 } }, 'higher')
+      ])
+    ],
+    risks: ['Freight hubs are critical points until the network has redundancy.', 'Low freight demand lowers the immediate strategic value.'],
+    completionEffects: [co(['NSW', 'VIC', 'QLD', 'SA'], 'Freight modernised')]
+  }
+];
+export const MEGAPROJECT_DEF_BY_KIND: Record<MegaprojectKind, MegaprojectDefinition> = Object.fromEntries(MEGAPROJECT_DEFINITIONS.map(d => [d.kind, d])) as Record<MegaprojectKind, MegaprojectDefinition>;
+export const megaprojectIdFor = (kind: MegaprojectKind) => `mp_${kind}`;
+/** Locked reason marker for capstones: only the owning program stage opens them. */
+export const V103_CAPSTONE_LOCK_PREFIX = 'Opens with the national program: ';
+
+// ---- Helpers ----------------------------------------------------------------------------------------------
+const v103N = (v: any, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const v103Functional = (status: string | undefined) => status === 'active' || status === 'upgraded';
+const v103Started = (status: string | undefined) => status === 'under_construction' || v103Functional(status) || status === 'damaged';
+const V103_PROJECT_INDEX: Record<string, InfrastructureProject> = Object.fromEntries([...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].map(p => [p.id, p]));
+/** Network role of one canonical component (from the V10.2 sidecar profile — the program never applies it). */
+export function megaprojectComponentEffects(projectIds: string[]): MegaprojectNetworkEffect[] {
+  const out: MegaprojectNetworkEffect[] = [];
+  projectIds.forEach(id => { const p = V103_PROJECT_INDEX[id]; const prof = p ? INFRA_NETWORK_PROFILES[p.projectType] : null; if (!p || !prof) return;
+    prof.contributesTo.filter(c => c.role !== 'local_support').forEach(c => out.push({ kind: 'component_network', network: c.network, regionIds: [p.regionId], projectIds: [id], label: `${p.title}: ${INFRA_NETWORK_LABEL[c.network]} ${INFRA_ROLE_LABEL[c.role].toLowerCase()}`, magnitude: c.capacityWeight })); });
+  return out;
+}
+// Derive every option's cost/time deltas, network modifiers and faction hooks from canonical data (deterministic, at load).
+MEGAPROJECT_DEFINITIONS.forEach(def => def.choices.forEach(ch => {
+  const measure = (o: MegaprojectChoiceOption) => {
+    const st = def.stages.find(s => s.id === ch.stageId)!; const ov = o.stageOverrides[ch.stageId] || {};
+    const ids = ov.requiredProjectIds || st.requiredProjectIds;
+    return { cost: v103N(ov.requiredCapital ?? st.requiredCapital) + ids.reduce((a, id) => a + v103N(V103_PROJECT_INDEX[id]?.totalCost), 0), time: ids.reduce((a, id) => a + v103N(V103_PROJECT_INDEX[id]?.laborTurnsRequired), 0) + v103N(ov.requiredLabor ?? st.requiredLabor) - st.requiredLabor, ids };
+  };
+  const base = measure(ch.options[0]);
+  ch.options.forEach(o => {
+    const m = measure(o); o.costDelta = m.cost - base.cost; o.timeDelta = m.time - base.time; o.networkModifiers = megaprojectComponentEffects(m.ids);
+    const types = new Set(m.ids.map(id => V103_PROJECT_INDEX[id]?.projectType).filter(Boolean) as string[]);
+    o.factionHooks = RF_FACTION_DEFS.filter(f => !f.emergent).flatMap(f => (Array.from(types).some(t => f.preferredInfrastructure.includes(t)) ? [`${f.name} supports`] : Array.from(types).some(t => f.opposedInfrastructure.includes(t)) ? [`${f.name} opposes`] : [])).slice(0, 4);
+  });
+}));
+
+export function createEmptyMegaprojectsPersisted(): MegaprojectsPersisted { return { schemaVersion: '10.3', revision: 0, seq: 0, programs: {}, history: [], tracked: {}, lastEvaluatedTurn: 0, lastWorldHash: '' }; }
+
+/** Effective stage definitions after the program's persistent choices are applied (deterministic). */
+export function megaprojectStageDefs(def: MegaprojectDefinition, choices: Record<string, { optionId: string }> = {}): MegaprojectStageDef[] {
+  return def.stages.map(s => {
+    let out: MegaprojectStageDef = { ...s, requiredRegionIds: [...s.requiredRegionIds], requiredProjectIds: [...s.requiredProjectIds], unlocksProjectIds: [...s.unlocksProjectIds], prerequisites: [...s.prerequisites] };
+    def.choices.forEach(c => { const pick = choices[c.id]; const opt = pick ? c.options.find(o => o.id === pick.optionId) : null; const ov = opt?.stageOverrides[s.id]; if (ov) out = { ...out, ...ov }; });
+    out.activatesProjectIds = [...out.requiredProjectIds];
+    out.partialEffects = [...megaprojectComponentEffects(out.requiredProjectIds), ...s.partialEffects.filter(e => e.kind === 'program_coordination').map(e => ({ ...e, regionIds: [...out.requiredRegionIds] }))];
+    return out;
+  });
+}
+export function megaprojectStageView(p: NationalMegaproject): MegaprojectStage[] {
+  const defs = megaprojectStageDefs(MEGAPROJECT_DEF_BY_KIND[p.kind], p.choices);
+  return defs.map((d, i) => ({ ...d, ...(p.stages[i] || { id: d.id, status: 'planned', progressCapital: 0, progressLabor: 0, startedTurn: null, completedTurn: null, stallReason: null }) }));
+}
+/** The choice (if any) that must be decided before a stage can open. */
+export function megaprojectPendingChoice(p: NationalMegaproject, stageIndex: number): MegaprojectChoice | null {
+  const def = MEGAPROJECT_DEF_BY_KIND[p.kind]; const stageId = def.stages[stageIndex]?.id;
+  return def.choices.find(c => c.stageId === stageId && !p.choices[c.id]) || null;
+}
+/** Spec stage lifecycle (locked / available / active / completed) for display and the inspector. */
+export function megaprojectStageSpecStatus(p: NationalMegaproject, i: number): 'locked' | 'available' | 'active' | 'completed' {
+  const s = p.stages[i]; if (!s) return 'locked';
+  if (s.status === 'completed') return 'completed';
+  if (i !== p.currentStageIndex || p.committedTurn === null || p.abandoned) return 'locked';
+  return s.progressCapital > 0 || s.progressLabor > 0 ? 'active' : 'available';
+}
+
+/** Program-level stakeholder support from REAL faction preferences (−1 … +1). An input, never a lock. */
+export function megaprojectFactionSupport(def: MegaprojectDefinition, world: Pick<MegaprojectWorld, 'factions' | 'projects'>, choices: Record<string, { optionId: string }> = {}): { score: number; supporters: string[]; opponents: string[] } {
+  const types = new Set<string>();
+  megaprojectStageDefs(def, choices).forEach(s => s.requiredProjectIds.forEach(id => { const t = world.projects[id]?.projectType || V103_PROJECT_INDEX[id]?.projectType; if (t) types.add(t); }));
+  let wsum = 0, ssum = 0; const supporters: string[] = [], opponents: string[] = [];
+  RF_FACTION_DEFS.forEach(fd => {
+    const live = world.factions?.factions?.[fd.id];
+    if (live && live.status !== 'active') return;
+    if (!live && fd.emergent) return;
+    const inf = def.regionIds.reduce((a, r) => a + (live ? v103N(live.influenceByRegion?.[r]) : (fd.homeRegions.includes(r) ? 0.5 : 0)), 0);
+    if (inf <= 0) return;
+    let stance = 0, n = 0;
+    types.forEach(t => { if (fd.preferredInfrastructure.includes(t)) { stance += 1; n++; } else if (fd.opposedInfrastructure.includes(t)) { stance -= 1; n++; } else if (fd.conditionalInfrastructure.includes(t)) { stance += 0.3; n++; } });
+    if (!n) return;
+    const s = stance / n; wsum += inf; ssum += inf * s;
+    if (s > 0.25) supporters.push(fd.name); else if (s < -0.25) opponents.push(fd.name);
+  });
+  return { score: wsum ? Math.round((ssum / wsum) * 100) / 100 : 0, supporters: supporters.slice(0, 4), opponents: opponents.slice(0, 4) };
+}
+
+/** Evaluate one prerequisite against REAL systems only (V10.0 / V10.1 / V10.2 / canonical projects / dev tiers / factions / content flags). */
+export function evaluateMegaprojectPrerequisite(p: MegaprojectPrerequisite, world: MegaprojectWorld, def?: MegaprojectDefinition, actor?: Pick<MegaprojectActorContext, 'money'> | null): MegaprojectPrereqResult {
+  const r = (met: boolean, detail: string): MegaprojectPrereqResult => ({ id: p.id, kind: p.kind, label: p.label, met, soft: Boolean(p.soft), group: p.group || p.id, detail });
+  switch (p.kind) {
+    case 'network_condition': {
+      if (p.infraKind) {
+        const nets = (world.networks?.networks || []).filter(n => n.networkKind === p.infraKind && (!p.regionId || n.regionIds.includes(p.regionId)));
+        const best = nets.reduce((m, n) => Math.max(m, V103_MAT_RANK[n.maturity]), -1);
+        if (best < 0) return r(false, world.networks ? `No ${INFRA_NETWORK_LABEL[p.infraKind].toLowerCase()} network yet` : 'Strategic networks unavailable');
+        const need = p.minMaturity || 'emerging'; const bestLabel = (Object.keys(V103_MAT_RANK) as InfrastructureNetworkMaturity[]).find(k => V103_MAT_RANK[k] === best)!;
+        return r(best >= V103_MAT_RANK[need], `${INFRA_NETWORK_LABEL[p.infraKind]} network is ${INFRA_MATURITY_LABEL[bestLabel]} (needs ${INFRA_MATURITY_LABEL[need]})`);
+      }
+      const net = p.network || 'freight'; const cond = world.national?.national?.[net]?.condition;
+      if (!cond) return r(false, 'National Systems unavailable');
+      const rank = V103_COND_RANK[cond];
+      if (p.atLeast && rank < V103_COND_RANK[p.atLeast]) return r(false, `${NATIONAL_NETWORK_LABEL[net]} is ${NATIONAL_CONDITION_LABEL[cond]} (needs ${NATIONAL_CONDITION_LABEL[p.atLeast]} or worse)`);
+      if (p.atMost && rank > V103_COND_RANK[p.atMost]) return r(false, `${NATIONAL_NETWORK_LABEL[net]} is ${NATIONAL_CONDITION_LABEL[cond]} (needs ${NATIONAL_CONDITION_LABEL[p.atMost]} or better)`);
+      return r(true, `${NATIONAL_NETWORK_LABEL[net]} is ${NATIONAL_CONDITION_LABEL[cond]}`);
+    }
+    case 'industry_strength': {
+      const k = p.industry || 'energy'; const regs = world.industries?.regions || {};
+      if (!world.industries) return r(false, 'Industries unavailable');
+      const vals = (p.regionId ? [p.regionId] : Object.keys(regs)).map(c => ({ c, v: v103N(regs[c]?.industries?.[k]?.strength) }));
+      const best = vals.reduce((m, x) => (x.v > m.v ? x : m), { c: p.regionId || '', v: 0 });
+      return r(best.v >= v103N(p.minStrength, 50), `${INDUSTRY_LABEL[k]} strength ${Math.round(best.v)}${best.c ? ` in ${best.c}` : ''} (needs ${v103N(p.minStrength, 50)})`);
+    }
+    case 'regional_development': { const t = v103N(world.devTiers[p.regionId || ''], 0); return r(t >= v103N(p.minTier, 1), `${p.regionId} development tier ${t} (needs ${v103N(p.minTier, 1)})`); }
+    case 'project_active': {
+      const pr = world.projects[p.projectId || '']; if (!pr) return r(false, `Unknown project ${p.projectId}`);
+      const ok = p.minProjectStatus === 'active' ? v103Functional(pr.status) : v103Started(pr.status);
+      return r(ok, `${pr.title}: ${pr.status.replace(/_/g, ' ')}`);
+    }
+    case 'capital': { if (!actor) return r(true, 'Checked against the acting team\'s cash'); return r(actor.money >= v103N(p.amount), `Cash $${Math.round(actor.money).toLocaleString()} (needs $${v103N(p.amount).toLocaleString()})`); }
+    case 'faction_support': {
+      const s = def ? megaprojectFactionSupport(def, world) : { score: 0, supporters: [], opponents: [] };
+      return r(s.score >= v103N(p.minSupport, 0), `Stakeholder support ${s.score >= 0 ? '+' : ''}${s.score}${s.supporters.length ? ` · for: ${s.supporters.join(', ')}` : ''}${s.opponents.length ? ` · against: ${s.opponents.join(', ')}` : ''}`);
+    }
+    case 'scenario_flag': return r(Boolean(world.flags?.[p.flag || '']), world.flags?.[p.flag || ''] ? 'Active in this match' : 'Not active in this match');
+  }
+  return r(false, 'Unknown prerequisite');
+}
+/** Hard groups must each have ≥1 met member; soft prerequisites never block. */
+export function evaluateMegaprojectPrereqSet(list: MegaprojectPrerequisite[], world: MegaprojectWorld, def?: MegaprojectDefinition, actor?: Pick<MegaprojectActorContext, 'money'> | null): { met: boolean; results: MegaprojectPrereqResult[]; missing: string[] } {
+  const results = list.map(p => evaluateMegaprojectPrerequisite(p, world, def, actor));
+  const groups: Record<string, MegaprojectPrereqResult[]> = {};
+  results.filter(x => !x.soft).forEach(x => { (groups[x.group] = groups[x.group] || []).push(x); });
+  const missing = Object.values(groups).filter(g => !g.some(x => x.met)).map(g => g.length > 1 ? `one of: ${g.map(x => x.label).join(' / ')}` : g[0].label);
+  return { met: missing.length === 0, results, missing };
+}
+
+/** Intentional pacing: short matches get one focused program; 60-day matches support full programs. */
+export function megaprojectPacing(totalDays: number): { concurrent: number; perMatch: number } {
+  const d = v103N(totalDays, 30);
+  if (d <= 20) return { concurrent: 1, perMatch: 1 };
+  if (d <= 45) return { concurrent: 2, perMatch: 2 };
+  return { concurrent: 2, perMatch: 3 };
+}
+const v103IsOpen = (p: NationalMegaproject) => !p.abandoned && p.status !== 'completed';
+
+export interface MegaprojectEligibilityRow { kind: MegaprojectKind; title: string; icon: string; status: MegaprojectStatus; eligible: boolean; reasons: string[]; prereqs: MegaprojectPrereqResult[]; support: { score: number; supporters: string[]; opponents: string[] } }
+/** World-state eligibility (no level locks): systems on, prerequisites met, and the program-pacing caps. */
+export function megaprojectEligibility(world: MegaprojectWorld, persisted: MegaprojectsPersisted | null, actor?: Pick<MegaprojectActorContext, 'money'> | null): MegaprojectEligibilityRow[] {
+  const programs = Object.values(persisted?.programs || {});
+  const pace = megaprojectPacing(world.totalDays);
+  const open = programs.filter(v103IsOpen).length;
+  return MEGAPROJECT_DEFINITIONS.map(def => {
+    const existing = persisted?.programs?.[megaprojectIdFor(def.kind)] || null;
+    const set = evaluateMegaprojectPrereqSet(def.eligibility, world, def, actor);
+    const support = megaprojectFactionSupport(def, world);
+    const reasons: string[] = [];
+    if (existing) return { kind: def.kind, title: def.title, icon: def.icon, status: existing.status, eligible: false, reasons: existing.abandoned ? ['Abandoned this match'] : [], prereqs: set.results, support };
+    if (!world.enabled) reasons.push('National Megaprojects are off in Settings');
+    if (!world.infrastructureEnabled) reasons.push('State infrastructure is off — programs need canonical component projects');
+    if (world.gameOver) reasons.push('The match is over');
+    reasons.push(...set.missing.map(m => `Needs ${m}`));
+    if (open >= pace.concurrent) reasons.push(`Program capacity reached (${pace.concurrent} active at once in a ${world.totalDays}-day match)`);
+    if (programs.length >= pace.perMatch) reasons.push(`Programs are rare: ${pace.perMatch} per ${world.totalDays}-day match`);
+    const eligible = reasons.length === 0;
+    return { kind: def.kind, title: def.title, icon: def.icon, status: eligible ? 'eligible' : 'unavailable', eligible, reasons, prereqs: set.results, support };
+  });
+}
+
+export function megaprojectWorldHash(world: MegaprojectWorld, persisted: MegaprojectsPersisted | null): string {
+  let h = 2166136261 >>> 0;
+  const mix = (s: string) => { for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } };
+  mix(`${world.turn}|${world.totalDays}|${world.enabled}|${world.infrastructureEnabled}|${world.gameOver}|${persisted?.revision ?? -1}`);
+  Object.keys(world.projects).sort().forEach(id => mix(`${id}:${world.projects[id].status}:${world.projects[id].lockedReason ? 1 : 0}`));
+  Object.keys(world.devTiers).sort().forEach(r => mix(`${r}${world.devTiers[r]}`));
+  NATIONAL_NETWORKS.forEach(n => mix(world.national?.national?.[n]?.condition || '-'));
+  (world.networks?.networks || []).forEach(n => mix(`${n.id}${n.maturity}`));
+  if (world.industries) Object.keys(world.industries.regions).sort().forEach(r => STRATEGIC_INDUSTRIES.forEach(k => mix(String(Math.round(v103N(world.industries!.regions[r]?.industries?.[k]?.strength) / 5)))));
+  Object.keys(world.flags || {}).sort().forEach(k => mix(`${k}=${world.flags[k] ? 1 : 0}`));
+  if (world.factions) Object.keys(world.factions.factions || {}).sort().forEach(k => mix(`${k}${world.factions!.factions[k].status}`));
+  return h.toString(36);
+}
+
+export function buildMegaprojectWorld(src: { turn: number; totalDays?: number; enabled?: boolean; infrastructureEnabled?: boolean; gameOver?: boolean; projects: Record<string, any> | any[] | null | undefined; regionalDevLevels?: Record<string, any> | null; national?: NationalSystemsState | null; industries?: IndustriesSupplyChainsState | null; networks?: StrategicInfrastructureState | null; factions?: RegionalFactionsState | null; flags?: Record<string, any> | null }): MegaprojectWorld {
+  const list: any[] = Array.isArray(src.projects) ? src.projects : Object.values(src.projects || {});
+  const projects: MegaprojectWorld['projects'] = {};
+  list.forEach(p => { if (p && typeof p.id === 'string') projects[p.id] = { id: p.id, title: String(p.title || p.id), regionId: p.regionId || p.stateCode || null, projectType: String(p.projectType || ''), status: String(p.status || 'unlocked'), totalInvestedMoney: v103N(p.totalInvestedMoney), totalCost: v103N(p.totalCost, 1),
+    laborTurnsRequired: v103N(p.laborTurnsRequired, 3), maintenanceCostPerTurn: v103N(p.maintenanceCostPerTurn), lockedReason: p.lockedReason || null, contributions: p.contributions && typeof p.contributions === 'object' ? { ...p.contributions } : undefined }; });
+  const devTiers: Record<string, number> = {};
+  Object.entries(src.regionalDevLevels || {}).forEach(([k, v]: [string, any]) => { devTiers[k] = v103N(v?.tier); });
+  return { turn: v103N(src.turn, 1), totalDays: v103N(src.totalDays, 30), enabled: src.enabled !== false, infrastructureEnabled: Boolean(src.infrastructureEnabled), gameOver: Boolean(src.gameOver), projects, devTiers,
+    national: src.national || null, industries: src.industries || null, networks: src.networks || null, factions: src.factions || null, flags: src.flags || {} };
+}
+
+// ---- Commands (the ONE validation used by the reducer, the AI and the UI) --------------------------------
+function v103Clone(p: MegaprojectsPersisted): MegaprojectsPersisted { return JSON.parse(JSON.stringify(p)); }
+function v103PushHistory(state: MegaprojectsPersisted, prog: NationalMegaproject, kind: MegaprojectHistoryKind, turn: number, actorId: string | null, summary: string, stageId?: string, sourceEventIds: string[] = []) {
+  state.seq += 1;
+  const e: MegaprojectHistoryEntry = { id: `${prog.id}:h${state.seq}`, turn, megaprojectId: prog.id, kind, ...(stageId ? { stageId } : {}), ...(actorId ? { actorId } : {}), summary: summary.slice(0, 200), sourceEventIds: sourceEventIds.slice(0, 4) };
+  prog.history = [...prog.history, e].slice(-V103_LIMITS.programHistory);
+  state.history = [...state.history, e].slice(-V103_LIMITS.history);
+}
+export function megaprojectAuthority(p: NationalMegaproject, actorId: string, teamId: string | null): boolean {
+  if (p.proposedBy === actorId || (teamId && p.proposedTeamId === teamId)) return true;
+  const totals = Object.entries(p.contributorTotals);
+  if (!totals.length) return false;
+  const top = totals.reduce((m, x) => (x[1].capital + x[1].labor * 1000 > m[1].capital + m[1].labor * 1000 ? x : m));
+  return top[0] === actorId || (Boolean(teamId) && top[1].teamId === teamId);
+}
+/** Tracking is a viewer preference (PLAY line / Current Focus), not a game action: no AP, no money. */
+export function setMegaprojectTracked(prev: MegaprojectsPersisted | null, actorId: string, programId: string | null): MegaprojectsPersisted {
+  const s = v103Clone(prev || createEmptyMegaprojectsPersisted());
+  if (programId && s.programs[programId]) s.tracked[actorId] = programId; else delete s.tracked[actorId];
+  s.revision += 1; return s;
+}
+
+export interface MegaprojectCommandResult { ok: boolean; reason: string | null; persisted: MegaprojectsPersisted; moneySpent: number; laborApplied: number; programId: string | null }
+/**
+ * Validate + apply one command to program memory (pure). Money is NOT touched here — the caller (reduceGameAction for the
+ * human path, executeAiAction for the rival) deducts exactly `moneySpent` from the real actor once.
+ */
+export function applyMegaprojectCommand(prev: MegaprojectsPersisted | null, cmd: MegaprojectCommand, actor: MegaprojectActorContext, world: MegaprojectWorld): MegaprojectCommandResult {
+  const base = prev || createEmptyMegaprojectsPersisted();
+  const fail = (reason: string): MegaprojectCommandResult => ({ ok: false, reason, persisted: base, moneySpent: 0, laborApplied: 0, programId: null });
+  if (world.gameOver) return fail('The match is over.');
+  if (!world.enabled) return fail('National Megaprojects are off in Settings.');
+  if (!actor.turnOwner) return fail('It is not your turn.');
+  if (actor.apRemaining < actor.apCost) return fail('No actions left this turn.');
+  const turn = world.turn;
+  const state = v103Clone(base);
+  const bump = (p: NationalMegaproject) => { p.revision += 1; state.revision += 1; };
+  if (cmd.op === 'propose') {
+    const kind = cmd.kind; if (!kind || !MEGAPROJECT_DEF_BY_KIND[kind]) return fail('Unknown program.');
+    const row = megaprojectEligibility(world, base, actor).find(r => r.kind === kind)!;
+    if (!row.eligible) return fail(row.reasons[0] || 'Not eligible yet.');
+    const def = MEGAPROJECT_DEF_BY_KIND[kind]; const id = megaprojectIdFor(kind);
+    const prog: NationalMegaproject = { id, kind, status: 'proposed', proposedBy: actor.id, proposedTeamId: actor.teamId, proposedTurn: turn, committedTurn: null, committedBy: null, completedTurn: null, suspendedTurn: null, suspendedBy: null, abandoned: false, closedReason: null,
+      currentStageIndex: 0, stages: def.stages.map(s => ({ id: s.id, status: 'planned', progressCapital: 0, progressLabor: 0, startedTurn: null, completedTurn: null, stallReason: null })), choices: {}, contributions: [], contributorTotals: {}, teamTotals: {}, stallReason: null, history: [],
+      emitted: { proposed: false, committed: false, stagesCompleted: 0, partial: false, stalled: false, damaged: false, completed: false, abandoned: false }, revision: 0 };
+    state.programs[id] = prog; v103PushHistory(state, prog, 'proposed', turn, actor.id, `${def.title} proposed`);
+    bump(prog);
+    return { ok: true, reason: null, persisted: state, moneySpent: 0, laborApplied: 0, programId: id };
+  }
+  const prog = cmd.programId ? state.programs[cmd.programId] : (cmd.kind ? state.programs[megaprojectIdFor(cmd.kind)] : null);
+  if (!prog) return fail('No such program.');
+  const def = MEGAPROJECT_DEF_BY_KIND[prog.kind];
+  if (prog.abandoned) return fail('This program was abandoned.');
+  if (prog.status === 'completed') return fail('This program is already complete.');
+  if (cmd.op === 'choose') {
+    const ch = def.choices.find(c => c.id === cmd.choiceId); if (!ch) return fail('Unknown decision.');
+    if (prog.choices[ch.id]) return fail('This decision is already made — program choices are permanent.');
+    const opt = ch.options.find(o => o.id === cmd.optionId); if (!opt) return fail('Unknown option.');
+    const gateIdx = def.stages.findIndex(s => s.id === ch.stageId);
+    if (gateIdx >= 0 && (prog.stages[gateIdx]?.status === 'completed' || gateIdx < prog.currentStageIndex)) return fail('That stage is already built.');
+    if (!megaprojectAuthority(prog, actor.id, actor.teamId) && !prog.contributorTotals[actor.id]) return fail('Only the proposer or a contributor can decide program design.');
+    prog.choices[ch.id] = { optionId: opt.id, actorId: actor.id, turn };
+    v103PushHistory(state, prog, 'choice_made', turn, actor.id, `${ch.title}: ${opt.label}`, ch.stageId);
+    bump(prog);
+    return { ok: true, reason: null, persisted: state, moneySpent: 0, laborApplied: 0, programId: prog.id };
+  }
+  if (cmd.op === 'suspend') {
+    if (prog.status === 'suspended') return fail('Already suspended.');
+    if (!megaprojectAuthority(prog, actor.id, actor.teamId)) return fail('Only the proposer or the largest contributor can suspend the program.');
+    prog.status = 'suspended'; prog.suspendedTurn = turn; prog.suspendedBy = actor.id;
+    prog.stages.forEach(s => { if (s.status !== 'completed') s.status = 'suspended'; });
+    v103PushHistory(state, prog, 'suspended', turn, actor.id, `${def.title} suspended — completed stages keep operating; capital in the unfinished stage stays committed (no refund)`);
+    bump(prog);
+    return { ok: true, reason: null, persisted: state, moneySpent: 0, laborApplied: 0, programId: prog.id };
+  }
+  if (cmd.op === 'resume') {
+    if (prog.status !== 'suspended') return fail('The program is not suspended.');
+    if (!megaprojectAuthority(prog, actor.id, actor.teamId)) return fail('Only the proposer or the largest contributor can resume the program.');
+    prog.status = prog.committedTurn !== null ? 'committed' : 'proposed'; prog.suspendedTurn = null; prog.suspendedBy = null;
+    prog.stages.forEach(s => { if (s.status === 'suspended') s.status = 'planned'; });
+    v103PushHistory(state, prog, 'resumed', turn, actor.id, `${def.title} resumed with all progress intact`);
+    bump(prog);
+    return { ok: true, reason: null, persisted: state, moneySpent: 0, laborApplied: 0, programId: prog.id };
+  }
+  // commit / contribute — current-stage funding only, capped at the stage remainder.
+  if (prog.status === 'suspended') return fail('The program is suspended.');
+  if (cmd.op === 'commit' && prog.committedTurn !== null) return fail('Already committed.');
+  if (cmd.op === 'contribute' && prog.committedTurn === null) return fail('Commit the program first.');
+  if (prog.status === 'stalled' || prog.status === 'damaged') return fail(`${prog.status === 'damaged' ? 'Damaged' : 'Stalled'}: ${prog.stallReason || 'a prerequisite is missing'}.`);
+  const idx = prog.currentStageIndex; const st = prog.stages[idx];
+  if (!st) return fail('No open stage.');
+  const pending = megaprojectPendingChoice(prog, idx);
+  if (pending) return fail(`Decide “${pending.title}” first.`);
+  if (st.status === 'stalled') return fail(`Stage stalled: ${st.stallReason || 'prerequisite missing'}.`);
+  const sdef = megaprojectStageDefs(def, prog.choices)[idx];
+  const capLeft = Math.max(0, sdef.requiredCapital - st.progressCapital);
+  const laborLeft = Math.max(0, sdef.requiredLabor - st.progressLabor);
+  const want = Math.max(0, Math.floor(v103N(cmd.amount)));
+  const capital = Math.min(want, capLeft);
+  let labor = Math.min(Math.max(0, Math.floor(v103N(cmd.labor))), 1, laborLeft);
+  if (labor > 0) {
+    const regs = sdef.requiredRegionIds.length ? sdef.requiredRegionIds : def.regionIds;
+    if (!actor.currentRegion || !regs.includes(actor.currentRegion)) { if (!capital) return fail(`Labour must be on site: travel to ${regs.join(' / ')}.`); labor = 0; }
+  }
+  if (capital <= 0 && labor <= 0) return fail(capLeft <= 0 && laborLeft <= 0 ? 'This stage is fully funded — it completes when its component projects are active.' : 'A contribution must add capital or on-site labour.');
+  if (capital > 0 && capital < Math.min(V103_LIMITS.minContribution, capLeft)) return fail(`Minimum contribution is $${Math.min(V103_LIMITS.minContribution, capLeft).toLocaleString()}.`);
+  if (capital > actor.money) return fail(`Not enough cash ($${Math.round(actor.money).toLocaleString()} available).`);
+  if (cmd.op === 'commit' && capital <= 0) return fail('Commitment needs a capital contribution.');
+  st.progressCapital += capital; st.progressLabor += labor;
+  if (st.startedTurn === null) st.startedTurn = turn;
+  state.seq += 1;
+  const contrib: MegaprojectContributionRecord = { id: `${prog.id}:c${state.seq}`, turn, actorId: actor.id, teamId: actor.teamId, stageId: st.id, capital, labor, kind: cmd.op === 'commit' ? 'commitment' : capital && labor ? 'capital_and_labor' : capital ? 'capital' : 'labor' };
+  prog.contributions = [...prog.contributions, contrib].slice(-V103_LIMITS.contributions);
+  const tot = prog.contributorTotals[actor.id] || { capital: 0, labor: 0, teamId: actor.teamId };
+  prog.contributorTotals[actor.id] = { capital: tot.capital + capital, labor: tot.labor + labor, teamId: actor.teamId };
+  if (actor.teamId) prog.teamTotals[actor.teamId] = v103N(prog.teamTotals[actor.teamId]) + capital;
+  // Contributions are recorded in the program's contribution list (provenance) and the Activity Ledger — never as program history.
+  if (cmd.op === 'commit') { prog.committedTurn = turn; prog.committedBy = actor.id; prog.status = 'committed'; v103PushHistory(state, prog, 'committed', turn, actor.id, `${def.title} committed with $${capital.toLocaleString()}`, st.id); }
+  bump(prog);
+  return { ok: true, reason: null, persisted: state, moneySpent: capital, laborApplied: labor, programId: prog.id };
+}
+
+// ---- Evaluation (stage progression / stall / resume / completion — deterministic, idempotent) -------------
+export interface MegaprojectAdvanceResult { persisted: MegaprojectsPersisted; events: MegaprojectDerivedEvent[]; unlockProjectIds: string[]; changed: boolean }
+/** Canonical locked projects a stage may open: v10.3 capstones and the content-gated national grid. */
+export function megaprojectCanUnlock(p: MegaprojectWorld['projects'][string] | undefined): boolean {
+  return Boolean(p && p.status === 'locked' && (!p.lockedReason || String(p.lockedReason).startsWith(V103_CAPSTONE_LOCK_PREFIX)));
+}
+export function applyMegaprojectUnlocks(projects: Record<string, any>, ids: string[]): Record<string, any> {
+  let out = projects;
+  ids.forEach(id => { const p = projects?.[id]; if (p && p.status === 'locked' && (!p.lockedReason || String(p.lockedReason).startsWith(V103_CAPSTONE_LOCK_PREFIX))) { if (out === projects) out = { ...projects }; out[id] = { ...p, status: 'unlocked', lockedReason: undefined }; } });
+  return out;
+}
+
+export function advanceNationalMegaprojects(prevIn: MegaprojectsPersisted | null, world: MegaprojectWorld): MegaprojectAdvanceResult {
+  const prev = prevIn || createEmptyMegaprojectsPersisted();
+  const state = v103Clone(prev);
+  const events: MegaprojectDerivedEvent[] = []; const unlocks: string[] = [];
+  const turn = world.turn;
+  const ev = (prog: NationalMegaproject, kind: MegaprojectDerivedKind, text: string, regionIds: string[], significance: 'meaningful' | 'major', projectIds: string[] = [], evidence: string[] = []): string => {
+    const id = `mpe:${prog.id}:${kind}:${turn}:${events.length}`;
+    events.push({ id, turn, kind, programId: prog.id, programKind: prog.kind, regionIds: regionIds.filter(r => REGIONS[r]), actorId: null, text, significance, evidence: evidence.slice(0, V103_LIMITS.evidence), projectIds,
+      projectTypes: Array.from(new Set(projectIds.map(pid => world.projects[pid]?.projectType).filter(Boolean) as string[])), contributorIds: Object.keys(prog.contributorTotals).sort() });
+    return id;
+  };
+  Object.values(state.programs).sort((a, b) => a.id.localeCompare(b.id)).forEach(prog => {
+    const def = MEGAPROJECT_DEF_BY_KIND[prog.kind]; if (!def) return;
+    const defs = megaprojectStageDefs(def, prog.choices);
+    if (!prog.emitted.proposed) { prog.emitted.proposed = true; ev(prog, 'megaproject_proposed', `${def.title} proposed — ${def.summary}`, def.regionIds, 'meaningful'); }
+    if (prog.committedTurn !== null && !prog.emitted.committed) { prog.emitted.committed = true; ev(prog, 'megaproject_committed', `${def.title} committed: stage 1 “${defs[0].title}” is open for funding.`, defs[0].requiredRegionIds, 'major'); }
+    if (prog.abandoned) return;
+    // Lapse / abandonment (bounded, deterministic). Completed stages and their canonical projects always remain.
+    if (prog.committedTurn === null && prog.status === 'proposed' && turn - prog.proposedTurn >= V103_LIMITS.proposalLapseTurns) {
+      prog.abandoned = true; prog.closedReason = 'Proposal lapsed without a commitment'; prog.status = 'suspended';
+      prog.emitted.abandoned = true;
+      const eid = ev(prog, 'megaproject_abandoned', `${def.title} lapsed: no team committed funding within ${V103_LIMITS.proposalLapseTurns} turns.`, def.regionIds, 'meaningful');
+      v103PushHistory(state, prog, 'abandoned', turn, null, `${def.title} lapsed — nobody committed funding`, undefined, [eid]);
+      return;
+    }
+    if (prog.status === 'suspended') {
+      if (prog.suspendedTurn !== null && turn - prog.suspendedTurn >= V103_LIMITS.suspendAbandonTurns) {
+        prog.abandoned = true; prog.closedReason = 'Suspended too long — future stages abandoned';
+        prog.stages.forEach(s => { if (s.status !== 'completed') s.status = 'abandoned'; });
+        const done = prog.stages.filter(s => s.status === 'completed').length;
+        prog.emitted.abandoned = true;
+        const eid = ev(prog, 'megaproject_abandoned', `${def.title} abandoned after a long suspension. ${done} completed stage(s) and their projects keep operating.`, def.regionIds, 'major');
+        v103PushHistory(state, prog, 'abandoned', turn, null, `${def.title} abandoned at stage ${done}/${prog.stages.length} — completed stages remain`, undefined, [eid]);
+      }
+      return;
+    }
+    // Damage to a completed stage's canonical component degrades the program (the stage itself stays completed).
+    const damaged: Array<{ id: string; stage: number }> = [];
+    prog.stages.forEach((s, i) => { if (s.status === 'completed') defs[i].requiredProjectIds.forEach(id => { if (world.projects[id]?.status === 'damaged') damaged.push({ id, stage: i }); }); });
+    // Current stage progression (at most one completion per evaluation — pacing).
+    if (prog.committedTurn !== null) {
+      const idx = prog.currentStageIndex; const s = prog.stages[idx]; const d = defs[idx];
+      if (s && d) {
+        const choice = megaprojectPendingChoice(prog, idx);
+        const reasons: string[] = damaged.map(x => `${world.projects[x.id]?.title || x.id} (stage ${x.stage + 1} “${defs[x.stage].title}”) is damaged`);
+        if (!choice) {
+          const pre = evaluateMegaprojectPrereqSet(d.prerequisites, world, def);
+          reasons.push(...pre.missing.map(m => `needs ${m}`));
+          d.requiredProjectIds.forEach(id => { const pr = world.projects[id]; if (!pr) reasons.push(`component ${id} is missing`); else if (pr.status === 'locked' && !d.unlocksProjectIds.includes(id)) reasons.push(`${pr.title} is closed${pr.lockedReason ? ` (${pr.lockedReason})` : ''}`); else if (pr.status === 'damaged') reasons.push(`${pr.title} is damaged`); });
+        }
+        const wasStalled = s.status === 'stalled';
+        if (choice && !damaged.length) {
+          if (wasStalled) { const eid = ev(prog, 'megaproject_resumed', `${def.title} resumed — “${d.title}” now awaits the “${choice.title}” decision.`, d.requiredRegionIds, 'meaningful', d.requiredProjectIds); v103PushHistory(state, prog, 'resumed', turn, null, `${d.title} resumed`, d.id, [eid]); }
+          s.status = 'awaiting_choice'; s.stallReason = null;
+        }
+        else if (reasons.length) {
+          s.status = 'stalled'; s.stallReason = reasons[0];
+          if (!wasStalled) { const eid = ev(prog, 'megaproject_stalled', `${def.title} stalled at “${d.title}”: ${reasons[0]}. Completed work is kept.`, d.requiredRegionIds, 'major', d.requiredProjectIds, reasons); v103PushHistory(state, prog, 'stalled', turn, null, `${d.title} stalled: ${reasons[0]}`, d.id, [eid]); }
+        } else {
+          if (wasStalled) { const eid = ev(prog, 'megaproject_resumed', `${def.title} resumed at “${d.title}” with all progress intact.`, d.requiredRegionIds, 'meaningful', d.requiredProjectIds); v103PushHistory(state, prog, 'resumed', turn, null, `${d.title} resumed`, d.id, [eid]); }
+          s.stallReason = null;
+          if (s.startedTurn === null) s.startedTurn = turn;
+          const opened = d.unlocksProjectIds.filter(id => megaprojectCanUnlock(world.projects[id]));
+          opened.forEach(id => { if (!unlocks.includes(id)) unlocks.push(id); });
+          if (s.status === 'planned' || s.status === 'awaiting_choice') v103PushHistory(state, prog, 'stage_started', turn, null, `Stage ${idx + 1} “${d.title}” started${opened.length ? ` — opened ${opened.map(id => world.projects[id].title).join(', ')} for funding` : ''}`, d.id);
+          const funded = s.progressCapital >= d.requiredCapital && s.progressLabor >= d.requiredLabor;
+          const built = d.requiredProjectIds.every(id => v103Functional(world.projects[id]?.status));
+          if (funded && built) {
+            s.status = 'completed'; s.completedTurn = turn; prog.currentStageIndex = Math.min(prog.stages.length, idx + 1);
+            const eid = ev(prog, 'megaproject_stage_completed', `${def.title}: stage ${idx + 1} “${d.title}” is operational.`, d.requiredRegionIds, 'major', d.requiredProjectIds, [...d.requiredProjectIds.map(id => `${world.projects[id]?.title || id} active`), ...d.partialEffects.filter(e => e.kind === 'program_coordination').map(e => e.label)]);
+            v103PushHistory(state, prog, 'stage_completed', turn, null, `Stage ${idx + 1} “${d.title}” completed`, d.id, [eid]);
+          } else s.status = funded ? 'funded' : 'active';
+        }
+      }
+    }
+    // Program status (derived from stages; suspension handled above).
+    const done = prog.stages.filter(s => s.status === 'completed').length;
+    const cur = prog.stages[prog.currentStageIndex];
+    let status: MegaprojectStatus;
+    if (damaged.length) status = 'damaged';
+    else if (done === prog.stages.length) status = 'completed';
+    else if (cur?.status === 'stalled') status = 'stalled';
+    else if (prog.committedTurn === null) status = 'proposed';
+    else if (done > 0) status = 'partially_operational';
+    else if (prog.contributions.some(c => c.kind !== 'commitment')) status = 'under_construction';
+    else status = 'committed';
+    if (status !== prog.status) prog.revision += 1;
+    prog.status = status; prog.stallReason = status === 'stalled' || status === 'damaged' ? (cur?.stallReason || (damaged[0] ? `${world.projects[damaged[0].id]?.title || damaged[0].id} is damaged` : null)) : null;
+    if (done > 0 && done < prog.stages.length && !prog.emitted.partial) { prog.emitted.partial = true; ev(prog, 'megaproject_partially_operational', `${def.title} is partially operational: ${done} of ${prog.stages.length} stages working.`, def.regionIds, 'meaningful'); }
+    if (done === prog.stages.length && !prog.emitted.completed) {
+      prog.emitted.completed = true; prog.completedTurn = turn;
+      const eid = ev(prog, 'megaproject_completed', `${def.title} completed — a national program across ${def.regionIds.join(', ')}.`, def.regionIds, 'major', defs.flatMap(x => x.requiredProjectIds), def.completionEffects.map(e => e.label));
+      v103PushHistory(state, prog, 'completed', turn, null, `${def.title} completed`, undefined, [eid]);
+    }
+    prog.emitted.stagesCompleted = done; prog.emitted.stalled = status === 'stalled'; prog.emitted.damaged = status === 'damaged';
+  });
+  state.lastEvaluatedTurn = turn;
+  const changed = JSON.stringify({ ...state, lastWorldHash: '' }) !== JSON.stringify({ ...prev, lastWorldHash: '' }) || unlocks.length > 0;
+  if (changed) state.revision = prev.revision + 1;
+  state.lastWorldHash = megaprojectWorldHash(world, state);
+  return { persisted: changed ? state : { ...prev, lastWorldHash: state.lastWorldHash }, events, unlockProjectIds: unlocks, changed };
+}
+
+// ---- Persistence ----------------------------------------------------------------------------------------
+export function sanitizeMegaprojectsPersisted(raw: unknown): MegaprojectsPersisted | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r: any = raw; const out = createEmptyMegaprojectsPersisted();
+  out.revision = Math.max(0, Math.floor(v103N(r.revision))); out.seq = Math.max(0, Math.floor(v103N(r.seq)));
+  out.lastEvaluatedTurn = Math.max(0, Math.floor(v103N(r.lastEvaluatedTurn))); out.lastWorldHash = typeof r.lastWorldHash === 'string' ? r.lastWorldHash.slice(0, 24) : '';
+  const statuses = Object.keys(MEGAPROJECT_STATUS_LABEL), sst = Object.keys(MEGAPROJECT_STAGE_LABEL);
+  const hk: MegaprojectHistoryKind[] = ['proposed', 'committed', 'stage_started', 'stage_completed', 'choice_made', 'stalled', 'resumed', 'suspended', 'completed', 'abandoned'];
+  const hist = (arr: any, max: number): MegaprojectHistoryEntry[] => (Array.isArray(arr) ? arr : []).filter((h: any) => h && typeof h.id === 'string' && typeof h.summary === 'string' && hk.includes(h.kind)).slice(-max)
+    .map((h: any) => ({ id: h.id.slice(0, 80), turn: Math.floor(v103N(h.turn)), megaprojectId: String(h.megaprojectId || '').slice(0, 60), kind: h.kind, ...(typeof h.stageId === 'string' ? { stageId: h.stageId.slice(0, 40) } : {}), ...(typeof h.actorId === 'string' ? { actorId: h.actorId.slice(0, 40) } : {}),
+      summary: h.summary.slice(0, 200), sourceEventIds: (Array.isArray(h.sourceEventIds) ? h.sourceEventIds : []).filter((x: any) => typeof x === 'string').slice(0, 4).map((x: string) => x.slice(0, 100)) }));
+  Object.entries(r.programs && typeof r.programs === 'object' ? r.programs : {}).slice(0, V103_LIMITS.programs).forEach(([id, v]: [string, any]) => {
+    if (!v || typeof v !== 'object' || !MEGAPROJECT_DEF_BY_KIND[v.kind as MegaprojectKind] || id !== megaprojectIdFor(v.kind)) return;
+    const def = MEGAPROJECT_DEF_BY_KIND[v.kind as MegaprojectKind];
+    const stages: MegaprojectStageProgress[] = def.stages.map((sd, i) => { const s = Array.isArray(v.stages) ? v.stages[i] : null; return { id: sd.id, status: s && sst.includes(s.status) ? s.status : 'planned', progressCapital: Math.max(0, v103N(s?.progressCapital)), progressLabor: Math.max(0, Math.floor(v103N(s?.progressLabor))), startedTurn: s?.startedTurn == null ? null : Math.floor(v103N(s.startedTurn)), completedTurn: s?.completedTurn == null ? null : Math.floor(v103N(s.completedTurn)), stallReason: typeof s?.stallReason === 'string' ? s.stallReason.slice(0, 160) : null }; });
+    const choices: NationalMegaproject['choices'] = {};
+    Object.entries(v.choices && typeof v.choices === 'object' ? v.choices : {}).forEach(([cid, c]: [string, any]) => { const ch = def.choices.find(x => x.id === cid); if (ch && c && ch.options.some(o => o.id === c.optionId)) choices[cid] = { optionId: c.optionId, actorId: String(c.actorId || '').slice(0, 40), turn: Math.floor(v103N(c.turn)) }; });
+    const contributions: MegaprojectContributionRecord[] = (Array.isArray(v.contributions) ? v.contributions : []).filter((c: any) => c && typeof c.id === 'string' && typeof c.actorId === 'string').slice(-V103_LIMITS.contributions)
+      .map((c: any) => ({ id: c.id.slice(0, 80), turn: Math.floor(v103N(c.turn)), actorId: c.actorId.slice(0, 40), teamId: typeof c.teamId === 'string' ? c.teamId.slice(0, 40) : null, stageId: String(c.stageId || '').slice(0, 40), capital: Math.max(0, v103N(c.capital)), labor: Math.max(0, Math.floor(v103N(c.labor))), kind: ['commitment', 'capital', 'labor', 'capital_and_labor'].includes(c.kind) ? c.kind : 'capital' }));
+    const contributorTotals: NationalMegaproject['contributorTotals'] = {};
+    Object.entries(v.contributorTotals && typeof v.contributorTotals === 'object' ? v.contributorTotals : {}).slice(0, 16).forEach(([a, t]: [string, any]) => { contributorTotals[a.slice(0, 40)] = { capital: Math.max(0, v103N(t?.capital)), labor: Math.max(0, Math.floor(v103N(t?.labor))), teamId: typeof t?.teamId === 'string' ? t.teamId.slice(0, 40) : null }; });
+    const teamTotals: Record<string, number> = {}; Object.entries(v.teamTotals && typeof v.teamTotals === 'object' ? v.teamTotals : {}).slice(0, 8).forEach(([t, n]) => { teamTotals[t.slice(0, 40)] = Math.max(0, v103N(n)); });
+    const em = v.emitted || {};
+    out.programs[id] = { id, kind: v.kind, status: statuses.includes(v.status) ? v.status : 'proposed', proposedBy: String(v.proposedBy || 'unknown').slice(0, 40), proposedTeamId: typeof v.proposedTeamId === 'string' ? v.proposedTeamId.slice(0, 40) : null,
+      proposedTurn: Math.floor(v103N(v.proposedTurn)), committedTurn: v.committedTurn == null ? null : Math.floor(v103N(v.committedTurn)), committedBy: typeof v.committedBy === 'string' ? v.committedBy.slice(0, 40) : null,
+      completedTurn: v.completedTurn == null ? null : Math.floor(v103N(v.completedTurn)), suspendedTurn: v.suspendedTurn == null ? null : Math.floor(v103N(v.suspendedTurn)), suspendedBy: typeof v.suspendedBy === 'string' ? v.suspendedBy.slice(0, 40) : null,
+      abandoned: Boolean(v.abandoned), closedReason: typeof v.closedReason === 'string' ? v.closedReason.slice(0, 160) : null,
+      currentStageIndex: Math.max(0, Math.min(def.stages.length, Math.floor(v103N(v.currentStageIndex)))), stages, choices, contributions, contributorTotals, teamTotals,
+      stallReason: typeof v.stallReason === 'string' ? v.stallReason.slice(0, 160) : null, history: hist(v.history, V103_LIMITS.programHistory),
+      emitted: { proposed: Boolean(em.proposed), committed: Boolean(em.committed), stagesCompleted: Math.max(0, Math.floor(v103N(em.stagesCompleted))), partial: Boolean(em.partial), stalled: Boolean(em.stalled), damaged: Boolean(em.damaged), completed: Boolean(em.completed), abandoned: Boolean(em.abandoned) },
+      revision: Math.max(0, Math.floor(v103N(v.revision))) };
+  });
+  out.history = hist(r.history, V103_LIMITS.history);
+  Object.entries(r.tracked && typeof r.tracked === 'object' ? r.tracked : {}).slice(0, 16).forEach(([a, pid]) => { if (typeof pid === 'string' && out.programs[pid]) out.tracked[a.slice(0, 40)] = pid; });
+  return out;
+}
+
+// ---- Validation (spec checks + invariants A–J) ------------------------------------------------------------
+export function validateNationalMegaproject(p: NationalMegaproject, world?: Pick<MegaprojectWorld, 'projects'> | null): string[] {
+  const issues: string[] = []; const def = MEGAPROJECT_DEF_BY_KIND[p.kind];
+  if (!def) return [`J: unknown program kind ${p.kind}`];
+  if (p.id !== megaprojectIdFor(p.kind)) issues.push(`J: unstable id ${p.id}`);
+  const defs = megaprojectStageDefs(def, p.choices);
+  if (p.stages.length !== defs.length || p.stages.some((s, i) => s.id !== defs[i].id)) issues.push('stage ids do not match the catalog');
+  p.stages.forEach((s, i) => {
+    const d = defs[i]; if (!d) return;
+    if (!Number.isFinite(s.progressCapital) || !Number.isFinite(d.requiredCapital)) issues.push(`${s.id}: non-finite cost/progress`);
+    if (s.progressCapital < 0 || s.progressCapital > d.requiredCapital + 0.001) issues.push(`E: ${s.id} capital ${s.progressCapital} outside 0…${d.requiredCapital}`);
+    if (s.progressLabor < 0 || s.progressLabor > d.requiredLabor) issues.push(`E: ${s.id} labour ${s.progressLabor} outside 0…${d.requiredLabor}`);
+    if (s.status === 'completed' && s.completedTurn === null) issues.push(`D: ${s.id} completed without a turn`);
+    if (s.status === 'completed' && i > 0 && p.stages[i - 1].status !== 'completed') issues.push(`H: ${s.id} completed before the prior stage`);
+    if (i < p.currentStageIndex && s.status !== 'completed') issues.push(`H: ${s.id} before the current stage is not complete`);
+    if (i > p.currentStageIndex && (s.progressCapital > 0 || s.progressLabor > 0)) issues.push(`E: future stage ${s.id} received funding (no pre-funding)`);
+    d.requiredRegionIds.forEach(r => { if (!REGIONS[r]) issues.push(`${s.id}: unknown region ${r}`); });
+    if (world) d.requiredProjectIds.concat(d.unlocksProjectIds).forEach(id => { if (!world.projects[id]) issues.push(`C: ${s.id} references non-canonical project ${id}`); });
+  });
+  if (!NATIONAL_NETWORKS.includes(def.primaryNetwork) || !INFRA_NETWORK_KINDS.includes(def.infraKind)) issues.push('invalid network kind');
+  const stageCap = p.stages.reduce((a, s) => a + s.progressCapital, 0);
+  const totCap = Object.values(p.contributorTotals).reduce((a, t) => a + t.capital, 0);
+  if (Math.abs(stageCap - totCap) > 0.5) issues.push(`A/F: contributions $${totCap} ≠ stage progress $${stageCap}`);
+  const teamCap = Object.values(p.teamTotals).reduce((a, n) => a + n, 0);
+  if (teamCap > totCap + 0.5) issues.push('A: team totals exceed contributions');
+  if (new Set(p.contributions.map(c => c.id)).size !== p.contributions.length) issues.push('F: duplicate contribution ids');
+  Object.entries(p.choices).forEach(([cid, c]) => { const ch = def.choices.find(x => x.id === cid); if (!ch || !ch.options.some(o => o.id === c.optionId)) issues.push(`invalid choice ${cid}=${c.optionId}`); });
+  const done = p.stages.filter(s => s.status === 'completed').length;
+  if (p.status === 'completed' && done !== p.stages.length) issues.push('H: completed with unfinished stages');
+  if (p.status === 'partially_operational' && done === 0) issues.push('H: partially operational with no completed stage');
+  if (p.committedTurn === null && stageCap > 0) issues.push('H: funded before commitment');
+  if (Object.keys(p as any).some(k => /capacity|bonus|income|maintenance|owner/i.test(k))) issues.push('B: program carries a capacity/bonus/maintenance/ownership field');
+  if (p.contributions.length > V103_LIMITS.contributions || p.history.length > V103_LIMITS.programHistory) issues.push('I: unbounded program memory');
+  return issues;
+}
+export function validateMegaprojectsPersisted(s: MegaprojectsPersisted, world?: Pick<MegaprojectWorld, 'projects'> | null): string[] {
+  const issues: string[] = [];
+  const progs = Object.values(s.programs);
+  if (progs.length > V103_LIMITS.programs) issues.push('I: too many programs');
+  if (s.history.length > V103_LIMITS.history) issues.push('I: unbounded history');
+  progs.forEach(p => validateNationalMegaproject(p, world).forEach(x => issues.push(`${p.id} ${x}`)));
+  MEGAPROJECT_DEFINITIONS.forEach(d => {
+    if (d.stages.length < 3 || d.choices.length < 1 || d.choices.length > 3) issues.push(`catalog: ${d.kind} must have ≥3 stages and 1–3 choices`);
+    if (new Set(d.stages.map(x => x.id)).size !== d.stages.length) issues.push(`catalog: ${d.kind} duplicate stage ids`);
+    d.choices.forEach(c => { if (!d.stages.some(x => x.id === c.stageId)) issues.push(`catalog: ${d.kind} choice ${c.id} → unknown stage`); if (c.options.length < 2) issues.push(`catalog: ${c.id} needs ≥2 options`); });
+    d.stages.forEach(x => x.requiredProjectIds.concat(x.unlocksProjectIds).forEach(id => { if (!V103_PROJECT_INDEX[id]) issues.push(`catalog: ${d.kind}/${x.id} non-canonical project ${id}`); }));
+    if (!V103_PROJECT_INDEX[d.capstoneProjectId]) issues.push(`catalog: ${d.kind} capstone ${d.capstoneProjectId} missing`);
+  });
+  return issues;
+}
+
+// ---- World Reaction adapter + read-only consumers ----------------------------------------------------------
+export function megaprojectToWorldEvent(d: MegaprojectDerivedEvent, observers: string[], day = 0): StrategicWorldEvent {
+  const region = d.regionIds.length === 1 && REGIONS[d.regionIds[0]] ? d.regionIds[0] : null;
+  return {
+    id: d.id, turn: d.turn, day, sourceSystem: 'megaprojects', sourceEventId: null, actorId: d.actorId, teamId: null, kind: d.kind as SWRKind,
+    subjectType: region ? 'region' : 'nation', subjectId: region || 'AUS', magnitude: d.significance === 'major' ? 3 : 2, significance: d.significance, visibility: 'public', observers,
+    evidence: d.evidence.slice(0, 3), before: {}, after: {}, delta: {}, strategicMeaning: d.text, affectedDomains: ['regions', 'projects', 'economy'],
+    tags: ['megaprojects', `megaproject:${d.programKind}`, `program_id:${d.programId}`, ...d.regionIds.map(r => `region:${r}`), ...d.projectIds.slice(0, 6).map(p => `project:${p}`), ...d.projectTypes.map(t => `ptype:${t}`), ...d.contributorIds.slice(0, 6).map(a => `contributor:${a}`)], layer: 'world', confidence: 'high',
+    claimKind: 'fact', causedByEventId: null, contributingCauses: [], rootEventId: d.id, reactionDepth: 0, expiresTurn: d.turn + 4, dedupeKey: `mp:${d.kind}:${d.programId}:${d.turn}`
+  };
+}
+
+export interface MegaprojectProgramView {
+  program: NationalMegaproject; def: MegaprojectDefinition; stages: MegaprojectStage[]; current: MegaprojectStage | null; pendingChoice: MegaprojectChoice | null;
+  capitalTotal: number; capitalDone: number; laborTotal: number; laborDone: number; componentRemaining: Array<{ projectId: string; title: string; remaining: number; status: string }>; support: { score: number; supporters: string[]; opponents: string[] };
+  contributors: Array<{ actorId: string; capital: number; labor: number; teamId: string | null; share: number }>;
+}
+export function megaprojectProgramView(p: NationalMegaproject, world: MegaprojectWorld): MegaprojectProgramView {
+  const def = MEGAPROJECT_DEF_BY_KIND[p.kind]; const stages = megaprojectStageView(p);
+  const current = p.currentStageIndex < stages.length ? stages[p.currentStageIndex] : null;
+  const capitalTotal = stages.reduce((a, s) => a + s.requiredCapital, 0), capitalDone = stages.reduce((a, s) => a + s.progressCapital, 0);
+  const laborTotal = stages.reduce((a, s) => a + s.requiredLabor, 0), laborDone = stages.reduce((a, s) => a + s.progressLabor, 0);
+  const ids = Array.from(new Set(stages.slice(p.currentStageIndex).flatMap(s => s.requiredProjectIds)));
+  const componentRemaining = ids.map(id => { const pr = world.projects[id]; return { projectId: id, title: pr?.title || id, remaining: pr ? (v103Functional(pr.status) ? 0 : Math.max(0, pr.totalCost - pr.totalInvestedMoney)) : 0, status: pr?.status || 'missing' }; });
+  const tot = Object.values(p.contributorTotals).reduce((a, t) => a + t.capital, 0) || 1;
+  const contributors = Object.entries(p.contributorTotals).map(([actorId, t]) => ({ actorId, capital: t.capital, labor: t.labor, teamId: t.teamId, share: Math.round((t.capital / tot) * 100) / 100 })).sort((a, b) => b.capital - a.capital || a.actorId.localeCompare(b.actorId));
+  return { program: p, def, stages, current, pendingChoice: megaprojectPendingChoice(p, p.currentStageIndex), capitalTotal, capitalDone, laborTotal, laborDone, componentRemaining, support: megaprojectFactionSupport(def, world, p.choices), contributors };
+}
+/** Spec-shaped NationalMegaproject view (derived from program memory + canonical projects; never persisted twice). */
+export function megaprojectSpecView(p: NationalMegaproject, world: MegaprojectWorld) {
+  const v = megaprojectProgramView(p, world); const def = v.def;
+  const contributors: Record<string, MegaprojectContribution> = {};
+  v.contributors.forEach(c => { contributors[c.actorId] = { actorId: c.actorId, capital: c.capital, labor: c.labor, contributionShare: c.share,
+    projectContributionIds: v.stages.flatMap(s => s.requiredProjectIds).filter((id, i, a) => a.indexOf(id) === i && v103N(world.projects[id]?.contributions?.[c.actorId]) > 0) }; });
+  const componentIds = Array.from(new Set(v.stages.flatMap(s => s.requiredProjectIds)));
+  return {
+    id: p.id, kind: p.kind, title: def.title, description: def.summary, status: p.status, participatingRegions: def.regionIds, stages: v.stages, currentStageIndex: p.currentStageIndex,
+    totalRequiredCapital: v.capitalTotal, totalCommittedCapital: v.capitalDone, totalRequiredLabor: v.laborTotal, totalCommittedLabor: v.laborDone, contributors,
+    prerequisites: def.eligibility, strategicChoices: def.choices.map(c => ({ choice: c, selectedOptionId: p.choices[c.id]?.optionId || null })),
+    milestoneIds: p.history.filter(h => h.kind === 'stage_completed' || h.kind === 'completed').map(h => h.id), startedTurn: p.committedTurn, completedTurn: p.completedTurn,
+    networkEffects: v.stages.flatMap(s => s.partialEffects),
+    maintenanceProfile: { componentMaintenancePerTurn: componentIds.filter(id => v103Functional(world.projects[id]?.status)).reduce((a, id) => a + v103N(world.projects[id]?.maintenanceCostPerTurn), 0), programOperationsPerTurn: MEGAPROJECT_OPERATIONS_COST_PER_TURN, note: 'Component maintenance is charged once by the Infrastructure Engine; the program adds no operations cost.' },
+    history: p.history, revision: p.revision
+  };
+}
+
+/** Regions participating in programs, with the segment state used by the map overlay. */
+export function megaprojectRegionSegments(s: MegaprojectsPersisted | null): Record<string, Array<{ programId: string; kind: MegaprojectKind; state: 'completed' | 'under_construction' | 'planned' | 'stalled' }>> {
+  const out: Record<string, Array<any>> = {};
+  Object.values(s?.programs || {}).filter(p => !p.abandoned || p.stages.some(x => x.status === 'completed')).forEach(p => {
+    megaprojectStageView(p).forEach((st, i) => {
+      const state = st.status === 'completed' ? 'completed' : st.status === 'stalled' ? 'stalled' : (i === p.currentStageIndex && !p.abandoned && p.committedTurn !== null && p.status !== 'suspended') ? 'under_construction' : p.abandoned ? null : 'planned';
+      if (!state) return;
+      st.requiredRegionIds.forEach(r => { if (!REGIONS[r]) return; const list = out[r] = out[r] || []; if (!list.some((x: any) => x.programId === p.id && x.state === state)) list.push({ programId: p.id, kind: p.kind, state }); });
+    });
+  });
+  return out;
+}
+
+// ---- Strategic assessment (never one universal score) -----------------------------------------------------
+export type MegaprojectRiskBand = 'LOW' | 'MODERATE' | 'HIGH';
+export interface MegaprojectAssessment {
+  networkImpact: string; industryImpact: string; resilienceImpact: string; capitalBurden: string; time: string; strategyRelevance: string;
+  risks: { liquidity: { band: MegaprojectRiskBand; evidence: string }; completion: { band: MegaprojectRiskBand; evidence: string }; dependency: { band: MegaprojectRiskBand; evidence: string }; freeRider: { band: MegaprojectRiskBand; evidence: string } };
+  remainingCapital: number; remainingCoordination: number; estimatedTurns: number; daysLeft: number; lowDemand: boolean;
+}
+/** Evidence-based impacts and risk bands for a program (existing or prospective) from the viewer's position. */
+export function megaprojectAssessment(kind: MegaprojectKind, prog: NationalMegaproject | null, world: MegaprojectWorld, viewer: { id: string; money: number; regions: string[]; rivalRegions: string[]; day: number }, choices?: Record<string, { optionId: string }>): MegaprojectAssessment {
+  const def = MEGAPROJECT_DEF_BY_KIND[kind]; const full = projectMegaprojectFullProgram(kind, choices || prog?.choices || {}, world, prog);
+  const remainingCapital = full.coordinationCapital + full.componentCapital;
+  const remainingIds = full.projects.filter(x => x.remaining > 0).map(x => x.id);
+  const estimatedTurns = Math.max(1, remainingIds.reduce((a, id) => a + v103N(world.projects[id]?.laborTurnsRequired, 3), 0) + Math.ceil(full.labor / 2));
+  const daysLeft = Math.max(0, world.totalDays - viewer.day);
+  const nets = (world.networks?.networks || []).filter(n => n.networkKind === def.infraKind);
+  const covered = def.regionIds.filter(r => nets.some(n => n.regionIds.includes(r))).length;
+  const netKinds = Array.from(new Set(full.projects.flatMap(p => p.networks)));
+  const cond = world.national?.national?.[def.primaryNetwork]?.condition || null;
+  const lowDemand = cond === 'surplus';
+  const strong = STRATEGIC_INDUSTRIES.map(k => ({ k, v: Math.max(0, ...def.regionIds.map(r => v103N(world.industries?.regions?.[r]?.industries?.[k]?.strength))) })).filter(x => x.v >= 40).sort((a, b) => b.v - a.v).slice(0, 3);
+  const res = (choices ? Object.entries(choices) : Object.entries(prog?.choices || {})).map(([cid, c]) => def.choices.find(x => x.id === cid)?.options.find(o => o.id === c.optionId)?.resilience).filter(Boolean);
+  const ratio = viewer.money > 0 ? remainingCapital / viewer.money : Infinity;
+  const nextNeed = prog && prog.currentStageIndex < prog.stages.length ? Math.max(0, megaprojectStageDefs(def, prog.choices)[prog.currentStageIndex].requiredCapital - prog.stages[prog.currentStageIndex].progressCapital) : megaprojectStageDefs(def, choices || {})[0].requiredCapital;
+  const liqBand: MegaprojectRiskBand = nextNeed > viewer.money * 0.6 ? 'HIGH' : nextNeed > viewer.money * 0.3 ? 'MODERATE' : 'LOW';
+  const compBand: MegaprojectRiskBand = estimatedTurns > daysLeft ? 'HIGH' : estimatedTurns > daysLeft * 0.6 ? 'MODERATE' : 'LOW';
+  const blocked = full.projects.filter(x => (world.projects[x.id]?.status === 'locked' && !megaprojectCanUnlock(world.projects[x.id])) || world.projects[x.id]?.status === 'damaged');
+  const depBand: MegaprojectRiskBand = blocked.length || prog?.status === 'stalled' || prog?.status === 'damaged' ? 'HIGH' : remainingIds.length >= 3 ? 'MODERATE' : 'LOW';
+  const rivalShare = def.regionIds.filter(r => viewer.rivalRegions.includes(r)).length / def.regionIds.length;
+  const myShare = def.regionIds.filter(r => viewer.regions.includes(r)).length / def.regionIds.length;
+  const frBand: MegaprojectRiskBand = rivalShare >= 0.5 ? 'HIGH' : rivalShare > 0 ? 'MODERATE' : 'LOW';
+  return {
+    networkImpact: `${netKinds.length ? netKinds.join(' + ') : INFRA_NETWORK_LABEL[def.infraKind]} via ${full.projects.length} canonical component project(s); ${INFRA_NETWORK_LABEL[def.infraKind].toLowerCase()} networks currently reach ${covered}/${def.regionIds.length} program regions.`,
+    industryImpact: `${strong.length ? `Supports ${strong.map(x => `${INDUSTRY_LABEL[x.k].toLowerCase()} (${Math.round(x.v)})`).join(', ')}` : 'No strong industry in the program regions yet'}${lowDemand ? ` — ${NATIONAL_NETWORK_LABEL[def.primaryNetwork].toLowerCase()} demand is currently low (surplus), so the immediate value is lower` : cond ? ` — ${NATIONAL_NETWORK_LABEL[def.primaryNetwork].toLowerCase()} is ${NATIONAL_CONDITION_LABEL[cond]}` : ''}.`,
+    resilienceImpact: res.length ? `Chosen design: ${res.join(', ')} resilience vs the alternative.` : `Design not chosen yet: ${def.choices.map(c => `${c.title} (${c.options.map(o => `${o.label}: ${o.resilience}`).join(' / ')})`).join('; ')}.`,
+    capitalBurden: `≈$${Math.round(remainingCapital).toLocaleString()} still needed ($${Math.round(full.coordinationCapital).toLocaleString()} program + $${Math.round(full.componentCapital).toLocaleString()} canonical components) — ${Number.isFinite(ratio) ? `${ratio.toFixed(1)}× your cash` : 'you have no cash'}.`,
+    time: `≈${estimatedTurns} turns of construction/coordination left; ${daysLeft} days remain in this match.`,
+    strategyRelevance: myShare > 0 ? `${Math.round(myShare * 100)}% of program regions are part of your position.` : 'None of the program regions are part of your position yet.',
+    risks: {
+      liquidity: { band: liqBand, evidence: `Next stage needs $${Math.round(nextNeed).toLocaleString()} vs your $${Math.round(viewer.money).toLocaleString()}.` },
+      completion: { band: compBand, evidence: `≈${estimatedTurns} turns needed vs ${daysLeft} days left.` },
+      dependency: { band: depBand, evidence: blocked.length ? `${blocked.map(x => x.title).join(', ')} closed or damaged.` : prog?.stallReason ? prog.stallReason : `${remainingIds.length} component project(s) still to build.` },
+      freeRider: { band: frBand, evidence: `Rivals hold ${Math.round(rivalShare * 100)}% of the program regions and benefit whether or not they contribute.` }
+    },
+    remainingCapital, remainingCoordination: full.coordinationCapital, estimatedTurns, daysLeft, lowDemand
+  };
+}
+
+/**
+ * Bounded rival-AI valuation (long-horizon). Considers cost, time remaining, network value, its regional stake,
+ * free-rider value, liquidity, risk and opportunity cost. May decline ("not worth it right now"), may free-ride,
+ * never colludes and makes at most one program contribution per turn (and only through its normal decision → AP).
+ */
+export function megaprojectAiCandidate(s: MegaprojectsPersisted | null, world: MegaprojectWorld, actor: MegaprojectActorContext, stake: { regions: string[]; day?: number }): { cmd: MegaprojectCommand; score: number; reason: string } | { cmd: null; score: 0; reason: string } {
+  if (!s || !world.enabled || world.gameOver) return { cmd: null, score: 0, reason: 'no programs' };
+  const progs = Object.values(s.programs).filter(p => !p.abandoned && p.status !== 'completed' && p.status !== 'suspended' && p.status !== 'stalled' && p.status !== 'damaged' && p.committedTurn !== null).sort((a, b) => a.id.localeCompare(b.id));
+  let best: { cmd: MegaprojectCommand; score: number; reason: string } | null = null; let lastReason = 'no open programs';
+  for (const p of progs) {
+    if (p.contributions.some(c => c.actorId === actor.id && c.turn === world.turn)) { lastReason = 'already contributed this turn'; continue; }
+    const view = megaprojectProgramView(p, world); const st = view.current; if (!st || view.pendingChoice) { lastReason = 'stage not open'; continue; }
+    const capLeft = Math.max(0, st.requiredCapital - st.progressCapital);
+    if (capLeft <= 0) { lastReason = 'stage fully funded'; continue; }
+    const regionStake = view.def.regionIds.filter(r => stake.regions.includes(r)).length / view.def.regionIds.length;
+    if (regionStake <= 0) { lastReason = 'no regional stake — not worth it right now'; continue; }
+    const others = st.progressCapital - (p.contributions.filter(c => c.actorId === actor.id && c.stageId === st.id).reduce((a, c) => a + c.capital, 0));
+    if (others / Math.max(1, st.requiredCapital) >= 0.6) { lastReason = 'free-ride: others are close to finishing this stage'; continue; }
+    const daysLeft = Math.max(0, world.totalDays - v103N(stake.day, world.turn));
+    const turnsLeft = view.componentRemaining.filter(c => c.remaining > 0).reduce((a, c) => a + v103N(world.projects[c.projectId]?.laborTurnsRequired, 3), 0);
+    if (turnsLeft > daysLeft) { lastReason = 'too little match time left to benefit — not worth it right now'; continue; }
+    const spendable = Math.max(0, actor.money - V103_LIMITS.aiReserve);
+    const amount = Math.floor(Math.min(capLeft, spendable * V103_LIMITS.aiMaxShareOfCash, V103_LIMITS.aiMaxContribution));
+    if (amount < Math.min(V103_LIMITS.minContribution, capLeft)) { lastReason = 'cash reserved for its own plan (opportunity cost)'; continue; }
+    const score = 8 + 10 * regionStake + 4 * Math.max(0, view.support.score) + 3 * view.stages.filter(x => x.status === 'completed').length;
+    if (!best || score > best.score) best = { cmd: { op: 'contribute', programId: p.id, amount }, score, reason: `long-horizon value: ${Math.round(regionStake * 100)}% of ${view.def.title} regions` };
+  }
+  return best || { cmd: null, score: 0, reason: lastReason };
+}
+
+// ---- What-If (isolated: no live mutation) ---------------------------------------------------------------------
+export function projectMegaprojectStageFunding(s: MegaprojectsPersisted, programId: string, amount: number, world: MegaprojectWorld, cash?: number): { capped: number; remainingAfter: number; completesFunding: boolean; waitingOn: string[]; cashBefore: number | null; cashAfter: number | null; liquidityBefore: MegaprojectRiskBand | null; liquidityAfter: MegaprojectRiskBand | null; networks: string[]; text: string } {
+  const none = { capped: 0, remainingAfter: 0, completesFunding: false, waitingOn: [], cashBefore: null, cashAfter: null, liquidityBefore: null, liquidityAfter: null, networks: [] };
+  const p = s.programs[programId]; if (!p) return { ...none, text: 'No such program.' };
+  const v = megaprojectProgramView(p, world); const st = v.current; if (!st) return { ...none, text: 'All stages are complete.' };
+  const left = Math.max(0, st.requiredCapital - st.progressCapital); const capped = Math.min(Math.max(0, Math.floor(amount)), left);
+  const waitingOn = st.requiredProjectIds.filter(id => !v103Functional(world.projects[id]?.status)).map(id => world.projects[id]?.title || id);
+  const laborLeft = Math.max(0, st.requiredLabor - st.progressLabor);
+  const completesFunding = capped >= left && laborLeft === 0;
+  const band = (c: number): MegaprojectRiskBand => (c < 5000 ? 'HIGH' : c < 15000 ? 'MODERATE' : 'LOW');
+  const cashBefore = typeof cash === 'number' ? cash : null; const cashAfter = cashBefore === null ? null : cashBefore - capped;
+  const networks = Array.from(new Set(st.partialEffects.filter(e => e.network).map(e => `${INFRA_NETWORK_LABEL[e.network!]} (${e.regionIds.join(', ')})`)));
+  return { capped, remainingAfter: left - capped, completesFunding, waitingOn, cashBefore, cashAfter, liquidityBefore: cashBefore === null ? null : band(cashBefore), liquidityAfter: cashAfter === null ? null : band(cashAfter), networks,
+    text: `${cashBefore !== null ? `Cash $${Math.round(cashBefore).toLocaleString()} → $${Math.round(cashAfter!).toLocaleString()}. ` : ''}$${capped.toLocaleString()} of $${amount.toLocaleString()} would apply (stage remainder $${left.toLocaleString()} — the rest stays with you). Stage ${p.currentStageIndex + 1} ${Math.round((st.progressCapital / Math.max(1, st.requiredCapital)) * 100)}% → ${completesFunding ? 'funded' : `${Math.round(((st.progressCapital + capped) / Math.max(1, st.requiredCapital)) * 100)}%`}. ${completesFunding ? (waitingOn.length ? `Funding complete, but the stage waits on: ${waitingOn.join(', ')}.` : 'The stage would complete at the next evaluation.') : `Still needed: $${(left - capped).toLocaleString()}${laborLeft ? ` and ${laborLeft} on-site labour` : ''}.`}${networks.length ? ` Likely improves: ${networks.join(', ')} (through the component projects).` : ''}` };
+}
+export function projectMegaprojectFullProgram(kind: MegaprojectKind, choices: Record<string, { optionId: string }>, world: MegaprojectWorld, progress?: NationalMegaproject | null): { coordinationCapital: number; componentCapital: number; labor: number; projects: Array<{ id: string; title: string; remaining: number; networks: string[] }>; longHorizon: true; text: string } {
+  const def = MEGAPROJECT_DEF_BY_KIND[kind]; const defs = megaprojectStageDefs(def, choices);
+  const from = progress ? progress.currentStageIndex : 0;
+  const coordinationCapital = defs.slice(from).reduce((a, d, i) => a + Math.max(0, d.requiredCapital - (progress?.stages[from + i]?.progressCapital || 0)), 0);
+  const labor = defs.slice(from).reduce((a, d, i) => a + Math.max(0, d.requiredLabor - (progress?.stages[from + i]?.progressLabor || 0)), 0);
+  const ids = Array.from(new Set(defs.slice(from).flatMap(d => d.requiredProjectIds)));
+  const projects = ids.map(id => { const pr = world.projects[id]; const prof = pr ? INFRA_NETWORK_PROFILES[pr.projectType as InfrastructureProjectType] : null; return { id, title: pr?.title || id, remaining: pr ? (v103Functional(pr.status) ? 0 : Math.max(0, pr.totalCost - pr.totalInvestedMoney)) : 0, networks: (prof?.contributesTo || []).filter(c => c.role !== 'local_support').map(c => INFRA_NETWORK_LABEL[c.network]) }; });
+  const componentCapital = projects.reduce((a, x) => a + x.remaining, 0);
+  return { coordinationCapital, componentCapital, labor, projects, longHorizon: true,
+    text: `LONG-HORIZON PROJECTION (uncertain): about $${(coordinationCapital + componentCapital).toLocaleString()} in total — $${coordinationCapital.toLocaleString()} program coordination plus $${componentCapital.toLocaleString()} still owed on ${projects.filter(p => p.remaining > 0).length} canonical component project(s) — and ${labor} on-site labour. Anyone may fund the component projects; benefits reach non-contributors too.` };
+}
+export function compareMegaprojectChoice(kind: MegaprojectKind, choiceId: string, world: MegaprojectWorld, decided: Record<string, { optionId: string }> = {}): Array<{ optionId: string; label: string; tradeoffs: string[]; total: number; resilience: string; projects: string[]; networks: string[]; regions: string[]; costDelta: number; timeDelta: number; factionHooks: string[] }> {
+  const def = MEGAPROJECT_DEF_BY_KIND[kind]; const ch = def.choices.find(c => c.id === choiceId); if (!ch) return [];
+  return ch.options.map(o => { const full = projectMegaprojectFullProgram(kind, { ...decided, [choiceId]: { optionId: o.id } }, world); const st = megaprojectStageDefs(def, { ...decided, [choiceId]: { optionId: o.id } }).find(s => s.id === ch.stageId)!;
+    return { optionId: o.id, label: o.label, tradeoffs: o.tradeoffs, total: full.coordinationCapital + full.componentCapital, resilience: o.resilience, projects: st.requiredProjectIds.map(id => world.projects[id]?.title || id),
+      networks: Array.from(new Set(o.networkModifiers.map(e => `${INFRA_NETWORK_LABEL[e.network!]} ${e.regionIds.join('/')}`))), regions: st.requiredRegionIds, costDelta: o.costDelta, timeDelta: o.timeDelta, factionHooks: o.factionHooks }; });
+}
+
+/** PLAY line: only for a tracked program (explicitly tracked, or the player's own / contributed program). */
+export function megaprojectPlayLine(s: MegaprojectsPersisted | null, world: MegaprojectWorld, actorId: string): { text: string; need: string; next: string | null; programId: string; tone: 'info' | 'warning' } | null {
+  if (!s) return null;
+  const trackedId = s.tracked[actorId] || null;
+  const tracked = Object.values(s.programs).filter(p => !p.abandoned && p.status !== 'completed' && (p.id === trackedId || p.proposedBy === actorId || p.contributorTotals[actorId])).sort((a, b) => a.id.localeCompare(b.id));
+  const p = tracked.find(x => x.id === trackedId) || (trackedId ? null : tracked[0]); if (!p) return null;
+  const v = megaprojectProgramView(p, world); const st = v.current; const def = v.def;
+  const head = `${def.icon} ${def.title} · Stage ${Math.min(p.currentStageIndex + 1, v.stages.length)} / ${v.stages.length}`;
+  const next = st ? st.title : null;
+  if (p.status === 'stalled' || p.status === 'damaged') return { text: head, need: `${p.status === 'damaged' ? 'Damaged' : 'Stalled'}: ${p.stallReason}`, next, programId: p.id, tone: 'warning' };
+  if (p.status === 'suspended') return { text: head, need: 'Suspended — completed stages keep operating', next, programId: p.id, tone: 'warning' };
+  if (v.pendingChoice) return { text: head, need: `Decide “${v.pendingChoice.title}”`, next, programId: p.id, tone: 'warning' };
+  if (p.committedTurn === null) return { text: head, need: 'Needs a funding commitment', next, programId: p.id, tone: 'info' };
+  if (!st) return null;
+  const left = Math.max(0, st.requiredCapital - st.progressCapital), lab = Math.max(0, st.requiredLabor - st.progressLabor);
+  const waiting = st.requiredProjectIds.filter(id => !v103Functional(world.projects[id]?.status)).map(id => world.projects[id]?.title || id);
+  return { text: head, need: left || lab ? `$${left.toLocaleString()}${lab ? ` + ${lab} labour` : ''}` : waiting.length ? `Waiting on ${waiting[0]}${waiting.length > 1 ? ` +${waiting.length - 1}` : ''}` : 'Ready to complete', next, programId: p.id, tone: 'info' };
+}
+/** Current Focus: only when the player explicitly tracks a program (never hijacked by mere existence). */
+export function megaprojectFocus(s: MegaprojectsPersisted | null, world: MegaprojectWorld, actorId: string): { title: string; regionIds: string[]; risk: string | null } | null {
+  const id = s?.tracked[actorId]; const p = id ? s!.programs[id] : null; if (!p || p.abandoned || p.status === 'completed') return null;
+  const v = megaprojectProgramView(p, world); const st = v.current; if (!st) return null;
+  return { title: `Complete Stage ${p.currentStageIndex + 1}: ${st.title}`, regionIds: st.requiredRegionIds, risk: p.status === 'stalled' || p.status === 'damaged' ? `${v.def.title}: ${p.stallReason}` : v.pendingChoice ? `${v.def.title}: decide “${v.pendingChoice.title}”` : null };
+}
+
+// ---- V10.3 National Megaprojects self-tests (pure, deterministic, bounded) --------------------------------------
+export function createMegaprojectFixtureWorld(o: { statuses?: Record<string, string>; sectors?: Record<string, Partial<Record<LRSector, number>>>; nsModifiers?: NationalSystemsInputs['modifiers']; totalDays?: number; turn?: number;
+  devTiers?: Record<string, number>; flags?: Record<string, any>; infrastructureEnabled?: boolean; enabled?: boolean; gameOver?: boolean } = {}): MegaprojectWorld {
+  const turn = o.turn ?? 5;
+  const w = createInfraNetworkFixtureWorld({ statuses: o.statuses, sectors: o.sectors, nsModifiers: o.nsModifiers, turn });
+  const ns = computeNationalSystems(w.nsi).state; const ind = computeIndustriesSupplyChains({ ...w.ii, national: ns }).state;
+  const net = computeStrategicInfrastructureNetworks({ ...w.xi, national: ns, industries: ind }).state;
+  const projects = [...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].map(p => {
+    const status = o.statuses?.[p.id] || p.status;
+    return { ...p, status, totalInvestedMoney: status === 'active' || status === 'upgraded' ? p.totalCost : status === 'under_construction' ? Math.round(p.totalCost / 2) : 0 };
+  });
+  return buildMegaprojectWorld({ turn, totalDays: o.totalDays ?? 30, enabled: o.enabled !== false, infrastructureEnabled: o.infrastructureEnabled !== false, gameOver: o.gameOver, projects,
+    regionalDevLevels: Object.fromEntries(Object.entries(o.devTiers || {}).map(([k, t]) => [k, { tier: t }])), national: ns, industries: ind, networks: net, factions: null, flags: o.flags || {} });
+}
+
+export function runV103NationalMegaprojectSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const ALL = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA'];
+  const pressure = (net: NationalNetworkKind, v = -40) => Object.fromEntries(ALL.map(r => [r, { [net]: v }])) as NationalSystemsInputs['modifiers'];
+  const HSR = 'infra_hsr_nsw_vic', PARK = 'infra_tech_park_act', CAP = 'infra_v103_hsr_brisbane_extension', ID = megaprojectIdFor('national_high_speed_rail');
+  type WO = Parameters<typeof createMegaprojectFixtureWorld>[0];
+  const W = (statuses: Record<string, string> = {}, extra: WO = {}) => createMegaprojectFixtureWorld({ statuses: { [HSR]: 'under_construction', ...statuses }, nsModifiers: pressure('freight'), ...extra });
+  const WA = (statuses: Record<string, string> = {}, extra: WO = {}) => W({ [HSR]: 'active', ...statuses }, extra);
+  const actor = (id = 'player', o: Partial<MegaprojectActorContext> = {}): MegaprojectActorContext => ({ id, kind: id === 'ai' ? 'ai' : 'human', teamId: id === 'ai' ? 'team_ai' : 'team_player', money: 50000, currentRegion: 'NSW', apRemaining: 3, apCost: 1, turnOwner: true, ...o });
+  const cmd = (s: MegaprojectsPersisted | null, c: MegaprojectCommand, a: MegaprojectActorContext, w: MegaprojectWorld) => applyMegaprojectCommand(s, c, a, w);
+  const must = (r: MegaprojectCommandResult) => { if (!r.ok) throw new Error(`command failed: ${r.reason}`); return r.persisted; };
+  const adv = (s: MegaprojectsPersisted, w: MegaprojectWorld) => advanceNationalMegaprojects(s, w);
+  const prog = (s: MegaprojectsPersisted, id = ID) => s.programs[id];
+  const at = (r: string) => actor('player', { currentRegion: r });
+  /** Proposed + committed National Rail ($5K into stage 1 "Sydney–Melbourne Core"). */
+  const committed = (w = W()) => { let s = must(cmd(null, { op: 'propose', kind: 'national_high_speed_rail' }, actor(), w)); s = must(cmd(s, { op: 'commit', programId: ID, amount: 5000 }, actor(), w)); return adv(s, w).persisted; };
+  /** Stage 1 fully funded + staffed and completed (the canonical Sydney–Melbourne HSR is active). */
+  const stage1Done = (w = WA()) => {
+    let s = committed(w);
+    s = must(cmd(s, { op: 'contribute', programId: ID, amount: 5000, labor: 1 }, actor(), w));
+    s = must(cmd(s, { op: 'contribute', programId: ID, labor: 1 }, at('VIC'), w));
+    return adv(s, w).persisted;
+  };
+  /** Stage 2 "Canberra Integration" (tech park) completed. */
+  const stage2Done = (wBuilt = WA({ [PARK]: 'active' })) => {
+    let s = stage1Done(wBuilt);
+    s = must(cmd(s, { op: 'choose', programId: ID, choiceId: 'canberra_model', optionId: 'tech_park' }, actor(), wBuilt));
+    s = adv(s, wBuilt).persisted;
+    s = must(cmd(s, { op: 'contribute', programId: ID, amount: 12000, labor: 1 }, at('ACT'), wBuilt)); s = must(cmd(s, { op: 'contribute', programId: ID, labor: 1 }, at('ACT'), wBuilt));
+    return adv(s, wBuilt).persisted;
+  };
+  const sameJ = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+  // Hydrogen fixture: SA renewables first; stage 2 "Firmed Generation" needs energy headroom (not Critical).
+  const H2 = 'green_hydrogen_export_network', H2ID = megaprojectIdFor(H2), SAG = 'infra_v93_sa_renewable_grid', QG = 'infra_v93_qld_renewable_grid';
+  const HW = (extra: WO = {}, statuses: Record<string, string> = {}) => createMegaprojectFixtureWorld({ statuses: { [SAG]: 'active', [QG]: 'under_construction', ...statuses }, sectors: { SA: { energy: 60, renewables: 60 } } as any, ...extra });
+  const h2Stage2Open = () => {
+    const w = HW(); let s = must(cmd(null, { op: 'propose', kind: H2 }, actor(), w));
+    s = must(cmd(s, { op: 'choose', programId: H2ID, choiceId: 'feedstock_region', optionId: 'southern_first' }, actor(), w));
+    s = must(cmd(s, { op: 'commit', programId: H2ID, amount: 8000 }, actor(), w));
+    s = must(cmd(s, { op: 'contribute', programId: H2ID, labor: 1 }, at('SA'), w)); s = must(cmd(s, { op: 'contribute', programId: H2ID, labor: 1 }, at('SA'), w));
+    s = adv(s, w).persisted; s = adv(s, w).persisted;
+    return must(cmd(s, { op: 'contribute', programId: H2ID, amount: 4000 }, actor(), w));
+  };
+
+  check('mp01_eligibility', 'Missing prerequisite → unavailable (with reasons); catalog: 8 distinct, valid, multi-stage programs', () => {
+    const none = megaprojectEligibility(createMegaprojectFixtureWorld(), null).find(r => r.kind === 'national_high_speed_rail')!;
+    const off = megaprojectEligibility(W({}, { infrastructureEnabled: false, nsModifiers: pressure('freight') }), null).find(r => r.kind === 'national_high_speed_rail')!;
+    const titles = new Set(MEGAPROJECT_DEFINITIONS.map(d => d.stages.map(s => s.title).join('|')));
+    const catalogOk = MEGAPROJECT_DEFINITIONS.length === 8 && titles.size === 8 && new Set(MEGAPROJECT_DEFINITIONS.map(d => d.choices.map(c => c.id).join())).size === 8 && validateMegaprojectsPersisted(createEmptyMegaprojectsPersisted(), W()).length === 0
+      && MEGAPROJECT_DEFINITIONS.every(d => d.stages.length >= 3 && d.regionIds.length >= 3) && MEGAPROJECT_DEFINITIONS.find(d => d.kind === 'national_high_speed_rail')!.stages.map(s => s.title).join('|') === 'Sydney–Melbourne Core|Canberra Integration|Brisbane Extension|Network Commissioning';
+    return (!none.eligible && none.status === 'unavailable' && none.reasons.some(r => /Needs/.test(r)) && !off.eligible && off.reasons.some(r => /infrastructure is off/.test(r)) && catalogOk) || JSON.stringify({ none: none.reasons, off: off.reasons, catalogOk, v: validateMegaprojectsPersisted(createEmptyMegaprojectsPersisted(), W()) });
+  });
+  check('mp02_unlock', 'Prerequisite becomes true → eligible; a later stage opens its locked canonical capstone (never funds it)', () => {
+    const before = megaprojectEligibility(createMegaprojectFixtureWorld({ nsModifiers: pressure('freight') }), null).find(r => r.kind === 'national_high_speed_rail')!;
+    const after = megaprojectEligibility(W(), null, { money: 50000 }).find(r => r.kind === 'national_high_speed_rail')!;
+    const wB = WA({ [PARK]: 'active' }, { devTiers: { QLD: 1 }, nsModifiers: pressure('freight') });
+    let s = stage2Done(wB);
+    s = must(cmd(s, { op: 'choose', programId: ID, choiceId: 'service_model', optionId: 'passenger_priority' }, actor(), wB));
+    const r = adv(s, wB);
+    const projects = Object.fromEntries(Object.values(wB.projects).map(p => [p.id, { ...p }]));
+    const opened = applyMegaprojectUnlocks(projects, r.unlockProjectIds);
+    return (!before.eligible && after.eligible && wB.projects[CAP].status === 'locked' && r.unlockProjectIds.includes(CAP) && opened[CAP].status === 'unlocked' && opened[CAP].totalInvestedMoney === 0 && opened['infra_v103_sovereign_compute'].status === 'locked'
+      && prog(r.persisted).history.some(h => h.kind === 'stage_started' && h.stageId === 'hsr_brisbane')) || JSON.stringify({ b: before.reasons, a: after.reasons, u: r.unlockProjectIds, st: prog(r.persisted).stages.map(x => x.status) });
+  });
+  check('mp03_propose', 'Propose: stable id, proposed, no money, no completion benefits, one proposed event', () => {
+    const w = W(); const r = cmd(null, { op: 'propose', kind: 'national_high_speed_rail' }, actor(), w);
+    const a = adv(r.persisted, w); const again = cmd(r.persisted, { op: 'propose', kind: 'national_high_speed_rail' }, actor(), w);
+    const poor = cmd(null, { op: 'propose', kind: 'national_high_speed_rail' }, actor('player', { money: 3000 }), w);
+    return (r.ok && r.programId === ID && r.moneySpent === 0 && prog(r.persisted).status === 'proposed' && a.events.filter(e => e.kind === 'megaproject_proposed').length === 1 && !a.unlockProjectIds.length && prog(a.persisted).stages.every(x => x.status !== 'completed')
+      && adv(a.persisted, w).events.length === 0 && !again.ok && !poor.ok && /capital/i.test(poor.reason || '')) || JSON.stringify({ r: r.reason, ev: a.events.map(e => e.kind), again: again.reason, poor: poor.reason });
+  });
+  check('mp04_capital', 'Commit/contribute: real money leaves once, program +capital, contributor totals match', () => {
+    const w = W(); let s = must(cmd(null, { op: 'propose', kind: 'national_high_speed_rail' }, actor(), w));
+    const c = cmd(s, { op: 'commit', programId: ID, amount: 5000 }, actor(), w); s = must(c);
+    const d = cmd(s, { op: 'contribute', programId: ID, amount: 2500 }, actor(), w); s = must(d);
+    const p = prog(s);
+    return (c.moneySpent === 5000 && d.moneySpent === 2500 && p.stages[0].progressCapital === 7500 && p.contributorTotals.player.capital === 7500 && p.contributions.length === 2 && p.committedTurn === w.turn && validateNationalMegaproject(p, w).length === 0) || JSON.stringify({ p: p.stages[0], issues: validateNationalMegaproject(p, w) });
+  });
+  check('mp05_insufficient_cash', 'Insufficient cash: rejected, no mutation, nothing spent', () => {
+    const s = committed(); const r = cmd(s, { op: 'contribute', programId: ID, amount: 4000 }, actor('player', { money: 1000 }), W());
+    return (!r.ok && /Not enough cash/.test(r.reason || '') && r.moneySpent === 0 && sameJ(r.persisted, s)) || String(r.reason);
+  });
+  check('mp06_overfund', 'Overfunding is capped at the current stage remainder (the rest stays with the actor; no pre-funding)', () => {
+    const s = committed(); const r = cmd(s, { op: 'contribute', programId: ID, amount: 50000 }, actor(), W());
+    return (r.ok && r.moneySpent === 5000 && prog(r.persisted).stages[0].progressCapital === 10000 && prog(r.persisted).stages[1].progressCapital === 0) || `${r.moneySpent} ${r.reason}`;
+  });
+  check('mp07_labor', 'Labour: on-site only, exactly once per contribution, capped at the stage requirement', () => {
+    const w = W(); const s = committed(w);
+    const off = cmd(s, { op: 'contribute', programId: ID, labor: 1 }, at('WA'), w);
+    let t = must(cmd(s, { op: 'contribute', programId: ID, labor: 1 }, actor(), w)); const once = prog(t).stages[0].progressLabor;
+    t = must(cmd(t, { op: 'contribute', programId: ID, labor: 5 }, actor(), w));
+    const third = cmd(t, { op: 'contribute', programId: ID, labor: 1 }, actor(), w);
+    return (!off.ok && /on site/.test(off.reason || '') && once === 1 && prog(t).stages[0].progressLabor === 2 && !third.ok) || JSON.stringify([off.reason, once, prog(t).stages[0].progressLabor, third.reason]);
+  });
+  check('mp08_zero', 'A $0 / 0-labour contribution is not a successful action and produces no progress', () => {
+    const s = committed(); const r = cmd(s, { op: 'contribute', programId: ID, amount: 0, labor: 0 }, actor(), W()); const neg = cmd(s, { op: 'contribute', programId: ID, amount: -500 }, actor(), W());
+    return (!r.ok && !neg.ok && sameJ(r.persisted, s) && r.moneySpent === 0) || String(r.reason);
+  });
+  check('mp09_project_requirement', 'A fully funded stage cannot complete while its canonical project is inactive (no duplicated progress)', () => {
+    const w = W(); let s = committed(w);
+    s = must(cmd(s, { op: 'contribute', programId: ID, amount: 5000, labor: 1 }, actor(), w)); s = must(cmd(s, { op: 'contribute', programId: ID, labor: 1 }, at('VIC'), w));
+    const r = adv(s, w); const st = prog(r.persisted).stages[0];
+    return (st.status === 'funded' && st.completedTurn === null && prog(r.persisted).currentStageIndex === 0 && !Object.keys(st).some(k => /invest|construction/i.test(k))) || JSON.stringify(st);
+  });
+  check('mp10_project_completes', 'Required canonical project becomes active (other requirements met) → stage completes', () => {
+    const w = W(); let s = committed(w);
+    s = must(cmd(s, { op: 'contribute', programId: ID, amount: 5000, labor: 1 }, actor(), w)); s = must(cmd(s, { op: 'contribute', programId: ID, labor: 1 }, at('VIC'), w));
+    s = adv(s, w).persisted; const r = adv(s, WA({}, { turn: 6, nsModifiers: pressure('freight') }));
+    return (prog(r.persisted).stages[0].status === 'completed' && prog(r.persisted).currentStageIndex === 1 && r.events.some(e => e.kind === 'megaproject_stage_completed')) || JSON.stringify(r.events.map(e => e.kind));
+  });
+  check('mp11_partial_benefit', 'Stage 1 complete → its documented effects active, later-stage effects not; partially operational once', () => {
+    const w = WA(); const s0 = committed(w); let s = must(cmd(s0, { op: 'contribute', programId: ID, amount: 5000, labor: 1 }, actor(), w)); s = must(cmd(s, { op: 'contribute', programId: ID, labor: 1 }, at('VIC'), w));
+    const r = adv(s, w); const r2 = adv(r.persisted, w); const v = megaprojectSpecView(prog(r.persisted), w);
+    const active = v.stages.filter(x => x.status === 'completed').flatMap(x => x.partialEffects), inactive = v.stages.filter(x => x.status !== 'completed').flatMap(x => x.partialEffects);
+    return (prog(r.persisted).status === 'partially_operational' && r.events.some(e => e.kind === 'megaproject_partially_operational') && !r2.events.some(e => e.kind === 'megaproject_partially_operational')
+      && active.some(e => e.kind === 'component_network' && e.projectIds.includes(HSR)) && !inactive.some(e => e.projectIds.includes(HSR)) && megaprojectStageSpecStatus(prog(r.persisted), 0) === 'completed' && megaprojectStageSpecStatus(prog(r.persisted), 2) === 'locked') || JSON.stringify({ st: prog(r.persisted).status, ev: r.events.map(e => e.kind) });
+  });
+  check('mp12_choice', 'Choice: persistent, cannot select both, authority checked, real requirement change', () => {
+    const w = WA(); let s = stage1Done(w);
+    const outsider = cmd(s, { op: 'choose', programId: ID, choiceId: 'canberra_model', optionId: 'research_campus' }, actor('ai'), w);
+    s = must(cmd(s, { op: 'choose', programId: ID, choiceId: 'canberra_model', optionId: 'research_campus' }, actor(), w));
+    const again = cmd(s, { op: 'choose', programId: ID, choiceId: 'canberra_model', optionId: 'tech_park' }, actor(), w);
+    const d = megaprojectStageDefs(MEGAPROJECT_DEF_BY_KIND.national_high_speed_rail, prog(s).choices)[1];
+    const opt = MEGAPROJECT_DEF_BY_KIND.australian_ai_compute_network.choices.find(c => c.id === 'compute_architecture')!.options;
+    return (!outsider.ok && !again.ok && d.requiredProjectIds.includes('infra_v93_act_research_campus') && !d.requiredProjectIds.includes(PARK) && prog(s).history.some(h => h.kind === 'choice_made')
+      && opt[1].costDelta !== 0 && opt[0].resilience !== opt[1].resilience && opt.every(o => o.tradeoffs.some(t => t.startsWith('+')) && o.tradeoffs.some(t => t.startsWith('−')))) || JSON.stringify([outsider.reason, again.reason, d.requiredProjectIds, opt.map(o => o.costDelta)]);
+  });
+  check('mp13_choice_replay', 'Replay with choices → same branch, identical program memory and events', () => {
+    const go = () => { const w = WA(); let s = stage1Done(w); s = must(cmd(s, { op: 'choose', programId: ID, choiceId: 'canberra_model', optionId: 'research_campus' }, actor(), w)); return JSON.stringify(adv(s, w)); };
+    return go() === go() || 'replay differs';
+  });
+  check('mp14_stall', 'Required network condition disappears → the future stage stalls; completed stage stays complete; contributions blocked', () => {
+    const s = h2Stage2Open();
+    const r = adv(s, HW({ nsModifiers: pressure('energy'), turn: 6 })); const p = r.persisted.programs[H2ID];
+    const blocked = cmd(r.persisted, { op: 'contribute', programId: H2ID, amount: 1000 }, actor(), HW({ nsModifiers: pressure('energy'), turn: 6 }));
+    return (p.status === 'stalled' && p.stages[1].status === 'stalled' && /Energy/.test(p.stallReason || '') && p.stages[1].progressCapital === 4000 && p.stages[0].status === 'completed' && r.events.some(e => e.kind === 'megaproject_stalled') && !blocked.ok) || JSON.stringify({ st: p.status, s: p.stages.map(x => x.status), why: p.stallReason, ev: r.events.map(e => e.kind), b: blocked.reason });
+  });
+  check('mp15_resume', 'Prerequisite restored → resumed (STALLED → UNDER CONSTRUCTION), no progress lost', () => {
+    const s = h2Stage2Open(); const a = adv(s, HW({ nsModifiers: pressure('energy'), turn: 6 })); const b = adv(a.persisted, HW({ turn: 7 }));
+    const p = b.persisted.programs[H2ID];
+    return (a.persisted.programs[H2ID].status === 'stalled' && b.events.some(e => e.kind === 'megaproject_resumed') && p.stages[1].progressCapital === 4000 && p.status === 'partially_operational' && p.stages[1].status === 'active') || JSON.stringify({ a: a.persisted.programs[H2ID].status, b: p.status, ev: b.events.map(e => e.kind) });
+  });
+  check('mp16_suspend', 'Suspend: future progress stops (authority checked); completed infrastructure remains; resume restores', () => {
+    const w = WA(); const s = stage1Done(w);
+    const outsider = cmd(s, { op: 'suspend', programId: ID }, actor('ai'), w);
+    const sus = must(cmd(s, { op: 'suspend', programId: ID }, actor(), w));
+    const blocked = cmd(sus, { op: 'contribute', programId: ID, amount: 1000 }, actor(), w);
+    const a = adv(sus, WA({}, { turn: 7, nsModifiers: pressure('freight') }));
+    const res = must(cmd(a.persisted, { op: 'resume', programId: ID }, actor(), w));
+    const b = adv(res, w);
+    return (!outsider.ok && !blocked.ok && prog(a.persisted).status === 'suspended' && prog(a.persisted).stages[0].status === 'completed' && w.projects[HSR].status === 'active' && prog(b.persisted).status === 'partially_operational') || JSON.stringify([outsider.reason, blocked.reason, prog(a.persisted).status, prog(b.persisted).status]);
+  });
+  check('mp17_multiple_contributors', 'Player + Riley contribute: provenance accurate, totals reconcile, no money duplication', () => {
+    const w = W(); let s = committed(w);
+    const a = cmd(s, { op: 'contribute', programId: ID, amount: 3000 }, actor('ai'), w); s = must(a); const b = cmd(s, { op: 'contribute', programId: ID, amount: 2000 }, actor('player'), w); s = must(b);
+    const p = prog(s);
+    return (p.contributorTotals.ai.capital === 3000 && p.contributorTotals.player.capital === 7000 && p.stages[0].progressCapital === 10000 && a.moneySpent + b.moneySpent + 5000 === p.stages[0].progressCapital && p.contributions.map(c => c.actorId).join() === 'player,ai,player' && validateNationalMegaproject(p, w).length === 0) || JSON.stringify(p.contributorTotals);
+  });
+  check('mp18_team_contributors', 'Team members contribute: team totals aggregate; authority follows the proposing team', () => {
+    const w = W(); let s = committed(w);
+    s = must(cmd(s, { op: 'contribute', programId: ID, amount: 2000 }, actor('mate', { teamId: 'team_player' }), w));
+    const sus = cmd(s, { op: 'suspend', programId: ID }, actor('mate', { teamId: 'team_player' }), w);
+    const enemy = cmd(s, { op: 'suspend', programId: ID }, actor('ai'), w);
+    return (prog(s).teamTotals.team_player === 7000 && sus.ok && !enemy.ok) || JSON.stringify([prog(s).teamTotals, sus.reason, enemy.reason]);
+  });
+  check('mp19_free_rider', 'Free rider: benefits arrive through the real network for non-contributors; AI may rationally save its capital', () => {
+    const w = W(); let s = committed(w); s = must(cmd(s, { op: 'contribute', programId: ID, amount: 3000 }, actor(), w));
+    const c = megaprojectAiCandidate(s, w, actor('ai', { money: 60000 }), { regions: ['NSW', 'VIC'] });
+    const mob = WA().networks!.networks.filter(n => n.networkKind === 'mobility');
+    return (c.cmd === null && /free-ride/.test(c.reason) && !Object.keys(prog(s)).some(k => /owner/i.test(k)) && mob.length > 0) || JSON.stringify(c);
+  });
+  check('mp20_no_double_bonus', 'No double bonus: canonical bonuses apply once (program never touches projects or capacity)', () => {
+    const w = WA(); const s = stage1Done(w); const before = JSON.stringify(w.projects);
+    const r = adv(s, w); const issues = validateNationalMegaproject(prog(r.persisted), w);
+    const ns1 = createMegaprojectFixtureWorld({ statuses: { [HSR]: 'active' } }).national, ns2 = createMegaprojectFixtureWorld({ statuses: { [HSR]: 'active' } }).national;
+    return (JSON.stringify(w.projects) === before && !issues.some(i => i.startsWith('B')) && JSON.stringify({ ...ns1, computeMs: 0 }) === JSON.stringify({ ...ns2, computeMs: 0 })) || issues.join(';');
+  });
+  check('mp21_maintenance', 'Component maintenance applies once; no duplicate program maintenance (operations cost = 0, documented)', () => {
+    const w = WA(); const s = stage1Done(w); const v = megaprojectSpecView(prog(s), w);
+    return (MEGAPROJECT_OPERATIONS_COST_PER_TURN === 0 && v.maintenanceProfile.programOperationsPerTurn === 0 && v.maintenanceProfile.componentMaintenancePerTurn === PRESET_INFRASTRUCTURE_PROJECTS.find(p => p.id === HSR)!.maintenanceCostPerTurn && !/maintenance/i.test(JSON.stringify(s))) || JSON.stringify(v.maintenanceProfile);
+  });
+  check('mp22_network_effect', 'Stage completes a corridor → V10.2 network changes (only via canonical component projects)', () => {
+    const a = createMegaprojectFixtureWorld({ statuses: { infra_v102_nsw_interstate_rail: 'active', infra_v102_vic_freight_terminal: 'active' } }).networks!;
+    const b = createMegaprojectFixtureWorld().networks!;
+    const full = projectMegaprojectFullProgram('national_freight_modernization', { corridor_priority: { optionId: 'east_coast' } }, createMegaprojectFixtureWorld());
+    return (a.networks.some(n => n.networkKind === 'freight' && n.regionIds.includes('NSW') && n.regionIds.includes('VIC')) && !b.networks.some(n => n.networkKind === 'freight') && full.projects.some(p => p.networks.includes('Freight'))) || JSON.stringify(a.networks.map(n => [n.networkKind, n.regionIds]));
+  });
+  check('mp23_industry_effect', 'Network change → V10.1 recalculates downstream (industries read canonical projects, not programs)', () => {
+    const a = createMegaprojectFixtureWorld({ statuses: { infra_v93_vic_data_center: 'active' }, sectors: { VIC: { technology: 50 } } as any }).industries!;
+    const b = createMegaprojectFixtureWorld({ sectors: { VIC: { technology: 50 } } as any }).industries!;
+    return JSON.stringify(a.regions.VIC) !== JSON.stringify(b.regions.VIC) || 'data centre did not change VIC industry';
+  });
+  check('mp24_world_reaction', 'World Reaction: a stage completion is ONE bounded event; routed to LR / Factions / GI3 / Team OS with contributors + project types', () => {
+    const w = WA(); let s = must(cmd(null, { op: 'propose', kind: 'national_high_speed_rail' }, actor(), w)); s = must(cmd(s, { op: 'commit', programId: ID, amount: 5000 }, actor(), w));
+    const r1 = adv(s, w); s = must(cmd(r1.persisted, { op: 'contribute', programId: ID, amount: 5000, labor: 1 }, actor(), w)); s = must(cmd(s, { op: 'contribute', programId: ID, labor: 1 }, at('VIC'), w));
+    const r2 = adv(s, w); const all = [...r1.events, ...r2.events, ...adv(r2.persisted, w).events];
+    const sw = all.map(e => megaprojectToWorldEvent(e, ['player']));
+    const subs = (sys: string) => SWR_SUBSCRIPTIONS.find(x => x.system === sys)!.kinds as any;
+    const lr = subs('living_regions'), fa = subs('factions'), gi = subs('gi3'), to = subs('team_os');
+    return (sw.length === 4 && sw.filter(e => e.kind === 'megaproject_stage_completed').length === 1 && sw.every(e => e.sourceSystem === 'megaprojects' && e.tags.includes('megaprojects') && e.dedupeKey.startsWith('mp:'))
+      && lr.includes('megaproject_stage_completed') && fa.includes('megaproject_completed') && gi.includes('megaproject_stalled') && to.includes('megaproject_committed') && sw.some(e => e.tags.includes('contributor:player') && e.tags.includes('ptype:high_speed_rail'))) || JSON.stringify(sw.map(e => e.kind));
+  });
+  check('mp25_crisis', 'Crisis damages a completed stage\'s component → program DAMAGED, next stage stalled with the reason, completed stages stay complete; repair resumes', () => {
+    const wB = WA({ [PARK]: 'active' }); const s = stage2Done(wB);
+    const d = adv(s, WA({ [PARK]: 'active', [HSR]: 'damaged' }, { turn: 7, nsModifiers: pressure('freight') }));
+    const r = adv(d.persisted, WA({ [PARK]: 'active' }, { turn: 8, nsModifiers: pressure('freight') })); const p = prog(d.persisted);
+    return (p.status === 'damaged' && p.stages[0].status === 'completed' && p.stages[1].status === 'completed' && /damaged/.test(p.stallReason || '') && d.events.filter(e => e.kind === 'megaproject_stalled').length === 1
+      && prog(r.persisted).status === 'partially_operational' && r.events.some(e => e.kind === 'megaproject_resumed')) || JSON.stringify([p.status, p.stages.map(x => x.status), p.stallReason, prog(r.persisted).status, r.events.map(e => e.kind)]);
+  });
+  check('mp26_what_if', 'What-If: stage funding (cash before→after, capped), full program (long-horizon), alternative design — live state unchanged', () => {
+    const w = W(); const s = committed(w); const snap = JSON.stringify(s) + JSON.stringify(w.projects);
+    const f = projectMegaprojectStageFunding(s, ID, 20000, w, 92000); const full = projectMegaprojectFullProgram('national_high_speed_rail', {}, w, prog(s));
+    const cmp = compareMegaprojectChoice('australian_ai_compute_network', 'compute_architecture', w);
+    return (f.capped === 5000 && f.cashAfter === 87000 && f.remainingAfter === 0 && full.longHorizon && /LONG-HORIZON/.test(full.text) && full.componentCapital > 0 && cmp.length === 2 && cmp[0].total !== cmp[1].total && cmp.some(c => c.resilience === 'higher') && cmp[1].regions.includes('SA')
+      && JSON.stringify(s) + JSON.stringify(w.projects) === snap) || JSON.stringify({ f, cmp });
+  });
+  check('mp27_save_load', 'Save mid-program → load: exact stage / funding / choice restoration (sanitizer is idempotent)', () => {
+    const w = WA(); let s = stage1Done(w); s = must(cmd(s, { op: 'choose', programId: ID, choiceId: 'canberra_model', optionId: 'tech_park' }, actor(), w)); s = setMegaprojectTracked(s, 'player', ID);
+    const back = sanitizeMegaprojectsPersisted(JSON.parse(JSON.stringify(s)));
+    return (sameJ(back, s) && sameJ(sanitizeMegaprojectsPersisted(back), back) && back!.tracked.player === ID) || 'round-trip differs';
+  });
+  check('mp28_old_save', 'Old save: no fake megaproject; eligibility still derived; garbage rejected safely', () => {
+    const mig = migrateSaveToV71Expansion({ version: '9.0', gameState: { turnCounter: 3 } } as any);
+    const garbage = sanitizeMegaprojectsPersisted({ programs: { mp_fake: { kind: 'moon_base' }, x: 5 }, history: 'no' });
+    return (sanitizeMegaprojectsPersisted(undefined) === null && mig.success && (mig as any).migratedData?.gameState?.megaprojects == null && garbage !== null && Object.keys(garbage.programs).length === 0 && megaprojectEligibility(W(), null).length === 8) || JSON.stringify(garbage);
+  });
+  check('mp29_replay', 'Replay: same canonical actions → same stage milestones, history and event ids (no Date-based ids)', () => {
+    const go = () => { const w = WA({ [PARK]: 'active' }); const s = stage2Done(w); const r = adv(s, WA({ [PARK]: 'active' }, { turn: 6, nsModifiers: pressure('freight') })); return JSON.stringify(r) + JSON.stringify(megaprojectEligibility(w, r.persisted)); };
+    const a = go(), b = go(); return (a === b && !/NaN/.test(a) && /stage_completed/.test(a)) || 'differs';
+  });
+  check('mp30_human_vs_ai', 'Human VS AI: canonical reducer refuses off-turn commands; on-turn spends cash + AP exactly once', () => {
+    const w = W(); const s = committed(w);
+    const projects = Object.fromEntries([...PRESET_INFRASTRUCTURE_PROJECTS, ...V93_INFRASTRUCTURE_PROJECTS].map(p => [p.id, { ...JSON.parse(JSON.stringify(p)), status: p.id === HSR ? 'under_construction' : p.status }]));
+    const bundle = (turn: string) => ({ gameState: { gameMode: 'game', selectedMode: 'ai', currentTurn: turn, turnCounter: 5, infrastructureProjects: projects, megaprojects: s, regionalDevLevels: {} },
+      player: { ...initialPlayerState, id: 'player', kind: 'human', money: 20000, actionsUsedThisTurn: 0, currentRegion: 'NSW' }, aiPlayer: { ...initialPlayerState, id: 'ai', kind: 'ai', isAi: true, money: 20000, actionsUsedThisTurn: 0, currentRegion: 'NSW' },
+      gameSettings: { ...DEFAULT_GAME_SETTINGS, stateInfrastructureEnabled: true, actionLimitsEnabled: true, playerActionsPerDay: 3, aiActionsPerDay: 3 } });
+    const act = (actorId: string) => ({ type: 'megaproject_command', actorId, parameters: { command: { op: 'contribute', programId: ID, amount: 1000 } } } as any);
+    const off = reduceGameAction(bundle('ai') as any, act('player')); const aiOff = reduceGameAction(bundle('player') as any, act('ai'));
+    const on = reduceGameAction(bundle('player') as any, act('player')); const n: any = on.nextState;
+    return (!off.success && !aiOff.success && on.success && n.player.money === 19000 && n.player.actionsUsedThisTurn === 1 && n.megaprojects.programs[ID].stages[0].progressCapital === 6000) || JSON.stringify({ off: off.success, aiOff: aiOff.success, on: on.success, m: n?.player?.money, ap: n?.player?.actionsUsedThisTurn });
+  });
+  check('mp31_ai_repeat', 'AI: one contribution per program per turn, no zero-AP / zero-value loop, can reject bad opportunities', () => {
+    const w = W(); let s = committed(w);
+    const c1 = megaprojectAiCandidate(s, w, actor('ai', { money: 60000 }), { regions: ['NSW', 'VIC'], day: 5 });
+    if (!c1.cmd) return `no candidate: ${c1.reason}`;
+    s = must(cmd(s, c1.cmd, actor('ai', { money: 60000 }), w));
+    const c2 = megaprojectAiCandidate(s, w, actor('ai', { money: 60000 }), { regions: ['NSW', 'VIC'], day: 5 });
+    const noAp = cmd(s, { op: 'contribute', programId: ID, amount: 500 }, actor('ai', { apRemaining: 0 }), w);
+    const stakeless = megaprojectAiCandidate(committed(w), w, actor('ai', { money: 60000 }), { regions: ['WA'] });
+    const late = megaprojectAiCandidate(committed(w), w, actor('ai', { money: 60000 }), { regions: ['NSW', 'VIC'], day: 29 });
+    return (c2.cmd === null && /already contributed/.test(c2.reason) && !noAp.ok && stakeless.cmd === null && late.cmd === null && /not worth it/.test(late.reason) && (c1.cmd.amount || 0) <= V103_LIMITS.aiMaxContribution) || JSON.stringify([c2.reason, noAp.reason, stakeless.reason, late.reason]);
+  });
+  check('mp32_game_over', 'Game over: no post-game construction actions continue', () => {
+    const w = W({}, { gameOver: true, nsModifiers: pressure('freight') }); const s = committed();
+    const ops: MegaprojectCommand[] = [{ op: 'propose', kind: 'national_freight_modernization' }, { op: 'contribute', programId: ID, amount: 1000 }, { op: 'suspend', programId: ID }, { op: 'choose', programId: ID, choiceId: 'canberra_model', optionId: 'tech_park' }];
+    return (ops.every(o => !cmd(s, o, actor(), w).ok) && megaprojectAiCandidate(s, w, actor('ai', { money: 60000 }), { regions: ['NSW'] }).cmd === null) || 'accepted after game over';
+  });
+  check('mp33_performance', 'Several eligible programs: 200 evaluations + eligibility + assessments stay fast and bounded', () => {
+    const w = WA({}, { sectors: { SA: { energy: 60 }, WA: { mining: 70 } } as any, nsModifiers: pressure('freight') }); let s = stage1Done(w); const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    for (let k = 0; k < 200; k++) { s = adv(s, { ...w, turn: 6 + k }).persisted; megaprojectEligibility(w, s); if (k % 20 === 0) megaprojectAssessment('national_high_speed_rail', prog(s), w, { id: 'player', money: 50000, regions: ['NSW'], rivalRegions: ['VIC'], day: 6 }); }
+    const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+    return (ms < 3000 && s.history.length <= V103_LIMITS.history && prog(s).history.length <= V103_LIMITS.programHistory) || `${Math.round(ms)}ms`;
+  });
+  check('mp34_full_completion', 'Complete all 4 stages through canonical projects → completed; final effects (event + milestone) occur once', () => {
+    const extra: WO = { devTiers: { QLD: 1 }, nsModifiers: pressure('freight') };
+    const wB = WA({ [PARK]: 'active' }, extra); let s = stage2Done(wB);
+    s = must(cmd(s, { op: 'choose', programId: ID, choiceId: 'service_model', optionId: 'mixed_trade' }, actor(), wB));
+    s = must(cmd(s, { op: 'contribute', programId: ID, amount: 11000, labor: 1 }, at('QLD'), wB)); s = must(cmd(s, { op: 'contribute', programId: ID, labor: 1 }, at('QLD'), wB)); s = must(cmd(s, { op: 'contribute', programId: ID, labor: 1 }, at('NSW'), wB));
+    const wAll = WA({ [PARK]: 'active', infra_inland_rail_qld: 'active', infra_v102_nsw_interstate_rail: 'active' }, { ...extra, turn: 9 });
+    s = adv(s, wAll).persisted;
+    s = must(cmd(s, { op: 'contribute', programId: ID, amount: 8000, labor: 1 }, at('VIC'), wAll)); s = must(cmd(s, { op: 'contribute', programId: ID, labor: 1 }, at('ACT'), wAll));
+    const r = adv(s, wAll); const r2 = adv(r.persisted, wAll); const p = prog(r.persisted);
+    return (p.status === 'completed' && p.completedTurn === 9 && r.events.filter(e => e.kind === 'megaproject_completed').length === 1 && !r2.events.some(e => e.kind === 'megaproject_completed') && p.history.filter(h => h.kind === 'completed').length === 1
+      && validateMegaprojectsPersisted(r.persisted, wAll).length === 0 && r.unlockProjectIds.length === 0) || JSON.stringify({ st: p.status, stages: p.stages.map(x => x.status), why: p.stallReason, ev: r.events.map(e => e.kind), v: validateMegaprojectsPersisted(r.persisted, wAll) });
+  });
+  check('mp35_partial_program', 'Match ends / program abandoned at stage 2 of 4: completed stages stay meaningful; capstone stays closed; no forced completion', () => {
+    const wB = WA({ [PARK]: 'active' }); const s = must(cmd(stage2Done(wB), { op: 'suspend', programId: ID }, actor(), wB));
+    const before = JSON.stringify(wB.projects);
+    const r = adv(s, WA({ [PARK]: 'active' }, { turn: 5 + V103_LIMITS.suspendAbandonTurns, nsModifiers: pressure('freight') })); const p = prog(r.persisted);
+    const again = cmd(r.persisted, { op: 'resume', programId: ID }, actor(), wB);
+    const seg = megaprojectRegionSegments(r.persisted);
+    return (p.abandoned && p.stages[0].status === 'completed' && p.stages[1].status === 'completed' && p.stages[2].status === 'abandoned' && r.events.some(e => e.kind === 'megaproject_abandoned') && !r.unlockProjectIds.length && !again.ok
+      && JSON.stringify(wB.projects) === before && seg.ACT?.some(x => x.state === 'completed') && !seg.QLD) || JSON.stringify({ ab: p.abandoned, st: p.stages.map(x => x.status), ev: r.events.map(e => e.kind), seg });
+  });
+  return results;
+}
+
+// ---- V10.3 National Megaprojects: UI (renders program memory + derived views; every action goes through onCommand) ----
+
+const V103_SEG_STYLE = { completed: { stroke: '#22c55e', dash: undefined, w: 5, label: '✓ built' }, under_construction: { stroke: '#f59e0b', dash: '6 3', w: 4, label: '● building' }, planned: { stroke: '#94a3b8', dash: '2 4', w: 2, label: '○ planned' }, stalled: { stroke: '#ef4444', dash: '4 4', w: 4, label: '⏸ stalled' } } as const;
+const v103Money = (n: number) => `$${Math.round(n).toLocaleString()}`;
+const V103_RISK_CLASS: Record<MegaprojectRiskBand, string> = { LOW: 'text-emerald-300', MODERATE: 'text-amber-300', HIGH: 'text-rose-300' };
+
+/** Map badge for one program: participating region + segment state (icon + text, never colour alone). */
+export function megaprojectMapBadge(s: MegaprojectsPersisted | null, regionId: string, programId: string): { text: string; title: string; tone: 'ok' | 'warn' | 'bad' | 'plan' } | null {
+  const segs = (megaprojectRegionSegments(s)[regionId] || []).filter(x => x.programId === programId);
+  if (!segs.length) return null;
+  const rank = { stalled: 3, under_construction: 2, completed: 1, planned: 0 } as const;
+  const top = [...segs].sort((a, b) => rank[b.state] - rank[a.state])[0];
+  const def = MEGAPROJECT_DEF_BY_KIND[top.kind];
+  return { text: V103_SEG_STYLE[top.state].label, title: `${def.title}: ${REGIONS[regionId]?.name || regionId} — ${segs.map(x => x.state.replace(/_/g, ' ')).join(', ')}`, tone: top.state === 'stalled' ? 'bad' : top.state === 'under_construction' ? 'warn' : top.state === 'completed' ? 'ok' : 'plan' };
+}
+
+/** Program geography on the existing map: one segment per consecutive pair of stage regions, styled by stage state. */
+export const MegaprojectMapOverlay: React.FC<{ persisted: MegaprojectsPersisted; programId: string }> = ({ persisted, programId }) => {
+  const p = persisted.programs[programId]; if (!p) return null;
+  const pos = (r: string) => REGIONS[r]?.position;
+  const stages = megaprojectStageView(p);
+  const segs: Array<{ key: string; a: string; b: string; state: keyof typeof V103_SEG_STYLE }> = [];
+  stages.forEach((st, i) => {
+    const state: keyof typeof V103_SEG_STYLE = st.status === 'completed' ? 'completed' : st.status === 'stalled' ? 'stalled' : (i === p.currentStageIndex && p.committedTurn !== null && !p.abandoned && p.status !== 'suspended') ? 'under_construction' : 'planned';
+    if (p.abandoned && state !== 'completed') return;
+    const regs = st.requiredRegionIds.filter(r => REGIONS[r]);
+    for (let k = 1; k < regs.length; k++) segs.push({ key: `${st.id}_${k}`, a: regs[k - 1], b: regs[k], state });
+    if (regs.length === 1 && i > 0) { const prevR = stages[i - 1].requiredRegionIds.find(r => REGIONS[r] && r !== regs[0]); if (prevR) segs.push({ key: `${st.id}_link`, a: prevR, b: regs[0], state }); }
+  });
+  const def = MEGAPROJECT_DEF_BY_KIND[p.kind];
+  return (
+    <>
+      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" data-testid="mp-map-links">
+        {segs.map(sg => { const a = pos(sg.a), b = pos(sg.b); if (!a || !b) return null; const st = V103_SEG_STYLE[sg.state];
+          return <line key={sg.key} data-testid={`mp-seg-${sg.state}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={st.stroke} strokeOpacity={0.9} strokeWidth={st.w} strokeDasharray={st.dash} strokeLinecap="round" vectorEffect="non-scaling-stroke" />; })}
+      </svg>
+      <div className="absolute left-1 bottom-1 text-[10px] bg-slate-950/85 text-slate-100 px-1.5 py-0.5 rounded z-[6]" data-testid="mp-map-legend">
+        {def.icon} {def.title} · {MEGAPROJECT_STATUS_LABEL[p.status]} · ✓ built ● building ○ planned ⏸ stalled
+      </div>
+    </>
+  );
+};
+
+/** PLAY: one concise line, only for a tracked / own program. */
+export const MegaprojectPlayLine: React.FC<{ line: ReturnType<typeof megaprojectPlayLine>; theme: any; onOpen: () => void; onAsk: (q: string) => void }> = ({ line, theme, onOpen, onAsk }) => {
+  if (!line) return null;
+  return (
+    <section aria-label="Megaproject" className={`${theme.card} ${theme.border} border rounded-lg px-3 py-2 text-xs flex flex-wrap items-center gap-2`} data-testid="mp-play-line">
+      <span className="font-bold uppercase tracking-wide opacity-70">Megaproject</span>
+      <button type="button" className={`px-2 py-0.5 rounded border ${line.tone === 'warning' ? 'border-amber-500' : 'border-sky-500'}`} onClick={onOpen}>{line.text}</button>
+      <span>Current need: <b>{line.need}</b></span>
+      {line.next && <span className="opacity-80">Next milestone: {line.next}</span>}
+      <button type="button" className="underline opacity-80" onClick={() => onAsk('What is the biggest risk to finishing this megaproject?')}>Biggest risk?</button>
+    </section>
+  );
+};
+
+export interface MegaprojectViewer { id: string; money: number; regions: string[]; rivalRegions: string[]; day: number; currentRegion: string | null; teamId: string | null }
+/** INTELLIGENCE › National Megaprojects (Available · Active · Stages · Requirements · Contributors · Network Impact · Choices · Risks · History). */
+export const MegaprojectCenter: React.FC<{ persisted: MegaprojectsPersisted | null; world: MegaprojectWorld; viewer: MegaprojectViewer; names: Record<string, string>; theme: any;
+  onCommand: (cmd: MegaprojectCommand) => void; onTrack: (programId: string | null) => void; onAsk: (q: string) => void; onMap: (programId: string) => void; guardian?: (amount: number) => React.ReactNode }> = ({ persisted, world, viewer, names, theme, onCommand, onTrack, onAsk, onMap, guardian }) => {
+  const tabs = ['available', 'active', 'stages', 'requirements', 'contributors', 'network impact', 'choices', 'risks', 'history'] as const;
+  const [tab, setTab] = useState<typeof tabs[number]>('active');
+  const programs = Object.values(persisted?.programs || {}).sort((a, b) => a.id.localeCompare(b.id));
+  const [sel, setSel] = useState<string | null>(null);
+  const p = (sel && persisted?.programs[sel]) || programs.find(x => !x.abandoned && x.status !== 'completed') || programs[0] || null;
+  const [amount, setAmount] = useState(5000);
+  const [whatIf, setWhatIf] = useState<string[] | null>(null);
+  const elig = useMemo(() => megaprojectEligibility(world, persisted, { money: viewer.money }), [world, persisted, viewer.money]);
+  const view = p ? megaprojectProgramView(p, world) : null;
+  const assess = p ? megaprojectAssessment(p.kind, p, world, viewer) : null;
+  const name = (a: string) => (a === viewer.id ? 'You' : names[a] || a);
+  const tracked = persisted?.tracked[viewer.id] || null;
+  const stageLine = (st: MegaprojectStage, i: number) => (
+    <div key={st.id} className="mb-1" data-testid="mp-stage">
+      <div><b>{MEGAPROJECT_STAGE_ICON[st.status]} Stage {i + 1}</b> {st.title} <span className="opacity-70">· {MEGAPROJECT_STAGE_LABEL[st.status]}</span></div>
+      {st.status !== 'completed' && i === p!.currentStageIndex && <div className="pl-4">{v103Money(st.progressCapital)} / {v103Money(st.requiredCapital)} · {st.progressLabor} / {st.requiredLabor} labour{st.stallReason ? <span className="text-rose-300"> · ⏸ {st.stallReason}</span> : null}</div>}
+      {st.requiredProjectIds.length > 0 && <div className="pl-4 opacity-80">Components: {st.requiredProjectIds.map(id => `${world.projects[id]?.title || id} (${(world.projects[id]?.status || 'missing').replace(/_/g, ' ')})`).join(' · ')}</div>}
+    </div>);
+  const runWhatIf = (kind: 'stage' | 'full' | 'design') => {
+    if (!p || !persisted) return;
+    if (kind === 'stage') { const f = projectMegaprojectStageFunding(persisted, p.id, amount, world, viewer.money); setWhatIf([`WHAT IF you fund ${v103Money(amount)} now (isolated preview — nothing changes):`, f.text, f.liquidityBefore ? `Liquidity risk ${f.liquidityBefore} → ${f.liquidityAfter}.` : '']); }
+    else if (kind === 'full') { setWhatIf([projectMegaprojectFullProgram(p.kind, p.choices, world, p).text]); }
+    else { const ch = MEGAPROJECT_DEF_BY_KIND[p.kind].choices.find(c => !p.choices[c.id]) || MEGAPROJECT_DEF_BY_KIND[p.kind].choices[0];
+      setWhatIf([`ALTERNATIVE DESIGN — ${ch.title}:`, ...compareMegaprojectChoice(p.kind, ch.id, world, p.choices).map(c => `${c.label}: ≈${v103Money(c.total)} total · resilience ${c.resilience} · regions ${c.regions.join('/')} · networks ${c.networks.join(', ') || '—'} · ${c.tradeoffs.join(' ')}`)]); }
+  };
+  return (
+    <section aria-labelledby="mp-center-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} text-sm`} data-testid="mp-center">
+      <div className="flex items-center justify-between gap-2"><h3 id="mp-center-h" className="font-bold">🏗 National Megaprojects</h3>
+        {programs.length > 0 && <select aria-label="Program" className="bg-transparent border rounded text-xs px-1" value={p?.id || ''} onChange={e => setSel(e.target.value)} data-testid="mp-center-select">{programs.map(x => <option key={x.id} value={x.id}>{MEGAPROJECT_DEF_BY_KIND[x.kind].icon} {MEGAPROJECT_DEF_BY_KIND[x.kind].title}</option>)}</select>}</div>
+      <div className="opacity-80 text-xs">Multi-stage national programs built from canonical projects. Completed stages work before the whole program finishes; contributions are public provenance, never ownership.</div>
+      <div className="flex flex-wrap gap-1 mt-2 text-xs">{tabs.map(t => <button key={t} type="button" onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-sky-400 font-bold' : theme.border}`} data-testid={`mp-tab-${t.replace(/ /g, '-')}`}>{t}</button>)}</div>
+      <div className="mt-2 text-xs space-y-1" data-testid="mp-center-body">
+        {tab === 'available' && elig.filter(r => r.eligible || !persisted?.programs[megaprojectIdFor(r.kind)]).map(r => (
+          <div key={r.kind} className="mb-1" data-testid={`mp-available-${r.kind}`}>
+            <div className="flex justify-between gap-2"><b>{r.icon} {r.title}</b><span>{r.eligible ? '◇ ELIGIBLE' : '▫ unavailable'}</span></div>
+            <div className="opacity-80">{MEGAPROJECT_DEF_BY_KIND[r.kind].summary}</div>
+            {r.eligible ? <button type="button" className="underline" onClick={() => onCommand({ op: 'propose', kind: r.kind })} data-testid={`mp-propose-${r.kind}`}>Propose program (1 action)</button>
+              : <div className="opacity-70">{r.reasons.slice(0, 2).join(' · ')}</div>}
+          </div>))}
+        {!p && tab !== 'available' && <div className="opacity-70">No program has been proposed in this match yet. Programs are rare: see “available”.</div>}
+        {p && view && tab === 'active' && (
+          <div>
+            <div className="flex flex-wrap justify-between gap-2"><b>{view.def.icon} {view.def.title}</b><span>{MEGAPROJECT_STATUS_ICON[p.status]} {MEGAPROJECT_STATUS_LABEL[p.status]}{p.abandoned ? ' (abandoned)' : ''}</span></div>
+            <div>Regions {view.def.regionIds.join(' • ')} · Stage {Math.min(p.currentStageIndex + 1, view.stages.length)} / {view.stages.length} · program capital {v103Money(view.capitalDone)} / {v103Money(view.capitalTotal)} · labour {view.laborDone} / {view.laborTotal}</div>
+            {p.stallReason && <div className="text-rose-300">Reason: {p.stallReason}</div>}
+            {view.current && !p.abandoned && p.status !== 'completed' && (
+              <div className="mt-1 p-2 rounded border border-sky-700/40">
+                {view.pendingChoice ? <div className="text-amber-300">Decide “{view.pendingChoice.title}” first (see choices).</div> : p.committedTurn === null ? (
+                  <div className="flex flex-wrap items-center gap-2">Commit with <input aria-label="Commitment" type="number" min={0} step={500} value={amount} onChange={e => setAmount(Math.max(0, Number(e.target.value) || 0))} className="w-24 bg-transparent border rounded px-1" />
+                    <button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} onClick={() => onCommand({ op: 'commit', programId: p.id, amount })} data-testid="mp-commit">Commit</button></div>
+                ) : p.status !== 'suspended' && (
+                  <div className="flex flex-wrap items-center gap-2">Fund stage {p.currentStageIndex + 1} <input aria-label="Contribution" type="number" min={0} step={500} value={amount} onChange={e => setAmount(Math.max(0, Number(e.target.value) || 0))} className="w-24 bg-transparent border rounded px-1" data-testid="mp-amount" />
+                    <button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} onClick={() => onCommand({ op: 'contribute', programId: p.id, amount })} data-testid="mp-contribute">Contribute</button>
+                    <button type="button" className={`px-2 py-0.5 rounded border ${theme.border}`} disabled={!viewer.currentRegion || !view.current.requiredRegionIds.includes(viewer.currentRegion)} title={`On-site labour in ${view.current.requiredRegionIds.join(' / ')}`} onClick={() => onCommand({ op: 'contribute', programId: p.id, labor: 1 })} data-testid="mp-labor">+1 labour on site</button>
+                    <span className="opacity-70">Capped at the stage remainder; costs 1 action.</span></div>
+                )}
+                {guardian && p.committedTurn !== null && guardian(amount)}
+              </div>)}
+            <div className="flex flex-wrap gap-2 mt-1">
+              <button type="button" className="underline" onClick={() => onTrack(tracked === p.id ? null : p.id)} data-testid="mp-track">{tracked === p.id ? 'Stop tracking' : 'Track (PLAY + Current Focus)'}</button>
+              <button type="button" className="underline" onClick={() => onMap(p.id)}>Show on map</button>
+              {!p.abandoned && p.status !== 'completed' && (p.status === 'suspended' ? <button type="button" className="underline" onClick={() => onCommand({ op: 'resume', programId: p.id })} data-testid="mp-resume">Resume</button>
+                : <button type="button" className="underline" onClick={() => onCommand({ op: 'suspend', programId: p.id })} data-testid="mp-suspend">Suspend future stages</button>)}
+              <button type="button" className="underline" onClick={() => runWhatIf('stage')} data-testid="mp-whatif-stage">What-If: fund this stage</button>
+              <button type="button" className="underline" onClick={() => runWhatIf('full')} data-testid="mp-whatif-full">What-If: full program</button>
+              <button type="button" className="underline" onClick={() => runWhatIf('design')} data-testid="mp-whatif-design">What-If: alternative design</button>
+            </div>
+            {whatIf && <div className="mt-1 p-2 rounded bg-slate-900/50" data-testid="mp-whatif">{whatIf.filter(Boolean).map(l => <div key={l}>{l}</div>)}</div>}
+          </div>)}
+        {p && view && tab === 'stages' && <div data-testid="mp-stages">{view.def.icon} <b>{view.def.title.toUpperCase()}</b>{view.stages.map(stageLine)}</div>}
+        {p && view && tab === 'requirements' && view.stages.map((st, i) => (
+          <div key={st.id} className="mb-1"><b>Stage {i + 1} {st.title}</b>: {v103Money(st.requiredCapital)} + {st.requiredLabor} labour in {st.requiredRegionIds.join('/')}
+            {st.requiredProjectIds.length ? ` · canonical projects: ${st.requiredProjectIds.map(id => world.projects[id]?.title || id).join(', ')}` : ' · coordination only'}
+            {st.prerequisites.length ? ` · needs: ${evaluateMegaprojectPrereqSet(st.prerequisites, world, view.def).results.map(r => `${r.met ? '✓' : '✕'} ${r.detail}`).join('; ')}` : ''}
+            {st.unlocksProjectIds.length ? ` · opens ${st.unlocksProjectIds.map(id => world.projects[id]?.title || id).join(', ')} for funding` : ''}</div>))}
+        {p && view && tab === 'contributors' && (view.contributors.length ? view.contributors.map(c => <div key={c.actorId}>{name(c.actorId)}: {v103Money(c.capital)} · {c.labor} labour · {Math.round(c.share * 100)}%</div>).concat([<div key="note" className="opacity-60">Public program provenance — not ownership. Benefits reach everyone using the network.</div>])
+          : <div className="opacity-70">No contributions yet.</div>)}
+        {p && assess && tab === 'network impact' && <div>
+          <div><b>Network impact</b>: {assess.networkImpact}</div><div><b>Industry impact</b>: {assess.industryImpact}</div><div><b>Resilience impact</b>: {assess.resilienceImpact}</div>
+          <div><b>Capital burden</b>: {assess.capitalBurden}</div><div><b>Time</b>: {assess.time}</div><div><b>Strategy relevance</b>: {assess.strategyRelevance}</div>
+          <div className="opacity-80">Effects by stage: {view!.stages.map((st, i) => `S${i + 1} ${st.status === 'completed' ? '(active)' : '(not yet)'} ${st.partialEffects.map(e => e.label).join('; ') || '—'}`).join(' | ')}</div></div>}
+        {p && tab === 'choices' && MEGAPROJECT_DEF_BY_KIND[p.kind].choices.map(ch => (
+          <div key={ch.id} className="mb-1" data-testid={`mp-choice-${ch.id}`}>
+            <div><b>{ch.title}</b> — {ch.description}</div>
+            {ch.options.map(o => (
+              <div key={o.id} className="pl-3">
+                <span>{p.choices[ch.id]?.optionId === o.id ? '◉' : '○'} <b>{o.label}</b>: {o.tradeoffs.join(' ')} <span className="opacity-70">({o.costDelta === 0 ? 'reference cost' : `${o.costDelta > 0 ? '+' : '−'}${v103Money(Math.abs(o.costDelta))}`}{o.timeDelta ? `, ${o.timeDelta > 0 ? '+' : ''}${o.timeDelta} turns` : ''}{o.factionHooks.length ? ` · ${o.factionHooks.join(', ')}` : ''})</span></span>
+                {!p.choices[ch.id] && !p.abandoned && <button type="button" className="underline ml-1" onClick={() => onCommand({ op: 'choose', programId: p.id, choiceId: ch.id, optionId: o.id })} data-testid={`mp-choose-${o.id}`}>Choose</button>}
+              </div>))}
+            {p.choices[ch.id] && <div className="pl-3 opacity-70">Decided by {name(p.choices[ch.id].actorId)} in round {p.choices[ch.id].turn} — permanent.</div>}
+          </div>))}
+        {p && assess && tab === 'risks' && <div data-testid="mp-risks">
+          {([['Liquidity Risk', assess.risks.liquidity], ['Completion Risk', assess.risks.completion], ['Dependency Risk', assess.risks.dependency], ['Rival Free-Rider Exposure', assess.risks.freeRider]] as const).map(([l, r]) => <div key={l}>{l}: <b className={V103_RISK_CLASS[r.band]}>{r.band}</b> — {r.evidence}</div>)}
+          {MEGAPROJECT_DEF_BY_KIND[p.kind].risks.map(r => <div key={r} className="opacity-80">• {r}</div>)}</div>}
+        {p && tab === 'history' && (p.history.length ? [...p.history].reverse().slice(0, 12).map(h => <div key={h.id}>R{h.turn}: {h.summary}</div>) : <div className="opacity-70">No milestones yet.</div>)}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-2 text-xs">{["Why can't I start National Rail?", 'Can I afford the next stage?', 'Would Riley benefit?', 'What is the biggest risk to finishing this megaproject?'].map(q => <button key={q} type="button" className="underline" onClick={() => onAsk(q)}>{q}</button>)}</div>
+    </section>
+  );
+};
+
+/** Debrief: structural program milestones (bounded; partial programs remain meaningful). */
+export function buildMegaprojectDebrief(s: MegaprojectsPersisted | null): string[] {
+  if (!s) return [];
+  return Object.values(s.programs).map(p => { const def = MEGAPROJECT_DEF_BY_KIND[p.kind]; const done = p.stages.filter(x => x.status === 'completed').length;
+    return `${def.icon} ${def.title}: ${MEGAPROJECT_STATUS_LABEL[p.status]}${p.abandoned ? ' (abandoned)' : ''} — ${done}/${p.stages.length} stages${done ? ` (${megaprojectStageView(p).filter(x => x.status === 'completed').map(x => x.title).join(', ')})` : ''}`; });
+}
+
+/** LAB › V10.3 Megaproject Inspector (16 views). Observes only. */
+export const MegaprojectInspector: React.FC<{ persisted: MegaprojectsPersisted | null; world: MegaprojectWorld; theme: any; diag: { evaluations: number; lastReason: string; lastMs: number; eventsEmitted: number; commands: number; rejected: number }; enabled: boolean }> = ({ persisted, world, theme, diag, enabled }) => {
+  const [open, setOpen] = useState(false); const [tab, setTab] = useState('registry'); const [busy, setBusy] = useState(false); const [tests, setTests] = useState<V9SelfTestResult[] | null>(null);
+  const tabs = ['registry', 'eligibility', 'active programs', 'stages', 'requirements', 'contributions', 'choices', 'component projects', 'network effects', 'industry effects', 'stall reasons', 'history', 'world reaction', 'replay', 'performance', 'self tests'];
+  const progs = Object.values(persisted?.programs || {});
+  const issues = persisted ? validateMegaprojectsPersisted(persisted, world) : validateMegaprojectsPersisted(createEmptyMegaprojectsPersisted(), world);
+  const runTests = () => { if (busy) return; setBusy(true); try { setTests(runV103NationalMegaprojectSelfTests()); } catch (err) { console.error('[V10.3 self-tests]', err); } finally { setBusy(false); } };
+  return (
+    <section aria-labelledby="mp-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="mp-inspector">
+      <div className="flex items-center justify-between"><h3 id="mp-lab-h" className="font-bold text-sm">🏗 V10.3 Megaproject Inspector</h3><button type="button" className="underline" onClick={() => setOpen(o => !o)} data-testid="mp-inspector-toggle">{open ? 'Hide' : 'Inspect'}</button></div>
+      <div className="opacity-80">{enabled ? `rev ${persisted?.revision ?? 0} · ${progs.length} program(s) · pacing ${JSON.stringify(megaprojectPacing(world.totalDays))} · validation ${issues.length ? `${issues.length} issue(s)` : 'OK'}` : 'National Megaprojects is OFF (V10.0–V10.2 continue)'}</div>
+      {open && (
+        <div className="mt-2">
+          <div className="flex flex-wrap gap-1">{tabs.map(t => <button key={t} type="button" onClick={() => setTab(t)} className={`px-1.5 py-0.5 rounded border ${tab === t ? 'border-sky-400 font-bold' : theme.border}`} data-testid={`mp-lab-tab-${t.replace(/ /g, '-')}`}>{t}</button>)}</div>
+          <div className="mt-2 max-h-72 overflow-auto font-mono" data-testid="mp-inspector-body">
+            {tab === 'registry' && <>{MEGAPROJECT_DEFINITIONS.map(d => <div key={d.kind}>{d.kind}: {d.stages.length} stages [{d.stages.map(s => s.id).join(', ')}] · regions {d.regionIds.join('/')} · choices {d.choices.map(c => c.id).join(', ')} · capstone {d.capstoneProjectId}</div>)}{issues.map(x => <div key={x} className="text-rose-300">{x}</div>)}</>}
+            {tab === 'eligibility' && megaprojectEligibility(world, persisted).map(r => <div key={r.kind}>{r.kind}: {r.status} — {r.prereqs.map(x => `${x.met ? '✓' : '✕'}${x.soft ? '(soft)' : ''} ${x.label}`).join('; ')}{r.reasons.length ? ` | ${r.reasons.join('; ')}` : ''}</div>)}
+            {tab === 'active programs' && (progs.length ? progs.map(p => <div key={p.id}>{p.id} {p.status} stage {p.currentStageIndex}/{p.stages.length} proposed R{p.proposedTurn} by {p.proposedBy}{p.committedTurn !== null ? ` committed R${p.committedTurn}` : ''}{p.abandoned ? ` ABANDONED (${p.closedReason})` : ''} rev {p.revision}</div>) : <div>No programs (none invented for older saves).</div>)}
+            {tab === 'stages' && progs.map(p => <div key={p.id}>{p.id}: {megaprojectStageView(p).map((s, i) => `${s.id}=${s.status}/${megaprojectStageSpecStatus(p, i)} $${s.progressCapital}/${s.requiredCapital} L${s.progressLabor}/${s.requiredLabor}`).join(' | ')}</div>)}
+            {tab === 'requirements' && progs.map(p => <div key={p.id}>{p.id}: {megaprojectStageView(p).map(s => `${s.id} needs [${s.requiredProjectIds.join(', ')}] prereqs [${s.prerequisites.map(x => x.id).join(', ')}] unlocks [${s.unlocksProjectIds.join(', ')}]`).join(' | ')}</div>)}
+            {tab === 'contributions' && progs.map(p => <div key={p.id}>{p.id}: {p.contributions.map(c => `${c.id} R${c.turn} ${c.actorId} ${c.kind} $${c.capital} L${c.labor}`).join(' | ') || '—'} · totals {JSON.stringify(p.contributorTotals)} · teams {JSON.stringify(p.teamTotals)}</div>)}
+            {tab === 'choices' && progs.map(p => <div key={p.id}>{p.id}: {JSON.stringify(p.choices)}</div>)}
+            {tab === 'component projects' && progs.map(p => <div key={p.id}>{p.id}: {megaprojectProgramView(p, world).componentRemaining.map(c => `${c.projectId} ${c.status} remaining $${c.remaining}`).join(' | ') || 'all built'}</div>)}
+            {tab === 'network effects' && progs.map(p => <div key={p.id}>{p.id}: {megaprojectStageView(p).flatMap(s => s.partialEffects.map(e => `${s.id}:${e.kind}:${e.network || 'program'}:${e.label}`)).join(' | ')}</div>)}
+            {tab === 'industry effects' && progs.map(p => <div key={p.id}>{p.id}: {megaprojectAssessment(p.kind, p, world, { id: 'player', money: 0, regions: [], rivalRegions: [], day: world.turn }).industryImpact}</div>)}
+            {tab === 'stall reasons' && progs.map(p => <div key={p.id}>{p.id}: {p.stallReason || '—'}{p.stages.filter(s => s.stallReason).map(s => ` | ${s.id}: ${s.stallReason}`).join('')}</div>)}
+            {tab === 'history' && ((persisted?.history || []).length ? persisted!.history.map(h => <div key={h.id}>R{h.turn} {h.megaprojectId} {h.kind}{h.stageId ? `(${h.stageId})` : ''}: {h.summary}{h.sourceEventIds.length ? ` ← ${h.sourceEventIds.join(',')}` : ''}</div>) : <div>No milestones.</div>)}
+            {tab === 'world reaction' && <div>events emitted {diag.eventsEmitted} · kinds: megaproject_proposed, committed, stage_completed, partially_operational, stalled, resumed, completed, abandoned</div>}
+            {tab === 'replay' && <div>world hash {persisted?.lastWorldHash || '—'} (current {megaprojectWorldHash(world, persisted)}) · seq {persisted?.seq ?? 0} · ids are stable (mp_&lt;kind&gt;, :c&lt;seq&gt;, :h&lt;seq&gt;) — never Date-based</div>}
+            {tab === 'performance' && <div>evaluations {diag.evaluations} · last {diag.lastMs} ms · reason: {diag.lastReason} · commands {diag.commands} (rejected {diag.rejected}) · bounds: programs {V103_LIMITS.programs}, contributions {V103_LIMITS.contributions}, history {V103_LIMITS.history}</div>}
+            {tab === 'self tests' && <div><button type="button" className={`px-2 py-1 rounded border ${theme.border}`} onClick={runTests} disabled={busy} data-testid="mp-run-tests">{busy ? 'Running…' : 'Run V10.3 self-tests'}</button>
+              {tests && <div data-testid="mp-test-results">{tests.filter(t => t.passed).length}/{tests.length} passed{tests.filter(t => !t.passed).map(t => <div key={t.id} className="text-rose-300">{t.id}: {t.detail}</div>)}</div>}</div>}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
+// ---- V10.3 National Megaprojects: Game Intelligence (Fact / Calculated / Inference / Projection) -----------------
+
+export interface MegaprojectWorldView { persisted: MegaprojectsPersisted | null; world: MegaprojectWorld; viewer: MegaprojectViewer; rivalId: string | null; names: Record<string, string> }
+export type MegaprojectQueryTopic = 'why_cant_start' | 'stage_requires' | 'beneficiaries' | 'stop_funding' | 'regions' | 'stall_why' | 'rival_benefit' | 'afford' | 'choice_what_if' | 'biggest_risk' | 'overview';
+export interface MegaprojectQuery { topic: MegaprojectQueryTopic; kind: MegaprojectKind | null; stageIndex: number | null; optionId: string | null; regionId: string | null }
+
+const V103_KIND_WORDS: Array<[MegaprojectKind, RegExp]> = [
+  ['national_high_speed_rail', /\b(national rail|high[- ]speed rail|hsr|fast rail|rail network)\b/], ['eastern_energy_supergrid', /\b(supergrid|energy grid program|eastern energy)\b/],
+  ['national_water_security', /\b(water security|water program)\b/], ['australian_ai_compute_network', /\b(ai compute|compute network|sovereign compute|distributed compute|centrali[sz]ed compute)\b/],
+  ['northern_export_corridor', /\b(northern export|export corridor)\b/], ['green_hydrogen_export_network', /\b(hydrogen)\b/],
+  ['continental_digital_backbone', /\b(digital backbone|continental digital)\b/], ['national_freight_modernization', /\b(freight moderni[sz]ation|freight program)\b/]
+];
+const v103Open = (p: NationalMegaproject) => !p.abandoned && p.status !== 'completed';
+
+/** Detects megaproject questions. Generic phrasings ("this stage", "stop funding it") only route here when a program exists. */
+export function detectMegaprojectQuery(raw: string, gw: GIWorld): MegaprojectQuery | null {
+  const v = gw.national?.megaprojects; if (!v || !v.world.enabled) return null;
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  const named = V103_KIND_WORDS.find(([, re]) => re.test(q))?.[0] || null;
+  const explicit = /\b(megaprojects?|national programs?|program)\b/.test(q) || Boolean(named);
+  const progs = Object.values(v.persisted?.programs || {});
+  const hasOpen = progs.some(v103Open);
+  const tracked = v.persisted?.tracked[v.viewer.id] || null;
+  const focus = named || (tracked ? v.persisted!.programs[tracked]?.kind : null) || progs.filter(v103Open).sort((a, b) => a.id.localeCompare(b.id))[0]?.kind || null;
+  const stageM = q.match(/\bstage (\d)\b/); const stageIndex = stageM ? Number(stageM[1]) - 1 : null;
+  const regionId = nsRegionInText(q);
+  const mk = (topic: MegaprojectQueryTopic, extra: Partial<MegaprojectQuery> = {}): MegaprojectQuery => ({ topic, kind: focus, stageIndex, optionId: null, regionId, ...extra });
+  if (/\bwhy (can'?t|cannot|can not) (i|we) (start|propose|begin|launch)\b|\bwhy (is|isn'?t) .{0,30}\b(available|eligible)\b/.test(q) && explicit) return mk('why_cant_start', { kind: named || focus });
+  if (!explicit && !hasOpen) return null;
+  const opt = focus ? MEGAPROJECT_DEF_BY_KIND[focus].choices.flatMap(c => c.options).find(o => q.includes(o.label.toLowerCase().split(' (')[0]) || q.includes(o.id.replace(/_/g, ' '))) : null;
+  const anyOpt = !opt ? MEGAPROJECT_DEFINITIONS.flatMap(d => d.choices.flatMap(c => c.options.map(o => ({ d, o })))).find(x => q.includes(x.o.label.toLowerCase().split(' (')[0])) : null;
+  if (/\bwhat (happens|would happen) if (i|we) (choose|pick|go with|select)\b|\bif (i|we) choose\b/.test(q) && (opt || anyOpt)) return mk('choice_what_if', { optionId: (opt || anyOpt!.o).id, kind: opt ? focus : anyOpt!.d.kind });
+  if (/\bwhat does stage \d (require|need)\b|\bwhat (is|are) (needed|required) for stage\b|\bstage \d requirements?\b/.test(q)) return mk('stage_requires');
+  if (/\bwhy did (this|the|that) stage stall\b|\bwhy (is|did) .{0,30}\bstall/.test(q)) return mk('stall_why');
+  if (/\bwhat (happens|would happen) if (i|we) stop funding\b|\bstop funding (it|this)\b/.test(q)) return mk('stop_funding');
+  if (/\bcan (i|we) afford (the )?next stage\b|\bafford (the )?(next )?stage\b/.test(q)) return mk('afford');
+  if (/\bbiggest risk\b|\bwhat could (stop|derail)\b/.test(q)) return mk('biggest_risk');
+  if (/\bwhich regions? benefit\b/.test(q)) return mk('regions');
+  if (/\bwould .{1,30} benefit\b|\bdoes (the )?rival benefit\b/.test(q)) return mk('rival_benefit');
+  if (/\bwho benefits\b/.test(q)) return mk('beneficiaries');
+  if (explicit && /\b(status|progress|how is|tell me about|what is|overview)\b/.test(q)) return mk('overview');
+  return explicit && named ? mk('overview') : null;
+}
+
+export function composeMegaprojectAnswer(query: MegaprojectQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  const v = gw.national!.megaprojects!; const w = v.world; const sections: GIAnswerSection[] = [];
+  const say = (id: string, heading: string | null, claims: Array<GIClaim | null | false | '' | undefined>) => { const cs = claims.filter(Boolean) as GIClaim[]; if (cs.length) sections.push({ id, heading, claims: cs }); };
+  const C = (t: string, k: LRClaim) => nsClaim(t, k);
+  const $ = (n: number) => `$${Math.round(n).toLocaleString()}`;
+  const kind = query.kind; let title = 'National megaprojects'; let shape: GIAnswerShape = 'explanation';
+  const def = kind ? MEGAPROJECT_DEF_BY_KIND[kind] : null;
+  const p = kind ? v.persisted?.programs[megaprojectIdFor(kind)] || null : null;
+  const view = p ? megaprojectProgramView(p, w) : null;
+  const rivalName = v.rivalId ? v.names[v.rivalId] || 'the rival' : 'the rival';
+  const assess = def ? megaprojectAssessment(def.kind, p, w, v.viewer) : null;
+  switch (query.topic) {
+    case 'why_cant_start': {
+      if (!def) break; title = `Why can't I start ${def.title}?`; shape = 'diagnosis';
+      const row = megaprojectEligibility(w, v.persisted, { money: v.viewer.money }).find(r => r.kind === def.kind)!;
+      if (p) { say('f', 'Fact', [C(`${def.title} already exists in this match: ${MEGAPROJECT_STATUS_LABEL[p.status]}${p.abandoned ? ' (abandoned)' : ''}.`, 'fact')]); break; }
+      say('f', 'Fact', row.prereqs.map(r => C(`${r.met ? '✓' : '✕'} ${r.label}: ${r.detail}${r.soft ? ' (input, not a lock)' : ''}.`, 'fact')));
+      say('c', 'Calculated', [row.eligible ? C('Every requirement is met — you can propose it now (1 action).', 'calculated') : C(`Blocking: ${row.reasons.join('; ')}.`, 'calculated')]);
+      say('i', 'Inference', [C('Eligibility comes from the world — networks, industries, development and projects — never from a level lock.', 'inference')]);
+      break;
+    }
+    case 'stage_requires': {
+      if (!def) break; const defs = megaprojectStageDefs(def, p?.choices || {}); const i = query.stageIndex ?? (p ? p.currentStageIndex : 0); const st = defs[i]; if (!st) break;
+      title = `${def.title}: stage ${i + 1} requirements`; shape = 'fact';
+      say('f', 'Fact', [C(`Stage ${i + 1} “${st.title}” requires ${$(st.requiredCapital)} program capital and ${st.requiredLabor} on-site labour in ${st.requiredRegionIds.join(' / ')}.`, 'fact'),
+        st.requiredProjectIds.length ? C(`Canonical component projects that must be active: ${st.requiredProjectIds.map(id => `${w.projects[id]?.title || id} (${w.projects[id]?.status || 'missing'})`).join(', ')}.`, 'fact') : C('Coordination only — no component project.', 'fact'),
+        st.unlocksProjectIds.length ? C(`Starting it opens ${st.unlocksProjectIds.map(id => w.projects[id]?.title || id).join(', ')} for canonical funding.`, 'fact') : null]);
+      if (st.prerequisites.length) say('c', 'Calculated', evaluateMegaprojectPrereqSet(st.prerequisites, w, def).results.map(r => C(`${r.met ? '✓' : '✕'} ${r.detail}.`, 'calculated')));
+      const ch = def.choices.find(c => c.stageId === st.id && !p?.choices[c.id]);
+      if (ch) say('i', 'Inference', [C(`The “${ch.title}” decision comes first and changes these requirements (${ch.options.map(o => o.label).join(' vs ')}).`, 'inference')]);
+      break;
+    }
+    case 'beneficiaries': case 'regions': {
+      if (!def) break; title = `Who benefits from ${def.title}`; shape = 'explanation';
+      say('f', 'Fact', [C(`Participating regions: ${def.regionIds.map(r => REGIONS[r]?.name || r).join(', ')}.`, 'fact'), view && view.contributors.length ? C(`Contributors so far: ${view.contributors.map(c => `${c.actorId === v.viewer.id ? 'you' : v.names[c.actorId] || c.actorId} ${$(c.capital)}`).join(', ')}.`, 'fact') : null]);
+      if (assess) say('c', 'Calculated', [C(assess.networkImpact, 'calculated'), C(assess.industryImpact, 'calculated')]);
+      say('i', 'Inference', [C('Benefits flow through the canonical projects and national networks to anyone operating in those regions — contribution is not ownership.', 'inference')]);
+      break;
+    }
+    case 'rival_benefit': {
+      if (!def || !assess) break; title = `Would ${rivalName} benefit from ${def.title}?`; shape = 'diagnosis';
+      const rivalRegs = def.regionIds.filter(r => v.viewer.rivalRegions.includes(r));
+      say('f', 'Fact', [C(`${rivalName} holds ${rivalRegs.length ? rivalRegs.join(', ') : 'none'} of the program regions (${def.regionIds.join(', ')}).`, 'fact'),
+        view ? C(`${rivalName} has contributed ${$(view.contributors.find(c => c.actorId === v.rivalId)?.capital || 0)}.`, 'fact') : null]);
+      say('c', 'Calculated', [C(`Rival free-rider exposure: ${assess.risks.freeRider.band} — ${assess.risks.freeRider.evidence}`, 'calculated')]);
+      say('i', 'Inference', [C(rivalRegs.length ? `Yes — completed stages improve networks ${rivalName} also uses. You could seek shared funding through Diplomacy (existing deal terms).` : `Little direct benefit for ${rivalName} unless it expands into these regions.`, 'inference')]);
+      break;
+    }
+    case 'afford': {
+      if (!p || !view || !view.current || !def) { say('f', 'Fact', [C('No open program stage to fund right now.', 'fact')]); break; }
+      title = `Can I afford ${def.title} stage ${p.currentStageIndex + 1}?`; shape = 'diagnosis';
+      const need = Math.max(0, view.current.requiredCapital - view.current.progressCapital); const after = v.viewer.money - need;
+      say('f', 'Fact', [C(`Stage ${p.currentStageIndex + 1} still requires ${$(need)} and ${Math.max(0, view.current.requiredLabor - view.current.progressLabor)} labour.`, 'fact')]);
+      say('c', 'Calculated', [C(`You currently have ${$(v.viewer.money)}.`, 'calculated'), C(`Committing the full remaining amount would leave ${$(after)} in cash.`, 'calculated')]);
+      say('i', 'Inference', [C(after < 0 ? 'You cannot fund it alone yet — partial contributions are allowed and stay with the program.' : after < 5000 ? 'That would substantially reduce your liquidity buffer.' : 'You would keep a workable liquidity buffer.', 'inference')]);
+      const waiting = view.current.requiredProjectIds.filter(id => !['active', 'upgraded'].includes(w.projects[id]?.status || ''));
+      say('p', 'Projection', [C(waiting.length ? `Even when funded, the stage completes only once ${waiting.map(id => w.projects[id]?.title || id).join(', ')} ${waiting.length > 1 ? 'are' : 'is'} active (≈${$(view.componentRemaining.filter(c => waiting.includes(c.projectId)).reduce((a, c) => a + c.remaining, 0))} of canonical funding still owed).` : 'With no component project outstanding, funding plus labour completes the stage at the next evaluation.', 'projection')]);
+      break;
+    }
+    case 'stop_funding': {
+      if (!p || !def) break; title = `What happens if I stop funding ${def.title}?`; shape = 'simulation';
+      const done = p.stages.filter(s => s.status === 'completed').length;
+      say('f', 'Fact', [C(`${done} of ${p.stages.length} stages are complete; the current stage holds ${$(p.stages[p.currentStageIndex]?.progressCapital || 0)} of committed capital.`, 'fact')]);
+      say('c', 'Calculated', [C('Committed capital is not refunded; completed stages and their canonical projects keep working.', 'calculated'), C(`A proposal lapses after ${V103_LIMITS.proposalLapseTurns} turns without commitment; a suspended program is abandoned after ${V103_LIMITS.suspendAbandonTurns} turns.`, 'calculated')]);
+      say('p', 'Projection', [C(`If nobody else funds it, the program likely stays at stage ${done}/${p.stages.length}; others may still contribute (or free-ride on what exists).`, 'projection')]);
+      break;
+    }
+    case 'stall_why': {
+      if (!p || !def) break; title = `Why did ${def.title} stall?`; shape = 'diagnosis';
+      if (!p.stallReason) { say('f', 'Fact', [C(`${def.title} is not stalled (${MEGAPROJECT_STATUS_LABEL[p.status]}).`, 'fact')]); break; }
+      say('f', 'Fact', [C(`Reason: ${p.stallReason}.`, 'fact'), C(`Completed stages remain complete: ${p.stages.filter(s => s.status === 'completed').length} of ${p.stages.length}.`, 'fact')]);
+      say('i', 'Inference', [C('The program resumes automatically — without losing progress — once that condition is restored (repair, network relief or the missing prerequisite).', 'inference')]);
+      break;
+    }
+    case 'choice_what_if': {
+      if (!def || !query.optionId) break; const ch = def.choices.find(c => c.options.some(o => o.id === query.optionId))!; const opt = ch.options.find(o => o.id === query.optionId)!;
+      title = `What if you choose ${opt.label}?`; shape = 'comparison';
+      const cmp = compareMegaprojectChoice(def.kind, ch.id, w, p?.choices || {});
+      say('f', 'Fact', [C(`${opt.label}: ${opt.description}`, 'fact'), p?.choices[ch.id] ? C(`This decision is already made (${ch.options.find(o => o.id === p.choices[ch.id].optionId)?.label}) and is permanent.`, 'fact') : null]);
+      say('c', 'Calculated', cmp.map(c => C(`${c.label}: ≈$${Math.round(c.total).toLocaleString()} total · regions ${c.regions.join('/')} · ${c.networks.join(', ') || 'no network component'} · resilience ${c.resilience}.`, 'calculated')));
+      say('i', 'Inference', [C(opt.tradeoffs.join(' '), 'inference')]);
+      say('p', 'Projection', [C('Long-horizon and uncertain: effects arrive only as the canonical component projects become active.', 'projection')]);
+      break;
+    }
+    case 'biggest_risk': {
+      if (!def || !assess) break; title = `Biggest risk to finishing ${def.title}`; shape = 'diagnosis';
+      const risks = [['Liquidity', assess.risks.liquidity], ['Completion', assess.risks.completion], ['Dependency', assess.risks.dependency], ['Rival free-rider exposure', assess.risks.freeRider]] as const;
+      const rank = { HIGH: 2, MODERATE: 1, LOW: 0 } as const; const top = [...risks].sort((a, b) => rank[b[1].band] - rank[a[1].band])[0];
+      say('c', 'Calculated', risks.map(([l, r]) => C(`${l} risk ${r.band}: ${r.evidence}`, 'calculated')));
+      say('i', 'Inference', [C(`The biggest risk is ${top[0].toLowerCase()} (${top[1].band}).`, 'inference')]);
+      say('p', 'Projection', [C(assess.time, 'projection')]);
+      break;
+    }
+    case 'overview': {
+      if (!def) break; title = def.title; shape = 'status';
+      say('f', 'Fact', [C(def.summary, 'fact'), p ? C(`Status ${MEGAPROJECT_STATUS_LABEL[p.status]} · stage ${Math.min(p.currentStageIndex + 1, p.stages.length)} / ${p.stages.length}.`, 'fact') : C('Not proposed in this match.', 'fact')]);
+      if (assess) say('c', 'Calculated', [C(assess.capitalBurden, 'calculated'), C(assess.time, 'calculated')]);
+      break;
+    }
+  }
+  if (!sections.length) say('none', null, [C('No megaproject matches that question yet.', 'fact')]);
+  return { title, sections, buttons: [], shape };
 }
 
 // ============================================================================
@@ -147128,6 +148908,10 @@ function dispatchGameSettingsChange(
         evaluateAiCrisisMitigation(aiState, gameState, gameSettings).forEach(cand => {
           decisions.push({ ...cand, score: cand.score * profile.decisionQuality });
         });
+        // V10.3: at most one national-program contribution candidate (long-horizon value; may decline or free-ride).
+        // Executes through executeAiAction → the canonical command path and costs one normal action (no extra loop).
+        const v103Mp = mpAiCandidateRef.current?.(aiState);
+        if (v103Mp) { const mpc = v103Mp!; decisions.push({ type: 'megaproject_contribute', description: `Fund a national program stage ($${Math.round(mpc.cmd.amount || 0).toLocaleString()}) — ${mpc.reason}`, data: { command: mpc.cmd }, score: mpc.score * profile.decisionQuality }); }
 
         getAiLoanDecisionCandidates(aiState).forEach(decision => {
           decisions.push({
@@ -148207,6 +149991,14 @@ function dispatchGameSettingsChange(
           const borrowed = takeAdvancedLoanForActor('ai', actionData.tierId, false, undefined, { silent: false });
           if (!borrowed) return false;
           addNotification(`🤖 ${currentAi.name} refinanced an advanced loan.`, 'ai', false, 'system');
+          break;
+        }
+
+        case 'megaproject_contribute': {
+          // V10.3: same pure validation as the human (turn, AP, cash, stage, cap); cash moves once; AP counted below once.
+          const r = mpExecuteRef.current('ai', actionData.command as MegaprojectCommand);
+          if (!r.ok) return false;
+          addNotification(`🤖 ${currentAi.name} funded a national program stage.`, 'ai', false);
           break;
         }
 
@@ -171324,9 +173116,10 @@ function dispatchGameSettingsChange(
   const [nsMapNetwork, setNsMapNetwork] = useState<NationalMapNetwork>(null);
   const [scMapLayer, setScMapLayer] = useState<IndustryMapLayer | null>(null);
   const [inMapKind, setInMapKind] = useState<StrategicInfrastructureNetworkKind | null>(null);
-  const inShowOnMap = useCallback((k: StrategicInfrastructureNetworkKind) => { setNsMapNetwork(null); setScMapLayer(null); setInMapKind(k); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const scShowOnMap = useCallback((layer: IndustryMapLayer) => { setNsMapNetwork(null); setScMapLayer(layer); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const nsShowOnMap = useCallback((n: NationalNetworkKind) => { setNsMapNetwork(n); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [mpMapId, setMpMapId] = useState<string | null>(null);
+  const inShowOnMap = useCallback((k: StrategicInfrastructureNetworkKind) => { setNsMapNetwork(null); setScMapLayer(null); setMpMapId(null); setInMapKind(k); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const scShowOnMap = useCallback((layer: IndustryMapLayer) => { setNsMapNetwork(null); setMpMapId(null); setScMapLayer(layer); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const nsShowOnMap = useCallback((n: NationalNetworkKind) => { setMpMapId(null); setNsMapNetwork(n); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Regional Factions & Stakeholders 2.0: live wiring ------------------------------------------------
   // Factions read Living Regions + World Reaction events (via the router's derive hook), advance once per round,
@@ -171712,6 +173505,115 @@ function dispatchGameSettingsChange(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inHash, inEnabled]);
 
+  // ---- V10.3 National Megaprojects: live wiring -------------------------------------------------------------
+  // Program memory is persisted (non-derivable). Evaluation (stage completion, stall/resume, capstone unlocks) runs only
+  // when the program world hash changes (contribution, component project, V10 network / industry revision, faction change,
+  // crisis damage, turn boundary, choice). Every command goes through the canonical 'megaproject_command' reducer action.
+  const mpEnabled = Boolean(nsEnabled && gameSettings.megaprojectsEnabled !== false);
+  const mpStoredRaw = (gameState as any).megaprojects;
+  const mpPersisted = useMemo(() => sanitizeMegaprojectsPersisted(mpStoredRaw), [mpStoredRaw]);
+  const mpPersistedRef = useRef<MegaprojectsPersisted | null>(mpPersisted); mpPersistedRef.current = mpPersisted;
+  const mpWorld = useMemo<MegaprojectWorld>(() => buildMegaprojectWorld({ turn: lrInputs.turn, totalDays: Number((gameSettings as any).totalDays) || 30, enabled: mpEnabled, infrastructureEnabled: Boolean(gameSettings.stateInfrastructureEnabled),
+    gameOver: gameState.gameMode !== 'game', projects: gameState.infrastructureProjects as any, regionalDevLevels: (gameState as any).regionalDevLevels, national: nsState, industries: scState, networks: inState, factions: rfState, flags: (gameState as any).contentState?.flags || {} }),
+    [lrInputs.turn, (gameSettings as any).totalDays, mpEnabled, gameSettings.stateInfrastructureEnabled, gameState.gameMode, gameState.infrastructureProjects, (gameState as any).regionalDevLevels, nsState, scState, inState, rfState, (gameState as any).contentState]);
+  const mpWorldRef = useRef(mpWorld); mpWorldRef.current = mpWorld;
+  const mpHash = useMemo(() => megaprojectWorldHash(mpWorld, mpPersisted), [mpWorld, mpPersisted]);
+  const mpDiagRef = useRef({ evaluations: 0, lastReason: 'not yet evaluated', lastMs: 0, eventsEmitted: 0, commands: 0, rejected: 0 });
+  const mpViewerId = String(player?.id || 'player');
+  const mpRivalId = aiPlayer?.id ? String(aiPlayer.id) : 'ai';
+  const mpViewer = useMemo<MegaprojectViewer>(() => ({ id: mpViewerId, money: Number(player?.money || 0), day: Number(gameState.day || 1), currentRegion: player?.currentRegion ? String(player.currentRegion) : null, teamId: player?.teamId ? String(player.teamId) : null,
+    regions: Object.entries(nsRegionOwners || {}).filter(([, o]) => o === 'you').map(([r]) => r).concat(player?.currentRegion ? [String(player.currentRegion)] : []),
+    rivalRegions: Object.entries(nsRegionOwners || {}).filter(([, o]) => o === 'rival').map(([r]) => r).concat(aiPlayer?.currentRegion ? [String(aiPlayer.currentRegion)] : []) }),
+    [mpViewerId, player?.money, player?.currentRegion, player?.teamId, gameState.day, nsRegionOwners, aiPlayer?.currentRegion]);
+  if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, megaprojects: mpEnabled ? { persisted: mpPersisted, world: mpWorld, viewer: mpViewer, rivalId: mpRivalId, names: swrInputs.ownerNames } : null };
+  useEffect(() => {
+    if (!mpEnabled) return;
+    const prev = mpPersistedRef.current;
+    if (!prev || !Object.keys(prev.programs).length || prev.lastWorldHash === mpHash) return;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    const res = advanceNationalMegaprojects(prev, mpWorldRef.current);
+    const d = mpDiagRef.current;
+    d.evaluations += 1; d.lastMs = Math.round(((typeof performance !== 'undefined' ? performance.now() : 0) - t0) * 10) / 10; d.lastReason = res.changed ? 'program memory advanced (contribution / component project / network / faction / turn change)' : 'world changed; no program transition';
+    if (res.events.length) {
+      d.eventsEmitted += res.events.length;
+      const day = Number(gameState.day || 1);
+      const lrBefore = lrStateRef.current ? sanitizeLivingRegionsState(lrStateRef.current) : null;
+      let lrWork: LivingRegionsState | null = lrBefore;
+      const rfBefore = rfStateRef.current ? sanitizeRegionalFactionsState(rfStateRef.current)! : null;
+      let rfWork: RegionalFactionsState | null = rfBefore;
+      const derive = {
+        living_regions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!lrWork) return []; const r = lrApplyWorldEvent(lrWork, e, lrInputsRef.current); lrWork = r.state; return r.derived.map(x => lrToWorldEvent(x, lrInputsRef.current, lrObservers, day)); },
+        factions: (_i: WorldReactionIntent, e: StrategicWorldEvent) => { if (!rfWork || !lrWork) return []; const inp = { ...rfInputsRef.current, regions: lrWork }; const r = rfApplyWorldEvent(rfWork, e, inp); rfWork = r.state; return r.derived.map(x => rfToWorldEvent(x, inp, day)); }
+      };
+      const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), res.events.map(x => megaprojectToWorldEvent(x, lrObservers, day)), swrInputs, { handlers: swrHandlers, derive });
+      persistWorldReaction(out.state);
+      if (lrWork && lrWork !== lrBefore) { if (lrBefore) logRegionalShifts(out.events, lrBefore, lrWork); persistLivingRegions(lrWork); }
+      if (rfWork && rfWork !== rfBefore) { logFactionEvents(out.events); persistRegionalFactions(rfWork); }
+      res.events.filter(x => x.significance === 'major').slice(0, 2).forEach(x => appendGameActivityLedgerEvent('decision', { actorId: 'system', eventType: x.kind, summary: x.text } as any));
+    }
+    mpPersistedRef.current = res.persisted;
+    const payload: any = { megaprojects: res.persisted };
+    if (res.unlockProjectIds.length) payload.infrastructureProjects = applyMegaprojectUnlocks(((gameStateLiveRef.current as any)?.infrastructureProjects || gameState.infrastructureProjects) as any, res.unlockProjectIds);
+    dispatchGameState({ type: 'LOAD_STATE', payload });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mpHash, mpEnabled]);
+  // Older saves predate the V10.3 capstone projects: add their canonical (locked, unfunded) definitions once — same engine,
+  // same costs/maintenance as a new match's content seeding. Never touches existing projects or progress.
+  useEffect(() => {
+    if (!mpEnabled || gameState.gameMode !== 'game') return;
+    const ip: any = gameState.infrastructureProjects; if (!ip || Array.isArray(ip) || !Object.keys(ip).length) return;
+    const missing = V93_INFRASTRUCTURE_PROJECTS.filter(p => p.id.startsWith('infra_v103_') && !ip[p.id]);
+    if (!missing.length) return;
+    const next = { ...ip }; missing.forEach(p => { next[p.id] = JSON.parse(JSON.stringify(p)); });
+    dispatchGameState({ type: 'LOAD_STATE', payload: { infrastructureProjects: next } as any });
+  }, [mpEnabled, gameState.gameMode, gameState.infrastructureProjects]);
+  /** One command through the canonical reducer (validation + cash exactly once). The AI's AP is counted by executeAiAction. */
+  const mpRunCommand = useCallback((who: 'human' | 'ai', cmd: MegaprojectCommand): { ok: boolean; reason: string | null } => {
+    const human: any = playerRef.current; const ai: any = aiPlayerRef.current;
+    const actorId = who === 'ai' ? 'ai' : String(human?.id || 'player');
+    const act: any = who === 'ai' ? ai : human;
+    const bundle: any = { gameState: gameStateLiveRef.current, player: human, aiPlayer: ai, actorsById: { [String(human?.id || 'player')]: human, player: human, ...(ai ? { ai } : {}) }, gameSettings };
+    const derived = { national: nsStateRef.current, industries: scStateRef.current, networks: inStateRef.current };
+    const res = reduceGameAction(bundle, { type: 'megaproject_command', actorId, teamId: act?.teamId, parameters: { command: cmd, derived } } as any, { active: true, operation: 'megaproject_command', actorId, teamId: act?.teamId } as ActionExecutionContext);
+    const dg = mpDiagRef.current; dg.commands += 1;
+    if (!res?.success) {
+      dg.rejected += 1;
+      const limitsOn = gameSettings.actionLimitsEnabled !== false;
+      const why = applyMegaprojectCommand(mpPersistedRef.current, cmd, { id: actorId, kind: who, teamId: act?.teamId || null, money: Number(act?.money) || 0, currentRegion: act?.currentRegion || null,
+        apRemaining: limitsOn ? getRemainingActionPoints(act, gameSettings) : Number.POSITIVE_INFINITY, apCost: limitsOn ? 1 : 0, turnOwner: who === 'ai' || !isHumanLockedOutForSoloRival(gameStateLiveRef.current, 'human') }, mpWorldRef.current).reason;
+      return { ok: false, reason: why || 'Not possible right now.' };
+    }
+    const next: any = res.nextState;
+    mpPersistedRef.current = next.megaprojects;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { megaprojects: next.megaprojects } as any });
+    if (who === 'ai') updateAiPlayerState((prev: any) => ({ ...prev, money: Number(next.aiPlayer?.money ?? prev.money) }));
+    else dispatchPlayer({ type: 'MERGE_STATE', payload: { money: next.player.money, actionsUsedThisTurn: next.player.actionsUsedThisTurn, ...(typeof next.player.actionPoints === 'number' ? { actionPoints: next.player.actionPoints } : {}) } });
+    const pdef = cmd.kind ? MEGAPROJECT_DEF_BY_KIND[cmd.kind] : cmd.programId ? MEGAPROJECT_DEF_BY_KIND[next.megaprojects?.programs?.[cmd.programId]?.kind as MegaprojectKind] : null;
+    appendGameActivityLedgerEvent('decision', { actorId, eventType: `megaproject_${cmd.op}`, summary: `${pdef?.title || 'National program'}: ${cmd.op}${cmd.amount ? ` $${Math.round(cmd.amount).toLocaleString()} (capped at the stage remainder)` : ''}${cmd.labor ? ' +1 labour' : ''}${cmd.optionId ? ` → ${cmd.optionId}` : ''}` } as any);
+    return { ok: true, reason: null };
+  }, [gameSettings, appendGameActivityLedgerEvent, updateAiPlayerState]);
+  const mpExecuteRef = useRef(mpRunCommand); mpExecuteRef.current = mpRunCommand;
+  const handleMegaprojectCommand = useCallback((cmd: MegaprojectCommand) => {
+    if (v96BlockHumanAction('National program action')) return;
+    const r = mpRunCommand('human', cmd);
+    if (!r.ok) { addNotification(`🏗 ${r.reason}`, 'warning', true); reportBlockedActionRef.current?.('megaproject', r.reason || 'Not possible right now.'); return; }
+    addNotification(`🏗 ${cmd.op === 'propose' ? 'Program proposed' : cmd.op === 'commit' ? 'Program committed' : cmd.op === 'choose' ? 'Design decision recorded (permanent)' : cmd.op === 'suspend' ? 'Future stages suspended — completed stages keep operating' : cmd.op === 'resume' ? 'Program resumed' : 'Contribution recorded'}`, 'success', true);
+  }, [mpRunCommand, addNotification]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mpTrack = useCallback((programId: string | null) => {
+    const next = setMegaprojectTracked(mpPersistedRef.current, mpViewerId, programId);
+    mpPersistedRef.current = next;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { megaprojects: next } as any });
+  }, [mpViewerId]);
+  const mpShowOnMap = useCallback((programId: string) => { setNsMapNetwork(null); setScMapLayer(null); setInMapKind(null); setMpMapId(programId); updateUiState({ showMap: true, experienceLayer: 'play' }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Rival AI: one bounded long-horizon candidate per decision (solo rival only); may decline or free-ride. */
+  const mpAiCandidateRef = useRef<((aiState: any) => { cmd: MegaprojectCommand; score: number; reason: string } | null) | null>(null);
+  mpAiCandidateRef.current = (aiState: any) => {
+    if (!mpEnabled || !isSoloRivalModeSelection(gameState.selectedMode) || !mpPersistedRef.current) return null;
+    const regions = Array.from(new Set([...Object.entries(nsRegionOwners || {}).filter(([, o]) => o === 'rival').map(([r]) => r), ...(aiState?.investments || []), aiState?.currentRegion].filter(Boolean).map(String)));
+    const c = megaprojectAiCandidate(mpPersistedRef.current, mpWorldRef.current, { id: 'ai', kind: 'ai', teamId: aiState?.teamId || null, money: Number(aiState?.money) || 0, currentRegion: aiState?.currentRegion || null, apRemaining: 1, apCost: 1, turnOwner: true }, { regions, day: Number(gameState.day || 1) });
+    return c.cmd ? c : null;
+  };
+
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
 
@@ -171729,7 +173631,7 @@ function dispatchGameSettingsChange(
     const regions: V9CohesionInputs['regions'] = {};
     (lrInputs.regions || []).forEach(r => {
       const reg = lrs?.regions[r.code];
-      regions[r.code] = { name: r.name, momentum: reg ? LR_MOMENTUM_LABEL[reg.momentum.band] : 'Stable', identity: reg?.identity.label || '', risk: reg?.risks.find(x => x.kind !== 'high_rivalry')?.label || (() => { const b = nsState?.bottlenecks.find(x => x.regionId === r.code); return b ? `${NATIONAL_NETWORK_LABEL[b.network]} bottleneck` : null; })() || (() => { const b = scState?.bottlenecks.find(x => x.regionId === r.code && (x.severity === 'major' || x.severity === 'critical')); return b ? `${INDUSTRY_LABEL[b.industry]} constrained${b.input ? ` (${SUPPLY_LABEL[b.input].toLowerCase()})` : ''}` : null; })() || (() => { const cp = inState?.criticalPoints.find(c => c.type === 'region' && c.subjectId === r.code && c.severity === 'critical'); return cp ? `Critical bridge in ${inState!.networks.find(n => n.id === cp.networkId)?.name || 'a network'}` : null; })() || null, need: reg?.needs.find(n => n.status === 'open')?.reason || null, heldByYou: Boolean(r.controller && keys.includes(String(r.controller))), rivalPressure: Boolean(reg?.risks.some(x => x.kind === 'high_rivalry' && x.severity === 'high')) };
+      regions[r.code] = { name: r.name, momentum: reg ? LR_MOMENTUM_LABEL[reg.momentum.band] : 'Stable', identity: reg?.identity.label || '', risk: reg?.risks.find(x => x.kind !== 'high_rivalry')?.label || (() => { const b = nsState?.bottlenecks.find(x => x.regionId === r.code); return b ? `${NATIONAL_NETWORK_LABEL[b.network]} bottleneck` : null; })() || (() => { const b = scState?.bottlenecks.find(x => x.regionId === r.code && (x.severity === 'major' || x.severity === 'critical')); return b ? `${INDUSTRY_LABEL[b.industry]} constrained${b.input ? ` (${SUPPLY_LABEL[b.input].toLowerCase()})` : ''}` : null; })() || (() => { const cp = inState?.criticalPoints.find(c => c.type === 'region' && c.subjectId === r.code && c.severity === 'critical'); return cp ? `Critical bridge in ${inState!.networks.find(n => n.id === cp.networkId)?.name || 'a network'}` : null; })() || (() => { const mf = mpEnabled ? megaprojectFocus(mpPersisted, mpWorld, pid) : null; return mf?.risk && mf.regionIds.includes(r.code) ? mf.risk : null; })() || null, need: reg?.needs.find(n => n.status === 'open')?.reason || null, heldByYou: Boolean(r.controller && keys.includes(String(r.controller))), rivalPressure: Boolean(reg?.risks.some(x => x.kind === 'high_rivalry' && x.severity === 'high')) };
     });
     const events: V9CohesionEvent[] = [];
     if (swrEnabled && swrState) summarizeWorldChanges(swrState, pid, dnRound - 1, 6).forEach(e => events.push({ id: e.id, turn: e.turn, source: e.sourceSystem === 'living_regions' ? 'regions' : e.sourceSystem === 'factions' ? 'factions' : 'world', significance: e.significance as V9CohesionEvent['significance'], text: personalizeWorldText(e.strategicMeaning, names[pid], player?.teamId ? names[String(player.teamId)] : null), subjectId: e.subjectType === 'region' ? e.subjectId : null, actorId: e.actorId, claim: e.claimKind === 'inference' ? 'inference' : 'fact', why: true, national: e.subjectType === 'nation' || e.subjectType === 'market' }));
@@ -171765,7 +173667,9 @@ function dispatchGameSettingsChange(
       transit: journey ? { destination: destName, day: Math.min(tTotal, Math.max(1, tTotal - journey.daysRemaining + 1)), total: tTotal } : null,
       presentation: getIntentPresentationLevel(gameSettings) as V9Presentation,
       critical: att && att.state === 'critical' ? { label: att.label, detail: att.detail } : null,
-      objective: obj ? { id: String(obj.sourceId || obj.title), title: obj.title, completed: obj.progress.completed, total: obj.progress.total, next: obj.recommendedNextStep?.label || null, blocked: (obj.blockers || []).length > 0 } : null,
+      objective: obj ? { id: String(obj.sourceId || obj.title), title: obj.title, completed: obj.progress.completed, total: obj.progress.total, next: obj.recommendedNextStep?.label || null, blocked: (obj.blockers || []).length > 0 }
+        : (() => { const mf = mpEnabled ? megaprojectFocus(mpPersisted, mpWorld, pid) : null; const tp = mf ? mpPersisted!.programs[mpPersisted!.tracked[pid]] : null;
+          return mf && tp ? { id: `mp_focus_${tp.id}`, title: mf.title, completed: tp.stages.filter(s => s.status === 'completed').length, total: tp.stages.length, next: mf.risk, blocked: Boolean(mf.risk) } : null; })(),
       strategy: g3 ? { phases: g3Goals.map(g => g.label), phaseIndex: gi3Live.progress?.phaseIndex ?? g3.phaseIndex, locked: Boolean(g3.locks.mission || g3.locks.primaryGoal || g3.locks.ordering || g3Goals.some(g => g.locked)), onTrack: gi3Live.progress?.onTrack || null, nextMove: gi3Live.progress?.nextMove || null, cashTarget: gi3Live.progress?.resourceStatus.reserve ?? null, regions: g3Goals.map(g => g.regionId).filter(Boolean) as string[], notices: gi3Live.notices.filter(n => !n.dismissed).map(n => ({ id: n.id, text: n.text })) } : null,
       actions: { recommendedId: v9ActionSetView?.recommended?.id || null, ranked: (v9ActionSetView?.ranked || []).slice(0, 12) },
       background: bgLive?.enabled ? { nextMove: bgNext ? { label: bgNext.label, reason: bgNext.reason, actionId: bgNext.actionId || null } : null, intervention: iv ? { level: iv.level, message: iv.message, subjectKind: iv.subjectKind, query: iv.actionContext?.query || null, key: iv.cooldownKey, actionId: iv.actionContext?.actionId || null } : null } : null,
@@ -171783,7 +173687,7 @@ function dispatchGameSettingsChange(
       pendingApprovals: uiState.activeCoPilotProposal && !uiState.showCoPilotProposalModal ? 1 : 0,
       lastBriefTurn: v9BriefSeenTurn
     };
-  }, [nsState, scState, inState, player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
+  }, [mpEnabled, mpPersisted, mpWorld, nsState, scState, inState, player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
   const v9CohesionSig = v9CohesionSignature(v9CohesionInputs);
   const v9CohesionInputsRef = useRef(v9CohesionInputs); v9CohesionInputsRef.current = v9CohesionInputs;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -172026,9 +173930,11 @@ function dispatchGameSettingsChange(
       controllers, rivalRegion: aiPlayer?.currentRegion ? String(aiPlayer.currentRegion) : null, rivalName: String(aiPlayer?.name || 'Rival'),
       contracts, projects, crises, momentum, factionBands, deals,
       infraNetworks: Object.fromEntries((inState?.networks || []).filter(n => n.memberRegionIds.length >= 2).map(n => [n.id, `${n.maturity}|${n.name}`])),
+      megaprojects: Object.fromEntries(Object.values(mpPersisted?.programs || {}).map(p => { const st = megaprojectStageView(p); const done = st.filter(x => x.status === 'completed'); const def = MEGAPROJECT_DEF_BY_KIND[p.kind];
+        return [p.id, JSON.stringify({ d: done.length, t: st.length, title: def.title, stage: done[done.length - 1]?.title || '', regions: done.length === st.length ? def.regionIds : done[done.length - 1]?.requiredRegionIds || [], c: Object.keys(p.contributorTotals).map(a => swrInputs.ownerNames[a] || a) })]; })),
       industries: Object.fromEntries(Object.values(scState?.regions || {}).flatMap(r => (Object.values(r.industries) as IndustryState[]).filter(x => x.strength >= 25).map(x => [`${r.regionId}:${x.industry}`, x.condition])))
     };
-  }, [scState, inState, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
+  }, [scState, inState, mpPersisted, isLiveIntentMatch, isTeamMode, player?.id, player?.money, player?.currentRegion, player?.level, gameState.regionDeposits, gameState.regionalContracts, gameState.infrastructureProjects, (gameState as any).crisisChainState, gameState.standingPerActor, gameState.day, gameState.turnCounter, gameState.currentActorId, gameState.selectedMode, gameSettings.selectedScenarioId, (gameState as any).contentState?.seed, lrState, rfState, dnState, v94Objective, isPlayerTurnForCoPilot, playerControlState.copilotHoldsControl, v9ApFinite, v9ApRemaining, v9Cohesion.focus, aiPlayer?.currentRegion, aiPlayer?.name]);
   const v94PrevRef = useRef<FeelSnapshot | null>(null);
   useEffect(() => {
     const prev = v94PrevRef.current; v94PrevRef.current = feelSnapshot;
@@ -172124,6 +174030,18 @@ function dispatchGameSettingsChange(
         const b = sc.bottlenecks.find(x => x.regionId === String(player.currentRegion || '') && x.input) || sc.bottlenecks.find(x => x.input);
         return b ? `${REGIONS[b.regionId]?.name || b.regionId}'s ${INDUSTRY_LABEL[b.industry].toLowerCase()} is currently short of ${SUPPLY_LABEL[b.input!].toLowerCase()} inputs.` : null;
       })(),
+      megaproject: (() => {
+        if (!mpEnabled) return null;
+        const p = Object.values(mpPersisted?.programs || {}).find(x => !x.abandoned);
+        if (p) return `${MEGAPROJECT_DEF_BY_KIND[p.kind].title} is ${MEGAPROJECT_STATUS_LABEL[p.status].toLowerCase()} — stage ${Math.min(p.currentStageIndex + 1, p.stages.length)} of ${p.stages.length}.`;
+        const e = megaprojectEligibility(mpWorld, mpPersisted).find(r => r.eligible);
+        return e ? `${e.title} is now eligible: a national program you can propose.` : null;
+      })(),
+      megaprojectSunk: (() => {
+        const pid = String(player?.id || 'player');
+        const p = Object.values(mpPersisted?.programs || {}).find(x => (x.status === 'suspended' || x.status === 'stalled') && x.contributorTotals[pid]?.capital);
+        return p ? `You have $${Math.round(p.contributorTotals[pid].capital).toLocaleString()} committed to ${MEGAPROJECT_DEF_BY_KIND[p.kind].title}.` : null;
+      })(),
       infraNetwork: (() => {
         const n = inState?.networks.filter(x => V102_MATURITY_RANK[x.maturity] >= 2).sort((a, b) => b.memberRegionIds.length - a.memberRegionIds.length || a.id.localeCompare(b.id))[0];
         return n ? `${n.memberRegionIds.map(r => REGIONS[r]?.name || r).join(' and ')} infrastructure now works as part of the same ${INFRA_NETWORK_LABEL[n.networkKind].toLowerCase()} system: ${n.name}.` : null;
@@ -172138,7 +174056,7 @@ function dispatchGameSettingsChange(
         return d ? `Most of ${REGIONS[d.consumerRegionId]?.name || d.consumerRegionId}'s available ${SUPPLY_LABEL[d.supply].toLowerCase()} currently comes from ${REGIONS[d.providerRegionId]?.name || d.providerRegionId}.` : null;
       })()
     };
-  }, [nsState, scState, inState, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
+  }, [nsState, scState, inState, mpEnabled, mpPersisted, mpWorld, player, gameState.regionDeposits, gameState.day, gameState.resourcePrices, gameState.selectedMode, gameState.standingPerActor, gameSettings, v9ActionSetView, v9Cohesion, v9CohesionInputs, swrState, dnRound, dnObservations, isPlayerTurnForCoPilot, v9ApFinite, v9ApRemaining, computeNetWorth, playerControlledRegions, aiControlledRegions, glPlayerKey, isTeamMode, getActorDisplayName, playerControlState.copilotHoldsControl, uiState.showTravelModal, uiState.showMarket, uiState.showResourceMarket, uiState.showRegionalContractsModal, uiState.showSettings, uiState.showChallenges, uiState.showShop, uiState.showCoPilotProposalModal, v9AfterAction, bgLive, getCompetitiveMetricValue, contentState, gameState.activeEvents]);
   const glSelection = useMemo(() => (isLiveIntentMatch ? selectNextLearningMoment(glCtx, glLearning, gameSettings, glPresentation) : { moment: null, level: 0, mode: 'off' as LearningMode, eligible: [], suppressed: [{ id: '*', reason: 'no live match' }], budget: { thisTurn: 0, window: 0, max: LEARNING_LIMITS.perTurn } }), [glCtx, glLearning, gameSettings, glPresentation, isLiveIntentMatch]);
   // A new live match starts a fresh hint session (budget + active lesson reset; mastery persists).
   const glWasLiveRef = useRef(false);
@@ -176521,6 +178439,10 @@ function dispatchGameSettingsChange(
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v102-setting-infra-networks">
                     <input type="checkbox" checked={gameSettings.infraNetworksEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🕸 Strategic Infrastructure Networks', prev => ({ ...prev, infraNetworksEnabled: e.target.checked }))} />
                     Strategic Infrastructure Networks (V10.2): projects combine into corridors and systems — redundancy, critical points and gateways (needs National Systems)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm mt-2" data-testid="v103-setting-megaprojects">
+                    <input type="checkbox" checked={gameSettings.megaprojectsEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🏗 National Megaprojects', prev => ({ ...prev, megaprojectsEnabled: e.target.checked }))} />
+                    National Megaprojects (V10.3): rare multi-stage national programs built from canonical projects — proposals, shared funding, design choices (needs National Systems and state infrastructure)
                   </label>
                   {([
                     ['v93StartingPackage', 'Starting conditions', STARTING_CONDITION_PACKAGES.map(p => [p.id, `${p.label} — ${p.summary}`])],
@@ -188068,6 +189990,7 @@ function dispatchGameSettingsChange(
             coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
           />
 
+          {mpEnabled && mpPersisted && <MegaprojectPlayLine line={megaprojectPlayLine(mpPersisted, mpWorld, mpViewerId)} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {inState && <InfraPlayLine state={inState} focus={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={inShowOnMap} />}
           {scState && <IndustryPlayStrip state={scState} focusRegions={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={scShowOnMap} />}
           {nsState && <NationalConditionsStrip state={nsState} focusRegions={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={nsShowOnMap} />}
@@ -188234,6 +190157,14 @@ function dispatchGameSettingsChange(
             {scState && (
               <OptionalSurfaceBoundary surface="Industries & Supply Chains">
                 <IndustriesIntelPanel state={scState} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={scShowOnMap} />
+              </OptionalSurfaceBoundary>
+            )}
+            {mpEnabled && (
+              <OptionalSurfaceBoundary surface="National Megaprojects">
+                <MegaprojectCenter persisted={mpPersisted} world={mpWorld} viewer={mpViewer} names={swrInputs.ownerNames} theme={themeStyles} onCommand={handleMegaprojectCommand} onTrack={mpTrack} onAsk={q => void submitIntelligenceQuery(q)} onMap={mpShowOnMap}
+                  guardian={amount => { const gs: any = gameSettings.guardianAiSettings; if (gs && gs.enabled === false) return null; const cash = Number(player.money || 0); if (amount < cash * 0.5) return null;
+                    const p = Object.values(mpPersisted?.programs || {}).find(x => !x.abandoned && x.status !== 'completed'); const v = p ? megaprojectProgramView(p, mpWorld) : null; const left = v?.current ? Math.max(0, v.current.requiredCapital - v.current.progressCapital) : 0; const pay = Math.min(amount, left);
+                    return <div className="mt-1 text-amber-200" role="note" data-testid="mp-guardian">⚠ Guardian: committing ${pay.toLocaleString()} would reduce your available cash from ${cash.toLocaleString()} to ${(cash - pay).toLocaleString()}.{v ? ` Later stages still need about $${Math.round(v.capitalTotal - v.capitalDone - pay).toLocaleString()} plus canonical component projects.` : ''} (Warning only — the decision is yours.)</div>; }} />
               </OptionalSurfaceBoundary>
             )}
             {inState && (
@@ -188403,6 +190334,9 @@ function dispatchGameSettingsChange(
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10.1 Industries & Supply Chains Inspector">
           <IndustriesInspector state={scState} persisted={scPersisted} theme={themeStyles} diag={scDiagRef.current} enabled={scEnabled} />
+        </OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="V10.3 Megaproject Inspector">
+          <MegaprojectInspector persisted={mpPersisted} world={mpWorld} theme={themeStyles} diag={mpDiagRef.current} enabled={mpEnabled} />
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10.2 Strategic Infrastructure Inspector">
           <InfraNetworksInspector state={inState} persisted={inPersisted} inputs={inInputs} theme={themeStyles} diag={inDiagRef.current} enabled={inEnabled} />
@@ -189724,10 +191658,11 @@ function dispatchGameSettingsChange(
                 <h3 className="text-xl font-bold">🗺️ Australia Map</h3>
                 {lrState && (
                   <label className="text-xs flex items-center gap-1 ml-auto mr-2">Layer
-                    <select aria-label="Map layer" data-testid="lr-map-mode" value={inMapKind && inState ? `infra:${inMapKind}` : scMapLayer && scState ? scMapLayer : nsMapNetwork && nsState ? `net:${nsMapNetwork}` : lrMapMode} onChange={e => { const v = e.target.value; setInMapKind(null); if (v.startsWith('infra:')) { setNsMapNetwork(null); setScMapLayer(null); setInMapKind(v.slice(6) as StrategicInfrastructureNetworkKind); } else if (v === 'ind' || v.startsWith('sc:')) { setNsMapNetwork(null); setScMapLayer(v as IndustryMapLayer); } else if (v.startsWith('net:')) { setScMapLayer(null); setNsMapNetwork(v.slice(4) as NationalNetworkKind); } else { setScMapLayer(null); setNsMapNetwork(null); setLrMapMode(v as LRMapMode); } }} className={`${themeStyles.input || ''} bg-transparent border rounded px-1 py-0.5`}>
+                    <select aria-label="Map layer" data-testid="lr-map-mode" value={mpMapId && mpPersisted?.programs[mpMapId] ? `mp:${mpMapId}` : inMapKind && inState ? `infra:${inMapKind}` : scMapLayer && scState ? scMapLayer : nsMapNetwork && nsState ? `net:${nsMapNetwork}` : lrMapMode} onChange={e => { const v = e.target.value; setInMapKind(null); setMpMapId(null); if (v.startsWith('mp:')) { setNsMapNetwork(null); setScMapLayer(null); setMpMapId(v.slice(3)); return; } if (v.startsWith('infra:')) { setNsMapNetwork(null); setScMapLayer(null); setInMapKind(v.slice(6) as StrategicInfrastructureNetworkKind); } else if (v === 'ind' || v.startsWith('sc:')) { setNsMapNetwork(null); setScMapLayer(v as IndustryMapLayer); } else if (v.startsWith('net:')) { setScMapLayer(null); setNsMapNetwork(v.slice(4) as NationalNetworkKind); } else { setScMapLayer(null); setNsMapNetwork(null); setLrMapMode(v as LRMapMode); } }} className={`${themeStyles.input || ''} bg-transparent border rounded px-1 py-0.5`}>
                       {LR_MAP_MODES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                       {nsState && <optgroup label="National networks">{NATIONAL_NETWORKS.map(n => <option key={n} value={`net:${n}`}>{NATIONAL_NETWORK_ICON[n]} {NATIONAL_NETWORK_LABEL[n]}</option>)}</optgroup>}
                       {inState && <optgroup label="Infrastructure networks">{INFRA_NETWORK_KINDS.map(k => <option key={k} value={`infra:${k}`}>🕸 {INFRA_NETWORK_ICON[k]} {INFRA_NETWORK_LABEL[k]} network</option>)}</optgroup>}
+                      {mpPersisted && Object.keys(mpPersisted.programs).length > 0 && <optgroup label="National programs">{Object.values(mpPersisted.programs).map(p => <option key={p.id} value={`mp:${p.id}`}>🏗 {MEGAPROJECT_DEF_BY_KIND[p.kind].icon} {MEGAPROJECT_DEF_BY_KIND[p.kind].title}</option>)}</optgroup>}
                       {scState && <optgroup label="Industries & supply chains"><option value="ind">🏭 Industry</option>{INDUSTRY_MAP_SUPPLIES.map(x => <option key={x} value={`sc:${x}`}>⛓ Supply chain: {SUPPLY_LABEL[x]}</option>)}</optgroup>}
                     </select>
                   </label>
@@ -189743,6 +191678,7 @@ function dispatchGameSettingsChange(
 	              <div className="relative w-full h-96 bg-gray-800 rounded-lg overflow-hidden" data-ns-network={nsMapNetwork && nsState ? nsMapNetwork : undefined}>
 	                {nsMapNetwork && nsState && <NationalNetworkMapLinks state={nsState} network={nsMapNetwork} />}
 	                {inMapKind && inState && nsState && <InfraNetworkMapOverlay state={inState} national={nsState} kind={inMapKind} />}
+	                {mpMapId && mpPersisted?.programs[mpMapId] && <MegaprojectMapOverlay persisted={mpPersisted} programId={mpMapId} />}
 	                {scMapLayer && scMapLayer !== 'ind' && scState && <IndustrySupplyMapLinks state={scState} supply={scMapLayer.slice(3) as StrategicSupplyKind} />}
 	                {Object.entries(REGIONS).map(([code, region]: [string, any]) => {
 	                  const isPlayerHere = player.currentRegion === code;
@@ -189816,7 +191752,7 @@ function dispatchGameSettingsChange(
 	                            ${regionControlInfo.highestDeposit}
 	                          </div>
 	                        )}
-                          {inMapKind && inState ? (() => { const xb = infraMapBadge(inState, code, inMapKind); return xb ? <div data-testid="in-map-badge" data-tone={xb.tone} title={xb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${xb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : xb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-sky-950 border-sky-400 text-sky-100'}`}>{xb.text}</div> : null; })() : scMapLayer && scState ? (() => { const ib = industryMapBadge(scState, code, scMapLayer); return ib ? <div data-testid="sc-map-badge" data-tone={ib.tone} title={ib.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${ib.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : ib.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-violet-950 border-violet-400 text-violet-100'}`}>{ib.text}</div> : null; })() : nsMapNetwork && nsState ? (() => { const nb = nationalMapBadge(nsState, code, nsMapNetwork); return nb ? <div data-testid="ns-map-badge" data-condition={nb.condition} title={nb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${nb.condition === 'critical' ? 'bg-red-950 border-red-400 text-red-100' : nb.condition === 'bottlenecked' ? 'bg-orange-950 border-orange-400 text-orange-100' : nb.condition === 'strained' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-teal-950 border-teal-500 text-teal-100'}`}>{nb.text}</div> : null; })() : (() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
+                          {mpMapId && mpPersisted?.programs[mpMapId] ? (() => { const mb = megaprojectMapBadge(mpPersisted, code, mpMapId); return mb ? <div data-testid="mp-map-badge" data-tone={mb.tone} title={mb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${mb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : mb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : mb.tone === 'ok' ? 'bg-emerald-950 border-emerald-400 text-emerald-100' : 'bg-slate-900 border-slate-400 text-slate-100'}`}>{mb.text}</div> : null; })() : inMapKind && inState ? (() => { const xb = infraMapBadge(inState, code, inMapKind); return xb ? <div data-testid="in-map-badge" data-tone={xb.tone} title={xb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${xb.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : xb.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-sky-950 border-sky-400 text-sky-100'}`}>{xb.text}</div> : null; })() : scMapLayer && scState ? (() => { const ib = industryMapBadge(scState, code, scMapLayer); return ib ? <div data-testid="sc-map-badge" data-tone={ib.tone} title={ib.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${ib.tone === 'bad' ? 'bg-red-950 border-red-400 text-red-100' : ib.tone === 'warn' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-violet-950 border-violet-400 text-violet-100'}`}>{ib.text}</div> : null; })() : nsMapNetwork && nsState ? (() => { const nb = nationalMapBadge(nsState, code, nsMapNetwork); return nb ? <div data-testid="ns-map-badge" data-condition={nb.condition} title={nb.title} className={`absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap px-1 rounded border ${nb.condition === 'critical' ? 'bg-red-950 border-red-400 text-red-100' : nb.condition === 'bottlenecked' ? 'bg-orange-950 border-orange-400 text-orange-100' : nb.condition === 'strained' ? 'bg-amber-950 border-amber-400 text-amber-100' : 'bg-teal-950 border-teal-500 text-teal-100'}`}>{nb.text}</div> : null; })() : (() => { const badge = lrMapBadge(lrState?.regions[code], lrMapMode); return badge ? <div data-testid="lr-map-badge" title={badge.title} className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-[9px] whitespace-nowrap bg-teal-900/90 text-teal-100 px-1 rounded">{badge.text}</div> : null; })()}
                           {interactiveMapActive && completedChallengeCount >= (region.challenges || []).length && (region.challenges || []).length > 0 && (
                             <div className="absolute -top-2 -left-2 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-[10px]">
                               ✓
@@ -198722,6 +200658,12 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	            <div className="p-3 rounded-xl bg-black/20 border border-sky-700/40 text-xs leading-relaxed" data-testid="ns-debrief">
 	              <span className="font-bold text-sky-300">National turning points: </span>
 	              {buildNationalDebrief(nsPersistedRef.current).join(' · ')}
+	            </div>
+	          )}
+	          {buildMegaprojectDebrief(mpPersistedRef.current).length > 0 && (
+	            <div className="p-3 rounded-xl bg-black/20 border border-amber-700/40 text-xs leading-relaxed" data-testid="mp-debrief">
+	              <span className="font-bold text-amber-300">National programs: </span>
+	              {buildMegaprojectDebrief(mpPersistedRef.current).join(' · ')}
 	            </div>
 	          )}
 	          {buildInfraNetworkDebrief(inPersistedRef.current).length > 0 && (
