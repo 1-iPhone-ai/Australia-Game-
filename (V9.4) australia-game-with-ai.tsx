@@ -178334,6 +178334,9 @@ export function simulateHouseholdEconomyWhatIf(
 
   // Advance turn on cloned inputs and zero out hysteresis so projected structural direction is visible
   clonedInputs.turn = (clonedInputs.turn || 1) + 1;
+  // Live inputs (buildHouseholdEconomyInputs) derive regions from Living Regions and leave `regions` unset;
+  // indexing it crashed the Intelligence tab's Households panel. Start an explicit-override map instead.
+  if (!clonedInputs.regions) clonedInputs.regions = {};
   const targetReg = clonedInputs.regions[scenario.targetRegionId] ?? {
     regionId: scenario.targetRegionId,
     economyBand: 'moderate',
@@ -180448,6 +180451,12 @@ export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
     diag2Listeners.add(listener);
     try { notifyDiag2Listeners(); notifyDiag2Listeners(); return calls === 0 || `called synchronously ${calls}x`; }
     finally { diag2Listeners.delete(listener); }
+  });
+  check('ru_households_whatif_live_inputs', 'Households what-if runs on live inputs (no explicit regions) — the Intelligence tab crash', () => {
+    const inputs = buildHouseholdEconomyInputs({ turn: 3, gameState: {}, gameSettings: settings });
+    const base = computeNationalHouseholdEconomy(inputs, null, null);
+    const r = simulateHouseholdEconomyWhatIf(inputs, base.persisted, { scenarioType: 'concentrate_industrial_expansion', targetRegionId: 'VIC', hasEnablingSkillsAndResearch: true });
+    return (inputs.regions === undefined && /VIC/.test(String(r.summary))) || 'unexpected';
   });
   return results;
 }
@@ -198035,8 +198044,9 @@ function dispatchGameSettingsChange(
         v96Flow('TURN_OWNER', 'player → ai');
         dispatchGameState({ type: 'SET_TURN', payload: 'ai' });
       } else {
-        // Single player mode - advance day
-        advanceDay();
+        // Single player mode - advance day (latest advanceDay via ref: it is declared after this callback,
+        // so it cannot be a dependency, and the captured one could carry stale settings/state)
+        (advanceDayRef.current || advanceDay)();
       }
       
       updatePersonalRecords('money', player.money);
@@ -198058,7 +198068,7 @@ function dispatchGameSettingsChange(
     } else {
       confirmEndTurn();
     }
-  }, [player, gameState, addNotification, handleTurnTransition, isTeamMode, showConfirmation, updatePersonalRecords]);
+  }, [player, gameState, gameSettings, addNotification, handleTurnTransition, isTeamMode, showConfirmation, updatePersonalRecords]);
 
   // V6.7 Phase 3a: single entry point / performance safeguard for all Phase 3a state mutation
   // (plan generation/reevaluation, plan-driven auto-reservation). The early-return guard below is
