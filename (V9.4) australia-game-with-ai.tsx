@@ -1286,14 +1286,24 @@ let diag2LastEventSig = '';
 
 export const diag2Listeners = new Set<() => void>();
 
+let diag2NotifyScheduled = false;
 export function notifyDiag2Listeners() {
-  for (const listener of diag2Listeners) {
-    try {
-      listener();
-    } catch {
-      // safe no-op
+  // Events are recorded inside reducers, which React runs while rendering AustraliaGame; notifying listeners
+  // synchronously set the overlay's state mid-render (React "Cannot update a component while rendering a
+  // different component"). Coalesce into one notification after the current synchronous work.
+  if (diag2NotifyScheduled) return;
+  diag2NotifyScheduled = true;
+  const run = () => {
+    diag2NotifyScheduled = false;
+    for (const listener of diag2Listeners) {
+      try {
+        listener();
+      } catch {
+        // safe no-op
+      }
     }
-  }
+  };
+  if (typeof queueMicrotask === 'function') queueMicrotask(run); else setTimeout(run, 0);
 }
 
 let copilotWaitingShellRuntimeEnabled = false;
@@ -8295,7 +8305,8 @@ export function generatePostMatchDebriefAnalytics(params: DebriefAssemblyParams)
   } = params;
 
   const playerWon = outcome?.playerWon ?? true;
-  const totalTurns = gameState?.day || gameState?.roundNumber || 1;
+  // A completed match has already stepped past its last day; report the days that were actually played.
+  const totalTurns = Math.min(gameState?.day || gameState?.roundNumber || 1, Number(gameSettings?.totalDays) || Number.MAX_SAFE_INTEGER);
   const timestamp = new Date().toISOString();
 
   // 1. Swing Point Analytics
@@ -10297,7 +10308,7 @@ export function evaluateScenarioOutcome(
 
   const playerBroke = (context.player?.money ?? 0) < BANKRUPTCY_THRESHOLD;
   const playerBankrupt = playerBroke && (context.gameState.bankruptcyTracker?.player || 0) >= BANKRUPTCY_STREAK_DAYS;
-  const maxDaysReached = context.gameState.day >= context.gameSettings.totalDays;
+  const maxDaysReached = context.gameState.day > context.gameSettings.totalDays; // evaluated with the day being entered: day N itself is still playable
 
   let isGameOver = false;
   let isVictory = false;
@@ -15849,6 +15860,19 @@ export function drawGameRandom(
     domain = domainOrOptionsOrState as RngScopeDomain;
     if (typeof modeOrScope === 'string') selectedMode = modeOrScope as RandomnessMode;
     if (Array.isArray(recordedValuesOrMode)) queue = recordedValuesOrMode as number[];
+  } else if (domainOrOptionsOrState == null) {
+    // State-form call with a missing state (e.g. generateCoPilotRecommendations(null, …) / a context
+    // without gameState): keep the explicit domain + mode instead of dropping them — an unscoped
+    // draw throws under the default strict RNG audit policy.
+    if (typeof modeOrScope === 'string') {
+      if (modeOrScope === 'deterministic' || modeOrScope === 'legacy_random' || modeOrScope === 'recorded_chaos' || modeOrScope === 'hybrid') {
+        selectedMode = modeOrScope as RandomnessMode;
+      } else {
+        domain = modeOrScope as RngScopeDomain;
+      }
+    }
+    if (typeof recordedValuesOrMode === 'string') selectedMode = recordedValuesOrMode as RandomnessMode;
+    if (Array.isArray(recordedValues)) queue = recordedValues;
   }
 
   let resultVal: number;
@@ -63355,7 +63379,7 @@ export const CoPilotLiveTurnIndicator: React.FC<CoPilotLiveTurnIndicatorProps> =
           <div className="w-10 h-10 rounded-full bg-indigo-500/20 border border-indigo-400/50 flex items-center justify-center text-xl shrink-0">▶</div>
           <div>
             <span className="font-extrabold text-indigo-200 text-base">Co-Pilot Autonomous is armed</span>
-            <p className="text-xs text-slate-300 mt-1">Settings saved. Press Start Co-Pilot when you want it to take Adam’s turn.</p>
+            <p className="text-xs text-slate-300 mt-1">Settings saved. Press Start Co-Pilot when you want it to take your turn.</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
@@ -65204,7 +65228,7 @@ export function getActionDisabledReason(actionId: string, context: ActionContext
       if (!settings.investmentsEnabled) return 'Investments disabled';
       return null;
     case 'endTurn':
-      if (day >= totalDays) return 'Game has ended';
+      if (day > totalDays) return 'Game has ended';
       return null;
     case 'teamAiSystems':
       if (!isTeamMode) return 'Requires Team Mode';
@@ -71313,6 +71337,9 @@ export function generateCoPilotPlayerActionCandidates(
   const candidates: CoPilotActionCandidate[] = [];
 
   const makeId = (catIdx: number, slug: string) => `candidate_cat${catIdx}_${slug}_t${currentTurn}`;
+  const tradeApCost = (type: string): number => { const c = getActionPointCost(type, actorObj, apSettings); return Number.isFinite(c) && c > 0 ? c : 0; };
+  const tradePrice = (resource: string): number => Math.round(Number(gs.resourcePrices?.[resource]) || getResourceMarketPrice(resource));
+  const buyableResource: string | null = ((REGIONAL_RESOURCES as any)[currentRegion] || []).find((r: string) => Boolean(RESOURCE_CATEGORIES[r])) || null;
 
   // Category 1: Movement / Travel
   let travelTarget = 'Melbourne';
@@ -71461,36 +71488,39 @@ export function generateCoPilotPlayerActionCandidates(
       title: `Sell ${itemToSell} in Regional Market`,
       description: `Execute market sale of 1 unit of ${itemToSell} for instant liquidity return.`,
       actionType: 'sell',
-      apCost: 1,
+      // AP and price come from the rules / live market (selling is free; a hard-coded 1 AP made the
+      // postcondition check fail and the executor then charged a phantom action).
+      apCost: tradeApCost('sell'),
       costEstimate: 0,
       expectedOutcome: `Earn revenue from selling 1x ${itemToSell}`,
       utilityScore: goal === 'wealth' ? 88 : 82,
       riskFactor: 10,
       rewardScore: 85,
       longTermScore: 75,
-      expectedStateDelta: { cashDelta: 100, apDelta: -1 },
+      expectedStateDelta: { cashDelta: tradePrice(itemToSell), apDelta: -tradeApCost('sell') },
       isValid: true,
-      parameters: { item: itemToSell, commodity: itemToSell, quantity: 1 }
+      parameters: { item: itemToSell, commodity: itemToSell, resource: itemToSell, quantity: 1, unitPrice: tradePrice(itemToSell) }
     });
-  } else {
+  } else if (buyableResource && cash - tradePrice(buyableResource) >= minReserveFloor) {
     candidates.push({
       id: makeId(4, 'trade'),
       category: 'resource_trading',
       categoryIndex: 4,
       categoryName: 'Resource Management / Trade',
       title: 'Purchase Market Commodities',
-      description: 'Purchase discounted local resources to initiate regional market trade route.',
+      description: `Purchase discounted local ${buyableResource} to initiate regional market trade route.`,
       actionType: 'buy_market',
-      apCost: 1,
-      costEstimate: 100,
-      expectedOutcome: 'Acquire 1 unit of regional commodity inventory',
+      apCost: tradeApCost('buy_market'),
+      costEstimate: tradePrice(buyableResource),
+      expectedOutcome: `Acquire 1 unit of ${buyableResource}`,
       utilityScore: goal === 'wealth' ? 86 : 76,
       riskFactor: 10,
       rewardScore: 80,
       longTermScore: 75,
-      expectedStateDelta: { cashDelta: -100, apDelta: -1 },
+      expectedStateDelta: { cashDelta: -tradePrice(buyableResource), apDelta: -tradeApCost('buy_market') },
       isValid: true,
-      parameters: { item: 'minerals', commodity: 'minerals', quantity: 1 }
+      // A real local resource at its market price (was the category 'minerals', which put a junk item in inventory).
+      parameters: { item: buyableResource, commodity: buyableResource, resource: buyableResource, quantity: 1, unitPrice: tradePrice(buyableResource) }
     });
   }
   // Always-legal income fallback (same 'work' action the team AI actors use: +$50 wage, 1 AP).
@@ -77344,8 +77374,11 @@ export function executeCoPilotActionIntent<T extends GameState | ExtendedGameSta
   setCoPilotStartPhase('execute_done');
 
   const postState = verificationResult.updatedState;
-  const postPlayer = (postState?.actorsById && postState.actorsById[actorIdStr]) || postState?.player || playerObj;
-  if (postPlayer) {
+  // Always a copy: falling back to playerObj (the live React player) let the AP top-up below mutate state
+  // outside the reducer — a failed Co-Pilot move still cost the player an action.
+  const postPlayerSource = (postState?.actorsById && postState.actorsById[actorIdStr]) || postState?.player || playerObj;
+  const postPlayer = postPlayerSource ? { ...postPlayerSource } : postPlayerSource;
+  if (postPlayer && verificationResult.success) {
     const priorUsed = typeof playerObj?.actionsUsedThisTurn === 'number' ? playerObj.actionsUsedThisTurn : 0;
     if (intent.expectedAPDelta === -1 || (intent.expectedAPDelta && intent.expectedAPDelta < 0)) {
       const currentUsed = typeof postPlayer.actionsUsedThisTurn === 'number' ? postPlayer.actionsUsedThisTurn : 0;
@@ -130061,7 +130094,7 @@ export function runV9GuidedLearningSelfTests(): V9SelfTestResult[] {
   check('gl_perf', 'Selector is cheap (bounded registry; 2,000 selections well under a frame budget each)', () => {
     const st = started(); const c = fx(); const t0 = Date.now(); for (let k = 0; k < 2000; k++) sel(c, st); const ms = Date.now() - t0;
     // Registry stays bounded (V10.4/V10.5 each add two concepts; the cap is a sanity bound, not a feature limit).
-    return (LEARNING_CONCEPTS.length <= 48 && ms < 1500) || `${LEARNING_CONCEPTS.length} concepts, ${ms}ms`;
+    return (LEARNING_CONCEPTS.length <= 64 && ms < 1500) || `${LEARNING_CONCEPTS.length} concepts, ${ms}ms`;
   });
   return results;
 }
@@ -133068,12 +133101,12 @@ export function contractStateChip(c: any): { label: string; icon: string; cls: s
 }
 
 /** Victory / defeat hero: clear winner, win condition, key final metric, and (on a loss) a lesson — no shaming. */
-export const V94OutcomeHero: React.FC<{ won: boolean; winLabel: string; metricLabel: string; you: string; rival: string; rivalName: string; reason: string; turningPoints: string[]; lesson: string | null }> = ({ won, winLabel, metricLabel, you, rival, rivalName, reason, turningPoints, lesson }) => (
+export const V94OutcomeHero: React.FC<{ won: boolean; winLabel: string; metricLabel: string; you: string; rival: string; rivalName: string; reason: string; turningPoints: string[]; lesson: string | null; solo?: boolean }> = ({ solo, won, winLabel, metricLabel, you, rival, rivalName, reason, turningPoints, lesson }) => (
   <section className={`v94-stagger rounded-2xl border-2 ${won ? 'border-emerald-400/70' : 'border-slate-400/60'} p-5 text-center space-y-2`} data-testid="v94-outcome-hero" aria-label={won ? 'Victory' : 'Match result'}>
     <div className="text-5xl" aria-hidden="true">{won ? '🏆' : '🏁'}</div>
     <h2 className={`text-3xl sm:text-4xl font-black tracking-tight ${won ? 'text-emerald-400' : ''}`}>{won ? 'VICTORY' : 'MATCH OVER'}</h2>
     <div className="text-sm opacity-85">{winLabel} · decided by {metricLabel}</div>
-    <div className="flex justify-center gap-6 text-lg font-bold"><span>▲ You {you}</span><span className="opacity-60">vs</span><span>◆ {rivalName} {rival}</span></div>
+    <div className="flex justify-center gap-6 text-lg font-bold"><span>▲ You {you}</span>{!solo && <><span className="opacity-60">vs</span><span>◆ {rivalName} {rival}</span></>}</div>
     <div className="text-xs opacity-80">{reason}</div>
     {turningPoints.length > 0 && <div className="text-xs"><span className="font-semibold">Turning points: </span>{turningPoints.slice(0, 3).join(' · ')}</div>}
     {!won && lesson && <div className="text-xs rounded-lg border border-sky-500/40 px-3 py-2 inline-block"><span className="font-semibold">Next time: </span>{lesson}</div>}
@@ -133704,7 +133737,8 @@ export function validateSaveDataCore(raw: any): SaveGameData {
       currentActorId: typeof stateData.currentActorId === 'string' ? stateData.currentActorId : initialGameState.currentActorId,
       turnOrder: Array.isArray(stateData.turnOrder) ? stateData.turnOrder.map(String) : initialGameState.turnOrder,
       turnCounter: v95IsFiniteNum(stateData.turnCounter) ? Math.max(0, Math.floor(stateData.turnCounter)) : initialGameState.turnCounter,
-      day: v95IsFiniteNum(stateData.day) && stateData.day >= 1 ? Math.floor(stateData.day) : 1,
+      // A numeric string (hand-edited / foreign save) keeps its day instead of silently restarting at day 1.
+      day: Number.isFinite(Number(stateData.day)) && Number(stateData.day) >= 1 ? Math.floor(Number(stateData.day)) : 1,
       roundNumber: v95IsFiniteNum(stateData.roundNumber) ? Math.max(0, Math.floor(stateData.roundNumber)) : initialGameState.roundNumber,
       autoplay: stateData.autoplay
         ? {
@@ -135776,6 +135810,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'replay', label: 'Replay Studio', tier: 'quick', section: 'Replay Integrity', severity: 'CRITICAL', run: () => runReplayStudioSelfTests() },
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
+  { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
@@ -178300,6 +178335,9 @@ export function simulateHouseholdEconomyWhatIf(
 
   // Advance turn on cloned inputs and zero out hysteresis so projected structural direction is visible
   clonedInputs.turn = (clonedInputs.turn || 1) + 1;
+  // Live inputs (buildHouseholdEconomyInputs) derive regions from Living Regions and leave `regions` unset;
+  // indexing it crashed the Intelligence tab's Households panel. Start an explicit-override map instead.
+  if (!clonedInputs.regions) clonedInputs.regions = {};
   const targetReg = clonedInputs.regions[scenario.targetRegionId] ?? {
     regionId: scenario.targetRegionId,
     economyBand: 'moderate',
@@ -180261,6 +180299,175 @@ export function runV1013HouseholdsLivingStandardsSelfTests(): {
     total: results.length,
     results
   };
+}
+
+/**
+ * Downloads `data` as a JSON file. Never throws: sandboxed embeds and some browsers block downloads or lack
+ * URL.createObjectURL, and a throw here used to abort match finalisation (replay) mid AI turn.
+ */
+export function triggerJsonFileDownload(filename: string, data: unknown): boolean {
+  try {
+    if (typeof document === 'undefined' || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return false;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch { /* already released */ } }, 0);
+    return true;
+  } catch (error) {
+    console.warn('[download] blocked or unavailable:', error);
+    return false;
+  }
+}
+
+// ============================================================================
+// SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
+// ----------------------------------------------------------------------------
+// One check per substantive reliability fix (crash, accounting, lifecycle, determinism, gating).
+// Pure: no live React state; globals touched by a check are restored by that check.
+// ============================================================================
+export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const settings = createDefaultGameSettings();
+  const nationalOk = (): any => ({
+    ...Object.fromEntries(NATIONAL_NETWORKS.map(n => [n, { condition: 'healthy', bottlenecks: 0, utilization: 0.5 }])),
+    resilienceScore: 60, resilienceBand: 'stable', criticalBottlenecks: [], criticalDependencies: [],
+    strongestSystem: NATIONAL_NETWORKS[0], weakestSystem: null
+  });
+  const infraState = (): any => ({ turn: 4, day: 4, actorsById: { player: { id: 'player', money: 10000, teamId: TEAM_PLAYER_ID, actionsUsedThisTurn: 0 } },
+    infrastructureProjects: { p_rail: { id: 'p_rail', title: 'Inland Rail', projectType: 'logistics_hub', status: 'unlocked', totalCost: 8000, laborTurnsRequired: 6, assignedWorkers: [], totalInvestedMoney: 0, regionId: 'NSW' } } });
+
+  check('ru_capacity_null_weakest', 'State Capacity tolerates a healthy national summary (weakestSystem: null) — the match-start crash', () => {
+    const r = computeNationalStateCapacity({ turn: 3, viewerId: 'player', programs: [], crises: [], stakeholders: [],
+      nationalSystems: { revision: 1, bottlenecks: [], dependencies: [], national: nationalOk() } } as any, null);
+    return Boolean(r && r.state) || 'no state';
+  });
+  check('ru_rng_null_state', 'drawGameRandom keeps an explicit domain when the state argument is missing (strict audit)', () => {
+    const prev = globalRngRegistry.auditPolicy;
+    globalRngRegistry.setAuditPolicy('strict');
+    try { const v = drawGameRandom(null as any, 'AI', 'deterministic'); return (typeof v === 'number' && v >= 0 && v < 1) || `got ${v}`; }
+    finally { globalRngRegistry.setAuditPolicy(prev); }
+  });
+  check('ru_last_day_playable', 'End Turn stays available on the final day; the gate closes only after it', () => {
+    const ctx: any = { isPlayerTurn: true, isCompetitiveMode: true, isTeamMode: false, isShopRegion: false, player: { id: 'player' }, selectedMode: 'ai', settings, day: 10, totalDays: 10, activeDebuffs: [] };
+    const onLast = getActionDisabledReason('endTurn', ctx);
+    const after = getActionDisabledReason('endTurn', { ...ctx, day: 11 });
+    return (onLast === null && after === 'Game has ended') || `${onLast} / ${after}`;
+  });
+  check('ru_scenario_day_limit', 'A scenario is not failed for its day limit on the last day, only once it has passed', () => {
+    const sc = findActiveScenario();
+    const base: any = { player: { id: 'player', money: 1000 }, aiPlayer: { id: 'ai', money: 1000 }, gameSettings: { ...settings, totalDays: 10 } };
+    const onLast = evaluateScenarioOutcome(sc as any, { ...base, gameState: { day: 10, bankruptcyTracker: {} } });
+    const past = evaluateScenarioOutcome(sc as any, { ...base, gameState: { day: 11, bankruptcyTracker: {} } });
+    const lastFailedOnLimit = onLast.isGameOver && /day limit/.test(String(onLast.reason));
+    return (!lastFailedOnLimit && past.isGameOver) || `${onLast.reason} | ${past.reason}`;
+  });
+  check('ru_infra_existing_preserved', 'Starting an existing named project resumes it (never overwritten by a $350 depot)', () => {
+    const r = reduceGameAction(infraState(), { type: 'start_infrastructure_project', actorId: 'player', parameters: { projectId: 'p_rail', regionId: 'NSW' } } as any, { active: true, actorId: 'player' } as any);
+    const p: any = (r.nextState as any).infrastructureProjects.p_rail;
+    return (p.title === 'Inland Rail' && p.totalCost === 8000 && p.status === 'under_construction') || JSON.stringify(p);
+  });
+  check('ru_infra_deterministic_ids', 'A generic build produces the same project id from the same inputs', () => {
+    const a = reduceGameAction(infraState(), { type: 'build_infrastructure', actorId: 'player', parameters: { region: 'VIC' } } as any, { active: true, actorId: 'player' } as any);
+    const b = reduceGameAction(infraState(), { type: 'build_infrastructure', actorId: 'player', parameters: { region: 'VIC' } } as any, { active: true, actorId: 'player' } as any);
+    const ka = Object.keys((a.nextState as any).infrastructureProjects).join(','), kb = Object.keys((b.nextState as any).infrastructureProjects).join(',');
+    return (ka === kb && !/\d{12,}/.test(ka)) || `${ka} vs ${kb}`;
+  });
+  check('ru_mitigate_real', 'mitigate_crisis runs the real handler (cost + stability), not the $200 stub', () => {
+    const r = reduceGameAction({ turn: 4, day: 4, actorsById: { player: { id: 'player', money: 6000, teamId: TEAM_PLAYER_ID } } } as any, { type: 'mitigate_crisis', actorId: 'player', parameters: {} } as any, { active: true, actorId: 'player' } as any);
+    const ns: any = r.nextState;
+    return (ns.actorsById.player.money === 1000 && Number(ns.publicStabilityState?.nationalStability) > 0) || `money ${ns.actorsById.player.money}`;
+  });
+  check('ru_partial_load_keeps_thinking', 'A partial LOAD_STATE keeps isAiThinking; a full-state payload resets it', () => {
+    const partial = gameStateReducer({ isAiThinking: true, currentTurn: 'ai' }, { type: 'LOAD_STATE', payload: { aiMemoriesByActor: {} } });
+    const full = gameStateReducer({ isAiThinking: true, currentTurn: 'ai' }, { type: 'LOAD_STATE', payload: { currentTurn: 'player', day: 3 } });
+    return (partial.isAiThinking === true && full.isAiThinking === false) || `${partial.isAiThinking}/${full.isAiThinking}`;
+  });
+  check('ru_spend_estimate', 'Action Requirements see the real cost of a decision', () => {
+    const basket = estimateDecisionSpendCost({ type: 'buy_market', data: { purchases: [{ resource: 'Wool', quantity: 2 }, { resource: 'Gold', quantity: 1 }] } });
+    const expected = getResourceMarketPrice('Wool') * 2 + getResourceMarketPrice('Gold');
+    const travel = estimateDecisionSpendCost({ type: 'travel', data: { region: 'WA' } }, r => (r === 'WA' ? 420 : 0));
+    return (basket === expected && basket > 0 && travel === 420 && estimateDecisionSpendCost({ type: 'region_deposit', data: { amount: 700 } }) === 700) || `${basket}/${expected}/${travel}`;
+  });
+  check('ru_rejections_reset', 'Rejected proposals do not outlive their match', () => {
+    const saved = Object.fromEntries(Object.entries(globalRejectedProposalSignatures).map(([k, v]) => [k, new Set(v)]));
+    try {
+      recordRejectedProposalSignature('ru_actor', 3, null, 'sig');
+      const before = getRejectedProposalSignatures('ru_actor', 3).has('sig');
+      resetRejectedProposalSignatures();
+      return (before && getRejectedProposalSignatures('ru_actor', 3).size === 0) || 'not cleared';
+    } finally { resetRejectedProposalSignatures(); Object.assign(globalRejectedProposalSignatures, saved); }
+  });
+  check('ru_craft_value', 'AI craft scoring values outputs at what they sell for (no buy-craft-at-a-loss loop)', () => {
+    const recipe = CRAFTING_RECIPES.find(r => r.output === 'Heat Shielding Suit')!;
+    const inputs = Object.entries(recipe.inputs).reduce((s, [res, n]) => s + getResourceMarketPrice(res) * Number(n), 0);
+    const value = getCraftedOutputRealizableValue(recipe, {});
+    return (value === calculateInventoryMarketValue([recipe.output], {}) && value < recipe.baseValue) || `${value} vs inputs ${inputs}`;
+  });
+  check('ru_guardian_cache_mode', "Guardian's cached verdict is per response mode (notify-only never blocks after an adaptive check)", () => {
+    const base = { ...createDefaultGuardianAiSettings(), enabled: true, protectionLevel: 'major_mistakes' as any };
+    const ctx = (responseMode: any): any => ({ gameState: { day: 9, turn: 9 }, settings: { ...base, responseMode }, actorId: 'ru_guardian', actionType: 'launch_expedition', actionPayload: { cost: 5000 }, source: 'co_pilot', day: 9, turn: 9, currentActionTokens: 3, currentCash: 1000, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false });
+    const adaptive = evaluateGuardianRiskPipeline(ctx('adaptive'));
+    const notify = evaluateGuardianRiskPipeline(ctx('notify_only'));
+    return (adaptive.confirmationRequired === true && notify.allowedToProceed === true && notify.confirmationRequired === false) || `${adaptive.confirmationRequired}/${notify.allowedToProceed}`;
+  });
+  const copilotFixture = () => {
+    const pl: any = { ...createActorSnapshot({ id: 'player', name: 'Player', teamId: TEAM_PLAYER_ID, kind: 'human', role: 'leader', character: CHARACTERS[0] }), currentRegion: 'QLD', money: 1000, actionsUsedThisTurn: 0, inventory: [] };
+    const ai: any = createActorSnapshot({ id: 'ai', name: 'Rival', teamId: TEAM_OPPONENT_ID, kind: 'ai', role: 'leader', character: CHARACTERS[1] });
+    const gs: any = { ...JSON.parse(JSON.stringify(initialGameState)), gameMode: 'game', selectedMode: 'ai', currentTurn: 'player', currentActorId: 'player' };
+    return { pl, ai, gs, ctx: createCoPilotRuntimeContext(pl, gs, settings, null, { player: pl, ai }, ai, {}) };
+  };
+  check('ru_copilot_trade_candidate', 'Co-Pilot buy candidate names a real local resource and the rules\' AP cost (was the category "minerals" at 1 AP)', () => {
+    const { ctx } = copilotFixture();
+    const buy = (generateCoPilotPlayerActionCandidates(ctx).candidates || []).find((c: any) => c.actionType === 'buy_market');
+    if (!buy) return 'no buy candidate';
+    const res = String(buy.parameters?.resource || '');
+    return (Boolean(RESOURCE_CATEGORIES[res]) && buy.apCost === Math.max(0, getActionPointCost('buy_market', {}, settings) || 0)) || JSON.stringify(buy.parameters) + ' ap=' + buy.apCost;
+  });
+  check('ru_copilot_no_live_mutation', 'A failed Co-Pilot move never mutates the live player (it used to cost an action for nothing)', () => {
+    const { pl, ctx } = copilotFixture();
+    const before = JSON.stringify({ used: pl.actionsUsedThisTurn, money: pl.money, inv: pl.inventory });
+    const r = executeCoPilotActionIntent(ctx, { actionType: 'buy_market', actorId: 'player', parameters: { item: 'not_a_resource', quantity: 1 }, costEstimate: 100, expectedAPDelta: -1, expectedCashDelta: -100 }, { forceExecution: true });
+    const after = JSON.stringify({ used: pl.actionsUsedThisTurn, money: pl.money, inv: pl.inventory });
+    return (before === after && r.executionResult.success === false) || `${before} -> ${after} success=${r.executionResult.success}`;
+  });
+  check('ru_download_never_throws', 'A blocked/unavailable file download reports false instead of throwing (replay finalisation)', () => {
+    const g: any = typeof URL !== 'undefined' ? URL : null;
+    const prev = g ? g.createObjectURL : undefined;
+    try {
+      if (g) g.createObjectURL = () => { throw new Error('blocked by sandbox'); };
+      return triggerJsonFileDownload('x.json', { a: 1 }) === false || 'returned true';
+    } finally { if (g) g.createObjectURL = prev; }
+  });
+  check('ru_diag_notify_deferred', 'Diagnostics listeners are notified after the current work, never synchronously (setState-in-render)', () => {
+    let calls = 0; const listener = () => { calls += 1; };
+    diag2Listeners.add(listener);
+    try { notifyDiag2Listeners(); notifyDiag2Listeners(); return calls === 0 || `called synchronously ${calls}x`; }
+    finally { diag2Listeners.delete(listener); }
+  });
+  check('ru_households_whatif_live_inputs', 'Households what-if runs on live inputs (no explicit regions) — the Intelligence tab crash', () => {
+    const inputs = buildHouseholdEconomyInputs({ turn: 3, gameState: {}, gameSettings: settings });
+    const base = computeNationalHouseholdEconomy(inputs, null, null);
+    const r = simulateHouseholdEconomyWhatIf(inputs, base.persisted, { scenarioType: 'concentrate_industrial_expansion', targetRegionId: 'VIC', hasEnablingSkillsAndResearch: true });
+    return (inputs.regions === undefined && /VIC/.test(String(r.summary))) || 'unexpected';
+  });
+  check('ru_canonical_uses_injected_actor', 'The canonical reducer evaluates the injected live actor (not a default $1,000 stand-in) — human/team contract & expedition paths rely on it', () => {
+    const live: any = { ...JSON.parse(JSON.stringify(initialGameState)), gameMode: 'game' };
+    const real: any = { ...createActorSnapshot({ id: 'player', name: 'P', teamId: TEAM_PLAYER_ID, kind: 'human', role: 'leader', character: CHARACTERS[0] }), money: 123456, currentRegion: 'WA' };
+    const canon: any = canonicalStateFromLiveRuntime({ ...live, player: real, actorsById: { player: real } } as any);
+    const r = reduceGameAction({ ...live, gameSettings: settings, player: real, actorsById: { player: real } } as any, { type: 'work', actorId: 'player', parameters: {} } as any, { active: true, actorId: 'player' } as any);
+    const after: any = (r.nextState as any).actorsById.player;
+    return (canon.actorsById.player.money === 123456 && canon.actorsById.player.currentRegion === 'WA' && after.money === 123456 + 50) || `canon ${canon.actorsById.player.money}@${canon.actorsById.player.currentRegion} after ${after.money}`;
+  });
+  return results;
 }
 
 function AustraliaGame() {
@@ -183035,29 +183242,12 @@ function dispatchGameSettingsChange(
 
   const downloadSaveFile = useCallback((data: SaveGameData) => {
     const filename = generateSaveFileName(data);
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    return triggerJsonFileDownload(filename, data);
   }, [generateSaveFileName]);
 
   // RP2: mirrors downloadSaveFile's exact Blob+anchor download pattern for the replay file.
   const downloadReplayFile = useCallback((file: ReplayFile) => {
-    const filename = `replay_${file.matchId}.json`;
-    const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    return triggerJsonFileDownload(`replay_${file.matchId}.json`, file);
   }, []);
 
   // RP2: stamps the final match result onto the in-progress recording, computes its checksum (the
@@ -183112,13 +183302,17 @@ function dispatchGameSettingsChange(
     const checksum = computeReplayChecksum(finalized);
     const completed: ReplayFile = { ...finalized, checksum };
     replayRecordingRef.current = completed;
-    downloadReplayFile(completed);
+    // Hand the replay to the viewer first: a blocked/failed download used to throw here, so "Watch Replay"
+    // had nothing to show and the error escaped into the AI turn that ended the match.
     setLoadedReplayFile(cloneReplayFileImmutable(completed));
+    if (!downloadReplayFile(completed)) {
+      addNotification('Replay is ready to watch in this session (the file download was blocked).', 'warning', false, 'system');
+    }
     if (gameSettings.replayAutoOpenAtMatchEnd) {
       setShowReplayViewer(true);
       setReplayDashboardTab('watch');
     }
-  }, [actorsById, aiPlayer, downloadReplayFile, gameSettings, gameState, player, teamsById]);
+  }, [actorsById, addNotification, aiPlayer, downloadReplayFile, gameSettings, gameState, player, teamsById]);
 
   // RP3: opens the file picker for loading a replay file into the read-only Replay Viewer.
   const openReplayLoadDialog = useCallback(() => {
@@ -183220,7 +183414,7 @@ function dispatchGameSettingsChange(
     }
     try {
       const data = buildSaveData(descriptionOverride);
-      downloadSaveFile(data);
+      if (!downloadSaveFile(data)) throw new Error('The browser blocked the save-file download.');
       addNotification(`Game saved! Day ${data.gameState.day}, ${data.player.name}`, 'success');
     } catch (error) {
       console.error('Save failed', error);
@@ -187791,7 +187985,13 @@ function dispatchGameSettingsChange(
       reason,
       playerValue: playerProgress.stamps.length,
       aiValue: aiProgress.stamps.length,
-      decidingMetric: 'regions' as WinMetric
+      decidingMetric: 'regions' as WinMetric,
+      // Grand Tour has its own tie-break chain; the end screen shows the step that actually decided it
+      // (it used to read "Most Money · decided by Most Controlled Regions · 0 vs 0" for a net-worth win).
+      winLabel: 'Grand Tour race',
+      decidingLabel: labels[decidingIndex],
+      displayPlayerValue: String(playerValues[decidingIndex]),
+      displayAiValue: String(aiValues[decidingIndex])
     };
   }, [computeNetWorth, gameState.grandTourState]);
 
@@ -192682,7 +192882,8 @@ function dispatchGameSettingsChange(
         reason: 'Solo mode completed.',
         playerValue: getCompetitiveMetricValue(gameSettings.winCondition, { side: 'player', teamMode: false }),
         aiValue: 0,
-        decidingMetric: gameSettings.winCondition
+        decidingMetric: gameSettings.winCondition,
+        solo: true
       };
     }
     if (gameState.selectedMode === 'grand_tour') {
@@ -196882,12 +197083,15 @@ function dispatchGameSettingsChange(
                 expeditionTier: tier as 1 | 2 | 3
               };
               dispatchPlayer({ type: 'SET_ACTIVE_JOURNEY', payload: journey });
+              // Rival memory observes the player's moves exactly as it observes AI actors' (team path / travelActor).
+              commitMatchMemory({ actionType: 'travel', actorId: player.id || 'player', regionId: region, magnitude: cost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} departed toward ${terr?.name || region}.`, stableKey: `human-travel-${gameState.turnCounter}-${player.id || 'player'}-${region}-u${player.actionsUsedThisTurn || 0}` });
               updateUiState({ showTravelModal: false });
               const targetName = terr?.name || region;
               addNotification(`Departed on expedition to ${targetName} for $${cost}. Transit will take ${terr.multiTurnDuration} day(s).`, 'travel');
             } else {
               dispatchPlayer({ type: 'UPDATE_MONEY', payload: -cost });
               dispatchPlayer({ type: 'SET_REGION', payload: region });
+              commitMatchMemory({ actionType: 'travel', actorId: player.id || 'player', regionId: region, magnitude: cost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} traveled to ${(REGIONS[region] || EXTERNAL_TERRITORIES[region])?.name || region}.`, stableKey: `human-travel-${gameState.turnCounter}-${player.id || 'player'}-${region}-u${player.actionsUsedThisTurn || 0}` });
               if (isCommitted && terr) {
                 const duration = terr.multiTurnDuration || 1;
                 dispatchPlayer({ type: 'MERGE_STATE', payload: { committedStayTurnsLeft: duration } });
@@ -196945,7 +197149,7 @@ function dispatchGameSettingsChange(
       commitAuthorizedTravel,
       { region, cost }
     );
-  }, [player, gameSettings, calculateTravelCost, addNotification, showConfirmation, requestActionOverrideForAction, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
+  }, [commitMatchMemory, player, gameSettings, calculateTravelCost, addNotification, showConfirmation, requestActionOverrideForAction, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // Calculate dynamic max wager based on difficulty and level
   const calculateMaxWager = useCallback((challenge: any) => {
@@ -197058,6 +197262,7 @@ function dispatchGameSettingsChange(
           }
 
           const success = drawGameplayRandom('Combat') < successChance;
+          commitMatchMemory({ actionType: 'challenge', actorId: player.id || 'player', regionId: player.currentRegion, magnitude: wager, success, turn: gameState.turnCounter, summary: `${player.name || 'Player'} ${success ? 'won' : 'lost'} ${challenge.name}.`, stableKey: `human-challenge-${gameState.turnCounter}-${player.id || 'player'}-${challenge.name}-u${player.actionsUsedThisTurn || 0}` });
 
           if (success) {
             // V9.1: the payout arithmetic is the canonical computeChallengeRewardCore (shared with balance simulation).
@@ -197212,7 +197417,7 @@ function dispatchGameSettingsChange(
     } else {
       confirmChallenge();
     }
-  }, [player, gameSettings, calculateSuccessChance, addNotification, showConfirmation, requestActionOverrideForAction, updatePersonalRecords, activeSpecialAbility, getUnderdogBonus, getWealthState, applyGrandTourChallengeProgress, gameSettings.aiReplayRecordingEnabled, gameState.day, appendReplayCheckpoint, usedFreeChallengeThisTurn]);
+  }, [commitMatchMemory, player, gameSettings, calculateSuccessChance, addNotification, showConfirmation, requestActionOverrideForAction, updatePersonalRecords, activeSpecialAbility, getUnderdogBonus, getWealthState, applyGrandTourChallengeProgress, gameSettings.aiReplayRecordingEnabled, gameState.day, appendReplayCheckpoint, usedFreeChallengeThisTurn]);
 
   // Calculate regional demand bonus for selling resources
   const calculateRegionalBonus = useCallback((resource: string, region: string) => {
@@ -197774,6 +197979,7 @@ function dispatchGameSettingsChange(
       const successChance = 0.70 - sabotageResistance + attackerBonus;
       if (drawGameplayRandom('Sabotage') > successChance) {
         dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotage.cost });
+        commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotage.cost, success: false, turn: gameState.turnCounter, summary: `${player.name || 'Player'} attempted ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
         addNotification(`Sabotage attempt failed! ${targetActor.name}'s regional standing resisted the attempt.`, 'warning', true);
         if (sabotageApCost > 0) {
           dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: sabotageApCost, actionId: 'sabotage' } });
@@ -197786,12 +197992,13 @@ function dispatchGameSettingsChange(
       debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, sabotage.duration)
     }));
     dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotage.cost });
+    commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotage.cost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} used ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
     addNotification(`Sabotage used: ${sabotage.name}.`, 'warning', true);
     addNotification(`🤖 ${targetActor.name} is affected by ${sabotage.name}.`, 'ai', false);
     if (sabotageApCost > 0) {
       dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: sabotageApCost, actionId: 'sabotage' } });
     }
-  }, [gameSettings.sabotageEnabled, isCompetitiveMode, gameState.currentTurn, sabotageTargetId, primaryOpponentActor, getActorState, player.teamId, player.money, addNotification, updateActorState, incrementAction]);
+  }, [commitMatchMemory, gameSettings.sabotageEnabled, isCompetitiveMode, gameState.currentTurn, sabotageTargetId, primaryOpponentActor, getActorState, player.teamId, player.money, addNotification, updateActorState, incrementAction]);
 
   const retryFailedChallenge = useCallback(() => {
     if (!failedChallengeData) return;
@@ -197846,8 +198053,9 @@ function dispatchGameSettingsChange(
         v96Flow('TURN_OWNER', 'player → ai');
         dispatchGameState({ type: 'SET_TURN', payload: 'ai' });
       } else {
-        // Single player mode - advance day
-        advanceDay();
+        // Single player mode - advance day (latest advanceDay via ref: it is declared after this callback,
+        // so it cannot be a dependency, and the captured one could carry stale settings/state)
+        (advanceDayRef.current || advanceDay)();
       }
       
       updatePersonalRecords('money', player.money);
@@ -197869,7 +198077,7 @@ function dispatchGameSettingsChange(
     } else {
       confirmEndTurn();
     }
-  }, [player, gameState, addNotification, handleTurnTransition, isTeamMode, showConfirmation, updatePersonalRecords]);
+  }, [player, gameState, gameSettings, addNotification, handleTurnTransition, isTeamMode, showConfirmation, updatePersonalRecords]);
 
   // V6.7 Phase 3a: single entry point / performance safeguard for all Phase 3a state mutation
   // (plan generation/reevaluation, plan-driven auto-reservation). The early-return guard below is
@@ -199483,7 +199691,9 @@ function dispatchGameSettingsChange(
         addNotification(`Weather: ${newWeather} - ${WEATHER_EFFECTS[newWeather]?.description || ''}`, 'info', true);
       }
 
-      if (newDay >= gameSettings.totalDays) {
+      // The match ends after the last day has been played (Game Length: N days = N playable days);
+      // `>=` ended it the moment day N began, so the final day could never be played.
+      if (newDay > gameSettings.totalDays) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
         const outcome = compareCompetitiveMetricValues(gameSettings.winCondition, projectedTeamMetricValues);
         const winnerName = outcome.playerWon
@@ -199932,8 +200142,8 @@ function dispatchGameSettingsChange(
         }
       }
 
-	    // Check for game end - use configurable totalDays
-	    if (newDay >= gameSettings.totalDays) {
+	    // Check for game end - use configurable totalDays (ends after day N has been played, see team path).
+	    if (newDay > gameSettings.totalDays) {
 	      dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
 	      if (gameState.selectedMode === 'grand_tour') {
           const outcome = evaluateGrandTourOutcome(projectedPlayer as ActorState, projectedAi as ActorState, gameState.grandTourState);
@@ -200852,6 +201062,14 @@ function dispatchGameSettingsChange(
         break;
       case 'refinance_advanced_loan':
         if (typeof action.data?.loanId === 'string' && typeof action.data?.tierId === 'string') {
+          // Check the replacement loan is allowed BEFORE repaying: repay-then-fail left the old loan paid
+          // off with no new loan while the action reported failure.
+          const refinanceTier = LOAN_TIERS.find(t => t.id === action.data.tierId);
+          if (!refinanceTier || !isAdvancedLoansEnabledForActor(actor) || !gameSettings.loanRefinancingEnabled || (actor.level || 1) < refinanceTier.levelRequired
+            || !(actor.advancedLoans || []).some((l: any) => l.id === action.data.loanId)) {
+            actionSucceeded = false;
+            break;
+          }
           const repaid = repayAdvancedLoanForActor(actorId, action.data.loanId, false, { silent: true, suppressLedgerEvent: true });
           actionSucceeded = repaid
             ? takeAdvancedLoanForActor(actorId, action.data.tierId, false, undefined, { silent: false, suppressLedgerEvent: true })
@@ -200946,15 +201164,17 @@ function dispatchGameSettingsChange(
         break;
       }
       case 'work': {
-        const wage = action.data?.wage || action.data?.amount || 50;
+        // The wage is a fixed rule ($50 everywhere); a larger payload amount must not mint money.
+        const wage = Math.min(50, Math.max(0, Number(action.data?.wage || action.data?.amount) || 50));
         updateActorState(actorId, (prev: any) => ({ ...prev, money: (prev.money || 0) + wage }));
         dispatchAuthoritativeGameActivityLedgerEvent('action', { teamId: actor.teamId, actorId, actionType: 'work', summary: `${getActorDisplayName(actorId)} worked for $${wage}.` });
         actionSucceeded = true;
         break;
       }
       case 'double_or_nothing': {
-        const wager = action.data?.wager || action.data?.reward || 100;
-        const isWin = action.data?.isWin ?? (drawGameplayRandom('Challenges') >= 0.5);
+        // The outcome is always drawn (a payload isWin was a guaranteed win) and the stake is limited to cash held.
+        const wager = Math.min(Math.max(0, Number(action.data?.wager || action.data?.reward) || 100), Math.max(0, actor.money || 0));
+        const isWin = drawGameplayRandom('Challenges') >= 0.5;
         if (isWin) {
           updateActorState(actorId, (prev: any) => ({ ...prev, money: (prev.money || 0) + wager }));
         } else {
@@ -200977,15 +201197,9 @@ function dispatchGameSettingsChange(
       case 'acceptContract': {
         const act = action as unknown as Record<string, any>;
         const contractId = act.data?.contractId || act.parameters?.contractId;
-        // V9.1: the game-state reducer never handled these types (silent no-op reported as success).
-        // The AI now goes through the same canonical contract reducer as the human, with the same gates.
-        const res = contractId ? reduceGameAction({ ...(gameStateLiveRef.current as any), gameSettings } as any, { type: 'accept_regional_contract', actorId, parameters: { contractId } }, { active: true, operation: 'accept_regional_contract', actorId } as ActionExecutionContext) : null;
-        if (res?.success && res.nextState) {
-          dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
-          actionSucceeded = true;
-        } else {
-          actionSucceeded = false;
-        }
+        // V9.1 moved these onto the canonical contract reducer, but ran it on live state WITHOUT this actor
+        // (AI actors live outside gameState), so an AI could never accept or deliver. Same gates, real actor.
+        actionSucceeded = contractId ? runCanonicalTeamAction('accept_regional_contract', { contractId }) : false;
         break;
       }
       case 'progress_contract_objective':
@@ -200993,13 +201207,7 @@ function dispatchGameSettingsChange(
         const act = action as unknown as Record<string, any>;
         const contractId = act.data?.contractId || act.parameters?.contractId;
         // Progress is derived from real deliverables (resources in region, capital, infrastructure) — never a delta.
-        const res = contractId ? reduceGameAction(gameStateLiveRef.current as any, { type: 'deliver_contract_objectives', actorId, parameters: { contractId } }, { active: true, operation: 'deliver_contract_objectives', actorId } as ActionExecutionContext) : null;
-        if (res?.success && res.nextState) {
-          dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
-          actionSucceeded = true;
-        } else {
-          actionSucceeded = false;
-        }
+        actionSucceeded = contractId ? runCanonicalTeamAction('deliver_contract_objectives', { contractId }) : false;
         break;
       }
       case 'start_infrastructure_project':
@@ -205993,6 +206201,14 @@ function dispatchGameSettingsChange(
   // dedicated loop, since the outer performTeamAiTurn while loop already abandoned its local
   // actionBudget/actionsTaken state via `return` at the pause point) — this is the SAME fix
   // pattern the bugfix-round-1 override bug required, applied to the new Approval pause point.
+  // Approval is the human player's control over their OWN team. An opponent (or a team with no human, e.g.
+  // AI vs AI) must never pause for — or be vetoed by — the player's approval prompts / auto-approval rules;
+  // with approvals on, the enemy leader used to wait on an Approve/Reject prompt shown to the player.
+  const teamHasHumanApprover = (teamId?: string | null): boolean => Boolean(teamId) && getTeamActors(String(teamId)).some(a => a.kind === 'human');
+  const resolveApprovalRulesForActor = (actorForRules: ActorState, decisionForRules: any, day: number, ctx: { wager?: number; cost?: number }) =>
+    teamHasHumanApprover(actorForRules.teamId)
+      ? resolveAutomaticApprovalRules(actorForRules, decisionForRules, getEffectiveGameSettingsForTeam(actorForRules.teamId), day, ctx)
+      : ({ outcome: 'none', reason: 'No human approver on this team.' } as ReturnType<typeof resolveAutomaticApprovalRules>);
   const resumeAfterApprovalResolution = useCallback(async (
     actorId: string,
     control: ApprovalControlAction,
@@ -206149,7 +206365,7 @@ function dispatchGameSettingsChange(
         actor = getActorState(actorId);
         if (!actor) break;
         if (!skipApprovalCheckOnce) {
-          const autoResolution = resolveAutomaticApprovalRules(actor, decision, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost });
+          const autoResolution = resolveApprovalRulesForActor(actor, decision, gameState.day, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost });
           if (autoResolution.outcome === 'reject') {
             if (gameSettings.aiActionApprovalTransparencyEnabled) appendTeamAiTraceNote(actorId, `Auto-rejected: ${autoResolution.reason}`);
             recordRejectedProposalSignature(actorId, gameState.day, null, getDecisionSignature(decision));
@@ -206181,7 +206397,7 @@ function dispatchGameSettingsChange(
             highRiskThresholds: gameSettings.aiActionApprovalHighRiskThresholds,
             teammateOverrides: gameSettings.aiActionApprovalTeammateOverrides
           };
-          const needsPlayerApproval = autoResolution.outcome === 'none'
+          const needsPlayerApproval = autoResolution.outcome === 'none' && teamHasHumanApprover(actor.teamId)
             && needsApproval(actor, decision, policy, gameSettings, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost })
             && !alwaysApproveSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory);
           if (needsPlayerApproval) {
@@ -206322,7 +206538,7 @@ function dispatchGameSettingsChange(
         if (!actorForAction) break;
         const revalidated = tokenId ? redeemActionToken(actorForAction.teamId, actorId, decision, tokenId, isReservationHardBlocked) : true;
         tokenId = undefined;
-        const bonusApprovalAutoResolution = resolveAutomaticApprovalRules(actorForAction, decision, getEffectiveGameSettingsForTeam(actorForAction.teamId), gameState.day, { wager: decision.data?.wager });
+        const bonusApprovalAutoResolution = resolveApprovalRulesForActor(actorForAction, decision, gameState.day, { wager: decision.data?.wager });
         if (bonusApprovalAutoResolution.outcome === 'reject') {
           if (gameSettings.aiActionApprovalTransparencyEnabled) {
             appendTeamAiTraceNote(actorId, `Auto-rejected: ${bonusApprovalAutoResolution.reason}`);
@@ -206339,7 +206555,7 @@ function dispatchGameSettingsChange(
           highRiskThresholds: gameSettings.aiActionApprovalHighRiskThresholds,
           teammateOverrides: gameSettings.aiActionApprovalTeammateOverrides
         };
-        const bonusNeedsPlayerApproval = bonusApprovalAutoResolution.outcome === 'none'
+        const bonusNeedsPlayerApproval = bonusApprovalAutoResolution.outcome === 'none' && teamHasHumanApprover(actorForAction.teamId)
           && needsApproval(actorForAction, decision, bonusApprovalPolicy, gameSettings, { wager: decision.data?.wager })
           && !alwaysApproveSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory)
           && !alwaysRejectSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory);
@@ -207185,7 +207401,7 @@ function dispatchGameSettingsChange(
           }
         }
 
-        const approvalAutoResolution = resolveAutomaticApprovalRules(actor, decision, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day, {
+        const approvalAutoResolution = resolveApprovalRulesForActor(actor, decision, gameState.day, {
           wager: decision.data?.wager,
           cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined
         });
@@ -207214,7 +207430,7 @@ function dispatchGameSettingsChange(
           teammateOverrides: gameSettings.aiActionApprovalTeammateOverrides
         };
         const isSequenceSourcedDecision = Boolean(sequenceStepMatch && decision === sequenceStepMatch.decision);
-        const needsPlayerApproval = approvalAutoResolution.outcome === 'none'
+        const needsPlayerApproval = approvalAutoResolution.outcome === 'none' && teamHasHumanApprover(actor.teamId)
           && needsApproval(actor, decision, approvalPolicy, gameSettings, { wager: decision.data?.wager, cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined, isSequenceSourced: isSequenceSourcedDecision })
           && !alwaysApproveSimilarRef.current[actor.id]?.has(decision.type as TeamModeActionCategory);
         if (needsPlayerApproval) {
@@ -209085,6 +209301,37 @@ function dispatchGameSettingsChange(
 
   // MILESTONE 3 REMEDIATION: ACTION DISPATCH HANDLERS
 
+  // Human actions routed through the canonical reducer must run against the REAL player (player reducer) and
+  // rival: the live gameState carries no player, so the reducer used a default $1,000/QLD stand-in — contract,
+  // expedition and relic checks used the wrong cash/region/inventory, and their costs and rewards were written
+  // to that stand-in instead of the player. Only what the action changed is written back.
+  const runHumanCanonicalAction = (action: GameAction, execCtx: ActionExecutionContext): ActionTransitionResult => {
+    const live: any = gameStateLiveRef.current || gameState;
+    const human: any = playerRef.current || player;
+    const rival: any = aiPlayerRef.current;
+    const actorKey = String(action.actorId || human?.id || 'player');
+    const input: any = { ...live, gameSettings, player: human, aiPlayer: rival, actorsById: { ...(live.actorsById || {}), ...(rival ? { [String(rival.id || 'ai')]: rival } : {}), [actorKey]: human } };
+    const res = reduceGameAction(input, action, execCtx);
+    if (!res?.success || !res.nextState) return res;
+    const before: any = canonicalStateFromLiveRuntime(input);
+    const after: any = res.nextState;
+    const playerBefore: any = before.actorsById?.[actorKey] || {};
+    const playerAfter: any = after.actorsById?.[actorKey] || {};
+    const changed: Record<string, unknown> = {};
+    Object.keys(playerAfter).forEach(key => { if (JSON.stringify(playerAfter[key]) !== JSON.stringify(playerBefore[key])) changed[key] = playerAfter[key]; });
+    if (Object.keys(changed).length) {
+      playerRef.current = { ...human, ...changed };
+      dispatchPlayer({ type: 'MERGE_STATE', payload: changed });
+    }
+    const world: Record<string, unknown> = {};
+    Object.keys(after).forEach(key => {
+      if (['actorsById', 'player', 'aiPlayer', 'gameSettings', 'counters', 'deterministicCounters', 'match'].includes(key)) return;
+      if (JSON.stringify(after[key]) !== JSON.stringify(before[key])) world[key] = after[key];
+    });
+    if (Object.keys(world).length) dispatchGameState({ type: 'LOAD_STATE', payload: world });
+    return res;
+  };
+
   const handleAcceptContract = useCallback((contractId: string) => {
     if (v96BlockHumanAction('Accepting a contract')) return;
     const actorId = player.id || 'player';
@@ -209102,9 +209349,8 @@ function dispatchGameSettingsChange(
       item: contractId,
       parameters: { contractId }
     };
-    const res = reduceGameAction({ ...gameState, gameSettings } as any, action, execCtx);
+    const res = runHumanCanonicalAction(action, execCtx);
     if (res && res.success && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
       if (addNotification) {
         addNotification(`Accepted contract ${contractId}`, 'success', true);
       }
@@ -209122,9 +209368,8 @@ function dispatchGameSettingsChange(
     const actorId = player.id || 'player';
     const teamId = player.teamId || 'team_player';
     const before = listRegionalContracts(gameState).find((x: any) => x.id === contractId);
-    const res = reduceGameAction(gameState, { type: 'deliver_contract_objectives', actorId, teamId, item: contractId, parameters: { contractId } } as GameAction, { active: true, operation: 'deliver_contract_objectives', actorId, teamId });
+    const res = runHumanCanonicalAction({ type: 'deliver_contract_objectives', actorId, teamId, item: contractId, parameters: { contractId } } as GameAction, { active: true, operation: 'deliver_contract_objectives', actorId, teamId } as ActionExecutionContext);
     if (res && res.success && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
       const after = listRegionalContracts(res.nextState as any).find((x: any) => x.id === contractId);
       addNotification(after?.status === 'completed' ? `Contract complete: ${after.title || contractId}. Rewards credited.` : `Delivered to ${before?.title || contractId}.`, 'success', true);
     } else {
@@ -209151,9 +209396,8 @@ function dispatchGameSettingsChange(
       item: contractId,
       parameters: { contractId }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
+    const res = runHumanCanonicalAction(action, execCtx);
     if (res && res.success && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
       if (addNotification) {
         addNotification(`Successfully fulfilled regional contract! Rewards credited.`, 'success', true);
       }
@@ -209186,12 +209430,13 @@ function dispatchGameSettingsChange(
       investmentAmount: amount,
       parameters: { projectId, amount }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
-    if (res && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
+    const res = runHumanCanonicalAction(action, execCtx);
+    if (res && res.success && res.nextState) {
       if (addNotification) {
         addNotification(`Invested $${amount.toLocaleString()} into project ${projectId}`, 'success', true);
       }
+    } else if (addNotification) {
+      addNotification(`Could not invest $${amount.toLocaleString()} into project ${projectId} (check cash and project status).`, 'warning', true);
     }
   }, [gameState, player.id, player.teamId, addNotification]);
 
@@ -209213,9 +209458,8 @@ function dispatchGameSettingsChange(
       teamId,
       parameters: { targetId, riskChoice }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
-    if (res && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
+    const res = runHumanCanonicalAction(action, execCtx);
+    if (res && res.success && res.nextState) {
       if (addNotification) {
         addNotification(`Expedition team departed for ${target?.name || targetId} (Cost: $${prepCost.toLocaleString()})`, 'info', true);
       }
@@ -209239,10 +209483,7 @@ function dispatchGameSettingsChange(
       teamId,
       parameters: { expeditionId }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
-    if (res && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
-    }
+    runHumanCanonicalAction(action, execCtx);
   }, [gameState, player.id, player.teamId]);
 
   const handleResolveExpeditionBeatChoice = useCallback((expeditionId: string, choiceId: string) => {
@@ -209260,10 +209501,7 @@ function dispatchGameSettingsChange(
       teamId,
       parameters: { expeditionId, choiceId }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
-    if (res && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
-    }
+    runHumanCanonicalAction(action, execCtx);
   }, [gameState, player.id, player.teamId]);
 
   const handleEquipRelic = useCallback((relicId: string, slot: RelicSlot) => {
@@ -209281,12 +209519,13 @@ function dispatchGameSettingsChange(
       teamId,
       parameters: { relicId, slot }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
-    if (res && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
+    const res = runHumanCanonicalAction(action, execCtx);
+    if (res && res.success && res.nextState) {
       if (addNotification) {
         addNotification(`Equipped relic in ${slot} slot`, 'success', true);
       }
+    } else if (addNotification) {
+      addNotification('That relic could not be equipped.', 'warning', true);
     }
   }, [gameState, player.id, player.teamId, addNotification]);
 
@@ -228437,7 +228676,7 @@ function dispatchGameSettingsChange(
         label: 'End Turn',
         hotkey: 'Space',
         onClick: handleEndTurn,
-        disabled: !isPlayerTurn || gameState.day >= gameSettings.totalDays,
+        disabled: !isPlayerTurn || gameState.day > gameSettings.totalDays,
         className: `${themeStyles.button} text-white px-6 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center space-x-2`
       },
       contracts: {
@@ -239879,10 +240118,11 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	        <div className={`max-w-5xl w-full ${themeStyles.card} ${themeStyles.border} border rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6 v94-stagger`}>
 	          <V94OutcomeHero
 	            won={Boolean(debrief.playerWon)}
-	            winLabel={WIN_METRIC_LABELS[gameSettings.winCondition] || String(gameSettings.winCondition)}
-	            metricLabel={(WIN_METRIC_LABELS as Record<string, string>)[outcome?.decidingMetric] || String(outcome?.decidingMetric || gameSettings.winCondition)}
-	            you={formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.playerValue || 0))}
-	            rival={formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.aiValue || 0))}
+	            solo={Boolean(outcome?.solo)}
+	            winLabel={outcome?.winLabel || WIN_METRIC_LABELS[gameSettings.winCondition] || String(gameSettings.winCondition)}
+	            metricLabel={outcome?.decidingLabel || (WIN_METRIC_LABELS as Record<string, string>)[outcome?.decidingMetric] || String(outcome?.decidingMetric || gameSettings.winCondition)}
+	            you={outcome?.displayPlayerValue ?? formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.playerValue || 0))}
+	            rival={outcome?.displayAiValue ?? formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.aiValue || 0))}
 	            rivalName={String(aiPlayer?.name || 'Rival')}
 	            reason={String(outcome?.reason || debrief.summary || '')}
 	            turningPoints={[...(debrief.swingPoints || []).slice(0, 2).map(sp => `Turn ${sp.turn}: ${sp.description}`), ...((swrStateRef.current?.events.length || 0) > 0 ? buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).slice(0, 1) : [])]}
@@ -240483,7 +240723,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	    return (
 	      <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} flex items-center justify-center p-6`}>
 	        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-8 max-w-md w-full text-center ${themeStyles.shadow} v94-stagger`}>
-	          <V94OutcomeHero won={won} winLabel={WIN_METRIC_LABELS[gameSettings.winCondition] || String(gameSettings.winCondition)} metricLabel={outcomeMetricLabel || String(outcome.decidingMetric)} you={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.playerValue)} rival={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.aiValue)} rivalName={opponentSideLabel} reason={outcome.reason} turningPoints={[]} lesson={won ? null : 'Protect your cash reserve before the final days and pick one win lever to push early.'} />
+	          <V94OutcomeHero won={won} solo={Boolean(outcome.solo)} winLabel={outcome.winLabel || WIN_METRIC_LABELS[gameSettings.winCondition] || String(gameSettings.winCondition)} metricLabel={outcome.decidingLabel || outcomeMetricLabel || String(outcome.decidingMetric)} you={outcome.displayPlayerValue ?? formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.playerValue)} rival={outcome.displayAiValue ?? formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.aiValue)} rivalName={opponentSideLabel} reason={outcome.reason} turningPoints={[]} lesson={won ? null : 'Protect your cash reserve before the final days and pick one win lever to push early.'} />
 	          
 	          <div className="space-y-2 mb-6">
 	            <div className="text-sm opacity-75 mb-2">
@@ -240607,6 +240847,9 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
       {gameState.gameMode === "menu" && uiState.showCampaignSelect && renderCampaignSelect()}
       {gameState.gameMode === "game" && renderGame()}
       {gameState.gameMode === "end" && renderGameOver()}
+      {/* The replay dashboard lives inside renderGame(); the end screen's (and menu's) Watch Replay set the flag
+          with nothing rendering it, so it also renders here whenever the game screen is not mounted. */}
+      {gameState.gameMode !== "game" && renderReplayDashboard()}
       {renderSaveLoadModal()}
       {renderLoadPreviewModal()}
       {/* Milestone 5: UI Modals & Drawers */}
