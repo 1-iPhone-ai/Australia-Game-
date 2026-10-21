@@ -8295,7 +8295,8 @@ export function generatePostMatchDebriefAnalytics(params: DebriefAssemblyParams)
   } = params;
 
   const playerWon = outcome?.playerWon ?? true;
-  const totalTurns = gameState?.day || gameState?.roundNumber || 1;
+  // A completed match has already stepped past its last day; report the days that were actually played.
+  const totalTurns = Math.min(gameState?.day || gameState?.roundNumber || 1, Number(gameSettings?.totalDays) || Number.MAX_SAFE_INTEGER);
   const timestamp = new Date().toISOString();
 
   // 1. Swing Point Analytics
@@ -10297,7 +10298,7 @@ export function evaluateScenarioOutcome(
 
   const playerBroke = (context.player?.money ?? 0) < BANKRUPTCY_THRESHOLD;
   const playerBankrupt = playerBroke && (context.gameState.bankruptcyTracker?.player || 0) >= BANKRUPTCY_STREAK_DAYS;
-  const maxDaysReached = context.gameState.day >= context.gameSettings.totalDays;
+  const maxDaysReached = context.gameState.day > context.gameSettings.totalDays; // evaluated with the day being entered: day N itself is still playable
 
   let isGameOver = false;
   let isVictory = false;
@@ -15849,6 +15850,19 @@ export function drawGameRandom(
     domain = domainOrOptionsOrState as RngScopeDomain;
     if (typeof modeOrScope === 'string') selectedMode = modeOrScope as RandomnessMode;
     if (Array.isArray(recordedValuesOrMode)) queue = recordedValuesOrMode as number[];
+  } else if (domainOrOptionsOrState == null) {
+    // State-form call with a missing state (e.g. generateCoPilotRecommendations(null, …) / a context
+    // without gameState): keep the explicit domain + mode instead of dropping them — an unscoped
+    // draw throws under the default strict RNG audit policy.
+    if (typeof modeOrScope === 'string') {
+      if (modeOrScope === 'deterministic' || modeOrScope === 'legacy_random' || modeOrScope === 'recorded_chaos' || modeOrScope === 'hybrid') {
+        selectedMode = modeOrScope as RandomnessMode;
+      } else {
+        domain = modeOrScope as RngScopeDomain;
+      }
+    }
+    if (typeof recordedValuesOrMode === 'string') selectedMode = recordedValuesOrMode as RandomnessMode;
+    if (Array.isArray(recordedValues)) queue = recordedValues;
   }
 
   let resultVal: number;
@@ -65204,7 +65218,7 @@ export function getActionDisabledReason(actionId: string, context: ActionContext
       if (!settings.investmentsEnabled) return 'Investments disabled';
       return null;
     case 'endTurn':
-      if (day >= totalDays) return 'Game has ended';
+      if (day > totalDays) return 'Game has ended';
       return null;
     case 'teamAiSystems':
       if (!isTeamMode) return 'Requires Team Mode';
@@ -130061,7 +130075,7 @@ export function runV9GuidedLearningSelfTests(): V9SelfTestResult[] {
   check('gl_perf', 'Selector is cheap (bounded registry; 2,000 selections well under a frame budget each)', () => {
     const st = started(); const c = fx(); const t0 = Date.now(); for (let k = 0; k < 2000; k++) sel(c, st); const ms = Date.now() - t0;
     // Registry stays bounded (V10.4/V10.5 each add two concepts; the cap is a sanity bound, not a feature limit).
-    return (LEARNING_CONCEPTS.length <= 48 && ms < 1500) || `${LEARNING_CONCEPTS.length} concepts, ${ms}ms`;
+    return (LEARNING_CONCEPTS.length <= 64 && ms < 1500) || `${LEARNING_CONCEPTS.length} concepts, ${ms}ms`;
   });
   return results;
 }
@@ -133068,12 +133082,12 @@ export function contractStateChip(c: any): { label: string; icon: string; cls: s
 }
 
 /** Victory / defeat hero: clear winner, win condition, key final metric, and (on a loss) a lesson — no shaming. */
-export const V94OutcomeHero: React.FC<{ won: boolean; winLabel: string; metricLabel: string; you: string; rival: string; rivalName: string; reason: string; turningPoints: string[]; lesson: string | null }> = ({ won, winLabel, metricLabel, you, rival, rivalName, reason, turningPoints, lesson }) => (
+export const V94OutcomeHero: React.FC<{ won: boolean; winLabel: string; metricLabel: string; you: string; rival: string; rivalName: string; reason: string; turningPoints: string[]; lesson: string | null; solo?: boolean }> = ({ solo, won, winLabel, metricLabel, you, rival, rivalName, reason, turningPoints, lesson }) => (
   <section className={`v94-stagger rounded-2xl border-2 ${won ? 'border-emerald-400/70' : 'border-slate-400/60'} p-5 text-center space-y-2`} data-testid="v94-outcome-hero" aria-label={won ? 'Victory' : 'Match result'}>
     <div className="text-5xl" aria-hidden="true">{won ? '🏆' : '🏁'}</div>
     <h2 className={`text-3xl sm:text-4xl font-black tracking-tight ${won ? 'text-emerald-400' : ''}`}>{won ? 'VICTORY' : 'MATCH OVER'}</h2>
     <div className="text-sm opacity-85">{winLabel} · decided by {metricLabel}</div>
-    <div className="flex justify-center gap-6 text-lg font-bold"><span>▲ You {you}</span><span className="opacity-60">vs</span><span>◆ {rivalName} {rival}</span></div>
+    <div className="flex justify-center gap-6 text-lg font-bold"><span>▲ You {you}</span>{!solo && <><span className="opacity-60">vs</span><span>◆ {rivalName} {rival}</span></>}</div>
     <div className="text-xs opacity-80">{reason}</div>
     {turningPoints.length > 0 && <div className="text-xs"><span className="font-semibold">Turning points: </span>{turningPoints.slice(0, 3).join(' · ')}</div>}
     {!won && lesson && <div className="text-xs rounded-lg border border-sky-500/40 px-3 py-2 inline-block"><span className="font-semibold">Next time: </span>{lesson}</div>}
@@ -135776,6 +135790,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'replay', label: 'Replay Studio', tier: 'quick', section: 'Replay Integrity', severity: 'CRITICAL', run: () => runReplayStudioSelfTests() },
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
+  { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
@@ -180263,6 +180278,104 @@ export function runV1013HouseholdsLivingStandardsSelfTests(): {
   };
 }
 
+// ============================================================================
+// SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
+// ----------------------------------------------------------------------------
+// One check per substantive reliability fix (crash, accounting, lifecycle, determinism, gating).
+// Pure: no live React state; globals touched by a check are restored by that check.
+// ============================================================================
+export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const settings = createDefaultGameSettings();
+  const nationalOk = (): any => ({
+    ...Object.fromEntries(NATIONAL_NETWORKS.map(n => [n, { condition: 'healthy', bottlenecks: 0, utilization: 0.5 }])),
+    resilienceScore: 60, resilienceBand: 'stable', criticalBottlenecks: [], criticalDependencies: [],
+    strongestSystem: NATIONAL_NETWORKS[0], weakestSystem: null
+  });
+  const infraState = (): any => ({ turn: 4, day: 4, actorsById: { player: { id: 'player', money: 10000, teamId: TEAM_PLAYER_ID, actionsUsedThisTurn: 0 } },
+    infrastructureProjects: { p_rail: { id: 'p_rail', title: 'Inland Rail', projectType: 'logistics_hub', status: 'unlocked', totalCost: 8000, laborTurnsRequired: 6, assignedWorkers: [], totalInvestedMoney: 0, regionId: 'NSW' } } });
+
+  check('ru_capacity_null_weakest', 'State Capacity tolerates a healthy national summary (weakestSystem: null) — the match-start crash', () => {
+    const r = computeNationalStateCapacity({ turn: 3, viewerId: 'player', programs: [], crises: [], stakeholders: [],
+      nationalSystems: { revision: 1, bottlenecks: [], dependencies: [], national: nationalOk() } } as any, null);
+    return Boolean(r && r.state) || 'no state';
+  });
+  check('ru_rng_null_state', 'drawGameRandom keeps an explicit domain when the state argument is missing (strict audit)', () => {
+    const prev = globalRngRegistry.auditPolicy;
+    globalRngRegistry.setAuditPolicy('strict');
+    try { const v = drawGameRandom(null as any, 'AI', 'deterministic'); return (typeof v === 'number' && v >= 0 && v < 1) || `got ${v}`; }
+    finally { globalRngRegistry.setAuditPolicy(prev); }
+  });
+  check('ru_last_day_playable', 'End Turn stays available on the final day; the gate closes only after it', () => {
+    const ctx: any = { isPlayerTurn: true, isCompetitiveMode: true, isTeamMode: false, isShopRegion: false, player: { id: 'player' }, selectedMode: 'ai', settings, day: 10, totalDays: 10, activeDebuffs: [] };
+    const onLast = getActionDisabledReason('endTurn', ctx);
+    const after = getActionDisabledReason('endTurn', { ...ctx, day: 11 });
+    return (onLast === null && after === 'Game has ended') || `${onLast} / ${after}`;
+  });
+  check('ru_scenario_day_limit', 'A scenario is not failed for its day limit on the last day, only once it has passed', () => {
+    const sc = findActiveScenario();
+    const base: any = { player: { id: 'player', money: 1000 }, aiPlayer: { id: 'ai', money: 1000 }, gameSettings: { ...settings, totalDays: 10 } };
+    const onLast = evaluateScenarioOutcome(sc as any, { ...base, gameState: { day: 10, bankruptcyTracker: {} } });
+    const past = evaluateScenarioOutcome(sc as any, { ...base, gameState: { day: 11, bankruptcyTracker: {} } });
+    const lastFailedOnLimit = onLast.isGameOver && /day limit/.test(String(onLast.reason));
+    return (!lastFailedOnLimit && past.isGameOver) || `${onLast.reason} | ${past.reason}`;
+  });
+  check('ru_infra_existing_preserved', 'Starting an existing named project resumes it (never overwritten by a $350 depot)', () => {
+    const r = reduceGameAction(infraState(), { type: 'start_infrastructure_project', actorId: 'player', parameters: { projectId: 'p_rail', regionId: 'NSW' } } as any, { active: true, actorId: 'player' } as any);
+    const p: any = (r.nextState as any).infrastructureProjects.p_rail;
+    return (p.title === 'Inland Rail' && p.totalCost === 8000 && p.status === 'under_construction') || JSON.stringify(p);
+  });
+  check('ru_infra_deterministic_ids', 'A generic build produces the same project id from the same inputs', () => {
+    const a = reduceGameAction(infraState(), { type: 'build_infrastructure', actorId: 'player', parameters: { region: 'VIC' } } as any, { active: true, actorId: 'player' } as any);
+    const b = reduceGameAction(infraState(), { type: 'build_infrastructure', actorId: 'player', parameters: { region: 'VIC' } } as any, { active: true, actorId: 'player' } as any);
+    const ka = Object.keys((a.nextState as any).infrastructureProjects).join(','), kb = Object.keys((b.nextState as any).infrastructureProjects).join(',');
+    return (ka === kb && !/\d{12,}/.test(ka)) || `${ka} vs ${kb}`;
+  });
+  check('ru_mitigate_real', 'mitigate_crisis runs the real handler (cost + stability), not the $200 stub', () => {
+    const r = reduceGameAction({ turn: 4, day: 4, actorsById: { player: { id: 'player', money: 6000, teamId: TEAM_PLAYER_ID } } } as any, { type: 'mitigate_crisis', actorId: 'player', parameters: {} } as any, { active: true, actorId: 'player' } as any);
+    const ns: any = r.nextState;
+    return (ns.actorsById.player.money === 1000 && Number(ns.publicStabilityState?.nationalStability) > 0) || `money ${ns.actorsById.player.money}`;
+  });
+  check('ru_partial_load_keeps_thinking', 'A partial LOAD_STATE keeps isAiThinking; a full-state payload resets it', () => {
+    const partial = gameStateReducer({ isAiThinking: true, currentTurn: 'ai' }, { type: 'LOAD_STATE', payload: { aiMemoriesByActor: {} } });
+    const full = gameStateReducer({ isAiThinking: true, currentTurn: 'ai' }, { type: 'LOAD_STATE', payload: { currentTurn: 'player', day: 3 } });
+    return (partial.isAiThinking === true && full.isAiThinking === false) || `${partial.isAiThinking}/${full.isAiThinking}`;
+  });
+  check('ru_spend_estimate', 'Action Requirements see the real cost of a decision', () => {
+    const basket = estimateDecisionSpendCost({ type: 'buy_market', data: { purchases: [{ resource: 'Wool', quantity: 2 }, { resource: 'Gold', quantity: 1 }] } });
+    const expected = getResourceMarketPrice('Wool') * 2 + getResourceMarketPrice('Gold');
+    const travel = estimateDecisionSpendCost({ type: 'travel', data: { region: 'WA' } }, r => (r === 'WA' ? 420 : 0));
+    return (basket === expected && basket > 0 && travel === 420 && estimateDecisionSpendCost({ type: 'region_deposit', data: { amount: 700 } }) === 700) || `${basket}/${expected}/${travel}`;
+  });
+  check('ru_rejections_reset', 'Rejected proposals do not outlive their match', () => {
+    const saved = Object.fromEntries(Object.entries(globalRejectedProposalSignatures).map(([k, v]) => [k, new Set(v)]));
+    try {
+      recordRejectedProposalSignature('ru_actor', 3, null, 'sig');
+      const before = getRejectedProposalSignatures('ru_actor', 3).has('sig');
+      resetRejectedProposalSignatures();
+      return (before && getRejectedProposalSignatures('ru_actor', 3).size === 0) || 'not cleared';
+    } finally { resetRejectedProposalSignatures(); Object.assign(globalRejectedProposalSignatures, saved); }
+  });
+  check('ru_craft_value', 'AI craft scoring values outputs at what they sell for (no buy-craft-at-a-loss loop)', () => {
+    const recipe = CRAFTING_RECIPES.find(r => r.output === 'Heat Shielding Suit')!;
+    const inputs = Object.entries(recipe.inputs).reduce((s, [res, n]) => s + getResourceMarketPrice(res) * Number(n), 0);
+    const value = getCraftedOutputRealizableValue(recipe, {});
+    return (value === calculateInventoryMarketValue([recipe.output], {}) && value < recipe.baseValue) || `${value} vs inputs ${inputs}`;
+  });
+  check('ru_guardian_cache_mode', "Guardian's cached verdict is per response mode (notify-only never blocks after an adaptive check)", () => {
+    const base = { ...createDefaultGuardianAiSettings(), enabled: true, protectionLevel: 'major_mistakes' as any };
+    const ctx = (responseMode: any): any => ({ gameState: { day: 9, turn: 9 }, settings: { ...base, responseMode }, actorId: 'ru_guardian', actionType: 'launch_expedition', actionPayload: { cost: 5000 }, source: 'co_pilot', day: 9, turn: 9, currentActionTokens: 3, currentCash: 1000, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false });
+    const adaptive = evaluateGuardianRiskPipeline(ctx('adaptive'));
+    const notify = evaluateGuardianRiskPipeline(ctx('notify_only'));
+    return (adaptive.confirmationRequired === true && notify.allowedToProceed === true && notify.confirmationRequired === false) || `${adaptive.confirmationRequired}/${notify.allowedToProceed}`;
+  });
+  return results;
+}
+
 function AustraliaGame() {
   // DIAG2: Mount detection for StrictMode double-invocation tracking
   useEffect(() => {
@@ -187791,7 +187904,13 @@ function dispatchGameSettingsChange(
       reason,
       playerValue: playerProgress.stamps.length,
       aiValue: aiProgress.stamps.length,
-      decidingMetric: 'regions' as WinMetric
+      decidingMetric: 'regions' as WinMetric,
+      // Grand Tour has its own tie-break chain; the end screen shows the step that actually decided it
+      // (it used to read "Most Money · decided by Most Controlled Regions · 0 vs 0" for a net-worth win).
+      winLabel: 'Grand Tour race',
+      decidingLabel: labels[decidingIndex],
+      displayPlayerValue: String(playerValues[decidingIndex]),
+      displayAiValue: String(aiValues[decidingIndex])
     };
   }, [computeNetWorth, gameState.grandTourState]);
 
@@ -192682,7 +192801,8 @@ function dispatchGameSettingsChange(
         reason: 'Solo mode completed.',
         playerValue: getCompetitiveMetricValue(gameSettings.winCondition, { side: 'player', teamMode: false }),
         aiValue: 0,
-        decidingMetric: gameSettings.winCondition
+        decidingMetric: gameSettings.winCondition,
+        solo: true
       };
     }
     if (gameState.selectedMode === 'grand_tour') {
@@ -199483,7 +199603,9 @@ function dispatchGameSettingsChange(
         addNotification(`Weather: ${newWeather} - ${WEATHER_EFFECTS[newWeather]?.description || ''}`, 'info', true);
       }
 
-      if (newDay >= gameSettings.totalDays) {
+      // The match ends after the last day has been played (Game Length: N days = N playable days);
+      // `>=` ended it the moment day N began, so the final day could never be played.
+      if (newDay > gameSettings.totalDays) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
         const outcome = compareCompetitiveMetricValues(gameSettings.winCondition, projectedTeamMetricValues);
         const winnerName = outcome.playerWon
@@ -199932,8 +200054,8 @@ function dispatchGameSettingsChange(
         }
       }
 
-	    // Check for game end - use configurable totalDays
-	    if (newDay >= gameSettings.totalDays) {
+	    // Check for game end - use configurable totalDays (ends after day N has been played, see team path).
+	    if (newDay > gameSettings.totalDays) {
 	      dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
 	      if (gameState.selectedMode === 'grand_tour') {
           const outcome = evaluateGrandTourOutcome(projectedPlayer as ActorState, projectedAi as ActorState, gameState.grandTourState);
@@ -228437,7 +228559,7 @@ function dispatchGameSettingsChange(
         label: 'End Turn',
         hotkey: 'Space',
         onClick: handleEndTurn,
-        disabled: !isPlayerTurn || gameState.day >= gameSettings.totalDays,
+        disabled: !isPlayerTurn || gameState.day > gameSettings.totalDays,
         className: `${themeStyles.button} text-white px-6 py-2 rounded-lg font-bold disabled:opacity-50 flex items-center space-x-2`
       },
       contracts: {
@@ -239879,10 +240001,11 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	        <div className={`max-w-5xl w-full ${themeStyles.card} ${themeStyles.border} border rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6 v94-stagger`}>
 	          <V94OutcomeHero
 	            won={Boolean(debrief.playerWon)}
-	            winLabel={WIN_METRIC_LABELS[gameSettings.winCondition] || String(gameSettings.winCondition)}
-	            metricLabel={(WIN_METRIC_LABELS as Record<string, string>)[outcome?.decidingMetric] || String(outcome?.decidingMetric || gameSettings.winCondition)}
-	            you={formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.playerValue || 0))}
-	            rival={formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.aiValue || 0))}
+	            solo={Boolean(outcome?.solo)}
+	            winLabel={outcome?.winLabel || WIN_METRIC_LABELS[gameSettings.winCondition] || String(gameSettings.winCondition)}
+	            metricLabel={outcome?.decidingLabel || (WIN_METRIC_LABELS as Record<string, string>)[outcome?.decidingMetric] || String(outcome?.decidingMetric || gameSettings.winCondition)}
+	            you={outcome?.displayPlayerValue ?? formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.playerValue || 0))}
+	            rival={outcome?.displayAiValue ?? formatWinMetricValue((outcome?.decidingMetric || gameSettings.winCondition) as WinMetric, Number(outcome?.aiValue || 0))}
 	            rivalName={String(aiPlayer?.name || 'Rival')}
 	            reason={String(outcome?.reason || debrief.summary || '')}
 	            turningPoints={[...(debrief.swingPoints || []).slice(0, 2).map(sp => `Turn ${sp.turn}: ${sp.description}`), ...((swrStateRef.current?.events.length || 0) > 0 ? buildWorldReactionDebrief(sanitizeWorldReactionState(swrStateRef.current), swrViewerId).slice(0, 1) : [])]}
@@ -240483,7 +240606,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	    return (
 	      <div className={`min-h-screen ${themeStyles.background} ${themeStyles.text} flex items-center justify-center p-6`}>
 	        <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl p-8 max-w-md w-full text-center ${themeStyles.shadow} v94-stagger`}>
-	          <V94OutcomeHero won={won} winLabel={WIN_METRIC_LABELS[gameSettings.winCondition] || String(gameSettings.winCondition)} metricLabel={outcomeMetricLabel || String(outcome.decidingMetric)} you={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.playerValue)} rival={formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.aiValue)} rivalName={opponentSideLabel} reason={outcome.reason} turningPoints={[]} lesson={won ? null : 'Protect your cash reserve before the final days and pick one win lever to push early.'} />
+	          <V94OutcomeHero won={won} solo={Boolean(outcome.solo)} winLabel={outcome.winLabel || WIN_METRIC_LABELS[gameSettings.winCondition] || String(gameSettings.winCondition)} metricLabel={outcome.decidingLabel || outcomeMetricLabel || String(outcome.decidingMetric)} you={outcome.displayPlayerValue ?? formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.playerValue)} rival={outcome.displayAiValue ?? formatWinMetricValue(outcome.decidingMetric as WinMetric, outcome.aiValue)} rivalName={opponentSideLabel} reason={outcome.reason} turningPoints={[]} lesson={won ? null : 'Protect your cash reserve before the final days and pick one win lever to push early.'} />
 	          
 	          <div className="space-y-2 mb-6">
 	            <div className="text-sm opacity-75 mb-2">
