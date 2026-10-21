@@ -63379,7 +63379,7 @@ export const CoPilotLiveTurnIndicator: React.FC<CoPilotLiveTurnIndicatorProps> =
           <div className="w-10 h-10 rounded-full bg-indigo-500/20 border border-indigo-400/50 flex items-center justify-center text-xl shrink-0">▶</div>
           <div>
             <span className="font-extrabold text-indigo-200 text-base">Co-Pilot Autonomous is armed</span>
-            <p className="text-xs text-slate-300 mt-1">Settings saved. Press Start Co-Pilot when you want it to take Adam’s turn.</p>
+            <p className="text-xs text-slate-300 mt-1">Settings saved. Press Start Co-Pilot when you want it to take your turn.</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
