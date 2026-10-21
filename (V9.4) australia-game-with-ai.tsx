@@ -28492,10 +28492,15 @@ export function gameStateReducer(state: any, action: any) {
       // value. Saves carry no transient turn-execution flags, which meant a
       // live `isAiThinking: true` survived a load and hung the game with no
       // recovery path. Normalise transient flags rather than inherit them.
+      // Partial payloads (e.g. { aiMemoriesByActor } after every AI action) must not clear it mid-turn; a
+      // full-state payload (has turn ownership) without the flag is normalised to false as before.
+      const payloadIsFullState = Boolean(action.payload && ('currentTurn' in action.payload || 'turnCounter' in action.payload));
       return {
         ...state,
         ...action.payload,
-        isAiThinking: Boolean(action.payload?.isAiThinking ?? false)
+        isAiThinking: action.payload && 'isAiThinking' in action.payload
+          ? Boolean(action.payload.isAiThinking)
+          : (payloadIsFullState ? false : Boolean(state.isAiThinking))
       };
     }
     default:
@@ -32878,6 +32883,37 @@ export function calculateActorOutstandingDebt(player: any): number {
   return Number.isFinite(totalDebt) ? Math.max(0, totalDebt) : 0;
 }
 
+/**
+ * What a decision will actually spend. Action Requirements' reserve checks read `context.cost`, but callers
+ * passed `data.purchases[0].cost` — a field purchase lines never had — so every reserve rule saw $0.
+ * Travel decisions carry only the destination, so the caller supplies the travel-cost resolver.
+ */
+export function estimateDecisionSpendCost(decision: any, travelCost?: (region: string) => number): number {
+  const d = decision?.data || {};
+  if (Array.isArray(d.purchases) && d.purchases.length > 0) {
+    return d.purchases.reduce((sum: number, entry: any) => sum + (typeof entry?.cost === 'number'
+      ? entry.cost
+      : getResourceMarketPrice(String(entry?.resource || '')) * Math.max(1, Math.floor(Number(entry?.quantity) || 0))), 0);
+  }
+  switch (decision?.type) {
+    case 'region_deposit':
+    case 'give_cash':
+    case 'support':
+    case 'contribute_treasury':
+      return Math.max(0, Number(d.amount) || 0);
+    case 'invest':
+      return REGIONAL_INVESTMENTS[d.region]?.cost || 0;
+    case 'buy_equipment':
+      return SHOP_ITEMS.find(item => item.id === d.itemId || item.name === d.itemId)?.cost || 0;
+    case 'sabotage':
+      return SABOTAGE_ACTIONS.find(item => item.id === d.sabotageId)?.cost || 0;
+    case 'travel':
+      return typeof d.cost === 'number' ? d.cost : (typeof d.region === 'string' && travelCost ? travelCost(d.region) : 0);
+    default:
+      return Math.max(0, Number(d.cost) || 0);
+  }
+}
+
 export const calculateNetWorth = (player: any, resourcePrices?: Record<string, number> | null): number => {
   if (!player) return 0;
   const money = typeof player.money === 'number' && Number.isFinite(player.money) ? player.money : 0;
@@ -37092,6 +37128,11 @@ export function recordRejectedProposalSignature(
     }
     globalRejectedProposalSignatures[actorId].add(sig);
   }
+}
+
+/** A new match / restart / load starts with no rejections (the store is module-level, so it outlived matches). */
+export function resetRejectedProposalSignatures(): void {
+  for (const k of Object.keys(globalRejectedProposalSignatures)) delete globalRejectedProposalSignatures[k];
 }
 
 export function clearRejectedProposalSignatures(actorId: string, turnNumber?: number | string): void {
@@ -45208,7 +45249,8 @@ export function evaluateGuardianRiskPipeline(
 
   // LRU CACHE CHECK (<0.01ms)
   const payloadHash = hashNormalizedPayload(context.actionPayload);
-  const cacheKey = `${context.actorId}:${context.turn}:${context.actionType}:${payloadHash}:${stateHashBefore}:${context.settings.protectionLevel}`;
+  // responseMode and source change the verdict (notify-only never confirms; auto_mode only stops criticals), so they key the cache too.
+  const cacheKey = `${context.actorId}:${context.turn}:${context.actionType}:${payloadHash}:${stateHashBefore}:${context.settings.protectionLevel}:${context.settings.responseMode}:${context.source}`;
 
   const cachedEntry = GUARDIAN_EVALUATION_CACHE.get(cacheKey);
   if (cachedEntry && cachedEntry.turn === context.turn) {
@@ -61680,7 +61722,8 @@ export function validateCoPilotActionPermissions(
 
       const evalResult = evaluateGuardianRiskPipeline(evalCtx);
 
-      if (evalResult.confirmationRequired || evalResult.highestSeverity === 'critical' || evalResult.highestSeverity === 'serious') {
+      // Guardian's own verdict already applies the player's protection level and response mode (notify-only never blocks).
+      if (evalResult.confirmationRequired || !evalResult.allowedToProceed) {
         const token = action?.guardianConfirmationToken;
         if (token) {
           const valRes = validateGuardianConfirmationToken({
@@ -72913,7 +72956,8 @@ export function runCoPilotAutonomousStep(input: CoPilotRuntimeStepInput): CoPilo
   // validateCoPilotActionPermissions reads the actor from the *state* (players / actorsById /
   // player). In team mode the reducer state carries none of those until the first commit syncs the
   // human in, so its cash read as $0 and every costed candidate failed the reserve check (0/3 AP).
-  const permissionState = syncHumanPlayerIntoGameState(gameState, player);
+  // gameSettings must ride along: the permission check's Guardian tier reads state.gameSettings and was skipped without it.
+  const permissionState = { ...syncHumanPlayerIntoGameState(gameState, player), gameSettings: input.gameSettings ?? gameState?.gameSettings };
 
   for (let attemptIdx = 0; attemptIdx < maxAttempts; attemptIdx++) {
     const candidate = candidateList[attemptIdx];
@@ -91787,13 +91831,14 @@ export const resolveSequenceStepCandidate = (
   candidates: ScoredTeamAiDecision[],
   actor: ActorState,
   mode: SequenceMode,
-  settings: GameSettingsState
+  settings: GameSettingsState,
+  currentDay?: number
 ): ScoredTeamAiDecision | null => {
   const mappedType = mapSequenceStepToActionType(step);
   if (mappedType === 'end_turn') {
     return { type: 'end_turn', description: step.actionCategory === 'wait' ? 'Sequence: wait (ends turn)' : 'Sequence: end turn', data: {}, score: 0, plan: {} as ActorAiPlan };
   }
-  const persistentRejectedSigs = typeof getRejectedProposalSignatures === 'function' ? getRejectedProposalSignatures(actor.id, settings.totalDays) : new Set<string>();
+  const persistentRejectedSigs = typeof getRejectedProposalSignatures === 'function' ? getRejectedProposalSignatures(actor.id, currentDay) : new Set<string>();
   const unrejectedCandidates = candidates.filter(c => {
     const sig = typeof getDecisionSignature === 'function' ? getDecisionSignature(c) : ((c as any).signature || (c as any).id || JSON.stringify(c));
     return !persistentRejectedSigs.has(sig);
@@ -157766,6 +157811,9 @@ export const WORKFORCE_DEPTH_LABELS: Record<WorkforceDepthBand, string> = {
   world_class: 'World-Class'
 };
 
+/** The band colour maps hold hex strings; UI surfaces read { bg, text, border } (undefined before → unstyled). */
+const workforceBandStyle = (hex: string): { bg: string; text: string; border: string } => ({ bg: `${hex}26`, text: hex, border: `${hex}80` });
+
 export const WORKFORCE_DEPTH_COLORS: Record<WorkforceDepthBand, string> = {
   limited: '#94a3b8',
   developing: '#60a5fa',
@@ -161163,8 +161211,8 @@ export const WorkforcePlayCard: React.FC<{
   onOpenInspector?: () => void;
   devMode?: boolean;
 }> = ({ workforce, onOpenCenter, onOpenInspector, devMode }) => {
-  const pStyle = WORKFORCE_PRESSURE_COLORS[workforce.nationalPressureBand];
-  const dStyle = WORKFORCE_DEPTH_COLORS[workforce.nationalDepthBand];
+  const pStyle = workforceBandStyle(WORKFORCE_PRESSURE_COLORS[workforce.nationalPressureBand]);
+  const dStyle = workforceBandStyle(WORKFORCE_DEPTH_COLORS[workforce.nationalDepthBand]);
 
   return (
     <div
@@ -161286,8 +161334,8 @@ export const WorkforcePlayCard: React.FC<{
 export const RegionWorkforcePanel: React.FC<{
   region: RegionalWorkforceProfile;
 }> = ({ region }) => {
-  const pStyle = WORKFORCE_PRESSURE_COLORS[region.pressureBand];
-  const dStyle = WORKFORCE_DEPTH_COLORS[region.depthBand];
+  const pStyle = workforceBandStyle(WORKFORCE_PRESSURE_COLORS[region.pressureBand]);
+  const dStyle = workforceBandStyle(WORKFORCE_DEPTH_COLORS[region.depthBand]);
 
   return (
     <div
@@ -161351,8 +161399,8 @@ export const WorkforceHumanCapitalCenter: React.FC<{
     [workforce, askQuery]
   );
 
-  const pStyle = WORKFORCE_PRESSURE_COLORS[workforce.nationalPressureBand];
-  const dStyle = WORKFORCE_DEPTH_COLORS[workforce.nationalDepthBand];
+  const pStyle = workforceBandStyle(WORKFORCE_PRESSURE_COLORS[workforce.nationalPressureBand]);
+  const dStyle = workforceBandStyle(WORKFORCE_DEPTH_COLORS[workforce.nationalDepthBand]);
 
   return (
     <div
@@ -161572,8 +161620,8 @@ export const WorkforceHumanCapitalCenter: React.FC<{
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
                 {WORKFORCE_SKILL_DOMAINS.map(d => {
                   const prof = workforce.domains[d];
-                  const dpColor = WORKFORCE_PRESSURE_COLORS[prof.pressureBand];
-                  const ddColor = WORKFORCE_DEPTH_COLORS[prof.depthBand];
+                  const dpColor = workforceBandStyle(WORKFORCE_PRESSURE_COLORS[prof.pressureBand]);
+                  const ddColor = workforceBandStyle(WORKFORCE_DEPTH_COLORS[prof.depthBand]);
                   const isSel = selectedDomain === d;
                   return (
                     <div
@@ -187529,7 +187577,7 @@ function dispatchGameSettingsChange(
         if (!reg) return;
         const pType = String(proj?.projectType || (decision.type === 'invest' ? 'advanced_manufacturing' : 'logistics'));
         const personality: 'growth' | 'resilience' | 'aggressive' | 'balanced' = Number(profile?.aggressiveness ?? 0.5) >= 0.7 ? 'aggressive' : Number(profile?.riskTolerance ?? 0.5) <= 0.35 ? 'resilience' : Number(profile?.planningDepth ?? 2) >= 3 ? 'growth' : 'balanced';
-        const o = economicGeographyAiLocationScore(v108Eg, String(aiState?.id || 'ai'), { projectType: pType, regionId: reg }, { personality, fogOfWar: Boolean(gameSettings.fogOfWar), controllers: npInputsRef.current?.controllers || {}, cash: Number(aiState?.money || 0) });
+        const o = economicGeographyAiLocationScore(v108Eg, String(aiState?.id || 'ai'), { projectType: pType, regionId: reg }, { personality, fogOfWar: Boolean(gameSettings.fogOfWarEnabled), controllers: npInputsRef.current?.controllers || {}, cash: Number(aiState?.money || 0) });
         if (o.factor !== 0) decision.score *= 1 + o.factor;
       });
       const v107Np = npStateRef.current; const v107Ctrl: Record<string, string | null> = npInputsRef.current?.controllers || {};
@@ -188576,7 +188624,7 @@ function dispatchGameSettingsChange(
       success: true,
       turn: gameState.turnCounter,
       summary: action.description,
-      stableKey: `solo-${gameState.turnCounter}-${currentAi.id || 'ai'}-${action.type}-${action.data?.region || action.data?.targetActorId || ''}`
+      stableKey: `solo-${gameState.turnCounter}-${currentAi.id || 'ai'}-${action.type}-${action.data?.region || action.data?.targetActorId || ''}-u${currentAi.actionsUsedThisTurn || 0}-${action.data?.challenge?.name || action.data?.resource || action.data?.itemId || action.data?.recipeId || ''}`
     });
 
     // Wait for React state to settle before returning
@@ -189440,6 +189488,7 @@ function dispatchGameSettingsChange(
       }
       skipPersistentAbandonPromptRef.current = false;
       v95MatchEpochRef.current += 1;
+      resetRejectedProposalSignatures(); alwaysApproveSimilarRef.current = {}; alwaysRejectSimilarRef.current = {};
       soloAiTurnSessionTokenRef.current = null; soloAiClaimsRef.current = createSoloAiClaimRegistry(); soloAiRuntimeRef.current = null; setSoloAiPhase('idle');
       if (gameSettings && (gameSettings as any).deferredTransactions?.length) {
         flushDeferredTransactionsOnBoundary(gameSettings, 'next_match', (newSet) => {
@@ -189833,6 +189882,7 @@ function dispatchGameSettingsChange(
 
   const handleRestartGame = useCallback(() => {
     v95MatchEpochRef.current += 1;
+    resetRejectedProposalSignatures();
     soloAiTurnSessionTokenRef.current = null; soloAiClaimsRef.current = createSoloAiClaimRegistry(); soloAiRuntimeRef.current = null; setSoloAiPhase('idle');
     if (soloAiTurnTimeoutRef.current) {
       clearTimeout(soloAiTurnTimeoutRef.current);
@@ -189864,11 +189914,11 @@ function dispatchGameSettingsChange(
 
     const resetAi = createActorSnapshot({
       id: 'ai',
-      name: 'AI Opponent',
+      name: aiPlayerRef.current?.name || 'AI Opponent',
       teamId: TEAM_OPPONENT_ID,
       kind: 'ai',
       role: 'leader',
-      character: CHARACTERS[1]
+      character: CHARACTERS.find(c => c.name === aiPlayerRef.current?.character?.name) || CHARACTERS[1]
     });
     setAiPlayer(resetAi);
     aiPlayerRef.current = resetAi;
@@ -189977,6 +190027,8 @@ function dispatchGameSettingsChange(
       return false;
     }
     v95MatchEpochRef.current += 1; // invalidates deferred callbacks scheduled by the previous match
+    // The save's rejections replace (never merge into) the previous match's; standing approval rules are per match.
+    resetRejectedProposalSignatures(); alwaysApproveSimilarRef.current = {}; alwaysRejectSimilarRef.current = {};
     soloAiClaimsRef.current = createSoloAiClaimRegistry(); soloAiRuntimeRef.current = null; setSoloAiPhase('idle'); v96Flow('MATCH_LOADED', '');
     if (soloAiTurnTimeoutRef.current) {
       clearTimeout(soloAiTurnTimeoutRef.current);
@@ -194138,6 +194190,7 @@ function dispatchGameSettingsChange(
 
     const currentDeposits = sanitizeRegionDeposits(regionDepositsRef.current);
     const regionEntry = { ...(currentDeposits[regionCode] || {}) };
+    const depositBeforeForMemory = Math.floor(Number((regionEntry as any)[ownerKey]) || 0); // distinguishes repeated equal deposits
     const beforeSnapshot = getRegionControlSnapshot(regionEntry);
     const requiredToTake = getRequiredDepositToControl(currentDeposits, regionCode, ownerKey);
     const isDefending = beforeSnapshot.controllerId === ownerKey;
@@ -194245,7 +194298,7 @@ function dispatchGameSettingsChange(
         success: true,
         turn: gameState.turnCounter,
         summary: `${actorState.name} deposited $${amount} in ${REGIONS[regionCode].name}.`,
-        stableKey: `human-deposit-${gameState.turnCounter}-${actorId}-${regionCode}-${amount}`
+        stableKey: `human-deposit-${gameState.turnCounter}-${actorId}-${regionCode}-${amount}-from${depositBeforeForMemory}`
       });
     }
 
@@ -194531,7 +194584,7 @@ function dispatchGameSettingsChange(
         success: true,
         turn: gameState.turnCounter,
         summary: `${getActorDisplayName(fromActorId)} gave $${amount} to ${getActorDisplayName(toActorId)}.`,
-        stableKey: `human-aid-${gameState.turnCounter}-${fromActorId}-${toActorId}-${amount}`
+        stableKey: `human-aid-${gameState.turnCounter}-${fromActorId}-${toActorId}-${amount}-m${fromActor.money}`
       });
     }
     return true;
@@ -200738,7 +200791,16 @@ function dispatchGameSettingsChange(
         break;
       case 'buy_market': {
         const purchases = Array.isArray(action.data?.purchases) ? action.data.purchases : [];
-        actionSucceeded = purchases.every((entry: any) => buyResourceFromMarket(entry.resource, entry.quantity, actorId, { consumeAction: false, silent: true, reason: action.data?.reason }));
+        // Validate the whole basket first: buying line by line used to commit the earlier lines, then report
+        // the action as failed (money spent, inventory changed, no action counted) when a later line failed.
+        const basketTariff = calculateRegionalTariffRate(actorId, actor.currentRegion || 'NSW', gameState);
+        const basketCost = purchases.reduce((sum: number, entry: any) => sum + Math.round(getResourceMarketPrice(entry?.resource) * (1 + basketTariff)) * Math.max(1, Math.floor(Number(entry?.quantity) || 0)), 0);
+        const basketUnits = purchases.reduce((sum: number, entry: any) => sum + Math.max(1, Math.floor(Number(entry?.quantity) || 0)), 0);
+        const basketValid = purchases.length > 0
+          && purchases.every((entry: any) => entry && typeof entry.resource === 'string' && Boolean(RESOURCE_CATEGORIES[entry.resource]))
+          && getActorSpendableCash(actor, actor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) >= basketCost
+          && (actor.inventory?.length || 0) + basketUnits <= MAX_INVENTORY;
+        actionSucceeded = basketValid && purchases.every((entry: any) => buyResourceFromMarket(entry.resource, entry.quantity, actorId, { consumeAction: false, silent: true, reason: action.data?.reason }));
         break;
       }
       case 'region_deposit':
@@ -201266,7 +201328,7 @@ function dispatchGameSettingsChange(
         success: actionSucceeded,
         turn: gameState.turnCounter,
         summary: action.description,
-        stableKey: `team-${gameState.turnCounter}-${actorId}-${action.type}-${action.data?.region || action.data?.targetActorId || action.data?.sabotageId || ''}-${actionSucceeded ? 'ok' : 'fail'}`
+        stableKey: `team-${gameState.turnCounter}-${actorId}-${action.type}-${action.data?.region || action.data?.targetActorId || action.data?.sabotageId || ''}-u${actor.actionsUsedThisTurn || 0}-${action.data?.challenge?.name || action.data?.resource || action.data?.itemId || action.data?.recipeId || action.data?.purchases?.map((p: any) => p?.resource).join('+') || ''}-${actionSucceeded ? 'ok' : 'fail'}`
       });
     }
 
@@ -202948,6 +203010,7 @@ function dispatchGameSettingsChange(
       const totalMissingUnits = missing.reduce((sum, entry) => sum + entry.quantity, 0);
       const totalCost = missing.reduce((sum, entry) => sum + (getResourceMarketPrice(entry.resource) * entry.quantity), 0);
       if (missing.length === 0 || totalMissingUnits > 3 || actor.money - totalCost < AI_SAFETY_BUFFER) return;
+      missing.forEach(entry => { (entry as any).cost = getResourceMarketPrice(entry.resource) * entry.quantity; });
       // Material purchases were the one ungated spend, so a Governor-"protected" AI still spent below its
       // reserve on materials. Gate them like the other capital spends (investment category).
       const marketException = findActiveGovernorException(actor.id, 'investment', totalCost);
@@ -204379,7 +204442,6 @@ function dispatchGameSettingsChange(
   // V6.9 Phase F3: per-actor-per-turn count of 'propose_again' approval-rejection revisions,
   // capped by APPROVAL_MAX_REVISED_PROPOSALS so a bounded retry can never loop indefinitely.
   const approvalRevisionCountRef = useRef<Record<string, number>>({});
-  const persistentRejectedProposalSignaturesRef = useRef<Record<string, Set<string>>>({});
   // V6.9 Phase F4: per-actor "yield remainder of this turn to normal AI" flag (allow_normal_ai
   // fallback) and per-step retry counter (use_fallback_action/retry_next_action), both cleared in
   // finishTeamAiTurn alongside the other per-turn refs.
@@ -205009,7 +205071,7 @@ function dispatchGameSettingsChange(
     let hops = 0;
     while (step && hops <= SEQUENCE_MAX_JUMP_HOPS) {
       hops++;
-      const resolved = resolveSequenceStepCandidate(step, candidates, actor, sequence.mode, gameSettings);
+      const resolved = resolveSequenceStepCandidate(step, candidates, actor, sequence.mode, gameSettings, gameState.day);
       if (resolved && checkCondition(step, resolved)) {
         return { decision: resolved, stepId: step.id, sequenceId: sequence.id, wasFallback: false };
       }
@@ -205686,10 +205748,7 @@ function dispatchGameSettingsChange(
     // inconsistency with the 4 refs above (already cleared here) — consolidated so every per-turn
     // ref has one matching lifecycle, and the session itself never outlives the turn it belongs to.
     delete requirementRetryCountRef.current[actorId];
-    delete alwaysApproveSimilarRef.current[actorId];
-    delete alwaysRejectSimilarRef.current[actorId];
     delete approvalRevisionCountRef.current[actorId];
-    delete persistentRejectedProposalSignaturesRef.current[actorId];
     delete sequenceYieldedThisTurnRef.current[actorId];
     delete activeAiTurnSessionRef.current[actorId];
     if (!copilotLiveHandoff) {
@@ -206077,7 +206136,7 @@ function dispatchGameSettingsChange(
         if (editedFields?.cost !== undefined && Array.isArray((editedDecision as unknown as Record<string, any>).data.purchases) && (editedDecision as unknown as Record<string, any>).data.purchases[0]) {
           (editedDecision as unknown as Record<string, any>).data.purchases = [{ ...(editedDecision as unknown as Record<string, any>).data.purchases[0], cost: Math.max(0, Math.min(editedFields.cost, (editedDecision as unknown as Record<string, any>).data.purchases[0].cost)) }];
         }
-        const reqCheck = evaluateActionRequirements(actor, editedDecision, { wager: (editedDecision as unknown as Record<string, any>).data?.wager, cost: (editedDecision as unknown as Record<string, any>).data?.purchases?.[0]?.cost });
+        const reqCheck = evaluateActionRequirements(actor, editedDecision, { wager: (editedDecision as unknown as Record<string, any>).data?.wager, cost: estimateDecisionSpendCost(editedDecision, (region: string) => calculateActorTravelCost(actor.currentRegion, region, actor)) });
         if (!reqCheck.approved) {
           addNotification('Edit refused: still fails a hard requirement.', 'warning', true, 'system');
           decision = null;
@@ -206162,7 +206221,7 @@ function dispatchGameSettingsChange(
         const revalidated = pendingTokenId
           ? redeemActionToken(actor.teamId, actorId, decision, pendingTokenId, isReservationHardBlocked)
           : true;
-        const requirementsResult = evaluateActionRequirements(actor, decision, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost, actionsRemaining: actionBudget - actionsTaken });
+        const requirementsResult = evaluateActionRequirements(actor, decision, { wager: decision.data?.wager, cost: estimateDecisionSpendCost(decision, (region: string) => calculateActorTravelCost(actor.currentRegion, region, actor)), actionsRemaining: actionBudget - actionsTaken });
         if (requirementsResult.softViolations.length && gameSettings.actionRequirementsTransparencyEnabled) {
           requirementsResult.softViolations.forEach(v => appendTeamAiTraceNote(actorId, `Soft requirement not met: ${v} (action proceeded).`));
         }
@@ -206321,7 +206380,7 @@ function dispatchGameSettingsChange(
             if (bonusEditedFields?.cost !== undefined && Array.isArray((editedDecision as unknown as Record<string, any>).data.purchases) && (editedDecision as unknown as Record<string, any>).data.purchases[0]) {
               (editedDecision as unknown as Record<string, any>).data.purchases = [{ ...(editedDecision as unknown as Record<string, any>).data.purchases[0], cost: Math.max(0, Math.min(bonusEditedFields.cost, (editedDecision as unknown as Record<string, any>).data.purchases[0].cost)) }];
             }
-            const bonusReqCheck = evaluateActionRequirements(actorForAction, editedDecision, { wager: (editedDecision as unknown as Record<string, any>).data?.wager, cost: (editedDecision as unknown as Record<string, any>).data?.purchases?.[0]?.cost });
+            const bonusReqCheck = evaluateActionRequirements(actorForAction, editedDecision, { wager: (editedDecision as unknown as Record<string, any>).data?.wager, cost: estimateDecisionSpendCost(editedDecision, (region: string) => calculateActorTravelCost(actorForAction.currentRegion, region, actorForAction)) });
             if (!bonusReqCheck.approved) {
               addNotification('Edit refused: still fails a hard requirement.', 'warning', true, 'system');
               rejectedBonusSignatures.add(getDecisionSignature(decision));
@@ -206333,7 +206392,7 @@ function dispatchGameSettingsChange(
             decision = editedDecision;
           }
         }
-        const requirementsResult = evaluateActionRequirements(actorForAction, decision, { wager: decision.data?.wager });
+        const requirementsResult = evaluateActionRequirements(actorForAction, decision, { wager: decision.data?.wager, cost: estimateDecisionSpendCost(decision, (region: string) => calculateActorTravelCost(actorForAction.currentRegion, region, actorForAction)) });
         if (requirementsResult.softViolations.length && gameSettings.actionRequirementsTransparencyEnabled) {
           requirementsResult.softViolations.forEach(v => appendTeamAiTraceNote(actorId, `Soft requirement not met: ${v} (action proceeded).`));
         }
@@ -206700,8 +206759,6 @@ function dispatchGameSettingsChange(
       delete hasLentThisTurnRef.current[actor.id];
       delete initiativeOverrideDiscountRef.current[actor.id];
       delete requirementRetryCountRef.current[actor.id];
-      delete alwaysApproveSimilarRef.current[actor.id];
-      delete alwaysRejectSimilarRef.current[actor.id];
       delete approvalRevisionCountRef.current[actor.id];
       delete sequenceYieldedThisTurnRef.current[actor.id];
 
@@ -207195,7 +207252,7 @@ function dispatchGameSettingsChange(
           ? redeemActionToken(actor.teamId, actor.id, decision, pendingTokenId, isReservationHardBlocked)
           : true;
 
-        const requirementsResult = evaluateActionRequirements(actor, decision, { wager: decision.data?.wager, cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined, actionsRemaining: actionBudget - actionsTaken });
+        const requirementsResult = evaluateActionRequirements(actor, decision, { wager: decision.data?.wager, cost: estimateDecisionSpendCost(decision, (region: string) => calculateActorTravelCost(actor.currentRegion, region, actor)), actionsRemaining: actionBudget - actionsTaken });
         if (requirementsResult.softViolations.length && gameSettings.actionRequirementsTransparencyEnabled) {
           requirementsResult.softViolations.forEach(v => appendTeamAiTraceNote(actor.id, `Soft requirement not met: ${v} (action proceeded).`));
         }
@@ -212418,10 +212475,10 @@ function dispatchGameSettingsChange(
       deposits: gameState.regionDeposits as any,
       standing: gameState.standingPerActor as any,
       viewerId: npViewerId,
-      fogOfWar: Boolean(gameSettings.fogOfWar),
+      fogOfWar: Boolean(gameSettings.fogOfWarEnabled),
       strategy
     });
-  }, [egEnabled, nsState, lrInputs.turn, lrState, scState, inState, mpEnabled, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, rfState, gameState.infrastructureProjects, gameState.regionalContracts, npControllers, gameState.regionDeposits, gameState.standingPerActor, npViewerId, gameSettings.fogOfWar, npStrategyKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [egEnabled, nsState, lrInputs.turn, lrState, scState, inState, mpEnabled, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, rfState, gameState.infrastructureProjects, gameState.regionalContracts, npControllers, gameState.regionDeposits, gameState.standingPerActor, npViewerId, gameSettings.fogOfWarEnabled, npStrategyKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const egInputsRef = useRef<EconomicGeographyInputs | null>(egInputs); egInputsRef.current = egInputs;
   const egHash = useMemo(() => (egInputs ? economicGeographyInputHash(egInputs) : ''), [egInputs]);
   const egState = useMemo<EconomicGeographyState | null>(() => (egInputs ? computeEconomicGeography(egInputs, egPersistedRef.current).state : null),
