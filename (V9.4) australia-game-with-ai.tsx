@@ -8959,6 +8959,16 @@ const getResourceMarketPrice = (resource: string) => {
   return RESOURCE_MARKET_PRICES_BY_CATEGORY[category] || 120;
 };
 
+/**
+ * What a crafted output is actually worth to its owner — the same price selling (sellActorResource) and
+ * net worth (calculateInventoryMarketValue) use. AI craft scoring used recipe.baseValue (e.g. $4,800 for a
+ * Heat Shielding Suit that sells for ~$110), so AIs bought materials and crafted at a loss every turn.
+ */
+const getCraftedOutputRealizableValue = (recipe: { output: string }, resourcePrices?: Record<string, number> | null): number => {
+  const livePrice = resourcePrices?.[recipe.output];
+  return typeof livePrice === 'number' && isFinite(livePrice) ? livePrice : getResourceMarketPrice(recipe.output);
+};
+
 export function computeDailyMarketUpdate(
   newDay: number,
   currentPrices: Record<string, number>,
@@ -9245,7 +9255,7 @@ const isRecoverySafeCandidate = (
       const ingredientCost = Object.entries(recipe.inputs).reduce(
         (sum, [resource, count]) => sum + getResourceMarketPrice(resource) * Number(count), 0
       );
-      const sellValue = recipe.baseValue || getResourceMarketPrice(recipe.output);
+      const sellValue = getCraftedOutputRealizableValue(recipe);
       return sellValue > ingredientCost;
     }
     case 'challenge': {
@@ -11340,14 +11350,53 @@ export function reduceGameAction(
         }
 
         case 'start_infrastructure_project':
+        case 'startInfrastructureProject':
         case 'build_infrastructure': {
+          // Starting a named project resumes/creates THAT project (labor + capital funded later); only an
+          // unnamed request builds a new generic depot. (This used to be two cases with the same label — the
+          // second, projectId-aware one never ran, and an existing project was overwritten by a $350 depot.)
+          if ((action.type === 'start_infrastructure_project' || action.type === 'startInfrastructureProject') && (action.parameters?.projectId || action.item)) {
+            const projectId = action.parameters?.projectId || action.item;
+            const regionId = action.parameters?.regionId || action.targetRegion || actor?.currentRegion || 'NSW';
+            if (projectId) {
+              if (!nextState.infrastructureProjects) nextState.infrastructureProjects = {};
+              let project = nextState.infrastructureProjects[projectId];
+              if (!project) {
+                project = {
+                  id: projectId,
+                  projectType: (action.parameters?.projectType as InfrastructureProjectType) || 'tech_innovation_park',
+                  title: (action.parameters?.title as string) || `Infrastructure ${projectId}`,
+                  description: (action.parameters?.description as string) || 'Regional Infrastructure Project',
+                  regionId,
+                  stateCode: (regionId as 'NSW' | 'VIC' | 'QLD' | 'WA' | 'SA' | 'TAS' | 'NT' | 'ACT') || 'NSW',
+                  requiredDevTier: 1,
+                  totalCost: action.price || action.parameters?.cost || 5000,
+                  laborTurnsRequired: action.parameters?.laborTurnsRequired || 5,
+                  currentLaborTurnsCompleted: 0,
+                  totalInvestedMoney: 0,
+                  status: 'under_construction',
+                  assignedWorkers: [actorId],
+                  providedBonuses: [],
+                  maintenanceCostPerTurn: 50
+                };
+                nextState.infrastructureProjects[projectId] = project;
+              } else if (project.status === 'locked' || project.status === 'unlocked') {
+                project.status = 'under_construction';
+                if (!project.assignedWorkers.includes(actorId)) project.assignedWorkers.push(actorId);
+              }
+              actionExecuted = true;
+            }
+            break;
+          }
           const reg = action.targetRegion || action.parameters?.region || actor?.currentRegion || 'NSW';
           const type = (action.parameters?.infrastructureType || 'trade_depot') as InfrastructureProjectType;
           const cost = action.investmentAmount || action.price || action.parameters?.capitalAmount || action.parameters?.cost || 350;
           if (actor && actor.money >= cost) {
             actor.money -= cost;
             if (!nextState.infrastructureProjects) nextState.infrastructureProjects = {};
-            const projectId = action.parameters?.projectId || `infra_${reg}_${Date.now()}`;
+            // Deterministic id (replay / save-load must reproduce the same state from the same inputs).
+            const requestedId = action.parameters?.projectId;
+            const projectId = (requestedId && !nextState.infrastructureProjects[requestedId]) ? requestedId : `infra_${reg}_t${nextState.turn ?? 0}_${actorId}_${Object.keys(nextState.infrastructureProjects).length}`;
             const proj: InfrastructureProject = {
               id: projectId,
               title: `${type.replace('_', ' ').toUpperCase()} in ${reg}`,
@@ -11372,7 +11421,6 @@ export function reduceGameAction(
           break;
         }
 
-        case 'start_expedition':
         case 'launch_expedition': {
           const siteId = action.targetRegion || action.parameters?.siteId || action.parameters?.targetId || action.item || 'site_1';
           const cost = action.investmentAmount || action.price || action.parameters?.initialCost || action.parameters?.cost || 250;
@@ -11400,8 +11448,7 @@ export function reduceGameAction(
           break;
         }
 
-        case 'emergency_rescue':
-        case 'mitigate_crisis': {
+        case 'emergency_rescue': {
           const cost = action.investmentAmount || action.price || action.parameters?.cost || 200;
           if (actor && actor.money >= cost) {
             actor.money -= cost;
@@ -11902,40 +11949,6 @@ export function reduceGameAction(
           break;
         }
 
-        case 'start_infrastructure_project':
-        case 'startInfrastructureProject': {
-          const projectId = action.parameters?.projectId || action.item;
-          const regionId = action.parameters?.regionId || action.targetRegion || actor?.currentRegion || 'NSW';
-          if (projectId) {
-            if (!nextState.infrastructureProjects) nextState.infrastructureProjects = {};
-            let project = nextState.infrastructureProjects[projectId];
-            if (!project) {
-              project = {
-                id: projectId,
-                projectType: (action.parameters?.projectType as InfrastructureProjectType) || 'tech_innovation_park',
-                title: (action.parameters?.title as string) || `Infrastructure ${projectId}`,
-                description: (action.parameters?.description as string) || 'Regional Infrastructure Project',
-                regionId,
-                stateCode: (regionId as 'NSW' | 'VIC' | 'QLD' | 'WA' | 'SA' | 'TAS' | 'NT' | 'ACT') || 'NSW',
-                requiredDevTier: 1,
-                totalCost: action.price || action.parameters?.cost || 5000,
-                laborTurnsRequired: action.parameters?.laborTurnsRequired || 5,
-                currentLaborTurnsCompleted: 0,
-                totalInvestedMoney: 0,
-                status: 'under_construction',
-                assignedWorkers: [actorId],
-                providedBonuses: [],
-                maintenanceCostPerTurn: 50
-              };
-              nextState.infrastructureProjects[projectId] = project;
-            } else if (project.status === 'locked' || project.status === 'unlocked') {
-              project.status = 'under_construction';
-              if (!project.assignedWorkers.includes(actorId)) project.assignedWorkers.push(actorId);
-            }
-            actionExecuted = true;
-          }
-          break;
-        }
 
         case 'contribute_infrastructure_labor':
         case 'contributeInfrastructureLabor': {
@@ -28479,10 +28492,15 @@ export function gameStateReducer(state: any, action: any) {
       // value. Saves carry no transient turn-execution flags, which meant a
       // live `isAiThinking: true` survived a load and hung the game with no
       // recovery path. Normalise transient flags rather than inherit them.
+      // Partial payloads (e.g. { aiMemoriesByActor } after every AI action) must not clear it mid-turn; a
+      // full-state payload (has turn ownership) without the flag is normalised to false as before.
+      const payloadIsFullState = Boolean(action.payload && ('currentTurn' in action.payload || 'turnCounter' in action.payload));
       return {
         ...state,
         ...action.payload,
-        isAiThinking: Boolean(action.payload?.isAiThinking ?? false)
+        isAiThinking: action.payload && 'isAiThinking' in action.payload
+          ? Boolean(action.payload.isAiThinking)
+          : (payloadIsFullState ? false : Boolean(state.isAiThinking))
       };
     }
     default:
@@ -28708,7 +28726,7 @@ const computeDirectiveRequiredResources = (actor: { inventory?: string[] }): str
     const ingredientCost = Object.entries(recipe.inputs).reduce(
       (sum, [resource, count]) => sum + getResourceMarketPrice(resource) * Number(count), 0
     );
-    const sellValue = recipe.baseValue || getResourceMarketPrice(recipe.output);
+    const sellValue = getCraftedOutputRealizableValue(recipe);
     const profit = sellValue - ingredientCost;
     if (profit > bestProfit) {
       bestProfit = profit;
@@ -32863,6 +32881,37 @@ export function calculateActorOutstandingDebt(player: any): number {
     ? (simpleLoanDebt + advancedLoanDebt)
     : (typeof player.debt === 'number' && Number.isFinite(player.debt) ? player.debt : (typeof player.loans === 'number' && Number.isFinite(player.loans) ? player.loans : 0));
   return Number.isFinite(totalDebt) ? Math.max(0, totalDebt) : 0;
+}
+
+/**
+ * What a decision will actually spend. Action Requirements' reserve checks read `context.cost`, but callers
+ * passed `data.purchases[0].cost` — a field purchase lines never had — so every reserve rule saw $0.
+ * Travel decisions carry only the destination, so the caller supplies the travel-cost resolver.
+ */
+export function estimateDecisionSpendCost(decision: any, travelCost?: (region: string) => number): number {
+  const d = decision?.data || {};
+  if (Array.isArray(d.purchases) && d.purchases.length > 0) {
+    return d.purchases.reduce((sum: number, entry: any) => sum + (typeof entry?.cost === 'number'
+      ? entry.cost
+      : getResourceMarketPrice(String(entry?.resource || '')) * Math.max(1, Math.floor(Number(entry?.quantity) || 0))), 0);
+  }
+  switch (decision?.type) {
+    case 'region_deposit':
+    case 'give_cash':
+    case 'support':
+    case 'contribute_treasury':
+      return Math.max(0, Number(d.amount) || 0);
+    case 'invest':
+      return REGIONAL_INVESTMENTS[d.region]?.cost || 0;
+    case 'buy_equipment':
+      return SHOP_ITEMS.find(item => item.id === d.itemId || item.name === d.itemId)?.cost || 0;
+    case 'sabotage':
+      return SABOTAGE_ACTIONS.find(item => item.id === d.sabotageId)?.cost || 0;
+    case 'travel':
+      return typeof d.cost === 'number' ? d.cost : (typeof d.region === 'string' && travelCost ? travelCost(d.region) : 0);
+    default:
+      return Math.max(0, Number(d.cost) || 0);
+  }
 }
 
 export const calculateNetWorth = (player: any, resourcePrices?: Record<string, number> | null): number => {
@@ -37079,6 +37128,11 @@ export function recordRejectedProposalSignature(
     }
     globalRejectedProposalSignatures[actorId].add(sig);
   }
+}
+
+/** A new match / restart / load starts with no rejections (the store is module-level, so it outlived matches). */
+export function resetRejectedProposalSignatures(): void {
+  for (const k of Object.keys(globalRejectedProposalSignatures)) delete globalRejectedProposalSignatures[k];
 }
 
 export function clearRejectedProposalSignatures(actorId: string, turnNumber?: number | string): void {
@@ -45195,7 +45249,8 @@ export function evaluateGuardianRiskPipeline(
 
   // LRU CACHE CHECK (<0.01ms)
   const payloadHash = hashNormalizedPayload(context.actionPayload);
-  const cacheKey = `${context.actorId}:${context.turn}:${context.actionType}:${payloadHash}:${stateHashBefore}:${context.settings.protectionLevel}`;
+  // responseMode and source change the verdict (notify-only never confirms; auto_mode only stops criticals), so they key the cache too.
+  const cacheKey = `${context.actorId}:${context.turn}:${context.actionType}:${payloadHash}:${stateHashBefore}:${context.settings.protectionLevel}:${context.settings.responseMode}:${context.source}`;
 
   const cachedEntry = GUARDIAN_EVALUATION_CACHE.get(cacheKey);
   if (cachedEntry && cachedEntry.turn === context.turn) {
@@ -47894,7 +47949,7 @@ export function enumerateLegalActions(
     for (const [resource, count] of Object.entries(recipe.inputs || {})) {
       materialCost += (resourcePrices[resource] || 100) * Number(count);
     }
-    let score = (recipe.baseValue - materialCost) * weightMultiplier(ctx.weights, 'factor.resource');
+    let score = (getCraftedOutputRealizableValue(recipe, resourcePrices) - materialCost) * weightMultiplier(ctx.weights, 'factor.resource');
     if (fullness > 0.7) score *= 1.8;
     if ((actor.money || 0) < 500) score *= 0.5;
     if (score > 0) {
@@ -61667,7 +61722,8 @@ export function validateCoPilotActionPermissions(
 
       const evalResult = evaluateGuardianRiskPipeline(evalCtx);
 
-      if (evalResult.confirmationRequired || evalResult.highestSeverity === 'critical' || evalResult.highestSeverity === 'serious') {
+      // Guardian's own verdict already applies the player's protection level and response mode (notify-only never blocks).
+      if (evalResult.confirmationRequired || !evalResult.allowedToProceed) {
         const token = action?.guardianConfirmationToken;
         if (token) {
           const valRes = validateGuardianConfirmationToken({
@@ -72900,7 +72956,8 @@ export function runCoPilotAutonomousStep(input: CoPilotRuntimeStepInput): CoPilo
   // validateCoPilotActionPermissions reads the actor from the *state* (players / actorsById /
   // player). In team mode the reducer state carries none of those until the first commit syncs the
   // human in, so its cash read as $0 and every costed candidate failed the reserve check (0/3 AP).
-  const permissionState = syncHumanPlayerIntoGameState(gameState, player);
+  // gameSettings must ride along: the permission check's Guardian tier reads state.gameSettings and was skipped without it.
+  const permissionState = { ...syncHumanPlayerIntoGameState(gameState, player), gameSettings: input.gameSettings ?? gameState?.gameSettings };
 
   for (let attemptIdx = 0; attemptIdx < maxAttempts; attemptIdx++) {
     const candidate = candidateList[attemptIdx];
@@ -91774,13 +91831,14 @@ export const resolveSequenceStepCandidate = (
   candidates: ScoredTeamAiDecision[],
   actor: ActorState,
   mode: SequenceMode,
-  settings: GameSettingsState
+  settings: GameSettingsState,
+  currentDay?: number
 ): ScoredTeamAiDecision | null => {
   const mappedType = mapSequenceStepToActionType(step);
   if (mappedType === 'end_turn') {
     return { type: 'end_turn', description: step.actionCategory === 'wait' ? 'Sequence: wait (ends turn)' : 'Sequence: end turn', data: {}, score: 0, plan: {} as ActorAiPlan };
   }
-  const persistentRejectedSigs = typeof getRejectedProposalSignatures === 'function' ? getRejectedProposalSignatures(actor.id, settings.totalDays) : new Set<string>();
+  const persistentRejectedSigs = typeof getRejectedProposalSignatures === 'function' ? getRejectedProposalSignatures(actor.id, currentDay) : new Set<string>();
   const unrejectedCandidates = candidates.filter(c => {
     const sig = typeof getDecisionSignature === 'function' ? getDecisionSignature(c) : ((c as any).signature || (c as any).id || JSON.stringify(c));
     return !persistentRejectedSigs.has(sig);
@@ -157753,6 +157811,9 @@ export const WORKFORCE_DEPTH_LABELS: Record<WorkforceDepthBand, string> = {
   world_class: 'World-Class'
 };
 
+/** The band colour maps hold hex strings; UI surfaces read { bg, text, border } (undefined before → unstyled). */
+const workforceBandStyle = (hex: string): { bg: string; text: string; border: string } => ({ bg: `${hex}26`, text: hex, border: `${hex}80` });
+
 export const WORKFORCE_DEPTH_COLORS: Record<WorkforceDepthBand, string> = {
   limited: '#94a3b8',
   developing: '#60a5fa',
@@ -161150,8 +161211,8 @@ export const WorkforcePlayCard: React.FC<{
   onOpenInspector?: () => void;
   devMode?: boolean;
 }> = ({ workforce, onOpenCenter, onOpenInspector, devMode }) => {
-  const pStyle = WORKFORCE_PRESSURE_COLORS[workforce.nationalPressureBand];
-  const dStyle = WORKFORCE_DEPTH_COLORS[workforce.nationalDepthBand];
+  const pStyle = workforceBandStyle(WORKFORCE_PRESSURE_COLORS[workforce.nationalPressureBand]);
+  const dStyle = workforceBandStyle(WORKFORCE_DEPTH_COLORS[workforce.nationalDepthBand]);
 
   return (
     <div
@@ -161273,8 +161334,8 @@ export const WorkforcePlayCard: React.FC<{
 export const RegionWorkforcePanel: React.FC<{
   region: RegionalWorkforceProfile;
 }> = ({ region }) => {
-  const pStyle = WORKFORCE_PRESSURE_COLORS[region.pressureBand];
-  const dStyle = WORKFORCE_DEPTH_COLORS[region.depthBand];
+  const pStyle = workforceBandStyle(WORKFORCE_PRESSURE_COLORS[region.pressureBand]);
+  const dStyle = workforceBandStyle(WORKFORCE_DEPTH_COLORS[region.depthBand]);
 
   return (
     <div
@@ -161338,8 +161399,8 @@ export const WorkforceHumanCapitalCenter: React.FC<{
     [workforce, askQuery]
   );
 
-  const pStyle = WORKFORCE_PRESSURE_COLORS[workforce.nationalPressureBand];
-  const dStyle = WORKFORCE_DEPTH_COLORS[workforce.nationalDepthBand];
+  const pStyle = workforceBandStyle(WORKFORCE_PRESSURE_COLORS[workforce.nationalPressureBand]);
+  const dStyle = workforceBandStyle(WORKFORCE_DEPTH_COLORS[workforce.nationalDepthBand]);
 
   return (
     <div
@@ -161559,8 +161620,8 @@ export const WorkforceHumanCapitalCenter: React.FC<{
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
                 {WORKFORCE_SKILL_DOMAINS.map(d => {
                   const prof = workforce.domains[d];
-                  const dpColor = WORKFORCE_PRESSURE_COLORS[prof.pressureBand];
-                  const ddColor = WORKFORCE_DEPTH_COLORS[prof.depthBand];
+                  const dpColor = workforceBandStyle(WORKFORCE_PRESSURE_COLORS[prof.pressureBand]);
+                  const ddColor = workforceBandStyle(WORKFORCE_DEPTH_COLORS[prof.depthBand]);
                   const isSel = selectedDomain === d;
                   return (
                     <div
@@ -164066,7 +164127,8 @@ export function computeNationalStateCapacity(
 
   // V10.0 National Systems maturity
   if (inputs.nationalSystems?.national) {
-    const nets = Object.values(inputs.nationalSystems.national);
+    // The summary also carries scalar fields (resilienceScore, strongestSystem, weakestSystem: null…) — read only the networks.
+    const nets = NATIONAL_NETWORKS.map(k => inputs.nationalSystems!.national[k]).filter(Boolean);
     const healthyCount = nets.filter(n => n.condition === 'healthy' || n.condition === 'surplus').length;
     if (healthyCount >= 3) {
       const bonus = Math.min(6, healthyCount * 1.2);
@@ -186557,7 +186619,7 @@ function dispatchGameSettingsChange(
 
     // Estimated crafted item value (1.5-2x materials)
     const qualityBonus = aiState.character?.craftingBonus?.effect?.qualityBonus || 0;
-    const craftedValue = recipe.baseValue * (1 + qualityBonus);
+    const craftedValue = getCraftedOutputRealizableValue(recipe, resourcePrices) * (1 + qualityBonus);
     const profit = craftedValue - materialCost;
 
     // Base score on profitability
@@ -186578,7 +186640,7 @@ function dispatchGameSettingsChange(
     }
 
     // Higher value items are better
-    if (recipe.baseValue > 800) {
+    if (getCraftedOutputRealizableValue(recipe, resourcePrices) > 800) {
       score *= 1.3; // Luxury items
     }
 
@@ -186624,13 +186686,14 @@ function dispatchGameSettingsChange(
       if ((aiState.inventory as string[]).length + totalMissingUnits > MAX_INVENTORY) return;
       if (aiState.money - totalCost < AI_SAFETY_BUFFER) return;
 
-      let score = recipe.baseValue - totalCost;
+      const outputValue = getCraftedOutputRealizableValue(recipe, gameState.resourcePrices);
+      let score = outputValue - totalCost;
       if (score <= 50) return;
       if (totalMissingUnits <= 2) score *= 1.2;
       score *= WIN_METRIC_PROFILES[gameSettings.winCondition]?.weights.craftingScoreMultiplier ?? 1.0;
-      if (recipe.baseValue > 800) score *= 1.15;
+      if (outputValue > 800) score *= 1.15;
       if (WIN_METRIC_PROFILES[gameSettings.winCondition]?.goalKind === 'money' && score < (totalCost * 0.5)) return;
-      if (WIN_METRIC_PROFILES[gameSettings.winCondition]?.weights.craftingAssetBonus && recipe.baseValue > totalCost) score += Math.min(120, (recipe.baseValue - totalCost) * 0.08);
+      if (WIN_METRIC_PROFILES[gameSettings.winCondition]?.weights.craftingAssetBonus && outputValue > totalCost) score += Math.min(120, (outputValue - totalCost) * 0.08);
 
       if (!bestPlan || score > bestPlan.score) {
         bestPlan = {
@@ -186643,7 +186706,7 @@ function dispatchGameSettingsChange(
     });
 
     return bestPlan;
-  }, [gameSettings.winCondition]);
+  }, [gameSettings.winCondition, gameState.resourcePrices]);
 
   // AI Strategy: Evaluate special ability usage
   const evaluateSpecialAbility = useCallback((aiState: any,gameState: any): any => {
@@ -187514,7 +187577,7 @@ function dispatchGameSettingsChange(
         if (!reg) return;
         const pType = String(proj?.projectType || (decision.type === 'invest' ? 'advanced_manufacturing' : 'logistics'));
         const personality: 'growth' | 'resilience' | 'aggressive' | 'balanced' = Number(profile?.aggressiveness ?? 0.5) >= 0.7 ? 'aggressive' : Number(profile?.riskTolerance ?? 0.5) <= 0.35 ? 'resilience' : Number(profile?.planningDepth ?? 2) >= 3 ? 'growth' : 'balanced';
-        const o = economicGeographyAiLocationScore(v108Eg, String(aiState?.id || 'ai'), { projectType: pType, regionId: reg }, { personality, fogOfWar: Boolean(gameSettings.fogOfWar), controllers: npInputsRef.current?.controllers || {}, cash: Number(aiState?.money || 0) });
+        const o = economicGeographyAiLocationScore(v108Eg, String(aiState?.id || 'ai'), { projectType: pType, regionId: reg }, { personality, fogOfWar: Boolean(gameSettings.fogOfWarEnabled), controllers: npInputsRef.current?.controllers || {}, cash: Number(aiState?.money || 0) });
         if (o.factor !== 0) decision.score *= 1 + o.factor;
       });
       const v107Np = npStateRef.current; const v107Ctrl: Record<string, string | null> = npInputsRef.current?.controllers || {};
@@ -188516,6 +188579,11 @@ function dispatchGameSettingsChange(
           false
         );
         break;
+
+      default:
+        // No solo execution path exists for this type (e.g. buy_supplies / start_narrative_story_leg):
+        // report failure so the turn loop rejects it instead of spending an action on a no-op.
+        return false;
     }
 
     // Update action counter with atomic state update (handling Challenge Master & Efficiency Expert masteries)
@@ -188556,7 +188624,7 @@ function dispatchGameSettingsChange(
       success: true,
       turn: gameState.turnCounter,
       summary: action.description,
-      stableKey: `solo-${gameState.turnCounter}-${currentAi.id || 'ai'}-${action.type}-${action.data?.region || action.data?.targetActorId || ''}`
+      stableKey: `solo-${gameState.turnCounter}-${currentAi.id || 'ai'}-${action.type}-${action.data?.region || action.data?.targetActorId || ''}-u${currentAi.actionsUsedThisTurn || 0}-${action.data?.challenge?.name || action.data?.resource || action.data?.itemId || action.data?.recipeId || ''}`
     });
 
     // Wait for React state to settle before returning
@@ -189420,6 +189488,7 @@ function dispatchGameSettingsChange(
       }
       skipPersistentAbandonPromptRef.current = false;
       v95MatchEpochRef.current += 1;
+      resetRejectedProposalSignatures(); alwaysApproveSimilarRef.current = {}; alwaysRejectSimilarRef.current = {};
       soloAiTurnSessionTokenRef.current = null; soloAiClaimsRef.current = createSoloAiClaimRegistry(); soloAiRuntimeRef.current = null; setSoloAiPhase('idle');
       if (gameSettings && (gameSettings as any).deferredTransactions?.length) {
         flushDeferredTransactionsOnBoundary(gameSettings, 'next_match', (newSet) => {
@@ -189813,6 +189882,7 @@ function dispatchGameSettingsChange(
 
   const handleRestartGame = useCallback(() => {
     v95MatchEpochRef.current += 1;
+    resetRejectedProposalSignatures();
     soloAiTurnSessionTokenRef.current = null; soloAiClaimsRef.current = createSoloAiClaimRegistry(); soloAiRuntimeRef.current = null; setSoloAiPhase('idle');
     if (soloAiTurnTimeoutRef.current) {
       clearTimeout(soloAiTurnTimeoutRef.current);
@@ -189844,11 +189914,11 @@ function dispatchGameSettingsChange(
 
     const resetAi = createActorSnapshot({
       id: 'ai',
-      name: 'AI Opponent',
+      name: aiPlayerRef.current?.name || 'AI Opponent',
       teamId: TEAM_OPPONENT_ID,
       kind: 'ai',
       role: 'leader',
-      character: CHARACTERS[1]
+      character: CHARACTERS.find(c => c.name === aiPlayerRef.current?.character?.name) || CHARACTERS[1]
     });
     setAiPlayer(resetAi);
     aiPlayerRef.current = resetAi;
@@ -189957,6 +190027,8 @@ function dispatchGameSettingsChange(
       return false;
     }
     v95MatchEpochRef.current += 1; // invalidates deferred callbacks scheduled by the previous match
+    // The save's rejections replace (never merge into) the previous match's; standing approval rules are per match.
+    resetRejectedProposalSignatures(); alwaysApproveSimilarRef.current = {}; alwaysRejectSimilarRef.current = {};
     soloAiClaimsRef.current = createSoloAiClaimRegistry(); soloAiRuntimeRef.current = null; setSoloAiPhase('idle'); v96Flow('MATCH_LOADED', '');
     if (soloAiTurnTimeoutRef.current) {
       clearTimeout(soloAiTurnTimeoutRef.current);
@@ -191522,7 +191594,7 @@ function dispatchGameSettingsChange(
         inventory.filter(item => item === resource).length >= Number(requiredCount)
       );
       if (!canCraft) return;
-      const profit = recipe.baseValue - Object.entries(recipe.inputs).reduce((sum, [resource, count]) => {
+      const profit = getCraftedOutputRealizableValue(recipe, gameState.resourcePrices) - Object.entries(recipe.inputs).reduce((sum, [resource, count]) => {
         return sum + ((gameState.resourcePrices[resource] || 100) * Number(count));
       }, 0);
       const score = profit + (inventoryFullness * 125);
@@ -191543,7 +191615,7 @@ function dispatchGameSettingsChange(
       if (missing.length === 0 || totalMissingUnits > 3) return;
       const totalCost = missing.reduce((sum, entry) => sum + (getResourceMarketPrice(entry.resource) * entry.quantity), 0);
       if ((availableMoney - totalCost) < Math.max(150, Math.floor(AI_SAFETY_BUFFER * 0.5))) return;
-      const score = Math.max(0, recipe.baseValue - totalCost) + 55;
+      const score = Math.max(0, getCraftedOutputRealizableValue(recipe, gameState.resourcePrices) - totalCost) + 55;
       if (score > bestScore) {
         bestScore = score;
         bestLabel = `Buy for ${recipe.output}`;
@@ -194118,6 +194190,7 @@ function dispatchGameSettingsChange(
 
     const currentDeposits = sanitizeRegionDeposits(regionDepositsRef.current);
     const regionEntry = { ...(currentDeposits[regionCode] || {}) };
+    const depositBeforeForMemory = Math.floor(Number((regionEntry as any)[ownerKey]) || 0); // distinguishes repeated equal deposits
     const beforeSnapshot = getRegionControlSnapshot(regionEntry);
     const requiredToTake = getRequiredDepositToControl(currentDeposits, regionCode, ownerKey);
     const isDefending = beforeSnapshot.controllerId === ownerKey;
@@ -194225,7 +194298,7 @@ function dispatchGameSettingsChange(
         success: true,
         turn: gameState.turnCounter,
         summary: `${actorState.name} deposited $${amount} in ${REGIONS[regionCode].name}.`,
-        stableKey: `human-deposit-${gameState.turnCounter}-${actorId}-${regionCode}-${amount}`
+        stableKey: `human-deposit-${gameState.turnCounter}-${actorId}-${regionCode}-${amount}-from${depositBeforeForMemory}`
       });
     }
 
@@ -194511,7 +194584,7 @@ function dispatchGameSettingsChange(
         success: true,
         turn: gameState.turnCounter,
         summary: `${getActorDisplayName(fromActorId)} gave $${amount} to ${getActorDisplayName(toActorId)}.`,
-        stableKey: `human-aid-${gameState.turnCounter}-${fromActorId}-${toActorId}-${amount}`
+        stableKey: `human-aid-${gameState.turnCounter}-${fromActorId}-${toActorId}-${amount}-m${fromActor.money}`
       });
     }
     return true;
@@ -200285,23 +200358,24 @@ function dispatchGameSettingsChange(
     }));
     if (craftedSuccessfully) {
       const qualityBonus = actor.character?.craftingBonus?.effect?.qualityBonus || 0;
-      const effectiveValue = Math.round(recipe.baseValue * (1 + qualityBonus));
+      const outputValue = getCraftedOutputRealizableValue(recipe, gameState.resourcePrices);
+      const effectiveValue = Math.round(outputValue * (1 + qualityBonus));
       updateActorContribution(actorId, {
         craftedValue: (actor.contributionStats?.craftedValue || 0) + effectiveValue
       });
       appendTeammatePerformanceSample(actor.teamId, actorId, {
         turn: gameState.turnCounter,
         actionType: 'craft',
-        impact: 0.28 + (recipe.baseValue >= 750 ? 0.06 : 0)
+        impact: 0.28 + (outputValue >= 750 ? 0.06 : 0)
       });
       addNotification(`${getActorDisplayName(actorId)} crafted ${recipe.output}.`, actor.kind === 'human' ? 'success' : 'ai', false, actor.kind === 'human' ? 'crafting' : 'ai_trade');
       // V6.7 Phase 3c Team Initiative trigger #4: high-value crafting chains earn initiative.
-      if (recipe.baseValue >= 750) {
+      if (outputValue >= 750) {
         gainTeamInitiative(actor.teamId, 5, 'high_value_craft', actorId);
       }
     }
     return craftedSuccessfully;
-  }, [addNotification, aiRandom, appendTeammatePerformanceSample, gainTeamInitiative, gameState.turnCounter, getActorDisplayName, getActorState, updateActorContribution, updateActorState]);
+  }, [addNotification, aiRandom, appendTeammatePerformanceSample, gainTeamInitiative, gameState.resourcePrices, gameState.turnCounter, getActorDisplayName, getActorState, updateActorContribution, updateActorState]);
 
   // V6.7 Phase 3c: bonusSuccessChance is an optional pass-through (default 0 preserves old
   // behavior exactly) for the Team Initiative "challenge assistance" spend effect.
@@ -200650,6 +200724,7 @@ function dispatchGameSettingsChange(
   }, [updateTeamState, dispatchAuthoritativeGameActivityLedgerEvent, getActorDisplayName]);
 
   const executeTeamAiAction = useCallback(async (actorId: string, action: AIAction): Promise<boolean> => {
+    const epochAtExecution = v95MatchEpochRef.current;
     lastActorActionTimeRef.current = Date.now();
     const actor = getActorState(actorId);
     if (!actor) return false;
@@ -200659,6 +200734,35 @@ function dispatchGameSettingsChange(
     // a single chokepoint, computed unconditionally but only ever consumed when Sync 2.0 is on.
     const netWorthBeforeAction = calculateNetWorth(actor, gameState.resourcePrices);
     const stateBeforeSnapshot = captureGameStateSnapshot(actor, teamsByIdRef.current?.[actor.teamId]);
+    // These action types live only in the canonical reducer (reduceGameAction); dispatching them to the
+    // game-state reducer was a silent no-op that still reported success. Run them for real against the
+    // live state plus this actor, then write back only what changed (AP stays owned by this executor).
+    const runCanonicalTeamAction = (type: string, parameters: Record<string, unknown>): boolean => {
+      const live: any = gameStateLiveRef.current || gameState;
+      const current = getActorState(actorId);
+      if (!current) return false;
+      const input: any = { ...live, gameSettings, actorsById: { ...(live.actorsById || {}), [actorId]: current } };
+      const res = reduceGameAction(input, { type, actorId, teamId: current.teamId, parameters } as unknown as GameAction, { active: true, operation: type, actorId, teamId: current.teamId } as ActionExecutionContext);
+      if (!res?.success || !res.nextState) return false;
+      const before: any = canonicalStateFromLiveRuntime(input);
+      const after: any = res.nextState;
+      const beforeActor: any = before.actorsById?.[actorId] || {};
+      const afterActor: any = after.actorsById?.[actorId] || {};
+      const changed: Record<string, unknown> = {};
+      Object.keys(afterActor).forEach(key => {
+        if (key === 'actionsUsedThisTurn' || key === 'actionPoints') return;
+        if (JSON.stringify(afterActor[key]) !== JSON.stringify(beforeActor[key])) changed[key] = afterActor[key];
+      });
+      if (Object.keys(changed).length) updateActorState(actorId, (prev: any) => ({ ...prev, ...changed }));
+      // Only the world keys this action changed — never the canonical envelope (actors, settings snapshot, counters).
+      const worldChanges: Record<string, unknown> = {};
+      Object.keys(after).forEach(key => {
+        if (['actorsById', 'player', 'aiPlayer', 'gameSettings', 'counters', 'deterministicCounters', 'match'].includes(key)) return;
+        if (JSON.stringify(after[key]) !== JSON.stringify(before[key])) worldChanges[key] = after[key];
+      });
+      if (Object.keys(worldChanges).length) dispatchGameState({ type: 'LOAD_STATE', payload: worldChanges });
+      return true;
+    };
 
     switch (action.type) {
       case 'travel':
@@ -200687,7 +200791,16 @@ function dispatchGameSettingsChange(
         break;
       case 'buy_market': {
         const purchases = Array.isArray(action.data?.purchases) ? action.data.purchases : [];
-        actionSucceeded = purchases.every((entry: any) => buyResourceFromMarket(entry.resource, entry.quantity, actorId, { consumeAction: false, silent: true, reason: action.data?.reason }));
+        // Validate the whole basket first: buying line by line used to commit the earlier lines, then report
+        // the action as failed (money spent, inventory changed, no action counted) when a later line failed.
+        const basketTariff = calculateRegionalTariffRate(actorId, actor.currentRegion || 'NSW', gameState);
+        const basketCost = purchases.reduce((sum: number, entry: any) => sum + Math.round(getResourceMarketPrice(entry?.resource) * (1 + basketTariff)) * Math.max(1, Math.floor(Number(entry?.quantity) || 0)), 0);
+        const basketUnits = purchases.reduce((sum: number, entry: any) => sum + Math.max(1, Math.floor(Number(entry?.quantity) || 0)), 0);
+        const basketValid = purchases.length > 0
+          && purchases.every((entry: any) => entry && typeof entry.resource === 'string' && Boolean(RESOURCE_CATEGORIES[entry.resource]))
+          && getActorSpendableCash(actor, actor.kind === 'ai' && gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) >= basketCost
+          && (actor.inventory?.length || 0) + basketUnits <= MAX_INVENTORY;
+        actionSucceeded = basketValid && purchases.every((entry: any) => buyResourceFromMarket(entry.resource, entry.quantity, actorId, { consumeAction: false, silent: true, reason: action.data?.reason }));
         break;
       }
       case 'region_deposit':
@@ -200780,8 +200893,7 @@ function dispatchGameSettingsChange(
               riskChoiceOverride
             }
           };
-          dispatchGameState(actionToDispatch);
-          actionSucceeded = true;
+          actionSucceeded = runCanonicalTeamAction(actionToDispatch.type, actionToDispatch.parameters);
         } else {
           actionSucceeded = false;
         }
@@ -200793,16 +200905,12 @@ function dispatchGameSettingsChange(
         const campaignId = act.data?.campaignId || act.parameters?.campaignId || PRIMARY_3LEG_EXPEDITION_CAMPAIGN.id;
         const targetId = act.data?.targetId || act.parameters?.targetId;
         const riskChoice = act.data?.riskChoice || act.parameters?.riskChoice || 'balanced';
-        dispatchGameState({
-          type: 'start_narrative_story_leg',
-          parameters: {
+        actionSucceeded = runCanonicalTeamAction('start_narrative_story_leg', {
             actorId,
             campaignId,
             targetId,
             riskChoice
-          }
-        });
-        actionSucceeded = true;
+          });
         break;
       }
       case 'launch_expedition':
@@ -200811,15 +200919,11 @@ function dispatchGameSettingsChange(
         const targetId = act.data?.targetId || act.parameters?.targetId;
         const riskChoice = act.data?.riskChoice || act.parameters?.riskChoice || 'balanced';
         if (targetId) {
-          dispatchGameState({
-            type: 'launch_expedition',
-            parameters: {
+          actionSucceeded = runCanonicalTeamAction('start_expedition', {
               actorId,
               targetId,
               riskChoice
-            }
-          });
-          actionSucceeded = true;
+            });
         } else {
           actionSucceeded = false;
         }
@@ -200829,15 +200933,11 @@ function dispatchGameSettingsChange(
       case 'BUY_SUPPLIES': {
         const act = action as unknown as Record<string, any>;
         const amount = act.data?.amount || act.parameters?.amount || 20;
-        dispatchGameState({
-          type: 'buy_supplies',
-          parameters: {
+        actionSucceeded = runCanonicalTeamAction('buy_supplies', {
             actorId,
             amount,
             costPerUnit: act.data?.costPerUnit || act.parameters?.costPerUnit || 10
-          }
-        });
-        actionSucceeded = true;
+          });
         break;
       }
       case 'wait': {
@@ -200908,12 +201008,7 @@ function dispatchGameSettingsChange(
         const projectId = act.data?.projectId || act.parameters?.projectId;
         const regionId = act.data?.regionId || act.parameters?.regionId || actor.currentRegion;
         if (projectId) {
-          dispatchGameState({
-            type: 'start_infrastructure_project',
-            actorId,
-            parameters: { projectId, regionId }
-          });
-          actionSucceeded = true;
+          actionSucceeded = runCanonicalTeamAction('start_infrastructure_project', { projectId, regionId });
         } else {
           actionSucceeded = false;
         }
@@ -200925,12 +201020,7 @@ function dispatchGameSettingsChange(
         const projectId = act.data?.projectId || act.parameters?.projectId;
         const capitalAmount = act.data?.capitalAmount || act.parameters?.capitalAmount || 100;
         if (projectId) {
-          dispatchGameState({
-            type: 'contribute_infrastructure_labor',
-            actorId,
-            parameters: { projectId, capitalAmount }
-          });
-          actionSucceeded = true;
+          actionSucceeded = runCanonicalTeamAction('contribute_infrastructure_labor', { projectId, capitalAmount });
         } else {
           actionSucceeded = false;
         }
@@ -200942,12 +201032,7 @@ function dispatchGameSettingsChange(
         const relicId = act.data?.relicId || act.parameters?.relicId;
         const slot = act.data?.slot || act.parameters?.slot || 'accessory';
         if (relicId) {
-          dispatchGameState({
-            type: 'equip_relic',
-            actorId,
-            parameters: { relicId, slot }
-          });
-          actionSucceeded = true;
+          actionSucceeded = runCanonicalTeamAction('equip_relic', { relicId, slot });
         } else {
           actionSucceeded = false;
         }
@@ -200958,12 +201043,7 @@ function dispatchGameSettingsChange(
         const act = action as unknown as Record<string, any>;
         const relicId = act.data?.relicId || act.parameters?.relicId;
         if (relicId) {
-          dispatchGameState({
-            type: 'use_relic_ability',
-            actorId,
-            parameters: { relicId }
-          });
-          actionSucceeded = true;
+          actionSucceeded = runCanonicalTeamAction('use_relic_ability', { relicId });
         } else {
           actionSucceeded = false;
         }
@@ -200975,12 +201055,7 @@ function dispatchGameSettingsChange(
         const crisisId = act.data?.crisisId || act.parameters?.crisisId;
         const choiceId = act.data?.choiceId || act.parameters?.choiceId;
         if (crisisId && choiceId) {
-          dispatchGameState({
-            type: 'resolve_crisis_choice',
-            actorId,
-            parameters: { crisisId, choiceId }
-          });
-          actionSucceeded = true;
+          actionSucceeded = runCanonicalTeamAction('resolve_crisis_choice', { crisisId, choiceId });
         } else {
           actionSucceeded = false;
         }
@@ -200991,12 +201066,7 @@ function dispatchGameSettingsChange(
         const act = action as unknown as Record<string, any>;
         const crisisId = act.data?.crisisId || act.parameters?.crisisId;
         const cost = act.data?.cost || act.parameters?.cost || 5000;
-        dispatchGameState({
-          type: 'mitigate_crisis',
-          actorId,
-          parameters: { crisisId, cost }
-        });
-        actionSucceeded = true;
+        actionSucceeded = runCanonicalTeamAction('mitigate_crisis', { crisisId, cost });
         break;
       }
       case 'create_replay_branch':
@@ -201004,12 +201074,7 @@ function dispatchGameSettingsChange(
         const act = action as unknown as Record<string, any>;
         const parentBranchId = act.data?.parentBranchId || act.parameters?.parentBranchId || 'root';
         const branchName = act.data?.branchName || act.parameters?.branchName || 'AI Branch';
-        dispatchGameState({
-          type: 'create_replay_branch',
-          actorId,
-          parameters: { parentBranchId, branchName }
-        });
-        actionSucceeded = true;
+        actionSucceeded = runCanonicalTeamAction('create_replay_branch', { parentBranchId, branchName });
         break;
       }
       case 'switch_replay_branch':
@@ -201018,12 +201083,7 @@ function dispatchGameSettingsChange(
         const act = action as unknown as Record<string, any>;
         const branchId = act.data?.branchId || act.parameters?.branchId || act.data?.timelineId || act.parameters?.timelineId;
         if (branchId) {
-          dispatchGameState({
-            type: 'switch_replay_branch',
-            actorId,
-            parameters: { branchId }
-          });
-          actionSucceeded = true;
+          actionSucceeded = runCanonicalTeamAction('switch_replay_branch', { branchId });
         } else {
           actionSucceeded = false;
         }
@@ -201034,12 +201094,7 @@ function dispatchGameSettingsChange(
         const nodeId = act.data?.nodeId || act.parameters?.nodeId;
         const alternativeAction = act.data?.alternativeAction || act.parameters?.alternativeAction;
         if (nodeId && alternativeAction) {
-          dispatchGameState({
-            type: 'simulate_alternative_action',
-            actorId,
-            parameters: { nodeId, alternativeAction }
-          });
-          actionSucceeded = true;
+          actionSucceeded = runCanonicalTeamAction('simulate_alternative_action', { nodeId, alternativeAction });
         } else {
           actionSucceeded = false;
         }
@@ -201050,12 +201105,7 @@ function dispatchGameSettingsChange(
         const timelineAId = act.data?.timelineAId || act.parameters?.timelineAId;
         const timelineBId = act.data?.timelineBId || act.parameters?.timelineBId;
         if (timelineAId && timelineBId) {
-          dispatchGameState({
-            type: 'compute_branch_delta',
-            actorId,
-            parameters: { timelineAId, timelineBId }
-          });
-          actionSucceeded = true;
+          actionSucceeded = runCanonicalTeamAction('compute_branch_delta', { timelineAId, timelineBId });
         } else {
           actionSucceeded = false;
         }
@@ -201065,12 +201115,7 @@ function dispatchGameSettingsChange(
         const act = action as unknown as Record<string, any>;
         const branchId = act.data?.branchId || act.parameters?.branchId;
         if (branchId) {
-          dispatchGameState({
-            type: 'prune_replay_branch',
-            actorId,
-            parameters: { branchId }
-          });
-          actionSucceeded = true;
+          actionSucceeded = runCanonicalTeamAction('prune_replay_branch', { branchId });
         } else {
           actionSucceeded = false;
         }
@@ -201080,12 +201125,7 @@ function dispatchGameSettingsChange(
         const act = action as unknown as Record<string, any>;
         const sourceTimelineId = act.data?.sourceTimelineId || act.parameters?.sourceTimelineId;
         const targetTimelineId = act.data?.targetTimelineId || act.parameters?.targetTimelineId;
-        dispatchGameState({
-          type: 'merge_timeline_outcomes',
-          actorId,
-          parameters: { sourceTimelineId, targetTimelineId }
-        });
-        actionSucceeded = true;
+        actionSucceeded = runCanonicalTeamAction('merge_timeline_outcomes', { sourceTimelineId, targetTimelineId });
         break;
       }
       case 'end_turn': {
@@ -201203,6 +201243,7 @@ function dispatchGameSettingsChange(
         appendTeamAiTraceNote(actorId, `Persistent opponent model update skipped: ${persistentModelSkip.reason}`);
       }
       await new Promise(resolve => setTimeout(resolve, Math.max(120, 450 / (gameState.autoplay?.speed || 1))));
+      if (v95MatchEpochRef.current !== epochAtExecution) return false; // match replaced while settling
     }
 
     const actorAfter = getActorState(actorId);
@@ -201287,7 +201328,7 @@ function dispatchGameSettingsChange(
         success: actionSucceeded,
         turn: gameState.turnCounter,
         summary: action.description,
-        stableKey: `team-${gameState.turnCounter}-${actorId}-${action.type}-${action.data?.region || action.data?.targetActorId || action.data?.sabotageId || ''}-${actionSucceeded ? 'ok' : 'fail'}`
+        stableKey: `team-${gameState.turnCounter}-${actorId}-${action.type}-${action.data?.region || action.data?.targetActorId || action.data?.sabotageId || ''}-u${actor.actionsUsedThisTurn || 0}-${action.data?.challenge?.name || action.data?.resource || action.data?.itemId || action.data?.recipeId || action.data?.purchases?.map((p: any) => p?.resource).join('+') || ''}-${actionSucceeded ? 'ok' : 'fail'}`
       });
     }
 
@@ -202662,7 +202703,7 @@ function dispatchGameSettingsChange(
         const giverOwned = (actor.inventory as string[]).filter(item => item === missingEntry.resource).length;
         if (giverOwned < missingEntry.quantity) return;
         if (((teammate.inventory as string[])?.length || 0) + missingEntry.quantity > MAX_INVENTORY) return;
-        const craftProfit = recipe.baseValue - Object.entries(recipe.inputs).reduce((sum, [resource, count]) => {
+        const craftProfit = getCraftedOutputRealizableValue(recipe, gameState.resourcePrices) - Object.entries(recipe.inputs).reduce((sum, [resource, count]) => {
           return sum + ((gameState.resourcePrices[resource] || 100) * Number(count));
         }, 0);
         const score = Math.max(0, craftProfit) + (teammateLiquidity?.isRecoveryEligible ? 95 : 42);
@@ -202929,7 +202970,7 @@ function dispatchGameSettingsChange(
         (actor.inventory as string[]).filter(item => item === resource).length >= Number(requiredCount)
       );
       if (!canCraft) return;
-      const craftProfit = recipe.baseValue - Object.entries(recipe.inputs).reduce((sum, [resource, count]) => sum + ((gameState.resourcePrices[resource] || 100) * Number(count)), 0);
+      const craftProfit = getCraftedOutputRealizableValue(recipe, gameState.resourcePrices) - Object.entries(recipe.inputs).reduce((sum, [resource, count]) => sum + ((gameState.resourcePrices[resource] || 100) * Number(count)), 0);
       const score = craftProfit + (inventoryFullness * 120);
       pushDecision({
         type: 'craft',
@@ -202969,7 +203010,15 @@ function dispatchGameSettingsChange(
       const totalMissingUnits = missing.reduce((sum, entry) => sum + entry.quantity, 0);
       const totalCost = missing.reduce((sum, entry) => sum + (getResourceMarketPrice(entry.resource) * entry.quantity), 0);
       if (missing.length === 0 || totalMissingUnits > 3 || actor.money - totalCost < AI_SAFETY_BUFFER) return;
-      const craftProfit = recipe.baseValue - totalCost;
+      missing.forEach(entry => { (entry as any).cost = getResourceMarketPrice(entry.resource) * entry.quantity; });
+      // Material purchases were the one ungated spend, so a Governor-"protected" AI still spent below its
+      // reserve on materials. Gate them like the other capital spends (investment category).
+      const marketException = findActiveGovernorException(actor.id, 'investment', totalCost);
+      const marketGovernorResult = marketException
+        ? { approved: true, reason: `Governor exception (${marketException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
+        : evaluateEconomySpendingApproval(actor, 'investment', totalCost, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day, { gameState });
+      if (!marketGovernorResult.approved) { recordGovernorBlock(actor.id, 'investment', marketGovernorResult.reason); return; }
+      const craftProfit = getCraftedOutputRealizableValue(recipe, gameState.resourcePrices) - totalCost;
       const score = craftProfit + (preferredResource && missing.some(entry => entry.resource === preferredResource) ? 45 : 0) + (comboDirective?.payload?.recipeId === recipe.id ? 90 : 0);
       const comboRecipeAligned = Boolean(primaryDirective?.type === 'combo_setup' && (!primaryDirective.payload?.recipeId || primaryDirective.payload.recipeId === recipe.id));
       const resourceAlignedToPrimary = missing.some(entry => isPrimaryDirectiveResourceAligned(entry.resource));
@@ -204393,7 +204442,6 @@ function dispatchGameSettingsChange(
   // V6.9 Phase F3: per-actor-per-turn count of 'propose_again' approval-rejection revisions,
   // capped by APPROVAL_MAX_REVISED_PROPOSALS so a bounded retry can never loop indefinitely.
   const approvalRevisionCountRef = useRef<Record<string, number>>({});
-  const persistentRejectedProposalSignaturesRef = useRef<Record<string, Set<string>>>({});
   // V6.9 Phase F4: per-actor "yield remainder of this turn to normal AI" flag (allow_normal_ai
   // fallback) and per-step retry counter (use_fallback_action/retry_next_action), both cleared in
   // finishTeamAiTurn alongside the other per-turn refs.
@@ -205023,7 +205071,7 @@ function dispatchGameSettingsChange(
     let hops = 0;
     while (step && hops <= SEQUENCE_MAX_JUMP_HOPS) {
       hops++;
-      const resolved = resolveSequenceStepCandidate(step, candidates, actor, sequence.mode, gameSettings);
+      const resolved = resolveSequenceStepCandidate(step, candidates, actor, sequence.mode, gameSettings, gameState.day);
       if (resolved && checkCondition(step, resolved)) {
         return { decision: resolved, stepId: step.id, sequenceId: sequence.id, wasFallback: false };
       }
@@ -205700,10 +205748,7 @@ function dispatchGameSettingsChange(
     // inconsistency with the 4 refs above (already cleared here) — consolidated so every per-turn
     // ref has one matching lifecycle, and the session itself never outlives the turn it belongs to.
     delete requirementRetryCountRef.current[actorId];
-    delete alwaysApproveSimilarRef.current[actorId];
-    delete alwaysRejectSimilarRef.current[actorId];
     delete approvalRevisionCountRef.current[actorId];
-    delete persistentRejectedProposalSignaturesRef.current[actorId];
     delete sequenceYieldedThisTurnRef.current[actorId];
     delete activeAiTurnSessionRef.current[actorId];
     if (!copilotLiveHandoff) {
@@ -206091,7 +206136,7 @@ function dispatchGameSettingsChange(
         if (editedFields?.cost !== undefined && Array.isArray((editedDecision as unknown as Record<string, any>).data.purchases) && (editedDecision as unknown as Record<string, any>).data.purchases[0]) {
           (editedDecision as unknown as Record<string, any>).data.purchases = [{ ...(editedDecision as unknown as Record<string, any>).data.purchases[0], cost: Math.max(0, Math.min(editedFields.cost, (editedDecision as unknown as Record<string, any>).data.purchases[0].cost)) }];
         }
-        const reqCheck = evaluateActionRequirements(actor, editedDecision, { wager: (editedDecision as unknown as Record<string, any>).data?.wager, cost: (editedDecision as unknown as Record<string, any>).data?.purchases?.[0]?.cost });
+        const reqCheck = evaluateActionRequirements(actor, editedDecision, { wager: (editedDecision as unknown as Record<string, any>).data?.wager, cost: estimateDecisionSpendCost(editedDecision, (region: string) => calculateActorTravelCost(actor.currentRegion, region, actor)) });
         if (!reqCheck.approved) {
           addNotification('Edit refused: still fails a hard requirement.', 'warning', true, 'system');
           decision = null;
@@ -206176,7 +206221,7 @@ function dispatchGameSettingsChange(
         const revalidated = pendingTokenId
           ? redeemActionToken(actor.teamId, actorId, decision, pendingTokenId, isReservationHardBlocked)
           : true;
-        const requirementsResult = evaluateActionRequirements(actor, decision, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost, actionsRemaining: actionBudget - actionsTaken });
+        const requirementsResult = evaluateActionRequirements(actor, decision, { wager: decision.data?.wager, cost: estimateDecisionSpendCost(decision, (region: string) => calculateActorTravelCost(actor.currentRegion, region, actor)), actionsRemaining: actionBudget - actionsTaken });
         if (requirementsResult.softViolations.length && gameSettings.actionRequirementsTransparencyEnabled) {
           requirementsResult.softViolations.forEach(v => appendTeamAiTraceNote(actorId, `Soft requirement not met: ${v} (action proceeded).`));
         }
@@ -206335,7 +206380,7 @@ function dispatchGameSettingsChange(
             if (bonusEditedFields?.cost !== undefined && Array.isArray((editedDecision as unknown as Record<string, any>).data.purchases) && (editedDecision as unknown as Record<string, any>).data.purchases[0]) {
               (editedDecision as unknown as Record<string, any>).data.purchases = [{ ...(editedDecision as unknown as Record<string, any>).data.purchases[0], cost: Math.max(0, Math.min(bonusEditedFields.cost, (editedDecision as unknown as Record<string, any>).data.purchases[0].cost)) }];
             }
-            const bonusReqCheck = evaluateActionRequirements(actorForAction, editedDecision, { wager: (editedDecision as unknown as Record<string, any>).data?.wager, cost: (editedDecision as unknown as Record<string, any>).data?.purchases?.[0]?.cost });
+            const bonusReqCheck = evaluateActionRequirements(actorForAction, editedDecision, { wager: (editedDecision as unknown as Record<string, any>).data?.wager, cost: estimateDecisionSpendCost(editedDecision, (region: string) => calculateActorTravelCost(actorForAction.currentRegion, region, actorForAction)) });
             if (!bonusReqCheck.approved) {
               addNotification('Edit refused: still fails a hard requirement.', 'warning', true, 'system');
               rejectedBonusSignatures.add(getDecisionSignature(decision));
@@ -206347,7 +206392,7 @@ function dispatchGameSettingsChange(
             decision = editedDecision;
           }
         }
-        const requirementsResult = evaluateActionRequirements(actorForAction, decision, { wager: decision.data?.wager });
+        const requirementsResult = evaluateActionRequirements(actorForAction, decision, { wager: decision.data?.wager, cost: estimateDecisionSpendCost(decision, (region: string) => calculateActorTravelCost(actorForAction.currentRegion, region, actorForAction)) });
         if (requirementsResult.softViolations.length && gameSettings.actionRequirementsTransparencyEnabled) {
           requirementsResult.softViolations.forEach(v => appendTeamAiTraceNote(actorId, `Soft requirement not met: ${v} (action proceeded).`));
         }
@@ -206591,7 +206636,12 @@ function dispatchGameSettingsChange(
     // auto-approved here; human/AI-AI resolution and automatic-safe-exception thresholds are wired
     // separately (see buildGovernorExceptionApprovalRequest/evaluateAiTeamExceptionPolicy).
     const exceptionTopCandidate = rankedCandidates[0];
-    const exceptionCategory = exceptionTopCandidate ? mapCandidateTypeToSpendCategory(exceptionTopCandidate.type) : null;
+    // In a true deadlock the Governor filtered EVERY candidate out of the ranking, so rankedCandidates is
+    // empty — fall back to a category the ranking pass recorded as blocked, or this tier could never fire
+    // in exactly the situation it exists for. The breach is then bounded by the configured maximum.
+    const blockedTrace = governorBlockTraceRef.current[actorId];
+    const fallbackCategory = !exceptionTopCandidate && blockedTrace ? (Array.from(blockedTrace.blockedCategories)[0] || null) : null;
+    const exceptionCategory = exceptionTopCandidate ? mapCandidateTypeToSpendCategory(exceptionTopCandidate.type) : fallbackCategory;
     if (exceptionCategory) {
       const alreadyPending = (team.governorExceptions || []).some(e => e.actorId === actorId && e.status === 'pending' && e.allowedCategories.includes(exceptionCategory));
       // GD4's per-turn rejection dedup: never re-propose an identical (actor, category) exception
@@ -206599,7 +206649,8 @@ function dispatchGameSettingsChange(
       // dedicated per-turn Set, reusing the exception record's own createdDay/status instead.
       const recentlyRejected = (team.governorExceptions || []).some(e => e.actorId === actorId && e.status === 'rejected' && e.allowedCategories.includes(exceptionCategory) && e.createdDay === gameState.day);
       if (!alreadyPending && !recentlyRejected) {
-        const exceptionCost = typeof exceptionTopCandidate.data?.wager === 'number' ? exceptionTopCandidate.data.wager
+        const exceptionCost = !exceptionTopCandidate ? gameSettings.teamAiGovernorExceptionMaxReserveBreach
+          : typeof exceptionTopCandidate.data?.wager === 'number' ? exceptionTopCandidate.data.wager
           : typeof exceptionTopCandidate.data?.purchases?.[0]?.cost === 'number' ? exceptionTopCandidate.data.purchases[0].cost : 0;
         const maxReserveBreach = Math.min(gameSettings.teamAiGovernorExceptionMaxReserveBreach, Math.max(0, exceptionCost));
 
@@ -206609,8 +206660,8 @@ function dispatchGameSettingsChange(
         // fields (e.g. a candidate type with no successChance) are treated as passing that one
         // specific threshold rather than blocking the whole check, matching this codebase's
         // established "missing context auto-passes" convention (used throughout F2's Requirements).
-        const successProbability = typeof exceptionTopCandidate.data?.successChance === 'number' ? exceptionTopCandidate.data.successChance : 1;
-        const expectedReward = typeof exceptionTopCandidate.plan?.expectedValue === 'number' ? exceptionTopCandidate.plan.expectedValue : exceptionCost;
+        const successProbability = typeof exceptionTopCandidate?.data?.successChance === 'number' ? exceptionTopCandidate.data.successChance : 1;
+        const expectedReward = typeof exceptionTopCandidate?.plan?.expectedValue === 'number' ? exceptionTopCandidate.plan.expectedValue : exceptionCost;
         const evRatio = exceptionCost > 0 ? expectedReward / exceptionCost : Infinity;
         const autoGrantEligible = gameSettings.teamAiGovernorAutomaticExceptionsEnabled
           && (actor.consecutiveRestrictedTurns || 0) >= gameSettings.teamAiGovernorExceptionConsecutiveTurnsThreshold
@@ -206618,7 +206669,8 @@ function dispatchGameSettingsChange(
           && successProbability >= gameSettings.teamAiGovernorExceptionMinProbability
           && evRatio >= gameSettings.teamAiGovernorExceptionMinEvRatio
           && exceptionCost <= gameSettings.teamAiGovernorExceptionMaxCost
-          && isRecoverySafeCandidate(exceptionTopCandidate, actor, gameSettings);
+          // No concrete candidate (deadlock fallback) → never auto-granted; it goes through normal resolution.
+          && Boolean(exceptionTopCandidate) && isRecoverySafeCandidate(exceptionTopCandidate, actor, gameSettings);
 
         const newException: TeamGovernorException = {
           id: nextCorrelationId(globalDeterministicCounters, 'gov_exc'),
@@ -206628,7 +206680,7 @@ function dispatchGameSettingsChange(
           allowedCategories: [exceptionCategory],
           maxReserveBreach,
           status: autoGrantEligible ? 'approved' : 'pending',
-          reason: `${getActorDisplayName(actorId)} is severely restricted and has no other recovery path available for ${exceptionTopCandidate.type}.`,
+          reason: `${getActorDisplayName(actorId)} is severely restricted and has no other recovery path available for ${exceptionTopCandidate?.type || exceptionCategory}.`,
           createdDay: gameState.day,
           resolvedDay: autoGrantEligible ? gameState.day : undefined
         };
@@ -206693,6 +206745,11 @@ function dispatchGameSettingsChange(
 
     let lastAttemptedDecisionType: string | undefined = undefined;
     let lastFailureStage: 'selection' | 'governance' | 'approval' | 'requirements' | 'revalidation' | 'diagnostics' | 'execution' | undefined = undefined;
+    // A load / restart while this async turn runs bumps the match epoch. Like the solo loop, the stale
+    // team loop must stop — never keep acting on (or finish a turn of) the replacement match.
+    const teamEpochAtStart = v95MatchEpochRef.current;
+    const TEAM_AI_TURN_STALE = { staleTeamAiTurn: true };
+    const throwIfTeamTurnStale = () => { if (v95MatchEpochRef.current !== teamEpochAtStart) throw TEAM_AI_TURN_STALE; };
     try {
       if (!copilotWaitingHandoff) {
         refreshTeamLiquidityLedger(actor.teamId);
@@ -206702,8 +206759,6 @@ function dispatchGameSettingsChange(
       delete hasLentThisTurnRef.current[actor.id];
       delete initiativeOverrideDiscountRef.current[actor.id];
       delete requirementRetryCountRef.current[actor.id];
-      delete alwaysApproveSimilarRef.current[actor.id];
-      delete alwaysRejectSimilarRef.current[actor.id];
       delete approvalRevisionCountRef.current[actor.id];
       delete sequenceYieldedThisTurnRef.current[actor.id];
 
@@ -206993,6 +207048,7 @@ function dispatchGameSettingsChange(
       setCoPilotStartPhase('team_ai_rank');
       await new Promise<void>((resolve) => { afterNextPaint(() => resolve()); });
       while (actionsTaken < actionBudget) {
+        throwIfTeamTurnStale();
         const roundPlanEntry = (actionsTaken === 0 && gameSettings.teamCompetitiveAiEnabled && gameSettings.parallelAiPlanningEnabled)
           ? teamRoundPlanRef.current?.[actor.id]
           : undefined;
@@ -207196,7 +207252,7 @@ function dispatchGameSettingsChange(
           ? redeemActionToken(actor.teamId, actor.id, decision, pendingTokenId, isReservationHardBlocked)
           : true;
 
-        const requirementsResult = evaluateActionRequirements(actor, decision, { wager: decision.data?.wager, cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined, actionsRemaining: actionBudget - actionsTaken });
+        const requirementsResult = evaluateActionRequirements(actor, decision, { wager: decision.data?.wager, cost: estimateDecisionSpendCost(decision, (region: string) => calculateActorTravelCost(actor.currentRegion, region, actor)), actionsRemaining: actionBudget - actionsTaken });
         if (requirementsResult.softViolations.length && gameSettings.actionRequirementsTransparencyEnabled) {
           requirementsResult.softViolations.forEach(v => appendTeamAiTraceNote(actor.id, `Soft requirement not met: ${v} (action proceeded).`));
         }
@@ -207218,7 +207274,9 @@ function dispatchGameSettingsChange(
           console.warn('[Diagnostic Inspector Guard] Non-fatal pre-execution diagnostic error:', diagError);
         }
 
+        throwIfTeamTurnStale();
         const success = (revalidated && requirementsResult.approved) ? await executeTeamAiAction(actor.id, decision as unknown as AIAction) : false;
+        throwIfTeamTurnStale();
 
         try {
           if (pipelineExecutionBefore) {
@@ -207282,7 +207340,9 @@ function dispatchGameSettingsChange(
           }
           if (dispatch === 'fallback') {
             const fallbackDecision = { type: 'think', description: 'Requirement fallback', data: {} } as unknown as ScoredTeamAiDecision;
+            throwIfTeamTurnStale();
             const fallbackSuccess = await executeTeamAiAction(actor.id, fallbackDecision as unknown as AIAction);
+            throwIfTeamTurnStale();
             if (!fallbackSuccess) break;
             successfulActions += 1;
             checkRoleFulfillment(actor, fallbackDecision.type);
@@ -207511,8 +207571,14 @@ function dispatchGameSettingsChange(
         }
       }
 
+      throwIfTeamTurnStale();
       finishTeamAiTurn(actor.id);
     } catch (error) {
+      if (error === TEAM_AI_TURN_STALE) {
+        // The match was replaced; the load / restart already reset turn ownership and thinking flags.
+        setCoPilotStartPhase(`team_ai_abandoned_stale:${actor.id}`);
+        return;
+      }
       console.error(`Team AI turn for ${actor.id} failed unexpectedly`, error);
       try {
         if (actor?.teamId) {
@@ -212409,10 +212475,10 @@ function dispatchGameSettingsChange(
       deposits: gameState.regionDeposits as any,
       standing: gameState.standingPerActor as any,
       viewerId: npViewerId,
-      fogOfWar: Boolean(gameSettings.fogOfWar),
+      fogOfWar: Boolean(gameSettings.fogOfWarEnabled),
       strategy
     });
-  }, [egEnabled, nsState, lrInputs.turn, lrState, scState, inState, mpEnabled, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, rfState, gameState.infrastructureProjects, gameState.regionalContracts, npControllers, gameState.regionDeposits, gameState.standingPerActor, npViewerId, gameSettings.fogOfWar, npStrategyKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [egEnabled, nsState, lrInputs.turn, lrState, scState, inState, mpEnabled, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, rfState, gameState.infrastructureProjects, gameState.regionalContracts, npControllers, gameState.regionDeposits, gameState.standingPerActor, npViewerId, gameSettings.fogOfWarEnabled, npStrategyKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const egInputsRef = useRef<EconomicGeographyInputs | null>(egInputs); egInputsRef.current = egInputs;
   const egHash = useMemo(() => (egInputs ? economicGeographyInputHash(egInputs) : ''), [egInputs]);
   const egState = useMemo<EconomicGeographyState | null>(() => (egInputs ? computeEconomicGeography(egInputs, egPersistedRef.current).state : null),
