@@ -11195,6 +11195,25 @@ export function simpleLoanRepaymentAmount(loan: any): number {
   return Number(loan?.accrued || 0) > 0 ? amount : amount + Math.floor(principal * LOAN_INTEREST_RATE);
 }
 
+/**
+ * AI rivals repay emergency loans through the same 0-AP repayment the human has (simpleLoanRepaymentAmount),
+ * smallest first, whenever they can do so and keep a working reserve. They never used it, so every forced
+ * loan cost $125/day to the end of the match and, in Team Mode, counted as debt toward the bankruptcy rule.
+ */
+export function repayAffordableAiSimpleLoans(actor: { money: number; loans?: any[] }, reserve: number): { money: number; loans: any[]; repaid: number } {
+  let money = Number(actor.money) || 0;
+  let repaid = 0;
+  const remaining = [...(actor.loans || [])].sort((a: any, b: any) => Number(a?.amount || 0) - Number(b?.amount || 0));
+  while (remaining.length) {
+    const owed = simpleLoanRepaymentAmount(remaining[0]);
+    if (money - owed < reserve) break;
+    money -= owed;
+    repaid += owed;
+    remaining.shift();
+  }
+  return { money, loans: remaining, repaid };
+}
+
 /** Simple (emergency) loan daily tick: 25% of the outstanding amount is charged; unpaid interest capitalises. */
 export function applySimpleLoanTick(state: { money: number; loans?: any[] }): { money: number; loans: any[] } {
   if (!state.loans || state.loans.length === 0) return { money: state.money, loans: [] };
@@ -47473,6 +47492,11 @@ export interface ClassicAiRuntimeContext {
   rng: SeededRng;
   difficultyKey: string;
   specialAbilityActive: boolean;
+  /** Live games pass the executor's own success formula (weather, season, events, equipment, underdog), so the
+   *  AI judges a challenge by the odds it will actually be resolved at. The LAB falls back to the base formula. */
+  successChance?: (challenge: any, actor: any) => number;
+  /** Live travel price (weather / season / events / equipment) — the same price the executor charges. */
+  travelCost?: (fromRegion: string, toRegion: string, actor: any) => number;
 }
 
 let tuningGenomeIdCounter = 0;
@@ -47868,16 +47892,42 @@ export function enumerateLegalActions(
 
   const currentRegion = REGIONS[actor.currentRegion];
   const availableChallenges = (currentRegion?.challenges || []).filter((c: any) => !(actor.completedThisSeason || []).includes(c.name));
+  // Grand Tour: stamps come from completing any challenge in a region, and the finale in the final region wins
+  // the race outright. Without this the AI collected stamps by accident and never attempted the finale.
+  const isGrandTour = (gameSnap.selectedMode || state.mode) === 'grand_tour';
+  const tourProgress = isGrandTour ? getGrandTourProgress(gameSnap.grandTourState, actorId) : null;
+  const finaleOpen = Boolean(tourProgress && tourProgress.finalUnlocked && !tourProgress.finalCompleted);
+  if (finaleOpen && actor.currentRegion === GRAND_TOUR_FINAL_REGION && (actor.money || 0) >= MINIMUM_WAGER) {
+    const p = ctx.successChance ? ctx.successChance(GRAND_TOUR_FINAL_CHALLENGE, actor) : classicSuccessChance(GRAND_TOUR_FINAL_CHALLENGE, actor);
+    decisions.push({
+      type: 'challenge',
+      description: `Attempt ${GRAND_TOUR_FINAL_CHALLENGE.name}`,
+      data: { challenge: GRAND_TOUR_FINAL_CHALLENGE, wager: MINIMUM_WAGER, successChance: p },
+      score: (600 + p * 600) * quality,
+      plan: AI_TUNING_LAB_DEFAULT_PLAN
+    } as AIAction & { score: number });
+  }
+  const regionNeedsStamp = (region: string) => Boolean(tourProgress && !tourProgress.stamps.includes(region));
+  const stampValue = 80 + 60 * (tourProgress?.stamps.length || 0);
+  // Finish the stamp where we stand before chasing the next one (otherwise travel bonuses ping-pong the AI).
+  const stampAvailableHere = regionNeedsStamp(actor.currentRegion) && availableChallenges.length > 0;
   availableChallenges.forEach((challenge: any) => {
     if ((actor.money || 0) < MINIMUM_WAGER) return;
-    const successChance = classicSuccessChance(challenge, actor);
-    const wager = Math.max(MINIMUM_WAGER, Math.min(actor.money, 500));
-    const expectedValue = wager * (challenge.reward || 2) * successChance - wager * (1 - successChance);
+    const successChance = ctx.successChance ? ctx.successChance(challenge, actor) : classicSuccessChance(challenge, actor);
     const riskTol = Number((AI_DIFFICULTY_PROFILES[ctx.difficultyKey] || {}).riskTolerance) || 0.7;
+    // Bankroll-aware stake: a winning challenge pays wager × reward, a loss costs the wager. Betting a flat
+    // min(cash, $500) went all-in whenever cash was low, so a couple of misses bankrupted the AI. Stake a
+    // fraction of the Kelly bet (bolder at higher risk tolerance) and skip bets with no edge at all.
+    const reward = Number(challenge.reward) || 2;
+    const edge = reward * successChance - (1 - successChance);
+    if (edge <= 0) return;
+    const stakeFraction = Math.min(1, (edge / reward) * (0.5 + riskTol * 0.5));
+    const wager = Math.floor(Math.min(500, actor.money, Math.max(MINIMUM_WAGER, (actor.money || 0) * stakeFraction)));
+    const expectedValue = wager * edge;
     let posture = 1;
     if (aiRatio < 0.7) posture = 1.4;
     else if (aiRatio > 1.3) posture = 0.85;
-    const score = expectedValue * riskTol * posture * weightMultiplier(ctx.weights, 'factor.challenge');
+    const score = (expectedValue * riskTol + (regionNeedsStamp(actor.currentRegion) ? stampValue : 0)) * posture * weightMultiplier(ctx.weights, 'factor.challenge');
     if (score > 0) {
       decisions.push({
         type: 'challenge',
@@ -47892,9 +47942,12 @@ export function enumerateLegalActions(
   Object.keys(REGIONS).forEach(region => {
     if (region === actor.currentRegion) return;
     if (settings.sabotageEnabled && isTravelBlocked(actor.debuffs)) return;
-    const cost = classicTravelCost(actor.currentRegion, region, actor);
+    const cost = Math.max(0, Math.floor(ctx.travelCost ? ctx.travelCost(actor.currentRegion, region, actor) : classicTravelCost(actor.currentRegion, region, actor)));
     if ((actor.money || 0) < cost) return;
     let score = (actor.visitedRegions || []).includes(region) ? 10 : 100;
+    // Each stamp brings the finale closer, so the last missing regions (often costly Tasmania) pull hardest.
+    if (regionNeedsStamp(region) && !stampAvailableHere) score += stampValue;
+    if (finaleOpen && region === GRAND_TOUR_FINAL_REGION) score += 500;
     const regionResources = REGIONAL_RESOURCES[region] || [];
     if (regionResources.length > 0) {
       const avg = regionResources.reduce((sum, r) => sum + (resourcePrices[r] || 100), 0) / regionResources.length;
@@ -47903,6 +47956,15 @@ export function enumerateLegalActions(
     const uncompleted = (REGIONS[region]?.challenges || []).filter((c: any) => !(actor.completedThisSeason || []).includes(c.name)).length;
     score += uncompleted * 30;
     score -= cost * 0.5;
+    // Regions matches: a region the AI can actually afford to take is a reason to go there (deposits only
+    // land in the region the actor stands in).
+    if ((WIN_METRIC_PROFILES as any)[(settings as any).winCondition]?.goalKind === 'regions' && isCompetitiveModeSelection(gameSnap.selectedMode || state.mode)) {
+      const allDeposits = sanitizeRegionDeposits(gameSnap.regionDeposits || {});
+      if (getRegionControlSnapshot(allDeposits[region] || {}).controllerId !== actorId) {
+        const need = getRequiredDepositToControl(allDeposits, region, actorId) + 25;
+        if ((actor.money || 0) - cost - AI_SAFETY_BUFFER >= need) score += 90;
+      }
+    }
     if (fullness >= 1) score *= 0.3;
     else if (fullness > 0.8) score *= 0.7;
     score *= weightMultiplier(ctx.weights, 'factor.travel');
@@ -47965,13 +48027,25 @@ export function enumerateLegalActions(
 
   if (isCompetitiveModeSelection(gameSnap.selectedMode || state.mode)) {
     const spendable = Math.max(0, Math.floor((actor.money || 0) - AI_SAFETY_BUFFER));
-    if (spendable >= 80) {
-      const amount = Math.min(spendable, 200);
+    // A deposit only commits when it takes (or keeps) control: the executor rejects anything below the stake
+    // needed to beat the current holder (REGION_MIN_CONTROL_STAKE for an empty region). A flat $200 was below
+    // that floor everywhere, so every deposit failed and the AI retried it until its turn ended.
+    const allDeposits = sanitizeRegionDeposits(gameSnap.regionDeposits || {});
+    const regionEntry = allDeposits[actor.currentRegion] || {};
+    const control = getRegionControlSnapshot(regionEntry);
+    const holdsRegion = control.controllerId === actorId;
+    const rivalBest = control.entries.filter(entry => entry.playerId !== actorId)[0]?.amount || 0;
+    const ownStake = Math.floor(regionEntry[actorId] || 0);
+    const threatened = holdsRegion && rivalBest > 0 && ownStake - rivalBest < 150;
+    const amount = holdsRegion
+      ? (threatened ? Math.min(spendable, 200) : 0)
+      : getRequiredDepositToControl(allDeposits, actor.currentRegion, actorId) + 25;
+    if (amount >= 1 && spendable >= amount) {
       decisions.push({
         type: 'region_deposit',
         description: `Deposit $${amount} in ${REGIONS[actor.currentRegion]?.name || actor.currentRegion}`,
         data: { region: actor.currentRegion, amount, reason: 'tuning_control' },
-        score: (amount * 0.2 + 50) * quality * weightMultiplier(ctx.weights, 'factor.region_control'),
+        score: (holdsRegion ? 80 : Math.max(10, 110 - amount * 0.04)) * quality * weightMultiplier(ctx.weights, 'factor.region_control'),
         plan: AI_TUNING_LAB_DEFAULT_PLAN
       } as AIAction & { score: number });
     }
@@ -48040,7 +48114,7 @@ export function chooseAction(
   actorId: string,
   weights: Record<string, number>,
   rng: SeededRng,
-  options?: { difficultyKey?: string; specialAbilityActive?: boolean; settings?: GameSettingsState }
+  options?: { difficultyKey?: string; specialAbilityActive?: boolean; settings?: GameSettingsState; successChance?: (challenge: any, actor: any) => number; travelCost?: (fromRegion: string, toRegion: string, actor: any) => number; isRejected?: (candidate: AIAction) => boolean }
 ): (AIAction & { score: number }) | null {
   const baseSettings = options?.settings || state.gameSettings || state.settings || createDefaultGameSettings();
   const settings = weightsToGameSettings(baseSettings, weights);
@@ -48049,7 +48123,9 @@ export function chooseAction(
     weights,
     rng,
     difficultyKey: options?.difficultyKey || 'expert',
-    specialAbilityActive: Boolean(options?.specialAbilityActive)
+    specialAbilityActive: Boolean(options?.specialAbilityActive),
+    successChance: options?.successChance,
+    travelCost: options?.travelCost
   };
   const profile = AI_DIFFICULTY_PROFILES[ctx.difficultyKey] || AI_DIFFICULTY_PROFILES.expert;
   if (rng.next() < (Number(profile.mistakeChance) || 0)) {
@@ -48094,7 +48170,12 @@ export function chooseAction(
         ]
       )
   });
-  const ranked = [...memoryInfluenced].sort((a, b) => (b.score || 0) - (a.score || 0));
+  // Candidates that already failed this turn are dropped, so the next-best action is tried instead of the
+  // same failure being re-proposed until the turn loop gives up.
+  const ranked = [...memoryInfluenced]
+    .filter(candidate => !options?.isRejected?.(candidate))
+    .sort((a, b) => (b.score || 0) - (a.score || 0));
+  if (!ranked.length) return null;
   return pickClassicDecision(ranked, rng, ctx.difficultyKey);
 }
 
@@ -63234,6 +63315,14 @@ export function formatCoPilotActionNotification(
       };
     }
     case 'challenge': {
+      // A failed challenge costs its wager (negative verified delta); it used to be announced as a success
+      // that "earned $0".
+      if (verifiedDeltas?.cashDelta !== undefined && verifiedDeltas.cashDelta < 0) {
+        return {
+          message: `🤖 Co-Pilot: Your challenge failed and cost $${Math.abs(verifiedDeltas.cashDelta).toLocaleString()}.`,
+          type: 'warning'
+        };
+      }
       const reward = verifiedDeltas?.cashDelta !== undefined ? Math.max(0, verifiedDeltas.cashDelta) : (parameters?.reward || parameters?.amount || 850);
       return {
         message: `🤖 Co-Pilot: Your challenge succeeded and earned $${reward.toLocaleString()}.`,
@@ -63300,6 +63389,9 @@ export function formatCoPilotActivityLedgerSummary(
       return `[Co-Pilot] Human player purchased ${item} for $${cost.toLocaleString()}`;
     }
     case 'challenge': {
+      if (verifiedDeltas?.cashDelta !== undefined && verifiedDeltas.cashDelta < 0) {
+        return `[Co-Pilot] Human player failed a challenge and lost $${Math.abs(verifiedDeltas.cashDelta).toLocaleString()}`;
+      }
       const reward = verifiedDeltas?.cashDelta !== undefined ? Math.max(0, verifiedDeltas.cashDelta) : (parameters?.reward || 0);
       return `[Co-Pilot] Human player completed challenge and earned $${reward.toLocaleString()}`;
     }
@@ -66337,7 +66429,9 @@ export function classifyPlayerAttentionState(state: any, settings: any, actorHin
   if (guardianHard) {
     return { state: 'needs_attention', label: 'Assistant status', detail: String(guardianHard.reason || 'Guardian blocked a risky action.'), navigation: navAction('assistant_advanced', 'Open Relevant Assistant Setting') };
   }
-  if (cash < 1500) {
+  // Below the working reserve the rest of the game uses. The old $1,500 line sits above every character's
+  // starting cash ($1,000-$1,500), so "Low liquidity" was raised on turn 1 of every match.
+  if (cash < AI_SAFETY_BUFFER) {
     return { state: 'needs_attention', label: 'Low liquidity', detail: `Cash reserve is $${cash.toLocaleString()}.`, navigation: navAction('market', 'Show cash actions') };
   }
   const teammates = Object.values(state?.actorsById || {}).filter((a: any) => a && a.teamId && a.teamId === actor?.teamId && a.id !== actor?.id);
@@ -79900,6 +79994,10 @@ const sanitizeRegionDeposits = (raw: any): RegionDeposits => {
  * matches were decided on the last day, always won by the last mover). A minimum stake ties control to capital.
  */
 export const REGION_MIN_CONTROL_STAKE = 300;
+/** Team AI: a held region is "safe" once the lead is this large; captures add this buffer over the minimum. */
+const TEAM_REGION_SAFE_MARGIN = 150;
+const TEAM_REGION_CAPTURE_BUFFER = 150;
+const TEAM_REGION_CASH_RESERVE = 500;
 
 const getRegionControlSnapshot = (regionEntry: Record<string, number> = {}) => {
   const entries = Object.entries(regionEntry)
@@ -187166,7 +187264,10 @@ function dispatchGameSettingsChange(
         {
           difficultyKey: difficulty,
           specialAbilityActive: Boolean(aiActiveSpecialAbilityRef.current),
-          settings: gameSettings
+          settings: gameSettings,
+          successChance: calculateAiSuccessChance,
+          travelCost: calculateAiTravelCost,
+          isRejected: decisionOptions?.isRejected
         }
       );
       return tuningChoice || {
@@ -187728,6 +187829,8 @@ function dispatchGameSettingsChange(
     }
   }, [
     aiRandom,
+    calculateAiSuccessChance,
+    calculateAiTravelCost,
     applyActorAdaptiveEffectsToDecision,
     applyStrategicDirectorScoring,
     ensureDecisionBaseScoreStage,
@@ -187785,7 +187888,7 @@ function dispatchGameSettingsChange(
     const loserName = playerWon ? 'AI' : 'You';
     const reason = playerValues[decidingIndex] === aiValues[decidingIndex]
       ? `Exact Grand Tour tie; defaulting to You after all tie-breakers.`
-      : `${winnerName} beat ${loserName} on ${labels[decidingIndex]} (${playerValues[decidingIndex]} vs ${aiValues[decidingIndex]}).`;
+      : `${winnerName} beat ${loserName} on ${labels[decidingIndex]} (${playerWon ? playerValues[decidingIndex] : aiValues[decidingIndex]} vs ${playerWon ? aiValues[decidingIndex] : playerValues[decidingIndex]}).`;
     return {
       playerWon,
       reason,
@@ -188128,6 +188231,13 @@ function dispatchGameSettingsChange(
           if (currentAi.masteryUnlocks?.includes("Lucky Streak") && currentAi.consecutiveWins > 0) {
             const streakBonus = Math.min(0.5, currentAi.consecutiveWins * 0.1);
             reward = Math.floor(reward * (1 + streakBonus));
+          } else if (!currentAi.masteryUnlocks?.includes("Lucky Streak")) {
+            // Win-streak reward tiers (On Fire / Unstoppable / Legendary) apply to the rival exactly as they do to
+            // the human (computeChallengeRewardCore); the AI's copy of the payout maths had dropped them.
+            const aiStreak = (currentAi.consecutiveWins || 0) + 1;
+            const aiStreakTier = Object.keys(STREAK_BONUSES).map(Number).sort((a, b) => b - a).find(tier => aiStreak >= tier);
+            const aiStreakBonus = aiStreakTier ? (STREAK_BONUSES as Record<number, any>)[aiStreakTier].rewardBonus : 0;
+            if (aiStreakBonus) reward = Math.floor(reward * (1 + aiStreakBonus));
           }
 
           // Calculate XP gain and check for level up
@@ -188732,7 +188842,21 @@ function dispatchGameSettingsChange(
     // canonical +1 action per override (V9.6) instead of a whole extra day of actions.
     if (!gameSettings.allowActionOverride) return false;
     if (getActorOverridesRemaining('ai') <= 0 || !getUnderdogBonus('ai', 'behavior').isUnderdog) return false;
-    if ((aiPlayerRef.current?.money || 0) < calculateActorOverrideCost('ai') || aiRandom() >= 0.6) return false;
+    const overrideCost = calculateActorOverrideCost('ai');
+    const ai = aiPlayerRef.current;
+    const cash = Number(ai?.money) || 0;
+    if (cash < overrideCost || aiRandom() >= 0.6) return false;
+    // Only buy an extra action that is worth more than it costs and leaves a working reserve. Overrides used to
+    // be bought whenever the AI was behind, so a nearly broke rival paid $500-$750 for one more coin-flip wager.
+    const stake = Math.min(500, cash - overrideCost - AI_SAFETY_BUFFER);
+    if (stake < MINIMUM_WAGER) return false;
+    const bestChallengeValue = (REGIONS[ai?.currentRegion]?.challenges || [])
+      .filter((c: any) => !(ai?.completedThisSeason || []).includes(c.name))
+      .reduce((best: number, c: any) => {
+        const p = calculateAiSuccessChance(c, ai);
+        return Math.max(best, stake * ((Number(c.reward) || 2) * p - (1 - p)));
+      }, 0);
+    if (bestChallengeValue <= overrideCost) return false;
     return applyActorActionOverride('ai');
   };
 
@@ -198300,9 +198424,16 @@ function dispatchGameSettingsChange(
 
         if (seasonChanged) {
           projected.completedThisSeason = [];
-          projected.challengesCompleted = [];
         }
 
+        if (actor.kind === 'ai' && (projected.loans || []).length) {
+          const repayment = repayAffordableAiSimpleLoans(projected, AI_SAFETY_BUFFER);
+          if (repayment.repaid > 0) {
+            projected.money = repayment.money;
+            projected.loans = repayment.loans;
+            addNotification(`🤖 ${projected.name} repaid emergency loans ($${repayment.repaid}).`, 'ai', false);
+          }
+        }
         const loanTick = applyLoanTick(projected);
         projected.money = loanTick.money;
         projected.loans = loanTick.loans;
@@ -199563,10 +199694,11 @@ function dispatchGameSettingsChange(
     projectedAi.debuffs = tickDebuffs(projectedAi.debuffs || []);
 
     if (seasonChanged) {
+      // Only the per-season availability list refreshes. challengesCompleted is the match-long record the
+      // Challenges win condition scores; it was wiped for the AI (but never actually for the human, whose
+      // reset was not dispatched), so the rival lost its whole tally every 7 days.
       projectedPlayer.completedThisSeason = [];
-      projectedPlayer.challengesCompleted = [];
       projectedAi.completedThisSeason = [];
-      projectedAi.challengesCompleted = [];
       addNotification(`Season changed to ${newSeason}. Challenges have refreshed with mastery tiers.`, 'info', true);
     }
 
@@ -199604,6 +199736,14 @@ function dispatchGameSettingsChange(
     projectedPlayer.money = playerLoanTick.money;
     projectedPlayer.loans = playerLoanTick.loans;
 
+    if ((projectedAi.loans || []).length) {
+      const aiRepayment = repayAffordableAiSimpleLoans(projectedAi, AI_SAFETY_BUFFER);
+      if (aiRepayment.repaid > 0) {
+        projectedAi.money = aiRepayment.money;
+        projectedAi.loans = aiRepayment.loans;
+        addNotification(`🤖 ${projectedAi.name} repaid emergency loans ($${aiRepayment.repaid}).`, 'ai', false);
+      }
+    }
     const aiLoanTick = applyLoanTick(projectedAi);
     projectedAi.money = aiLoanTick.money;
     projectedAi.loans = aiLoanTick.loans;
@@ -199802,12 +199942,15 @@ function dispatchGameSettingsChange(
       : (soloPrimaryPlayerValue > 0 && soloPrimaryAiValue / soloPrimaryPlayerValue >= 5 ? gameState.dominanceTracker.ai + 1 : 0);
     dispatchGameState({ type: 'SET_DOMINANCE_TRACKER', payload: { player: playerDominance, ai: aiDominance } });
 
-    if (playerDominance >= 5) {
+    // Grand Tour is decided by the race (stamps → finale), not the win-condition metric: a cash-ratio mercy end
+    // used to award the race to whoever was richer, even when the other side had the finale unlocked.
+    const mercyRuleApplies = gameState.selectedMode !== 'grand_tour';
+    if (mercyRuleApplies && playerDominance >= 5) {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
       addNotification(`Mercy rule: you dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days. Victory!`, 'success', true);
       return;
     }
-    if (aiDominance >= 5) {
+    if (mercyRuleApplies && aiDominance >= 5) {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
       addNotification(`Mercy rule: AI dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days straight.`, 'ai', true);
       return;
@@ -202183,7 +202326,10 @@ function dispatchGameSettingsChange(
     const opponentLiquidityAnalysis = analyzeTeamLiquidity(opponentTeamId, snapshot?.actors);
     const teamSummary = teamScoreSummary[actor.teamId] || createDefaultTeamScoreBreakdown();
     const opponentSummary = teamScoreSummary[opponentTeamId] || createDefaultTeamScoreBreakdown();
-    const currentDeposits = sanitizeRegionDeposits(gameState.regionDeposits);
+    // Live deposits: the team turn loop re-ranks after every action inside one async turn, and the render-time
+    // gameState closure still held the turn-start deposits, so a region the actor had just secured looked
+    // uncontrolled and was deposited into again (2-3 identical deposits per turn).
+    const currentDeposits = sanitizeRegionDeposits((gameStateLiveRef.current || gameState).regionDeposits);
     // V6.7 Phase 3b: computed once per call and reused by both the sabotage-target block and the
     // Tier 2 / endgame additive-bonus pass below, so selectThreatTarget's persisting side effect
     // only fires once per decision-ranking call, not twice.
@@ -202247,12 +202393,18 @@ function dispatchGameSettingsChange(
       const enemyDeposit = Math.floor(regionInfo.regionEntry[opponentTeamId] || 0);
       const required = actor.teamId === TEAM_PLAYER_ID ? regionInfo.minimumPlayerDeposit : regionInfo.minimumAiDeposit;
       let score = 0;
+      // Price-aware: these terms were tuned for the old $1 stake ("50 - required * 5" is always 0 at a $300
+      // floor), so a contested region (+40) outranked every empty one and all four actors bid each other up in
+      // one region. Cheap captures now rank first and a contest only pays while it is near the base stake.
+      const contestPremium = Math.max(0, regionInfo.highestDeposit + 1 - REGION_MIN_CONTROL_STAKE);
       if (regionInfo.controllerId !== actor.teamId) {
-        score += 125 + Math.max(0, 50 - (required * 5));
-        if (regionInfo.controllerId === opponentTeamId) score += 40;
+        score += 125 + Math.max(0, 60 - contestPremium * 0.1);
+        // A capture this actor cannot fund is not a reason to travel there (it used to fly around chasing it).
+        if (getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) < required + TEAM_REGION_CAPTURE_BUFFER + TEAM_REGION_CASH_RESERVE) score -= 150;
+        if (regionInfo.controllerId === opponentTeamId) score += contestPremium <= REGION_MIN_CONTROL_STAKE ? 40 : 10;
       } else {
         const holdMargin = teamDeposit - enemyDeposit;
-        if (holdMargin <= 2) score += 90 - (holdMargin * 12);
+        if (holdMargin < TEAM_REGION_SAFE_MARGIN) score += 60 - holdMargin * 0.4;
       }
       if (preferredRegion === regionCode) score += 80;
       if (gameSettings.regionalStandingEnabled) {
@@ -203233,23 +203385,43 @@ function dispatchGameSettingsChange(
       }
     }
 
-    const currentRegionInfo = getRegionControlInfo(actor.currentRegion);
-    const minimalDeposit = actor.teamId === TEAM_PLAYER_ID
+    const currentRegionInfo = getRegionControlInfo(actor.currentRegion, currentDeposits);
+    const requiredDeposit = actor.teamId === TEAM_PLAYER_ID
       ? currentRegionInfo.minimumPlayerDeposit
       : currentRegionInfo.minimumAiDeposit;
+    // A held region only needs topping up when the rival is close; a capture carries a buffer so the rival
+    // cannot retake it for $1 next turn. (Depositing $1-$4 into an already-held region, or outbidding by $1,
+    // spent whole turns and both teams' cash in an endless one-region auction.)
+    const teamHoldsCurrent = currentRegionInfo.controllerId === actor.teamId;
+    const currentHoldMargin = Math.floor(currentRegionInfo.regionEntry[actor.teamId] || 0)
+      - Math.max(0, ...currentRegionInfo.entries.filter(entry => entry.playerId !== actor.teamId).map(entry => entry.amount));
+    const minimalDeposit = teamHoldsCurrent
+      ? Math.max(0, TEAM_REGION_SAFE_MARGIN - currentHoldMargin)
+      : requiredDeposit + TEAM_REGION_CAPTURE_BUFFER;
+    // Measured on the region's total stake, not the marginal top-up: in a running auction every top-up looks
+    // cheap (own earlier bids are sunk), which is exactly how both teams were drawn into it.
+    const depositContestPremium = teamHoldsCurrent ? 0 : Math.max(0, currentRegionInfo.highestDeposit + 1 - REGION_MIN_CONTROL_STAKE);
+    const cheaperRegionOpen = depositContestPremium > REGION_MIN_CONTROL_STAKE
+      && Object.keys(REGIONS).some(code => code !== actor.currentRegion && !getRegionControlInfo(code, currentDeposits).controllerId);
     // V6.8 Phase B: afford-gate now checks spendable (not total) cash once the Vault is on.
     // V6.8 Phase C: Economy Governor spending approval is an additional && term — no-op when off.
-    const regionDepositAffordable = getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) >= minimalDeposit;
+    // Deposits are sunk cash, so keep a working reserve: draining to $0 for one more region left the team unable
+    // to earn, forced emergency loans and lost the match to the 3-day bankruptcy rule within a week.
+    const regionDepositAffordable = getActorSpendableCash(actor, gameSettings.teamCompetitiveAiEnabled && gameSettings.teamCashVaultEnabled) >= minimalDeposit + TEAM_REGION_CASH_RESERVE;
     const regionDepositException = findActiveGovernorException(actor.id, 'region_deposit', minimalDeposit);
     const regionDepositGovernorResult = regionDepositException
       ? { approved: true, reason: `Governor exception (${regionDepositException.scope}) applied.`, phase: 'accumulation' as EconomicPhase }
       : evaluateEconomySpendingApproval(actor, 'region_deposit', minimalDeposit, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day, { gameState });
-    if (regionDepositAffordable && !gameSettings.negotiationMode && !regionDepositGovernorResult.approved) {
+    if (minimalDeposit >= 1 && regionDepositAffordable && !gameSettings.negotiationMode && !regionDepositGovernorResult.approved) {
       // The Governor's block stands; Team OS only adds the strategic purpose and legitimate alternatives.
       recordGovernorBlock(actor.id, 'region_deposit', teamOsGovernorNoteRef.current(actor, 'region_deposit', minimalDeposit, actor.currentRegion, regionDepositGovernorResult.reason));
     }
-    if (regionDepositAffordable && !gameSettings.negotiationMode && regionDepositGovernorResult.approved) {
+    // Escalation cap: once retaking costs more than three base stakes while an empty region is still open,
+    // stop feeding the auction (directive bonuses alone kept both teams bidding until they went bankrupt).
+    const depositEscalationCapped = cheaperRegionOpen && depositContestPremium > 2 * REGION_MIN_CONTROL_STAKE;
+    if (!depositEscalationCapped && minimalDeposit >= 1 && regionDepositAffordable && !gameSettings.negotiationMode && regionDepositGovernorResult.approved) {
       let score = WIN_METRIC_PROFILES[gameSettings.winCondition]?.aiActionScoreBaseline ?? 80;
+      if (cheaperRegionOpen) score -= 120;
       // Team Intelligence 2.0: live strategy context (task priority, reserve floor, spend locks,
       // deprioritised regions) as a scoring input only — canonical validation still decides.
       const depositTeamOs = teamOsLiveBiasRef.current(actor, 'region_deposit', minimalDeposit, actor.currentRegion);
