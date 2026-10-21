@@ -1286,14 +1286,24 @@ let diag2LastEventSig = '';
 
 export const diag2Listeners = new Set<() => void>();
 
+let diag2NotifyScheduled = false;
 export function notifyDiag2Listeners() {
-  for (const listener of diag2Listeners) {
-    try {
-      listener();
-    } catch {
-      // safe no-op
+  // Events are recorded inside reducers, which React runs while rendering AustraliaGame; notifying listeners
+  // synchronously set the overlay's state mid-render (React "Cannot update a component while rendering a
+  // different component"). Coalesce into one notification after the current synchronous work.
+  if (diag2NotifyScheduled) return;
+  diag2NotifyScheduled = true;
+  const run = () => {
+    diag2NotifyScheduled = false;
+    for (const listener of diag2Listeners) {
+      try {
+        listener();
+      } catch {
+        // safe no-op
+      }
     }
-  }
+  };
+  if (typeof queueMicrotask === 'function') queueMicrotask(run); else setTimeout(run, 0);
 }
 
 let copilotWaitingShellRuntimeEnabled = false;
@@ -71327,6 +71337,9 @@ export function generateCoPilotPlayerActionCandidates(
   const candidates: CoPilotActionCandidate[] = [];
 
   const makeId = (catIdx: number, slug: string) => `candidate_cat${catIdx}_${slug}_t${currentTurn}`;
+  const tradeApCost = (type: string): number => { const c = getActionPointCost(type, actorObj, apSettings); return Number.isFinite(c) && c > 0 ? c : 0; };
+  const tradePrice = (resource: string): number => Math.round(Number(gs.resourcePrices?.[resource]) || getResourceMarketPrice(resource));
+  const buyableResource: string | null = ((REGIONAL_RESOURCES as any)[currentRegion] || []).find((r: string) => Boolean(RESOURCE_CATEGORIES[r])) || null;
 
   // Category 1: Movement / Travel
   let travelTarget = 'Melbourne';
@@ -71475,36 +71488,39 @@ export function generateCoPilotPlayerActionCandidates(
       title: `Sell ${itemToSell} in Regional Market`,
       description: `Execute market sale of 1 unit of ${itemToSell} for instant liquidity return.`,
       actionType: 'sell',
-      apCost: 1,
+      // AP and price come from the rules / live market (selling is free; a hard-coded 1 AP made the
+      // postcondition check fail and the executor then charged a phantom action).
+      apCost: tradeApCost('sell'),
       costEstimate: 0,
       expectedOutcome: `Earn revenue from selling 1x ${itemToSell}`,
       utilityScore: goal === 'wealth' ? 88 : 82,
       riskFactor: 10,
       rewardScore: 85,
       longTermScore: 75,
-      expectedStateDelta: { cashDelta: 100, apDelta: -1 },
+      expectedStateDelta: { cashDelta: tradePrice(itemToSell), apDelta: -tradeApCost('sell') },
       isValid: true,
-      parameters: { item: itemToSell, commodity: itemToSell, quantity: 1 }
+      parameters: { item: itemToSell, commodity: itemToSell, resource: itemToSell, quantity: 1, unitPrice: tradePrice(itemToSell) }
     });
-  } else {
+  } else if (buyableResource && cash - tradePrice(buyableResource) >= minReserveFloor) {
     candidates.push({
       id: makeId(4, 'trade'),
       category: 'resource_trading',
       categoryIndex: 4,
       categoryName: 'Resource Management / Trade',
       title: 'Purchase Market Commodities',
-      description: 'Purchase discounted local resources to initiate regional market trade route.',
+      description: `Purchase discounted local ${buyableResource} to initiate regional market trade route.`,
       actionType: 'buy_market',
-      apCost: 1,
-      costEstimate: 100,
-      expectedOutcome: 'Acquire 1 unit of regional commodity inventory',
+      apCost: tradeApCost('buy_market'),
+      costEstimate: tradePrice(buyableResource),
+      expectedOutcome: `Acquire 1 unit of ${buyableResource}`,
       utilityScore: goal === 'wealth' ? 86 : 76,
       riskFactor: 10,
       rewardScore: 80,
       longTermScore: 75,
-      expectedStateDelta: { cashDelta: -100, apDelta: -1 },
+      expectedStateDelta: { cashDelta: -tradePrice(buyableResource), apDelta: -tradeApCost('buy_market') },
       isValid: true,
-      parameters: { item: 'minerals', commodity: 'minerals', quantity: 1 }
+      // A real local resource at its market price (was the category 'minerals', which put a junk item in inventory).
+      parameters: { item: buyableResource, commodity: buyableResource, resource: buyableResource, quantity: 1, unitPrice: tradePrice(buyableResource) }
     });
   }
   // Always-legal income fallback (same 'work' action the team AI actors use: +$50 wage, 1 AP).
@@ -77358,8 +77374,11 @@ export function executeCoPilotActionIntent<T extends GameState | ExtendedGameSta
   setCoPilotStartPhase('execute_done');
 
   const postState = verificationResult.updatedState;
-  const postPlayer = (postState?.actorsById && postState.actorsById[actorIdStr]) || postState?.player || playerObj;
-  if (postPlayer) {
+  // Always a copy: falling back to playerObj (the live React player) let the AP top-up below mutate state
+  // outside the reducer — a failed Co-Pilot move still cost the player an action.
+  const postPlayerSource = (postState?.actorsById && postState.actorsById[actorIdStr]) || postState?.player || playerObj;
+  const postPlayer = postPlayerSource ? { ...postPlayerSource } : postPlayerSource;
+  if (postPlayer && verificationResult.success) {
     const priorUsed = typeof playerObj?.actionsUsedThisTurn === 'number' ? playerObj.actionsUsedThisTurn : 0;
     if (intent.expectedAPDelta === -1 || (intent.expectedAPDelta && intent.expectedAPDelta < 0)) {
       const currentUsed = typeof postPlayer.actionsUsedThisTurn === 'number' ? postPlayer.actionsUsedThisTurn : 0;
@@ -180278,6 +180297,29 @@ export function runV1013HouseholdsLivingStandardsSelfTests(): {
   };
 }
 
+/**
+ * Downloads `data` as a JSON file. Never throws: sandboxed embeds and some browsers block downloads or lack
+ * URL.createObjectURL, and a throw here used to abort match finalisation (replay) mid AI turn.
+ */
+export function triggerJsonFileDownload(filename: string, data: unknown): boolean {
+  try {
+    if (typeof document === 'undefined' || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return false;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch { /* already released */ } }, 0);
+    return true;
+  } catch (error) {
+    console.warn('[download] blocked or unavailable:', error);
+    return false;
+  }
+}
+
 // ============================================================================
 // SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
 // ----------------------------------------------------------------------------
@@ -180372,6 +180414,40 @@ export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
     const adaptive = evaluateGuardianRiskPipeline(ctx('adaptive'));
     const notify = evaluateGuardianRiskPipeline(ctx('notify_only'));
     return (adaptive.confirmationRequired === true && notify.allowedToProceed === true && notify.confirmationRequired === false) || `${adaptive.confirmationRequired}/${notify.allowedToProceed}`;
+  });
+  const copilotFixture = () => {
+    const pl: any = { ...createActorSnapshot({ id: 'player', name: 'Player', teamId: TEAM_PLAYER_ID, kind: 'human', role: 'leader', character: CHARACTERS[0] }), currentRegion: 'QLD', money: 1000, actionsUsedThisTurn: 0, inventory: [] };
+    const ai: any = createActorSnapshot({ id: 'ai', name: 'Rival', teamId: TEAM_OPPONENT_ID, kind: 'ai', role: 'leader', character: CHARACTERS[1] });
+    const gs: any = { ...JSON.parse(JSON.stringify(initialGameState)), gameMode: 'game', selectedMode: 'ai', currentTurn: 'player', currentActorId: 'player' };
+    return { pl, ai, gs, ctx: createCoPilotRuntimeContext(pl, gs, settings, null, { player: pl, ai }, ai, {}) };
+  };
+  check('ru_copilot_trade_candidate', 'Co-Pilot buy candidate names a real local resource and the rules\' AP cost (was the category "minerals" at 1 AP)', () => {
+    const { ctx } = copilotFixture();
+    const buy = (generateCoPilotPlayerActionCandidates(ctx).candidates || []).find((c: any) => c.actionType === 'buy_market');
+    if (!buy) return 'no buy candidate';
+    const res = String(buy.parameters?.resource || '');
+    return (Boolean(RESOURCE_CATEGORIES[res]) && buy.apCost === Math.max(0, getActionPointCost('buy_market', {}, settings) || 0)) || JSON.stringify(buy.parameters) + ' ap=' + buy.apCost;
+  });
+  check('ru_copilot_no_live_mutation', 'A failed Co-Pilot move never mutates the live player (it used to cost an action for nothing)', () => {
+    const { pl, ctx } = copilotFixture();
+    const before = JSON.stringify({ used: pl.actionsUsedThisTurn, money: pl.money, inv: pl.inventory });
+    const r = executeCoPilotActionIntent(ctx, { actionType: 'buy_market', actorId: 'player', parameters: { item: 'not_a_resource', quantity: 1 }, costEstimate: 100, expectedAPDelta: -1, expectedCashDelta: -100 }, { forceExecution: true });
+    const after = JSON.stringify({ used: pl.actionsUsedThisTurn, money: pl.money, inv: pl.inventory });
+    return (before === after && r.executionResult.success === false) || `${before} -> ${after} success=${r.executionResult.success}`;
+  });
+  check('ru_download_never_throws', 'A blocked/unavailable file download reports false instead of throwing (replay finalisation)', () => {
+    const g: any = typeof URL !== 'undefined' ? URL : null;
+    const prev = g ? g.createObjectURL : undefined;
+    try {
+      if (g) g.createObjectURL = () => { throw new Error('blocked by sandbox'); };
+      return triggerJsonFileDownload('x.json', { a: 1 }) === false || 'returned true';
+    } finally { if (g) g.createObjectURL = prev; }
+  });
+  check('ru_diag_notify_deferred', 'Diagnostics listeners are notified after the current work, never synchronously (setState-in-render)', () => {
+    let calls = 0; const listener = () => { calls += 1; };
+    diag2Listeners.add(listener);
+    try { notifyDiag2Listeners(); notifyDiag2Listeners(); return calls === 0 || `called synchronously ${calls}x`; }
+    finally { diag2Listeners.delete(listener); }
   });
   return results;
 }
@@ -183148,29 +183224,12 @@ function dispatchGameSettingsChange(
 
   const downloadSaveFile = useCallback((data: SaveGameData) => {
     const filename = generateSaveFileName(data);
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    return triggerJsonFileDownload(filename, data);
   }, [generateSaveFileName]);
 
   // RP2: mirrors downloadSaveFile's exact Blob+anchor download pattern for the replay file.
   const downloadReplayFile = useCallback((file: ReplayFile) => {
-    const filename = `replay_${file.matchId}.json`;
-    const blob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+    return triggerJsonFileDownload(`replay_${file.matchId}.json`, file);
   }, []);
 
   // RP2: stamps the final match result onto the in-progress recording, computes its checksum (the
@@ -183225,13 +183284,17 @@ function dispatchGameSettingsChange(
     const checksum = computeReplayChecksum(finalized);
     const completed: ReplayFile = { ...finalized, checksum };
     replayRecordingRef.current = completed;
-    downloadReplayFile(completed);
+    // Hand the replay to the viewer first: a blocked/failed download used to throw here, so "Watch Replay"
+    // had nothing to show and the error escaped into the AI turn that ended the match.
     setLoadedReplayFile(cloneReplayFileImmutable(completed));
+    if (!downloadReplayFile(completed)) {
+      addNotification('Replay is ready to watch in this session (the file download was blocked).', 'warning', false, 'system');
+    }
     if (gameSettings.replayAutoOpenAtMatchEnd) {
       setShowReplayViewer(true);
       setReplayDashboardTab('watch');
     }
-  }, [actorsById, aiPlayer, downloadReplayFile, gameSettings, gameState, player, teamsById]);
+  }, [actorsById, addNotification, aiPlayer, downloadReplayFile, gameSettings, gameState, player, teamsById]);
 
   // RP3: opens the file picker for loading a replay file into the read-only Replay Viewer.
   const openReplayLoadDialog = useCallback(() => {
@@ -183333,7 +183396,7 @@ function dispatchGameSettingsChange(
     }
     try {
       const data = buildSaveData(descriptionOverride);
-      downloadSaveFile(data);
+      if (!downloadSaveFile(data)) throw new Error('The browser blocked the save-file download.');
       addNotification(`Game saved! Day ${data.gameState.day}, ${data.player.name}`, 'success');
     } catch (error) {
       console.error('Save failed', error);
@@ -197002,12 +197065,15 @@ function dispatchGameSettingsChange(
                 expeditionTier: tier as 1 | 2 | 3
               };
               dispatchPlayer({ type: 'SET_ACTIVE_JOURNEY', payload: journey });
+              // Rival memory observes the player's moves exactly as it observes AI actors' (team path / travelActor).
+              commitMatchMemory({ actionType: 'travel', actorId: player.id || 'player', regionId: region, magnitude: cost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} departed toward ${terr?.name || region}.`, stableKey: `human-travel-${gameState.turnCounter}-${player.id || 'player'}-${region}-u${player.actionsUsedThisTurn || 0}` });
               updateUiState({ showTravelModal: false });
               const targetName = terr?.name || region;
               addNotification(`Departed on expedition to ${targetName} for $${cost}. Transit will take ${terr.multiTurnDuration} day(s).`, 'travel');
             } else {
               dispatchPlayer({ type: 'UPDATE_MONEY', payload: -cost });
               dispatchPlayer({ type: 'SET_REGION', payload: region });
+              commitMatchMemory({ actionType: 'travel', actorId: player.id || 'player', regionId: region, magnitude: cost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} traveled to ${(REGIONS[region] || EXTERNAL_TERRITORIES[region])?.name || region}.`, stableKey: `human-travel-${gameState.turnCounter}-${player.id || 'player'}-${region}-u${player.actionsUsedThisTurn || 0}` });
               if (isCommitted && terr) {
                 const duration = terr.multiTurnDuration || 1;
                 dispatchPlayer({ type: 'MERGE_STATE', payload: { committedStayTurnsLeft: duration } });
@@ -197065,7 +197131,7 @@ function dispatchGameSettingsChange(
       commitAuthorizedTravel,
       { region, cost }
     );
-  }, [player, gameSettings, calculateTravelCost, addNotification, showConfirmation, requestActionOverrideForAction, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
+  }, [commitMatchMemory, player, gameSettings, calculateTravelCost, addNotification, showConfirmation, requestActionOverrideForAction, isTeamMode, dispatchAuthoritativeGameActivityLedgerEvent]);
 
   // Calculate dynamic max wager based on difficulty and level
   const calculateMaxWager = useCallback((challenge: any) => {
@@ -197178,6 +197244,7 @@ function dispatchGameSettingsChange(
           }
 
           const success = drawGameplayRandom('Combat') < successChance;
+          commitMatchMemory({ actionType: 'challenge', actorId: player.id || 'player', regionId: player.currentRegion, magnitude: wager, success, turn: gameState.turnCounter, summary: `${player.name || 'Player'} ${success ? 'won' : 'lost'} ${challenge.name}.`, stableKey: `human-challenge-${gameState.turnCounter}-${player.id || 'player'}-${challenge.name}-u${player.actionsUsedThisTurn || 0}` });
 
           if (success) {
             // V9.1: the payout arithmetic is the canonical computeChallengeRewardCore (shared with balance simulation).
@@ -197332,7 +197399,7 @@ function dispatchGameSettingsChange(
     } else {
       confirmChallenge();
     }
-  }, [player, gameSettings, calculateSuccessChance, addNotification, showConfirmation, requestActionOverrideForAction, updatePersonalRecords, activeSpecialAbility, getUnderdogBonus, getWealthState, applyGrandTourChallengeProgress, gameSettings.aiReplayRecordingEnabled, gameState.day, appendReplayCheckpoint, usedFreeChallengeThisTurn]);
+  }, [commitMatchMemory, player, gameSettings, calculateSuccessChance, addNotification, showConfirmation, requestActionOverrideForAction, updatePersonalRecords, activeSpecialAbility, getUnderdogBonus, getWealthState, applyGrandTourChallengeProgress, gameSettings.aiReplayRecordingEnabled, gameState.day, appendReplayCheckpoint, usedFreeChallengeThisTurn]);
 
   // Calculate regional demand bonus for selling resources
   const calculateRegionalBonus = useCallback((resource: string, region: string) => {
@@ -197894,6 +197961,7 @@ function dispatchGameSettingsChange(
       const successChance = 0.70 - sabotageResistance + attackerBonus;
       if (drawGameplayRandom('Sabotage') > successChance) {
         dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotage.cost });
+        commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotage.cost, success: false, turn: gameState.turnCounter, summary: `${player.name || 'Player'} attempted ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
         addNotification(`Sabotage attempt failed! ${targetActor.name}'s regional standing resisted the attempt.`, 'warning', true);
         if (sabotageApCost > 0) {
           dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: sabotageApCost, actionId: 'sabotage' } });
@@ -197906,12 +197974,13 @@ function dispatchGameSettingsChange(
       debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, sabotage.duration)
     }));
     dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotage.cost });
+    commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotage.cost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} used ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
     addNotification(`Sabotage used: ${sabotage.name}.`, 'warning', true);
     addNotification(`🤖 ${targetActor.name} is affected by ${sabotage.name}.`, 'ai', false);
     if (sabotageApCost > 0) {
       dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: sabotageApCost, actionId: 'sabotage' } });
     }
-  }, [gameSettings.sabotageEnabled, isCompetitiveMode, gameState.currentTurn, sabotageTargetId, primaryOpponentActor, getActorState, player.teamId, player.money, addNotification, updateActorState, incrementAction]);
+  }, [commitMatchMemory, gameSettings.sabotageEnabled, isCompetitiveMode, gameState.currentTurn, sabotageTargetId, primaryOpponentActor, getActorState, player.teamId, player.money, addNotification, updateActorState, incrementAction]);
 
   const retryFailedChallenge = useCallback(() => {
     if (!failedChallengeData) return;
@@ -200974,6 +201043,14 @@ function dispatchGameSettingsChange(
         break;
       case 'refinance_advanced_loan':
         if (typeof action.data?.loanId === 'string' && typeof action.data?.tierId === 'string') {
+          // Check the replacement loan is allowed BEFORE repaying: repay-then-fail left the old loan paid
+          // off with no new loan while the action reported failure.
+          const refinanceTier = LOAN_TIERS.find(t => t.id === action.data.tierId);
+          if (!refinanceTier || !isAdvancedLoansEnabledForActor(actor) || !gameSettings.loanRefinancingEnabled || (actor.level || 1) < refinanceTier.levelRequired
+            || !(actor.advancedLoans || []).some((l: any) => l.id === action.data.loanId)) {
+            actionSucceeded = false;
+            break;
+          }
           const repaid = repayAdvancedLoanForActor(actorId, action.data.loanId, false, { silent: true, suppressLedgerEvent: true });
           actionSucceeded = repaid
             ? takeAdvancedLoanForActor(actorId, action.data.tierId, false, undefined, { silent: false, suppressLedgerEvent: true })
@@ -201068,15 +201145,17 @@ function dispatchGameSettingsChange(
         break;
       }
       case 'work': {
-        const wage = action.data?.wage || action.data?.amount || 50;
+        // The wage is a fixed rule ($50 everywhere); a larger payload amount must not mint money.
+        const wage = Math.min(50, Math.max(0, Number(action.data?.wage || action.data?.amount) || 50));
         updateActorState(actorId, (prev: any) => ({ ...prev, money: (prev.money || 0) + wage }));
         dispatchAuthoritativeGameActivityLedgerEvent('action', { teamId: actor.teamId, actorId, actionType: 'work', summary: `${getActorDisplayName(actorId)} worked for $${wage}.` });
         actionSucceeded = true;
         break;
       }
       case 'double_or_nothing': {
-        const wager = action.data?.wager || action.data?.reward || 100;
-        const isWin = action.data?.isWin ?? (drawGameplayRandom('Challenges') >= 0.5);
+        // The outcome is always drawn (a payload isWin was a guaranteed win) and the stake is limited to cash held.
+        const wager = Math.min(Math.max(0, Number(action.data?.wager || action.data?.reward) || 100), Math.max(0, actor.money || 0));
+        const isWin = drawGameplayRandom('Challenges') >= 0.5;
         if (isWin) {
           updateActorState(actorId, (prev: any) => ({ ...prev, money: (prev.money || 0) + wager }));
         } else {
@@ -206115,6 +206194,14 @@ function dispatchGameSettingsChange(
   // dedicated loop, since the outer performTeamAiTurn while loop already abandoned its local
   // actionBudget/actionsTaken state via `return` at the pause point) — this is the SAME fix
   // pattern the bugfix-round-1 override bug required, applied to the new Approval pause point.
+  // Approval is the human player's control over their OWN team. An opponent (or a team with no human, e.g.
+  // AI vs AI) must never pause for — or be vetoed by — the player's approval prompts / auto-approval rules;
+  // with approvals on, the enemy leader used to wait on an Approve/Reject prompt shown to the player.
+  const teamHasHumanApprover = (teamId?: string | null): boolean => Boolean(teamId) && getTeamActors(String(teamId)).some(a => a.kind === 'human');
+  const resolveApprovalRulesForActor = (actorForRules: ActorState, decisionForRules: any, day: number, ctx: { wager?: number; cost?: number }) =>
+    teamHasHumanApprover(actorForRules.teamId)
+      ? resolveAutomaticApprovalRules(actorForRules, decisionForRules, getEffectiveGameSettingsForTeam(actorForRules.teamId), day, ctx)
+      : ({ outcome: 'none', reason: 'No human approver on this team.' } as ReturnType<typeof resolveAutomaticApprovalRules>);
   const resumeAfterApprovalResolution = useCallback(async (
     actorId: string,
     control: ApprovalControlAction,
@@ -206271,7 +206358,7 @@ function dispatchGameSettingsChange(
         actor = getActorState(actorId);
         if (!actor) break;
         if (!skipApprovalCheckOnce) {
-          const autoResolution = resolveAutomaticApprovalRules(actor, decision, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost });
+          const autoResolution = resolveApprovalRulesForActor(actor, decision, gameState.day, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost });
           if (autoResolution.outcome === 'reject') {
             if (gameSettings.aiActionApprovalTransparencyEnabled) appendTeamAiTraceNote(actorId, `Auto-rejected: ${autoResolution.reason}`);
             recordRejectedProposalSignature(actorId, gameState.day, null, getDecisionSignature(decision));
@@ -206303,7 +206390,7 @@ function dispatchGameSettingsChange(
             highRiskThresholds: gameSettings.aiActionApprovalHighRiskThresholds,
             teammateOverrides: gameSettings.aiActionApprovalTeammateOverrides
           };
-          const needsPlayerApproval = autoResolution.outcome === 'none'
+          const needsPlayerApproval = autoResolution.outcome === 'none' && teamHasHumanApprover(actor.teamId)
             && needsApproval(actor, decision, policy, gameSettings, { wager: decision.data?.wager, cost: decision.data?.purchases?.[0]?.cost })
             && !alwaysApproveSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory);
           if (needsPlayerApproval) {
@@ -206444,7 +206531,7 @@ function dispatchGameSettingsChange(
         if (!actorForAction) break;
         const revalidated = tokenId ? redeemActionToken(actorForAction.teamId, actorId, decision, tokenId, isReservationHardBlocked) : true;
         tokenId = undefined;
-        const bonusApprovalAutoResolution = resolveAutomaticApprovalRules(actorForAction, decision, getEffectiveGameSettingsForTeam(actorForAction.teamId), gameState.day, { wager: decision.data?.wager });
+        const bonusApprovalAutoResolution = resolveApprovalRulesForActor(actorForAction, decision, gameState.day, { wager: decision.data?.wager });
         if (bonusApprovalAutoResolution.outcome === 'reject') {
           if (gameSettings.aiActionApprovalTransparencyEnabled) {
             appendTeamAiTraceNote(actorId, `Auto-rejected: ${bonusApprovalAutoResolution.reason}`);
@@ -206461,7 +206548,7 @@ function dispatchGameSettingsChange(
           highRiskThresholds: gameSettings.aiActionApprovalHighRiskThresholds,
           teammateOverrides: gameSettings.aiActionApprovalTeammateOverrides
         };
-        const bonusNeedsPlayerApproval = bonusApprovalAutoResolution.outcome === 'none'
+        const bonusNeedsPlayerApproval = bonusApprovalAutoResolution.outcome === 'none' && teamHasHumanApprover(actorForAction.teamId)
           && needsApproval(actorForAction, decision, bonusApprovalPolicy, gameSettings, { wager: decision.data?.wager })
           && !alwaysApproveSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory)
           && !alwaysRejectSimilarRef.current[actorId]?.has(decision.type as TeamModeActionCategory);
@@ -207307,7 +207394,7 @@ function dispatchGameSettingsChange(
           }
         }
 
-        const approvalAutoResolution = resolveAutomaticApprovalRules(actor, decision, getEffectiveGameSettingsForTeam(actor.teamId), gameState.day, {
+        const approvalAutoResolution = resolveApprovalRulesForActor(actor, decision, gameState.day, {
           wager: decision.data?.wager,
           cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined
         });
@@ -207336,7 +207423,7 @@ function dispatchGameSettingsChange(
           teammateOverrides: gameSettings.aiActionApprovalTeammateOverrides
         };
         const isSequenceSourcedDecision = Boolean(sequenceStepMatch && decision === sequenceStepMatch.decision);
-        const needsPlayerApproval = approvalAutoResolution.outcome === 'none'
+        const needsPlayerApproval = approvalAutoResolution.outcome === 'none' && teamHasHumanApprover(actor.teamId)
           && needsApproval(actor, decision, approvalPolicy, gameSettings, { wager: decision.data?.wager, cost: decision.type === 'buy_market' ? decision.data?.purchases?.[0]?.cost : undefined, isSequenceSourced: isSequenceSourcedDecision })
           && !alwaysApproveSimilarRef.current[actor.id]?.has(decision.type as TeamModeActionCategory);
         if (needsPlayerApproval) {
@@ -240730,6 +240817,9 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
       {gameState.gameMode === "menu" && uiState.showCampaignSelect && renderCampaignSelect()}
       {gameState.gameMode === "game" && renderGame()}
       {gameState.gameMode === "end" && renderGameOver()}
+      {/* The replay dashboard lives inside renderGame(); the end screen's (and menu's) Watch Replay set the flag
+          with nothing rendering it, so it also renders here whenever the game screen is not mounted. */}
+      {gameState.gameMode !== "game" && renderReplayDashboard()}
       {renderSaveLoadModal()}
       {renderLoadPreviewModal()}
       {/* Milestone 5: UI Modals & Drawers */}
