@@ -133737,7 +133737,8 @@ export function validateSaveDataCore(raw: any): SaveGameData {
       currentActorId: typeof stateData.currentActorId === 'string' ? stateData.currentActorId : initialGameState.currentActorId,
       turnOrder: Array.isArray(stateData.turnOrder) ? stateData.turnOrder.map(String) : initialGameState.turnOrder,
       turnCounter: v95IsFiniteNum(stateData.turnCounter) ? Math.max(0, Math.floor(stateData.turnCounter)) : initialGameState.turnCounter,
-      day: v95IsFiniteNum(stateData.day) && stateData.day >= 1 ? Math.floor(stateData.day) : 1,
+      // A numeric string (hand-edited / foreign save) keeps its day instead of silently restarting at day 1.
+      day: Number.isFinite(Number(stateData.day)) && Number(stateData.day) >= 1 ? Math.floor(Number(stateData.day)) : 1,
       roundNumber: v95IsFiniteNum(stateData.roundNumber) ? Math.max(0, Math.floor(stateData.roundNumber)) : initialGameState.roundNumber,
       autoplay: stateData.autoplay
         ? {
@@ -180458,6 +180459,14 @@ export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
     const r = simulateHouseholdEconomyWhatIf(inputs, base.persisted, { scenarioType: 'concentrate_industrial_expansion', targetRegionId: 'VIC', hasEnablingSkillsAndResearch: true });
     return (inputs.regions === undefined && /VIC/.test(String(r.summary))) || 'unexpected';
   });
+  check('ru_canonical_uses_injected_actor', 'The canonical reducer evaluates the injected live actor (not a default $1,000 stand-in) — human/team contract & expedition paths rely on it', () => {
+    const live: any = { ...JSON.parse(JSON.stringify(initialGameState)), gameMode: 'game' };
+    const real: any = { ...createActorSnapshot({ id: 'player', name: 'P', teamId: TEAM_PLAYER_ID, kind: 'human', role: 'leader', character: CHARACTERS[0] }), money: 123456, currentRegion: 'WA' };
+    const canon: any = canonicalStateFromLiveRuntime({ ...live, player: real, actorsById: { player: real } } as any);
+    const r = reduceGameAction({ ...live, gameSettings: settings, player: real, actorsById: { player: real } } as any, { type: 'work', actorId: 'player', parameters: {} } as any, { active: true, actorId: 'player' } as any);
+    const after: any = (r.nextState as any).actorsById.player;
+    return (canon.actorsById.player.money === 123456 && canon.actorsById.player.currentRegion === 'WA' && after.money === 123456 + 50) || `canon ${canon.actorsById.player.money}@${canon.actorsById.player.currentRegion} after ${after.money}`;
+  });
   return results;
 }
 
@@ -201188,15 +201197,9 @@ function dispatchGameSettingsChange(
       case 'acceptContract': {
         const act = action as unknown as Record<string, any>;
         const contractId = act.data?.contractId || act.parameters?.contractId;
-        // V9.1: the game-state reducer never handled these types (silent no-op reported as success).
-        // The AI now goes through the same canonical contract reducer as the human, with the same gates.
-        const res = contractId ? reduceGameAction({ ...(gameStateLiveRef.current as any), gameSettings } as any, { type: 'accept_regional_contract', actorId, parameters: { contractId } }, { active: true, operation: 'accept_regional_contract', actorId } as ActionExecutionContext) : null;
-        if (res?.success && res.nextState) {
-          dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
-          actionSucceeded = true;
-        } else {
-          actionSucceeded = false;
-        }
+        // V9.1 moved these onto the canonical contract reducer, but ran it on live state WITHOUT this actor
+        // (AI actors live outside gameState), so an AI could never accept or deliver. Same gates, real actor.
+        actionSucceeded = contractId ? runCanonicalTeamAction('accept_regional_contract', { contractId }) : false;
         break;
       }
       case 'progress_contract_objective':
@@ -201204,13 +201207,7 @@ function dispatchGameSettingsChange(
         const act = action as unknown as Record<string, any>;
         const contractId = act.data?.contractId || act.parameters?.contractId;
         // Progress is derived from real deliverables (resources in region, capital, infrastructure) — never a delta.
-        const res = contractId ? reduceGameAction(gameStateLiveRef.current as any, { type: 'deliver_contract_objectives', actorId, parameters: { contractId } }, { active: true, operation: 'deliver_contract_objectives', actorId } as ActionExecutionContext) : null;
-        if (res?.success && res.nextState) {
-          dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
-          actionSucceeded = true;
-        } else {
-          actionSucceeded = false;
-        }
+        actionSucceeded = contractId ? runCanonicalTeamAction('deliver_contract_objectives', { contractId }) : false;
         break;
       }
       case 'start_infrastructure_project':
@@ -209304,6 +209301,37 @@ function dispatchGameSettingsChange(
 
   // MILESTONE 3 REMEDIATION: ACTION DISPATCH HANDLERS
 
+  // Human actions routed through the canonical reducer must run against the REAL player (player reducer) and
+  // rival: the live gameState carries no player, so the reducer used a default $1,000/QLD stand-in — contract,
+  // expedition and relic checks used the wrong cash/region/inventory, and their costs and rewards were written
+  // to that stand-in instead of the player. Only what the action changed is written back.
+  const runHumanCanonicalAction = (action: GameAction, execCtx: ActionExecutionContext): ActionTransitionResult => {
+    const live: any = gameStateLiveRef.current || gameState;
+    const human: any = playerRef.current || player;
+    const rival: any = aiPlayerRef.current;
+    const actorKey = String(action.actorId || human?.id || 'player');
+    const input: any = { ...live, gameSettings, player: human, aiPlayer: rival, actorsById: { ...(live.actorsById || {}), ...(rival ? { [String(rival.id || 'ai')]: rival } : {}), [actorKey]: human } };
+    const res = reduceGameAction(input, action, execCtx);
+    if (!res?.success || !res.nextState) return res;
+    const before: any = canonicalStateFromLiveRuntime(input);
+    const after: any = res.nextState;
+    const playerBefore: any = before.actorsById?.[actorKey] || {};
+    const playerAfter: any = after.actorsById?.[actorKey] || {};
+    const changed: Record<string, unknown> = {};
+    Object.keys(playerAfter).forEach(key => { if (JSON.stringify(playerAfter[key]) !== JSON.stringify(playerBefore[key])) changed[key] = playerAfter[key]; });
+    if (Object.keys(changed).length) {
+      playerRef.current = { ...human, ...changed };
+      dispatchPlayer({ type: 'MERGE_STATE', payload: changed });
+    }
+    const world: Record<string, unknown> = {};
+    Object.keys(after).forEach(key => {
+      if (['actorsById', 'player', 'aiPlayer', 'gameSettings', 'counters', 'deterministicCounters', 'match'].includes(key)) return;
+      if (JSON.stringify(after[key]) !== JSON.stringify(before[key])) world[key] = after[key];
+    });
+    if (Object.keys(world).length) dispatchGameState({ type: 'LOAD_STATE', payload: world });
+    return res;
+  };
+
   const handleAcceptContract = useCallback((contractId: string) => {
     if (v96BlockHumanAction('Accepting a contract')) return;
     const actorId = player.id || 'player';
@@ -209321,9 +209349,8 @@ function dispatchGameSettingsChange(
       item: contractId,
       parameters: { contractId }
     };
-    const res = reduceGameAction({ ...gameState, gameSettings } as any, action, execCtx);
+    const res = runHumanCanonicalAction(action, execCtx);
     if (res && res.success && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
       if (addNotification) {
         addNotification(`Accepted contract ${contractId}`, 'success', true);
       }
@@ -209341,9 +209368,8 @@ function dispatchGameSettingsChange(
     const actorId = player.id || 'player';
     const teamId = player.teamId || 'team_player';
     const before = listRegionalContracts(gameState).find((x: any) => x.id === contractId);
-    const res = reduceGameAction(gameState, { type: 'deliver_contract_objectives', actorId, teamId, item: contractId, parameters: { contractId } } as GameAction, { active: true, operation: 'deliver_contract_objectives', actorId, teamId });
+    const res = runHumanCanonicalAction({ type: 'deliver_contract_objectives', actorId, teamId, item: contractId, parameters: { contractId } } as GameAction, { active: true, operation: 'deliver_contract_objectives', actorId, teamId } as ActionExecutionContext);
     if (res && res.success && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
       const after = listRegionalContracts(res.nextState as any).find((x: any) => x.id === contractId);
       addNotification(after?.status === 'completed' ? `Contract complete: ${after.title || contractId}. Rewards credited.` : `Delivered to ${before?.title || contractId}.`, 'success', true);
     } else {
@@ -209370,9 +209396,8 @@ function dispatchGameSettingsChange(
       item: contractId,
       parameters: { contractId }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
+    const res = runHumanCanonicalAction(action, execCtx);
     if (res && res.success && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
       if (addNotification) {
         addNotification(`Successfully fulfilled regional contract! Rewards credited.`, 'success', true);
       }
@@ -209405,12 +209430,13 @@ function dispatchGameSettingsChange(
       investmentAmount: amount,
       parameters: { projectId, amount }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
-    if (res && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
+    const res = runHumanCanonicalAction(action, execCtx);
+    if (res && res.success && res.nextState) {
       if (addNotification) {
         addNotification(`Invested $${amount.toLocaleString()} into project ${projectId}`, 'success', true);
       }
+    } else if (addNotification) {
+      addNotification(`Could not invest $${amount.toLocaleString()} into project ${projectId} (check cash and project status).`, 'warning', true);
     }
   }, [gameState, player.id, player.teamId, addNotification]);
 
@@ -209432,9 +209458,8 @@ function dispatchGameSettingsChange(
       teamId,
       parameters: { targetId, riskChoice }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
-    if (res && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
+    const res = runHumanCanonicalAction(action, execCtx);
+    if (res && res.success && res.nextState) {
       if (addNotification) {
         addNotification(`Expedition team departed for ${target?.name || targetId} (Cost: $${prepCost.toLocaleString()})`, 'info', true);
       }
@@ -209458,10 +209483,7 @@ function dispatchGameSettingsChange(
       teamId,
       parameters: { expeditionId }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
-    if (res && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
-    }
+    runHumanCanonicalAction(action, execCtx);
   }, [gameState, player.id, player.teamId]);
 
   const handleResolveExpeditionBeatChoice = useCallback((expeditionId: string, choiceId: string) => {
@@ -209479,10 +209501,7 @@ function dispatchGameSettingsChange(
       teamId,
       parameters: { expeditionId, choiceId }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
-    if (res && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
-    }
+    runHumanCanonicalAction(action, execCtx);
   }, [gameState, player.id, player.teamId]);
 
   const handleEquipRelic = useCallback((relicId: string, slot: RelicSlot) => {
@@ -209500,12 +209519,13 @@ function dispatchGameSettingsChange(
       teamId,
       parameters: { relicId, slot }
     };
-    const res = reduceGameAction(gameState, action, execCtx);
-    if (res && res.nextState) {
-      dispatchGameState({ type: 'LOAD_STATE', payload: res.nextState });
+    const res = runHumanCanonicalAction(action, execCtx);
+    if (res && res.success && res.nextState) {
       if (addNotification) {
         addNotification(`Equipped relic in ${slot} slot`, 'success', true);
       }
+    } else if (addNotification) {
+      addNotification('That relic could not be equipped.', 'warning', true);
     }
   }, [gameState, player.id, player.teamId, addNotification]);
 
