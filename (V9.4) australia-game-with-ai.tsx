@@ -15884,7 +15884,7 @@ export function drawGameRandom(
   let resultVal: number;
   switch (selectedMode) {
     case 'legacy_random':
-      resultVal = Math.random();
+      resultVal = NATIVE_MATH_RANDOM();
       break;
 
     case 'recorded_chaos':
@@ -15915,8 +15915,8 @@ export function drawGameRandom(
         resultVal = drawGameplayRandom(domain);
       } catch {
         // V9.5: hybrid mode may fall back, but never silently claim a certified deterministic replay.
-        globalRngRegistry.markReplayUncertified(`Hybrid RNG fallback to Math.random for ${String(domain || 'World')}`);
-        resultVal = Math.random();
+        globalRngRegistry.markReplayUncertified(`Hybrid RNG fallback to native random for ${String(domain || 'World')}`);
+        resultVal = NATIVE_MATH_RANDOM();
       }
       break;
 
@@ -16344,6 +16344,13 @@ export function nextCorrelationId(counters: DeterministicCounters = globalDeterm
   counters.correlation += 1;
   return `${matchId}:corr:${counters.correlation}`;
 }
+export function restoreRngRegistryForLoad(saved: Record<string, any> | null | undefined, masterSeed: number): void {
+  const savedObj = saved && typeof saved === 'object' ? saved : null;
+  const coversAll = Boolean(savedObj && RNG_STREAM_NAMES.every(domain => savedObj[domain] || savedObj[String(domain).toLowerCase()]));
+  if (!coversAll) globalRngRegistry.initStreams(masterSeed);
+  if (savedObj) globalRngRegistry.importStreamStates(savedObj);
+}
+
 export function setRngMasterSeed(seed: number, isDeterministic: boolean = true) {
   globalRngRegistry.isDeterministic = isDeterministic;
   globalRngRegistry.setAuditPolicy(isDeterministic ? 'strict' : 'monitor');
@@ -24950,10 +24957,15 @@ export function createMatchCheckpoint(
   }
 
   const expectedStateHash = computeCanonicalStateHash(gameState);
-  const counters: DeterministicCounters = JSON.parse(
-    JSON.stringify(gameState?.deterministicCounters || gameState?.counters || globalDeterministicCounters)
-  );
-  const cpId = nextCheckpointId(counters);
+  const liveCounters = (gameState?.deterministicCounters && typeof gameState.deterministicCounters === 'object')
+    ? gameState.deterministicCounters
+    : globalDeterministicCounters;
+  if (liveCounters !== globalDeterministicCounters) {
+    liveCounters.checkpoint = Math.max(Number(liveCounters.checkpoint) || 0, Number(globalDeterministicCounters.checkpoint) || 0);
+  }
+  const cpId = nextCheckpointId(liveCounters);
+  globalDeterministicCounters.checkpoint = liveCounters.checkpoint;
+  const counters: DeterministicCounters = JSON.parse(JSON.stringify(liveCounters));
 
   const rngRegistry = gameState?.rngRegistry || globalRngRegistry;
   const rngMasterSeed = rngRegistry?.masterSeed ?? gameState?.rng?.masterSeed ?? 1337;
@@ -48559,6 +48571,23 @@ export interface AiTuningLabSelfTestResult {
   id: string;
   passed: boolean;
   detail: string;
+}
+
+export function withIsolatedRng<T>(fn: () => T): T {
+  const streams = globalRngRegistry.exportStreamStates();
+  const counters = JSON.parse(JSON.stringify(globalDeterministicCounters));
+  const master = globalRngRegistry.masterSeed;
+  const deterministic = globalRngRegistry.isDeterministic;
+  const policy = globalRngRegistry.auditPolicy;
+  try {
+    return fn();
+  } finally {
+    globalRngRegistry.masterSeed = master;
+    globalRngRegistry.isDeterministic = deterministic;
+    if (policy) globalRngRegistry.setAuditPolicy(policy);
+    globalRngRegistry.importStreamStates(streams);
+    Object.assign(globalDeterministicCounters, counters);
+  }
 }
 
 export function runAiTuningLabSelfTests(): AiTuningLabSelfTestResult[] {
@@ -136320,6 +136349,67 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
     const allowed = humanAutomationRunNowAllowed({ humanAutomationEnabled: true }, { enabled: true, authorityMode: 'silent_autorun' });
     return (!blocked && !disabled && allowed) || `b=${blocked} d=${disabled} a=${allowed}`;
   });
+  check('u_legacy_random_does_not_throw', 'legacy_random returns a native draw under strict audit (SAVE-001)', () => {
+    const streams = globalRngRegistry.exportStreamStates();
+    const counters = JSON.parse(JSON.stringify(globalDeterministicCounters));
+    try {
+      setRngMasterSeed(5, true);
+      const n = drawGameRandom({ day: 1, turn: 1 }, 'World', 'legacy_random');
+      return (typeof n === 'number' && n >= 0 && n < 1) || String(n);
+    } finally {
+      globalRngRegistry.importStreamStates(streams);
+      Object.assign(globalDeterministicCounters, counters);
+    }
+  });
+  check('u_checkpoint_ids_advance', 'Replay checkpoints get distinct ids and keep match start (SAVE-002)', () => {
+    const previous = globalDeterministicCounters.checkpoint;
+    try {
+      globalDeterministicCounters.checkpoint = 0;
+      const first = createMatchCheckpoint({ day: 1, turnCounter: 0, deterministicCounters: globalDeterministicCounters } as any, 'match_start', 'Match start');
+      const second = createMatchCheckpoint({ day: 2, turnCounter: 1, deterministicCounters: globalDeterministicCounters } as any, 'day', 'Day 2');
+      const third = createMatchCheckpoint({ day: 3, turnCounter: 2, deterministicCounters: globalDeterministicCounters } as any, 'day', 'Day 3');
+      const ids = [first.id, second.id, third.id];
+      return (new Set(ids).size === 3 && ids[0] !== ids[2]) || ids.join(',');
+    } finally {
+      globalDeterministicCounters.checkpoint = previous;
+    }
+  });
+  check('u_partial_rng_reseeds_missing', 'A partial RNG registry reseeds the missing stream from the save seed (SAVE-004)', () => {
+    const streams = globalRngRegistry.exportStreamStates();
+    const counters = JSON.parse(JSON.stringify(globalDeterministicCounters));
+    try {
+      setRngMasterSeed(111, true);
+      const fresh = globalRngRegistry.exportStreamStates().World.currentState;
+      globalRngRegistry.draw('World');
+      const moved = globalRngRegistry.exportStreamStates().World.currentState;
+      const partial = globalRngRegistry.exportStreamStates();
+      delete partial.World;
+      delete partial.world;
+      delete partial.map;
+      delete partial.player;
+      restoreRngRegistryForLoad(partial, 111);
+      const restored = globalRngRegistry.exportStreamStates().World.currentState;
+      const kept = globalRngRegistry.exportStreamStates().AIReasoning.currentState === partial.AIReasoning.currentState;
+      return (restored === fresh && restored !== moved && kept) || `fresh=${fresh} moved=${moved} restored=${restored} kept=${kept}`;
+    } finally {
+      globalRngRegistry.importStreamStates(streams);
+      Object.assign(globalDeterministicCounters, counters);
+    }
+  });
+  check('u_tuning_lab_restores_rng', 'Tuning Lab work restores the live RNG streams (UI-007)', () => {
+    const streams = globalRngRegistry.exportStreamStates();
+    const counters = JSON.parse(JSON.stringify(globalDeterministicCounters));
+    try {
+      setRngMasterSeed(42, true);
+      const before = globalRngRegistry.exportStreamStates().World.currentState;
+      withIsolatedRng(() => { setRngMasterSeed(99, true); globalRngRegistry.draw('World'); return 1; });
+      const after = globalRngRegistry.exportStreamStates().World.currentState;
+      return before === after || `before=${before} after=${after}`;
+    } finally {
+      globalRngRegistry.importStreamStates(streams);
+      Object.assign(globalDeterministicCounters, counters);
+    }
+  });
 
   return results;
 }
@@ -189546,7 +189636,7 @@ function dispatchGameSettingsChange(
 
 	    window.addEventListener('keydown', handleKeyPress);
 	    return () => window.removeEventListener('keydown', handleKeyPress);
-	  }, [clearAllNotifications, closeConfirmation, confirmationDialog, gameSettings.notificationClearShortcut, gameSettings.totalDays, gameState.currentTurn, gameState.day, gameState.gameMode, handleSaveGame, uiState]);
+	  }, [clearAllNotifications, closeConfirmation, confirmationDialog, gameSettings.notificationClearShortcut, gameSettings.totalDays, gameState.currentTurn, gameState.day, gameState.gameMode, handleEndTurn, handleSaveGame, uiState]);
 
   // =========================================
   // HELPER FUNCTIONS
@@ -190450,6 +190540,8 @@ function dispatchGameSettingsChange(
     // "AI is thinking" state from surviving the load and hanging the game.
     isAiThinkingRef.current = false;
     dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+    replayRecordingRef.current = null;
+    pendingReplayStartRef.current = false;
     setCurrentAiAction(null);
 
     // AUDIT-BUG-002 & AUDIT-BUG-003: Clear approval request IDs and active AI turn sessions during save load
@@ -190619,7 +190711,7 @@ function dispatchGameSettingsChange(
       ? data.aiRuntime.worldRngState
       : normalizeAiSeed(data.gameSettings.worldRngSeed);
     if (data.rngRegistryState) {
-      globalRngRegistry.importStreamStates(data.rngRegistryState);
+      restoreRngRegistryForLoad(data.rngRegistryState, data.gameSettings?.worldRngSeed || data.gameSettings?.aiDeterministicSeed || 1337);
     } else {
       const seed = data.gameSettings?.worldRngSeed || data.gameSettings?.aiDeterministicSeed || 1337;
       setRngMasterSeed(seed, true);
@@ -241153,7 +241245,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                 <div>Sigma: {tuningSigma.toFixed(3)} · Neither streak: {tuningNeitherStreak}</div>
                 <button type="button" disabled={tuningFeatureCeiling} onClick={runTuningLabGeneration} className="px-4 py-2 rounded bg-fuchsia-700 font-semibold disabled:opacity-40">Run generation</button>
                 <div className="text-slate-400 text-xs">{tuningLabProgress}</div>
-                <button type="button" className="px-3 py-1 rounded bg-slate-700 text-xs" onClick={() => setTuningSelfTestReport(runAiTuningLabSelfTests())}>Run lab self-tests</button>
+                <button type="button" className="px-3 py-1 rounded bg-slate-700 text-xs" onClick={() => setTuningSelfTestReport(withIsolatedRng(() => runAiTuningLabSelfTests()))}>Run lab self-tests</button>
               </div>
               <div className="space-y-2">
                 <div className="font-semibold">Champion manager</div>
@@ -241456,6 +241548,13 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                 The launcher and dock render an entry only when its open-callback
                 prop is supplied, so passing undefined removes the Ask Game /
                 AI Command entries when those surfaces are switched off. */}
+            {uiState.showStrategyPlannerModal ? (
+              <StrategyPlannerModal
+                isOpen
+                onClose={() => updateUiState({ showStrategyPlannerModal: false })}
+                gameState={gameState}
+              />
+            ) : null}
             <UnifiedInterfaceLauncher
               settings={gameSettings.launcherSettings || createDefaultLauncherSettings()}
               unreadCount={askAI.hasUnread ? 1 : 0}
