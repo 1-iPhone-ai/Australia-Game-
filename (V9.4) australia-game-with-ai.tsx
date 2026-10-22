@@ -9128,6 +9128,11 @@ const tickDebuffs = (debuffs: Debuff[] = []) => {
     .filter(debuff => debuff.remainingDays > 0);
 };
 
+/** Team days tick debuffs once, on the day wrap. Non-team human End Turn is that tick. */
+export function debuffsAfterHumanEndTurn(debuffs: Debuff[] = [], isTeamMode = false): Debuff[] {
+  return isTeamMode ? debuffs : tickDebuffs(debuffs);
+}
+
 const upsertDebuff = (debuffs: Debuff[] = [], type: string, duration: number) => {
   const normalized = debuffs.filter(debuff => debuff.remainingDays > 0);
   const existing = normalized.find(debuff => debuff.type === type);
@@ -21339,6 +21344,57 @@ export function isHumanActor(actorOrId: any, gameState?: any): boolean {
   return false;
 }
 
+/** Solo day commit. Override AP and the free-challenge flag do not survive the day. */
+export function soloDayBoundaryPlayerMerge(projected: any): Record<string, unknown> {
+  return {
+    actionsUsedThisTurn: projected?.actionsUsedThisTurn ?? 0,
+    overridesUsedToday: projected?.overridesUsedToday ?? 0,
+    overrideFatigue: projected?.overrideFatigue ?? 0,
+    overrideActionsGranted: 0,
+    usedFreeChallengeThisTurn: false,
+    lentActionsUsedToday: projected?.lentActionsUsedToday ?? 0,
+    receivedActionsUsedToday: projected?.receivedActionsUsedToday ?? 0,
+    completedThisSeason: projected?.completedThisSeason ?? [],
+    challengesCompleted: projected?.challengesCompleted ?? [],
+    advancedLoans: projected?.advancedLoans,
+    creditScore: projected?.creditScore,
+    loanHistory: projected?.loanHistory,
+    daysSinceLastBankruptcy: projected?.daysSinceLastBankruptcy
+  };
+}
+
+/** Versus bankruptcy and mercy belong to mode `ai`. Single may end broke without naming an AI winner. */
+export function soloVersusFailurePolicy(mode: string | null | undefined): {
+  endOnPlayerBankruptcy: boolean;
+  bankruptcyNamesAiWinner: boolean;
+  endOnAiBankruptcy: boolean;
+  applyMercy: boolean;
+} {
+  if (mode === 'ai') {
+    return { endOnPlayerBankruptcy: true, bankruptcyNamesAiWinner: true, endOnAiBankruptcy: true, applyMercy: true };
+  }
+  if (mode === 'single') {
+    return { endOnPlayerBankruptcy: true, bankruptcyNamesAiWinner: false, endOnAiBankruptcy: false, applyMercy: false };
+  }
+  return { endOnPlayerBankruptcy: false, bankruptcyNamesAiWinner: false, endOnAiBankruptcy: false, applyMercy: false };
+}
+
+/** Match-boundary release for the AI turn lock. Load, restart, and mode init all call this. */
+export function releaseInFlightAiTurnLocks(locks: {
+  isAiThinking: { current: boolean };
+  startedTeamAiTurnKeys: { current: Set<string> };
+  activeAiTurnSessions: { current: Record<string, unknown> };
+}): void {
+  locks.isAiThinking.current = false;
+  locks.startedTeamAiTurnKeys.current = new Set();
+  locks.activeAiTurnSessions.current = {};
+}
+
+/** Human End Turn evaluates Auto Mode once, as `player`. The old extra `'0'` dispatch and the advance-actor copy are not boundaries. */
+export function shouldEmitAutoModeBoundary(site: 'turn_transition' | 'finish_team_ai' | 'human_end_turn_extra' | 'advance_actor'): boolean {
+  return site === 'turn_transition' || site === 'finish_team_ai';
+}
+
 export function isHumanPlayerTurn(gameStateOrContext: any, explicitPlayerOrFlag?: any): boolean {
   if (!gameStateOrContext) {
     if (typeof explicitPlayerOrFlag === 'boolean') return explicitPlayerOrFlag;
@@ -21366,13 +21422,22 @@ export function isHumanPlayerTurn(gameStateOrContext: any, explicitPlayerOrFlag?
   const humanPlayerId = gameState?.humanPlayerId ?? (isHumanActor(resolvedHumanPlayer?.id, gameState) ? resolvedHumanPlayer?.id : 'player');
 
   // Determine if Team Mode is active (where currentActorId is the authoritative source of truth)
-  const mode = gameState?.selectedMode || gameState?.gameMode || gameState?.mode;
+  const mode = gameState?.selectedMode || gameState?.mode;
+  // team_ai_vs_ai has no human seat. The id "player" is an AI actor, and gameState.actorsById is empty after init.
+  if (mode === 'team_ai_vs_ai') return false;
   const isTeam = mode === 'team_human_ai_vs_ai_ai' || mode === 'team_ai_vs_ai' || (typeof mode === 'string' && mode.startsWith('team')) || Boolean(gameState?.teamsById && Object.keys(gameState.teamsById).length > 0);
 
   if (isTeam) {
     // 1. Team Mode: Authoritative Active Actor check (do NOT require gameState.currentTurn === 'player')
     const activeActorId = gameState.currentActorId ?? gameState.activeActorId ?? gameState.activePlayerId;
     if (activeActorId !== undefined && activeActorId !== null) {
+      const explicitActor = typeof explicitPlayerOrFlag === 'object' && explicitPlayerOrFlag ? explicitPlayerOrFlag : null;
+      const activeActor = gameState.actorsById?.[activeActorId]
+        || gameState.actorsById?.[String(activeActorId)]
+        || (explicitActor && (explicitActor.id === activeActorId || String(explicitActor.id) === String(activeActorId)) ? explicitActor : null)
+        || (gameState?.player && (gameState.player.id === activeActorId || String(gameState.player.id) === String(activeActorId)) ? gameState.player : null);
+      if (activeActor && (activeActor.kind === 'ai' || activeActor.isAi === true)) return false;
+      if (activeActor && activeActor.kind === 'human') return true;
       if (activeActorId === humanPlayerId || String(activeActorId) === String(humanPlayerId) || activeActorId === 'player' || activeActorId === 0 || activeActorId === '0') {
         if (isHumanActor(activeActorId, gameState)) {
           return true;
@@ -28103,7 +28168,9 @@ export function gameStateReducer(state: any, action: any) {
       return {
         ...initialGameState,
         gameMode: state.gameMode,
-        selectedMode: state.selectedMode,
+        // Return to Menu rebuilds a 1v1 human roster. Keeping a team selectedMode
+        // described a four-actor match that this reset just deleted.
+        selectedMode: null,
         aiDifficulty: state.aiDifficulty,
         takeoverSession: null,
         coPilotSettings: {
@@ -136128,6 +136195,47 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
   check('k_findings_classified', 'Every audit finding has a severity and a status', () => V95_AUDIT_FINDINGS.every(f => f.severity && f.status && f.title) || 'unclassified finding');
   check('k_no_open_blockers', 'No open blocker/critical finding remains', () => { const o = V95_AUDIT_FINDINGS.filter(f => f.status !== 'fixed' && (f.severity === 'BLOCKER' || f.severity === 'CRITICAL')); return o.length === 0 || o.map(f => f.id).join(','); });
 
+  check('u_team_ai_seat_not_human', 'AI vs AI player seat is not a human turn (CORE-002)', () => {
+    const aiVsAi = isHumanPlayerTurn({ selectedMode: 'team_ai_vs_ai', gameMode: 'game', currentActorId: 'player', currentTurn: 'ai', actorsById: {}, turnOrder: ['player', 'ai'] });
+    const humanTeam = isHumanPlayerTurn({ selectedMode: 'team_human_ai_vs_ai_ai', gameMode: 'game', currentActorId: 'player', currentTurn: 'player', actorsById: {} });
+    const allyTurn = isHumanPlayerTurn({ selectedMode: 'team_human_ai_vs_ai_ai', gameMode: 'game', currentActorId: 'ally_ai', currentTurn: 'ai', actorsById: { ally_ai: { id: 'ally_ai', kind: 'ai' } } });
+    const explicitAi = isHumanPlayerTurn({ selectedMode: 'team_human_ai_vs_ai_ai', gameMode: 'game', currentActorId: 'player', currentTurn: 'player', actorsById: {} }, { id: 'player', kind: 'ai' });
+    return (!aiVsAi && humanTeam && !allyTurn && !explicitAi) || `aiVsAi=${aiVsAi} human=${humanTeam} ally=${allyTurn} explicit=${explicitAi}`;
+  });
+  check('u_single_day_clears_override_and_season', 'Single-player day commit clears override AP, the free challenge, and seasonal challenges (CORE-003, CORE-006)', () => {
+    const before: any = { actionsUsedThisTurn: 3, overrideActionsGranted: 2, overridesUsedToday: 1, usedFreeChallengeThisTurn: true, overrideFatigue: 0.1, challengesCompleted: ['Reef'], completedThisSeason: ['Reef'], money: 100 };
+    const projected = { ...before, actionsUsedThisTurn: 0, overridesUsedToday: 0, overrideFatigue: 0, challengesCompleted: [], completedThisSeason: [] };
+    const next = playerReducer(before, { type: 'MERGE_STATE', payload: soloDayBoundaryPlayerMerge(projected) });
+    return (next.overrideActionsGranted === 0 && next.usedFreeChallengeThisTurn === false && next.challengesCompleted.length === 0 && next.completedThisSeason.length === 0 && next.actionsUsedThisTurn === 0) || JSON.stringify({ g: next.overrideActionsGranted, f: next.usedFreeChallengeThisTurn, c: next.challengesCompleted });
+  });
+  check('u_solo_failure_policy', 'Single-player bankruptcy does not name an AI winner, and mercy stays on mode ai (CORE-004)', () => {
+    const single = soloVersusFailurePolicy('single');
+    const ai = soloVersusFailurePolicy('ai');
+    const tour = soloVersusFailurePolicy('grand_tour');
+    const scenario = soloVersusFailurePolicy('scenario');
+    return (single.endOnPlayerBankruptcy && !single.bankruptcyNamesAiWinner && !single.applyMercy && !single.endOnAiBankruptcy
+      && ai.bankruptcyNamesAiWinner && ai.applyMercy && ai.endOnAiBankruptcy
+      && !tour.applyMercy && !tour.endOnPlayerBankruptcy && !scenario.applyMercy && !scenario.endOnPlayerBankruptcy) || 'policy';
+  });
+  check('u_team_end_does_not_tick_debuff', 'Human End Turn does not tick debuffs in team mode (CORE-005)', () => {
+    const debuffs = [{ type: 'rumors', remainingDays: 2 }];
+    const team = debuffsAfterHumanEndTurn(debuffs as any, true);
+    const solo = debuffsAfterHumanEndTurn(debuffs as any, false);
+    return (team[0].remainingDays === 2 && solo[0].remainingDays === 1) || `${team[0].remainingDays}/${solo[0].remainingDays}`;
+  });
+  check('u_auto_mode_one_boundary', 'Human End Turn does not emit the actor-0 or advance-actor Auto Mode boundary (CORE-007)', () => {
+    return (shouldEmitAutoModeBoundary('turn_transition') && shouldEmitAutoModeBoundary('finish_team_ai') && !shouldEmitAutoModeBoundary('human_end_turn_extra') && !shouldEmitAutoModeBoundary('advance_actor')) || 'boundary policy';
+  });
+  check('u_restart_drops_team_mode', 'Restart does not keep a team mode over a 1v1 roster (CORE-009)', () => {
+    const next = gameStateReducer({ ...initialGameState, selectedMode: 'team_human_ai_vs_ai_ai', gameMode: 'end', turnOrder: ['player', 'ai', 'ally_ai', 'enemy_support_ai'], currentActorId: 'ally_ai', turnCounter: 4 }, { type: 'RESET_GAME' });
+    return (next.selectedMode === null && JSON.stringify(next.turnOrder) === JSON.stringify(['player', 'ai'])) || `mode=${next.selectedMode} order=${JSON.stringify(next.turnOrder)}`;
+  });
+  check('u_release_inflight_ai_locks', 'A new match releases an in-flight AI turn lock (CORE-001)', () => {
+    const locks = { isAiThinking: { current: true }, startedTeamAiTurnKeys: { current: new Set(['player:3']) }, activeAiTurnSessions: { current: { player: { isFinished: false } } } };
+    releaseInFlightAiTurnLocks(locks);
+    return (!locks.isAiThinking.current && locks.startedTeamAiTurnKeys.current.size === 0 && Object.keys(locks.activeAiTurnSessions.current).length === 0) || 'locks remained';
+  });
+
   return results;
 }
 
@@ -189703,6 +189811,11 @@ function dispatchGameSettingsChange(
       clearTimeout(teamAiTurnTimeoutRef.current);
       teamAiTurnTimeoutRef.current = null;
     }
+    releaseInFlightAiTurnLocks({
+      isAiThinking: isAiThinkingRef,
+      startedTeamAiTurnKeys: startedTeamAiTurnKeysRef,
+      activeAiTurnSessions: activeAiTurnSessionRef
+    });
 
     const selectedCharacter = CHARACTERS[uiState.selectedCharacter] || CHARACTERS[0];
     const aiCharacters = pickRandomCharacters(3, [uiState.selectedCharacter]);
@@ -193759,7 +193872,7 @@ function dispatchGameSettingsChange(
     if (dynamicEvt && dynamicEvt.name) {
       dispatchGameState({ type: 'SET_DYNAMIC_EVENT', payload: dynamicEvt });
     }
-    if (gameSettings?.autoModeSettings?.autoModeEnabled) {
+    if (shouldEmitAutoModeBoundary('turn_transition') && gameSettings?.autoModeSettings?.autoModeEnabled) {
       dispatchGameState({ type: 'EVALUATE_AUTO_MODE_TURN_STEP', payload: { settings: gameSettings, options: { actorId: _sourcePlayer, boundaryType: 'actor_turn_completed' } } });
     }
     if (!gameSettings.negotiationMode || !isCompetitiveMode || gameState.selectedMode === 'team_ai_vs_ai') {
@@ -198028,7 +198141,9 @@ function dispatchGameSettingsChange(
       setActiveSpecialAbility(null);
       setFailedChallengeData(null);
       setUsedFreeChallengeThisTurn(false);
-      dispatchPlayer({ type: 'MERGE_STATE', payload: { debuffs: tickDebuffs(player.debuffs || []) } });
+      if (!isTeamMode) {
+        dispatchPlayer({ type: 'MERGE_STATE', payload: { debuffs: debuffsAfterHumanEndTurn(player.debuffs || [], false) } });
+      }
       
       // Reset Co-Pilot deduplication set and compact panel dismissal for new turn
       setCoPilotDeduplicationSet(new Set());
@@ -198037,9 +198152,6 @@ function dispatchGameSettingsChange(
       addNotification('Your turn ended', 'info');
       // Turn-transition subsystems run after main player actions complete.
       handleTurnTransition('player');
-      if (gameSettings?.autoModeSettings?.autoModeEnabled) {
-        dispatchGameState({ type: 'EVALUATE_AUTO_MODE_TURN_STEP', payload: { settings: gameSettings, options: { actorId: '0', boundaryType: 'actor_turn_completed' } } });
-      }
 
       if (isTeamMode) {
         if (advanceToNextActorTurnRef.current) {
@@ -199759,6 +199871,8 @@ function dispatchGameSettingsChange(
 
     projectedPlayer.actionsUsedThisTurn = 0;
     projectedPlayer.overridesUsedToday = 0;
+    projectedPlayer.overrideActionsGranted = 0;
+    projectedPlayer.usedFreeChallengeThisTurn = false;
     projectedPlayer.overrideFatigue = Math.max(0, (projectedPlayer.overrideFatigue || 0) * OVERRIDE_FATIGUE_DECAY);
     projectedPlayer.lentActionsUsedToday = 0;
     projectedPlayer.receivedActionsUsedToday = 0;
@@ -199966,17 +200080,24 @@ function dispatchGameSettingsChange(
     const aiStreak = aiBroke ? gameState.bankruptcyTracker.ai + 1 : 0;
     dispatchGameState({ type: 'SET_BANKRUPTCY_TRACKER', payload: { player: playerStreak, ai: aiStreak } });
 
+    const failurePolicy = soloVersusFailurePolicy(gameState.selectedMode);
     if (playerStreak === 1) {
       addNotification('⚠️ Funds critically low. Three days under $50 triggers bankruptcy.', 'warning', true);
     } else if (playerStreak === 2) {
       addNotification('⚠️ One day until bankruptcy! Improve cash above $50.', 'warning', true);
-    } else if (playerStreak >= BANKRUPTCY_STREAK_DAYS) {
+    } else if (playerStreak >= BANKRUPTCY_STREAK_DAYS && failurePolicy.endOnPlayerBankruptcy) {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
-      addNotification('Bankruptcy! You fell below $50 for 3 days. AI wins.', 'error', true);
+      addNotification(
+        failurePolicy.bankruptcyNamesAiWinner
+          ? 'Bankruptcy! You fell below $50 for 3 days. AI wins.'
+          : 'Bankruptcy! You fell below $50 for 3 days.',
+        'error',
+        true
+      );
       return;
     }
 
-    if (gameState.selectedMode === 'ai') {
+    if (failurePolicy.endOnAiBankruptcy) {
       if (aiStreak === 1) {
         addNotification('🤖 AI is broke. Three days under $50 will end the game.', 'ai', true);
       } else if (aiStreak === 2) {
@@ -200012,12 +200133,12 @@ function dispatchGameSettingsChange(
       : (soloPrimaryPlayerValue > 0 && soloPrimaryAiValue / soloPrimaryPlayerValue >= 5 ? gameState.dominanceTracker.ai + 1 : 0);
     dispatchGameState({ type: 'SET_DOMINANCE_TRACKER', payload: { player: playerDominance, ai: aiDominance } });
 
-    if (playerDominance >= 5) {
+    if (failurePolicy.applyMercy && playerDominance >= 5) {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
       addNotification(`Mercy rule: you dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days. Victory!`, 'success', true);
       return;
     }
-    if (aiDominance >= 5) {
+    if (failurePolicy.applyMercy && aiDominance >= 5) {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
       addNotification(`Mercy rule: AI dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days straight.`, 'ai', true);
       return;
@@ -200094,18 +200215,7 @@ function dispatchGameSettingsChange(
     // Commit projected player state changes
     dispatchPlayer({
       type: 'MERGE_STATE',
-      payload: {
-        actionsUsedThisTurn: projectedPlayer.actionsUsedThisTurn,
-        overridesUsedToday: projectedPlayer.overridesUsedToday,
-        overrideFatigue: projectedPlayer.overrideFatigue,
-        lentActionsUsedToday: projectedPlayer.lentActionsUsedToday,
-        receivedActionsUsedToday: projectedPlayer.receivedActionsUsedToday,
-        completedThisSeason: projectedPlayer.completedThisSeason,
-        advancedLoans: projectedPlayer.advancedLoans,
-        creditScore: projectedPlayer.creditScore,
-        loanHistory: projectedPlayer.loanHistory,
-        daysSinceLastBankruptcy: projectedPlayer.daysSinceLastBankruptcy
-      }
+      payload: soloDayBoundaryPlayerMerge(projectedPlayer)
     });
     dispatchPlayer({ type: 'SET_LOANS', payload: projectedPlayer.loans });
     dispatchPlayer({ type: 'SET_INVENTORY', payload: projectedPlayer.inventory });
@@ -205881,10 +205991,6 @@ function dispatchGameSettingsChange(
       return;
     }
 
-    if (gameSettings?.autoModeSettings?.autoModeEnabled) {
-      dispatchGameState({ type: 'EVALUATE_AUTO_MODE_TURN_STEP', payload: { settings: gameSettings, options: { actorId: gameState.currentActorId || '0', boundaryType: 'actor_turn_completed' } } });
-    }
-
     dispatchGameState({
       type: 'ADVANCE_ACTOR_TURN',
       payload: {
@@ -205935,8 +206041,17 @@ function dispatchGameSettingsChange(
     // for Co-Pilot when the order wraps) → advanceDay() on wrap. The forced-actor ref only seeds the
     // first AI turn after the human's End Turn, so it is cleared here.
     const copilotLiveHandoff = false;
+    const forcedSeat = coPilotForcedAiActorIdRef.current;
     coPilotForcedAiActorIdRef.current = null;
     const session = activeAiTurnSessionRef.current[actorId];
+    const liveActorId = gameStateLiveRef.current?.currentActorId;
+    if (!copilotLiveHandoff && !forcedSeat && liveActorId && liveActorId !== actorId) {
+      if (session) session.isFinished = true;
+      delete activeAiTurnSessionRef.current[actorId];
+      isAiThinkingRef.current = false;
+      dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+      return;
+    }
     if (session) {
       assertApprovalSessionInvariants(session, 'finishTeamAiTurn:pre');
     }
@@ -206014,7 +206129,7 @@ function dispatchGameSettingsChange(
       if (actorId === 'ai') {
         handleTurnTransition('ai');
       }
-      if (gameSettings?.autoModeSettings?.autoModeEnabled) {
+      if (shouldEmitAutoModeBoundary('finish_team_ai') && gameSettings?.autoModeSettings?.autoModeEnabled) {
         dispatchGameState({ type: 'EVALUATE_AUTO_MODE_TURN_STEP', payload: { settings: gameSettings, options: { actorId, boundaryType: 'actor_turn_completed' } } });
       }
       dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
@@ -206932,6 +207047,7 @@ function dispatchGameSettingsChange(
   const performTeamAiTurn = useCallback(async () => {
     const live = gameStateLiveRef.current || gameState;
     const actorId = coPilotForcedAiActorIdRef.current || live.currentActorId || '';
+    const teamTurnOwnedLiveSeat = !coPilotForcedAiActorIdRef.current;
     const turnKey = `${actorId}:${live.turnCounter}`;
     if (!isTeamMode || live.gameMode !== 'game' || (live.isAiThinking && !coPilotForcedAiActorIdRef.current) || isAiThinkingRef.current) {
       startedTeamAiTurnKeysRef.current.delete(turnKey);
@@ -206966,6 +207082,11 @@ function dispatchGameSettingsChange(
     const teamEpochAtStart = v95MatchEpochRef.current;
     const TEAM_AI_TURN_STALE = { staleTeamAiTurn: true };
     const throwIfTeamTurnStale = () => { if (v95MatchEpochRef.current !== teamEpochAtStart) throw TEAM_AI_TURN_STALE; };
+    const throwIfTeamSeatMoved = () => {
+      if (!teamTurnOwnedLiveSeat) return;
+      const nowId = gameStateLiveRef.current?.currentActorId;
+      if (nowId && nowId !== actorId) throw TEAM_AI_TURN_STALE;
+    };
     try {
       if (!copilotWaitingHandoff) {
         refreshTeamLiquidityLedger(actor.teamId);
@@ -207264,7 +207385,7 @@ function dispatchGameSettingsChange(
       setCoPilotStartPhase('team_ai_rank');
       await new Promise<void>((resolve) => { afterNextPaint(() => resolve()); });
       while (actionsTaken < actionBudget) {
-        throwIfTeamTurnStale();
+        throwIfTeamTurnStale(); throwIfTeamSeatMoved();
         const roundPlanEntry = (actionsTaken === 0 && gameSettings.teamCompetitiveAiEnabled && gameSettings.parallelAiPlanningEnabled)
           ? teamRoundPlanRef.current?.[actor.id]
           : undefined;
@@ -207490,9 +207611,9 @@ function dispatchGameSettingsChange(
           console.warn('[Diagnostic Inspector Guard] Non-fatal pre-execution diagnostic error:', diagError);
         }
 
-        throwIfTeamTurnStale();
+        throwIfTeamTurnStale(); throwIfTeamSeatMoved();
         const success = (revalidated && requirementsResult.approved) ? await executeTeamAiAction(actor.id, decision as unknown as AIAction) : false;
-        throwIfTeamTurnStale();
+        throwIfTeamTurnStale(); throwIfTeamSeatMoved();
 
         try {
           if (pipelineExecutionBefore) {
@@ -207556,9 +207677,9 @@ function dispatchGameSettingsChange(
           }
           if (dispatch === 'fallback') {
             const fallbackDecision = { type: 'think', description: 'Requirement fallback', data: {} } as unknown as ScoredTeamAiDecision;
-            throwIfTeamTurnStale();
+            throwIfTeamTurnStale(); throwIfTeamSeatMoved();
             const fallbackSuccess = await executeTeamAiAction(actor.id, fallbackDecision as unknown as AIAction);
-            throwIfTeamTurnStale();
+            throwIfTeamTurnStale(); throwIfTeamSeatMoved();
             if (!fallbackSuccess) break;
             successfulActions += 1;
             checkRoleFulfillment(actor, fallbackDecision.type);
@@ -207787,11 +207908,16 @@ function dispatchGameSettingsChange(
         }
       }
 
-      throwIfTeamTurnStale();
+      throwIfTeamTurnStale(); throwIfTeamSeatMoved();
       finishTeamAiTurn(actor.id);
     } catch (error) {
       if (error === TEAM_AI_TURN_STALE) {
-        // The match was replaced; the load / restart already reset turn ownership and thinking flags.
+        // Epoch change: init / load / restart already released the lock.
+        // Same match, seat already moved: release the lock without a second advance.
+        if (v95MatchEpochRef.current === teamEpochAtStart) {
+          isAiThinkingRef.current = false;
+          dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+        }
         setCoPilotStartPhase(`team_ai_abandoned_stale:${actor.id}`);
         return;
       }
