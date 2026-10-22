@@ -21403,6 +21403,21 @@ export function shouldEmitAutoModeBoundary(site: 'turn_transition' | 'finish_tea
   return site === 'turn_transition' || site === 'finish_team_ai';
 }
 
+let advanceDayEndedMatch = false;
+export function noteMatchEndedDuringAdvance(): void { advanceDayEndedMatch = true; }
+export function clearMatchEndedDuringAdvance(): void { advanceDayEndedMatch = false; }
+export function consumeAdvanceDayEndedMatch(): boolean {
+  const ended = advanceDayEndedMatch;
+  advanceDayEndedMatch = false;
+  return ended;
+}
+export function shouldHandTurnBackAfterMatchAdvance(gameMode: string | null | undefined): boolean {
+  return gameMode !== 'end';
+}
+export function replayFileAlreadySealed(file: { finalResult?: unknown } | null | undefined): boolean {
+  return Boolean(file && file.finalResult);
+}
+
 export function isHumanPlayerTurn(gameStateOrContext: any, explicitPlayerOrFlag?: any): boolean {
   if (!gameStateOrContext) {
     if (typeof explicitPlayerOrFlag === 'boolean') return explicitPlayerOrFlag;
@@ -136410,6 +136425,16 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
       Object.assign(globalDeterministicCounters, counters);
     }
   });
+  check('u_match_end_does_not_hand_back', 'A sealed match does not hand the turn back (CORE-010)', () => {
+    const open = shouldHandTurnBackAfterMatchAdvance('game');
+    const closed = shouldHandTurnBackAfterMatchAdvance('end');
+    noteMatchEndedDuringAdvance();
+    const first = consumeAdvanceDayEndedMatch();
+    const second = consumeAdvanceDayEndedMatch();
+    const sealed = replayFileAlreadySealed({ finalResult: { reason: 'mercy' } });
+    const openFile = replayFileAlreadySealed({ events: [] });
+    return (open && !closed && first && !second && sealed && !openFile) || `open=${open} closed=${closed} first=${first} second=${second}`;
+  });
 
   return results;
 }
@@ -183538,7 +183563,7 @@ function dispatchGameSettingsChange(
   // was never turned on for this match.
   const finalizeReplayRecording = useCallback((finalResult: ReplayFinalResult) => {
     const recording = replayRecordingRef.current;
-    if (!gameSettings.aiReplayRecordingEnabled || !recording) return;
+    if (!gameSettings.aiReplayRecordingEnabled || !recording || replayFileAlreadySealed(recording)) return;
     const scoresByTeam: Record<string, number> = { ...(finalResult.scoresByTeam || {}) };
     Object.keys(teamsById || {}).forEach(id => {
       const team = teamsById[id];
@@ -188296,9 +188321,11 @@ function dispatchGameSettingsChange(
     }
     if (!previousProgress.finalCompleted && nextProgress.finalCompleted) {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
+      noteMatchEndedDuringAdvance();
+      finalizeReplayRecording({ winnerTeamId: null, winnerActorId: actorId, reason: 'grand tour finale', day: gameState.day, turn: gameState.turnCounter });
       addNotification(`${actorLabel} won the Grand Tour Rival Race by completing the National Champion finale.`, actorId === 'player' ? 'success' : 'ai', true, 'system');
     }
-  }, [addNotification, gameState.grandTourState, gameState.selectedMode, getActorDisplayName]);
+  }, [addNotification, finalizeReplayRecording, gameState.day, gameState.grandTourState, gameState.selectedMode, gameState.turnCounter, getActorDisplayName]);
 
   // CRITICAL FIX: Execute AI action with async/await for state consistency
   // Returns Promise<boolean> indicating success/failure
@@ -189238,8 +189265,9 @@ function dispatchGameSettingsChange(
     if (v95MatchEpochRef.current !== epochAtStart) { v96Flow('AI_FINALIZE_ABORTED', 'match replaced'); return false; }
     const live = gameStateLiveRef.current;
     const aiName = aiPlayerRef.current?.name || 'AI';
-    if (live.gameMode !== 'game') {
+    if (live.gameMode !== 'game' || advanceDayEndedMatch) {
       // Game over during the AI turn: no hand-back as if the match continued; just release the AI.
+      consumeAdvanceDayEndedMatch();
       isAiThinkingRef.current = false;
       dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
       finishSoloAiTurnClaim(soloAiClaimsRef.current, rt.turnKey);
@@ -189257,6 +189285,12 @@ function dispatchGameSettingsChange(
     const dayBefore = Number(live.day) || 0;
     if (advanceDayRef.current) advanceDayRef.current(); else console.error('[V9.6] advanceDayRef missing at AI turn end');
     v96Flow('DAY_ADVANCED', `from day ${dayBefore}`);
+    if (consumeAdvanceDayEndedMatch() || !shouldHandTurnBackAfterMatchAdvance(gameStateLiveRef.current?.gameMode)) {
+      finishSoloAiTurnClaim(soloAiClaimsRef.current, rt.turnKey);
+      rt.phase = 'finished'; setSoloAiPhase('idle');
+      v96Flow('AI_TURN_ENDED_GAME_OVER', rt.turnKey);
+      return true;
+    }
     dispatchPlayer({ type: 'RESET_ACTIONS' });
     v96Flow('PLAYER_AP_RESET', '');
     dispatchGameState({ type: 'SET_TURN', payload: 'player' });
@@ -189991,6 +190025,7 @@ function dispatchGameSettingsChange(
       clearTimeout(teamAiTurnTimeoutRef.current);
       teamAiTurnTimeoutRef.current = null;
     }
+    clearMatchEndedDuringAdvance();
     releaseInFlightAiTurnLocks({
       isAiThinking: isAiThinkingRef,
       startedTeamAiTurnKeys: startedTeamAiTurnKeysRef,
@@ -190463,6 +190498,7 @@ function dispatchGameSettingsChange(
     lastAutomationTurnKeyRef.current = '';
     lastAutomationDayRef.current = -1;
     rejectionPenaltyLedgerRef.current = {};
+    clearMatchEndedDuringAdvance();
     replayRecordingRef.current = null;
     pendingReplayStartRef.current = false;
     pendingReplayBranchSourceMatchIdRef.current = null;
@@ -190540,6 +190576,7 @@ function dispatchGameSettingsChange(
     // "AI is thinking" state from surviving the load and hanging the game.
     isAiThinkingRef.current = false;
     dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+    clearMatchEndedDuringAdvance();
     replayRecordingRef.current = null;
     pendingReplayStartRef.current = false;
     setCurrentAiAction(null);
@@ -198557,6 +198594,7 @@ function dispatchGameSettingsChange(
   };
 
   const advanceDay = useCallback(() => {
+    if (advanceDayEndedMatch) return;
     const prevDay = gameState.day;
     const currentPlayer = player;
     const currentAi = aiPlayerRef.current;
@@ -199094,6 +199132,12 @@ function dispatchGameSettingsChange(
       projectedPrimaryPlayerValue = projectedTeamMetricValues[gameSettings.winCondition].player;
       projectedPrimaryOpponentValue = projectedTeamMetricValues[gameSettings.winCondition].ai;
 
+      const sealTeamEnd = (reason: string, winnerTeamId: string | null) => {
+        noteMatchEndedDuringAdvance();
+        dispatchPlayer({ type: 'LOAD_STATE', payload: projectedPlayer });
+        playerRef.current = projectedPlayer;
+        finalizeReplayRecording({ winnerTeamId, winnerActorId: null, reason, day: newDay, turn: projectedTurnCounter });
+      };
       const playerStreak = projectedPlayerTeamCash < BANKRUPTCY_THRESHOLD ? gameState.bankruptcyTracker.player + 1 : 0;
       const aiStreak = projectedOpponentTeamCash < BANKRUPTCY_THRESHOLD ? gameState.bankruptcyTracker.ai + 1 : 0;
       dispatchGameState({ type: 'SET_BANKRUPTCY_TRACKER', payload: { player: playerStreak, ai: aiStreak } });
@@ -199105,6 +199149,7 @@ function dispatchGameSettingsChange(
       } else if (playerStreak >= BANKRUPTCY_STREAK_DAYS) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
         addNotification('Bankruptcy! Your team fell below $50 for 3 days. The AI squad wins.', 'error', true);
+        sealTeamEnd('team bankruptcy', TEAM_OPPONENT_ID);
         return;
       }
 
@@ -199115,6 +199160,7 @@ function dispatchGameSettingsChange(
       } else if (aiStreak >= BANKRUPTCY_STREAK_DAYS) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
         addNotification('The opposing team went bankrupt for 3 days. Victory!', 'success', true);
+        sealTeamEnd('opposing team bankruptcy', TEAM_PLAYER_ID);
         return;
       }
 
@@ -199129,11 +199175,13 @@ function dispatchGameSettingsChange(
       if (playerDominance >= 5) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
         addNotification(`Mercy rule: your team dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days. Victory!`, 'success', true);
+        sealTeamEnd('team mercy', TEAM_PLAYER_ID);
         return;
       }
       if (aiDominance >= 5) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
         addNotification(`Mercy rule: the AI squad dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days straight.`, 'ai', true);
+        sealTeamEnd('team mercy', TEAM_OPPONENT_ID);
         return;
       }
 
@@ -199152,6 +199200,7 @@ function dispatchGameSettingsChange(
             dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
             dispatchGameState({ type: 'SET_SCENARIO_OUTCOME', payload: outcome });
             addNotification(outcome.reason, outcome.isVictory ? 'success' : 'error', true, 'system');
+            sealTeamEnd(outcome.reason || 'scenario', outcome.isVictory ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID);
             return;
           }
         }
@@ -200005,6 +200054,7 @@ function dispatchGameSettingsChange(
           true,
           'system'
         );
+        noteMatchEndedDuringAdvance();
         finalizeReplayRecording({
           winnerTeamId: outcome.playerWon ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID,
           winnerActorId: null,
@@ -200253,6 +200303,22 @@ function dispatchGameSettingsChange(
     }
 
     // Bankruptcy tracking and mercy rule
+    let soloDayCommitted = false;
+    const commitSoloDayProjection = () => {
+      if (soloDayCommitted) return;
+      soloDayCommitted = true;
+      dispatchPlayer({ type: 'MERGE_STATE', payload: soloDayBoundaryPlayerMerge(projectedPlayer) });
+      dispatchPlayer({ type: 'SET_LOANS', payload: projectedPlayer.loans });
+      dispatchPlayer({ type: 'SET_INVENTORY', payload: projectedPlayer.inventory });
+      dispatchPlayer({ type: 'UPDATE_MONEY', payload: projectedPlayer.money - currentPlayer.money });
+      setAiPlayer(projectedAi);
+      aiPlayerRef.current = projectedAi;
+    };
+    const sealSoloEnd = (reason: string, winnerActorId: string | null, commitCash: boolean) => {
+      noteMatchEndedDuringAdvance();
+      if (commitCash) commitSoloDayProjection();
+      finalizeReplayRecording({ winnerTeamId: null, winnerActorId, reason, day: newDay, turn: gameState.turnCounter });
+    };
     const updatedPlayerWorth = computeNetWorth(projectedPlayer);
     const updatedAiWorth = computeNetWorth(projectedAi);
     const playerBroke = projectedPlayer.money < BANKRUPTCY_THRESHOLD;
@@ -200276,6 +200342,7 @@ function dispatchGameSettingsChange(
         'error',
         true
       );
+      sealSoloEnd(failurePolicy.bankruptcyNamesAiWinner ? 'player bankruptcy' : 'player bankruptcy', failurePolicy.bankruptcyNamesAiWinner ? 'ai' : 'player', true);
       return;
     }
 
@@ -200287,6 +200354,7 @@ function dispatchGameSettingsChange(
       } else if (aiStreak >= BANKRUPTCY_STREAK_DAYS) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
         addNotification('AI bankrupt for 3 days. You win!', 'success', true);
+        sealSoloEnd('ai bankruptcy', 'player', true);
         return;
       }
     }
@@ -200318,11 +200386,13 @@ function dispatchGameSettingsChange(
     if (failurePolicy.applyMercy && playerDominance >= 5) {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
       addNotification(`Mercy rule: you dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days. Victory!`, 'success', true);
+      sealSoloEnd('mercy', 'player', true);
       return;
     }
     if (failurePolicy.applyMercy && aiDominance >= 5) {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
       addNotification(`Mercy rule: AI dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days straight.`, 'ai', true);
+      sealSoloEnd('mercy', 'ai', true);
       return;
     }
 
@@ -200395,16 +200465,7 @@ function dispatchGameSettingsChange(
     }
 
     // Commit projected player state changes
-    dispatchPlayer({
-      type: 'MERGE_STATE',
-      payload: soloDayBoundaryPlayerMerge(projectedPlayer)
-    });
-    dispatchPlayer({ type: 'SET_LOANS', payload: projectedPlayer.loans });
-    dispatchPlayer({ type: 'SET_INVENTORY', payload: projectedPlayer.inventory });
-    dispatchPlayer({ type: 'UPDATE_MONEY', payload: projectedPlayer.money - currentPlayer.money });
-
-    setAiPlayer(projectedAi);
-    aiPlayerRef.current = projectedAi;
+    commitSoloDayProjection();
 
     if (!gameSettings.showDayTransition) {
       addNotification(`Market trend: ${nextTrend}`, 'market', true);
@@ -200429,6 +200490,7 @@ function dispatchGameSettingsChange(
             dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
             dispatchGameState({ type: 'SET_SCENARIO_OUTCOME', payload: outcome });
             addNotification(outcome.reason, outcome.isVictory ? 'success' : 'error', true, 'system');
+            sealSoloEnd(outcome.reason || 'scenario', outcome.isVictory ? 'player' : 'ai', false);
             return;
           }
         }
@@ -200439,6 +200501,8 @@ function dispatchGameSettingsChange(
 	      dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
 	      if (gameState.selectedMode === 'grand_tour') {
           const outcome = evaluateGrandTourOutcome(projectedPlayer as ActorState, projectedAi as ActorState, gameState.grandTourState);
+          noteMatchEndedDuringAdvance();
+          finalizeReplayRecording({ winnerTeamId: null, winnerActorId: outcome.playerWon ? 'player' : 'ai', reason: outcome.reason || 'grand tour day limit', day: newDay, turn: gameState.turnCounter });
           addNotification(
             `Game Over! ${outcome.playerWon ? 'You win' : 'AI wins'} the Grand Tour tie-break. ${outcome.reason}`,
             outcome.playerWon ? 'success' : 'ai',
@@ -200457,6 +200521,7 @@ function dispatchGameSettingsChange(
             true,
             'system'
           );
+          noteMatchEndedDuringAdvance();
           finalizeReplayRecording({
             winnerTeamId: null,
             winnerActorId: outcome.playerWon ? 'player' : 'ai',
@@ -200465,6 +200530,8 @@ function dispatchGameSettingsChange(
             turn: gameState.turnCounter
           });
 	      } else {
+	        noteMatchEndedDuringAdvance();
+	        finalizeReplayRecording({ winnerTeamId: null, winnerActorId: 'player', reason: 'final day', day: newDay, turn: gameState.turnCounter });
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
