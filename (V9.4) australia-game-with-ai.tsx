@@ -14213,6 +14213,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   nationalPrioritiesEnabled: true,
   economicGeographyEnabled: true,
   workforceHumanCapitalEnabled: true,
+  strategicCapitalEnabled: true,
   stateCapacityEnabled: true,
   publicFinanceEnabled: true,
   householdsEnabled: true,
@@ -26675,6 +26676,7 @@ export type GameSettingsState = {
   economicGeographyEnabled?: boolean;
   /** V10.10 Workforce, Skills & Human Capital (needs National Systems; off = no workforce layer, V10.0–V10.9 unchanged). */
   workforceHumanCapitalEnabled?: boolean;
+  strategicCapitalEnabled?: boolean;
   /** V10.11 Adaptive Governance, Institutions & State Capacity (needs National Systems; off = no state capacity layer, V10.0–V10.10 unchanged). */
   stateCapacityEnabled?: boolean;
   /** V10.12 Public Finance, National Budget & Fiscal Capacity (needs National Systems; off = no fiscal capacity layer, V10.0–V10.11 unchanged). */
@@ -133632,7 +133634,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'strategicCapitalEnabled'
 ] as const;
 
 /**
@@ -136594,6 +136596,11 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
     } as any, 'd', 'c', { id: 'player', money: 100 });
     return next.player?.money === 6100 || String(next.player?.money);
   });
+  check('u_workforce_reads_infrastructure_projects', 'Workforce inputs include infrastructure projects (WORLD-002)', () => {
+    const inputs = buildWorkforceInputsFromGameState({ turn: 2, gameState: { infrastructureProjects: { park: { id: 'infra_park', status: 'under_construction', title: 'Parkes' } } } });
+    return (inputs.projects || []).some((project: any) => project.id === 'infra_park') || JSON.stringify(inputs.projects);
+  });
+
 
 
   return results;
@@ -154868,7 +154875,7 @@ function validateStrategicCapitalState(state: StrategicCapitalState): { valid: b
 // MAIN ORCHESTRATOR: computeStrategicCapital
 // ============================================================================
 
-function computeStrategicCapital(
+export function computeStrategicCapital(
   i: StrategicCapitalInputs,
   rawPersisted?: StrategicCapitalPersisted | null
 ): {
@@ -160880,7 +160887,9 @@ export function buildWorkforceInputsFromGameState(params: {
     ...(Array.isArray(player?.projects) ? player.projects : []),
     ...(Array.isArray(gameState?.projects) ? gameState.projects : []),
     ...(Array.isArray(gameState?.activeProjects) ? gameState.activeProjects : []),
-    ...(Array.isArray(gameState?.megaprojects) ? gameState.megaprojects : [])
+    ...(Array.isArray(gameState?.megaprojects) ? gameState.megaprojects : []),
+    ...(gameState?.infrastructureProjects && typeof gameState.infrastructureProjects === 'object' ? Object.values(gameState.infrastructureProjects) : []),
+    ...(gameState?.megaprojects?.programs && typeof gameState.megaprojects.programs === 'object' ? Object.values(gameState.megaprojects.programs) : [])
   ];
 
   for (const p of rawProjects) {
@@ -212429,7 +212438,7 @@ function dispatchGameSettingsChange(
     Object.entries(teamsById || {}).forEach(([tid, t]: [string, any]) => { ownerNames[tid] = String(t?.name || (tid === TEAM_PLAYER_ID ? 'Your team' : 'Rival team')); ownerTeams[tid] = tid; });
     const inv = (a: any) => { const out: Record<string, number> = {}; (Array.isArray(a?.inventory) ? a.inventory : []).forEach((it: any) => { const k = typeof it === 'string' ? it : String(it?.name || ''); if (k) out[k] = (out[k] || 0) + 1; }); return out; };
     const rawProjects = gameState.infrastructureProjects || {};
-    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 16).map((p: any) => { const total = Number(p.totalCost || p.fundingGoal || 0); const inv2 = Number(p.totalInvestedMoney ?? p.currentFunding ?? 0); return { id: String(p.id), title: String(p.title || p.name || p.id), regionId: p.regionId ? String(p.regionId) : null, status: p.projectType && /^(active|upgraded)$/.test(String(p.status)) ? 'completed' : String(p.status || 'planned'), progress: total > 0 ? Math.max(0, Math.min(1, inv2 / total)) : /complet/.test(String(p.status)) ? 1 : 0 }; });
+    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 64).map((p: any) => { const total = Number(p.totalCost || p.fundingGoal || 0); const inv2 = Number(p.totalInvestedMoney ?? p.currentFunding ?? 0); return { id: String(p.id), title: String(p.title || p.name || p.id), regionId: p.regionId ? String(p.regionId) : null, status: p.projectType && /^(active|upgraded)$/.test(String(p.status)) ? 'completed' : String(p.status || 'planned'), progress: total > 0 ? Math.max(0, Math.min(1, inv2 / total)) : /complet/.test(String(p.status)) ? 1 : 0 }; });
     let contracts: SWRInputs['contracts'] = [];
     try { contracts = listRegionalContracts(gameState).slice(0, 16).map((c: any) => ({ id: String(c.id), title: String(c.title || c.name || c.id), regionId: c.regionId ? String(c.regionId) : null, status: String(c.status || 'available'), rewardMoney: Number(c.rewardMoney ?? c.reward ?? c.payout ?? 0), turnsRemaining: typeof c.turnsRemaining === 'number' ? c.turnsRemaining : null, assignedActorId: c.assignedActorId ? String(c.assignedActorId) : null })); } catch { contracts = []; }
     const teams: SWRInputs['teams'] = isTeamMode ? Object.entries(teamsById || {}).map(([tid, t]: [string, any]) => {
@@ -212480,7 +212489,7 @@ function dispatchGameSettingsChange(
     const devs = (gameState.regionalDevLevels || {}) as Record<string, any>;
     const stab = gameSettings.publicStabilityEnabled && gameState.publicStabilityState ? (gameState.publicStabilityState.regionalStability || {}) as Record<string, number> : null;
     const rawProjects = gameState.infrastructureProjects || {};
-    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 24).map((p: any) => {
+    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 64).map((p: any) => {
       const total = Number(p.totalCost || 0); const inv = Number(p.totalInvestedMoney || 0);
       return { id: String(p.id), title: String(p.title || p.id), regionId: p.regionId ? String(p.regionId) : null, projectType: String(p.projectType || ''), status: String(p.status || 'locked'), progress: total > 0 ? Math.max(0, Math.min(1, inv / total)) : 0, remainingCost: Math.max(0, total - inv), completionTurn: typeof p.completionTurn === 'number' ? p.completionTurn : null };
     });
@@ -212776,7 +212785,7 @@ function dispatchGameSettingsChange(
   const icPersisted = useMemo(() => sanitizeInnovationPersisted(icStoredRaw), [icStoredRaw]);
   const icPersistedRef = useRef<InnovationPersisted | null>(icPersisted); icPersistedRef.current = icPersisted;
   const icSectorKey = JSON.stringify(Object.keys(lrState?.regions || {}).sort().map(k => [k, Math.round(Number((lrState as any)?.regions?.[k]?.sectors?.renewables || 0))]));
-  const icModifiers = useMemo<CapabilityModifiers>(() => (icEnabled ? innovationCapabilityModifiers(icPersisted, Object.fromEntries(Object.entries((lrState?.regions || {}) as Record<string, any>).map(([k, r]) => [k, r?.sectors || {}]))) : { national: {}, industries: {} }),
+  const icModifiers = useMemo<CapabilityModifiers>(() => innovationCapabilityModifiers(icPersisted, Object.fromEntries(Object.entries((lrState?.regions || {}) as Record<string, any>).map(([k, r]) => [k, r?.sectors || {}]))),
     [icEnabled, icPersisted, icSectorKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const nsModifiersLive = useMemo(() => mergeCapabilityModifiers(nsScenarioModifiers, icModifiers.national), [nsScenarioModifiers, icModifiers]);
   const nsInputs = useMemo<NationalSystemsInputs>(() => buildNationalSystemsInputs({
@@ -212899,7 +212908,7 @@ function dispatchGameSettingsChange(
   attachInfraView();
   const inDiagRef = useRef<{ recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number }>({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0 });
   useEffect(() => {
-    if (!inEnabled || !nsState) return;
+    if (!inEnabled || !nsState || gameSettings.industriesEnabled === false) return;
     const prev = inPersistedRef.current;
     if (prev && prev.inputHash === inHash && prev.initializedTurn !== null) return;
     const res = computeStrategicInfrastructureNetworks(inInputs, prev && prev.initializedTurn !== null ? prev : null);
@@ -213057,7 +213066,7 @@ function dispatchGameSettingsChange(
   const ndProfileRef = useRef<NationalDevelopmentProfile | null>(ndProfile); ndProfileRef.current = ndProfile;
   const ndDiagRef = useRef({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0 });
   useEffect(() => {
-    if (!ndEnabled || !ndInputs || gameState.gameMode !== 'game') return;
+    if (!ndEnabled || !ndInputs || gameState.gameMode !== 'game' || gameSettings.megaprojectsEnabled === false) return;
     const prev = ndPersistedRef.current;
     if (prev && prev.inputHash === ndHash && prev.current.lastTurn === ndInputs.turn) return;
     const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
@@ -213359,10 +213368,30 @@ function dispatchGameSettingsChange(
   }, [egState, egInputs, egPersisted, nsInputs, scInputs, npViewerId, npActors]);
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, geography: egEnabled ? egView : null };
 
-  // ---- V10.10 Workforce & V10.11 Adaptive Governance, Institutions & State Capacity: live wiring ----------
+  const capEnabled = Boolean(nsEnabled && gameSettings.strategicCapitalEnabled !== false);
+  const capState = useMemo(() => {
+    if (!capEnabled || !nsState) return null;
+    try {
+      const inputs = buildStrategicCapitalInputs({
+        turn: lrInputs.turn,
+        actorId: player?.id || 'player',
+        cash: Number(player?.money) || 0,
+        projects: gameState.infrastructureProjects,
+        regionDeposits: gameState.regionDeposits,
+        national: nsState,
+        industries: scState,
+        networks: inState
+      });
+      return computeStrategicCapital(inputs, (gameState as any).strategicCapital || null).state;
+    } catch (err) {
+      console.warn('[Strategic Capital] skipped:', err);
+      return null;
+    }
+  }, [capEnabled, nsState, lrInputs.turn, player?.id, player?.money, gameState.infrastructureProjects, gameState.regionDeposits, (gameState as any).strategicCapital, scState, inState]);
   const wfEnabled = Boolean(nsEnabled && gameSettings.workforceHumanCapitalEnabled !== false);
   const wfStoredRaw = (gameState as any).workforceHumanCapital;
   const wfPersisted = useMemo(() => (wfStoredRaw ? sanitizeWorkforcePersisted(wfStoredRaw) : null), [wfStoredRaw]);
+  const wfPersistedLiveRef = useRef<any>(null);
   const wfState = useMemo<NationalWorkforceState | null>(() => {
     if (!wfEnabled || !nsState) return null;
     const wfInputs = buildWorkforceInputsFromGameState({
@@ -213371,10 +213400,21 @@ function dispatchGameSettingsChange(
       gameState,
       economicGeography: egEnabled ? egState : null,
       systemicRisk: srEnabled ? srState : null,
-      nationalPriorities: npEnabled ? npState : null
+      nationalPriorities: npEnabled ? npState : null,
+      strategicCapital: capEnabled ? capState : null
     });
-    return computeNationalWorkforce(wfInputs, wfPersisted || undefined).state;
-  }, [wfEnabled, nsState, lrInputs.turn, player, gameState.infrastructureProjects, gameState.regionalContracts, egEnabled, egState, srEnabled, srState, npEnabled, npState, wfPersisted]);
+    const workforceResult = computeNationalWorkforce(wfInputs, wfPersisted || undefined);
+    wfPersistedLiveRef.current = workforceResult.persisted;
+    return workforceResult.state;
+  }, [wfEnabled, nsState, lrInputs.turn, player, gameState.infrastructureProjects, gameState.regionalContracts, egEnabled, egState, srEnabled, srState, npEnabled, npState, wfPersisted, capEnabled, capState]);
+  useEffect(() => {
+    if (!wfEnabled || gameState.gameMode !== 'game') return;
+    const persisted = wfPersistedLiveRef.current;
+    if (!persisted) return;
+    const previous = (gameState as any).workforceHumanCapital;
+    if (previous && previous.lastComputedTurn === persisted.lastComputedTurn && previous.lastInputHash === persisted.lastInputHash) return;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { workforceHumanCapital: persisted } as any });
+  }, [wfEnabled, wfState, gameState.gameMode, (gameState as any).workforceHumanCapital]);
 
   const sc11Enabled = Boolean(nsEnabled && gameSettings.stateCapacityEnabled !== false);
   const sc11StoredRaw = (gameState as any).stateCapacity;
@@ -213387,6 +213427,7 @@ function dispatchGameSettingsChange(
       viewerId: npViewerId,
       gameState,
       player,
+      strategicCapital: capEnabled ? capState : null,
       regionalFactions: rfState,
       nationalSystems: nsState,
       industries: scState,
@@ -230015,6 +230056,7 @@ function dispatchGameSettingsChange(
           />
 
           {pf12Enabled && pf12View && <PublicFinancePlayChip view={pf12View} onClick={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
+          {capEnabled && capState && <StrategicCapitalPlayCard state={capState} theme={themeStyles} onOpenCenter={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
           {hh13Enabled && hh13State && <HouseholdsPlaySignalBanner state={hh13State} onOpenIntel={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
           {egEnabled && egState && <EconomicGeographyPlayCard state={egState} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {npEnabled && npState?.primary && <NationalPriorityPlayCard state={npState} viewerId={npViewerId} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
