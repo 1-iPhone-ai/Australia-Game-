@@ -4233,6 +4233,26 @@ const UX_ASSIST_SETTING_KEYS = [
   'groupedInventoryCardsEnabled'
 ] as const;
 const MINIMUM_WAGER = 50; // Minimum wager required for challenges
+
+export function adaptiveChallengeWager(wager: number, money: number, aggression: number, risk: number): number {
+  const wagerMultiplier = 1 + Math.min(0.3, ((aggression + risk) / 100) * 0.12);
+  return Math.max(MINIMUM_WAGER, Math.min(money, Math.floor(wager * wagerMultiplier)));
+}
+
+export function preferRankedDecisionType<T extends { type: string }>(ranked: T[], preferredType: string | null | undefined): T[] {
+  if (!preferredType || ranked.length === 0) return ranked;
+  const preferred = ranked.filter(decision => decision.type === preferredType);
+  if (preferred.length === 0) return ranked;
+  return [...preferred, ...ranked.filter(decision => decision.type !== preferredType)];
+}
+
+export function guardianBlocksAutomation(result: { allowedToProceed?: boolean; highestSeverity?: string; confirmationRequired?: boolean } | null | undefined, protectionLevel?: string): boolean {
+  if (!result) return false;
+  if (result.allowedToProceed === false) return true;
+  if (result.highestSeverity === 'critical') return true;
+  if (protectionLevel === 'maximum_protection' && result.confirmationRequired) return true;
+  return false;
+}
 const MAX_INVENTORY = 50; // Maximum inventory capacity for players and AI
 const OVERRIDE_DAILY_CAP = 3;
 const OVERRIDE_BASE_COST = 500;
@@ -136435,6 +136455,23 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
     const openFile = replayFileAlreadySealed({ events: [] });
     return (open && !closed && first && !second && sealed && !openFile) || `open=${open} closed=${closed} first=${first} second=${second}`;
   });
+  check('u_adaptive_wager_moves', 'Adaptive AI changes a solo challenge wager when the phase is all-in (AI-002)', () => {
+    const calm = adaptiveChallengeWager(100, 1000, 0, 0);
+    const allIn = adaptiveChallengeWager(100, 1000, 80, 80);
+    return (calm === 100 && allIn > calm) || `calm=${calm} allIn=${allIn}`;
+  });
+  check('u_genome_stays_on_ranked_actions', 'An opponent genome prefers a ranked legal action (AI-011)', () => {
+    const ranked = [{ type: 'invest' }, { type: 'challenge' }, { type: 'sell' }];
+    const preferred = preferRankedDecisionType(ranked, 'challenge');
+    const missing = preferRankedDecisionType(ranked, 'think');
+    return (preferred[0].type === 'challenge' && preferred.length === 3 && missing[0].type === 'invest' && missing.every((row, i) => row.type === ranked[i].type)) || JSON.stringify(preferred);
+  });
+  check('u_guardian_blocks_silent_automation', 'Guardian can block a silent automation (AI-006)', () => {
+    const blocked = guardianBlocksAutomation({ allowedToProceed: false, highestSeverity: 'critical', confirmationRequired: true }, 'maximum_protection');
+    const confirm = guardianBlocksAutomation({ allowedToProceed: true, highestSeverity: 'caution', confirmationRequired: true }, 'maximum_protection');
+    const clear = guardianBlocksAutomation({ allowedToProceed: true, highestSeverity: 'none', confirmationRequired: false }, 'maximum_protection');
+    return (blocked && confirm && !clear) || `b=${blocked} c=${confirm} clear=${clear}`;
+  });
 
   return results;
 }
@@ -185022,10 +185059,9 @@ function dispatchGameSettingsChange(
       : normalizedImpactPercent;
     let nextData = nextDecision.data;
     if (nextDecision.type === 'challenge' && typeof nextDecision.data?.wager === 'number' && actor.money > 0) {
-      const wagerMultiplier = 1 + Math.min(0.3, ((aggression + risk) / 100) * 0.12);
       nextData = {
         ...nextDecision.data,
-        wager: Math.max(MINIMUM_WAGER, Math.min(actor.money, Math.floor(nextDecision.data.wager * wagerMultiplier)))
+        wager: adaptiveChallengeWager(nextDecision.data.wager, actor.money, aggression, risk)
       };
     }
 
@@ -187671,12 +187707,16 @@ function dispatchGameSettingsChange(
           settings: gameSettings
         }
       );
-      return tuningChoice || {
+      const baseChoice = tuningChoice || {
         type: 'end_turn',
         description: 'Ending turn',
         data: null,
         score: 0
       };
+      if (gameSettings.adaptiveAiEnabled && aiState) {
+        return applyActorAdaptiveEffectsToDecision(aiState, { ...baseChoice, score: typeof baseChoice.score === 'number' ? baseChoice.score : 1 });
+      }
+      return baseChoice;
 
       // Sometimes make mistakes based on difficulty
       if (aiRandom() < profile.mistakeChance) {
@@ -202115,6 +202155,23 @@ function dispatchGameSettingsChange(
         const gate = evaluateActionRequirements(actor, built.action, { cost: built.resolvedCost, wager: built.action.data?.wager }, [automation.conditions]);
         if (!gate.approved) continue;
       }
+      const automationGuardian = evaluateGuardianRiskPipeline({
+        settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(),
+        gameState,
+        actorId: actor.id || 'player',
+        actionType: built.action.type || 'automation_action',
+        actionPayload: built.action.data || {},
+        source: 'human_automation',
+        day: gameState.day || 1,
+        turn: gameState.turnCounter || 1,
+        currentActionTokens: (actor as any).actionPoints || 3,
+        currentCash: actor.money,
+        activeContracts: [],
+        activeExpeditions: [],
+        activePlans: [],
+        isReplay: false
+      });
+      if (guardianBlocksAutomation(automationGuardian, gameSettings.guardianAiSettings?.protectionLevel)) continue;
       if (automation.authorityMode === 'confirm_before_running') {
         // Bug/polish pass (post-HA3): skip if this automation already has an unresolved
         // confirm_before_running request sitting in the queue (e.g. dismissed without resolving,
@@ -202197,6 +202254,26 @@ function dispatchGameSettingsChange(
     const safety = checkHumanAutomationSafetyLimits(automation, spendableCash, built.resolvedCost);
     if (!safety.ok) {
       addNotification(`Could not execute "${automation.name}": ${safety.reason}`, 'error', false, 'system');
+      return;
+    }
+    const runNowGuardian = evaluateGuardianRiskPipeline({
+      settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(),
+      gameState,
+      actorId: actor.id || 'player',
+      actionType: built.action.type || 'automation_action',
+      actionPayload: built.action.data || {},
+      source: 'human_automation',
+      day: gameState.day || 1,
+      turn: gameState.turnCounter || 1,
+      currentActionTokens: (actor as any).actionPoints || 3,
+      currentCash: actor.money,
+      activeContracts: [],
+      activeExpeditions: [],
+      activePlans: [],
+      isReplay: false
+    });
+    if (guardianBlocksAutomation(runNowGuardian, gameSettings.guardianAiSettings?.protectionLevel)) {
+      addNotification(`Could not execute "${automation.name}": Guardian blocked it.`, 'warning', false, 'system');
       return;
     }
     if (automation.conditions) {
@@ -205795,7 +205872,11 @@ function dispatchGameSettingsChange(
     if (!actor) {
       return { type: 'end_turn', description: 'End turn' };
     }
-    if (gameSettings.opponentGenomeId && actor.teamId === TEAM_OPPONENT_ID) {
+    const ranked = getRankedTeamAiDecisions(actorId);
+    let decisions = rejectedSignatures && rejectedSignatures.size > 0
+      ? ranked.filter(c => !rejectedSignatures.has(getDecisionSignature(c)))
+      : ranked;
+    if (gameSettings.opponentGenomeId && actor.teamId === TEAM_OPPONENT_ID && decisions.length > 0) {
       const tuningWeights = resolveLiveAiGenomeWeights(gameSettings, tuningArchiveRef.current, actorId);
       const tuningCanonical = canonicalStateFromLiveRuntime({
         gameState,
@@ -205811,14 +205892,8 @@ function dispatchGameSettingsChange(
         createCallbackSeededRng(aiRandom),
         { difficultyKey: String(gameState.aiDifficulty || 'expert'), settings: gameSettings }
       );
-      if (tuned && !(rejectedSignatures && rejectedSignatures.has(getDecisionSignature(tuned)))) {
-        return tuned;
-      }
+      if (tuned?.type) decisions = preferRankedDecisionType(decisions, tuned.type);
     }
-    const ranked = getRankedTeamAiDecisions(actorId);
-    const decisions = rejectedSignatures && rejectedSignatures.size > 0
-      ? ranked.filter(c => !rejectedSignatures.has(getDecisionSignature(c)))
-      : ranked;
     const difficultyBehavior = getTeamDifficultyBehavior(actor.teamId);
     if (decisions.length === 0) {
       updateActorState(actorId, (prev: any) => ({
