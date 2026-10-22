@@ -1174,6 +1174,7 @@ export function evaluateSuggestedActionGate(params: { autonomy: CommunicationAut
   if (params.plan && (params.plan.status === 'paused' || params.plan.status === 'cancelled')) return { allowed: false, needsApproval: false, reason: `The team plan is ${params.plan.status}, so plan-driven suggestions are on hold.` };
   if (params.autonomy === 'assisted') return { allowed: true, needsApproval: true, reason: null };
   if (!params.copilotEnabled) return { allowed: true, needsApproval: true, reason: 'Delegated actions still need the Co-Pilot; approval required while it is off.' };
+  if (params.autonomy === 'delegated') return { allowed: true, needsApproval: true, reason: null };
   return { allowed: true, needsApproval: false, reason: null };
 }
 
@@ -14804,7 +14805,7 @@ export function createDefaultTeamAutoModePolicy(targetTeamId: string, teamName: 
 }
 
 export function sanitizeTeamAutoModePolicy(input: unknown): TeamAutoModePolicy {
-  const validPermissions: AutoModePermission[] = ['locked', 'observe', 'recommend', 'assist_only', 'challenge_only', 'full_adaptive', 'disabled', 'recommend_only', 'auto_apply_non_intrusive', 'full_auto'];
+  const validPermissions: string[] = ['locked', 'observe', 'recommend', 'assist_only', 'challenge_only', 'full_adaptive', 'disabled', 'recommend_only', 'auto_apply_non_intrusive', 'full_auto', 'read_only', 'recommendation_only', 'assisted', 'autonomous'];
   const validCategories: AutoModeCategory[] = [
     'pricing', 'capacity', 'route_expansion', 'borrowing', 'debt_repayment',
     'marketing', 'alliance', 'tax_relief', 'subsidy', 'dividend',
@@ -38541,7 +38542,7 @@ export function sanitizeAutoModeGlobalSettings(input: unknown): AutoModeGlobalSe
   const src = input as Record<string, unknown>;
 
   const validIntensities: AutoModeIntensity[] = ['gentle', 'balanced', 'responsive', 'director', 'subtle', 'standard', 'aggressive', 'dynamic'];
-  const validPermissions: AutoModePermission[] = ['locked', 'observe', 'recommend', 'assist_only', 'challenge_only', 'full_adaptive', 'disabled', 'recommend_only', 'auto_apply_non_intrusive', 'full_auto'];
+  const validPermissions: string[] = ['locked', 'observe', 'recommend', 'assist_only', 'challenge_only', 'full_adaptive', 'disabled', 'recommend_only', 'auto_apply_non_intrusive', 'full_auto', 'read_only', 'recommendation_only', 'assisted', 'autonomous'];
   const validTransparencies: AutoModeTransparency[] = ['minimal', 'standard', 'detailed', 'developer', 'silent', 'ledger_only', 'toast_notifications', 'modal_approvals', 'full_diagnostics'];
 
   const categoryTogglesSrc = (src['categoryToggles'] && typeof src['categoryToggles'] === 'object')
@@ -40926,19 +40927,35 @@ export const askToolExplainAutoDecision = askGameToolExplainAutoDecision;
 /**
  * 14. set_automode_goal / askGameToolSetAutoModeGoal
  */
-export function askGameToolSetAutoModeGoal(state: any, actorId: string, primaryGoal: string): any {
+export function goalNamedInAskQuery(query: string): string | null {
+  const q = String(query || '').toLowerCase();
+  if (/wealth/.test(q)) return 'wealth_accumulation';
+  if (/expansion|regional control|focus control/.test(q)) return 'rapid_expansion';
+  if (/crisis|stabil/.test(q)) return 'crisis_stabilization';
+  if (/aggressive|takeover/.test(q)) return 'aggressive_takeover';
+  if (/balanced/.test(q)) return 'balanced_strategy';
+  return null;
+}
+
+export function askGameToolSetAutoModeGoal(state: any, actorId: string, primaryGoal: string, options?: { allowSettingsWrite?: boolean }): any {
   const validGoals = ['balanced_strategy', 'wealth_accumulation', 'rapid_expansion', 'crisis_stabilization', 'aggressive_takeover'];
-  const targetGoal = validGoals.includes(primaryGoal) ? primaryGoal : 'balanced_strategy';
-  
-  if (state?.gameSettings?.autoModeSettings) {
-    state.gameSettings.autoModeSettings.primaryGoal = targetGoal as any;
+  const current = state?.gameSettings?.autoModeSettings?.primaryGoal;
+  if (options?.allowSettingsWrite !== true || !validGoals.includes(primaryGoal)) {
+    return {
+      success: false,
+      actorId,
+      newPrimaryGoal: current,
+      message: 'Auto Mode goal was not changed. A confirmed settings write and an explicit goal are required.'
+    };
   }
-  
+  if (state?.gameSettings?.autoModeSettings) {
+    state.gameSettings.autoModeSettings.primaryGoal = primaryGoal as any;
+  }
   return {
     success: true,
     actorId,
-    newPrimaryGoal: targetGoal,
-    message: `Auto Mode primary strategic goal updated to '${targetGoal}' for actor ${actorId}.`
+    newPrimaryGoal: primaryGoal,
+    message: `Auto Mode primary strategic goal updated to '${primaryGoal}' for actor ${actorId}.`
   };
 }
 export const askToolSetAutoModeGoal = askGameToolSetAutoModeGoal;
@@ -41057,7 +41074,7 @@ export function executeAskGameTool(
       case 'set_automode_goal':
       case 'askgametoolsetautomodegoal':
       case 'asktoolsetautomodegoal':
-        result = askGameToolSetAutoModeGoal(gameState, actorId, args.primaryGoal || args.goal || 'balanced_strategy');
+        result = askGameToolSetAutoModeGoal(gameState, actorId, args.primaryGoal || args.goal || goalNamedInAskQuery(args.rawQuery || '') || '', { allowSettingsWrite: args.allowSettingsWrite === true });
         break;
 
 
@@ -41657,7 +41674,10 @@ export async function processAskGameQuery(
           infrastructureType: resolvedEntities.infrastructureTypes[0],
           settingKey: resolvedEntities.settingKeys[0],
           rawQuery: rawQuery,
-          normalizedQuery: normalized.normalizedQuery
+          normalizedQuery: normalized.normalizedQuery,
+          primaryGoal: goalNamedInAskQuery(rawQuery) || undefined,
+          goal: goalNamedInAskQuery(rawQuery) || undefined,
+          allowSettingsWrite: userPermissions.includes('SETTINGS_WRITE')
         };
         const toolRes = executeAskGameTool(toolName, params, gameState, resolvedEntities.actors[0] || 'player');
         toolResults.push(toolRes);
@@ -74799,6 +74819,27 @@ export function formatPayloadValue(key: string, value: unknown): string {
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
+export function soloActionCommits(actionType: string, flags?: { travelBlocked?: boolean }): boolean {
+  if (actionType === 'think') return false;
+  if (actionType === 'travel' && flags?.travelBlocked) return false;
+  return true;
+}
+
+export function soloRefinanceMayRepay(actor: { level?: number; advancedLoans?: Array<{ id?: string }> } | null | undefined, loanId: string, tier: { levelRequired?: number } | null | undefined, settings: { loanRefinancingEnabled?: boolean } | null | undefined, loansEnabled: boolean): boolean {
+  if (!actor || !tier || !loanId || !loansEnabled) return false;
+  if (settings && settings.loanRefinancingEnabled === false) return false;
+  if ((actor.level || 1) < (tier.levelRequired || 1)) return false;
+  return (actor.advancedLoans || []).some(loan => loan?.id === loanId);
+}
+
+export function humanAutomationRunNowAllowed(settings: { humanAutomationEnabled?: boolean } | null | undefined, automation: { enabled?: boolean; authorityMode?: string } | null | undefined): boolean {
+  if (!settings?.humanAutomationEnabled) return false;
+  if (!automation || automation.enabled === false) return false;
+  const authority = automation.authorityMode;
+  if (authority === 'confirm_before_running' || authority === 'disabled') return false;
+  return true;
+}
+
 export function normalizePermissionMode(input: any): AutoModePermission {
   if (!input) return 'recommend';
   const str = String(input);
@@ -74810,10 +74851,17 @@ export function normalizePermissionMode(input: any): AutoModePermission {
     case 'observe':
     case '1':
       return 'observe';
+    case 'read_only':
+      return 'observe';
+    case 'recommendation_only':
     case 'recommend_only':
     case 'recommend':
     case '2':
       return 'recommend';
+    case 'assisted':
+      return 'assist_only';
+    case 'autonomous':
+      return 'full_adaptive';
     case 'auto_apply_non_intrusive':
     case 'assist_only':
     case '3':
@@ -76553,6 +76601,9 @@ export function handleApproveProposal(
     forceExecution: true,
     approvedProposalId: proposalId
   });
+  if (!pipelineResult.success) {
+    return JSON.parse(JSON.stringify(gameState)) as ExtendedGameState;
+  }
 
   const nextState = pipelineResult.updatedState;
   if (pipelineResult.success && nextState.autoModeRuntime?.activePackages) {
@@ -77809,6 +77860,11 @@ export function executeAutoModePipeline(
   recordStage('GuardianValidation', true, `Guardian AI and Reserve Floor checks passed`);
 
   // Stage 7: Approval (Check if auto-approved or pushed to proposal queue)
+  const permissionNow = normalizePermissionMode(effectivePolicy.permissionMode);
+  if (permissionNow === 'locked' || permissionNow === 'observe') {
+    recordStage('Approval', true, 'Read-only permission does not enqueue or apply a package');
+    return { success: true, status: 'SKIPPED', actorId, stageHistory, updatedState };
+  }
   const isHuman = isHumanActor(currentActor);
   const allowHumanAutopilot = settings?.autoModeSettings?.allowHumanAutopilot === true;
   const currentDay = updatedState.day || 1;
@@ -83072,7 +83128,7 @@ export function executeStrategyPlannerCoPilotStep(
     newState.coPilotAuthorityMode ||
     'full_co_pilot';
 
-  if (mode === 'off' || mode === 'monitor_only') {
+  if (mode === 'off' || mode === 'monitor_only' || mode === 'warnings') {
     return { executed: false, pausedAtCheckpoint: false, newState };
   }
 
@@ -83118,7 +83174,7 @@ export function executeStrategyPlannerCoPilotStep(
     {
       mode: mode,
       coPilotSettings: stepCoPilotSettings,
-      forceExecution: true
+      forceExecution: false
     }
   );
 
@@ -94212,7 +94268,7 @@ export function createDefaultActorAutoModePolicy(targetActorId: string | number,
 }
 
 export function sanitizeActorAutoModePolicy(input: unknown): ActorAutoModePolicy {
-  const validPermissions: AutoModePermission[] = ['locked', 'observe', 'recommend', 'assist_only', 'challenge_only', 'full_adaptive', 'disabled', 'recommend_only', 'auto_apply_non_intrusive', 'full_auto'];
+  const validPermissions: string[] = ['locked', 'observe', 'recommend', 'assist_only', 'challenge_only', 'full_adaptive', 'disabled', 'recommend_only', 'auto_apply_non_intrusive', 'full_auto', 'read_only', 'recommendation_only', 'assisted', 'autonomous'];
   const validCategories: AutoModeCategory[] = [
     'pricing', 'capacity', 'route_expansion', 'borrowing', 'debt_repayment',
     'marketing', 'alliance', 'tax_relief', 'subsidy', 'dividend',
@@ -136234,6 +136290,35 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
     const locks = { isAiThinking: { current: true }, startedTeamAiTurnKeys: { current: new Set(['player:3']) }, activeAiTurnSessions: { current: { player: { isFinished: false } } } };
     releaseInFlightAiTurnLocks(locks);
     return (!locks.isAiThinking.current && locks.startedTeamAiTurnKeys.current.size === 0 && Object.keys(locks.activeAiTurnSessions.current).length === 0) || 'locks remained';
+  });
+  check('u_think_is_not_a_commit', 'A solo think token is not a successful action (AI-001)', () => {
+    return (soloActionCommits('think') === false && soloActionCommits('travel', { travelBlocked: true }) === false && soloActionCommits('sell') === true) || 'think still commits';
+  });
+  check('u_read_only_does_not_apply', 'Catalog read_only sanitizes to observe and does not apply (AI-007)', () => {
+    const sanitized = sanitizeAutoModeGlobalSettings({ permissionMode: 'read_only', autoModeEnabled: true });
+    const apply = shouldAutoApplyAutoModeForActor(true, sanitized.permissionMode, true, null);
+    return (normalizePermissionMode('read_only') === 'observe' && sanitized.permissionMode === 'observe' && apply === false) || `perm=${sanitized.permissionMode} apply=${apply}`;
+  });
+  check('u_ask_goal_needs_write', 'Ask the Game does not rewrite the Auto Mode goal without a settings write (AI-003)', () => {
+    const state: any = { gameSettings: { autoModeSettings: { primaryGoal: 'wealth_accumulation' } } };
+    const refused = askGameToolSetAutoModeGoal(state, 'player', 'balanced_strategy', { allowSettingsWrite: false });
+    const named = goalNamedInAskQuery('set auto mode goal to wealth');
+    return (refused.success === false && state.gameSettings.autoModeSettings.primaryGoal === 'wealth_accumulation' && named === 'wealth_accumulation') || state.gameSettings.autoModeSettings.primaryGoal;
+  });
+  check('u_delegated_suggestion_needs_approval', 'Delegated communication does not execute a loan suggestion (AI-004)', () => {
+    const gate = evaluateSuggestedActionGate({ autonomy: 'delegated', copilotEnabled: true, copilotAuthority: 'recommendations', action: { id: 's1', type: 'take_advanced_loan', label: 'Borrow', status: 'pending' } as any, alreadyCommittedIds: [] });
+    return (gate.allowed && gate.needsApproval) || JSON.stringify(gate);
+  });
+  check('u_refinance_checks_before_repay', 'Solo refinance does not repay when the new tier is illegal (AI-010)', () => {
+    const illegal = soloRefinanceMayRepay({ level: 1, advancedLoans: [{ id: 'L1' }] }, 'L1', { levelRequired: 5 }, { loanRefinancingEnabled: true }, true);
+    const legal = soloRefinanceMayRepay({ level: 6, advancedLoans: [{ id: 'L1' }] }, 'L1', { levelRequired: 5 }, { loanRefinancingEnabled: true }, true);
+    return (illegal === false && legal === true) || `illegal=${illegal} legal=${legal}`;
+  });
+  check('u_run_now_respects_authority', 'Run Now does not bypass confirm-before-running (AI-006)', () => {
+    const blocked = humanAutomationRunNowAllowed({ humanAutomationEnabled: true }, { enabled: true, authorityMode: 'confirm_before_running' });
+    const disabled = humanAutomationRunNowAllowed({ humanAutomationEnabled: false }, { enabled: true, authorityMode: 'silent_autorun' });
+    const allowed = humanAutomationRunNowAllowed({ humanAutomationEnabled: true }, { enabled: true, authorityMode: 'silent_autorun' });
+    return (!blocked && !disabled && allowed) || `b=${blocked} d=${disabled} a=${allowed}`;
   });
 
   return results;
@@ -180789,7 +180874,7 @@ function AustraliaGame() {
     const surfaceOn = Boolean(
       enabled &&
       (commandCenterSettings?.enabled ?? true) &&
-      ((commandCenterSettings?.showInPlayerStatusHeader ?? false) || (commandCenterSettings?.showCompactFloatingWidget ?? false))
+      (Boolean(uiState.showAiCommandCenterModal) || (commandCenterSettings?.showInPlayerStatusHeader ?? false) || (commandCenterSettings?.showCompactFloatingWidget ?? false))
     );
     if (!surfaceOn) {
       return createDefaultCommandCenterState();
@@ -180799,7 +180884,7 @@ function AustraliaGame() {
       commandCenterSettings,
       player?.id || 'player'
     );
-  }, [gameState, commandCenterSettings, player?.id, gameSettings.aiCommandCenterUiEnabled]);
+  }, [gameState, commandCenterSettings, player?.id, gameSettings.aiCommandCenterUiEnabled, uiState.showAiCommandCenterModal]);
   const builderState = gameState.customScenarioBuilder;
 
   // Milestone 7: Co-Pilot Dev Self-Tests State
@@ -188565,7 +188650,7 @@ function dispatchGameSettingsChange(
         const cost = actionData.cost;
         if (gameSettings.sabotageEnabled && isTravelBlocked(currentAi.debuffs)) {
           addNotification(`🤖 ${currentAi.name} couldn't travel due to sabotage`, 'ai', false);
-          break;
+          if (!soloActionCommits('travel', { travelBlocked: true })) return false;
         }
         updateAiPlayerState((prev: any) => ({
           ...prev,
@@ -188864,6 +188949,10 @@ function dispatchGameSettingsChange(
         }
 
         case 'refinance_advanced_loan': {
+          const refinanceTier = LOAN_TIERS.find(t => t.id === actionData.tierId);
+          if (!soloRefinanceMayRepay(currentAi, actionData.loanId, refinanceTier, gameSettings, isAdvancedLoansEnabledForActor(currentAi))) {
+            return false;
+          }
           const repaid = repayAdvancedLoanForActor('ai', actionData.loanId, false, { silent: true });
           if (!repaid) return false;
           const borrowed = takeAdvancedLoanForActor('ai', actionData.tierId, false, undefined, { silent: false });
@@ -188886,6 +188975,7 @@ function dispatchGameSettingsChange(
           'ai',
           false
         );
+        if (!soloActionCommits('think')) return false;
         break;
 
       default:
@@ -196843,7 +196933,7 @@ function dispatchGameSettingsChange(
       return;
     }
     const executed = markSuggestedAction(action, 'executed', comms.committedActionIds);
-    if (executed.executed && action.regionId) {
+    if (executed.executed && action.type === 'reserve_region' && action.regionId) {
       issueTeamDirective({
         fromActorId: 'player',
         toActorId: gameState.aiCommunication?.selectedSpeakerId || ALLY_AI_ID,
@@ -201936,6 +202026,7 @@ function dispatchGameSettingsChange(
   const executeHumanAutomationNow = useCallback(async (automationId: string) => {
     const automation = humanAutomations.find(a => a.id === automationId);
     if (!automation) return;
+    if (!humanAutomationRunNowAllowed(gameSettings, automation)) return;
     const actor = getActorState('player');
     if (!actor || actor.kind !== 'human') return;
     const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
