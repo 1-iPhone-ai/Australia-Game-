@@ -136851,6 +136851,17 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; pr
     return (indexed && notInGate) || `indexed=${indexed} notInGate=${notInGate}`;
   });
 
+  check('u_uistate_before_command_center', 'Command center memo reads uiState only after it is initialized (BOOT-001)', () => {
+    const src = Function.prototype.toString.call(AustraliaGame);
+    for (const name of ['uiState2', 'uiState']) {
+      const use = src.indexOf(name + '.showAiCommandCenterModal');
+      if (use === -1) continue;
+      const decl = src.indexOf('const [' + name);
+      return (decl !== -1 && decl < use) || `decl=${decl} use=${use} name=${name}`;
+    }
+    return 'command center modal flag is not read from uiState';
+  });
+
 
 
   return results;
@@ -181518,37 +181529,6 @@ function AustraliaGame() {
     return gameSettings.commandCenterSettings || createDefaultCommandCenterSettings();
   }, [gameSettings.commandCenterSettings]);
 
-  const liveCommandCenterState = useMemo(() => {
-    const enabled = Boolean(gameSettings.aiCommandCenterUiEnabled ?? false);
-    const surfaceOn = Boolean(
-      enabled &&
-      (commandCenterSettings?.enabled ?? true) &&
-      (Boolean(uiState.showAiCommandCenterModal) || (commandCenterSettings?.showInPlayerStatusHeader ?? false) || (commandCenterSettings?.showCompactFloatingWidget ?? false))
-    );
-    if (!surfaceOn) {
-      return createDefaultCommandCenterState();
-    }
-    return evaluateCommandCenterDeduplicated(
-      gameState,
-      commandCenterSettings,
-      player?.id || 'player'
-    );
-  }, [gameState, commandCenterSettings, player?.id, gameSettings.aiCommandCenterUiEnabled, uiState.showAiCommandCenterModal]);
-  const builderState = gameState.customScenarioBuilder;
-
-  // Milestone 7: Co-Pilot Dev Self-Tests State
-  const [coPilotSelfTestResult, setCoPilotSelfTestResult] = useState<CoPilotDevSelfTestReport | null>(null);
-  const [isExecutingCoPilotSelfTests, setIsExecutingCoPilotSelfTests] = useState<boolean>(false);
-  const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
-
-
-
-
-
-
-  // Phase 12: Pre-Scenario Settings Snapshot
-  const [savedPreScenarioSettings, setSavedPreScenarioSettings] = useState<GameSettingsState | null>(null);
-
   // UI state
   const [uiState, setUiState] = useState<UIState>({
     experienceLayer: 'play' as ExperienceLayer,
@@ -181637,6 +181617,38 @@ function AustraliaGame() {
     intentTeaching: null,
     intentAdjustment: null
   });
+
+  const liveCommandCenterState = useMemo(() => {
+    const enabled = Boolean(gameSettings.aiCommandCenterUiEnabled ?? false);
+    const surfaceOn = Boolean(
+      enabled &&
+      (commandCenterSettings?.enabled ?? true) &&
+      (Boolean(uiState.showAiCommandCenterModal) || (commandCenterSettings?.showInPlayerStatusHeader ?? false) || (commandCenterSettings?.showCompactFloatingWidget ?? false))
+    );
+    if (!surfaceOn) {
+      return createDefaultCommandCenterState();
+    }
+    return evaluateCommandCenterDeduplicated(
+      gameState,
+      commandCenterSettings,
+      player?.id || 'player'
+    );
+  }, [gameState, commandCenterSettings, player?.id, gameSettings.aiCommandCenterUiEnabled, uiState.showAiCommandCenterModal]);
+  const builderState = gameState.customScenarioBuilder;
+
+  // Milestone 7: Co-Pilot Dev Self-Tests State
+  const [coPilotSelfTestResult, setCoPilotSelfTestResult] = useState<CoPilotDevSelfTestReport | null>(null);
+  const [isExecutingCoPilotSelfTests, setIsExecutingCoPilotSelfTests] = useState<boolean>(false);
+  const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
+
+
+
+
+
+
+  // Phase 12: Pre-Scenario Settings Snapshot
+  const [savedPreScenarioSettings, setSavedPreScenarioSettings] = useState<GameSettingsState | null>(null);
+
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
