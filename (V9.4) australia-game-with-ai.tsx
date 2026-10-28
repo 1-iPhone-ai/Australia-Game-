@@ -136862,6 +136862,43 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; pr
     return 'command center modal flag is not read from uiState';
   });
 
+  check('u_australiagame_first_render_no_tdz', 'AustraliaGame first render does not read a const before it is initialized (BOOT-002)', () => v95WithIsolatedGlobals(() => {
+    const internals = (React as any).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+    if (!internals || !('H' in internals)) return 'React hook dispatcher is not available';
+    const previous = internals.H;
+    const noop = () => {};
+    const dispatcher: any = {
+      useState: (init: any) => [typeof init === 'function' ? init() : init, noop],
+      useReducer: (_reducer: any, init: any, initFn?: any) => [typeof initFn === 'function' ? initFn(init) : init, noop],
+      useMemo: (fn: any) => fn(),
+      useCallback: (fn: any) => fn,
+      useRef: (init: any) => ({ current: init }),
+      useEffect: () => {},
+      useLayoutEffect: () => {},
+      useImperativeHandle: () => {},
+      useDebugValue: () => {},
+      useId: () => 'boot',
+      useContext: (context: any) => context && (context._currentValue ?? context._currentValue2),
+      useSyncExternalStore: (_subscribe: any, getSnapshot: any) => getSnapshot(),
+      useTransition: () => [false, noop],
+      useDeferredValue: (value: any) => value,
+      useOptimistic: (value: any) => value,
+      useInsertionEffect: () => {},
+      use: (value: any) => value
+    };
+    internals.H = dispatcher;
+    try {
+      AustraliaGame();
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/before initialization/.test(msg)) return msg;
+      return true;
+    } finally {
+      internals.H = previous;
+    }
+  }));
+
 
 
   return results;
@@ -182274,6 +182311,9 @@ function AustraliaGame() {
   // CPFIX2: Ref-indirection for advanceDay, handleTurnTransition, and updatePersonalRecords to supply missing helpers to Co-Pilot without TDZ issues
   const advanceDayRef = useRef<(() => void) | null>(null);
   const handleTurnTransitionRef = useRef<((actor: 'player' | 'ai') => void) | null>(null);
+  // Keyboard shortcuts list handleEndTurn before that callback exists. The ref is assigned
+  // once the callback is created, so the shortcut effect can depend on the ref instead of the binding.
+  const handleEndTurnRef = useRef<(() => void) | null>(null);
   const updatePersonalRecordsRef = useRef<((type: string, value: any) => void) | null>(null);
   const getCompetitiveMetricValueRef = useRef<((metric: WinMetric, options: any) => number) | null>(null);
   const bankDrawEligibilityRef = useRef<((actorId: string, decision: any | null) => { eligible: boolean; reasonLabel: string }) | null>(null);
@@ -190076,7 +190116,7 @@ function dispatchGameSettingsChange(
       switch (shortcut.action) {
         case 'endTurn':
           if (isHumanPlayerTurn(gameState) && gameState.day < gameSettings.totalDays) {
-            handleEndTurn();
+            handleEndTurnRef.current?.();
           }
           break;
         case 'openChallenges':
@@ -190220,7 +190260,7 @@ function dispatchGameSettingsChange(
 
 	    window.addEventListener('keydown', handleKeyPress);
 	    return () => window.removeEventListener('keydown', handleKeyPress);
-	  }, [clearAllNotifications, closeConfirmation, confirmationDialog, gameSettings.notificationClearShortcut, gameSettings.totalDays, gameState.currentTurn, gameState.day, gameState.gameMode, handleEndTurn, handleSaveGame, uiState]);
+	  }, [clearAllNotifications, closeConfirmation, confirmationDialog, gameSettings.notificationClearShortcut, gameSettings.totalDays, gameState.currentTurn, gameState.day, gameState.gameMode, handleSaveGame, uiState]);
 
   // =========================================
   // HELPER FUNCTIONS
@@ -198981,6 +199021,7 @@ function dispatchGameSettingsChange(
       confirmEndTurn();
     }
   }, [player, gameState, gameSettings, addNotification, handleTurnTransition, isTeamMode, showConfirmation, updatePersonalRecords]);
+  handleEndTurnRef.current = handleEndTurn;
 
   // V6.7 Phase 3a: single entry point / performance safeguard for all Phase 3a state mutation
   // (plan generation/reevaluation, plan-driven auto-reservation). The early-return guard below is
