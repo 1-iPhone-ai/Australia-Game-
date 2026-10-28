@@ -15844,6 +15844,10 @@ export interface RecordedRandomDraw {
 const pendingReplayRandomDraws: RecordedRandomDraw[] = [];
 const pendingReplayDirectorEvents: Array<{ category: ReplayEventCategory; summary: string; payload: Record<string, unknown> }> = [];
 
+export function drainPendingReplayRandomDraws(): RecordedRandomDraw[] {
+  return pendingReplayRandomDraws.splice(0, pendingReplayRandomDraws.length);
+}
+
 function flushPendingReplaySideChannels(
   recording: ReplayFile,
   day: number,
@@ -16013,7 +16017,7 @@ export function drawGameRandom(
     day: gameStateRef?.day ?? 1,
     turn: gameStateRef?.turn ?? 1
   };
-  if (selectedMode === 'recorded_chaos' || selectedMode === 'hybrid') {
+  if (selectedMode === 'recorded_chaos' || selectedMode === 'hybrid' || selectedMode === 'deterministic') {
     pendingReplayRandomDraws.push(drawRecord);
   }
   const activeReplay = gameStateRef?.autoModeRuntime?.replayEvents?.[gameStateRef.autoModeRuntime.replayEvents.length - 1];
@@ -22833,6 +22837,10 @@ export interface ReplayCompatibilityReport {
   canBranch: boolean;
   canCompare: boolean;
   integrityStatus: ReplayIntegrityStatus;
+  /** Checksum that arrived with the file, kept even when the migrated bytes get a new checksum. */
+  originalChecksum?: string;
+  /** True only when the exported checksum is the original file's checksum. */
+  checksumPresentedAsOriginal?: boolean;
 }
 
 export interface ReplayMigrationResult {
@@ -23052,6 +23060,7 @@ export function migrateReplayFileWithReport(raw: unknown): ReplayMigrationResult
     bookmarks: Array.isArray(data.bookmarks) ? data.bookmarks : [],
     branches: Array.isArray(data.branches) ? data.branches : []
   };
+  compatibility.originalChecksum = typeof data.checksum === 'string' ? data.checksum : undefined;
   const checksumCheck = verifyReplayChecksum({ ...originalCandidate, checksum: typeof data.checksum === 'string' ? data.checksum : undefined });
   const checksumOk = typeof data.checksum === 'string' && checksumCheck.ok;
   if (!checksumOk) {
@@ -23089,6 +23098,8 @@ export function migrateReplayFileWithReport(raw: unknown): ReplayMigrationResult
   migrated.migrationsApplied = compatibility.migrationsApplied;
   const migratedChecksum = computeReplayChecksum(migrated);
   migrated.checksum = migratedChecksum;
+  compatibility.checksumPresentedAsOriginal = checksumOk && migratedChecksum === compatibility.originalChecksum;
+  if (!checksumOk) compatibility.integrityStatus = 'Corrupted';
 
   const hasSnapshots = migrated.checkpoints.some(cp => Boolean(cp.fullStateSnapshot));
   const hasInitialConfig = Boolean(migrated.initialConfig && migrated.initialConfig.actorsById);
@@ -23123,6 +23134,15 @@ export function migrateReplayFileWithReport(raw: unknown): ReplayMigrationResult
     compatibility.warnings.push('No full-state checkpoints — seeking falls back to event roll-forward.');
   }
   return { file: migrated, compatibility };
+}
+
+export function reexportImportedReplay(result: ReplayMigrationResult): { integrityStatus: string; checksumPresentedAsOriginal: boolean; checksum?: string; originalChecksum?: string } {
+  return {
+    integrityStatus: result.compatibility.integrityStatus,
+    checksumPresentedAsOriginal: result.compatibility.checksumPresentedAsOriginal === true,
+    checksum: result.file?.checksum,
+    originalChecksum: result.compatibility.originalChecksum
+  };
 }
 
 const migrateReplayFile = (raw: unknown): ReplayFile | null => {
@@ -23519,7 +23539,9 @@ const applyReplayEventToIsolatedRuntime = (runtime: IsolatedReplayRuntime, ev: R
   const actorId = ev.actorId || 'player';
   if (next.actors[actorId]) {
     const actor = { ...next.actors[actorId] };
-    if (typeof canonical.price === 'number' && (ev.category === 'market' || ev.category === 'human_action' || ev.category === 'ai_execution')) {
+    const moneyDelta = typeof payload.moneyDelta === 'number' ? payload.moneyDelta : (typeof (canonical as { moneyDelta?: unknown }).moneyDelta === 'number' ? (canonical as { moneyDelta: number }).moneyDelta : undefined);
+    if (typeof moneyDelta === 'number') actor.money += moneyDelta;
+    else if (typeof canonical.price === 'number' && (ev.category === 'market' || ev.category === 'human_action' || ev.category === 'ai_execution')) {
       const summary = (ev.summary || '').toLowerCase();
       if (summary.includes('sold') || summary.includes('sell')) actor.money += canonical.price;
       else if (summary.includes('bought') || summary.includes('buy') || summary.includes('purchas') || summary.includes('travel')) actor.money = Math.max(0, actor.money - canonical.price);
@@ -23627,7 +23649,7 @@ export function seekReplayToSequenceDeterministic(
     try {
       applyReplayEventReducer(simCtx, ev);
       const actualHash = computeCanonicalStateHash(simCtx.currentSimState);
-      const expectedHash = ev.stateHashAfter || ev.stateHash;
+      const expectedHash = replayRecordedPostHash(ev);
       if (validateHashes && expectedHash && expectedHash !== actualHash) {
         divergedSequence = ev.sequence;
         error = `Deterministic reconstruction diverged at sequence ${ev.sequence}. Recorded playback remains available.`;
@@ -23957,7 +23979,8 @@ export function buildReplayBranchExperiment(label: string, current?: Record<stri
   const nextDifficulty = REPLAY_DIFFICULTY_CYCLE[(Math.max(0, REPLAY_DIFFICULTY_CYCLE.indexOf(difficulty as typeof REPLAY_DIFFICULTY_CYCLE[number])) + 1) % REPLAY_DIFFICULTY_CYCLE.length];
   const currentMode = (typeof settings.randomnessMode === 'string' ? settings.randomnessMode : 'deterministic') as RandomnessMode;
   const nextMode = REPLAY_RANDOMNESS_CYCLE[(Math.max(0, REPLAY_RANDOMNESS_CYCLE.indexOf(currentMode)) + 1) % REPLAY_RANDOMNESS_CYCLE.length];
-  const worldSeed = typeof settings.worldSeed === 'number' ? settings.worldSeed : 1337;
+  const worldSeed = typeof settings.worldRngSeed === 'number' ? settings.worldRngSeed : (typeof settings.worldSeed === 'number' ? settings.worldSeed : 1337);
+  const aiSeed = typeof settings.aiDeterministicSeed === 'number' ? settings.aiDeterministicSeed : (typeof settings.aiSeed === 'number' ? settings.aiSeed : worldSeed);
   switch (label) {
     case 'Let AI Choose':
       return { label, branchReason: 'auto_mode', branchSeedPolicy: 'preserve_original', title: 'Let AI Choose', modifiedSettings: { autoModeEnabled: true, coPilotEnabled: true } };
@@ -23968,7 +23991,7 @@ export function buildReplayBranchExperiment(label: string, current?: Record<stri
     case 'Disable Auto Mode':
       return { label, branchReason: 'auto_mode', branchSeedPolicy: 'preserve_original', title: 'Disable Auto Mode', modifiedSettings: { autoModeEnabled: false } };
     case 'Change Seed':
-      return { label, branchReason: 'randomness', branchSeedPolicy: 'new_seed', title: 'Change Seed', modifiedSettings: { worldSeed: worldSeed + 1, aiSeed: (typeof settings.aiSeed === 'number' ? settings.aiSeed : worldSeed) + 1 } };
+      return { label, branchReason: 'randomness', branchSeedPolicy: 'new_seed', title: 'Change Seed', modifiedSettings: { worldSeed: worldSeed + 1, aiSeed: aiSeed + 1, worldRngSeed: worldSeed + 1, aiDeterministicSeed: aiSeed + 1 } };
     case 'Change Randomness Mode':
       return { label, branchReason: 'randomness', branchSeedPolicy: 'preserve_original', title: `Change Randomness Mode to ${nextMode}`, modifiedSettings: { randomnessMode: nextMode } };
     case 'Change AI Strategy': {
@@ -24161,6 +24184,39 @@ export function replayCategoryToCheckpointKind(category: ReplayEventCategory): R
 
 export function shouldThrottleReplayDetail(detailLevel: string | undefined, usage: number, isCritical: boolean): boolean {
   return usage >= 0.9 && !isCritical && (detailLevel || 'standard') === 'standard';
+}
+
+/** A dropped non-critical event is a truncation, not a missing event. */
+export function noteReplayThrottleDrop(recording: { events: Array<{ sequence?: number }>; truncated?: boolean; truncatedAtSequence?: number }, usage: number, detailLevel: string | undefined, isCritical: boolean): boolean {
+  if (!shouldThrottleReplayDetail(detailLevel, usage, isCritical)) return false;
+  if (!recording.truncated) {
+    recording.truncated = true;
+    const last = recording.events.length > 0 ? recording.events[recording.events.length - 1] : undefined;
+    const nextSequence = typeof last?.sequence === 'number' ? last.sequence + 1 : recording.events.length;
+    if (recording.truncatedAtSequence === undefined) recording.truncatedAtSequence = nextSequence;
+  }
+  return true;
+}
+
+/** Stamp a pre-state hash only. A post-state hash is written when the caller supplied one. */
+export function stampReplayEventHashes(
+  fields: { stateHashBefore?: string; stateHashAfter?: string; payload?: Record<string, unknown> },
+  preState: unknown
+): { stateHashBefore: string; stateHashAfter: string; stateHash: string } {
+  const payload = fields.payload || {};
+  const before = fields.stateHashBefore || (typeof payload.stateHashBefore === 'string' ? payload.stateHashBefore : '') || computeCanonicalStateHash(preState);
+  const suppliedAfter = fields.stateHashAfter || (typeof payload.stateHashAfter === 'string' ? payload.stateHashAfter : '');
+  return { stateHashBefore: before, stateHashAfter: suppliedAfter, stateHash: suppliedAfter };
+}
+
+/** A hash copied from the pre-state is not a post-state hash. */
+export function replayRecordedPostHash(ev: { stateHashBefore?: string; stateHashAfter?: string; stateHash?: string; payload?: Record<string, unknown> | null }): string {
+  const after = typeof ev.stateHashAfter === 'string' ? ev.stateHashAfter : '';
+  if (after && after !== ev.stateHashBefore) return after;
+  const fromPayload = ev.payload && typeof ev.payload.stateHash === 'string' ? ev.payload.stateHash : '';
+  const generic = typeof ev.stateHash === 'string' && ev.stateHash ? ev.stateHash : fromPayload;
+  if (generic && generic !== ev.stateHashBefore) return generic;
+  return '';
 }
 
 export function computeReplayChecksumLegacy(file: Omit<ReplayFile, 'checksum'>): string {
@@ -24862,7 +24918,7 @@ export function reexecuteReplayMatch(
     currentSimState = simCtx.currentSimState;
 
     const actualHash = computeCanonicalStateHash(currentSimState);
-    const expectedHash = ev.stateHash || (payload.stateHash as string) || '';
+    const expectedHash = replayRecordedPostHash({ stateHashBefore: ev.stateHashBefore, stateHashAfter: ev.stateHashAfter, stateHash: ev.stateHash, payload });
 
     let isDivergent = false;
     let expectedHashForComparison = expectedHash;
@@ -25098,6 +25154,23 @@ export function createMatchCheckpoint(
   };
 }
 
+export function applyNewSeedToBranchSave<T extends { gameSettings?: GameSettingsState; aiRuntime?: { queue?: unknown[]; currentAction?: unknown; rngState?: number; worldRngState?: number }; rngRegistryState?: Record<string, RngStreamState> }>(save: T, overrides?: Record<string, unknown> | null): T {
+  if (!overrides) return save;
+  const nextWorld = typeof overrides.worldRngSeed === 'number' ? overrides.worldRngSeed : (typeof overrides.worldSeed === 'number' ? overrides.worldSeed : null);
+  const nextAi = typeof overrides.aiDeterministicSeed === 'number' ? overrides.aiDeterministicSeed : (typeof overrides.aiSeed === 'number' ? overrides.aiSeed : null);
+  if (nextWorld == null && nextAi == null) return save;
+  const world = nextWorld ?? (Number(save.gameSettings?.worldRngSeed) || 1337);
+  const ai = nextAi ?? world;
+  const reg = new GameplayRngRegistry(world);
+  reg.initStreams(world);
+  return {
+    ...save,
+    gameSettings: { ...(save.gameSettings || {}), ...overrides, worldRngSeed: world, aiDeterministicSeed: ai } as GameSettingsState,
+    rngRegistryState: reg.exportStreamStates(),
+    aiRuntime: { ...(save.aiRuntime || { queue: [], currentAction: null, rngState: ai, worldRngState: world }), rngState: ai, worldRngState: world }
+  };
+}
+
 export function spawnMatchBranchFromCheckpoint(
   checkpoint: ReplayCheckpoint,
   sourceReplayFile?: ReplayFile,
@@ -25124,7 +25197,7 @@ export function spawnMatchBranchFromCheckpoint(
     if (overrides) {
       saveData.gameSettings = { ...(saveData.gameSettings || {}), ...overrides };
     }
-    return saveData;
+    return applyNewSeedToBranchSave(saveData, overrides as Record<string, unknown> | undefined);
   }
 
   // PRIORITY 2: Fast-forward roll-forward re-simulation from sequence 0 up to checkpoint.sequence
@@ -25247,7 +25320,7 @@ export function spawnMatchBranchFromCheckpoint(
       deterministicCounters: simCtx?.counters ? { ...createInitialDeterministicCounters(), ...simCtx.counters } : undefined
     };
 
-    return saveData;
+    return applyNewSeedToBranchSave(saveData, overrides as Record<string, unknown> | undefined);
   }
 
   // FALLBACK (If sourceReplayFile is not provided)
@@ -25297,7 +25370,7 @@ export function spawnMatchBranchFromCheckpoint(
     deterministicCounters: { ...globalDeterministicCounters }
   };
 
-  return saveData;
+  return applyNewSeedToBranchSave(saveData, overrides as Record<string, unknown> | undefined);
 }
 
 // MILESTONE 6: PHASES 15, 17, 18 TYPES & PURE LOGIC FUNCTIONS
@@ -136625,6 +136698,62 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
     const roots = out.events.filter(e => e.reactionDepth === 0 && e.sourceSystem === 'households');
     return (off.length === 0 && roots.length === 1 && roots[0].strategicMeaning === entry.summary) || `off=${off.length} roots=${roots.length}`;
   });
+  check('u_replay_prehash_is_not_divergence', 'A money event stamped from the pre-state does not diverge when cash matches (SAVE-005)', () => v95WithIsolatedGlobals(() => {
+    const pre = { day: 1, turnCounter: 1, actorsById: { player: { id: 'player', money: 100, inventory: [] } }, player: { id: 'player', money: 100, inventory: [] }, teamsById: {}, regions: {}, activeEvents: [] };
+    const payload = { actionType: 'sell', moneyDelta: 40 };
+    const stamped = stampReplayEventHashes({ payload }, pre);
+    const ev = { id: 'e0', sequence: 0, category: 'market' as const, day: 1, turn: 1, actorId: 'player', teamId: 'team_player', summary: 'balance updated', payload, timestamp: 1, stateHashBefore: stamped.stateHashBefore, stateHashAfter: stamped.stateHashAfter, stateHash: stamped.stateHash };
+    const file = {
+      schemaVersion: 4, matchId: 'hashfix', events: [ev],
+      checkpoints: [{ id: 'cp', sequence: -1, day: 1, turn: 1, label: 'pre', fullStateSnapshot: { gameState: pre } }],
+      initialConfig: { worldSeed: 1337, actorsById: {}, teamsById: {}, gameSettings: createDefaultGameSettings(), selectedMode: 'single', aiDifficulty: 'medium', aiSeed: 1337 }
+    };
+    const sought = seekReplayToSequenceDeterministic(file as any, 0, 'strict', true);
+    const cash = sought.runtime.actors.player?.money;
+    return (!sought.error && stamped.stateHashAfter === '' && cash === 140) || `err=${sought.error} cash=${cash} after=${stamped.stateHashAfter}`;
+  }));
+  check('u_deterministic_world_draw_is_compared', 'A flipped deterministic World draw is an RNG divergence (SAVE-006)', () => {
+    drainPendingReplayRandomDraws();
+    const draws = v95WithIsolatedGlobals(() => {
+      setRngMasterSeed(42, true);
+      drawGameRandom('World', 'deterministic');
+      drawGameRandom('World', 'deterministic');
+      return drainPendingReplayRandomDraws();
+    });
+    const flipped = draws.map((draw, index) => index === 1 ? { ...draw, value: draw.value === 0 ? 0.2 : 0 } : draw);
+    const div = findFirstReplayRngDivergence({ randomDraws: draws } as ReplayFile, { randomDraws: flipped } as ReplayFile);
+    drainPendingReplayRandomDraws();
+    return (draws.length >= 2 && draws.every(draw => draw.mode === 'deterministic' && draw.stream === 'World') && div?.sequence === 1) || JSON.stringify({ n: draws.length, mode: draws[0]?.mode, div });
+  });
+  check('u_throttle_marks_truncated', 'Dropping a non-critical event at 91% records truncation (SAVE-007)', () => {
+    const recording = { events: Array.from({ length: 91 }, (_, i) => ({ sequence: i })), truncated: false as boolean, truncatedAtSequence: undefined as number | undefined };
+    const dropped = noteReplayThrottleDrop(recording, 0.91, 'standard', false);
+    const critical = noteReplayThrottleDrop({ events: recording.events, truncated: false }, 0.91, 'standard', true);
+    return (dropped && recording.truncated === true && recording.truncatedAtSequence === 91 && critical === false) || JSON.stringify(recording);
+  });
+  check('u_isolated_sell_reads_money_delta', 'Isolated playback applies moneyDelta without a sold keyword (SAVE-008)', () => {
+    const runtime = { actors: { player: { id: 'player', name: 'Player', money: 100, netWorth: 100, region: 'NSW', inventory: {} } }, teams: {}, day: 1, turn: 1, sequence: 0, regions: {}, activeEvents: [], stateHash: '' } as IsolatedReplayRuntime;
+    const next = applyReplayEventToIsolatedRuntime(runtime, { id: 's', sequence: 1, category: 'market', day: 1, turn: 1, actorId: 'player', summary: 'quoted', payload: { moneyDelta: 40 }, timestamp: 1 } as ReplayEvent);
+    return next.actors.player.money === 140 || String(next.actors.player.money);
+  });
+  check('u_change_seed_changes_world_draw', 'Change Seed writes worldRngSeed and the next World draw differs (SAVE-009)', () => v95WithIsolatedGlobals(() => {
+    setRngMasterSeed(100, true);
+    const continued = drawGameplayRandom('World');
+    const plan = buildReplayBranchExperiment('Change Seed', { worldRngSeed: 100, worldSeed: 100, aiDeterministicSeed: 50, aiSeed: 50 });
+    const save = spawnMatchBranchFromCheckpoint({ id: 'c', sequence: 0, day: 1, turn: 0, label: 'start', kind: 'match_start' } as ReplayCheckpoint, undefined, plan.modifiedSettings as Partial<GameSettingsState>);
+    const branchedSeed = save.gameSettings.worldRngSeed;
+    setRngMasterSeed(branchedSeed, true);
+    const branched = drawGameplayRandom('World');
+    return (plan.branchSeedPolicy === 'new_seed' && branchedSeed === 101 && save.gameSettings.aiDeterministicSeed === 51 && branched !== continued) || `seed=${branchedSeed} continued=${continued} branched=${branched}`;
+  }));
+  check('u_bad_checksum_stays_corrupt', 'A flipped replay byte stays corrupted after import and re-export (SAVE-010)', () => {
+    const raw: any = v95SyntheticReplay();
+    const original = raw.checksum;
+    raw.events[0].summary = String(raw.events[0].summary) + '!';
+    const imported = migrateReplayFileWithReport(raw);
+    const exported = reexportImportedReplay(imported);
+    return (imported.compatibility.integrityStatus === 'Corrupted' && exported.integrityStatus === 'Corrupted' && exported.checksumPresentedAsOriginal === false && exported.checksum !== original && exported.originalChecksum === original) || JSON.stringify(exported);
+  });
 
 
 
@@ -182582,7 +182711,7 @@ function AustraliaGame() {
       || category === 'ai_execution' || category === 'human_action' || category === 'lead_change_event'
       || category === 'rng_draw' || category === 'director_event' || category === 'auto_mode_package_applied';
     const usage = recording.events.length / Math.max(100, gameSettings.aiReplayMaxEvents);
-    if (shouldThrottleReplayDetail(gameSettings.replayDetailLevel, usage, isCritical)) {
+    if (noteReplayThrottleDrop(recording, usage, gameSettings.replayDetailLevel, isCritical)) {
       return;
     }
     const maxEvents = Math.max(100, gameSettings.aiReplayMaxEvents);
@@ -182596,8 +182725,9 @@ function AustraliaGame() {
       return;
     }
     const nextSequence = recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence + 1 : 0;
-    const stateHashBefore = fields.stateHashBefore || (fields.payload?.stateHashBefore as string) || computeCanonicalStateHash(gameState);
-    const stateHashAfter = fields.stateHashAfter || (fields.payload?.stateHashAfter as string) || computeCanonicalStateHash(gameState);
+    const stampedHashes = stampReplayEventHashes(fields, gameState);
+    const stateHashBefore = stampedHashes.stateHashBefore;
+    const stateHashAfter = stampedHashes.stateHashAfter;
     const event: ReplayEvent = {
       id: nextCorrelationId(globalDeterministicCounters, 'replayevt'),
       sequence: nextSequence,
@@ -191201,7 +191331,7 @@ function dispatchGameSettingsChange(
       rngRegistryState: config.rngRegistryState || globalRngRegistry.exportStreamStates(),
       deterministicCounters: config.deterministicCounters || { ...globalDeterministicCounters }
     };
-    applyLoadedState(day1Data);
+    applyLoadedState(applyNewSeedToBranchSave(day1Data, overrides as Record<string, unknown>));
     addNotification(`Branched from ${sourceFile.matchId}'s Day 1 configuration.`, 'success', true, 'system');
   }, [addNotification, applyLoadedState, buildSaveData, gameState.gameActivityLedger, uiState.theme]);
 
