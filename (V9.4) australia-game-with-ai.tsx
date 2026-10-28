@@ -136600,6 +136600,31 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
     const inputs = buildWorkforceInputsFromGameState({ turn: 2, gameState: { infrastructureProjects: { park: { id: 'infra_park', status: 'under_construction', title: 'Parkes' } } } });
     return (inputs.projects || []).some((project: any) => project.id === 'infra_park') || JSON.stringify(inputs.projects);
   });
+  check('u_public_finance_emits_world_root', 'A fiscal-pressure change emits one world-reaction root (WORLD-003)', () => {
+    const entry: FiscalHistoryEntry = {
+      id: 'pf1', turn: 3, kind: 'fiscal_pressure_became_strained',
+      pressure: 'strained', sustainability: 'stressed', headroom: 10,
+      maintenanceLoad: 20, debtLevel: 40,
+      text: 'Fiscal pressure became strained.',
+      significance: 'major', regionIds: ['NSW']
+    };
+    const off = publicFinanceWorldRoots(false, [entry], ['player'], 2);
+    const on = publicFinanceWorldRoots(true, [entry], ['player'], 2);
+    const out = processWorldReactions(createEmptyWorldReactionState(), on, createSWRFixtureInputs(), { persist: true });
+    const roots = out.events.filter(e => e.reactionDepth === 0 && e.sourceSystem === 'public_finance');
+    return (off.length === 0 && roots.length === 1 && roots[0].strategicMeaning === entry.text) || `off=${off.length} roots=${roots.length}`;
+  });
+  check('u_household_affordability_emits_world_root', 'An affordability move to strained emits one world-reaction root (WORLD-004)', () => {
+    const entry: HouseholdWorldReactionEvent = {
+      id: 'hh1', turn: 4, kind: 'affordability_became_strained', regionIds: ['NSW'],
+      significance: 'major', title: 'Affordability strained', summary: 'Household affordability moved to strained.', dedupeKey: 'aff:4'
+    };
+    const off = householdWorldRoots(false, [entry], ['player'], 2);
+    const on = householdWorldRoots(true, [entry], ['player'], 2);
+    const out = processWorldReactions(createEmptyWorldReactionState(), on, createSWRFixtureInputs(), { persist: true });
+    const roots = out.events.filter(e => e.reactionDepth === 0 && e.sourceSystem === 'households');
+    return (off.length === 0 && roots.length === 1 && roots[0].strategicMeaning === entry.summary) || `off=${off.length} roots=${roots.length}`;
+  });
 
 
 
@@ -172090,6 +172115,62 @@ export function publicFinanceToWorldEvent(entry: FiscalHistoryEntry): {
   };
 }
 
+const FISCAL_SWR_KIND: Record<FiscalHistoryEntry['kind'], SWRKind> = {
+  fiscal_pressure_became_strained: 'debt_pressure_changed',
+  fiscal_pressure_became_critical: 'debt_pressure_changed',
+  fiscal_headroom_recovered: 'liquidity_improved',
+  fiscal_reserve_became_weak: 'liquidity_deteriorated',
+  fiscal_reserve_restored: 'liquidity_improved',
+  debt_pressure_increased: 'debt_pressure_changed',
+  maintenance_burden_became_high: 'debt_pressure_changed',
+  funding_conflict_emerged: 'crisis_escalated',
+  funding_conflict_resolved: 'crisis_resolved',
+  major_commitment_completed: 'project_completed',
+  recovery_spending_ended: 'liquidity_improved'
+};
+
+/** Fiscal history rows are not StrategicWorldEvents. This adapter is what the live effect emits. */
+export function fiscalEntryToStrategicEvent(entry: FiscalHistoryEntry, observers: string[] = ['player'], day = 1): StrategicWorldEvent {
+  const significance: SWRSignificance = entry.significance;
+  return {
+    id: `swr_${entry.id}`,
+    turn: entry.turn,
+    day,
+    sourceSystem: 'public_finance',
+    sourceEventId: entry.id,
+    actorId: null,
+    teamId: null,
+    kind: FISCAL_SWR_KIND[entry.kind] || 'debt_pressure_changed',
+    subjectType: entry.regionIds.length === 1 ? 'region' : 'nation',
+    subjectId: entry.regionIds.length === 1 ? entry.regionIds[0] : 'australia',
+    magnitude: significance === 'critical' ? 90 : significance === 'major' ? 75 : 55,
+    significance,
+    visibility: 'public',
+    observers,
+    evidence: [entry.text],
+    before: {},
+    after: { pressure: entry.pressure, sustainability: entry.sustainability },
+    delta: {},
+    strategicMeaning: entry.text,
+    affectedDomains: ['economy', 'strategy'],
+    tags: ['v1012_public_finance', `kind:${entry.kind}`],
+    layer: 'world',
+    confidence: 'high',
+    claimKind: 'fact',
+    causedByEventId: null,
+    contributingCauses: [],
+    rootEventId: `swr_${entry.id}`,
+    reactionDepth: 0,
+    expiresTurn: entry.turn + 4,
+    dedupeKey: `v1012:${entry.kind}:${entry.turn}`
+  };
+}
+
+export function publicFinanceWorldRoots(enabled: boolean, events: FiscalHistoryEntry[] | null | undefined, observers: string[] = ['player'], day = 1): StrategicWorldEvent[] {
+  if (!enabled || !events || events.length === 0) return [];
+  return events.map(entry => fiscalEntryToStrategicEvent(entry, observers, day));
+}
+
 // ---- Part 101–102: What-If Simulator (Pure, Non-Mutating) -------------------------------------------
 
 export function simulatePublicFinanceWhatIf(
@@ -178391,6 +178472,60 @@ export function householdToWorldEvent(transition: LivingStandardsTransition): {
         : 'info',
     headline: transition.explanation
   };
+}
+
+const HOUSEHOLD_SWR_KIND: Record<HouseholdWorldEventKind, SWRKind> = {
+  living_standards_improved: 'liquidity_improved',
+  living_standards_deteriorated: 'market_shift_major',
+  affordability_became_strained: 'regional_need_became_critical',
+  affordability_recovered: 'liquidity_improved',
+  housing_pressure_became_severe: 'regional_need_became_critical',
+  domestic_demand_strengthened: 'market_shift_major',
+  domestic_demand_weakened: 'market_shift_major',
+  regional_living_standards_diverged: 'market_shift_major',
+  household_resilience_improved: 'liquidity_improved',
+  household_resilience_deteriorated: 'market_shift_major'
+};
+
+/** Household reaction rows are not StrategicWorldEvents. Do not reuse householdToWorldEvent for this. */
+export function householdReactionToStrategicEvent(entry: HouseholdWorldReactionEvent, observers: string[] = ['player'], day = 1): StrategicWorldEvent {
+  return {
+    id: `swr_${entry.id}`,
+    turn: entry.turn,
+    day,
+    sourceSystem: 'households',
+    sourceEventId: entry.id,
+    actorId: null,
+    teamId: null,
+    kind: HOUSEHOLD_SWR_KIND[entry.kind] || 'market_shift_major',
+    subjectType: entry.regionIds.length === 1 ? 'region' : 'nation',
+    subjectId: entry.regionIds.length === 1 ? entry.regionIds[0] : 'australia',
+    magnitude: entry.significance === 'critical' ? 90 : entry.significance === 'major' ? 75 : 55,
+    significance: entry.significance,
+    visibility: 'public',
+    observers,
+    evidence: [entry.summary || entry.title],
+    before: {},
+    after: { kind: entry.kind },
+    delta: {},
+    strategicMeaning: entry.summary || entry.title,
+    affectedDomains: ['economy', 'regions'],
+    tags: ['v1013_households', `kind:${entry.kind}`],
+    layer: 'world',
+    confidence: 'high',
+    claimKind: 'fact',
+    causedByEventId: null,
+    contributingCauses: [],
+    rootEventId: `swr_${entry.id}`,
+    reactionDepth: 0,
+    expiresTurn: entry.turn + 4,
+    dedupeKey: entry.dedupeKey || `v1013:${entry.kind}:${entry.turn}`
+  };
+}
+
+export function householdWorldRoots(enabled: boolean, events: HouseholdWorldReactionEvent[] | null | undefined, observers: string[] = ['player'], day = 1): StrategicWorldEvent[] {
+  if (!enabled || !events || events.length === 0) return [];
+  return events.map(entry => householdReactionToStrategicEvent(entry, observers, day));
 }
 
 // ============================================================================
@@ -213525,6 +213660,16 @@ function dispatchGameSettingsChange(
     const prev = pf12PersistedRef.current;
     if (prev && prev.lastInputHash === pf12Hash) return;
     const res = computeNationalPublicFinance(pf12Inputs, prev);
+    if (res.events.length && pf12Enabled) {
+      try {
+        const day = Number(gameState.day || 1);
+        const roots = publicFinanceWorldRoots(true, res.events, lrObservers, day);
+        if (roots.length) {
+          const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), roots, swrInputs, { handlers: swrHandlers });
+          persistWorldReaction(out.state);
+        }
+      } catch (err) { console.warn('[Public finance] world reaction skipped:', err); }
+    }
     pf12PersistedRef.current = res.persisted;
     dispatchGameState({ type: 'LOAD_STATE', payload: { publicFinance: res.persisted, publicFinanceState: res.state } as any });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -213604,6 +213749,16 @@ function dispatchGameSettingsChange(
     const prev = hh13PersistedRef.current;
     if (prev && prev.lastInputHash === hh13Hash) return;
     const res = computeNationalHouseholdEconomy(hh13Inputs, prev, hh13StateRef.current);
+    if (res.events.length && hh13Enabled) {
+      try {
+        const day = Number(gameState.day || 1);
+        const roots = householdWorldRoots(true, res.events, lrObservers, day);
+        if (roots.length) {
+          const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), roots, swrInputs, { handlers: swrHandlers });
+          persistWorldReaction(out.state);
+        }
+      } catch (err) { console.warn('[Households] world reaction skipped:', err); }
+    }
     hh13PersistedRef.current = res.persisted;
     dispatchGameState({ type: 'LOAD_STATE', payload: { householdEconomy: res.persisted, householdEconomyState: res.state } as any });
     // eslint-disable-next-line react-hooks/exhaustive-deps
