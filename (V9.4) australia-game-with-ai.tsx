@@ -46881,7 +46881,7 @@ export const GuardianAiCenterModal: React.FC<GuardianAiCenterModalProps> = ({
       if (e.key === 'Escape') {
         e.stopPropagation();
         onCloseRef.current();
-      } else if (e.key === 'Tab' && modalRef.current) {
+      } else if (e.key === 'Tab' && modalRef.current && modalShouldTrapFocus(gameSettings?.accessibilitySettings)) {
         const focusables = Array.from(
           modalRef.current.querySelectorAll<HTMLElement>(
             'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -60649,6 +60649,7 @@ interface CommandCenterDashboardModalProps {
   teamsById?: Record<string, any>;
   onExecuteRecommendation?: (rec: CommandCenterRecommendation) => void;
   onAskCoPilot?: (prompt: string) => void;
+  accessibilitySettings?: { trapFocusInModals?: boolean } | null;
 }
 
 export const CommandCenterDashboardModal: React.FC<CommandCenterDashboardModalProps> = ({
@@ -60666,9 +60667,17 @@ export const CommandCenterDashboardModal: React.FC<CommandCenterDashboardModalPr
   aiPlayer,
   teamsById,
   onExecuteRecommendation,
-  onAskCoPilot
+  onAskCoPilot,
+  accessibilitySettings
 }) => {
   const surfaceState = useGlobalUISurfaceManager();
+  const { containerRef: commandCenterTrapRef } = useModalAccessibility({
+    activeModalId: 'ai_command_center_modal',
+    isOpen,
+    onEscape: onClose,
+    trapFocus: modalShouldTrapFocus(accessibilitySettings || gameState?.gameSettings?.accessibilitySettings),
+    restoreFocusOnClose: true
+  });
   const [previewedRecId, setPreviewedRecId] = safeUseState<string | null>(null);
   const [showWhyRecId, setShowWhyRecId] = safeUseState<string | null>(null);
   const [jsonSearchFilter, setJsonSearchFilter] = safeUseState('');
@@ -60795,6 +60804,7 @@ export const CommandCenterDashboardModal: React.FC<CommandCenterDashboardModalPr
 
   return (
     <div
+      ref={commandCenterTrapRef}
       role="presentation"
       className={`fixed inset-0 ${(!surfaceState?.backdropOwner || surfaceState.backdropOwner === "ai_command_center_modal") ? "bg-black/85 backdrop-blur-md" : "bg-transparent"} flex items-center justify-center p-4 overflow-hidden`} style={{ zIndex: globalUISurfaceManager.getZIndex("ai_command_center_modal") }}
       onClick={onClose}
@@ -85170,7 +85180,7 @@ export const QuickActionsCustomizerModal: React.FC<QuickActionsCustomizerModalPr
     activeModalId: 'quick_actions_customizer',
     isOpen,
     onEscape: onClose,
-    trapFocus: true,
+    trapFocus: modalShouldTrapFocus(uiState?.accessibilitySettings),
     restoreFocusOnClose: true
   });
 
@@ -85986,6 +85996,16 @@ export interface ModalAccessibilityOptions {
   onEscape?: () => void;
   trapFocus?: boolean;
   restoreFocusOnClose?: boolean;
+}
+
+/** Default on, matching createDefaultAccessibilitySettings. Off means Tab may leave the dialog. */
+export function modalShouldTrapFocus(settings?: { trapFocusInModals?: boolean } | null): boolean {
+  if (!settings || typeof settings.trapFocusInModals !== 'boolean') return true;
+  return settings.trapFocusInModals;
+}
+
+export function modalTabWouldLeave(trap: boolean, atEdge: boolean): boolean {
+  return !trap && atEdge;
 }
 
 export function useModalAccessibility(options: ModalAccessibilityOptions) {
@@ -99336,7 +99356,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
       if (e.key === 'Escape') {
         e.preventDefault?.();
         handleCloseRef.current();
-      } else if (e.key === 'Tab' && modalRef.current) {
+      } else if (e.key === 'Tab' && modalRef.current && modalShouldTrapFocus(gameSettings?.accessibilitySettings)) {
         const focusables = Array.from(
           modalRef.current.querySelectorAll<HTMLElement>(
             'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -135941,18 +135961,28 @@ export interface V95StressResult {
   maxTurnMs: number;
   durationMs: number;
   moneyConservationBreaks: number;
+  yields: number;
 }
 
-export function runV95LongMatchStress(opts: { seed?: number; turns?: number; sampleEvery?: number } = {}): V95StressResult {
+interface V95StressCarry { state: any; rng: any; genome: any; res: V95StressResult; t0: number }
+
+function v95StressSlice(opts: { seed?: number; turns?: number; sampleEvery?: number; fromTurn?: number; toTurn?: number }, carry: V95StressCarry | null): V95StressCarry {
   const seed = opts.seed ?? 9501, turns = opts.turns ?? 100, every = opts.sampleEvery ?? 20;
-  const t0 = v95Now();
-  const res: V95StressResult = { seed, turns: 0, actions: 0, errors: [], violations: [], sizes: [], finalHash: '', maxTurnMs: 0, durationMs: 0, moneyConservationBreaks: 0 };
-  try {
+  const fromTurn = opts.fromTurn ?? 1;
+  const toTurn = opts.toTurn ?? turns;
+  let state: any; let rng: any; let genome: any; let res: V95StressResult; let t0: number;
+  if (!carry) {
+    t0 = v95Now();
+    res = { seed, turns: 0, actions: 0, errors: [], violations: [], sizes: [], finalHash: '', maxTurnMs: 0, durationMs: 0, moneyConservationBreaks: 0, yields: 0 };
     setRngMasterSeed(seed, true);
-    const rng = createSeededRng(seed);
-    const genome = createSeedGenome();
-    let state = createTuningMatchState(seed, false);
-    for (let turn = 1; turn <= turns; turn++) {
+    rng = createSeededRng(seed);
+    genome = createSeedGenome();
+    state = createTuningMatchState(seed, false);
+  } else {
+    state = carry.state; rng = carry.rng; genome = carry.genome; res = carry.res; t0 = carry.t0;
+  }
+  try {
+    for (let turn = fromTurn; turn <= toTurn; turn++) {
       const tt = v95Now();
       const actorId = turn % 2 === 1 ? 'player' : 'ai';
       state.turnCounter = turn; (state as any).turn = turn; state.day = Math.floor((turn - 1) / 2) + 1;
@@ -135978,14 +136008,32 @@ export function runV95LongMatchStress(opts: { seed?: number; turns?: number; sam
       if (turn % every === 0) { try { res.sizes.push({ turn, bytes: JSON.stringify(state).length }); } catch { res.errors.push(`turn ${turn}: state not serializable`); } }
       res.turns = turn;
       res.maxTurnMs = Math.max(res.maxTurnMs, Math.round((v95Now() - tt) * 100) / 100);
+      if (turn % 20 === 0 || turn === turns) res.yields += 1;
     }
-    res.finalHash = computeCanonicalStateHash(state);
+    if (toTurn >= turns) res.finalHash = computeCanonicalStateHash(state);
   } catch (err) {
     res.errors.push(err instanceof Error ? `${err.message}` : String(err));
   }
   res.durationMs = Math.round(v95Now() - t0);
-  return res;
+  return { state, rng, genome, res, t0 };
 }
+
+export function runV95LongMatchStress(opts: { seed?: number; turns?: number; sampleEvery?: number } = {}): V95StressResult {
+  return v95StressSlice(opts, null).res;
+}
+
+/** Same match as runV95LongMatchStress, pausing the event loop at each 20-turn boundary. */
+export async function runV95LongMatchStressYielding(opts: { seed?: number; turns?: number; sampleEvery?: number } = {}): Promise<V95StressResult> {
+  const turns = opts.turns ?? 100;
+  const chunk = 20;
+  let carry: V95StressCarry | null = null;
+  for (let from = 1; from <= turns; from += chunk) {
+    carry = v95StressSlice({ ...opts, turns, fromTurn: from, toTurn: Math.min(turns, from + chunk - 1) }, carry);
+    await new Promise<void>(resolve => { setTimeout(resolve, 0); });
+  }
+  return carry!.res;
+}
+
 
 // ---- Resource conservation / numeric-boundary fuzz on the canonical executor -------------------------------
 export interface V95FuzzResult { cases: number; breaches: string[] }
@@ -136159,6 +136207,17 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   ] }
 ];
 
+/** Developer harnesses that stay out of the release gate. Quick mode also skips tier "full" by design. */
+export const V95_SUITE_GATE_INDEX: Array<{ id: string; gate: 'in' | 'out'; reason: string }> = [
+  { id: 'runAutoModeDevSelfTests', gate: 'out', reason: 'Auto Mode developer harness. Not part of the release gate.' },
+  { id: 'runStrategyPlannerM3DevTests', gate: 'out', reason: 'Strategy planner M3 harness. Not part of the release gate.' },
+  { id: 'runStrategyPlannerM4DevTests', gate: 'out', reason: 'Strategy planner M4 harness. Not part of the release gate.' },
+  { id: 'runStrategyPlannerM5DevTests', gate: 'out', reason: 'Strategy planner M5 harness. Not part of the release gate.' },
+  { id: 'runAiCommandCenterM4DevTests', gate: 'out', reason: 'Command center M4 harness. Not part of the release gate.' },
+  { id: 'runAiCommandCenterM5DevTests', gate: 'out', reason: 'Command center M5 harness. Not part of the release gate.' },
+  { id: 'runGlobalUISurfaceManagerDevTests', gate: 'out', reason: 'Global UI surface manager harness. Not part of the release gate.' }
+];
+
 export function runV95ExistingSuite(spec: V95SuiteSpec): V95CheckResult[] {
   const t0 = v95Now();
   let rows: Array<{ name: string; passed: boolean; detail: string }> = [];
@@ -136196,6 +136255,24 @@ export function v95WithIsolatedGlobals<T>(fn: () => T): T {
   }
 }
 
+export async function v95WithIsolatedGlobalsAsync<T>(fn: () => Promise<T>): Promise<T> {
+  const reg: any = globalRngRegistry as any;
+  const streams = globalRngRegistry.exportStreamStates();
+  const flags = { isDeterministic: reg.isDeterministic, auditPolicy: reg.auditPolicy, strictAuditMode: reg.strictAuditMode, isReplayCertified: reg.isReplayCertified };
+  const counters = { ...globalDeterministicCounters };
+  try { return await fn(); }
+  finally {
+    globalRngRegistry.importStreamStates(streams);
+    Object.assign(reg, flags);
+    Object.assign(globalDeterministicCounters, counters);
+  }
+}
+
+/** LAB self-tests restore the live match RNG even when a suite reseeds mid-run. */
+export function isolateLabSelfTestRun<T>(fn: () => T): T {
+  return v95WithIsolatedGlobals(fn);
+}
+
 function v95SyntheticReplay(n = 6): ReplayFile {
   const events: ReplayEvent[] = Array.from({ length: n }, (_, i) => ({
     id: `v95e${i}`, sequence: i, category: (i === n - 1 ? 'match_result' : i % 2 ? 'ai_decision' : 'human_action') as ReplayEventCategory,
@@ -136219,7 +136296,7 @@ const V95_TEST_SECTION: Record<string, V95ReleaseSection> = {
   i: 'Critical Invariants', p: 'Performance', u: 'UI Recovery', v: 'System Regression', rr: 'System Regression', k: 'Known Issues'
 };
 
-export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } = {}): V9SelfTestResult[] {
+export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; preparedStress?: [V95StressResult, V95StressResult] } = {}): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => true | string) => {
     try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
@@ -136402,8 +136479,8 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
   // ---- Determinism + long match
   const turns = opts.stressTurns ?? 60;
   const sampleEvery = Math.max(5, Math.floor(turns / 6));
-  const s1 = v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 9501, turns, sampleEvery }));
-  const s2 = v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 9501, turns, sampleEvery }));
+  const s1 = opts.preparedStress?.[0] || v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 9501, turns, sampleEvery }));
+  const s2 = opts.preparedStress?.[1] || v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 9501, turns, sampleEvery }));
   check('d_stress_repeatable', `AI vs AI ${turns}-turn match is deterministic for a seed`, () => (s1.finalHash !== '' && s1.finalHash === s2.finalHash) || `${s1.finalHash} vs ${s2.finalHash} ${s1.errors.join('|')}`);
   check('d_isolation', 'Stress runs never change the live RNG streams or id counters', () => {
     const before = JSON.stringify([globalRngRegistry.exportStreamStates(), globalDeterministicCounters]);
@@ -136755,6 +136832,25 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
     return (imported.compatibility.integrityStatus === 'Corrupted' && exported.integrityStatus === 'Corrupted' && exported.checksumPresentedAsOriginal === false && exported.checksum !== original && exported.originalChecksum === original) || JSON.stringify(exported);
   });
 
+  check('u_settings_trap_follows_setting', 'Modal focus trapping follows trapFocusInModals (UI-003)', () => {
+    const on = modalShouldTrapFocus({ trapFocusInModals: true });
+    const off = modalShouldTrapFocus({ trapFocusInModals: false });
+    const fallback = modalShouldTrapFocus(undefined);
+    return (on && !off && fallback && modalTabWouldLeave(on, true) === false && modalTabWouldLeave(off, true) === true) || `on=${on} off=${off}`;
+  });
+  check('u_stress_yields_and_lab_restores_rng', 'Long stress yields and a mid-match lab run restores RNG (UI-008)', () => {
+    const before = JSON.stringify([globalRngRegistry.exportStreamStates(), globalDeterministicCounters]);
+    const paced = isolateLabSelfTestRun(() => runV95LongMatchStress({ seed: 3, turns: 4 }));
+    const after = JSON.stringify([globalRngRegistry.exportStreamStates(), globalDeterministicCounters]);
+    return (before === after && paced.yields >= 1) || `yields=${paced.yields} same=${before === after}`;
+  });
+  check('u_dev_suites_are_indexed_out_of_gate', 'Uncalled dev suites are listed as outside the release gate (UI-009)', () => {
+    const ids = ['runAutoModeDevSelfTests', 'runStrategyPlannerM3DevTests', 'runStrategyPlannerM4DevTests', 'runStrategyPlannerM5DevTests', 'runAiCommandCenterM4DevTests', 'runAiCommandCenterM5DevTests', 'runGlobalUISurfaceManagerDevTests'];
+    const indexed = ids.every(id => V95_SUITE_GATE_INDEX.some(row => row.id === id && row.gate === 'out'));
+    const notInGate = ids.every(id => !V95_EXISTING_SUITES.some(suite => suite.id === id));
+    return (indexed && notInGate) || `indexed=${indexed} notInGate=${notInGate}`;
+  });
+
 
 
   return results;
@@ -136781,7 +136877,12 @@ export async function runV95ReleaseCheck(mode: 'quick' | 'full', onProgress?: (l
   const checks: V95CheckResult[] = [];
   onProgress?.('V9.5 release checks', 0, total);
   await yieldToUi();
-  const own = v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: mode === 'full' ? 120 : 40 }));
+  const stressTurns = mode === 'full' ? 120 : 40;
+  const sampleEvery = Math.max(5, Math.floor(stressTurns / 6));
+  const s1 = await v95WithIsolatedGlobalsAsync(() => runV95LongMatchStressYielding({ seed: 9501, turns: stressTurns, sampleEvery }));
+  await yieldToUi();
+  const s2 = await v95WithIsolatedGlobalsAsync(() => runV95LongMatchStressYielding({ seed: 9501, turns: stressTurns, sampleEvery }));
+  const own = v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns, preparedStress: [s1, s2] }));
   own.forEach(t => checks.push(v95ClassifyOwnTest(t)));
   let done = 1;
   for (const s of suites) {
@@ -230687,7 +230788,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
+            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -234501,7 +234602,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
         e.preventDefault();
         e.stopPropagation();
         onClose();
-      } else if (e.key === 'Tab' && modalRef.current) {
+      } else if (e.key === 'Tab' && modalRef.current && modalShouldTrapFocus(gameSettings?.accessibilitySettings)) {
         const focusables = Array.from(
           modalRef.current.querySelectorAll<HTMLElement>(
             'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -242359,6 +242460,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
         return (
           <CommandCenterDashboardModal
             isOpen={shouldShowCommandCenterModal}
+            accessibilitySettings={gameSettings.accessibilitySettings}
             onClose={() => updateUiState({ showAiCommandCenterModal: false })}
             commandCenterState={liveCommandCenterState}
             commandCenterSettings={gameSettings.commandCenterSettings || createDefaultCommandCenterSettings()}
