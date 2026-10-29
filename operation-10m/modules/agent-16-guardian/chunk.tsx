@@ -103,6 +103,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   covenantStrainIndex: number;
   mandateIntegrityScore: number;
   governanceTenacityScore: number;
+  charterStrainIndex: number;
+  authorityIntegrityScore: number;
+  governancePersistenceScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -1017,6 +1020,62 @@ export function buildGuardianDepthCovenantReport(snapshot: GuardianCoPilotMonito
   return lines.slice(0, 3);
 }
 
+export function computeCharterStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceTenacityScore < 50) load += Math.min(25, 50 - snapshot.governanceTenacityScore);
+  if (snapshot.governanceTenacityScore < 35) load += 10;
+  if (snapshot.mandateIntegrityScore < 45) load += 20;
+  if (snapshot.mandateIntegrityScore < 35) load += 10;
+  if (snapshot.covenantStrainIndex >= 55) load += 20;
+  if (snapshot.covenantStrainIndex >= 70) load += 10;
+  if (snapshot.actionBurnPressure >= 50) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.advisoryDepletionIndex >= 55) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeAuthorityIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.charterStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.charterStrainIndex * 0.35));
+  if (snapshot.mandateIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.mandateIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.copilotAuthorityMode === 'autonomous' && snapshot.guardianProtectionMaximum) score -= 10;
+  if (snapshot.governanceTenacityScore < 40) score -= 15;
+  if (snapshot.humanRelayPressure >= 50) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernancePersistenceScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.charterStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.charterStrainIndex * 0.32));
+  if (snapshot.authorityIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.authorityIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceDurabilityScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthCharterReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.charterStrainIndex >= 55) {
+    lines.push(
+      `Charter strain ${snapshot.charterStrainIndex} — stacked charter review may exceed operator authority capacity`
+    );
+  }
+  if (snapshot.authorityIntegrityScore < 45) {
+    lines.push(
+      `Authority integrity ${snapshot.authorityIntegrityScore} — align Co-Pilot authority with Guardian charter posture`
+    );
+  }
+  if (snapshot.governancePersistenceScore < 40) {
+    lines.push(
+      `Governance persistence ${snapshot.governancePersistenceScore} — little persistence to sustain charter oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -1123,9 +1182,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withCovenantStrain: GuardianCoPilotMonitorSnapshot = { ...withDurability, covenantStrainIndex };
   const mandateIntegrityScore = computeMandateIntegrityScore(withCovenantStrain);
   const withMandate: GuardianCoPilotMonitorSnapshot = { ...withCovenantStrain, mandateIntegrityScore };
-  return {
+  const withTenacity: GuardianCoPilotMonitorSnapshot = {
     ...withMandate,
     governanceTenacityScore: computeGovernanceTenacityScore(withMandate),
+    charterStrainIndex: 0,
+    authorityIntegrityScore: 100,
+    governancePersistenceScore: 100,
+  };
+  const charterStrainIndex = computeCharterStrainIndex(withTenacity);
+  const withCharterStrain: GuardianCoPilotMonitorSnapshot = { ...withTenacity, charterStrainIndex };
+  const authorityIntegrityScore = computeAuthorityIntegrityScore(withCharterStrain);
+  const withAuthority: GuardianCoPilotMonitorSnapshot = { ...withCharterStrain, authorityIntegrityScore };
+  return {
+    ...withAuthority,
+    governancePersistenceScore: computeGovernancePersistenceScore(withAuthority),
   };
 }
 
@@ -1481,6 +1551,41 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceTenacityScore(snap) < 35;
+  });
+  ok('gd_charter_strain', () => {
+    const snap = {
+      governanceTenacityScore: 30,
+      mandateIntegrityScore: 32,
+      covenantStrainIndex: 72,
+      actionBurnPressure: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      advisoryDepletionIndex: 58,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeCharterStrainIndex(snap) >= 70;
+  });
+  ok('gd_authority_integrity', () => {
+    const snap = {
+      charterStrainIndex: 72,
+      mandateIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      copilotAuthorityMode: 'autonomous',
+      guardianProtectionMaximum: true,
+      governanceTenacityScore: 32,
+      humanRelayPressure: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAuthorityIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_persistence', () => {
+    const snap = {
+      charterStrainIndex: 78,
+      authorityIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceDurabilityScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernancePersistenceScore(snap) < 35;
   });
   return out;
 }
@@ -3122,6 +3227,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_11: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_11_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_11.length;
 
 
+// --- source: monitor-rules-scale-wave-12.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_12: AdvisoryMonitorRule[] = [
+  {
+    id: 'charter_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Charter Strain High',
+    detailTemplate: 'Charter strain is in the high band — reduce overlapping warn-only charter review demands',
+    evidenceFields: ['charterStrainIndex', 'governanceTenacityScore', 'authorityIntegrityScore'],
+    evaluate: s => s.charterStrainIndex >= 70,
+  },
+  {
+    id: 'charter_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Charter Strain Elevated',
+    detailTemplate: 'Charter strain is elevated — expect slower authority review across turns',
+    evidenceFields: ['charterStrainIndex', 'covenantStrainIndex'],
+    evaluate: s => s.charterStrainIndex >= 45 && s.charterStrainIndex < 70,
+  },
+  {
+    id: 'authority_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Authority Integrity Low',
+    detailTemplate: 'Authority integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['authorityIntegrityScore', 'charterStrainIndex', 'mandateIntegrityScore'],
+    evaluate: s => s.authorityIntegrityScore < 35,
+  },
+  {
+    id: 'authority_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Authority While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate authority integrity',
+    evidenceFields: ['authorityIntegrityScore', 'copilotAutonomousActive', 'charterStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.authorityIntegrityScore >= 35 && s.authorityIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_persistence_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Persistence Low',
+    detailTemplate: 'Little governance persistence remains for warn-only charter oversight across turns',
+    evidenceFields: ['governancePersistenceScore', 'charterStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governancePersistenceScore < 35,
+  },
+  {
+    id: 'governance_persistence_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Persistence While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance persistence',
+    evidenceFields: ['governancePersistenceScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governancePersistenceScore >= 35 && s.governancePersistenceScore < 55,
+  },
+  {
+    id: 'charter_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Charter Envelope Pressured',
+    detailTemplate: 'Charter strain and low authority integrity align in the pressured envelope band',
+    evidenceFields: ['charterStrainIndex', 'authorityIntegrityScore', 'governancePersistenceScore'],
+    evaluate: s => s.charterStrainIndex >= 55 && s.authorityIntegrityScore < 50,
+  },
+  {
+    id: 'rival_charter_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Charter Strain',
+    detailTemplate: 'Rival victory progress plus elevated charter strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'charterStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.charterStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_charter_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Charter Strain',
+    detailTemplate: 'Pending team plan while charter strain is elevated',
+    evidenceFields: ['teamPlanPending', 'charterStrainIndex', 'governancePersistenceScore'],
+    evaluate: s => s.teamPlanPending && s.charterStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_charter_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Charter Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance persistence',
+    evidenceFields: ['guardianRiskBand', 'governancePersistenceScore', 'charterStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governancePersistenceScore < 40,
+  },
+  {
+    id: 'copilot_charter_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Charter Strain',
+    detailTemplate: 'Autonomous Co-Pilot while charter strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'charterStrainIndex', 'authorityIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.charterStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_persistence',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Persistence',
+    detailTemplate: 'Expiring contracts while governance persistence is low',
+    evidenceFields: ['expiringContractCount', 'governancePersistenceScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governancePersistenceScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_12_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_12.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -3362,6 +3600,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_9,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_10,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_11,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_12,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -3711,6 +3950,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     covenantStrainIndex: 0,
     mandateIntegrityScore: 100,
     governanceTenacityScore: 100,
+    charterStrainIndex: 0,
+    authorityIntegrityScore: 100,
+    governancePersistenceScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -3800,6 +4042,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     covenantStrainIndex: 0,
     mandateIntegrityScore: 100,
     governanceTenacityScore: 100,
+    charterStrainIndex: 0,
+    authorityIntegrityScore: 100,
+    governancePersistenceScore: 100,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
@@ -4704,6 +4949,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['covenant_envelope_pressured', 'guardian_covenant_envelope_critical'],
     notes: 'Pressured covenant envelope with critical Guardian band',
   },
+  {
+    id: 'sc_charter_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 10,
+      minCashReserve: 500,
+      debt: 1650,
+      maxSpendPerAction: 9400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['charter_strain_high', 'authority_integrity_low'],
+    notes: 'High charter strain with critical authority integrity',
+  },
+  {
+    id: 'sc_governance_persistence_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 21,
+      minCashReserve: 500,
+      debt: 1100,
+      maxSpendPerAction: 7400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_persistence_low', 'contracts_governance_persistence'],
+    notes: 'Low governance persistence with expiring contracts',
+  },
+  {
+    id: 'sc_charter_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 15,
+      minCashReserve: 500,
+      debt: 1140,
+      maxSpendPerAction: 7980,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['charter_envelope_pressured', 'guardian_charter_envelope_critical'],
+    notes: 'Pressured charter envelope with critical Guardian band',
+  },
 ];
 
 
@@ -4879,8 +5192,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 11 scale wave brings monitor catalog to 166+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 166;
+  check(results, 'a16_expansion_count', 'Round 12 scale wave brings monitor catalog to 178+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 178;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
