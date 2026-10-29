@@ -16,5 +16,8 @@ export * from './linkage-hub-centrality.ts';
 export * from './regional-migration-pressure.ts';
 export * from './settlement-vulnerability.ts';
 export * from './fiscal-urban-coupling.ts';
+export * from './metropolitan-absorption-stress.ts';
+export * from './regional-service-equity.ts';
+export * from './regional-convergence-velocity.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

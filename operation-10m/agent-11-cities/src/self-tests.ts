@@ -45,6 +45,15 @@ import {
 } from './fiscal-urban-coupling.ts';
 import { op10mA11ComputeSettlementVulnerability } from './settlement-vulnerability.ts';
 import { runOP10M_A11_RegionalRegressionHarness } from './integration/regional-regression-harness.ts';
+import {
+  op10mA11ComputeMetropolitanAbsorptionStress,
+  op10mA11NationalMetropolitanSaturation,
+} from './metropolitan-absorption-stress.ts';
+import { op10mA11ComputeRegionalServiceEquity } from './regional-service-equity.ts';
+import {
+  op10mA11ComputeRegionalConvergence,
+  op10mA11StandingSpread,
+} from './regional-convergence-velocity.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -371,7 +380,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.3',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.4',
     composite.state.schemaVersion,
   );
 
@@ -449,7 +458,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     composite.derived.map((d) => d.kind).join(', '),
   );
 
-  const harness = runOP10M_A11_RegionalRegressionHarness(6);
+  const harness = runOP10M_A11_RegionalRegressionHarness(8);
   push(out, 'a11_34', harness.ok, harness.detail);
 
   push(
@@ -462,8 +471,79 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_36',
-    composite.persisted.lastCohesionIndex === composite.state.regionalCohesionIndex,
-    `persisted cohesion ${composite.persisted.lastCohesionIndex}`,
+    composite.persisted.lastCohesionIndex === composite.state.regionalCohesionIndex &&
+      composite.persisted.lastServiceEquityIndex === composite.state.nationalServiceEquityIndex,
+    `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
+  );
+
+  const absorption = composite.state.absorptionStress;
+  push(
+    out,
+    'a11_37',
+    absorption.length === 8 &&
+      composite.state.metropolitanSaturationIndex === op10mA11NationalMetropolitanSaturation(absorption),
+    `saturation ${composite.state.metropolitanSaturationIndex}`,
+  );
+
+  const serviceEq = op10mA11ComputeRegionalServiceEquity({
+    settlement: composite.state.settlementVulnerability,
+    fiscal: composite.state.fiscalUrbanCoupling,
+  });
+  push(
+    out,
+    'a11_38',
+    composite.state.nationalServiceEquityIndex === serviceEq.nationalIndex &&
+      composite.state.serviceEquity.every((s) => s.narrative.includes('service equity')),
+    `service equity ${composite.state.nationalServiceEquityIndex}`,
+  );
+
+  push(
+    out,
+    'a11_39',
+    composite.state.convergence.narrative.includes('standing spread') &&
+      composite.persisted.lastStandingSpread === composite.state.convergence.standingSpread,
+    composite.state.convergence.band,
+  );
+
+  push(
+    out,
+    'a11_40',
+    composite.derived.some((d) => d.kind === 'absorption_capacity_breach') ||
+      composite.state.absorptionStress.some((a) => a.band === 'strained' || a.band === 'breached'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_41',
+    composite.derived.some((d) => d.kind === 'service_equity_gap') || serviceEq.rows[0].gapDrivers.length >= 1,
+    composite.state.serviceEquity[0]?.band ?? 'none',
+  );
+
+  const spread = op10mA11StandingSpread(composite.state.urban.regions);
+  const conv = op10mA11ComputeRegionalConvergence({
+    regions: composite.state.urban.regions,
+    priorStandingSpread: spread + 2,
+  });
+  push(
+    out,
+    'a11_42',
+    conv.velocity !== 0 && composite.state.convergence.standingSpread === spread,
+    `velocity sample ${conv.velocity}`,
+  );
+
+  push(
+    out,
+    'a11_43',
+    validateOP10M_A11_CompositeState(composite.state).length === 0,
+    'composite validation clean',
+  );
+
+  push(
+    out,
+    'a11_44',
+    composite.derived.some((d) => d.kind === 'convergence_stall') || composite.state.convergence.band !== 'balanced',
+    composite.state.convergence.band,
   );
 
   return out;

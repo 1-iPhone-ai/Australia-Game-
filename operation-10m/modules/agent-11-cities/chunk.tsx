@@ -219,7 +219,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.3' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.4' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -234,7 +234,42 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'peripheral_isolation_deepening'
   | 'migration_pressure_spike'
   | 'settlement_vulnerability_critical'
-  | 'fiscal_coupling_mismatch';
+  | 'fiscal_coupling_mismatch'
+  | 'absorption_capacity_breach'
+  | 'service_equity_gap'
+  | 'convergence_stall';
+
+export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
+
+export interface OP10M_A11_AbsorptionStressRow {
+  regionId: OP10M_A11_RegionId;
+  stressScore: number;
+  band: OP10M_A11_AbsorptionStressBand;
+  minHeadroom: number;
+  gatewayLoad: number;
+  narrative: string;
+}
+
+export type OP10M_A11_ServiceEquityBand = 'equitable' | 'mixed' | 'uneven' | 'critical_gap';
+
+export interface OP10M_A11_ServiceEquityRow {
+  regionId: OP10M_A11_RegionId;
+  equityScore: number;
+  band: OP10M_A11_ServiceEquityBand;
+  gapDrivers: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_ConvergenceBand = 'balanced' | 'catching_up' | 'stalled' | 'diverging';
+
+export interface OP10M_A11_ConvergenceVelocityRow {
+  standingSpread: number;
+  velocity: number;
+  band: OP10M_A11_ConvergenceBand;
+  laggingCount: number;
+  leadingCount: number;
+  narrative: string;
+}
 
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
@@ -347,6 +382,11 @@ export interface OP10M_A11_CompositeState {
   fiscalUrbanCoupling: OP10M_A11_FiscalUrbanCouplingRow[];
   fiscalUrbanCouplingIndex: number;
   regionalCohesionIndex: number;
+  absorptionStress: OP10M_A11_AbsorptionStressRow[];
+  metropolitanSaturationIndex: number;
+  serviceEquity: OP10M_A11_ServiceEquityRow[];
+  nationalServiceEquityIndex: number;
+  convergence: OP10M_A11_ConvergenceVelocityRow;
   summary: string;
   inputHash: string;
 }
@@ -360,6 +400,8 @@ export interface OP10M_A11_CompositePersisted {
   lastFragilityIndex: number;
   lastMaxCorridorFlow: number;
   lastCohesionIndex: number;
+  lastStandingSpread: number;
+  lastServiceEquityIndex: number;
   inputHash: string;
 }
 
@@ -1479,6 +1521,18 @@ export function op10mA11BuildReliefPlaybook(args: {
   op10mA11ComputeSettlementVulnerability,
   op10mA11CriticalSettlementRegions,
 } from './settlement-vulnerability.ts';
+  op10mA11ComputeMetropolitanAbsorptionStress,
+  op10mA11NationalMetropolitanSaturation,
+  op10mA11RegionsWithAbsorptionBreach,
+} from './metropolitan-absorption-stress.ts';
+  op10mA11ComputeRegionalServiceEquity,
+  op10mA11RegionsWithServiceEquityGap,
+} from './regional-service-equity.ts';
+  op10mA11ComputeRegionalConvergence,
+  op10mA11ConvergenceStalled,
+  op10mA11LaggingRegionsNotClosing,
+  op10mA11StandingSpread,
+} from './regional-convergence-velocity.ts';
 
 export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePersisted {
   return {
@@ -1490,6 +1544,8 @@ export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePe
     lastFragilityIndex: 0,
     lastMaxCorridorFlow: 0,
     lastCohesionIndex: 0,
+    lastStandingSpread: 0,
+    lastServiceEquityIndex: 0,
     inputHash: '',
   };
 }
@@ -1506,6 +1562,11 @@ export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState
   if (state.settlementVulnerability.length !== 8) errs.push('settlement vulnerability count');
   if (state.fiscalUrbanCoupling.length !== 8) errs.push('fiscal coupling count');
   if (state.regionalCohesionIndex < 0 || state.regionalCohesionIndex > 100) errs.push('cohesion out of range');
+  if (state.absorptionStress.length !== 8) errs.push('absorption stress row count');
+  if (state.serviceEquity.length !== 8) errs.push('service equity row count');
+  if (state.metropolitanSaturationIndex < 0 || state.metropolitanSaturationIndex > 100) errs.push('saturation out of range');
+  if (state.nationalServiceEquityIndex < 0 || state.nationalServiceEquityIndex > 100) errs.push('service equity index out of range');
+  if (!state.convergence?.narrative) errs.push('convergence row missing');
   return errs;
 }
 
@@ -1585,6 +1646,20 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     fragilityIndex,
     fiscalNationalIndex: fiscalOut.nationalIndex,
     maxMigrationPressure,
+  });
+
+  const absorptionStress = op10mA11ComputeMetropolitanAbsorptionStress(inputs.urban.cities);
+  const metropolitanSaturationIndex = op10mA11NationalMetropolitanSaturation(absorptionStress);
+
+  const serviceEquityOut = op10mA11ComputeRegionalServiceEquity({
+    settlement: settlementVulnerability,
+    fiscal: fiscalOut.rows,
+  });
+
+  const standingSpread = op10mA11StandingSpread(urbanOut.state.regions);
+  const convergence = op10mA11ComputeRegionalConvergence({
+    regions: urbanOut.state.regions,
+    priorStandingSpread: base.revision > 0 ? base.lastStandingSpread : null,
   });
 
   const derivedRaw: Omit<OP10M_A11_CompositeDerivedEvent, 'id'>[] = [];
@@ -1706,17 +1781,58 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     );
   }
 
+  const absorptionBreach = op10mA11RegionsWithAbsorptionBreach(absorptionStress);
+  if (absorptionBreach.length >= 2 || metropolitanSaturationIndex >= 58) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'absorption_capacity_breach',
+      absorptionBreach.slice(0, 5),
+      `Metropolitan absorption strained (saturation ${metropolitanSaturationIndex.toFixed(1)}); ${absorptionBreach.slice(0, 3).join(', ')}.`,
+      metropolitanSaturationIndex >= 68 ? 'major' : 'meaningful',
+    );
+  }
+
+  const equityGap = op10mA11RegionsWithServiceEquityGap(serviceEquityOut.rows);
+  if (
+    equityGap.length >= 3 ||
+    (serviceEquityOut.nationalIndex < 38 && base.revision > 0 && serviceEquityOut.nationalIndex < base.lastServiceEquityIndex - 6)
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'service_equity_gap',
+      equityGap.slice(0, 5),
+      `Regional service equity gap (national index ${serviceEquityOut.nationalIndex.toFixed(1)}).`,
+      serviceEquityOut.nationalIndex < 30 ? 'major' : 'meaningful',
+    );
+  }
+
+  const laggingStuck = op10mA11LaggingRegionsNotClosing(urbanOut.state.regions, convergence);
+  if (op10mA11ConvergenceStalled(convergence) && (standingSpread >= 32 || laggingStuck.length >= 2)) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'convergence_stall',
+      laggingStuck.slice(0, 4),
+      `Regional convergence ${convergence.band}; standing spread ${standingSpread.toFixed(1)}.`,
+      convergence.band === 'diverging' ? 'major' : 'meaningful',
+    );
+  }
+
   base.revision += 1;
   base.urban = urbanOut.persisted;
   base.infra = infraOut.persisted;
   base.lastFragilityIndex = fragilityIndex;
   base.lastMaxCorridorFlow = maxCorridorFlow;
   base.lastCohesionIndex = regionalCohesionIndex;
+  base.lastStandingSpread = standingSpread;
+  base.lastServiceEquityIndex = serviceEquityOut.nationalIndex;
   base.inputHash = op10mA11HashInputs({
     turn: inputs.urban.turn,
     cityCount: inputs.urban.cities.length,
     regionKeys: 'composite',
-    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}`,
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}`,
   });
 
   const state: OP10M_A11_CompositeState = {
@@ -1738,7 +1854,12 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     fiscalUrbanCoupling: fiscalOut.rows,
     fiscalUrbanCouplingIndex: fiscalOut.nationalIndex,
     regionalCohesionIndex,
-    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}.`,
+    absorptionStress,
+    metropolitanSaturationIndex,
+    serviceEquity: serviceEquityOut.rows,
+    nationalServiceEquityIndex: serviceEquityOut.nationalIndex,
+    convergence,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}.`,
     inputHash: base.inputHash,
   };
 
@@ -2141,10 +2262,12 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   revision: number;
   cohesionIndex: number;
   inequalityIndex: number;
+  serviceEquityIndex: number;
+  standingSpread: number;
   validationErrors: number;
 };
 
-export function runOP10M_A11_RegionalRegressionHarness(turns = 6): {
+export function runOP10M_A11_RegionalRegressionHarness(turns = 8): {
   ok: boolean;
   snapshots: OP10M_A11_RegressionTurnSnapshot[];
   detail: string;
@@ -2177,6 +2300,8 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 6): {
       revision: out.state.revision,
       cohesionIndex: out.state.regionalCohesionIndex,
       inequalityIndex: out.state.urban.inequalityIndex,
+      serviceEquityIndex: out.state.nationalServiceEquityIndex,
+      standingSpread: out.state.convergence.standingSpread,
       validationErrors,
     });
   }
@@ -2184,11 +2309,13 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 6): {
   const monotonicRevision = snapshots.every((s, i) => (i === 0 ? s.revision === 1 : s.revision === snapshots[i - 1].revision + 1));
   const allValid = snapshots.every((s) => s.validationErrors === 0);
   const cohesionStable = snapshots.every((s) => s.cohesionIndex >= 8 && s.cohesionIndex <= 100);
+  const serviceEquityStable = snapshots.every((s) => s.serviceEquityIndex >= 8 && s.serviceEquityIndex <= 100);
+  const spreadStable = snapshots.every((s) => s.standingSpread >= 0 && s.standingSpread <= 100);
 
-  const ok = monotonicRevision && allValid && cohesionStable;
+  const ok = monotonicRevision && allValid && cohesionStable && serviceEquityStable && spreadStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, service equity ${snapshots[snapshots.length - 1].serviceEquityIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable}`;
 
   return { ok, snapshots, detail };
 }
@@ -2226,6 +2353,12 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 6): {
   op10mA11ComputeFiscalUrbanCoupling,
   op10mA11RegionalCohesionIndex,
 } from './fiscal-urban-coupling.ts';
+  op10mA11ComputeMetropolitanAbsorptionStress,
+  op10mA11NationalMetropolitanSaturation,
+} from './metropolitan-absorption-stress.ts';
+  op10mA11ComputeRegionalConvergence,
+  op10mA11StandingSpread,
+} from './regional-convergence-velocity.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -2552,7 +2685,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.3',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.4',
     composite.state.schemaVersion,
   );
 
@@ -2630,7 +2763,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     composite.derived.map((d) => d.kind).join(', '),
   );
 
-  const harness = runOP10M_A11_RegionalRegressionHarness(6);
+  const harness = runOP10M_A11_RegionalRegressionHarness(8);
   push(out, 'a11_34', harness.ok, harness.detail);
 
   push(
@@ -2643,8 +2776,79 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_36',
-    composite.persisted.lastCohesionIndex === composite.state.regionalCohesionIndex,
-    `persisted cohesion ${composite.persisted.lastCohesionIndex}`,
+    composite.persisted.lastCohesionIndex === composite.state.regionalCohesionIndex &&
+      composite.persisted.lastServiceEquityIndex === composite.state.nationalServiceEquityIndex,
+    `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
+  );
+
+  const absorption = composite.state.absorptionStress;
+  push(
+    out,
+    'a11_37',
+    absorption.length === 8 &&
+      composite.state.metropolitanSaturationIndex === op10mA11NationalMetropolitanSaturation(absorption),
+    `saturation ${composite.state.metropolitanSaturationIndex}`,
+  );
+
+  const serviceEq = op10mA11ComputeRegionalServiceEquity({
+    settlement: composite.state.settlementVulnerability,
+    fiscal: composite.state.fiscalUrbanCoupling,
+  });
+  push(
+    out,
+    'a11_38',
+    composite.state.nationalServiceEquityIndex === serviceEq.nationalIndex &&
+      composite.state.serviceEquity.every((s) => s.narrative.includes('service equity')),
+    `service equity ${composite.state.nationalServiceEquityIndex}`,
+  );
+
+  push(
+    out,
+    'a11_39',
+    composite.state.convergence.narrative.includes('standing spread') &&
+      composite.persisted.lastStandingSpread === composite.state.convergence.standingSpread,
+    composite.state.convergence.band,
+  );
+
+  push(
+    out,
+    'a11_40',
+    composite.derived.some((d) => d.kind === 'absorption_capacity_breach') ||
+      composite.state.absorptionStress.some((a) => a.band === 'strained' || a.band === 'breached'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_41',
+    composite.derived.some((d) => d.kind === 'service_equity_gap') || serviceEq.rows[0].gapDrivers.length >= 1,
+    composite.state.serviceEquity[0]?.band ?? 'none',
+  );
+
+  const spread = op10mA11StandingSpread(composite.state.urban.regions);
+  const conv = op10mA11ComputeRegionalConvergence({
+    regions: composite.state.urban.regions,
+    priorStandingSpread: spread + 2,
+  });
+  push(
+    out,
+    'a11_42',
+    conv.velocity !== 0 && composite.state.convergence.standingSpread === spread,
+    `velocity sample ${conv.velocity}`,
+  );
+
+  push(
+    out,
+    'a11_43',
+    validateOP10M_A11_CompositeState(composite.state).length === 0,
+    'composite validation clean',
+  );
+
+  push(
+    out,
+    'a11_44',
+    composite.derived.some((d) => d.kind === 'convergence_stall') || composite.state.convergence.band !== 'balanced',
+    composite.state.convergence.band,
   );
 
   return out;

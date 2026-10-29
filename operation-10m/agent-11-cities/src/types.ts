@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.3' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.4' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -230,7 +230,42 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'peripheral_isolation_deepening'
   | 'migration_pressure_spike'
   | 'settlement_vulnerability_critical'
-  | 'fiscal_coupling_mismatch';
+  | 'fiscal_coupling_mismatch'
+  | 'absorption_capacity_breach'
+  | 'service_equity_gap'
+  | 'convergence_stall';
+
+export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
+
+export interface OP10M_A11_AbsorptionStressRow {
+  regionId: OP10M_A11_RegionId;
+  stressScore: number;
+  band: OP10M_A11_AbsorptionStressBand;
+  minHeadroom: number;
+  gatewayLoad: number;
+  narrative: string;
+}
+
+export type OP10M_A11_ServiceEquityBand = 'equitable' | 'mixed' | 'uneven' | 'critical_gap';
+
+export interface OP10M_A11_ServiceEquityRow {
+  regionId: OP10M_A11_RegionId;
+  equityScore: number;
+  band: OP10M_A11_ServiceEquityBand;
+  gapDrivers: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_ConvergenceBand = 'balanced' | 'catching_up' | 'stalled' | 'diverging';
+
+export interface OP10M_A11_ConvergenceVelocityRow {
+  standingSpread: number;
+  velocity: number;
+  band: OP10M_A11_ConvergenceBand;
+  laggingCount: number;
+  leadingCount: number;
+  narrative: string;
+}
 
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
@@ -343,6 +378,11 @@ export interface OP10M_A11_CompositeState {
   fiscalUrbanCoupling: OP10M_A11_FiscalUrbanCouplingRow[];
   fiscalUrbanCouplingIndex: number;
   regionalCohesionIndex: number;
+  absorptionStress: OP10M_A11_AbsorptionStressRow[];
+  metropolitanSaturationIndex: number;
+  serviceEquity: OP10M_A11_ServiceEquityRow[];
+  nationalServiceEquityIndex: number;
+  convergence: OP10M_A11_ConvergenceVelocityRow;
   summary: string;
   inputHash: string;
 }
@@ -356,5 +396,7 @@ export interface OP10M_A11_CompositePersisted {
   lastFragilityIndex: number;
   lastMaxCorridorFlow: number;
   lastCohesionIndex: number;
+  lastStandingSpread: number;
+  lastServiceEquityIndex: number;
   inputHash: string;
 }

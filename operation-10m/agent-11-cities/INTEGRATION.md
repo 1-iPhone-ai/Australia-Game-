@@ -33,6 +33,14 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 4. Persist infra slice under `gameState.op10mAgent11IntercityInfra` (`createEmptyOP10M_A11_InfraPersisted()`).
 5. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
 
+### Scale wave round 5 (schema `10m.a11.composite.4`)
+
+- **Metropolitan absorption stress** — growth load vs headroom by region (`op10mA11ComputeMetropolitanAbsorptionStress`, `metropolitanSaturationIndex`)
+- **Regional service equity** — settlement vulnerability × fiscal coupling (`op10mA11ComputeRegionalServiceEquity`)
+- **Convergence velocity** — standing spread and catch-up momentum (`op10mA11ComputeRegionalConvergence`)
+- **8-turn regression harness** — extended `runOP10M_A11_RegionalRegressionHarness`
+- Derived events: `absorption_capacity_breach`, `service_equity_gap`, `convergence_stall`
+
 ### Scale wave round 4 (schema `10m.a11.composite.3`)
 
 - **Regional migration pressure** — pull/push from growth gaps, bottlenecks, corridor surges (`op10mA11ComputeMigrationPressure`)

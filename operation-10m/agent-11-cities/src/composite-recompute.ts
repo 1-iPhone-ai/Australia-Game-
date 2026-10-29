@@ -47,6 +47,21 @@ import {
   op10mA11ComputeSettlementVulnerability,
   op10mA11CriticalSettlementRegions,
 } from './settlement-vulnerability.ts';
+import {
+  op10mA11ComputeMetropolitanAbsorptionStress,
+  op10mA11NationalMetropolitanSaturation,
+  op10mA11RegionsWithAbsorptionBreach,
+} from './metropolitan-absorption-stress.ts';
+import {
+  op10mA11ComputeRegionalServiceEquity,
+  op10mA11RegionsWithServiceEquityGap,
+} from './regional-service-equity.ts';
+import {
+  op10mA11ComputeRegionalConvergence,
+  op10mA11ConvergenceStalled,
+  op10mA11LaggingRegionsNotClosing,
+  op10mA11StandingSpread,
+} from './regional-convergence-velocity.ts';
 
 export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePersisted {
   return {
@@ -58,6 +73,8 @@ export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePe
     lastFragilityIndex: 0,
     lastMaxCorridorFlow: 0,
     lastCohesionIndex: 0,
+    lastStandingSpread: 0,
+    lastServiceEquityIndex: 0,
     inputHash: '',
   };
 }
@@ -74,6 +91,11 @@ export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState
   if (state.settlementVulnerability.length !== 8) errs.push('settlement vulnerability count');
   if (state.fiscalUrbanCoupling.length !== 8) errs.push('fiscal coupling count');
   if (state.regionalCohesionIndex < 0 || state.regionalCohesionIndex > 100) errs.push('cohesion out of range');
+  if (state.absorptionStress.length !== 8) errs.push('absorption stress row count');
+  if (state.serviceEquity.length !== 8) errs.push('service equity row count');
+  if (state.metropolitanSaturationIndex < 0 || state.metropolitanSaturationIndex > 100) errs.push('saturation out of range');
+  if (state.nationalServiceEquityIndex < 0 || state.nationalServiceEquityIndex > 100) errs.push('service equity index out of range');
+  if (!state.convergence?.narrative) errs.push('convergence row missing');
   return errs;
 }
 
@@ -153,6 +175,20 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     fragilityIndex,
     fiscalNationalIndex: fiscalOut.nationalIndex,
     maxMigrationPressure,
+  });
+
+  const absorptionStress = op10mA11ComputeMetropolitanAbsorptionStress(inputs.urban.cities);
+  const metropolitanSaturationIndex = op10mA11NationalMetropolitanSaturation(absorptionStress);
+
+  const serviceEquityOut = op10mA11ComputeRegionalServiceEquity({
+    settlement: settlementVulnerability,
+    fiscal: fiscalOut.rows,
+  });
+
+  const standingSpread = op10mA11StandingSpread(urbanOut.state.regions);
+  const convergence = op10mA11ComputeRegionalConvergence({
+    regions: urbanOut.state.regions,
+    priorStandingSpread: base.revision > 0 ? base.lastStandingSpread : null,
   });
 
   const derivedRaw: Omit<OP10M_A11_CompositeDerivedEvent, 'id'>[] = [];
@@ -274,17 +310,58 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     );
   }
 
+  const absorptionBreach = op10mA11RegionsWithAbsorptionBreach(absorptionStress);
+  if (absorptionBreach.length >= 2 || metropolitanSaturationIndex >= 58) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'absorption_capacity_breach',
+      absorptionBreach.slice(0, 5),
+      `Metropolitan absorption strained (saturation ${metropolitanSaturationIndex.toFixed(1)}); ${absorptionBreach.slice(0, 3).join(', ')}.`,
+      metropolitanSaturationIndex >= 68 ? 'major' : 'meaningful',
+    );
+  }
+
+  const equityGap = op10mA11RegionsWithServiceEquityGap(serviceEquityOut.rows);
+  if (
+    equityGap.length >= 3 ||
+    (serviceEquityOut.nationalIndex < 38 && base.revision > 0 && serviceEquityOut.nationalIndex < base.lastServiceEquityIndex - 6)
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'service_equity_gap',
+      equityGap.slice(0, 5),
+      `Regional service equity gap (national index ${serviceEquityOut.nationalIndex.toFixed(1)}).`,
+      serviceEquityOut.nationalIndex < 30 ? 'major' : 'meaningful',
+    );
+  }
+
+  const laggingStuck = op10mA11LaggingRegionsNotClosing(urbanOut.state.regions, convergence);
+  if (op10mA11ConvergenceStalled(convergence) && (standingSpread >= 32 || laggingStuck.length >= 2)) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'convergence_stall',
+      laggingStuck.slice(0, 4),
+      `Regional convergence ${convergence.band}; standing spread ${standingSpread.toFixed(1)}.`,
+      convergence.band === 'diverging' ? 'major' : 'meaningful',
+    );
+  }
+
   base.revision += 1;
   base.urban = urbanOut.persisted;
   base.infra = infraOut.persisted;
   base.lastFragilityIndex = fragilityIndex;
   base.lastMaxCorridorFlow = maxCorridorFlow;
   base.lastCohesionIndex = regionalCohesionIndex;
+  base.lastStandingSpread = standingSpread;
+  base.lastServiceEquityIndex = serviceEquityOut.nationalIndex;
   base.inputHash = op10mA11HashInputs({
     turn: inputs.urban.turn,
     cityCount: inputs.urban.cities.length,
     regionKeys: 'composite',
-    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}`,
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}`,
   });
 
   const state: OP10M_A11_CompositeState = {
@@ -306,7 +383,12 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     fiscalUrbanCoupling: fiscalOut.rows,
     fiscalUrbanCouplingIndex: fiscalOut.nationalIndex,
     regionalCohesionIndex,
-    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}.`,
+    absorptionStress,
+    metropolitanSaturationIndex,
+    serviceEquity: serviceEquityOut.rows,
+    nationalServiceEquityIndex: serviceEquityOut.nationalIndex,
+    convergence,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}.`,
     inputHash: base.inputHash,
   };
 
