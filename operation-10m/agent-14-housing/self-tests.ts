@@ -4049,6 +4049,170 @@ export function runAgent14WellbeingSelfTests(): {
     '50 scenarios'
   );
 
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 12, fiscalHeadroom: 63, stateCapacityLoad: 33, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave25_gate_trajectory',
+      'Turn advance attaches wave 25 gate trajectory',
+      adv.inputs.wave25GateTrajectory !== undefined &&
+        adv.wave25GateTrajectoryPersisted.lastTurn === 12,
+      `band=${adv.inputs.wave25GateTrajectory?.band}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 11, fiscalHeadroom: 57, stateCapacityLoad: 41, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave25_integration_monitor',
+      'Wave 25 integration monitor present',
+      adv.inputs.wave25IntegrationMonitor !== undefined &&
+        adv.inputs.wave25IntegrationMonitor!.summary.length > 10,
+      adv.inputs.wave25IntegrationMonitor?.summary.slice(0, 72) ?? 'missing'
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 16, fiscalHeadroom: 68, stateCapacityLoad: 28, workforceReadiness: 'strong' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave25_projection_handoff_brief',
+      'Agent 25 wave 25 projection handoff attached',
+      adv.inputs.agent25Wave25ProjectionHandoffBrief !== undefined &&
+        adv.inputs.agent25Wave25ProjectionHandoffBrief!.summary.length > 10,
+      `project=${adv.inputs.agent25Wave25ProjectionHandoffBrief?.shouldProjectWave25}`
+    );
+  }
+
+  {
+    const raw = sanitizeWave25GateTrajectory({
+      schemaVersion: AGENT14_WELLBEING_SCHEMA_VERSION,
+      lastTurn: 10,
+      emaAlpha: 0.3,
+      wave25GateEma: 22,
+    });
+    check(
+      results,
+      'wave25_gate_sanitize',
+      'Wave 25 gate trajectory sanitize preserves schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.wave25GateEma === 22,
+      `ema=${raw.wave25GateEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 14, fiscalHeadroom: 52, stateCapacityLoad: 33, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const wave25 = composeAgent25Wave25ProjectionHandoffBrief({
+      turn: 14,
+      wave25IntegrationMonitor: adv.inputs.wave25IntegrationMonitor!,
+      wave25GateTrajectory: adv.inputs.wave25GateTrajectory,
+    });
+    check(
+      results,
+      'wave25_projection_composer',
+      'Standalone wave 25 projection composer returns headlines',
+      wave25.headlines.length > 0 && wave25.summary.length > 10,
+      wave25.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 10, fiscalHeadroom: 43, stateCapacityLoad: 39, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceWave25GateTrajectory(
+      10,
+      adv.inputs.agent25Wave24ProjectionHandoffBrief!,
+      createInitialWave25GateTrajectory()
+    );
+    check(
+      results,
+      'wave25_gate_advance_unit',
+      'Wave 25 gate trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 10 && snap.snapshot.wave25GateEma > 0,
+      `ema=${snap.snapshot.wave25GateEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 15, fiscalHeadroom: 70, stateCapacityLoad: 26, workforceReadiness: 'strong' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const monitor = buildWave25IntegrationMonitor({
+      turn: 15,
+      wave24ProjectionBrief: adv.inputs.agent25Wave24ProjectionHandoffBrief!,
+      wave25GateTrajectory: adv.inputs.wave25GateTrajectory,
+      wave24IntegrationMonitor: adv.inputs.wave24IntegrationMonitor!,
+    });
+    check(
+      results,
+      'wave25_integration_monitor_unit',
+      'Standalone wave 25 integration monitor returns summary',
+      monitor.summary.length > 10,
+      monitor.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('wave25_gate_trajectory_arc', 10);
+    const last = sim.turns[sim.turns.length - 1];
+    check(
+      results,
+      'wave25_gate_arc_scenario',
+      'Wave 25 gate arc scenario surfaces wave 25 brief',
+      last.wave25GateTrajectory !== undefined &&
+        last.wave25IntegrationMonitor !== undefined &&
+        last.agent25Wave25ProjectionHandoffBrief !== undefined,
+      `gate=${last.wave25GateTrajectory?.band}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('wave25_integration_stress', 8);
+    const last = sim.turns[sim.turns.length - 1];
+    check(
+      results,
+      'wave25_integration_stress_scenario',
+      'Wave 25 integration stress keeps O10-182 gated under stress',
+      !last.agent25Wave25ProjectionHandoffBrief!.shouldProjectWave25 ||
+        last.wave25IntegrationMonitor!.shouldRunO10m182DryRun,
+      `project=${last.agent25Wave25ProjectionHandoffBrief?.shouldProjectWave25} o10m182=${last.wave25IntegrationMonitor?.shouldRunO10m182DryRun}`
+    );
+  }
+
+  check(
+    results,
+    'wave25_projection_stub_catalog',
+    'Round 25 projection stubs registered',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_VIC_wave25_projection') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_NT_o10m182_gate'),
+    'wave25_projection+o10m182_gate'
+  );
+
+  check(
+    results,
+    'wave25_scenario_registry',
+    'Round 25 scenarios registered',
+    listAgent14ScenarioIds().includes('wave25_gate_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('wave25_integration_stress'),
+    '52 scenarios'
+  );
+
   const passed = results.filter((r) => r.passed).length;
   return { passed, failed: results.length - passed, total: results.length, results };
 }
