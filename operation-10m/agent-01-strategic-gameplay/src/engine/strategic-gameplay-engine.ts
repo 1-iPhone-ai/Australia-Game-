@@ -75,6 +75,7 @@ import { resetCoalitionMatriarchTranscendenceStreak } from './coalition-matriarc
 import { resetCoalitionMatriarchApotheosisStreak } from './coalition-matriarch-apotheosis.ts';
 import { resetCoalitionMatriarchDeificationStreak } from './coalition-matriarch-deification.ts';
 import { resetCoalitionMatriarchOmnipotenceStreak } from './coalition-matriarch-omnipotence.ts';
+import { resetCoalitionMatriarchSovereigntyStreak } from './coalition-matriarch-sovereignty.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -145,6 +146,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionMatriarchApotheosisStreakDays: 0,
     coalitionMatriarchDeificationStreakDays: 0,
     coalitionMatriarchOmnipotenceStreakDays: 0,
+    coalitionMatriarchSovereigntyStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -575,6 +577,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_matriarch_omnipotence_covenant') {
     nextState = resetCoalitionMatriarchOmnipotenceStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_matriarch_sovereignty_charter') {
+    nextState = resetCoalitionMatriarchSovereigntyStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_matriarch_sovereignty_covenant') {
+    nextState = resetCoalitionMatriarchSovereigntyStreak(nextState);
   }
 
   contracts.ui.pushToast({

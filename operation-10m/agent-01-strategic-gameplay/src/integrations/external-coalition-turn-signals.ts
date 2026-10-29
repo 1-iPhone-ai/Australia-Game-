@@ -49,6 +49,7 @@ import { isMatriarchCoalitionTranscendence } from '../engine/coalition-matriarch
 import { isMatriarchCoalitionApotheosis } from '../engine/coalition-matriarch-apotheosis.ts';
 import { isMatriarchCoalitionDeification } from '../engine/coalition-matriarch-deification.ts';
 import { isMatriarchCoalitionOmnipotence } from '../engine/coalition-matriarch-omnipotence.ts';
+import { isMatriarchCoalitionSovereignty } from '../engine/coalition-matriarch-sovereignty.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -147,6 +148,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionMatriarchDeificationStreakDays: number;
   matriarchCoalitionOmnipotence: boolean;
   coalitionMatriarchOmnipotenceStreakDays: number;
+  matriarchSovereigntyActive: boolean;
+  coalitionMatriarchSovereigntyStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -250,6 +253,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionMatriarchDeificationStreakDays: state.coalitionMatriarchDeificationStreakDays ?? 0,
     matriarchCoalitionOmnipotence: isMatriarchCoalitionOmnipotence(state),
     coalitionMatriarchOmnipotenceStreakDays: state.coalitionMatriarchOmnipotenceStreakDays ?? 0,
+    matriarchSovereigntyActive: isMatriarchCoalitionSovereignty(state),
+    coalitionMatriarchSovereigntyStreakDays: state.coalitionMatriarchSovereigntyStreakDays ?? 0,
   };
 }
 
@@ -353,5 +358,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionMatriarchDeificationStreakDays: raw?.coalitionMatriarchDeificationStreakDays ?? 0,
     matriarchCoalitionOmnipotence: raw?.matriarchCoalitionOmnipotence ?? false,
     coalitionMatriarchOmnipotenceStreakDays: raw?.coalitionMatriarchOmnipotenceStreakDays ?? 0,
+    matriarchSovereigntyActive: raw?.matriarchSovereigntyActive ?? false,
+    coalitionMatriarchSovereigntyStreakDays: raw?.coalitionMatriarchSovereigntyStreakDays ?? 0,
   };
 }

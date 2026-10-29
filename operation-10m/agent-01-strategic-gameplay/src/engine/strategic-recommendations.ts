@@ -61,6 +61,7 @@ import {
   matriarchApotheosisRankingBonus,
   matriarchDeificationRankingBonus,
   matriarchOmnipotenceRankingBonus,
+  matriarchSovereigntyRankingBonus,
 } from './coalition-balance.ts';
 import { scoreNationalPriorityAlignment, validateAction } from './validation.ts';
 
@@ -139,7 +140,8 @@ export function rankStrategicActions(
         matriarchTranscendenceRankingBonus(state, action) +
         matriarchApotheosisRankingBonus(state, action) +
         matriarchDeificationRankingBonus(state, action) +
-        matriarchOmnipotenceRankingBonus(state, action),
+        matriarchOmnipotenceRankingBonus(state, action) +
+        matriarchSovereigntyRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });

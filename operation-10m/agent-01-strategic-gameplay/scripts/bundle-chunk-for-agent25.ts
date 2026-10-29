@@ -134,6 +134,8 @@ const SOURCE_FILES = [
   'src/engine/coalition-matriarch-deification-gates.ts',
   'src/engine/coalition-matriarch-omnipotence.ts',
   'src/engine/coalition-matriarch-omnipotence-gates.ts',
+  'src/engine/coalition-matriarch-sovereignty.ts',
+  'src/engine/coalition-matriarch-sovereignty-gates.ts',
   'src/engine/coalition-gates.ts',
   'src/engine/mandate-gates.ts',
   'src/engine/strategic-save.ts',
