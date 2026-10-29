@@ -1,0 +1,31 @@
+import type { V1017IclogCorridorEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 009 (freight route cross-system coupling). */
+export const V1017_ICLOG_CORRIDOR_SHARD_009: readonly V1017IclogCorridorEdge[] = [
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.498, lagTurns: 4, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.505, lagTurns: 5, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.512, lagTurns: 6, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.519, lagTurns: 4, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.526, lagTurns: 5, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.533, lagTurns: 6, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.435, lagTurns: 4, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.442, lagTurns: 5, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.449, lagTurns: 6, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.456, lagTurns: 4, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.463, lagTurns: 5, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.47, lagTurns: 6, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.477, lagTurns: 4, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.484, lagTurns: 5, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.491, lagTurns: 6, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.498, lagTurns: 4, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.505, lagTurns: 5, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.512, lagTurns: 6, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.519, lagTurns: 4, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.526, lagTurns: 5, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.533, lagTurns: 6, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.435, lagTurns: 4, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.442, lagTurns: 5, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.449, lagTurns: 6, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.456, lagTurns: 4, nodeId: 'hub_09' },
+  { fromSystem: 'finance', toSystem: 'digital', weight: 0.463, lagTurns: 5, nodeId: 'hub_09' },
+];
