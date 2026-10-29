@@ -168,6 +168,9 @@ const FILES = [
   'bridge-v1022-ui-responsiveness-wave-round37-export.ts',
   'bridge-v1023-dashboard-clarity-wave-round37-export.ts',
   'scenario-wave37-integration-rank.ts',
+  'bridge-v1024-replay-wave-round38-export.ts',
+  'bridge-v1025-integration-health-wave-round38-export.ts',
+  'scenario-wave38-integration-rank.ts',
   'regression-harness.ts',
   'cycle-memory.ts',
   'sector-decomposition.ts',
@@ -218,6 +221,7 @@ const FILES = [
   'round35-self-tests.ts',
   'round36-self-tests.ts',
   'round37-self-tests.ts',
+  'round38-self-tests.ts',
   'self-tests.ts',
   'react/MacroEconomyInspectorLab.tsx'
 ];

@@ -1233,5 +1233,49 @@ export function evaluateMacroConsistencyGates(
       summary: 'Stacked transmission redundancy — aligned spillover mass concentrates across active layers.'
     });
   }
+  const wave38Replay: any =
+    inputs.replayWave38Export ?? inputs.historyReplay?.wave38Export ?? inputs.replay?.wave38Export;
+  const round38Ready = Boolean(
+    wave38Replay?.round38Ready ?? wave38Replay?.payload?.round38Ready ?? wave38Replay?.exportReady
+  );
+  if (
+    wave38Replay &&
+    !round38Ready &&
+    (state.replaySpilloverSummary != null || state.replayWave38ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'replay_wave38_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'History replay wave 38 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave38Health: any =
+    inputs.integrationHealthWave38Export ??
+    inputs.integrationHealth?.wave38Export ??
+    inputs.assembly?.integrationHealthWave38Export;
+  const healthReady = Boolean(
+    wave38Health?.healthReady ?? wave38Health?.round38Ready ?? wave38Health?.payload?.healthReady
+  );
+  if (
+    wave38Health &&
+    !healthReady &&
+    (state.integrationHealthSpilloverSummary != null || state.integrationHealthWave38ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'integration_health_wave38_export_blocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Integration health wave 38 export not ready coincides with strained integration health spillover.'
+    });
+  }
+  if (state.transmissionSynthesis?.band === 'elevated') {
+    gates.push({
+      id: 'transmission_synthesis_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission synthesis — net spillover impulse is concentrated across layers.'
+    });
+  }
   return gates;
 }
