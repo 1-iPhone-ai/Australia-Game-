@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 764e2689593f13821d03e9973e5feb0beea4f3fa3e215771fda1ee489a5c9a7a
-// OP10M_MODULE_VERSION: 10m.1.5.0-agent20
+// OP10M_MANIFEST_SHA256: 890b28df25e2cf6224dfa7903a79cace14deabe27eb69a9f147b6d8603c12092
+// OP10M_MODULE_VERSION: 10m.1.6.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -3543,6 +3543,394 @@ export function runO10Agent20IntentBackpressureSelfTests(): O10SelfTestResult[] 
 }
 
 
+// --- source: automation-idle-deescalation.ts ---
+  evaluateIdleAutomationEscalation,
+  type O10IdleEscalationResult,
+  type O10IdleEscalationTier,
+} from './automation-idle-escalation.js';
+
+export interface O10IdleDeescalationState {
+  latchedTier: O10IdleEscalationTier;
+  turnsAtTier: number;
+}
+
+export function createDefaultIdleDeescalationState(): O10IdleDeescalationState {
+  return { latchedTier: 0, turnsAtTier: 0 };
+}
+
+/**
+ * Reconcile latched escalation tier with fresh idle telemetry.
+ * Human commit snaps to tier 0; easing pressure drops at most one tier per turn (hysteresis).
+ */
+export function stepIdleDeescalation(
+  state: O10IdleDeescalationState,
+  measured: O10IdleEscalationResult,
+  humanCommittedThisTurn: boolean
+): O10IdleDeescalationState {
+  if (humanCommittedThisTurn) {
+    return { latchedTier: 0, turnsAtTier: 0 };
+  }
+
+  const { latchedTier } = state;
+  let next: O10IdleEscalationTier = latchedTier;
+
+  if (measured.tier > latchedTier) {
+    next = measured.tier;
+  } else if (measured.tier < latchedTier) {
+    next = Math.max(measured.tier, latchedTier - 1) as O10IdleEscalationTier;
+  }
+
+  const turnsAtTier = next === latchedTier ? state.turnsAtTier + 1 : 1;
+  return { latchedTier: next, turnsAtTier };
+}
+
+/** Measure escalation from telemetry then apply hysteresis de-escalation latch. */
+export function evaluateIdleEscalationWithDeescalation(
+  escalationInput: Parameters<typeof evaluateIdleAutomationEscalation>[0],
+  state: O10IdleDeescalationState,
+  humanCommittedThisTurn: boolean
+): { state: O10IdleDeescalationState; measured: O10IdleEscalationResult; effectiveTier: O10IdleEscalationTier } {
+  const measured = evaluateIdleAutomationEscalation(escalationInput);
+  const nextState = stepIdleDeescalation(state, measured, humanCommittedThisTurn);
+  return { state: nextState, measured, effectiveTier: nextState.latchedTier };
+}
+
+export function formatIdleDeescalationSummary(state: O10IdleDeescalationState): string {
+  return `idle_latch t${state.latchedTier} for ${state.turnsAtTier} turn(s)`;
+}
+
+export function runO10Agent20IdleDeescalationSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const humanReset = stepIdleDeescalation(
+    { latchedTier: 3, turnsAtTier: 4 },
+    evaluateIdleAutomationEscalation({ idleMs: 900_000, consecutiveIdleTurns: 12 }),
+    true
+  );
+  push('deesc_human', 'human commit resets latch to tier 0', humanReset.latchedTier === 0);
+
+  const measuredLow = evaluateIdleAutomationEscalation({ idleMs: 1000, consecutiveIdleTurns: 0 });
+  const oneStep = stepIdleDeescalation(
+    { latchedTier: 3, turnsAtTier: 2 },
+    measuredLow,
+    false
+  );
+  push('deesc_hysteresis', 'easing drops at most one tier per turn', oneStep.latchedTier === 2);
+
+  const measuredHigh = evaluateIdleAutomationEscalation({
+    idleMs: 900_000,
+    consecutiveIdleTurns: 10,
+    queuedIntentCount: 6,
+  });
+  const ramp = stepIdleDeescalation({ latchedTier: 1, turnsAtTier: 1 }, measuredHigh, false);
+  push('deesc_ramp_up', 'pressure can ramp latch upward immediately', ramp.latchedTier === 3);
+
+  const combo = evaluateIdleEscalationWithDeescalation(
+    { idleMs: 500, consecutiveIdleTurns: 0 },
+    { latchedTier: 2, turnsAtTier: 3 },
+    false
+  );
+  push(
+    'deesc_combo',
+    'combo returns effective latched tier',
+    combo.effectiveTier === 1 && combo.state.turnsAtTier === 1
+  );
+
+  return results;
+}
+
+
+// --- source: automation-backpressure-telemetry.ts ---
+
+export interface O10BackpressureTelemetrySlice {
+  turn: number;
+  day: number;
+  tier: O10IdleEscalationTier;
+  effectiveMaxDepth: number;
+  deferLowPriorityBelow: number;
+  decision: O10IntentScheduleDecision['action'];
+  droppedLowPriority: number;
+}
+
+export interface O10BackpressureTelemetryDigest {
+  schema: '10m.agent20.backpressure-telemetry.v1';
+  sliceCount: number;
+  deferCount: number;
+  executeCount: number;
+  totalDropped: number;
+  peakTier: O10IdleEscalationTier;
+  summaryLine: string;
+}
+
+export function recordBackpressureTelemetrySlice(
+  slices: O10BackpressureTelemetrySlice[],
+  slice: O10BackpressureTelemetrySlice
+): O10BackpressureTelemetrySlice[] {
+  const next = [...slices, slice];
+  if (next.length > 64) return next.slice(next.length - 64);
+  return next;
+}
+
+export function buildBackpressureTelemetryDigest(
+  slices: O10BackpressureTelemetrySlice[]
+): O10BackpressureTelemetryDigest {
+  let deferCount = 0;
+  let executeCount = 0;
+  let totalDropped = 0;
+  let peakTier: O10IdleEscalationTier = 0;
+  for (const s of slices) {
+    if (s.decision === 'defer') deferCount += 1;
+    if (s.decision === 'execute_now') executeCount += 1;
+    totalDropped += s.droppedLowPriority;
+    if (s.tier > peakTier) peakTier = s.tier;
+  }
+  const summaryLine = `bp telo slices=${slices.length} defer=${deferCount} exec=${executeCount} drop=${totalDropped} peak=t${peakTier}`;
+  return {
+    schema: '10m.agent20.backpressure-telemetry.v1',
+    sliceCount: slices.length,
+    deferCount,
+    executeCount,
+    totalDropped,
+    peakTier,
+    summaryLine,
+  };
+}
+
+export function sliceFromBackpressureTurn(
+  turn: number,
+  day: number,
+  policy: O10IntentBackpressurePolicy,
+  decision: O10IntentScheduleDecision,
+  droppedLowPriority: number
+): O10BackpressureTelemetrySlice {
+  return {
+    turn,
+    day,
+    tier: policy.tier,
+    effectiveMaxDepth: policy.effectiveMaxDepth,
+    deferLowPriorityBelow: policy.deferLowPriorityBelow,
+    decision: decision.action,
+    droppedLowPriority,
+  };
+}
+
+export function runO10Agent20BackpressureTelemetrySelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  let slices: O10BackpressureTelemetrySlice[] = [];
+  slices = recordBackpressureTelemetrySlice(slices, {
+    turn: 1,
+    day: 1,
+    tier: 2,
+    effectiveMaxDepth: 6,
+    deferLowPriorityBelow: 4,
+    decision: 'defer',
+    droppedLowPriority: 0,
+  });
+  slices = recordBackpressureTelemetrySlice(slices, {
+    turn: 2,
+    day: 1,
+    tier: 0,
+    effectiveMaxDepth: 8,
+    deferLowPriorityBelow: 0,
+    decision: 'execute_now',
+    droppedLowPriority: 1,
+  });
+  const digest = buildBackpressureTelemetryDigest(slices);
+  push(
+    'bp_telo_digest',
+    'digest aggregates defer/exec/drops',
+    digest.deferCount === 1 && digest.executeCount === 1 && digest.totalDropped === 1 && digest.peakTier === 2
+  );
+
+  let ring: O10BackpressureTelemetrySlice[] = [];
+  for (let i = 0; i < 70; i++) {
+    ring = recordBackpressureTelemetrySlice(
+      ring,
+      sliceFromBackpressureTurn(
+        i,
+        1,
+        { tier: 1, effectiveMaxDepth: 7, deferLowPriorityBelow: 2 },
+        { action: 'defer', reason: 'x' },
+        0
+      )
+    );
+  }
+  push('bp_telo_cap', 'ring retains last 64 slices', ring.length === 64);
+
+  push(
+    'bp_telo_schema',
+    'schema marker present',
+    digest.schema === '10m.agent20.backpressure-telemetry.v1' && digest.summaryLine.includes('peak=t2')
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-ops-pipeline.ts ---
+  buildBackpressureTelemetryDigest,
+  recordBackpressureTelemetrySlice,
+  sliceFromBackpressureTurn,
+  type O10BackpressureTelemetrySlice,
+} from './automation-backpressure-telemetry.js';
+  evaluateIdleEscalationWithDeescalation,
+  type O10IdleDeescalationState,
+} from './automation-idle-deescalation.js';
+
+export interface O10IdleOpsTurnInput {
+  queue: O10AutomationIntentQueue;
+  rule: PortableHumanAutomationRule;
+  turn: number;
+  day: number;
+  deescalationState: O10IdleDeescalationState;
+  telemetry: O10BackpressureTelemetrySlice[];
+  humanCommittedThisTurn: boolean;
+  escalationInput: Parameters<typeof scheduleWithIdleBackpressure>[4];
+}
+
+export interface O10IdleOpsTurnResult {
+  queue: O10AutomationIntentQueue;
+  deescalationState: O10IdleDeescalationState;
+  telemetry: O10BackpressureTelemetrySlice[];
+  effectiveTier: number;
+  scheduleAction: string;
+  digestSummary: string;
+}
+
+function countActiveQueued(queue: O10AutomationIntentQueue): number {
+  return queue.items.filter(i => i.status === 'queued' || i.status === 'running').length;
+}
+
+/** One automation ops turn: de-escalation latch, backpressure schedule, telemetry ring. */
+export function runIdleAutomationOpsTurn(input: O10IdleOpsTurnInput): O10IdleOpsTurnResult {
+  const before = countActiveQueued(input.queue);
+  const { state, effectiveTier } = evaluateIdleEscalationWithDeescalation(
+    input.escalationInput,
+    input.deescalationState,
+    input.humanCommittedThisTurn
+  );
+
+  const mergedEscalation = {
+    ...input.escalationInput,
+    blockedEndTurnStreak: Math.max(input.escalationInput.blockedEndTurnStreak ?? 0, effectiveTier >= 3 ? 2 : 0),
+  };
+
+  const { queue, schedule, policy } = scheduleWithIdleBackpressure(
+    input.queue,
+    input.rule,
+    input.turn,
+    input.day,
+    mergedEscalation,
+    `ops${input.turn}`
+  );
+
+  const after = countActiveQueued(queue);
+  const droppedLowPriority = Math.max(0, before - after - (schedule.decision.action === 'execute_now' ? 1 : 0));
+
+  const slice = sliceFromBackpressureTurn(input.turn, input.day, policy, schedule.decision, droppedLowPriority);
+  const telemetry = recordBackpressureTelemetrySlice(input.telemetry, slice);
+  const digest = buildBackpressureTelemetryDigest(telemetry);
+
+  return {
+    queue,
+    deescalationState: state,
+    telemetry,
+    effectiveTier,
+    scheduleAction: schedule.decision.action,
+    digestSummary: digest.summaryLine,
+  };
+}
+
+export function buildIdleOpsPipelineReportMarkdown(telemetry: O10BackpressureTelemetrySlice[]): string {
+  const digest = buildBackpressureTelemetryDigest(telemetry);
+  return ['## Agent 20 idle ops pipeline', digest.summaryLine, ''].join('\n');
+}
+
+function sampleOpsRule(overrides: Partial<PortableHumanAutomationRule> = {}): PortableHumanAutomationRule {
+  return {
+    id: 'ops1',
+    name: 'Ops sample',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 6,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 5, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+    ...overrides,
+  };
+}
+
+export function runO10Agent20IdleOpsPipelineSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const turn1 = runIdleAutomationOpsTurn({
+    queue: createEmptyAutomationIntentQueue(8),
+    rule: sampleOpsRule(),
+    turn: 1,
+    day: 1,
+    deescalationState: { latchedTier: 0, turnsAtTier: 0 },
+    telemetry: [],
+    humanCommittedThisTurn: false,
+    escalationInput: { idleMs: 500, consecutiveIdleTurns: 0 },
+  });
+  push('ops_exec_nominal', 'nominal turn schedules execute_now', turn1.scheduleAction === 'execute_now');
+
+  const turn2 = runIdleAutomationOpsTurn({
+    queue: turn1.queue,
+    rule: sampleOpsRule({ priority: 1 }),
+    turn: 2,
+    day: 1,
+    deescalationState: turn1.deescalationState,
+    telemetry: turn1.telemetry,
+    humanCommittedThisTurn: false,
+    escalationInput: { idleMs: 500_000, consecutiveIdleTurns: 5, queuedIntentCount: 3 },
+  });
+  push('ops_defer_pressure', 'pressure defers low priority rule', turn2.scheduleAction === 'defer');
+
+  const turn3 = runIdleAutomationOpsTurn({
+    queue: turn2.queue,
+    rule: sampleOpsRule(),
+    turn: 3,
+    day: 1,
+    deescalationState: { latchedTier: 3, turnsAtTier: 2 },
+    telemetry: turn2.telemetry,
+    humanCommittedThisTurn: true,
+    escalationInput: { idleMs: 900_000, consecutiveIdleTurns: 12 },
+  });
+  push('ops_human_reset', 'human commit resets effective tier', turn3.effectiveTier === 0);
+
+  const md = buildIdleOpsPipelineReportMarkdown(turn3.telemetry);
+  push('ops_report_md', 'pipeline report markdown header', md.includes('idle ops pipeline') && md.includes('slices='));
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -3593,6 +3981,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleEscalationSelfTests());
   results.push(...runO10Agent20SoakReplayAttestationSelfTests());
   results.push(...runO10Agent20IntentBackpressureSelfTests());
+  results.push(...runO10Agent20IdleDeescalationSelfTests());
+  results.push(...runO10Agent20BackpressureTelemetrySelfTests());
+  results.push(...runO10Agent20IdleOpsPipelineSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

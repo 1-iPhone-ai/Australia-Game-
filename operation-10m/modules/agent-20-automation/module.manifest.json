@@ -1,13 +1,13 @@
 {
   "moduleId": "agent-20-automation",
-  "moduleVersion": "10m.1.5.0-agent20",
+  "moduleVersion": "10m.1.6.0-agent20",
   "slot": "append-only-self-tests",
   "touchesSaveFormat": true,
   "anchorComment": "O10_AGENT20_INTEGRATION_ANCHOR",
   "sourceRoot": "operation-10m/agent-20-automation/src",
   "regenerate": "node operation-10m/agent-20-automation/scripts/build-chunk.mjs",
-  "chunkSha256": "764e2689593f13821d03e9973e5feb0beea4f3fa3e215771fda1ee489a5c9a7a",
-  "chunkLineCount": 3602,
+  "chunkSha256": "890b28df25e2cf6224dfa7903a79cace14deabe27eb69a9f147b6d8603c12092",
+  "chunkLineCount": 3993,
   "sourceFiles": [
     "types.ts",
     "conditional-actions.ts",
@@ -29,6 +29,9 @@
     "automation-idle-escalation.ts",
     "automation-soak-replay-attestation.ts",
     "automation-intent-backpressure.ts",
+    "automation-idle-deescalation.ts",
+    "automation-backpressure-telemetry.ts",
+    "automation-idle-ops-pipeline.ts",
     "index.ts"
   ]
 }

@@ -13,7 +13,9 @@ National steward planning logic mirrors canonical **SECTION 20AN** (`V1014_*`) f
 
 **Round 5** adds idle escalation tiers (`evaluateIdleAutomationEscalation`), soak↔replay attestation (`buildSoakReplayAttestationFromInput`), and intent backpressure (`scheduleWithIdleBackpressure`).
 
-Module version: `10m.1.5.0-agent20`.
+**Round 6** adds de-escalation hysteresis (`evaluateIdleEscalationWithDeescalation`), backpressure telemetry digest (`buildBackpressureTelemetryDigest`), and idle ops turn pipeline (`runIdleAutomationOpsTurn`).
+
+Module version: `10m.1.6.0-agent20`.
 
 Run tests:
 
