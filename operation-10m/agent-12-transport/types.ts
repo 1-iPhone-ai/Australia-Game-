@@ -369,8 +369,14 @@ export type MedevacHelicopterStagingPolicy = 'baseline' | 'surge';
 
 export type ReefRestorationLogisticsPolicy = 'baseline' | 'expand';
 
+export type PumpedHydroRenewableExportPolicy = 'baseline' | 'accelerate';
+
+export type WildfireAirtankerStagingPolicy = 'baseline' | 'surge';
+
+export type SuburbanMicroFulfillmentLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/37';
+  schemaVersion: 'agent12/38';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -632,6 +638,14 @@ export interface TransportInfrastructureState {
   reefRestorationLogisticsShare: number;
   nationalReefRestorationLogisticsThroughputIndex: number;
   reefRestorationLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalPumpedHydroRenewableExportIndex: number;
+  pumpedHydroRenewableExportByRegion: Record<AuRegionCode, number>;
+  wildfireAirtankerStagingShare: number;
+  nationalWildfireAirtankerStagingIndex: number;
+  wildfireAirtankerStagingByRegion: Record<AuRegionCode, number>;
+  suburbanMicroFulfillmentLogisticsShare: number;
+  nationalSuburbanMicroFulfillmentLogisticsThroughputIndex: number;
+  suburbanMicroFulfillmentLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -733,6 +747,9 @@ export interface TransportInfrastructureOptions {
   offshoreWindCableExportPolicy?: OffshoreWindCableExportPolicy;
   medevacHelicopterStagingPolicy?: MedevacHelicopterStagingPolicy;
   reefRestorationLogisticsPolicy?: ReefRestorationLogisticsPolicy;
+  pumpedHydroRenewableExportPolicy?: PumpedHydroRenewableExportPolicy;
+  wildfireAirtankerStagingPolicy?: WildfireAirtankerStagingPolicy;
+  suburbanMicroFulfillmentLogisticsPolicy?: SuburbanMicroFulfillmentLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

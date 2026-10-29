@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/37' &&
+      infra.schemaVersion === 'agent12/38' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -198,8 +198,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalOffshoreWindCableExportIndex >= 5 &&
       infra.nationalMedevacHelicopterStagingIndex >= 6 &&
       infra.reefRestorationLogisticsShare >= 0.03 &&
-      infra.nationalReefRestorationLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} cable=${infra.nationalOffshoreWindCableExportIndex.toFixed(1)} medevac=${infra.nationalMedevacHelicopterStagingIndex.toFixed(1)} reef=${infra.nationalReefRestorationLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalReefRestorationLogisticsThroughputIndex >= 2 &&
+      infra.nationalPumpedHydroRenewableExportIndex >= 5 &&
+      infra.nationalWildfireAirtankerStagingIndex >= 6 &&
+      infra.suburbanMicroFulfillmentLogisticsShare >= 0.03 &&
+      infra.nationalSuburbanMicroFulfillmentLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} pumped=${infra.nationalPumpedHydroRenewableExportIndex.toFixed(1)} tanker=${infra.nationalWildfireAirtankerStagingIndex.toFixed(1)} micro=${infra.nationalSuburbanMicroFulfillmentLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;

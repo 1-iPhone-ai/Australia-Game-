@@ -567,6 +567,23 @@ import {
   nationalReefRestorationLogisticsThroughputIndex,
   reefRestorationLogisticsProductivityMultiplier,
 } from './reef-restoration-logistics-index.ts';
+import {
+  computePumpedHydroRenewableExportByRegion,
+  nationalPumpedHydroRenewableExportIndex,
+  pumpedHydroRenewableExportProductivityMultiplier,
+} from '../network/pumped-hydro-renewable-export-index.ts';
+import {
+  computeWildfireAirtankerStagingByRegion,
+  computeWildfireAirtankerStagingShare,
+  nationalWildfireAirtankerStagingIndex,
+  wildfireAirtankerStagingProductivityMultiplier,
+} from '../operations/wildfire-airtanker-staging-index.ts';
+import {
+  computeSuburbanMicroFulfillmentLogisticsShare,
+  computeSuburbanMicroFulfillmentLogisticsThroughputByRegion,
+  nationalSuburbanMicroFulfillmentLogisticsThroughputIndex,
+  suburbanMicroFulfillmentLogisticsProductivityMultiplier,
+} from './suburban-micro-fulfillment-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1778,6 +1795,35 @@ export function computeTransportInfrastructureState(
     reefRestorationLogisticsShare,
     options?.reefRestorationLogisticsPolicy ?? 'baseline',
   );
+  const pumpedHydroRenewableExportByRegion = computePumpedHydroRenewableExportByRegion(ops);
+  const nationalPumpedHydro = nationalPumpedHydroRenewableExportIndex(pumpedHydroRenewableExportByRegion);
+  const pumpedHydroMult = pumpedHydroRenewableExportProductivityMultiplier(
+    nationalPumpedHydro,
+    options?.pumpedHydroRenewableExportPolicy ?? 'baseline',
+  );
+  const wildfireAirtankerStagingByRegion = computeWildfireAirtankerStagingByRegion(ops, networkStress);
+  const nationalWildfireTanker = nationalWildfireAirtankerStagingIndex(wildfireAirtankerStagingByRegion);
+  const wildfireAirtankerStagingShare = computeWildfireAirtankerStagingShare(
+    ops,
+    options?.wildfireAirtankerStagingPolicy ?? 'baseline',
+  );
+  const wildfireTankerMult = wildfireAirtankerStagingProductivityMultiplier(
+    wildfireAirtankerStagingShare,
+    options?.wildfireAirtankerStagingPolicy ?? 'baseline',
+  );
+  const suburbanMicroFulfillmentLogisticsThroughputByRegion =
+    computeSuburbanMicroFulfillmentLogisticsThroughputByRegion(ops);
+  const nationalSuburbanMicro = nationalSuburbanMicroFulfillmentLogisticsThroughputIndex(
+    suburbanMicroFulfillmentLogisticsThroughputByRegion,
+  );
+  const suburbanMicroFulfillmentLogisticsShare = computeSuburbanMicroFulfillmentLogisticsShare(
+    ops,
+    options?.suburbanMicroFulfillmentLogisticsPolicy ?? 'baseline',
+  );
+  const suburbanMicroMult = suburbanMicroFulfillmentLogisticsProductivityMultiplier(
+    suburbanMicroFulfillmentLogisticsShare,
+    options?.suburbanMicroFulfillmentLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1843,6 +1889,9 @@ export function computeTransportInfrastructureState(
     const windCableBoost = (offshoreWindCableExportByRegion[code] - 5) * 0.0032;
     const medevacHeliBoost = (medevacHelicopterStagingByRegion[code] - 6) * 0.0028;
     const reefLogisticsBoost = (reefRestorationLogisticsThroughputByRegion[code] - 2) * 0.0024;
+    const pumpedHydroBoost = (pumpedHydroRenewableExportByRegion[code] - 5) * 0.0031;
+    const wildfireTankerBoost = (wildfireAirtankerStagingByRegion[code] - 6) * 0.0027;
+    const suburbanMicroBoost = (suburbanMicroFulfillmentLogisticsThroughputByRegion[code] - 2) * 0.0023;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1907,7 +1956,10 @@ export function computeTransportInfrastructureState(
         baggageRobotBoost +
         windCableBoost +
         medevacHeliBoost +
-        reefLogisticsBoost) *
+        reefLogisticsBoost +
+        pumpedHydroBoost +
+        wildfireTankerBoost +
+        suburbanMicroBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1970,7 +2022,10 @@ export function computeTransportInfrastructureState(
       baggageRobotMult *
       windCableMult *
       medevacHeliMult *
-      reefLogisticsMult;
+      reefLogisticsMult *
+      pumpedHydroMult *
+      wildfireTankerMult *
+      suburbanMicroMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2056,7 +2111,10 @@ export function computeTransportInfrastructureState(
     nationalBaggageRobot * 0.003 +
     nationalWindCable * 0.003 +
     nationalMedevacHeli * 0.003 +
-    nationalReefLogistics * 0.003;
+    nationalReefLogistics * 0.003 +
+    nationalPumpedHydro * 0.003 +
+    nationalWildfireTanker * 0.003 +
+    nationalSuburbanMicro * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2071,7 +2129,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/37',
+    schemaVersion: 'agent12/38',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2333,6 +2391,14 @@ export function computeTransportInfrastructureState(
     reefRestorationLogisticsShare,
     nationalReefRestorationLogisticsThroughputIndex: nationalReefLogistics,
     reefRestorationLogisticsThroughputByRegion,
+    nationalPumpedHydroRenewableExportIndex: nationalPumpedHydro,
+    pumpedHydroRenewableExportByRegion,
+    wildfireAirtankerStagingShare,
+    nationalWildfireAirtankerStagingIndex: nationalWildfireTanker,
+    wildfireAirtankerStagingByRegion,
+    suburbanMicroFulfillmentLogisticsShare,
+    nationalSuburbanMicroFulfillmentLogisticsThroughputIndex: nationalSuburbanMicro,
+    suburbanMicroFulfillmentLogisticsThroughputByRegion,
     computeMs,
   };
 }

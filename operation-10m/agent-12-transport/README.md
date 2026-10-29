@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 37
+
+- Schema **`agent12/38`**: pumped hydro renewable export throughput, wildfire airtanker staging readiness, suburban micro-fulfillment logistics share (`pumpedHydroRenewableExportPolicy`, `wildfireAirtankerStagingPolicy`, `suburbanMicroFulfillmentLogisticsPolicy`)
+- Catalog: **510** assets, **125** corridors, **203** scenarios
+- Systems: `network/pumped-hydro-renewable-export-index.ts`, `operations/wildfire-airtanker-staging-index.ts`, `productivity/suburban-micro-fulfillment-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 36
 
 - Schema **`agent12/37`**: offshore wind cable export throughput, medevac helicopter staging readiness, reef restoration logistics share (`offshoreWindCableExportPolicy`, `medevacHelicopterStagingPolicy`, `reefRestorationLogisticsPolicy`)
