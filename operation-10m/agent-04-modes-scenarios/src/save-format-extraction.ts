@@ -150,6 +150,7 @@ export function attachExtractionSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,

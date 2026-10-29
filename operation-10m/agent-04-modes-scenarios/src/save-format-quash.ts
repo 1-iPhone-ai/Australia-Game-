@@ -126,6 +126,7 @@ export function attachQuashSessionToState(
     ...state,
     quashSession: sanitized,
     supersedeSession: null,
+    certiorariSession: null,
     setAsideSession: null,
     reinstatementSession: null,
     annulmentSession: null,

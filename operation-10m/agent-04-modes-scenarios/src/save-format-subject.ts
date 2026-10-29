@@ -147,6 +147,7 @@ export function attachSubjectSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,

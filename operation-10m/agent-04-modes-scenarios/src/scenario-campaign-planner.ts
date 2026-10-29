@@ -117,6 +117,11 @@ import {
   sanitizeReversalSession,
 } from './save-format-reversal.js';
 import {
+  getCertiorariScenarioAtCursor,
+  certiorariSessionSummary,
+  sanitizeCertiorariSession,
+} from './save-format-certiorari.js';
+import {
   getSupersedeScenarioAtCursor,
   supersedeSessionSummary,
   sanitizeSupersedeSession,
@@ -215,6 +220,7 @@ import type {
   O10mSetAsidePhase,
   O10mQuashPhase,
   O10mSupersedePhase,
+  O10mCertiorariPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -361,9 +367,31 @@ const emptyQueuePlan = {
   supersedeCursor: null as number | null,
   supersedePhase: null as O10mSupersedePhase | null,
   supersedeScore: null as number | null,
+  certiorariId: null as string | null,
+  certiorariCursor: null as number | null,
+  certiorariPhase: null as O10mCertiorariPhase | null,
+  certiorariScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const certiorari = sanitizeCertiorariSession(state.certiorariSession);
+  const certiorariScenario = getCertiorariScenarioAtCursor(certiorari);
+  if (certiorari && certiorari.active && certiorariScenario) {
+    return {
+      kind: 'certiorari_step',
+      scenarioId: certiorariScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      certiorariId: certiorari.certiorariId,
+      certiorariCursor: certiorari.cursor,
+      certiorariPhase: certiorari.phaseTag,
+      certiorariScore: certiorari.certiorariScore,
+      reason: `Certiorari "${certiorari.label}" ${certiorari.phaseTag} phase ${certiorari.cursor + 1}/${certiorari.scenarioIds.length} (score ${certiorari.certiorariScore}).`,
+    };
+  }
+
   const supersede = sanitizeSupersedeSession(state.supersedeSession);
   const supersedeScenario = getSupersedeScenarioAtCursor(supersede);
   if (supersede && supersede.active && supersedeScenario) {
@@ -1113,6 +1141,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   setAsideActive: boolean;
   quashActive: boolean;
   supersedeActive: boolean;
+  certiorariActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1156,6 +1185,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const setAside = setAsideSessionSummary(state);
   const quash = quashSessionSummary(state);
   const supersede = supersedeSessionSummary(state);
+  const certiorari = certiorariSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1197,6 +1227,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     setAsideActive: setAside.active,
     quashActive: quash.active,
     supersedeActive: supersede.active,
+    certiorariActive: certiorari.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

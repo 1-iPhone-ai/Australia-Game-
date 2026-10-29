@@ -40,6 +40,7 @@ import { sanitizeReinstatementSession } from './save-format-reinstatement.js';
 import { sanitizeSetAsideSession } from './save-format-setaside.js';
 import { sanitizeQuashSession } from './save-format-quash.js';
 import { sanitizeSupersedeSession } from './save-format-supersede.js';
+import { sanitizeCertiorariSession } from './save-format-certiorari.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -58,7 +59,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 40;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 41;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -197,6 +198,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
   };
 }
 
@@ -256,6 +258,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       setAsideSession: merged.setAsideSession ?? null,
       quashSession: merged.quashSession ?? null,
       supersedeSession: merged.supersedeSession ?? null,
+      certiorariSession: merged.certiorariSession ?? null,
     };
     return upgraded;
   }
@@ -339,6 +342,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     setAsideSession: sanitizeSetAsideSession(o.setAsideSession),
     quashSession: sanitizeQuashSession(o.quashSession),
     supersedeSession: sanitizeSupersedeSession(o.supersedeSession),
+    certiorariSession: sanitizeCertiorariSession(o.certiorariSession),
   };
 }
 
@@ -625,6 +629,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Supersede session failed sanitization; planner will ignore it.');
   } else if (supersede && supersede.cursor >= supersede.scenarioIds.length) {
     warnings.push('Supersede cursor out of range; clamp on next sanitize.');
+  }
+
+  const certiorari = sanitizeCertiorariSession(state.certiorariSession);
+  if (state.certiorariSession && !certiorari) {
+    warnings.push('Certiorari session failed sanitization; planner will ignore it.');
+  } else if (certiorari && certiorari.cursor >= certiorari.scenarioIds.length) {
+    warnings.push('Certiorari cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

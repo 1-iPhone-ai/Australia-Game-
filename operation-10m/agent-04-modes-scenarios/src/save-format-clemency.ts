@@ -142,6 +142,7 @@ export function attachClemencySessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,

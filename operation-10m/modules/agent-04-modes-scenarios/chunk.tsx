@@ -396,6 +396,7 @@ export type O10mReinstatementPhase = 'filing' | 'review' | 'reinstatement';
 export type O10mSetAsidePhase = 'filing' | 'review' | 'setAside';
 export type O10mQuashPhase = 'filing' | 'review' | 'quash';
 export type O10mSupersedePhase = 'filing' | 'review' | 'supersede';
+export type O10mCertiorariPhase = 'filing' | 'review' | 'certiorari';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -760,6 +761,17 @@ export interface O10mSupersedeSession {
   phaseTag: O10mSupersedePhase;
 }
 
+/** Schema v41 — certiorari arc with score accrual between phases. */
+export interface O10mCertiorariSession {
+  certiorariId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  certiorariScore: number;
+  phaseTag: O10mCertiorariPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -784,6 +796,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'certiorari_step'
     | 'supersede_step'
     | 'quash_step'
     | 'setaside_step'
@@ -967,6 +980,10 @@ export interface O10mCampaignPlan {
   supersedeCursor: number | null;
   supersedePhase: O10mSupersedePhase | null;
   supersedeScore: number | null;
+  certiorariId: string | null;
+  certiorariCursor: number | null;
+  certiorariPhase: O10mCertiorariPhase | null;
+  certiorariScore: number | null;
   reason: string;
 }
 
@@ -1068,8 +1085,10 @@ export interface O10mModesPersistedState {
   setAsideSession?: O10mSetAsideSession | null;
   /** Schema v39 — active quash arc (mutually exclusive with supersede / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   quashSession?: O10mQuashSession | null;
-  /** Schema v40 — active supersede arc (mutually exclusive with quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v40 — active supersede arc (mutually exclusive with certiorari / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   supersedeSession?: O10mSupersedeSession | null;
+  /** Schema v41 — active certiorari arc (mutually exclusive with supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  certiorariSession?: O10mCertiorariSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -5497,6 +5516,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Supersede finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_certiorari_filing_docket',
+    title: 'Certiorari Filing Docket',
+    description: 'Open a certiorari arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100532,
+    startingMoney: 3850,
+    startingRegions: ['NT', 'QLD'],
+    badgeId: 'badge_o10m_certiorari_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100532),
+      o10mCertiorariFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_cfd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Certiorari arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_certiorari_review_chamber',
+    title: 'Certiorari Review Chamber',
+    description: 'Mid certiorari review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100533,
+    startingMoney: 4400,
+    startingRegions: ['WA', 'SA'],
+    startingStanding: { WA: 72, SA: 70 },
+    badgeId: 'badge_o10m_certiorari_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100533),
+      regionalStandingEnabled: true,
+      o10mCertiorariReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_crc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_certiorari_mandate_finale',
+    title: 'Certiorari Mandate Finale',
+    description: 'Finale certiorari stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100534,
+    startingMoney: 4850,
+    startingRegions: ['ACT', 'NSW', 'VIC'],
+    badgeId: 'badge_o10m_certiorari_mandate_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100534),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mCertiorariMandateFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_cmf_obj_net',
+        label: 'Mandate Net Worth',
+        description: 'Reach $21,800 net worth',
+        targetType: 'netWorth',
+        targetValue: 21800,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Certiorari finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -7339,6 +7455,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_certiorari_route',
+    title: 'Certiorari Route',
+    description:
+      'Three-phase certiorari arc with score accrual between legs — round-41 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_certiorari_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_certiorari_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File certiorari petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 510 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_certiorari_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mCertiorariMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_certiorari_mandate_finale',
+        title: 'Mandate Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainCertiorariRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -8165,7 +8315,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 40;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 41;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -8304,6 +8454,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
   };
 }
 
@@ -8363,6 +8514,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       setAsideSession: merged.setAsideSession ?? null,
       quashSession: merged.quashSession ?? null,
       supersedeSession: merged.supersedeSession ?? null,
+      certiorariSession: merged.certiorariSession ?? null,
     };
     return upgraded;
   }
@@ -8446,6 +8598,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     setAsideSession: sanitizeSetAsideSession(o.setAsideSession),
     quashSession: sanitizeQuashSession(o.quashSession),
     supersedeSession: sanitizeSupersedeSession(o.supersedeSession),
+    certiorariSession: sanitizeCertiorariSession(o.certiorariSession),
   };
 }
 
@@ -8734,6 +8887,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Supersede cursor out of range; clamp on next sanitize.');
   }
 
+  const certiorari = sanitizeCertiorariSession(state.certiorariSession);
+  if (state.certiorariSession && !certiorari) {
+    warnings.push('Certiorari session failed sanitization; planner will ignore it.');
+  } else if (certiorari && certiorari.cursor >= certiorari.scenarioIds.length) {
+    warnings.push('Certiorari cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -8877,6 +9037,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'setAsideSession',
   'quashSession',
   'supersedeSession',
+  'certiorariSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -9415,6 +9576,7 @@ export function attachMarathonQueueToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -9532,6 +9694,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceCertiorariSessionAfterRun(next, run);
   next = advanceSupersedeSessionAfterRun(next, run);
   next = advanceQuashSessionAfterRun(next, run);
   next = advanceSetAsideSessionAfterRun(next, run);
@@ -9728,6 +9891,7 @@ export function attachGauntletSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -9990,6 +10154,7 @@ export function attachRelaySessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -10212,6 +10377,7 @@ export function attachCircuitSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -10452,6 +10618,7 @@ export function attachExpeditionSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -10690,6 +10857,7 @@ export function attachOdysseySessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -10927,6 +11095,7 @@ export function attachPilgrimageSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -11165,6 +11334,7 @@ export function attachCaravanSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -11397,6 +11567,7 @@ export function attachVoyageSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -11629,6 +11800,7 @@ export function attachSiegeSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -11861,6 +12033,7 @@ export function attachConvoySessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -12093,6 +12266,7 @@ export function attachEscortSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -12334,6 +12508,7 @@ export function attachExtractionSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -12583,6 +12758,7 @@ export function attachSubjectSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -12832,6 +13008,7 @@ export function attachWitnessSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -13081,6 +13258,7 @@ export function attachTribunalSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -13330,6 +13508,7 @@ export function attachIndictmentSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -13579,6 +13758,7 @@ export function attachAppealSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -13828,6 +14008,7 @@ export function attachClemencySessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -14077,6 +14258,7 @@ export function attachPardonSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -14326,6 +14508,7 @@ export function attachAmnestySessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -14575,6 +14758,7 @@ export function attachReprieveSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -14824,6 +15008,7 @@ export function attachParoleSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -15073,6 +15258,7 @@ export function attachProbationSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -15322,6 +15508,7 @@ export function attachCommutationSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -15571,6 +15758,7 @@ export function attachAcquittalSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -15820,6 +16008,7 @@ export function attachExonerationSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -16069,6 +16258,7 @@ export function attachExpungementSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -16318,6 +16508,7 @@ export function attachVacaturSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -16567,6 +16758,7 @@ export function attachRemandSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -16816,6 +17008,7 @@ export function attachReversalSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -17065,6 +17258,7 @@ export function attachAnnulmentSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     reversalSession: null,
     remandSession: null,
     vacaturSession: null,
@@ -17316,6 +17510,7 @@ export function attachReinstatementSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     annulmentSession: null,
     reversalSession: null,
     remandSession: null,
@@ -17567,6 +17762,7 @@ export function attachSetAsideSessionToState(
     setAsideSession: sanitized,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     reinstatementSession: null,
     annulmentSession: null,
     reversalSession: null,
@@ -17816,6 +18012,7 @@ export function attachQuashSessionToState(
     ...state,
     quashSession: sanitized,
     supersedeSession: null,
+    certiorariSession: null,
     setAsideSession: null,
     reinstatementSession: null,
     annulmentSession: null,
@@ -18067,6 +18264,7 @@ export function attachSupersedeSessionToState(
   return {
     ...state,
     supersedeSession: sanitized,
+    certiorariSession: null,
     quashSession: null,
     setAsideSession: null,
     reinstatementSession: null,
@@ -18194,6 +18392,259 @@ export function supersedeSessionSummary(state: O10mModesPersistedState): {
     active: session?.active === true,
     cursor: session?.active ? session.cursor : null,
     supersedeScore: session?.supersedeScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
+// --- bundled from src/save-format-certiorari.ts ---
+export const O10M_CERTIORARI_SCENARIO_CAP = 6;
+export const O10M_CERTIORARI_SCORE_CAP = 1070;
+export const O10M_CERTIORARI_SCORE_MONEY_CAP = 1150;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mCertiorariPhase>(['filing', 'review', 'certiorari']);
+
+export function unlockTokenForCertiorariId(certiorariId: string): string | null {
+  if (!certiorariId.startsWith('o10m_certiorari_')) return null;
+  return `o10m_unlock_${certiorariId.slice('o10m_certiorari_'.length)}`;
+}
+
+export function certiorariPhaseForCursor(cursor: number, scenarioCount: number): O10mCertiorariPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'certiorari';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function certiorariScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(140, Math.max(35, Math.floor(run.playerNetWorth / 128) + standingSlice));
+}
+
+export function sanitizeCertiorariSession(raw: unknown): O10mCertiorariSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const certiorariId =
+    typeof o.certiorariId === 'string' && o.certiorariId.startsWith('o10m_certiorari_')
+      ? o.certiorariId
+      : null;
+  if (!certiorariId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : certiorariId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_CERTIORARI_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const certiorariScore = Math.min(
+    O10M_CERTIORARI_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.certiorariScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mCertiorariPhase)
+      ? (phaseRaw as O10mCertiorariPhase)
+      : certiorariPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    certiorariId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    certiorariScore,
+    phaseTag,
+  };
+}
+
+export function createCertiorariSession(params: {
+  certiorariId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mCertiorariSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.certiorariId.startsWith('o10m_certiorari_')) {
+    return { session: null, warnings: ['Certiorari ids must start with o10m_certiorari_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_CERTIORARI_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Certiorari arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      certiorariId: params.certiorariId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      certiorariScore: 0,
+      phaseTag: certiorariPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachCertiorariSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mCertiorariSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeCertiorariSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    certiorariSession: sanitized,
+    supersedeSession: null,
+    quashSession: null,
+    setAsideSession: null,
+    reinstatementSession: null,
+    annulmentSession: null,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearCertiorariSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, certiorariSession: null };
+}
+
+export function getCertiorariScenarioAtCursor(
+  session: O10mCertiorariSession | null | undefined,
+): string | null {
+  const certiorari = sanitizeCertiorariSession(session);
+  if (!certiorari || !certiorari.active) return null;
+  return certiorari.scenarioIds[certiorari.cursor] ?? null;
+}
+
+export function buildCertiorariScenarioStartOverrides(
+  session: O10mCertiorariSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const certiorari = sanitizeCertiorariSession(session);
+  if (!certiorari) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_CERTIORARI_SCORE_MONEY_CAP,
+    Math.floor(certiorari.certiorariScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveCertiorariId: certiorari.certiorariId,
+      o10mActiveCertiorariStep: certiorari.cursor,
+      o10mActiveCertiorariPhase: certiorari.phaseTag,
+      o10mCertiorariScore: certiorari.certiorariScore,
+    },
+  };
+}
+
+export function advanceCertiorariSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeCertiorariSession(state.certiorariSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const certiorariScore = Math.min(
+    O10M_CERTIORARI_SCORE_CAP,
+    session.certiorariScore + certiorariScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      certiorariSession: {
+        ...session,
+        cursor,
+        certiorariScore,
+        phaseTag: certiorariPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForCertiorariId(session.certiorariId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    certiorariSession: { ...session, active: false, certiorariScore, phaseTag: 'certiorari' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function certiorariSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  certiorariScore: number;
+  phase: O10mCertiorariPhase | null;
+} {
+  const session = sanitizeCertiorariSession(state.certiorariSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    certiorariScore: session?.certiorariScore ?? 0,
     phase: session?.active ? session.phaseTag : null,
   };
 }
@@ -18340,9 +18791,31 @@ const emptyQueuePlan = {
   supersedeCursor: null as number | null,
   supersedePhase: null as O10mSupersedePhase | null,
   supersedeScore: null as number | null,
+  certiorariId: null as string | null,
+  certiorariCursor: null as number | null,
+  certiorariPhase: null as O10mCertiorariPhase | null,
+  certiorariScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const certiorari = sanitizeCertiorariSession(state.certiorariSession);
+  const certiorariScenario = getCertiorariScenarioAtCursor(certiorari);
+  if (certiorari && certiorari.active && certiorariScenario) {
+    return {
+      kind: 'certiorari_step',
+      scenarioId: certiorariScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      certiorariId: certiorari.certiorariId,
+      certiorariCursor: certiorari.cursor,
+      certiorariPhase: certiorari.phaseTag,
+      certiorariScore: certiorari.certiorariScore,
+      reason: `Certiorari "${certiorari.label}" ${certiorari.phaseTag} phase ${certiorari.cursor + 1}/${certiorari.scenarioIds.length} (score ${certiorari.certiorariScore}).`,
+    };
+  }
+
   const supersede = sanitizeSupersedeSession(state.supersedeSession);
   const supersedeScenario = getSupersedeScenarioAtCursor(supersede);
   if (supersede && supersede.active && supersedeScenario) {
@@ -19092,6 +19565,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   setAsideActive: boolean;
   quashActive: boolean;
   supersedeActive: boolean;
+  certiorariActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -19135,6 +19609,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const setAside = setAsideSessionSummary(state);
   const quash = quashSessionSummary(state);
   const supersede = supersedeSessionSummary(state);
+  const certiorari = certiorariSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -19176,6 +19651,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     setAsideActive: setAside.active,
     quashActive: quash.active,
     supersedeActive: supersede.active,
+    certiorariActive: certiorari.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -19194,7 +19670,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 41, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 42, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -19510,16 +19986,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const supersedeState = supersede ? attachSupersedeSessionToState(createEmptyO10mModesPersistedState(), supersede) : null;
   push('agent04_chunk_48', supersedeState !== null && planNextCampaignAction(supersedeState!).kind === 'supersede_step');
 
+  const certiorari = createCertiorariSession({
+    certiorariId: 'o10m_certiorari_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_certiorari_filing_docket'],
+  }).session;
+  const certiorariState = certiorari ? attachCertiorariSessionToState(createEmptyO10mModesPersistedState(), certiorari) : null;
+  push('agent04_chunk_49', certiorariState !== null && planNextCampaignAction(certiorariState!).kind === 'certiorari_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v41',
+  schemaVersion: 'op10m-agent04-v42',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 40,
+  saveSchemaVersion: 41,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

@@ -25,6 +25,7 @@ import { advanceReinstatementSessionAfterRun } from './save-format-reinstatement
 import { advanceSetAsideSessionAfterRun } from './save-format-setaside.js';
 import { advanceQuashSessionAfterRun } from './save-format-quash.js';
 import { advanceSupersedeSessionAfterRun } from './save-format-supersede.js';
+import { advanceCertiorariSessionAfterRun } from './save-format-certiorari.js';
 import { advanceExonerationSessionAfterRun } from './save-format-exoneration.js';
 import { advanceAcquittalSessionAfterRun } from './save-format-acquittal.js';
 import { advanceCommutationSessionAfterRun } from './save-format-commutation.js';
@@ -171,6 +172,7 @@ export function attachMarathonQueueToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -288,6 +290,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceCertiorariSessionAfterRun(next, run);
   next = advanceSupersedeSessionAfterRun(next, run);
   next = advanceQuashSessionAfterRun(next, run);
   next = advanceSetAsideSessionAfterRun(next, run);

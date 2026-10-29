@@ -127,6 +127,7 @@ export function attachSupersedeSessionToState(
   return {
     ...state,
     supersedeSession: sanitized,
+    certiorariSession: null,
     quashSession: null,
     setAsideSession: null,
     reinstatementSession: null,

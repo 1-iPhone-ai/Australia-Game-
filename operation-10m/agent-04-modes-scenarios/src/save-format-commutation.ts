@@ -136,6 +136,7 @@ export function attachCommutationSessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,

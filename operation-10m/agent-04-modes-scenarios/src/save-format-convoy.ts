@@ -143,6 +143,7 @@ export function attachConvoySessionToState(
     setAsideSession: null,
     quashSession: null,
     supersedeSession: null,
+    certiorariSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,

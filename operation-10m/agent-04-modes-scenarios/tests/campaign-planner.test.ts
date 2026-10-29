@@ -35,6 +35,7 @@ import {
   attachSetAsideSessionToState,
   attachQuashSessionToState,
   attachSupersedeSessionToState,
+  attachCertiorariSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -73,6 +74,7 @@ import {
   createSetAsideSession,
   createQuashSession,
   createSupersedeSession,
+  createCertiorariSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -248,6 +250,22 @@ describe('scenario campaign planner round 4', () => {
     state = attachReprieveSessionToState(state, reprieve!);
     state = attachParoleSessionToState(state, parole!);
     assert.equal(planNextCampaignAction(state).kind, 'parole_step');
+  });
+
+  it('prefers active certiorari over supersede, quash, set-aside, reinstatement, annulment, reversal, remand, vacatur, expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: certiorari } = createCertiorariSession({
+      certiorariId: 'o10m_certiorari_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_certiorari_filing_docket', 'o10m_certiorari_review_chamber'],
+    });
+    const { session: supersede } = createSupersedeSession({
+      supersedeId: 'o10m_supersede_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_supersede_filing_docket', 'o10m_supersede_review_chamber'],
+    });
+    let state = attachSupersedeSessionToState(createEmptyO10mModesPersistedState(), supersede!);
+    state = attachCertiorariSessionToState(state, certiorari!);
+    assert.equal(planNextCampaignAction(state).kind, 'certiorari_step');
   });
 
   it('prefers active supersede over quash, set-aside, reinstatement, annulment, reversal, remand, vacatur, expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
