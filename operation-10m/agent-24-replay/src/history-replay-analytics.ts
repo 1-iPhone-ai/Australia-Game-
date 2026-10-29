@@ -1,5 +1,5 @@
 
-export const O6K_AGENT24_MODULE_VERSION = '1.2.0-op10m-r23';
+export const O6K_AGENT24_MODULE_VERSION = '1.2.0-op10m-r24';
 export const O6K_AGENT24_MODULE_ID = 'history_replay_analytics';
 
 /** Stable FNV-1a 32-bit — replay-safe fingerprint primitive (no Math.random). */

@@ -5,6 +5,7 @@ import {
   O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 /** @deprecated use integration-closeout WAVE21 constant */
@@ -43,11 +44,13 @@ export function buildAgent24ReplayScaleWaveDryrunHandoffReport(
   const waveRound = input.replayScaleWaveProjectionVerification.waveRound;
   const dryrunBaselineSha =
     input.dryrunBaselineSha ??
-    (waveRound >= 23
-      ? O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA
-      : waveRound >= 22
-        ? O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA
-        : O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA);
+    (waveRound >= 24
+      ? O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA
+      : waveRound >= 23
+        ? O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA
+        : waveRound >= 22
+          ? O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA
+          : O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA);
   const baselineAligned = input.replayScaleWaveProjectionVerification.projectionBaselineSha === dryrunBaselineSha;
 
   const checkpoints: Agent24ReplayScaleWaveDryrunHandoffCheckpoint[] = [
@@ -117,8 +120,8 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
   const projectionVerification = {
     reportId: 'pv',
     matchId: 'self',
-    waveRound: 23,
-    projectionBaselineSha: O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
+    waveRound: 24,
+    projectionBaselineSha: O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -129,7 +132,7 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
   const postProjectionGate = {
     reportId: 'ppg',
     matchId: 'self',
-    waveRound: 23,
+    waveRound: 24,
     gateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -145,12 +148,12 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
 
   return [
     {
-      name: 'dryrun_handoff_complete_at_wave23_baseline',
+      name: 'dryrun_handoff_complete_at_wave24_baseline',
       passed:
         report.handoffComplete &&
-        report.dryrunBaselineSha === O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
+        report.dryrunBaselineSha === O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 24 },
     {
       name: 'deterministic_fingerprint',
       passed:

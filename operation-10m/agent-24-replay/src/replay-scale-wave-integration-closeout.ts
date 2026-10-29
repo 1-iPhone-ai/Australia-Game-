@@ -18,6 +18,9 @@ export const O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA = '634656bb';
 /** O10-176 integration baseline anchor (wave 23 roster). */
 export const O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA = 'b23e1449';
 
+/** O10-179 integration baseline anchor (wave 24 roster). */
+export const O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA = 'b64a7aa8';
+
 export interface Agent24ReplayScaleWaveIntegrationCloseoutCheckpoint {
   checkpointId: string;
   label: string;
@@ -52,15 +55,17 @@ export function buildAgent24ReplayScaleWaveIntegrationCloseoutReport(
   const waveRound = input.replayScaleWaveAttestationVerification.waveRound;
   const integrationBaselineSha =
     input.integrationBaselineSha ??
-    (waveRound >= 23
-      ? O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA
-      : waveRound >= 22
-        ? O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA
-        : waveRound >= 21
-          ? O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA
-          : waveRound >= 20
-            ? O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA
-            : O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA);
+    (waveRound >= 24
+      ? O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA
+      : waveRound >= 23
+        ? O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA
+        : waveRound >= 22
+          ? O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA
+          : waveRound >= 21
+            ? O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA
+            : waveRound >= 20
+              ? O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA
+              : O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA);
 
   const checkpoints: Agent24ReplayScaleWaveIntegrationCloseoutCheckpoint[] = [
     {
@@ -138,7 +143,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   const closeout = {
     reportId: 'co',
     matchId: 'self',
-    waveRound: 23,
+    waveRound: 24,
     closeoutComplete: true,
     checkpointCount: 3,
     satisfiedCheckpointCount: 3,
@@ -149,7 +154,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   const attestationVerification = {
     reportId: 'av',
     matchId: 'self',
-    waveRound: 23,
+    waveRound: 24,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -160,7 +165,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   const handoffGate = {
     reportId: 'hg',
     matchId: 'self',
-    waveRound: 23,
+    waveRound: 24,
     handoffAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -178,9 +183,9 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   return [
     {
       name: 'integration_closeout_complete_when_wave_stack_ready',
-      passed: report.closeoutComplete && report.integrationBaselineSha === O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
+      passed: report.closeoutComplete && report.integrationBaselineSha === O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 23 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 24 },
     {
       name: 'deterministic_fingerprint',
       passed:
