@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: c95b629d0faf5665
+// content-sha256-prefix: 15ee3db6db975cd6
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -10651,7 +10651,13 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchApotheosisStreakDays: 0,
   };
   }
-  if (save.version !== 49 && save.version !== 50 && save.version !== 51 && save.version !== 52) {
+  if (
+    save.version !== 49 &&
+    save.version !== 50 &&
+    save.version !== 51 &&
+    save.version !== 52 &&
+    save.version !== 53
+  ) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   if (save.version === 53) {
@@ -10714,7 +10720,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchInfinityStreakDays: save.coalitionMatriarchInfinityStreakDays,
     coalitionMatriarchTranscendenceStreakDays: save.coalitionMatriarchTranscendenceStreakDays,
     coalitionMatriarchApotheosisStreakDays: save.coalitionMatriarchApotheosisStreakDays,
-    coalitionMatriarchDeificationStreakDays: (save as StrategicGameplaySaveV52).coalitionMatriarchDeificationStreakDays,
+    coalitionMatriarchDeificationStreakDays: (save as StrategicGameplaySaveV53).coalitionMatriarchDeificationStreakDays,
     coalitionMatriarchOmnipotenceStreakDays: (save as StrategicGameplaySaveV53).coalitionMatriarchOmnipotenceStreakDays,
     coalitionMatriarchSovereigntyStreakDays: (save as StrategicGameplaySaveV53).coalitionMatriarchSovereigntyStreakDays,
   };

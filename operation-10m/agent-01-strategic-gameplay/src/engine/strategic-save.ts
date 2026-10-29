@@ -3382,7 +3382,13 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchApotheosisStreakDays: 0,
   };
   }
-  if (save.version !== 49 && save.version !== 50 && save.version !== 51 && save.version !== 52) {
+  if (
+    save.version !== 49 &&
+    save.version !== 50 &&
+    save.version !== 51 &&
+    save.version !== 52 &&
+    save.version !== 53
+  ) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   if (save.version === 53) {
@@ -3445,7 +3451,7 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchInfinityStreakDays: save.coalitionMatriarchInfinityStreakDays,
     coalitionMatriarchTranscendenceStreakDays: save.coalitionMatriarchTranscendenceStreakDays,
     coalitionMatriarchApotheosisStreakDays: save.coalitionMatriarchApotheosisStreakDays,
-    coalitionMatriarchDeificationStreakDays: (save as StrategicGameplaySaveV52).coalitionMatriarchDeificationStreakDays,
+    coalitionMatriarchDeificationStreakDays: (save as StrategicGameplaySaveV53).coalitionMatriarchDeificationStreakDays,
     coalitionMatriarchOmnipotenceStreakDays: (save as StrategicGameplaySaveV53).coalitionMatriarchOmnipotenceStreakDays,
     coalitionMatriarchSovereigntyStreakDays: (save as StrategicGameplaySaveV53).coalitionMatriarchSovereigntyStreakDays,
   };
