@@ -12840,6 +12840,289 @@ export function summitRecoveryOrchestratorWithinCap(report: SummitRecoveryOrches
 }
 
 
+// --- source: match-explainability-acme-bundle.ts ---
+  auditMatchExplainabilityAcmeGate,
+  matchExplainabilityAcmeAllowed,
+} from './match-explainability-acme-gate.ts';
+  buildMatchExplainabilitySummitBundle,
+  matchExplainabilitySummitReady,
+} from './match-explainability-summit-bundle.ts';
+  buildSessionSummitExportBundle,
+  sessionSummitExportShipped,
+} from './session-summit-export-bundle.ts';
+
+export const AGENT19_ACME_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityAcmeBundle {
+  acmeReady: boolean;
+  acmeAllowed: boolean;
+  summitReady: boolean;
+  summitExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type AcmeParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Acme bundle: acme gate and summit export must both be green. */
+export function buildMatchExplainabilityAcmeBundle(
+  packs: TurnExplainabilityPack[],
+  params: AcmeParams,
+): MatchExplainabilityAcmeBundle {
+  const acme = auditMatchExplainabilityAcmeGate(packs, params);
+  const summit = buildMatchExplainabilitySummitBundle(packs, params);
+  const summitExport = buildSessionSummitExportBundle(packs, params);
+  const acmeAllowed = matchExplainabilityAcmeAllowed(acme);
+  const summitReady = matchExplainabilitySummitReady(summit);
+  const summitExportShipped = sessionSummitExportShipped(summitExport);
+  const acmeReady = acmeAllowed && summitReady && summitExportShipped;
+  const narrativeLines = [
+    `Match explainability acme bundle: ${acmeReady ? 'READY' : 'PENDING'} (gate ${acmeAllowed ? 'ok' : 'fail'}, summit ${summitReady ? 'ok' : 'fail'}).`,
+    ...acme.narrativeLines.slice(0, 2),
+    ...summit.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_ACME_NARRATIVE_CAP);
+  return {
+    acmeReady,
+    acmeAllowed,
+    summitReady,
+    summitExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityAcmeReady(bundle: MatchExplainabilityAcmeBundle): boolean {
+  return bundle.acmeReady;
+}
+
+
+// --- source: session-acme-export-bundle.ts ---
+  buildSessionSummitExportBundle,
+  type SessionSummitExportBundle,
+} from './session-summit-export-bundle.ts';
+  buildMatchExplainabilityAcmeBundle,
+  matchExplainabilityAcmeReady,
+} from './match-explainability-acme-bundle.ts';
+
+export interface SessionAcmeExportBundle extends SessionSummitExportBundle {
+  acmeReady: boolean;
+  acmeSchema: string;
+}
+
+/** Acme export wraps summit export when acme bundle is ready. */
+export function buildSessionAcmeExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionAcmeExportBundle {
+  const base = buildSessionSummitExportBundle(packs, params);
+  const acme = buildMatchExplainabilityAcmeBundle(packs, params);
+  const acmeReady = matchExplainabilityAcmeReady(acme);
+  const exports = acmeReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    acmeReady,
+    acmeSchema: 'agent19.acme.v1',
+    releaseReady: acmeReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Acme export: ${acmeReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionAcmeExportShipped(bundle: SessionAcmeExportBundle): boolean {
+  return bundle.acmeReady && bundle.exports.length > 0 && bundle.acmeSchema === 'agent19.acme.v1';
+}
+
+
+// --- source: summit-acme-bridge.ts ---
+  buildMatchExplainabilityAcmeBundle,
+  matchExplainabilityAcmeReady,
+} from './match-explainability-acme-bundle.ts';
+  buildMatchExplainabilitySummitBundle,
+  matchExplainabilitySummitReady,
+} from './match-explainability-summit-bundle.ts';
+
+export interface SummitAcmeBridgeReport {
+  aligned: boolean;
+  acmeReady: boolean;
+  summitReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Acme-ready should match summit-ready when summit export stack passes. */
+export function auditSummitAcmeBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SummitAcmeBridgeReport {
+  const acme = buildMatchExplainabilityAcmeBundle(packs, params);
+  const summit = buildMatchExplainabilitySummitBundle(packs, params);
+  const acmeReady = matchExplainabilityAcmeReady(acme);
+  const summitReady = matchExplainabilitySummitReady(summit);
+  const aligned = acmeReady === summitReady;
+  const narrativeLines = [
+    `Summit/acme bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (acme ${acmeReady ? 'ok' : 'fail'}, summit ${summitReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, acmeReady, summitReady, narrativeLines };
+}
+
+export function summitAcmeBridgeHealthy(report: SummitAcmeBridgeReport): boolean {
+  return report.acmeReady && report.summitReady && report.aligned;
+}
+
+
+// --- source: match-explainability-crest-gate.ts ---
+  buildMatchExplainabilityAcmeBundle,
+  matchExplainabilityAcmeReady,
+} from './match-explainability-acme-bundle.ts';
+  buildSessionAcmeExportBundle,
+  sessionAcmeExportShipped,
+} from './session-acme-export-bundle.ts';
+
+export interface MatchExplainabilityCrestGateReport {
+  crestAllowed: boolean;
+  acmeReady: boolean;
+  acmeExportShipped: boolean;
+  summitAcmeHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Crest gate: acme bundle + acme export + summit/acme bridge. */
+export function auditMatchExplainabilityCrestGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityCrestGateReport {
+  const acme = buildMatchExplainabilityAcmeBundle(packs, params);
+  const acmeExport = buildSessionAcmeExportBundle(packs, params);
+  const bridge = auditSummitAcmeBridge(packs, params);
+  const acmeReady = matchExplainabilityAcmeReady(acme);
+  const acmeExportShipped = sessionAcmeExportShipped(acmeExport);
+  const summitAcmeHealthy = summitAcmeBridgeHealthy(bridge);
+  const crestAllowed = acmeReady && acmeExportShipped && summitAcmeHealthy;
+  const narrativeLines = [
+    `Match explainability crest: ${crestAllowed ? 'ALLOWED' : 'DENIED'} (acme ${acmeReady ? 'ok' : 'fail'}, export ${acmeExportShipped ? 'ok' : 'fail'}).`,
+    ...acme.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    crestAllowed,
+    acmeReady,
+    acmeExportShipped,
+    summitAcmeHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityCrestAllowed(report: MatchExplainabilityCrestGateReport): boolean {
+  return report.crestAllowed;
+}
+
+
+// --- source: acme-recovery-orchestrator.ts ---
+  auditMatchExplainabilityAcmeGate,
+  matchExplainabilityAcmeAllowed,
+} from './match-explainability-acme-gate.ts';
+
+export const AGENT19_ACME_RECOVERY_CAP = 10;
+
+export interface AcmeRecoveryOrchestratorReport {
+  acmeBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when acme gate blocks crest rollout. */
+export function buildAcmeRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): AcmeRecoveryOrchestratorReport {
+  const acme = auditMatchExplainabilityAcmeGate(packs, params);
+  const acmeBlocked = !matchExplainabilityAcmeAllowed(acme);
+  const steps: string[] = [];
+  if (acmeBlocked) {
+    if (!acme.summitReady) {
+      steps.push('Restore summit bundle: zenith and summit export must pass.');
+    }
+    if (!acme.summitExportShipped) {
+      steps.push('Emit session summit export before acme clearance.');
+    }
+    if (!acme.zenithSummitHealthy) {
+      steps.push('Reconcile zenith/summit bridge before acme.');
+    }
+    steps.push(...buildSummitRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const summit = buildMatchExplainabilitySummitBundle(packs, params);
+    if (!summit.summitReady) {
+      steps.push('Re-run summit readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Acme gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_ACME_RECOVERY_CAP);
+  return {
+    acmeBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Acme recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function acmeRecoveryOrchestratorWithinCap(report: AcmeRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_ACME_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -13480,6 +13763,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityAcmeGate,
   matchExplainabilityAcmeAllowed,
 } from '../match-explainability-acme-gate.ts';
+  buildMatchExplainabilityAcmeBundle,
+  matchExplainabilityAcmeReady,
+} from '../match-explainability-acme-bundle.ts';
+  buildSessionAcmeExportBundle,
+  sessionAcmeExportShipped,
+} from '../session-acme-export-bundle.ts';
+  buildAcmeRecoveryOrchestrator,
+  acmeRecoveryOrchestratorWithinCap,
+} from '../acme-recovery-orchestrator.ts';
+  auditMatchExplainabilityCrestGate,
+  matchExplainabilityCrestAllowed,
+} from '../match-explainability-crest-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -20061,6 +20356,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityAcmeAllowed(report) && !report.summitReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r48_acme_ready',
+        'Acme bundle ready when acme gate and summit export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityAcmeBundle([pack], params);
+          return matchExplainabilityAcmeReady(bundle) && bundle.acmeAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r48_acme_held',
+        'Acme bundle pending when acme gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 71, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityAcmeBundle([pack], {
+            memory: null,
+            currentTurn: 71,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityAcmeReady(bundle) && !bundle.acmeAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r48_acme_recovery',
+        'Acme recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 27, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 27, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildAcmeRecoveryOrchestrator([pack], params);
+          return report.acmeBlocked && acmeRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r48_summit_acme_bridge',
+        'Summit acme bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditSummitAcmeBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return summitAcmeBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r48_acme_export',
+        'Acme export shipped when acme ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionAcmeExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionAcmeExportShipped(bundle) && bundle.acmeSchema === 'agent19.acme.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r48_crest_gate_ok',
+        'Crest gate allowed on healthy acme stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityCrestGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityCrestAllowed(report) && report.acmeExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r48_crest_gate_block',
+        'Crest gate denied when acme pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 72, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityCrestGate([pack], {
+            memory: null,
+            currentTurn: 72,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityCrestAllowed(report) && !report.acmeReady || JSON.stringify(report);
         },
       ],
     ]),
