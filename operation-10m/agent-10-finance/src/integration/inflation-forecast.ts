@@ -144,6 +144,14 @@ import {
   assessTradeExchangeImportInflation,
   type TradeExchangeImportBand,
 } from '../inflation/trade-exchange-import-inflation.js';
+import {
+  assessGuardianInflationInterventionInflation,
+  type GuardianInflationInterventionBand,
+} from '../inflation/guardian-inflation-intervention-inflation.js';
+import {
+  assessTeamIntelligenceConsensusInflation,
+  type TeamIntelligenceConsensusBand,
+} from '../inflation/team-intelligence-consensus-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -188,6 +196,8 @@ export interface InflationForecastPoint {
   urbanRentDispersionBand: UrbanRentDispersionBand;
   corporatePricingPassThroughBand: CorporatePricingPassThroughBand;
   tradeExchangeImportBand: TradeExchangeImportBand;
+  guardianInflationInterventionBand: GuardianInflationInterventionBand;
+  teamIntelligenceConsensusBand: TeamIntelligenceConsensusBand;
 }
 
 export interface InflationForecastPath {
@@ -530,6 +540,25 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const guardianIntervention = assessGuardianInflationInterventionInflation({
+      inflationGuardrailTripped: inputs.highInflationScenario,
+      stabilityInterventionBand:
+        inputs.publicStability < 40 ? 'urgent' : inputs.fiscalPressure === 'critical' ? 'advisory' : 'none',
+      narrativeShockSeverity: inputs.publicStability < 45 ? 'high' : inputs.publicStability < 55 ? 'medium' : 'low',
+      copilotInflationEscalationActive: inputs.householdInflationScenarioActive,
+      guardrailNarrativeCascadeBand: inputs.creditShockActive ? 'urgent' : inputs.highInflationScenario ? 'building' : 'none',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const teamConsensus = assessTeamIntelligenceConsensusInflation({
+      consensusInflationOutlook: inputs.highInflationScenario ? 'upside_risk' : 'reacceleration',
+      briefingUrgencyBand: inputs.publicStability < 42 ? 'critical' : inputs.householdInflationScenarioActive ? 'elevated' : 'routine',
+      crossDomainStressScore: inputs.actorCreditStressIndex ?? 0.35,
+      teamForecastDeanchoringFlag: inputs.highInflationScenario && inputs.householdInflationScenarioActive,
+      briefingInflationSalienceBand: inputs.publicStability < 38 ? 'critical' : inputs.publicStability < 48 ? 'elevated' : 'muted',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -574,6 +603,8 @@ export function projectInflationForecastPath(
       urbanRentDispersionBand: urbanRent.dispersionBand,
       corporatePricingPassThroughBand: corporatePricing.passThroughBand,
       tradeExchangeImportBand: tradeImport.importBand,
+      guardianInflationInterventionBand: guardianIntervention.interventionBand,
+      teamIntelligenceConsensusBand: teamConsensus.consensusBand,
     });
   }
 

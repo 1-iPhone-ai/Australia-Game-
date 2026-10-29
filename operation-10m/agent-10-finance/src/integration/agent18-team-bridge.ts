@@ -7,6 +7,10 @@ export interface Agent18TeamSnapshot {
   consensusInflationOutlook: 'disinflation' | 'stable' | 'reacceleration' | 'upside_risk';
   briefingUrgencyBand: 'routine' | 'elevated' | 'critical';
   crossDomainStressScore: number;
+  /** Round 23: team forecast de-anchoring from briefings. */
+  teamForecastDeanchoringFlag?: boolean;
+  /** Round 23: briefing inflation salience band. */
+  briefingInflationSalienceBand?: 'muted' | 'elevated' | 'critical';
 }
 
 export function mergeAgent18IntoMacroFinancialInputs(
@@ -32,6 +36,10 @@ export function mergeAgent18IntoMacroFinancialInputs(
     snapshot.briefingUrgencyBand === 'critical'
   ) {
     highInflationScenario = true;
+  }
+  if (snapshot.teamForecastDeanchoringFlag && snapshot.briefingInflationSalienceBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
   }
 
   return {

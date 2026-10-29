@@ -746,6 +746,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'corporate', 'trade', 'round22'],
   },
+  {
+    id: 'guardian_inflation_intervention_stack',
+    label: 'Guardian inflation intervention stack',
+    description: 'Tripped guardrail with urgent narrative cascade.',
+    patch: {
+      highInflationScenario: true,
+      publicStability: 36,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.27,
+    },
+    tags: ['inflation', 'guardian', 'round23'],
+  },
+  {
+    id: 'team_consensus_briefing_stress',
+    label: 'Team consensus briefing stress',
+    description: 'Upside risk outlook with critical briefing urgency.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      actorCreditStressIndex: 0.72,
+      inflationSettingMultiplier: 1.25,
+    },
+    tags: ['inflation', 'team', 'round23'],
+  },
+  {
+    id: 'guardian_team_fusion_stress',
+    label: 'Guardian & team fusion stress',
+    description: 'Aligned Agent 16 cascade + Agent 18 de-anchoring salience.',
+    patch: {
+      inflationSettingMultiplier: 1.34,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      publicStability: 34,
+    },
+    tags: ['inflation', 'guardian', 'team', 'round23'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

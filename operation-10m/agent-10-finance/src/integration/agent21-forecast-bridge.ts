@@ -38,11 +38,13 @@ import type { WholesaleEnergyTransitionBand } from '../inflation/wholesale-energ
 import type { UrbanRentDispersionBand } from '../inflation/urban-rent-dispersion-inflation.js';
 import type { CorporatePricingPassThroughBand } from '../inflation/corporate-pricing-pass-through-inflation.js';
 import type { TradeExchangeImportBand } from '../inflation/trade-exchange-import-inflation.js';
+import type { GuardianInflationInterventionBand } from '../inflation/guardian-inflation-intervention-inflation.js';
+import type { TeamIntelligenceConsensusBand } from '../inflation/team-intelligence-consensus-inflation.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r22';
+  schemaVersion: '10.14.agent10.r23';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -82,6 +84,8 @@ export interface Agent21InflationForecastBundle {
   terminalUrbanRentDispersion: UrbanRentDispersionBand;
   terminalCorporatePricingPassThrough: CorporatePricingPassThroughBand;
   terminalTradeExchangeImport: TradeExchangeImportBand;
+  terminalGuardianInflationIntervention: GuardianInflationInterventionBand;
+  terminalTeamIntelligenceConsensus: TeamIntelligenceConsensusBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -110,7 +114,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r22',
+    schemaVersion: '10.14.agent10.r23',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -150,6 +154,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalUrbanRentDispersion: lastPoint?.urbanRentDispersionBand ?? 'aligned',
     terminalCorporatePricingPassThrough: lastPoint?.corporatePricingPassThroughBand ?? 'absorbed',
     terminalTradeExchangeImport: lastPoint?.tradeExchangeImportBand ?? 'anchored',
+    terminalGuardianInflationIntervention: lastPoint?.guardianInflationInterventionBand ?? 'calm',
+    terminalTeamIntelligenceConsensus: lastPoint?.teamIntelligenceConsensusBand ?? 'anchored',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

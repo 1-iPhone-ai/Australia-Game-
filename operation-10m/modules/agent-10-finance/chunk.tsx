@@ -3969,6 +3969,170 @@ export function tradeExchangeImportInflationScoreAdjustment(band: TradeExchangeI
 }
 
 
+// --- source: inflation/guardian-inflation-intervention-inflation.ts ---
+
+export type GuardianInflationInterventionBand = 'calm' | 'advisory' | 'urgent' | 'guardrail_cascade';
+
+export interface GuardianInflationInterventionAssessment {
+  interventionBand: GuardianInflationInterventionBand;
+  guardrailIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Guardian co-pilot inflation guardrails and narrative intervention (Agent 16). */
+export function assessGuardianInflationInterventionInflation(input: {
+  inflationGuardrailTripped: boolean;
+  stabilityInterventionBand: 'none' | 'advisory' | 'urgent';
+  narrativeShockSeverity: 'low' | 'medium' | 'high';
+  copilotInflationEscalationActive: boolean;
+  guardrailNarrativeCascadeBand: 'none' | 'building' | 'urgent';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): GuardianInflationInterventionAssessment {
+  let pressure = 0;
+  if (input.inflationGuardrailTripped) {
+    pressure += 0.24;
+  }
+  if (input.stabilityInterventionBand === 'urgent') {
+    pressure += 0.22;
+  } else if (input.stabilityInterventionBand === 'advisory') {
+    pressure += 0.1;
+  }
+  if (input.narrativeShockSeverity === 'high') {
+    pressure += 0.18;
+  } else if (input.narrativeShockSeverity === 'medium') {
+    pressure += 0.08;
+  }
+  if (input.copilotInflationEscalationActive) {
+    pressure += 0.16;
+  }
+  if (input.guardrailNarrativeCascadeBand === 'urgent') {
+    pressure += 0.2;
+  } else if (input.guardrailNarrativeCascadeBand === 'building') {
+    pressure += 0.1;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.05;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0037, 0, 1.05);
+  const guardrailIndex = finRound(100 + pressure * 16, 1);
+
+  let interventionBand: GuardianInflationInterventionBand = 'calm';
+  if (pressure >= 0.55) interventionBand = 'guardrail_cascade';
+  else if (pressure >= 0.35) interventionBand = 'urgent';
+  else if (pressure >= 0.17) interventionBand = 'advisory';
+
+  const inflationScoreNudge =
+    interventionBand === 'guardrail_cascade'
+      ? 0.086
+      : interventionBand === 'urgent'
+        ? 0.054
+        : interventionBand === 'advisory'
+          ? 0.024
+          : 0;
+
+  const narrative =
+    interventionBand === 'guardrail_cascade' || interventionBand === 'urgent'
+      ? 'Guardian guardrails are reflecting elevated inflation intervention in CPI metadata.'
+      : interventionBand === 'advisory'
+        ? 'Co-pilot advisory band nudging inflation presentation layers.'
+        : 'Guardian inflation intervention calm versus headline CPI.';
+
+  return { interventionBand, guardrailIndex, inflationScoreNudge, narrative };
+}
+
+export function guardianInflationInterventionScoreAdjustment(band: GuardianInflationInterventionBand): number {
+  if (band === 'guardrail_cascade') return 4;
+  if (band === 'urgent') return 3;
+  if (band === 'advisory') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/team-intelligence-consensus-inflation.ts ---
+
+export type TeamIntelligenceConsensusBand = 'anchored' | 'drifting' | 'reacceleration' | 'consensus_shock';
+
+export interface TeamIntelligenceConsensusInflationAssessment {
+  consensusBand: TeamIntelligenceConsensusBand;
+  briefingIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Team intelligence consensus and briefing salience in CPI metadata (Agent 18). */
+export function assessTeamIntelligenceConsensusInflation(input: {
+  consensusInflationOutlook: 'disinflation' | 'stable' | 'reacceleration' | 'upside_risk';
+  briefingUrgencyBand: 'routine' | 'elevated' | 'critical';
+  crossDomainStressScore: number;
+  teamForecastDeanchoringFlag: boolean;
+  briefingInflationSalienceBand: 'muted' | 'elevated' | 'critical';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): TeamIntelligenceConsensusInflationAssessment {
+  let pressure = 0;
+  if (input.consensusInflationOutlook === 'upside_risk') {
+    pressure += 0.28;
+  } else if (input.consensusInflationOutlook === 'reacceleration') {
+    pressure += 0.16;
+  }
+  if (input.briefingUrgencyBand === 'critical') {
+    pressure += 0.2;
+  } else if (input.briefingUrgencyBand === 'elevated') {
+    pressure += 0.1;
+  }
+  pressure += finClamp(input.crossDomainStressScore, 0, 1) * 0.2;
+  if (input.teamForecastDeanchoringFlag) {
+    pressure += 0.14;
+  }
+  if (input.briefingInflationSalienceBand === 'critical') {
+    pressure += 0.18;
+  } else if (input.briefingInflationSalienceBand === 'elevated') {
+    pressure += 0.09;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.05;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0039, 0, 1.05);
+  const briefingIndex = finRound(100 + pressure * 15, 1);
+
+  let consensusBand: TeamIntelligenceConsensusBand = 'anchored';
+  if (pressure >= 0.56) consensusBand = 'consensus_shock';
+  else if (pressure >= 0.36) consensusBand = 'reacceleration';
+  else if (pressure >= 0.18) consensusBand = 'drifting';
+
+  const inflationScoreNudge =
+    consensusBand === 'consensus_shock'
+      ? 0.088
+      : consensusBand === 'reacceleration'
+        ? 0.056
+        : consensusBand === 'drifting'
+          ? 0.026
+          : 0;
+
+  const narrative =
+    consensusBand === 'consensus_shock' || consensusBand === 'reacceleration'
+      ? 'Team intelligence consensus is lifting inflation outlook salience across briefings.'
+      : consensusBand === 'drifting'
+        ? 'Cross-domain stress drifting team inflation consensus upward.'
+        : 'Team consensus inflation outlook anchored versus headline.';
+
+  return { consensusBand, briefingIndex, inflationScoreNudge, narrative };
+}
+
+export function teamIntelligenceConsensusInflationScoreAdjustment(band: TeamIntelligenceConsensusBand): number {
+  if (band === 'consensus_shock') return 4;
+  if (band === 'reacceleration') return 3;
+  if (band === 'drifting') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -4952,6 +5116,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       fiscalPressure: 'critical',
     },
     tags: ['inflation', 'corporate', 'trade', 'round22'],
+  },
+  {
+    id: 'guardian_inflation_intervention_stack',
+    label: 'Guardian inflation intervention stack',
+    description: 'Tripped guardrail with urgent narrative cascade.',
+    patch: {
+      highInflationScenario: true,
+      publicStability: 36,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.27,
+    },
+    tags: ['inflation', 'guardian', 'round23'],
+  },
+  {
+    id: 'team_consensus_briefing_stress',
+    label: 'Team consensus briefing stress',
+    description: 'Upside risk outlook with critical briefing urgency.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      actorCreditStressIndex: 0.72,
+      inflationSettingMultiplier: 1.25,
+    },
+    tags: ['inflation', 'team', 'round23'],
+  },
+  {
+    id: 'guardian_team_fusion_stress',
+    label: 'Guardian & team fusion stress',
+    description: 'Aligned Agent 16 cascade + Agent 18 de-anchoring salience.',
+    patch: {
+      inflationSettingMultiplier: 1.34,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      publicStability: 34,
+    },
+    tags: ['inflation', 'guardian', 'team', 'round23'],
   },
 ] as const;
 
@@ -6458,6 +6659,10 @@ export interface Agent16GuardianSnapshot {
   narrativeShockSeverity: 'low' | 'medium' | 'high';
   /** Round 16: guardian flags financial-services fee shock feeding CPI metadata. */
   financialServicesFeeShockActive?: boolean;
+  /** Round 23: co-pilot inflation escalation latch. */
+  copilotInflationEscalationActive?: boolean;
+  /** Round 23: guardrail narrative cascade band. */
+  guardrailNarrativeCascadeBand?: 'none' | 'building' | 'urgent';
 }
 
 export function mergeAgent16IntoMacroFinancialInputs(
@@ -6495,6 +6700,12 @@ export function mergeAgent16IntoMacroFinancialInputs(
   let creditShockActive = base.creditShockActive;
   if (snapshot.financialServicesFeeShockActive) {
     creditShockActive = true;
+  }
+  if (snapshot.copilotInflationEscalationActive || snapshot.guardrailNarrativeCascadeBand === 'urgent') {
+    highInflationScenario = true;
+  }
+  if (snapshot.guardrailNarrativeCascadeBand === 'urgent') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
   }
 
   return {
@@ -6579,6 +6790,10 @@ export interface Agent18TeamSnapshot {
   consensusInflationOutlook: 'disinflation' | 'stable' | 'reacceleration' | 'upside_risk';
   briefingUrgencyBand: 'routine' | 'elevated' | 'critical';
   crossDomainStressScore: number;
+  /** Round 23: team forecast de-anchoring from briefings. */
+  teamForecastDeanchoringFlag?: boolean;
+  /** Round 23: briefing inflation salience band. */
+  briefingInflationSalienceBand?: 'muted' | 'elevated' | 'critical';
 }
 
 export function mergeAgent18IntoMacroFinancialInputs(
@@ -6604,6 +6819,10 @@ export function mergeAgent18IntoMacroFinancialInputs(
     snapshot.briefingUrgencyBand === 'critical'
   ) {
     highInflationScenario = true;
+  }
+  if (snapshot.teamForecastDeanchoringFlag && snapshot.briefingInflationSalienceBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
   }
 
   return {
@@ -7020,6 +7239,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessTradeExchangeImportInflation,
   type TradeExchangeImportBand,
 } from '../inflation/trade-exchange-import-inflation.js';
+  assessGuardianInflationInterventionInflation,
+  type GuardianInflationInterventionBand,
+} from '../inflation/guardian-inflation-intervention-inflation.js';
+  assessTeamIntelligenceConsensusInflation,
+  type TeamIntelligenceConsensusBand,
+} from '../inflation/team-intelligence-consensus-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -7064,6 +7289,8 @@ export interface InflationForecastPoint {
   urbanRentDispersionBand: UrbanRentDispersionBand;
   corporatePricingPassThroughBand: CorporatePricingPassThroughBand;
   tradeExchangeImportBand: TradeExchangeImportBand;
+  guardianInflationInterventionBand: GuardianInflationInterventionBand;
+  teamIntelligenceConsensusBand: TeamIntelligenceConsensusBand;
 }
 
 export interface InflationForecastPath {
@@ -7406,6 +7633,25 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const guardianIntervention = assessGuardianInflationInterventionInflation({
+      inflationGuardrailTripped: inputs.highInflationScenario,
+      stabilityInterventionBand:
+        inputs.publicStability < 40 ? 'urgent' : inputs.fiscalPressure === 'critical' ? 'advisory' : 'none',
+      narrativeShockSeverity: inputs.publicStability < 45 ? 'high' : inputs.publicStability < 55 ? 'medium' : 'low',
+      copilotInflationEscalationActive: inputs.householdInflationScenarioActive,
+      guardrailNarrativeCascadeBand: inputs.creditShockActive ? 'urgent' : inputs.highInflationScenario ? 'building' : 'none',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const teamConsensus = assessTeamIntelligenceConsensusInflation({
+      consensusInflationOutlook: inputs.highInflationScenario ? 'upside_risk' : 'reacceleration',
+      briefingUrgencyBand: inputs.publicStability < 42 ? 'critical' : inputs.householdInflationScenarioActive ? 'elevated' : 'routine',
+      crossDomainStressScore: inputs.actorCreditStressIndex ?? 0.35,
+      teamForecastDeanchoringFlag: inputs.highInflationScenario && inputs.householdInflationScenarioActive,
+      briefingInflationSalienceBand: inputs.publicStability < 38 ? 'critical' : inputs.publicStability < 48 ? 'elevated' : 'muted',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -7450,6 +7696,8 @@ export function projectInflationForecastPath(
       urbanRentDispersionBand: urbanRent.dispersionBand,
       corporatePricingPassThroughBand: corporatePricing.passThroughBand,
       tradeExchangeImportBand: tradeImport.importBand,
+      guardianInflationInterventionBand: guardianIntervention.interventionBand,
+      teamIntelligenceConsensusBand: teamConsensus.consensusBand,
     });
   }
 
@@ -7555,7 +7803,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r22';
+  schemaVersion: '10.14.agent10.r23';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -7595,6 +7843,8 @@ export interface Agent21InflationForecastBundle {
   terminalUrbanRentDispersion: UrbanRentDispersionBand;
   terminalCorporatePricingPassThrough: CorporatePricingPassThroughBand;
   terminalTradeExchangeImport: TradeExchangeImportBand;
+  terminalGuardianInflationIntervention: GuardianInflationInterventionBand;
+  terminalTeamIntelligenceConsensus: TeamIntelligenceConsensusBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -7623,7 +7873,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r22',
+    schemaVersion: '10.14.agent10.r23',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -7663,6 +7913,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalUrbanRentDispersion: lastPoint?.urbanRentDispersionBand ?? 'aligned',
     terminalCorporatePricingPassThrough: lastPoint?.corporatePricingPassThroughBand ?? 'absorbed',
     terminalTradeExchangeImport: lastPoint?.tradeExchangeImportBand ?? 'anchored',
+    terminalGuardianInflationIntervention: lastPoint?.guardianInflationInterventionBand ?? 'calm',
+    terminalTeamIntelligenceConsensus: lastPoint?.teamIntelligenceConsensusBand ?? 'anchored',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -7892,6 +8144,12 @@ export function effectiveTierLoanRate(
   assessTradeExchangeImportInflation,
   tradeExchangeImportInflationScoreAdjustment,
 } from './inflation/trade-exchange-import-inflation.js';
+  assessGuardianInflationInterventionInflation,
+  guardianInflationInterventionScoreAdjustment,
+} from './inflation/guardian-inflation-intervention-inflation.js';
+  assessTeamIntelligenceConsensusInflation,
+  teamIntelligenceConsensusInflationScoreAdjustment,
+} from './inflation/team-intelligence-consensus-inflation.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -8296,7 +8554,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r22');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r23');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -8443,7 +8701,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -8535,7 +8793,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -8634,7 +8892,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -8732,7 +8990,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -8830,7 +9088,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -8920,7 +9178,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -9010,7 +9268,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -9100,7 +9358,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -9190,7 +9448,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -9282,7 +9540,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r16_10',
       'agent21 r16 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalFinancialServicesFee !== undefined &&
         bundle.terminalAgriculturalFarmgatePressure !== undefined,
     );
@@ -9378,7 +9636,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r17_10',
       'agent21 r17 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalPublicUtilitiesGridTariff !== undefined &&
         bundle.terminalUiInflationSalience !== undefined,
     );
@@ -9482,7 +9740,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r18_10',
       'agent21 r18 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalHousingMortgageEssential !== undefined &&
         bundle.terminalMacroTransmissionMerge !== undefined,
     );
@@ -9587,7 +9845,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r19_10',
       'agent21 r19 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalDynamicEventsInflationSpillover !== undefined &&
         bundle.terminalDashboardMapInflationOverlay !== undefined,
     );
@@ -9692,7 +9950,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r20_10',
       'agent21 r20 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalPublicFinanceDebtService !== undefined &&
         bundle.terminalPopulationLaborWage !== undefined,
     );
@@ -9802,7 +10060,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r21_10',
       'agent21 r21 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalWholesaleEnergyTransition !== undefined &&
         bundle.terminalUrbanRentDispersion !== undefined,
     );
@@ -9904,7 +10162,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r22_10',
       'agent21 r22 fields',
-      bundle.schemaVersion === '10.14.agent10.r22' &&
+      bundle.schemaVersion === '10.14.agent10.r23' &&
         bundle.terminalCorporatePricingPassThrough !== undefined &&
         bundle.terminalTradeExchangeImport !== undefined,
     );
@@ -9931,6 +10189,112 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_trade_fusion_stress');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.32;
+    })(),
+  );
+
+  // --- Round 23 scale wave ---
+  {
+    const guardian = assessGuardianInflationInterventionInflation({
+      inflationGuardrailTripped: true,
+      stabilityInterventionBand: 'urgent',
+      narrativeShockSeverity: 'high',
+      copilotInflationEscalationActive: true,
+      guardrailNarrativeCascadeBand: 'urgent',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r23_01',
+      'guardian urgent or cascade',
+      guardian.interventionBand === 'urgent' || guardian.interventionBand === 'guardrail_cascade',
+    );
+    check('a10_r23_02', 'guardian score adj', guardianInflationInterventionScoreAdjustment(guardian.interventionBand) >= 3);
+  }
+  {
+    const team = assessTeamIntelligenceConsensusInflation({
+      consensusInflationOutlook: 'upside_risk',
+      briefingUrgencyBand: 'critical',
+      crossDomainStressScore: 0.78,
+      teamForecastDeanchoringFlag: true,
+      briefingInflationSalienceBand: 'critical',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r23_03',
+      'team reacceleration or shock',
+      team.consensusBand === 'reacceleration' || team.consensusBand === 'consensus_shock',
+    );
+    check('a10_r23_04', 'team score adj', teamIntelligenceConsensusInflationScoreAdjustment(team.consensusBand) >= 3);
+  }
+  {
+    const merged16 = mergeAgent16IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      inflationGuardrailTripped: true,
+      stabilityInterventionBand: 'urgent',
+      narrativeShockSeverity: 'high',
+      copilotInflationEscalationActive: true,
+      guardrailNarrativeCascadeBand: 'urgent',
+    });
+    check('a10_r23_05', 'agent16 guardian merge', merged16.highInflationScenario === true);
+    check('a10_r23_06', 'agent16 bridge note', agent16GuardianBridgeIntegrationNote().includes('Agent 16'));
+  }
+  {
+    const merged18 = mergeAgent18IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      consensusInflationOutlook: 'upside_risk',
+      briefingUrgencyBand: 'critical',
+      crossDomainStressScore: 0.75,
+      teamForecastDeanchoringFlag: true,
+      briefingInflationSalienceBand: 'critical',
+    });
+    check('a10_r23_07', 'agent18 team merge', merged18.highInflationScenario === true);
+    check('a10_r23_08', 'agent18 bridge note', agent18TeamBridgeIntegrationNote().includes('Agent 18'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r23_09',
+      'forecast guardian and team consensus fields',
+      path.points.every((p) => !!p.guardianInflationInterventionBand && !!p.teamIntelligenceConsensusBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r23_10',
+      'agent21 r23 fields',
+      bundle.schemaVersion === '10.14.agent10.r23' &&
+        bundle.terminalGuardianInflationIntervention !== undefined &&
+        bundle.terminalTeamIntelligenceConsensus !== undefined,
+    );
+  }
+  check(
+    'a10_r23_11',
+    'round23 preset guardian intervention stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'guardian_inflation_intervention_stack');
+      return inp?.creditShockActive === true && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r23_12',
+    'round23 preset team consensus stress',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'team_consensus_briefing_stress');
+      return inp?.highInflationScenario === true && (inp.actorCreditStressIndex ?? 0) > 0.7;
+    })(),
+  );
+  check(
+    'a10_r23_13',
+    'round23 preset guardian team fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'guardian_team_fusion_stress');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.33;
     })(),
   );
 
@@ -11263,6 +11627,79 @@ export function CorporateTradeInflationPanel(props: CorporateTradeInflationPanel
       </p>
       <p data-testid="corporate-trade-note">{pricing.narrative}</p>
       <p>{imports.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/GuardianTeamInflationPanel.tsx ---
+  assessGuardianInflationInterventionInflation,
+  guardianInflationInterventionScoreAdjustment,
+} from '../inflation/guardian-inflation-intervention-inflation.js';
+  assessTeamIntelligenceConsensusInflation,
+  teamIntelligenceConsensusInflationScoreAdjustment,
+} from '../inflation/team-intelligence-consensus-inflation.js';
+
+export interface GuardianTeamInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent16?: Agent16GuardianSnapshot | null;
+  agent18?: Agent18TeamSnapshot | null;
+}
+
+export function GuardianTeamInflationPanel(props: GuardianTeamInflationPanelProps) {
+  const guardian = props.agent16 ?? {
+    turn: props.inputs.turn,
+    inflationGuardrailTripped: props.inputs.highInflationScenario,
+    stabilityInterventionBand:
+      props.inputs.publicStability < 40 ? ('urgent' as const) : props.inputs.fiscalPressure === 'critical' ? ('advisory' as const) : ('none' as const),
+    narrativeShockSeverity: props.inputs.publicStability < 45 ? ('high' as const) : ('medium' as const),
+    copilotInflationEscalationActive: props.inputs.householdInflationScenarioActive,
+    guardrailNarrativeCascadeBand: props.inputs.creditShockActive ? ('urgent' as const) : ('building' as const),
+  };
+
+  const team = props.agent18 ?? {
+    turn: props.inputs.turn,
+    consensusInflationOutlook: props.inputs.highInflationScenario ? ('upside_risk' as const) : ('reacceleration' as const),
+    briefingUrgencyBand: props.inputs.publicStability < 42 ? ('critical' as const) : ('elevated' as const),
+    crossDomainStressScore: props.inputs.actorCreditStressIndex,
+    teamForecastDeanchoringFlag: props.inputs.householdInflationScenarioActive && props.inputs.highInflationScenario,
+    briefingInflationSalienceBand: props.inputs.publicStability < 38 ? ('critical' as const) : ('elevated' as const),
+  };
+
+  const intervention = assessGuardianInflationInterventionInflation({
+    inflationGuardrailTripped: guardian.inflationGuardrailTripped,
+    stabilityInterventionBand: guardian.stabilityInterventionBand,
+    narrativeShockSeverity: guardian.narrativeShockSeverity,
+    copilotInflationEscalationActive: guardian.copilotInflationEscalationActive === true,
+    guardrailNarrativeCascadeBand: guardian.guardrailNarrativeCascadeBand ?? 'none',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const consensus = assessTeamIntelligenceConsensusInflation({
+    consensusInflationOutlook: team.consensusInflationOutlook,
+    briefingUrgencyBand: team.briefingUrgencyBand,
+    crossDomainStressScore: team.crossDomainStressScore,
+    teamForecastDeanchoringFlag: team.teamForecastDeanchoringFlag === true,
+    briefingInflationSalienceBand: team.briefingInflationSalienceBand ?? 'muted',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-guardian-team-inflation" data-testid="guardian-team-inflation-panel">
+      <h4>Guardian intervention & team consensus (round 23)</h4>
+      <p>
+        Guardian {intervention.interventionBand} · index {intervention.guardrailIndex.toFixed(0)} · score adj{' '}
+        {guardianInflationInterventionScoreAdjustment(intervention.interventionBand)}
+      </p>
+      <p>
+        Team {consensus.consensusBand} · index {consensus.briefingIndex.toFixed(0)} · score adj{' '}
+        {teamIntelligenceConsensusInflationScoreAdjustment(consensus.consensusBand)}
+      </p>
+      <p data-testid="guardian-team-note">{intervention.narrative}</p>
+      <p>{consensus.narrative}</p>
     </div>
   );
 }

@@ -9,6 +9,10 @@ export interface Agent16GuardianSnapshot {
   narrativeShockSeverity: 'low' | 'medium' | 'high';
   /** Round 16: guardian flags financial-services fee shock feeding CPI metadata. */
   financialServicesFeeShockActive?: boolean;
+  /** Round 23: co-pilot inflation escalation latch. */
+  copilotInflationEscalationActive?: boolean;
+  /** Round 23: guardrail narrative cascade band. */
+  guardrailNarrativeCascadeBand?: 'none' | 'building' | 'urgent';
 }
 
 export function mergeAgent16IntoMacroFinancialInputs(
@@ -46,6 +50,12 @@ export function mergeAgent16IntoMacroFinancialInputs(
   let creditShockActive = base.creditShockActive;
   if (snapshot.financialServicesFeeShockActive) {
     creditShockActive = true;
+  }
+  if (snapshot.copilotInflationEscalationActive || snapshot.guardrailNarrativeCascadeBand === 'urgent') {
+    highInflationScenario = true;
+  }
+  if (snapshot.guardrailNarrativeCascadeBand === 'urgent') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
   }
 
   return {
