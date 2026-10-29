@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `op10m/agent-09-population` |
 | Base commit | `2820eea` — wave **43** / round 43 coordination stack |
-| Origin (round 44 feat) | **`<FEAT>`** — pushed first |
+| Origin (round 44 feat) | **`633c5e0`** — pushed first |
 | Wave baseline | **`bca7e0a3`** projected (O10-219) |
 | Round **44** / wave **44** | Coordination-scheduling coupling, scheduling pulse, subject scheduling, workforce scheduling |
 | Self-tests | **746** cases (`npm run test:agent09`) |
