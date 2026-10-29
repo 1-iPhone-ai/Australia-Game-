@@ -1,0 +1,31 @@
+import type { V1024DgovDataSovereigntyEdge } from '../../types/core.ts';
+
+/** Data sovereignty graph shard 026 (residency/liability/audit corridor coupling). */
+export const V1024_DGOV_DATA_SOVEREIGNTY_SHARD_026: readonly V1024DgovDataSovereigntyEdge[] = [
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.518, lagTurns: 10, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.524, lagTurns: 11, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.428, lagTurns: 12, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.434, lagTurns: 13, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.44, lagTurns: 10, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.446, lagTurns: 11, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.452, lagTurns: 12, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.458, lagTurns: 13, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.464, lagTurns: 10, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.47, lagTurns: 11, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.476, lagTurns: 12, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.482, lagTurns: 13, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.488, lagTurns: 10, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.494, lagTurns: 11, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.5, lagTurns: 12, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.506, lagTurns: 13, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.512, lagTurns: 10, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.518, lagTurns: 11, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.524, lagTurns: 12, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.428, lagTurns: 13, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.434, lagTurns: 10, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.44, lagTurns: 11, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.446, lagTurns: 12, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.452, lagTurns: 13, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.458, lagTurns: 10, nodeId: 'platform_node_02' },
+  { fromChannel: 'critical_infra', toChannel: 'remote', weight: 0.464, lagTurns: 11, nodeId: 'platform_node_02' },
+];

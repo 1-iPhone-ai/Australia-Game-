@@ -1,0 +1,31 @@
+import type { V1024DgovDataSovereigntyEdge } from '../../types/core.ts';
+
+/** Data sovereignty graph shard 078 (residency/liability/audit corridor coupling). */
+export const V1024_DGOV_DATA_SOVEREIGNTY_SHARD_078: readonly V1024DgovDataSovereigntyEdge[] = [
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.526, lagTurns: 8, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.532, lagTurns: 9, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.538, lagTurns: 10, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.544, lagTurns: 11, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.55, lagTurns: 8, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.556, lagTurns: 9, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.46, lagTurns: 10, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.466, lagTurns: 11, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.472, lagTurns: 8, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.478, lagTurns: 9, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.484, lagTurns: 10, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.49, lagTurns: 11, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.496, lagTurns: 8, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.502, lagTurns: 9, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.508, lagTurns: 10, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.514, lagTurns: 11, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.52, lagTurns: 8, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.526, lagTurns: 9, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.532, lagTurns: 10, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.538, lagTurns: 11, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.544, lagTurns: 8, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.55, lagTurns: 9, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.556, lagTurns: 10, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.46, lagTurns: 11, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.466, lagTurns: 8, nodeId: 'platform_node_06' },
+  { fromChannel: 'regional', toChannel: 'platform_liability', weight: 0.472, lagTurns: 9, nodeId: 'platform_node_06' },
+];

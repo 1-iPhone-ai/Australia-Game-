@@ -26,6 +26,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     intermodal_freight_paths,
     housing_affordability_paths,
     climate_adaptation_paths,
+    digital_governance_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -47,6 +48,7 @@ MTRD_MARKER = "export function runV1019MtrdTurn"
 IMFD_MARKER = "export function runV1021ImfdTurn"
 HAFF_MARKER = "export function runV1022HaffTurn"
 CLAD_MARKER = "export function runV1023CladTurn"
+DGOV_MARKER = "export function runV1024DgovTurn"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -145,6 +147,13 @@ CLAD_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20BR: V10.23 CLIMATE ADAPTATION — HAZARD SCENARIOS, DROUGHT BUFFERS & FLOOD DEFEND (O6K-50)\n"
     "// Renumbered from shard 20BQ (canonical 20BQ = housing affordability, push #19)\n"
+    "// ============================================================================\n"
+)
+
+DGOV_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BT: V10.24 DIGITAL GOVERNANCE — POLICY SCENARIOS, DATA SOVEREIGNTY & PLATFORM NODES (O6K-54)\n"
+    "// Renumbered from shard 20BR (canonical 20BR = climate adaptation, push #21)\n"
     "// ============================================================================\n"
 )
 
@@ -1936,6 +1945,161 @@ def push_clad(text: str) -> str:
     return text
 
 
+DGOV_HELPERS = """
+function V1024_DGOV_readPersistedFromGameState(gs: any): V1024DgovPersisted | null {
+  const raw = (gs?.save?.meta?.v1024 as any)?.digital_governance;
+  return raw ? sanitizeV1024DgovPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1024_DGOV_applyToGameState(gs: any, out: V1024DgovTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1024 = { ...(meta.v1024 || {}) };
+  v1024.digital_governance = out.persisted;
+  meta.v1024 = v1024;
+  save.meta = meta;
+  return { ...gs, save, v1024DigitalGovernance: out.state };
+}
+
+export function buildV1024DgovTurnInputFromGameState(gs: any, turn: number): V1024DgovTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10240;
+  const inp = buildV1024DgovTurnInputFromGameStateStub(turn, seed);
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const supply = gs?.v1014SupplyChain ?? null;
+  const workforce = gs?.v1014WorkforceMigration ?? gs?.workforceHumanCapital ?? null;
+  const pubsvc = gs?.v1014PublicServicesCrosswalk ?? null;
+  const aifid = gs?.v1014AiFidelity ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      dataSovereigntyIndex: Number(supply?.dataSovereigntyIndex ?? inp.supply20bb.dataSovereigntyIndex),
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+      importDependencyRatio: Number(trade?.importDependencyRatio ?? inp.trade20ba.importDependencyRatio),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+      reserveMarginPct: Number(energy?.reserveMarginPct ?? inp.energy20bc.reserveMarginPct),
+      platformRiskStress: Number(energy?.platformRiskStress ?? inp.energy20bc.platformRiskStress),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      specialistGap: Number(workforce?.specialistGap ?? inp.workforce20bf.specialistGap),
+      nationalReadiness: Number(workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+      mismatchIndex: Number(workforce?.mismatchIndex ?? inp.workforce20bf.mismatchIndex),
+    },
+    publicServices20az: {
+      ...inp.publicServices20az,
+      turn,
+      clinicCapacityScore: Number(pubsvc?.clinicCapacityScore ?? inp.publicServices20az.clinicCapacityScore),
+      digitalServiceCoverage: Number(
+        pubsvc?.digitalServiceCoverage ?? inp.publicServices20az.digitalServiceCoverage,
+      ),
+      serviceDeliveryReadiness: Number(
+        pubsvc?.serviceDeliveryReadiness ?? inp.publicServices20az.serviceDeliveryReadiness,
+      ),
+    },
+    aiFidelity20be: {
+      ...inp.aiFidelity20be,
+      turn,
+      modelGovernancePressure: Number(
+        aifid?.modelGovernancePressure ?? inp.aiFidelity20be.modelGovernancePressure,
+      ),
+      grantStackLoad: Number(aifid?.grantStackLoad ?? inp.aiFidelity20be.grantStackLoad),
+      alignmentDriftTurns: Number(aifid?.alignmentDriftTurns ?? inp.aiFidelity20be.alignmentDriftTurns),
+    },
+    persisted: null,
+  };
+}
+"""
+
+DGOV_DAY_HOOK = """
+      if (typeof runV1024DgovTurn === 'function') {
+        try {
+          const dgovIn = buildV1024DgovTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          dgovIn.persisted = V1024_DGOV_readPersistedFromGameState(mergedGameState);
+          const dgovOut = runV1024DgovTurn(dgovIn);
+          mergedGameState = V1024_DGOV_applyToGameState(mergedGameState, dgovOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_dgov_day_hook(text: str) -> str:
+    marker = "runV1024DgovTurn(dgovIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:48000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip dgov day hook (present)")
+        return text
+    clad_tail = """      if (typeof runV1023CladTurn === 'function') {
+        try {
+          const cladIn = buildV1023CladTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          cladIn.persisted = V1023_CLAD_readPersistedFromGameState(mergedGameState);
+          const cladOut = runV1023CladTurn(cladIn);
+          mergedGameState = V1023_CLAD_applyToGameState(mergedGameState, cladOut);
+        } catch (_) { /* isolated */ }
+      }"""
+    if clad_tail not in text:
+        raise SystemExit("clad day hook anchor missing for dgov hook")
+    return text.replace(clad_tail, clad_tail + DGOV_DAY_HOOK, 1)
+
+
+def wire_dgov_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1023CladPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1024DgovPersisted === 'function') {\n"
+        "    const dgovRaw = (migrated.gameState as any)?.save?.meta?.v1024?.digital_governance;\n"
+        "    if (dgovRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1024 = { ...(meta.v1024 || {}) };\n"
+        "      v1024.digital_governance = sanitizeV1024DgovPersisted(dgovRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1024 = v1024;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1024.digital_governance = sanitizeV1024DgovPersisted" in text:
+        print("skip dgov §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("clad §6 anchor missing for dgov migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_dgov(text: str) -> str:
+    block = DGOV_SECTION + bundle_local_files(digital_governance_paths()) + DGOV_HELPERS
+    text = insert_before(text, block, DGOV_MARKER, "T6 push #22 v1024-digital-governance (PR #348)")
+    text = wire_dgov_day_hook(text)
+    text = wire_dgov_migration(text)
+    lab = """  { id: 'v1024_digital_governance', label: 'V10.24 Digital governance (20BT policy & data sovereignty)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1024DgovSelfTestsForLab() },
+"""
+    clad_lab = (
+        "  { id: 'v1023_climate_adaptation', label: 'V10.23 Climate adaptation (20BR hazard & drought buffers)', "
+        "tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1023CladSelfTestsForLab() },"
+    )
+    if "{ id: 'v1024_digital_governance'" not in text:
+        if clad_lab in text:
+            text = text.replace(clad_lab, clad_lab + "\n" + lab.strip(), 1)
+            print("registered LAB v1024_digital_governance")
+        else:
+            text = wire_lab(text, lab, "v1024_digital_governance")
+            print("registered LAB v1024_digital_governance (fallback)")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -1950,7 +2114,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -1985,6 +2149,8 @@ def main() -> None:
         text = push_haff(text)
     elif args.push == 21:
         text = push_clad(text)
+    elif args.push == 22:
+        text = push_dgov(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

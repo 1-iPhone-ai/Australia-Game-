@@ -1,0 +1,31 @@
+import type { V1024DgovDataSovereigntyEdge } from '../../types/core.ts';
+
+/** Data sovereignty graph shard 081 (residency/liability/audit corridor coupling). */
+export const V1024_DGOV_DATA_SOVEREIGNTY_SHARD_081: readonly V1024DgovDataSovereigntyEdge[] = [
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.652, lagTurns: 2, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.556, lagTurns: 3, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.562, lagTurns: 4, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.568, lagTurns: 5, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.574, lagTurns: 2, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.58, lagTurns: 3, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.586, lagTurns: 4, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.592, lagTurns: 5, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.598, lagTurns: 2, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.604, lagTurns: 3, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.61, lagTurns: 4, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.616, lagTurns: 5, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.622, lagTurns: 2, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.628, lagTurns: 3, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.634, lagTurns: 4, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.64, lagTurns: 5, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.646, lagTurns: 2, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.652, lagTurns: 3, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.556, lagTurns: 4, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.562, lagTurns: 5, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.568, lagTurns: 2, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.574, lagTurns: 3, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.58, lagTurns: 4, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.586, lagTurns: 5, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.592, lagTurns: 2, nodeId: 'platform_node_09' },
+  { fromChannel: 'mortgage', toChannel: 'student', weight: 0.598, lagTurns: 3, nodeId: 'platform_node_09' },
+];

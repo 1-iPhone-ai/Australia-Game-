@@ -432,6 +432,49 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1023CladPersisted,\n  v1023CladInputHash,\n  sanitizeV1023CladPersisted,\n} from '../engine/climate-adaptation-orchestrator';",
             "  v1023CladInputHash,\n} from '../engine/climate-adaptation-orchestrator';\nimport {\n  createEmptyV1023CladPersisted,\n  sanitizeV1023CladPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1024-digital-governance" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BR", "SECTION 20BT")
+        src = src.replace("SECTION 20BQ", "SECTION 20BT")
+        src = src.replace("SECTION 20BS", "SECTION 20BT")
+    if "digital-governance/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1024DgovClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1024DgovClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1024_DGOV_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1024_DGOV_MIG_REGIONS", src)
+    if "digital-governance-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1024DgovPersisted, sanitizeV1024DgovPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1024_DGOV_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1024_DGOV_ORCH_REGIONS.forEach", src)
+    if "digital-governance-utils.ts" in name:
+        src = re.sub(
+            r"export function V1024_DGOV_dataSovereigntyGraphHash",
+            "export function V1024_DGOV_utilDataSovereigntyGraphHash",
+            src,
+        )
+    if "v1024-digital-governance/data-sovereignty-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1024_DGOV_dataSovereigntyGraphHash as dgovGraphHashCore",
+            "V1024_DGOV_utilDataSovereigntyGraphHash as dgovGraphHashCore",
+            src,
+        )
+    if "run-v1024-dgov-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1024DgovSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1024DgovSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1024DgovBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1024DgovBaseInput(", src)
+        src = src.replace(
+            "  runV1024DgovTurn,\n  createEmptyV1024DgovPersisted,\n  v1024DgovInputHash,\n  sanitizeV1024DgovPersisted,\n} from '../engine/digital-governance-orchestrator';",
+            "  runV1024DgovTurn,\n  v1024DgovInputHash,\n} from '../engine/digital-governance-orchestrator';\nimport {\n  createEmptyV1024DgovPersisted,\n  sanitizeV1024DgovPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1024DgovPersisted,\n  v1024DgovInputHash,\n  sanitizeV1024DgovPersisted,\n} from '../engine/digital-governance-orchestrator';",
+            "  v1024DgovInputHash,\n} from '../engine/digital-governance-orchestrator';\nimport {\n  createEmptyV1024DgovPersisted,\n  sanitizeV1024DgovPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -1000,6 +1043,58 @@ def climate_adaptation_paths() -> list[str]:
             and not (p.parent.name == "generated" and p.name == "index.ts")
             and "stress-registry" not in str(p)
             and "supply-pipeline" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def digital_governance_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1024-digital-governance"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/data-sovereignty-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/policy-scenarios/" in s:
+            return (3, s)
+        if "/generated/data-sovereignty-stacks/" in s:
+            return (4, s)
+        if "policy-registry" in s or "data-sovereignty-bundle" in s:
+            return (5, s)
+        if "/platform-regulation-nodes/" in s:
+            return (6, s)
+        if "digital-governance-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "digital-governance-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        if "stress-registry" in s or "supply-pipeline" in s:
+            return (98, s)
+        if "drought-buffer-bundle" in s or "hazard-registry" in s:
+            return (98, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "stress-registry" not in str(p)
+            and "supply-pipeline" not in str(p)
+            and "drought-buffer-bundle" not in str(p)
+            and "hazard-registry" not in str(p)
         ),
         key=sort_key,
     )
