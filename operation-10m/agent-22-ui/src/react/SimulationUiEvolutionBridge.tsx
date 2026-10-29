@@ -216,6 +216,18 @@ export function SimulationUiEvolutionBridge({
       {result.uiDensityProfileDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-density-profile-day">{result.uiDensityProfileDayCoachCopy}</div>
       ) : null}
+      {result.contextualQuickActionDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-contextual-qa-day">{result.contextualQuickActionDayCoachCopy}</div>
+      ) : null}
+      {result.nextUnlockRecommendationDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-next-unlock-day">{result.nextUnlockRecommendationDayCoachCopy}</div>
+      ) : null}
+      {result.milestoneApproachingDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-milestone-approaching-day">{result.milestoneApproachingDayCoachCopy}</div>
+      ) : null}
+      {result.accessibleChromeShellDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-chrome-shell-day">{result.accessibleChromeShellDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

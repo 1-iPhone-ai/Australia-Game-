@@ -93,6 +93,10 @@ import { buildSessionResumeCoachPlanDayCoach } from '../engine/session-resume-co
 import { buildDayAdvanceCalmRecoveryDayCoach } from '../engine/day-advance-calm-recovery-day-coach.js';
 import { buildPanelUnlockHeadlineDayCoach } from '../engine/panel-unlock-headline-day-coach.js';
 import { buildUiDensityProfileDayCoach } from '../engine/ui-density-profile-day-coach.js';
+import { buildContextualQuickActionDayCoach } from '../engine/contextual-quick-action-day-coach.js';
+import { buildNextUnlockRecommendationDayCoach } from '../engine/next-unlock-recommendation-day-coach.js';
+import { buildMilestoneApproachingDayCoach } from '../engine/milestone-approaching-day-coach.js';
+import { buildAccessibleChromeShellDayCoach } from '../engine/accessible-chrome-shell-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -194,6 +198,10 @@ export interface DayAdvanceUiEvolutionResult {
   dayAdvanceCalmRecoveryDayCoachCopy: string | null;
   panelUnlockHeadlineDayCoachCopy: string | null;
   uiDensityProfileDayCoachCopy: string | null;
+  contextualQuickActionDayCoachCopy: string | null;
+  nextUnlockRecommendationDayCoachCopy: string | null;
+  milestoneApproachingDayCoachCopy: string | null;
+  accessibleChromeShellDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -705,6 +713,33 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const contextualQuickActionDayCoach =
+    context.phase != null
+      ? buildContextualQuickActionDayCoach({
+          phase: context.phase,
+          gameDay: nextSignals.gameDay,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { actionCount: 0, coachCopy: null };
+
+  const nextUnlockRecommendationDayCoach = buildNextUnlockRecommendationDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const milestoneApproachingDayCoach = buildMilestoneApproachingDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const accessibleChromeShellDayCoach = buildAccessibleChromeShellDayCoach({
+    accessibility,
+    interfaceLevel: nextSignals.interfaceLevel,
+    preferredDensityTier: persistedAfterCalm.preferredDensity ?? null,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -807,6 +842,10 @@ export function tickEvolvingUiOnDayAdvance(
     dayAdvanceCalmRecoveryDayCoachCopy: dayAdvanceCalmRecoveryDayCoach.coachCopy,
     panelUnlockHeadlineDayCoachCopy: panelUnlockHeadlineDayCoach.coachCopy,
     uiDensityProfileDayCoachCopy: uiDensityProfileDayCoach.coachCopy,
+    contextualQuickActionDayCoachCopy: contextualQuickActionDayCoach.coachCopy,
+    nextUnlockRecommendationDayCoachCopy: nextUnlockRecommendationDayCoach.coachCopy,
+    milestoneApproachingDayCoachCopy: milestoneApproachingDayCoach.coachCopy,
+    accessibleChromeShellDayCoachCopy: accessibleChromeShellDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

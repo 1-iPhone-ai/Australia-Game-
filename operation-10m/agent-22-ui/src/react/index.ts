@@ -89,3 +89,7 @@ export { SessionResumeCoachPlanDayCoachStrip } from './SessionResumeCoachPlanDay
 export { DayAdvanceCalmRecoveryDayCoachStrip } from './DayAdvanceCalmRecoveryDayCoachStrip.js';
 export { PanelUnlockHeadlineDayCoachStrip } from './PanelUnlockHeadlineDayCoachStrip.js';
 export { UiDensityProfileDayCoachStrip } from './UiDensityProfileDayCoachStrip.js';
+export { ContextualQuickActionDayCoachStrip } from './ContextualQuickActionDayCoachStrip.js';
+export { NextUnlockRecommendationDayCoachStrip } from './NextUnlockRecommendationDayCoachStrip.js';
+export { MilestoneApproachingDayCoachStrip } from './MilestoneApproachingDayCoachStrip.js';
+export { AccessibleChromeShellDayCoachStrip } from './AccessibleChromeShellDayCoachStrip.js';

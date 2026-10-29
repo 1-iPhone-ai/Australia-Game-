@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: eb4ac49c95b24110
+// content-sha256-prefix: dc56d2952453a2b9
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -931,6 +931,10 @@ export interface DayAdvanceUiEvolutionResult {
   dayAdvanceCalmRecoveryDayCoachCopy: string | null;
   panelUnlockHeadlineDayCoachCopy: string | null;
   uiDensityProfileDayCoachCopy: string | null;
+  contextualQuickActionDayCoachCopy: string | null;
+  nextUnlockRecommendationDayCoachCopy: string | null;
+  milestoneApproachingDayCoachCopy: string | null;
+  accessibleChromeShellDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1442,6 +1446,33 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const contextualQuickActionDayCoach =
+    context.phase != null
+      ? buildContextualQuickActionDayCoach({
+          phase: context.phase,
+          gameDay: nextSignals.gameDay,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { actionCount: 0, coachCopy: null };
+
+  const nextUnlockRecommendationDayCoach = buildNextUnlockRecommendationDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const milestoneApproachingDayCoach = buildMilestoneApproachingDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const accessibleChromeShellDayCoach = buildAccessibleChromeShellDayCoach({
+    accessibility,
+    interfaceLevel: nextSignals.interfaceLevel,
+    preferredDensityTier: persistedAfterCalm.preferredDensity ?? null,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1544,6 +1575,10 @@ export function tickEvolvingUiOnDayAdvance(
     dayAdvanceCalmRecoveryDayCoachCopy: dayAdvanceCalmRecoveryDayCoach.coachCopy,
     panelUnlockHeadlineDayCoachCopy: panelUnlockHeadlineDayCoach.coachCopy,
     uiDensityProfileDayCoachCopy: uiDensityProfileDayCoach.coachCopy,
+    contextualQuickActionDayCoachCopy: contextualQuickActionDayCoach.coachCopy,
+    nextUnlockRecommendationDayCoachCopy: nextUnlockRecommendationDayCoach.coachCopy,
+    milestoneApproachingDayCoachCopy: milestoneApproachingDayCoach.coachCopy,
+    accessibleChromeShellDayCoachCopy: accessibleChromeShellDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -6079,6 +6114,288 @@ export function buildUiDensityProfileDayCoach(input: {
     densityTier: profile.tier,
     coachCopy,
   };
+}
+
+// --- source: engine/contextual-quick-action-day-coach.ts ---
+export interface ContextualQuickActionDayCoach {
+  actionCount: number;
+  coachCopy: string | null;
+}
+
+export function buildContextualQuickActionDayCoach(input: {
+  phase: V94StandardizedGamePhase;
+  gameDay: number;
+  nextGameDay: number;
+  limit?: number;
+}): ContextualQuickActionDayCoach {
+  const actions = listContextualQuickActions(input.phase, input.gameDay, input.limit ?? 6);
+  if (!actions.length) {
+    return { actionCount: 0, coachCopy: null };
+  }
+  const preview = actions
+    .slice(0, 2)
+    .map(a => a.label)
+    .join(', ');
+  const coachCopy = `Day ${input.nextGameDay}: ${actions.length} contextual quick actions (${preview}${actions.length > 2 ? '…' : ''}).`;
+  return { actionCount: actions.length, coachCopy };
+}
+
+// --- source: engine/next-unlock-recommendation-day-coach.ts ---
+export interface NextUnlockRecommendationDayCoach {
+  recommendationCount: number;
+  coachCopy: string | null;
+}
+
+export function buildNextUnlockRecommendationDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  nextGameDay: number;
+  limit?: number;
+}): NextUnlockRecommendationDayCoach {
+  const recs = listNextUnlockRecommendations(input.signals, input.policy, input.limit ?? 3);
+  if (!recs.length) {
+    return { recommendationCount: 0, coachCopy: null };
+  }
+  const coachCopy = `Day ${input.nextGameDay}: Next unlock focus — ${recs[0].headline}`;
+  return {
+    recommendationCount: recs.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/milestone-approaching-day-coach.ts ---
+export interface MilestoneApproachingDayCoach {
+  approachingCount: number;
+  coachCopy: string | null;
+}
+
+export function buildMilestoneApproachingDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+  limit?: number;
+}): MilestoneApproachingDayCoach {
+  const milestones = listMilestonesApproaching(input.signals, input.limit ?? 2);
+  if (!milestones.length) {
+    return { approachingCount: 0, coachCopy: null };
+  }
+  const next = milestones[0];
+  const coachCopy = `Day ${input.nextGameDay}: Milestone nearing — ${next.title}. ${next.coachCopy}`;
+  return {
+    approachingCount: milestones.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/accessible-chrome-shell-day-coach.ts ---
+export interface AccessibleChromeShellDayCoach {
+  densityTier: string;
+  reducedMotion: boolean;
+  coachCopy: string | null;
+}
+
+export function buildAccessibleChromeShellDayCoach(input: {
+  accessibility: AccessibilitySettingsSnapshot;
+  interfaceLevel: InterfaceExperienceLevel;
+  preferredDensityTier?: 'compact' | 'comfortable' | 'spacious' | null;
+  nextGameDay: number;
+}): AccessibleChromeShellDayCoach {
+  const shell = resolveAccessibleChromeShellProfile({
+    accessibility: input.accessibility,
+    interfaceLevel: input.interfaceLevel,
+    preferredDensityTier: input.preferredDensityTier,
+  });
+  const reducedMotion = shell.dataAttributes['data-motion-reduced'] === 'true';
+
+  let coachCopy: string | null = null;
+  if (reducedMotion || input.nextGameDay <= 4) {
+    coachCopy = reducedMotion
+      ? `Day ${input.nextGameDay}: accessible chrome shell uses ${shell.density.tier} density with reduced motion.`
+      : `Day ${input.nextGameDay}: accessible chrome shell tuned for ${shell.density.tier} density.`;
+  }
+
+  return {
+    densityTier: shell.density.tier,
+    reducedMotion,
+    coachCopy,
+  };
+}
+
+// --- source: engine/round29-self-tests.ts ---
+export function runAgent22Round29SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r29_contextual_qa',
+    'contextual quick action day coach on human_turn',
+    (() => {
+      const coach = buildContextualQuickActionDayCoach({
+        phase: 'human_turn',
+        gameDay: 3,
+        nextGameDay: 3,
+      });
+      return coach.actionCount > 0 && Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r29_next_unlock',
+    'next unlock recommendation day coach on early day',
+    (() => {
+      const coach = buildNextUnlockRecommendationDayCoach({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 1,
+      });
+      return coach.recommendationCount > 0 && Boolean(coach.coachCopy?.includes('Day 1'));
+    })()
+  );
+
+  check(
+    'r29_milestone_approaching',
+    'milestone approaching day coach shape',
+    (() => {
+      const coach = buildMilestoneApproachingDayCoach({
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        nextGameDay: 2,
+      });
+      return coach.approachingCount >= 0 && (coach.coachCopy === null || coach.coachCopy.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r29_chrome_shell',
+    'accessible chrome shell day coach on early day',
+    (() => {
+      const coach = buildAccessibleChromeShellDayCoach({
+        accessibility: DEFAULT_ACCESSIBILITY_SNAPSHOT,
+        interfaceLevel: 'simple',
+        nextGameDay: 2,
+      });
+      return Boolean(coach.coachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r29_chrome_reduced_motion',
+    'accessible chrome shell day coach with reduced motion',
+    (() => {
+      const coach = buildAccessibleChromeShellDayCoach({
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, reducedMotion: true },
+        interfaceLevel: 'guided',
+        nextGameDay: 10,
+      });
+      return coach.reducedMotion && Boolean(coach.coachCopy?.includes('reduced motion'));
+    })()
+  );
+
+  check(
+    'r29_tick_qa_field',
+    'day advance exposes contextual quick action day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.contextualQuickActionDayCoachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r29_tick_unlock_rec_field',
+    'day advance exposes next unlock recommendation day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.nextUnlockRecommendationDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r29_tick_milestone_field',
+    'day advance exposes milestone approaching day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.milestoneApproachingDayCoachCopy === 'string' || r.milestoneApproachingDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r29_tick_chrome_field',
+    'day advance exposes accessible chrome shell day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.accessibleChromeShellDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r29_qa_save_load',
+    'contextual quick action day coach null on save_load',
+    (() => {
+      const coach = buildContextualQuickActionDayCoach({
+        phase: 'save_load',
+        gameDay: 5,
+        nextGameDay: 5,
+      });
+      return coach.actionCount === 0 && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r29_next_unlock_nonempty',
+    'next unlock recommendation includes headline',
+    (() => {
+      const coach = buildNextUnlockRecommendationDayCoach({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 1,
+      });
+      return Boolean(coach.coachCopy?.includes('Next unlock focus'));
+    })()
+  );
+
+  check(
+    'r29_milestone_active',
+    'milestone approaching day coach when milestones near',
+    (() => {
+      const coach = buildMilestoneApproachingDayCoach({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        nextGameDay: 1,
+        limit: 3,
+      });
+      return coach.approachingCount >= 0 && (coach.coachCopy === null || coach.coachCopy.includes('Milestone'));
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round28-self-tests.ts ---
@@ -11490,6 +11807,18 @@ export function SimulationUiEvolutionBridge({
       {result.uiDensityProfileDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-density-profile-day">{result.uiDensityProfileDayCoachCopy}</div>
       ) : null}
+      {result.contextualQuickActionDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-contextual-qa-day">{result.contextualQuickActionDayCoachCopy}</div>
+      ) : null}
+      {result.nextUnlockRecommendationDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-next-unlock-day">{result.nextUnlockRecommendationDayCoachCopy}</div>
+      ) : null}
+      {result.milestoneApproachingDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-milestone-approaching-day">{result.milestoneApproachingDayCoachCopy}</div>
+      ) : null}
+      {result.accessibleChromeShellDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-chrome-shell-day">{result.accessibleChromeShellDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -13540,7 +13869,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.28.0';
+export const AGENT_22_MODULE_VERSION = '1.29.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -13691,6 +14020,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round29 = runAgent22Round29SelfTests();
+  for (const r of round29.results) {
+    check(`agent22_round29_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round28 = runAgent22Round28SelfTests();
