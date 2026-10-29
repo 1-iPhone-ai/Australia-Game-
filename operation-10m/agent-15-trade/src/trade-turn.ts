@@ -263,6 +263,20 @@ import {
   forwardBookAnchorStabilizationWorldEvent,
 } from './forward-book-anchor-stabilization.ts';
 import {
+  computeAnchoredBookReadinessSnapshot,
+  anchoredBookReadinessDomesticStress,
+  anchoredBookReadinessExportScale,
+  anchoredBookReadinessGiNotes,
+  anchoredBookReadinessWorldEvent,
+} from './anchored-book-readiness.ts';
+import {
+  computeBilateralThroughputCertificationSnapshot,
+  bilateralThroughputCertificationDomesticStressRelief,
+  bilateralThroughputCertificationExportScale,
+  bilateralThroughputCertificationGiNotes,
+  bilateralThroughputCertificationWorldEvent,
+} from './bilateral-throughput-certification.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -847,6 +861,27 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const anchorEvent = forwardBookAnchorStabilizationWorldEvent(forwardBookAnchorStabilization, turn);
   if (anchorEvent) worldEvents.push(anchorEvent);
 
+  const readinessStep = computeAnchoredBookReadinessSnapshot({
+    forwardBookAnchorStabilization,
+    tradeSettlementContinuity,
+    tradeThroughputOrchestration,
+    persisted,
+  });
+  persisted = readinessStep.persisted;
+  const anchoredBookReadiness = readinessStep.snapshot;
+  const readinessEvent = anchoredBookReadinessWorldEvent(anchoredBookReadiness, turn);
+  if (readinessEvent) worldEvents.push(readinessEvent);
+
+  const certificationStep = computeBilateralThroughputCertificationSnapshot({
+    anchoredBookReadiness,
+    logistics,
+    persisted,
+  });
+  persisted = certificationStep.persisted;
+  const bilateralThroughputCertification = certificationStep.snapshot;
+  const certificationEvent = bilateralThroughputCertificationWorldEvent(bilateralThroughputCertification, turn);
+  if (certificationEvent) worldEvents.push(certificationEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -876,6 +911,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralSettlementReconciliationExportScale(bilateralSettlementReconciliation) *
         tradeSettlementContinuityExportScale(tradeSettlementContinuity) *
         forwardBookAnchorStabilizationExportScale(forwardBookAnchorStabilization) *
+        anchoredBookReadinessExportScale(anchoredBookReadiness) *
+        bilateralThroughputCertificationExportScale(bilateralThroughputCertification) *
         10,
     ) / 10;
 
@@ -943,6 +980,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       commitmentTurnCloseoutDomesticStressRelief(commitmentTurnCloseout) +
       bilateralSettlementReconciliationDomesticStressRelief(bilateralSettlementReconciliation) +
       forwardBookAnchorStabilizationDomesticStressRelief(forwardBookAnchorStabilization) +
+      bilateralThroughputCertificationDomesticStressRelief(bilateralThroughputCertification) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -956,7 +994,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       tradeThroughputOrchestrationDomesticStress(tradeThroughputOrchestration) +
       bilateralCargoSchedulingDomesticStress(bilateralCargoScheduling) +
       forwardSlotRolloverDomesticStress(forwardSlotRollover) +
-      tradeSettlementContinuityDomesticStress(tradeSettlementContinuity),
+      tradeSettlementContinuityDomesticStress(tradeSettlementContinuity) +
+      anchoredBookReadinessDomesticStress(anchoredBookReadiness),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -1007,6 +1046,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.bilateralSettlementReconciliationSmoothing,
     persisted.tradeSettlementContinuitySmoothing,
     persisted.forwardBookAnchorStabilizationSmoothing,
+    persisted.anchoredBookReadinessSmoothing,
+    persisted.bilateralThroughputCertificationSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -1089,6 +1130,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     bilateralSettlementReconciliation,
     tradeSettlementContinuity,
     forwardBookAnchorStabilization,
+    anchoredBookReadiness,
+    bilateralThroughputCertification,
     inputHash,
   };
 
@@ -1150,6 +1193,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...bilateralSettlementReconciliationGiNotes(state.bilateralSettlementReconciliation));
   lines.push(...tradeSettlementContinuityGiNotes(state.tradeSettlementContinuity));
   lines.push(...forwardBookAnchorStabilizationGiNotes(state.forwardBookAnchorStabilization));
+  lines.push(...anchoredBookReadinessGiNotes(state.anchoredBookReadiness));
+  lines.push(...bilateralThroughputCertificationGiNotes(state.bilateralThroughputCertification));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }

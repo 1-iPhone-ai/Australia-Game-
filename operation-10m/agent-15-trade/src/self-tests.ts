@@ -159,6 +159,16 @@ import {
   createEmptyForwardBookAnchorStabilizationSnapshot,
   forwardBookAnchorStabilizationExportScale,
 } from './forward-book-anchor-stabilization.ts';
+import {
+  computeAnchoredBookReadinessSnapshot,
+  createEmptyAnchoredBookReadinessSnapshot,
+  anchoredBookReadinessExportScale,
+} from './anchored-book-readiness.ts';
+import {
+  computeBilateralThroughputCertificationSnapshot,
+  createEmptyBilateralThroughputCertificationSnapshot,
+  bilateralThroughputCertificationExportScale,
+} from './bilateral-throughput-certification.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1331,6 +1341,48 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       forwardBookAnchorStabilizationExportScale(locked) >= forwardBookAnchorStabilizationExportScale(unmoored),
       'expected anchor scale lift',
+    );
+  });
+
+  ok('anchored book readiness improves when anchors are locked and continuity anchored', () => {
+    const anchor = { ...createEmptyForwardBookAnchorStabilizationSnapshot(), score: 0.78, band: 'locked' as const };
+    const continuity = { ...createEmptyTradeSettlementContinuitySnapshot(), score: 0.76, band: 'anchored' as const };
+    const orchestration = { ...createEmptyTradeThroughputOrchestrationSnapshot(), score: 0.7, band: 'fluid' as const };
+    const ready = computeAnchoredBookReadinessSnapshot({
+      forwardBookAnchorStabilization: anchor,
+      tradeSettlementContinuity: continuity,
+      tradeThroughputOrchestration: orchestration,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const blocked = computeAnchoredBookReadinessSnapshot({
+      forwardBookAnchorStabilization: { ...anchor, score: 0.28, band: 'unmoored' },
+      tradeSettlementContinuity: { ...continuity, score: 0.26, band: 'broken' },
+      tradeThroughputOrchestration: { ...orchestration, score: 0.24, band: 'stalled' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(ready.score > blocked.score, 'expected stronger readiness when locked');
+    gtelAssert(
+      anchoredBookReadinessExportScale(ready) >= anchoredBookReadinessExportScale(blocked),
+      'expected readiness scale lift',
+    );
+  });
+
+  ok('bilateral throughput certification improves when book readiness is ready', () => {
+    const readiness = { ...createEmptyAnchoredBookReadinessSnapshot(), score: 0.8, band: 'ready' as const };
+    const certified = computeBilateralThroughputCertificationSnapshot({
+      anchoredBookReadiness: readiness,
+      logistics: { band: 'fluid', freightPressure: 0.18, redundancyScore: 0.74, effectiveExportThroughput: 95, networkStrain: 0.08, summary: 'test' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const rejected = computeBilateralThroughputCertificationSnapshot({
+      anchoredBookReadiness: { ...readiness, score: 0.26, band: 'blocked' },
+      logistics: { band: 'congested', freightPressure: 0.8, redundancyScore: 0.26, effectiveExportThroughput: 48, networkStrain: 0.68, summary: 'test' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(certified.score > rejected.score, 'expected stronger certification when ready');
+    gtelAssert(
+      bilateralThroughputCertificationExportScale(certified) >= bilateralThroughputCertificationExportScale(rejected),
+      'expected certification scale lift',
     );
   });
 

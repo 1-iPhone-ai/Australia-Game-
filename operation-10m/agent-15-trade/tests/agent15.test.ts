@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 47);
+  assert.ok(r.passed >= 49);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -954,5 +954,49 @@ test('round 20: broken settlement continuity weakens book anchor vs anchored bas
   });
   assert.ok(
     anchored.state.forwardBookAnchorStabilization.score >= broken.state.forwardBookAnchorStabilization.score - 0.14,
+  );
+});
+
+test('round 21: anchored book readiness and throughput certification on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.anchoredBookReadinessSmoothing = 0.54;
+  persisted.bilateralThroughputCertificationSmoothing = 0.52;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 59,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 100 } } },
+    persisted,
+  });
+  assert.ok(r.state.anchoredBookReadiness);
+  assert.ok(['ready', 'staging', 'constrained', 'blocked'].includes(r.state.anchoredBookReadiness.band));
+  assert.ok(r.state.bilateralThroughputCertification);
+  assert.ok(['certified', 'pending', 'conditional', 'rejected'].includes(r.state.bilateralThroughputCertification.band));
+  assert.ok(r.persisted.anchoredBookReadinessSmoothing != null);
+  assert.ok(r.persisted.bilateralThroughputCertificationSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Anchored book readiness/i.test(n)));
+  assert.ok(notes.some(n => /Bilateral throughput certification/i.test(n)));
+});
+
+test('round 21: blocked readiness lowers certification vs ready baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.anchoredBookReadinessSmoothing = 0.78;
+  persisted.forwardBookAnchorStabilizationSmoothing = 0.74;
+  const ready = advanceGlobalTradeEconomyTurn({
+    turn: 60,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 85 } } },
+    persisted: { ...persisted },
+  });
+  persisted.anchoredBookReadinessSmoothing = 0.22;
+  persisted.forwardBookAnchorStabilizationSmoothing = 0.2;
+  const blocked = advanceGlobalTradeEconomyTurn({
+    turn: 60,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 195 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    ready.state.bilateralThroughputCertification.score >= blocked.state.bilateralThroughputCertification.score - 0.14,
   );
 });

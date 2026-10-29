@@ -182,6 +182,10 @@ export interface GTELPersisted {
   tradeSettlementContinuitySmoothing?: number;
   /** Smoothed forward book anchor stabilization score (0–1). */
   forwardBookAnchorStabilizationSmoothing?: number;
+  /** Smoothed anchored book readiness score (0–1). */
+  anchoredBookReadinessSmoothing?: number;
+  /** Smoothed bilateral throughput certification score (0–1). */
+  bilateralThroughputCertificationSmoothing?: number;
 }
 
 export interface GTELState {
@@ -235,6 +239,8 @@ export interface GTELState {
   bilateralSettlementReconciliation: GTELBilateralSettlementReconciliationSnapshot;
   tradeSettlementContinuity: GTELTradeSettlementContinuitySnapshot;
   forwardBookAnchorStabilization: GTELForwardBookAnchorStabilizationSnapshot;
+  anchoredBookReadiness: GTELAnchoredBookReadinessSnapshot;
+  bilateralThroughputCertification: GTELBilateralThroughputCertificationSnapshot;
   inputHash: string;
 }
 
@@ -759,6 +765,26 @@ export interface GTELForwardBookAnchorStabilizationSnapshot {
   band: GTELForwardBookAnchorStabilizationBand;
   continuitySupport: number;
   harmonizationLift: number;
+  summary: string;
+}
+
+export type GTELAnchoredBookReadinessBand = 'ready' | 'staging' | 'constrained' | 'blocked';
+
+export interface GTELAnchoredBookReadinessSnapshot {
+  score: number;
+  band: GTELAnchoredBookReadinessBand;
+  anchorSupport: number;
+  continuityLift: number;
+  summary: string;
+}
+
+export type GTELBilateralThroughputCertificationBand = 'certified' | 'pending' | 'conditional' | 'rejected';
+
+export interface GTELBilateralThroughputCertificationSnapshot {
+  score: number;
+  band: GTELBilateralThroughputCertificationBand;
+  readinessSupport: number;
+  logisticsClearance: number;
   summary: string;
 }
 
