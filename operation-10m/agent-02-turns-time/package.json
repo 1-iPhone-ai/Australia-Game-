@@ -1,0 +1,15 @@
+{
+  "name": "@operation-10m/agent-02-turns-time",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "bundle:chunk": "tsx scripts/bundle-chunk-for-agent25.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.0",
+    "tsx": "4.23.0",
+    "typescript": "5.9.3"
+  }
+}
