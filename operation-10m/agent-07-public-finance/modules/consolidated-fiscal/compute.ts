@@ -13,6 +13,11 @@ import { buildFiscalRiskRegister } from '../fiscal-risk-register/compute';
 import { allocateIntergovernmentalGrants } from '../intergovernmental-grants/compute';
 import { buildStatutoryBalancesReport } from '../statutory-balances/compute';
 import { buildCostRecoveryStatement } from '../cost-recovery-pricing/compute';
+import { buildCashManagementReport } from '../cash-management/compute';
+import { buildAppropriationWarrantLedger } from '../appropriation-warrants/compute';
+import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
+import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
+import { assessFiscalResilience } from '../fiscal-resilience/compute';
 import { assessFiscalRulesFramework } from '../fiscal-rules/compute';
 import { executeIssuanceCalendar } from '../sovereign-issuance/compute';
 import { reviewProgramPerformance } from '../program-performance/compute';
@@ -61,6 +66,15 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   const igGrants = allocateIntergovernmentalGrants(turn, v1012);
   const statutory = buildStatutoryBalancesReport(turn, v1012);
   const costRecovery = buildCostRecoveryStatement(turn, v1012);
+  const cashMgmt = buildCashManagementReport(turn, v1012);
+  const warrantLedger = buildAppropriationWarrantLedger(turn, v1012);
+  const debtRollover = resolveDebtRollover({
+    turn,
+    v1012,
+    tranches: defaultMaturityLadder(turn),
+    computeTrajectory: computeDebtOutcomeTrajectory
+  });
+  const resilienceStack = assessFiscalResilience(turn, v1012, ['commodity_drop', 'rate_shock']);
   const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
   const fiscalRules = assessFiscalRulesFramework({
     turn,
@@ -227,12 +241,43 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `capital=${infraSummary.aggregateCapital}, service=${infraSummary.aggregateServiceLoad}`
   });
 
+  checks.push({
+    id: 'CF21',
+    label: 'Debt maturity rollover without liquidity stress',
+    passed: !debtRollover.liquidityStress || !v1012.debtEnabled || v1012.pressure === 'critical',
+    detail: `events=${debtRollover.events.length}, stress=${debtRollover.liquidityStress}`
+  });
+
+  checks.push({
+    id: 'CF22',
+    label: 'Stacked fiscal shocks remain above critical band',
+    passed:
+      resilienceStack.compositeStressBand !== 'critical' ||
+      v1012.pressure === 'critical' ||
+      resilienceStack.baselinePressure === 'critical',
+    detail: `band=${resilienceStack.compositeStressBand}, reserve=${resilienceStack.reserveAdequacy}`
+  });
+
+  checks.push({
+    id: 'CF23',
+    label: 'Treasury cash within drawdown limit',
+    passed: cashMgmt.withinDrawdownLimit,
+    detail: `closing=${cashMgmt.aggregateClosingBalance}, runway=${cashMgmt.runwayTurns}`
+  });
+
+  checks.push({
+    id: 'CF24',
+    label: 'Appropriation warrant lapse within tolerance',
+    passed: warrantLedger.lapseWithinTolerance,
+    detail: `risk=${warrantLedger.aggregateLapseRisk}, remaining=${warrantLedger.aggregateRemaining}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 18
+    layerCount: 22
   };
 }

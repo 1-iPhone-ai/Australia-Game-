@@ -3300,6 +3300,236 @@ export function buildCostRecoveryStatement(turn: number, v1012: V1012FiscalSnaps
 }
 
 
+// --- source: cash-management/types.ts ---
+export const CASH_MANAGEMENT_SCHEMA = 'op10m-agent07-cash-management-v1';
+
+export type CashRunwayBand = 'comfortable' | 'watch' | 'squeeze' | 'critical';
+
+export interface CashManagementLine {
+  id: string;
+  label: string;
+  openingBalancePoints: number;
+  inflowPoints: number;
+  outflowPoints: number;
+  closingBalancePoints: number;
+}
+
+export interface CashManagementReport {
+  schemaVersion: string;
+  turn: number;
+  lines: CashManagementLine[];
+  aggregateClosingBalance: number;
+  runwayTurns: number;
+  runwayBand: CashRunwayBand;
+  withinDrawdownLimit: boolean;
+  endOfYearSqueeze: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: cash-management/compute.ts ---
+
+const DRAWDOWN_LIMIT = 12;
+
+function runwayBand(runwayTurns: number, squeeze: boolean): CashRunwayBand {
+  if (squeeze) return 'critical';
+  if (runwayTurns >= 5) return 'comfortable';
+  if (runwayTurns >= 3) return 'watch';
+  if (runwayTurns >= 1) return 'squeeze';
+  return 'critical';
+}
+
+export function buildCashManagementReport(turn: number, v1012: V1012FiscalSnapshot): CashManagementReport {
+  const revenueInflow = Math.round(v1012.revenueCapacity * 0.11 * 10) / 10;
+  const grantInflow = Math.round(v1012.revenueCapacity * 0.015 * 10) / 10;
+  const operatingOutflow =
+    Math.round((v1012.maintenanceLoad * 0.9 + v1012.debtServiceLoad * 0.55 + Math.max(0, 8 - v1012.fiscalHeadroom) * 0.4) * 10) /
+    10;
+  const capitalOutflow = v1012.debtEnabled ? Math.round(v1012.debtLevel * 0.02 * 10) / 10 : 0;
+
+  const opening =
+    Math.round((14 + v1012.fiscalHeadroom * 0.35 + (v1012.reservePolicy === 'prudent' ? 4 : 0)) * 10) / 10;
+
+  const lines: CashManagementLine[] = [
+    {
+      id: 'operating',
+      label: 'Operating TGA slice',
+      openingBalancePoints: opening,
+      inflowPoints: revenueInflow + grantInflow,
+      outflowPoints: operatingOutflow,
+      closingBalancePoints: 0
+    },
+    {
+      id: 'capital',
+      label: 'Capital & rollover buffer',
+      openingBalancePoints: Math.max(2, opening * 0.25),
+      inflowPoints: v1012.debtEnabled ? Math.round(v1012.debtLevel * 0.015 * 10) / 10 : 0,
+      outflowPoints: capitalOutflow,
+      closingBalancePoints: 0
+    }
+  ];
+
+  for (const line of lines) {
+    line.closingBalancePoints =
+      Math.round((line.openingBalancePoints + line.inflowPoints - line.outflowPoints) * 10) / 10;
+  }
+
+  const aggregateClosingBalance = lines.reduce((s, l) => s + l.closingBalancePoints, 0);
+  const weeklyBurn = Math.max(0.5, operatingOutflow / 4);
+  const runwayTurns = Math.max(0, Math.round((aggregateClosingBalance / weeklyBurn) * 10) / 10);
+
+  const endOfYearSqueeze = turn % 12 >= 10 && aggregateClosingBalance < DRAWDOWN_LIMIT;
+  const band = runwayBand(runwayTurns, endOfYearSqueeze && v1012.pressure !== 'comfortable');
+
+  const withinDrawdownLimit =
+    aggregateClosingBalance >= DRAWDOWN_LIMIT || v1012.pressure === 'critical' || !v1012.debtEnabled;
+
+  const warnings: string[] = [];
+  if (endOfYearSqueeze) {
+    warnings.push('End-of-year appropriation squeeze — TGA closing balance below drawdown comfort.');
+  }
+  if (!withinDrawdownLimit) {
+    warnings.push(`Aggregate closing ${aggregateClosingBalance} below drawdown limit ${DRAWDOWN_LIMIT}.`);
+  }
+  if (band === 'squeeze' || band === 'critical') {
+    warnings.push(`Cash runway ${runwayTurns} turns — ${band} band.`);
+  }
+
+  const narrative = withinDrawdownLimit
+    ? `TGA aggregate closing ${aggregateClosingBalance} with ~${runwayTurns} turn runway (${band}).`
+    : `Cash management alert: closing ${aggregateClosingBalance}, runway ${runwayTurns}.`;
+
+  return {
+    schemaVersion: CASH_MANAGEMENT_SCHEMA,
+    turn,
+    lines,
+    aggregateClosingBalance,
+    runwayTurns,
+    runwayBand: band,
+    withinDrawdownLimit,
+    endOfYearSqueeze,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: appropriation-warrants/types.ts ---
+export const APPROPRIATION_WARRANTS_SCHEMA = 'op10m-agent07-appropriation-warrants-v1';
+
+export type WarrantStatus = 'open' | 'partially_lapsed' | 'fully_lapsed' | 'reallocated';
+
+export interface AppropriationWarrantLine {
+  warrantId: string;
+  portfolio: string;
+  appropriationPoints: number;
+  warrantIssuedPoints: number;
+  warrantRemainingPoints: number;
+  lapseRiskPoints: number;
+  status: WarrantStatus;
+  withinTolerance: boolean;
+}
+
+export interface AppropriationWarrantLedger {
+  schemaVersion: string;
+  turn: number;
+  lines: AppropriationWarrantLine[];
+  aggregateAppropriation: number;
+  aggregateRemaining: number;
+  aggregateLapseRisk: number;
+  lapseWithinTolerance: boolean;
+  reallocationCount: number;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: appropriation-warrants/compute.ts ---
+
+const BASE_PORTFOLIOS: Array<{ portfolio: string; share: number }> = [
+  { portfolio: 'social_services', share: 0.32 },
+  { portfolio: 'infrastructure', share: 0.22 },
+  { portfolio: 'defence', share: 0.14 },
+  { portfolio: 'health', share: 0.18 },
+  { portfolio: 'education', share: 0.14 }
+];
+
+function statusFromRemaining(ratio: number, lapseRisk: number): WarrantStatus {
+  if (lapseRisk >= ratio * 0.45) return 'fully_lapsed';
+  if (lapseRisk >= ratio * 0.2) return 'partially_lapsed';
+  if (lapseRisk >= ratio * 0.08) return 'reallocated';
+  return 'open';
+}
+
+export function buildAppropriationWarrantLedger(turn: number, v1012: V1012FiscalSnapshot): AppropriationWarrantLedger {
+  const envelopeCapacity = v1012.revenueCapacity * 0.55 + Math.max(0, v1012.fiscalHeadroom) * 0.4;
+  const pressureLapseScale =
+    v1012.pressure === 'critical' ? 1.35 : v1012.pressure === 'strained' ? 1.15 : v1012.pressure === 'tight' ? 1.05 : 1;
+  const turnPhase = turn % 12 >= 9 ? 1.2 : 1;
+
+  const lines: AppropriationWarrantLine[] = BASE_PORTFOLIOS.map((row, idx) => {
+    const appropriationPoints = Math.round(envelopeCapacity * row.share * 10) / 10;
+    const issuedRatio = 0.72 + ((turn + idx) % 5) * 0.04;
+    const warrantIssuedPoints = Math.round(appropriationPoints * issuedRatio * 10) / 10;
+    const warrantRemainingPoints = Math.round((appropriationPoints - warrantIssuedPoints) * 10) / 10;
+    const lapseRiskPoints =
+      Math.round(Math.max(0, warrantRemainingPoints * 0.35 * pressureLapseScale * turnPhase) * 10) / 10;
+    const status = statusFromRemaining(
+      warrantRemainingPoints / Math.max(1, appropriationPoints),
+      lapseRiskPoints
+    );
+    const withinTolerance =
+      lapseRiskPoints <= appropriationPoints * 0.12 || v1012.pressure === 'critical' || status === 'open';
+    return {
+      warrantId: `warrant_${row.portfolio}`,
+      portfolio: row.portfolio,
+      appropriationPoints,
+      warrantIssuedPoints,
+      warrantRemainingPoints,
+      lapseRiskPoints,
+      status,
+      withinTolerance
+    };
+  });
+
+  const aggregateAppropriation = lines.reduce((s, l) => s + l.appropriationPoints, 0);
+  const aggregateRemaining = lines.reduce((s, l) => s + l.warrantRemainingPoints, 0);
+  const aggregateLapseRisk = lines.reduce((s, l) => s + l.lapseRiskPoints, 0);
+  const reallocationCount = lines.filter(l => l.status === 'reallocated').length;
+
+  const lapseTolerance = aggregateAppropriation * 0.1;
+  const lapseWithinTolerance =
+    aggregateLapseRisk <= lapseTolerance || v1012.pressure === 'critical';
+
+  const warnings: string[] = [];
+  const outOfTolerance = lines.filter(l => !l.withinTolerance);
+  if (outOfTolerance.length >= 2) {
+    warnings.push(`${outOfTolerance.length} warrant lines exceed per-portfolio lapse tolerance.`);
+  }
+  if (!lapseWithinTolerance) {
+    warnings.push(`Aggregate lapse risk ${aggregateLapseRisk} above tolerance ${lapseTolerance.toFixed(1)}.`);
+  }
+
+  const narrative = lapseWithinTolerance
+    ? `Warrant ledger reconciled; ${aggregateRemaining.toFixed(1)} points unissued with controlled lapse risk.`
+    : `Appropriation lapse pressure: aggregate risk ${aggregateLapseRisk.toFixed(1)}.`;
+
+  return {
+    schemaVersion: APPROPRIATION_WARRANTS_SCHEMA,
+    turn,
+    lines,
+    aggregateAppropriation,
+    aggregateRemaining,
+    aggregateLapseRisk,
+    lapseWithinTolerance,
+    reallocationCount,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -5040,6 +5270,15 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   const igGrants = allocateIntergovernmentalGrants(turn, v1012);
   const statutory = buildStatutoryBalancesReport(turn, v1012);
   const costRecovery = buildCostRecoveryStatement(turn, v1012);
+  const cashMgmt = buildCashManagementReport(turn, v1012);
+  const warrantLedger = buildAppropriationWarrantLedger(turn, v1012);
+  const debtRollover = resolveDebtRollover({
+    turn,
+    v1012,
+    tranches: defaultMaturityLadder(turn),
+    computeTrajectory: computeDebtOutcomeTrajectory
+  });
+  const resilienceStack = assessFiscalResilience(turn, v1012, ['commodity_drop', 'rate_shock']);
   const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
   const fiscalRules = assessFiscalRulesFramework({
     turn,
@@ -5206,13 +5445,44 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `capital=${infraSummary.aggregateCapital}, service=${infraSummary.aggregateServiceLoad}`
   });
 
+  checks.push({
+    id: 'CF21',
+    label: 'Debt maturity rollover without liquidity stress',
+    passed: !debtRollover.liquidityStress || !v1012.debtEnabled || v1012.pressure === 'critical',
+    detail: `events=${debtRollover.events.length}, stress=${debtRollover.liquidityStress}`
+  });
+
+  checks.push({
+    id: 'CF22',
+    label: 'Stacked fiscal shocks remain above critical band',
+    passed:
+      resilienceStack.compositeStressBand !== 'critical' ||
+      v1012.pressure === 'critical' ||
+      resilienceStack.baselinePressure === 'critical',
+    detail: `band=${resilienceStack.compositeStressBand}, reserve=${resilienceStack.reserveAdequacy}`
+  });
+
+  checks.push({
+    id: 'CF23',
+    label: 'Treasury cash within drawdown limit',
+    passed: cashMgmt.withinDrawdownLimit,
+    detail: `closing=${cashMgmt.aggregateClosingBalance}, runway=${cashMgmt.runwayTurns}`
+  });
+
+  checks.push({
+    id: 'CF24',
+    label: 'Appropriation warrant lapse within tolerance',
+    passed: warrantLedger.lapseWithinTolerance,
+    detail: `risk=${warrantLedger.aggregateLapseRisk}, remaining=${warrantLedger.aggregateRemaining}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 18
+    layerCount: 22
   };
 }
 
@@ -7092,12 +7362,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Eighteen fiscal layers integrated', healthy.layerCount === 18, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Twenty-two fiscal layers integrated', healthy.layerCount === 22, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 20,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 24,
     'ok'
   );
 
@@ -7109,9 +7379,9 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF20 ids present',
+    'CF01–CF24 ids present',
     healthy.checks.map(c => c.id).join(',') ===
-      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20',
+      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20,CF21,CF22,CF23,CF24',
     'ok'
   );
 
@@ -7736,6 +8006,123 @@ export function runCostRecoveryPricingSelfTests(): {
   record('CR05', 'Critical pressure overrides portfolio target', critical.withinPortfolioTarget, 'ok');
 
   record('CR06', 'Aggregate recovered <= full cost', healthy.aggregateRecovered <= healthy.aggregateFullCost, `${healthy.aggregateRecovered}/${healthy.aggregateFullCost}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: cash-management/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 11,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 9,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 22,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 5,
+    commitmentCount: partial.commitmentCount ?? 4,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runCashManagementSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const healthy = buildCashManagementReport(11, snap({}));
+  record('CM01', 'Operating and capital TGA lines', healthy.lines.length === 2, 'ok');
+  record('CM02', 'Healthy within drawdown limit', healthy.withinDrawdownLimit, healthy.narrative);
+  record('CM03', 'Runway turns non-negative', healthy.runwayTurns >= 0, `runway=${healthy.runwayTurns}`);
+
+  const prudent = buildCashManagementReport(11, snap({ reservePolicy: 'prudent', fiscalHeadroom: 12 }));
+  record(
+    'CM04',
+    'Prudent reserve lifts closing balance',
+    prudent.aggregateClosingBalance >= healthy.aggregateClosingBalance,
+    `${prudent.aggregateClosingBalance} vs ${healthy.aggregateClosingBalance}`
+  );
+
+  const eoy = buildCashManagementReport(11, snap({ fiscalHeadroom: -2, maintenanceLoad: 16, debtServiceLoad: 14 }));
+  record('CM05', 'Stressed fiscal position may fail drawdown', eoy.withinDrawdownLimit === false || eoy.runwayBand !== 'comfortable', eoy.narrative);
+
+  const critical = buildCashManagementReport(11, snap({ pressure: 'critical', fiscalHeadroom: -20 }));
+  record('CM06', 'Critical pressure overrides drawdown guard', critical.withinDrawdownLimit, 'ok');
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: appropriation-warrants/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 8,
+    revenueCapacity: partial.revenueCapacity ?? 70,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 7,
+    debtLevel: partial.debtLevel ?? 24,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runAppropriationWarrantsSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const healthy = buildAppropriationWarrantLedger(8, snap({}));
+  record('AW01', 'Five portfolio warrant lines', healthy.lines.length === 5, 'ok');
+  record('AW02', 'Healthy lapse within tolerance', healthy.lapseWithinTolerance, healthy.narrative);
+  record(
+    'AW03',
+    'Issued plus remaining approximates appropriation',
+    healthy.lines.every(l => l.warrantIssuedPoints + l.warrantRemainingPoints <= l.appropriationPoints + 0.2),
+    'ok'
+  );
+
+  const lateYear = buildAppropriationWarrantLedger(11, snap({ pressure: 'strained', fiscalHeadroom: -1 }));
+  record(
+    'AW04',
+    'Late-year strained pressure raises lapse risk',
+    lateYear.aggregateLapseRisk >= healthy.aggregateLapseRisk,
+    `${lateYear.aggregateLapseRisk} vs ${healthy.aggregateLapseRisk}`
+  );
+
+  const critical = buildAppropriationWarrantLedger(11, snap({ pressure: 'critical', fiscalHeadroom: -18 }));
+  record('AW05', 'Critical overrides aggregate lapse guard', critical.lapseWithinTolerance, 'ok');
+
+  record(
+    'AW06',
+    'Each line has warrant id',
+    healthy.lines.every(l => l.warrantId.startsWith('warrant_')),
+    'ok'
+  );
 
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };

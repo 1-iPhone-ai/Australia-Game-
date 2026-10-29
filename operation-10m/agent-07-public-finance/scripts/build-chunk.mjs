@@ -36,6 +36,10 @@ const FILES = [
   'statutory-balances/compute.ts',
   'cost-recovery-pricing/types.ts',
   'cost-recovery-pricing/compute.ts',
+  'cash-management/types.ts',
+  'cash-management/compute.ts',
+  'appropriation-warrants/types.ts',
+  'appropriation-warrants/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -91,7 +95,9 @@ const FILES = [
   'fiscal-risk-register/self-tests.ts',
   'intergovernmental-grants/self-tests.ts',
   'statutory-balances/self-tests.ts',
-  'cost-recovery-pricing/self-tests.ts'
+  'cost-recovery-pricing/self-tests.ts',
+  'cash-management/self-tests.ts',
+  'appropriation-warrants/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {

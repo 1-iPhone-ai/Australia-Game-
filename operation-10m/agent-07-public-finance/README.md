@@ -23,6 +23,12 @@ National **budget envelopes**, **revenue** (tax instruments + ledger), **soverei
 | Fiscal transparency | `modules/fiscal-transparency/` | Disclosure tier index for budget papers and open data |
 | Infrastructure financing | `modules/infrastructure-financing/` | Pay-go vs debt capital stacks (with self-tests) |
 
+### Scale wave round 7
+
+- **cash-management/** — TGA operating/capital slices, drawdown limits, runway bands
+- **appropriation-warrants/** — portfolio warrant ledger, lapse risk, reallocation counts
+- **consolidated-fiscal/** — CF21–CF24 debt rollover, stacked shocks, cash, warrants; `layerCount` **22**
+
 ### Scale wave round 6
 
 - **statutory-balances/** — net operating balance, fiscal balance, net debt-to-capacity anchors
