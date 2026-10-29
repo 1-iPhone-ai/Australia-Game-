@@ -52,11 +52,13 @@ import type { FreightLogisticsInflationCongestionBand } from '../inflation/freig
 import type { HousingWellbeingInflationEssentialStressBand } from '../inflation/housing-wellbeing-inflation-essential-stress.js';
 import type { CommandCenterInflationFusionEscalationBand } from '../inflation/command-center-inflation-fusion-escalation.js';
 import type { UiPlayerInflationSalienceNudgeBand } from '../inflation/ui-player-inflation-salience-nudge.js';
+import type { FiscalIndexationInflationAnchorBreachBand } from '../inflation/fiscal-indexation-inflation-anchor-breach.js';
+import type { HouseholdWageInflationDeanchoringBand } from '../inflation/household-wage-inflation-deanchoring.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r29';
+  schemaVersion: '10.14.agent10.r30';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -110,6 +112,8 @@ export interface Agent21InflationForecastBundle {
   terminalHousingWellbeingInflationEssentialStress: HousingWellbeingInflationEssentialStressBand;
   terminalCommandCenterInflationFusionEscalation: CommandCenterInflationFusionEscalationBand;
   terminalUiPlayerInflationSalienceNudge: UiPlayerInflationSalienceNudgeBand;
+  terminalFiscalIndexationInflationAnchorBreach: FiscalIndexationInflationAnchorBreachBand;
+  terminalHouseholdWageInflationDeanchoring: HouseholdWageInflationDeanchoringBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -138,7 +142,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r29',
+    schemaVersion: '10.14.agent10.r30',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -192,6 +196,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalHousingWellbeingInflationEssentialStress: lastPoint?.housingWellbeingInflationEssentialStressBand ?? 'stable',
     terminalCommandCenterInflationFusionEscalation: lastPoint?.commandCenterInflationFusionEscalationBand ?? 'calm',
     terminalUiPlayerInflationSalienceNudge: lastPoint?.uiPlayerInflationSalienceNudgeBand ?? 'muted',
+    terminalFiscalIndexationInflationAnchorBreach: lastPoint?.fiscalIndexationInflationAnchorBreachBand ?? 'anchored',
+    terminalHouseholdWageInflationDeanchoring: lastPoint?.householdWageInflationDeanchoringBand ?? 'anchored',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

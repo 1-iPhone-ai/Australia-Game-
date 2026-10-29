@@ -200,6 +200,14 @@ import {
   assessUiPlayerInflationSalienceNudge,
   type UiPlayerInflationSalienceNudgeBand,
 } from '../inflation/ui-player-inflation-salience-nudge.js';
+import {
+  assessFiscalIndexationInflationAnchorBreach,
+  type FiscalIndexationInflationAnchorBreachBand,
+} from '../inflation/fiscal-indexation-inflation-anchor-breach.js';
+import {
+  assessHouseholdWageInflationDeanchoring,
+  type HouseholdWageInflationDeanchoringBand,
+} from '../inflation/household-wage-inflation-deanchoring.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -258,6 +266,8 @@ export interface InflationForecastPoint {
   housingWellbeingInflationEssentialStressBand: HousingWellbeingInflationEssentialStressBand;
   commandCenterInflationFusionEscalationBand: CommandCenterInflationFusionEscalationBand;
   uiPlayerInflationSalienceNudgeBand: UiPlayerInflationSalienceNudgeBand;
+  fiscalIndexationInflationAnchorBreachBand: FiscalIndexationInflationAnchorBreachBand;
+  householdWageInflationDeanchoringBand: HouseholdWageInflationDeanchoringBand;
 }
 
 export interface InflationForecastPath {
@@ -734,6 +744,26 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const fiscalBreach = assessFiscalIndexationInflationAnchorBreach({
+      consolidatedDeficitBand: inputs.fiscalPressure === 'critical' ? 'large_deficit' : 'moderate_deficit',
+      debtServicePressure: inputs.fiscalPressure === 'critical' ? 'critical' : inputs.sovereignDebtPressure === 'elevated' ? 'elevated' : 'moderate',
+      fiscalAnchorBreached: inputs.highInflationScenario,
+      debtIndexationInflationLatch: inputs.householdInflationScenarioActive,
+      fiscalPassThroughCascadeBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'runaway' : inputs.creditShockActive ? 'building' : 'muted',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const householdDeanchoring = assessHouseholdWageInflationDeanchoring({
+      wageGrowthBand: inputs.highInflationScenario ? 'surge' : inputs.householdInflationScenarioActive ? 'elevated' : 'moderate',
+      costOfLivingStress: inputs.publicStability < 40 ? 'extreme' : inputs.publicStability < 50 ? 'high' : 'moderate',
+      householdExpectationsDeanchoring: inputs.householdInflationScenarioActive,
+      wagePriceSpiralLatch: inputs.creditShockActive,
+      householdDeanchoringBand:
+        inputs.fiscalPressure === 'critical' ? 'unmoored' : inputs.highInflationScenario ? 'drifting' : 'anchored',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -792,6 +822,8 @@ export function projectInflationForecastPath(
       housingWellbeingInflationEssentialStressBand: housingStress.stressBand,
       commandCenterInflationFusionEscalationBand: commandFusion.escalationBand,
       uiPlayerInflationSalienceNudgeBand: uiSalienceNudge.nudgeBand,
+      fiscalIndexationInflationAnchorBreachBand: fiscalBreach.breachBand,
+      householdWageInflationDeanchoringBand: householdDeanchoring.deanchoringBand,
     });
   }
 

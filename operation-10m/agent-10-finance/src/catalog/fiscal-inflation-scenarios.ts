@@ -1016,6 +1016,46 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'command', 'ui', 'round29'],
   },
+  {
+    id: 'fiscal_indexation_anchor_breach_stack',
+    label: 'Fiscal indexation anchor breach stack',
+    description: 'Large deficit with runaway fiscal pass-through cascade latch.',
+    patch: {
+      highInflationScenario: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.34,
+    },
+    tags: ['inflation', 'fiscal', 'round30'],
+  },
+  {
+    id: 'household_wage_deanchoring_stress',
+    label: 'Household wage de-anchoring stress',
+    description: 'Surge wages with unmoored household expectations under COL stress.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.31,
+      publicStability: 36,
+    },
+    tags: ['inflation', 'household', 'round30'],
+  },
+  {
+    id: 'fiscal_household_fusion_stress',
+    label: 'Fiscal & household fusion stress',
+    description: 'Fiscal indexation cascade colliding with wage-price spiral de-anchoring.',
+    patch: {
+      inflationSettingMultiplier: 1.41,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 30,
+    },
+    tags: ['inflation', 'fiscal', 'household', 'round30'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

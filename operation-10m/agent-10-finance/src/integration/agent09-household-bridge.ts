@@ -11,6 +11,10 @@ export interface Agent09HouseholdSnapshot {
   participationSlackInflationBand?: 'tight' | 'balanced' | 'slack' | 'severe_slack';
   /** Round 20: household inflation expectations de-anchoring flag. */
   householdExpectationsDeanchoring?: boolean;
+  /** Round 30: wage-price spiral inflation latch. */
+  wagePriceSpiralLatch?: boolean;
+  /** Round 30: household de-anchoring band. */
+  householdDeanchoringBand?: 'anchored' | 'drifting' | 'unmoored';
 }
 
 export function mergeAgent09IntoMacroFinancialInputs(
@@ -47,6 +51,14 @@ export function mergeAgent09IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
   }
   if (snapshot.participationSlackInflationBand === 'severe_slack' && snapshot.wageGrowthBand !== 'subdued') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wagePriceSpiralLatch && snapshot.householdDeanchoringBand === 'unmoored') {
+    highInflationScenario = true;
+    householdInflationScenarioActive = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.householdDeanchoringBand === 'drifting' && snapshot.householdExpectationsDeanchoring) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 

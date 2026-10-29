@@ -5106,6 +5106,176 @@ export function uiPlayerInflationSalienceNudgeScoreAdjustment(band: UiPlayerInfl
 }
 
 
+// --- source: inflation/fiscal-indexation-inflation-anchor-breach.ts ---
+
+export type FiscalIndexationInflationAnchorBreachBand = 'anchored' | 'strained' | 'breached' | 'cascade';
+
+export interface FiscalIndexationInflationAnchorBreachAssessment {
+  breachBand: FiscalIndexationInflationAnchorBreachBand;
+  fiscalIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Fiscal indexation and anchor breach inflation pressure (Agent 07). */
+export function assessFiscalIndexationInflationAnchorBreach(input: {
+  consolidatedDeficitBand: 'surplus' | 'balanced' | 'moderate_deficit' | 'large_deficit';
+  debtServicePressure: 'low' | 'moderate' | 'elevated' | 'critical';
+  fiscalAnchorBreached: boolean;
+  debtIndexationInflationLatch: boolean;
+  fiscalPassThroughCascadeBand: 'muted' | 'building' | 'runaway';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): FiscalIndexationInflationAnchorBreachAssessment {
+  let pressure = 0;
+  if (input.consolidatedDeficitBand === 'large_deficit') {
+    pressure += 0.18;
+  } else if (input.consolidatedDeficitBand === 'moderate_deficit') {
+    pressure += 0.08;
+  }
+  if (input.debtServicePressure === 'critical') {
+    pressure += 0.22;
+  } else if (input.debtServicePressure === 'elevated') {
+    pressure += 0.11;
+  }
+  if (input.fiscalAnchorBreached) {
+    pressure += 0.16;
+  }
+  if (input.debtIndexationInflationLatch) {
+    pressure += 0.13;
+  }
+  if (input.fiscalPassThroughCascadeBand === 'runaway') {
+    pressure += 0.21;
+  } else if (input.fiscalPassThroughCascadeBand === 'building') {
+    pressure += 0.1;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.05;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0035, 0, 1.05);
+  const fiscalIndex = finRound(100 + pressure * 15, 1);
+
+  let breachBand: FiscalIndexationInflationAnchorBreachBand = 'anchored';
+  if (pressure >= 0.54) breachBand = 'cascade';
+  else if (pressure >= 0.34) breachBand = 'breached';
+  else if (pressure >= 0.15) breachBand = 'strained';
+
+  const inflationScoreNudge =
+    breachBand === 'cascade'
+      ? 0.09
+      : breachBand === 'breached'
+        ? 0.056
+        : breachBand === 'strained'
+          ? 0.026
+          : 0;
+
+  const narrative =
+    breachBand === 'cascade' || breachBand === 'breached'
+      ? 'Fiscal indexation anchor breach feeding indexed-charge CPI metadata.'
+      : breachBand === 'strained'
+        ? 'Debt indexation latch building fiscal pass-through pressure.'
+        : 'Fiscal indexation anchor held versus headline CPI.';
+
+  return { breachBand, fiscalIndex, inflationScoreNudge, narrative };
+}
+
+export function fiscalIndexationInflationAnchorBreachScoreAdjustment(
+  band: FiscalIndexationInflationAnchorBreachBand,
+): number {
+  if (band === 'cascade') return 4;
+  if (band === 'breached') return 3;
+  if (band === 'strained') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/household-wage-inflation-deanchoring.ts ---
+
+export type HouseholdWageInflationDeanchoringBand = 'anchored' | 'drifting' | 'deanchored' | 'spiral';
+
+export interface HouseholdWageInflationDeanchoringAssessment {
+  deanchoringBand: HouseholdWageInflationDeanchoringBand;
+  householdIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Household wage growth and expectations de-anchoring (Agent 09). */
+export function assessHouseholdWageInflationDeanchoring(input: {
+  wageGrowthBand: 'subdued' | 'moderate' | 'elevated' | 'surge';
+  costOfLivingStress: 'low' | 'moderate' | 'high' | 'extreme';
+  householdExpectationsDeanchoring: boolean;
+  wagePriceSpiralLatch: boolean;
+  householdDeanchoringBand: 'anchored' | 'drifting' | 'unmoored';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): HouseholdWageInflationDeanchoringAssessment {
+  let pressure = 0;
+  if (input.wageGrowthBand === 'surge') {
+    pressure += 0.24;
+  } else if (input.wageGrowthBand === 'elevated') {
+    pressure += 0.13;
+  }
+  if (input.costOfLivingStress === 'extreme') {
+    pressure += 0.2;
+  } else if (input.costOfLivingStress === 'high') {
+    pressure += 0.1;
+  }
+  if (input.householdExpectationsDeanchoring) {
+    pressure += 0.16;
+  }
+  if (input.wagePriceSpiralLatch) {
+    pressure += 0.14;
+  }
+  if (input.householdDeanchoringBand === 'unmoored') {
+    pressure += 0.22;
+  } else if (input.householdDeanchoringBand === 'drifting') {
+    pressure += 0.11;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.05;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0036, 0, 1.05);
+  const householdIndex = finRound(100 + pressure * 16, 1);
+
+  let deanchoringBand: HouseholdWageInflationDeanchoringBand = 'anchored';
+  if (pressure >= 0.56) deanchoringBand = 'spiral';
+  else if (pressure >= 0.36) deanchoringBand = 'deanchored';
+  else if (pressure >= 0.16) deanchoringBand = 'drifting';
+
+  const inflationScoreNudge =
+    deanchoringBand === 'spiral'
+      ? 0.091
+      : deanchoringBand === 'deanchored'
+        ? 0.058
+        : deanchoringBand === 'drifting'
+          ? 0.027
+          : 0;
+
+  const narrative =
+    deanchoringBand === 'spiral' || deanchoringBand === 'deanchored'
+      ? 'Household wage expectations de-anchoring lifting CPI metadata.'
+      : deanchoringBand === 'drifting'
+        ? 'Wage-price spiral latch building under cost-of-living stress.'
+        : 'Household wage inflation expectations anchored versus headline.';
+
+  return { deanchoringBand, householdIndex, inflationScoreNudge, narrative };
+}
+
+export function householdWageInflationDeanchoringScoreAdjustment(
+  band: HouseholdWageInflationDeanchoringBand,
+): number {
+  if (band === 'spiral') return 4;
+  if (band === 'deanchored') return 3;
+  if (band === 'drifting') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -6360,6 +6530,46 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'command', 'ui', 'round29'],
   },
+  {
+    id: 'fiscal_indexation_anchor_breach_stack',
+    label: 'Fiscal indexation anchor breach stack',
+    description: 'Large deficit with runaway fiscal pass-through cascade latch.',
+    patch: {
+      highInflationScenario: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.34,
+    },
+    tags: ['inflation', 'fiscal', 'round30'],
+  },
+  {
+    id: 'household_wage_deanchoring_stress',
+    label: 'Household wage de-anchoring stress',
+    description: 'Surge wages with unmoored household expectations under COL stress.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.31,
+      publicStability: 36,
+    },
+    tags: ['inflation', 'household', 'round30'],
+  },
+  {
+    id: 'fiscal_household_fusion_stress',
+    label: 'Fiscal & household fusion stress',
+    description: 'Fiscal indexation cascade colliding with wage-price spiral de-anchoring.',
+    patch: {
+      inflationSettingMultiplier: 1.41,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 30,
+    },
+    tags: ['inflation', 'fiscal', 'household', 'round30'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
@@ -7191,6 +7401,10 @@ export interface Agent07FiscalSnapshot {
   fiscalAnchorBreached?: boolean;
   /** Round 20: government indexed charges pass-through active. */
   indexedChargesInflationPassThrough?: boolean;
+  /** Round 30: debt indexation inflation latch. */
+  debtIndexationInflationLatch?: boolean;
+  /** Round 30: fiscal pass-through cascade band. */
+  fiscalPassThroughCascadeBand?: 'muted' | 'building' | 'runaway';
 }
 
 export function mergeAgent07IntoMacroFinancialInputs(
@@ -7237,6 +7451,13 @@ export function mergeAgent07IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
+  if (snapshot.debtIndexationInflationLatch && snapshot.fiscalPassThroughCascadeBand === 'runaway') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.fiscalPassThroughCascadeBand === 'building' && snapshot.debtServicePressure === 'critical') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
@@ -7265,6 +7486,10 @@ export interface Agent09HouseholdSnapshot {
   participationSlackInflationBand?: 'tight' | 'balanced' | 'slack' | 'severe_slack';
   /** Round 20: household inflation expectations de-anchoring flag. */
   householdExpectationsDeanchoring?: boolean;
+  /** Round 30: wage-price spiral inflation latch. */
+  wagePriceSpiralLatch?: boolean;
+  /** Round 30: household de-anchoring band. */
+  householdDeanchoringBand?: 'anchored' | 'drifting' | 'unmoored';
 }
 
 export function mergeAgent09IntoMacroFinancialInputs(
@@ -7301,6 +7526,14 @@ export function mergeAgent09IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
   }
   if (snapshot.participationSlackInflationBand === 'severe_slack' && snapshot.wageGrowthBand !== 'subdued') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wagePriceSpiralLatch && snapshot.householdDeanchoringBand === 'unmoored') {
+    highInflationScenario = true;
+    householdInflationScenarioActive = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.householdDeanchoringBand === 'drifting' && snapshot.householdExpectationsDeanchoring) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
@@ -8604,6 +8837,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessUiPlayerInflationSalienceNudge,
   type UiPlayerInflationSalienceNudgeBand,
 } from '../inflation/ui-player-inflation-salience-nudge.js';
+  assessFiscalIndexationInflationAnchorBreach,
+  type FiscalIndexationInflationAnchorBreachBand,
+} from '../inflation/fiscal-indexation-inflation-anchor-breach.js';
+  assessHouseholdWageInflationDeanchoring,
+  type HouseholdWageInflationDeanchoringBand,
+} from '../inflation/household-wage-inflation-deanchoring.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -8662,6 +8901,8 @@ export interface InflationForecastPoint {
   housingWellbeingInflationEssentialStressBand: HousingWellbeingInflationEssentialStressBand;
   commandCenterInflationFusionEscalationBand: CommandCenterInflationFusionEscalationBand;
   uiPlayerInflationSalienceNudgeBand: UiPlayerInflationSalienceNudgeBand;
+  fiscalIndexationInflationAnchorBreachBand: FiscalIndexationInflationAnchorBreachBand;
+  householdWageInflationDeanchoringBand: HouseholdWageInflationDeanchoringBand;
 }
 
 export interface InflationForecastPath {
@@ -9138,6 +9379,26 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const fiscalBreach = assessFiscalIndexationInflationAnchorBreach({
+      consolidatedDeficitBand: inputs.fiscalPressure === 'critical' ? 'large_deficit' : 'moderate_deficit',
+      debtServicePressure: inputs.fiscalPressure === 'critical' ? 'critical' : inputs.sovereignDebtPressure === 'elevated' ? 'elevated' : 'moderate',
+      fiscalAnchorBreached: inputs.highInflationScenario,
+      debtIndexationInflationLatch: inputs.householdInflationScenarioActive,
+      fiscalPassThroughCascadeBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'runaway' : inputs.creditShockActive ? 'building' : 'muted',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const householdDeanchoring = assessHouseholdWageInflationDeanchoring({
+      wageGrowthBand: inputs.highInflationScenario ? 'surge' : inputs.householdInflationScenarioActive ? 'elevated' : 'moderate',
+      costOfLivingStress: inputs.publicStability < 40 ? 'extreme' : inputs.publicStability < 50 ? 'high' : 'moderate',
+      householdExpectationsDeanchoring: inputs.householdInflationScenarioActive,
+      wagePriceSpiralLatch: inputs.creditShockActive,
+      householdDeanchoringBand:
+        inputs.fiscalPressure === 'critical' ? 'unmoored' : inputs.highInflationScenario ? 'drifting' : 'anchored',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -9196,6 +9457,8 @@ export function projectInflationForecastPath(
       housingWellbeingInflationEssentialStressBand: housingStress.stressBand,
       commandCenterInflationFusionEscalationBand: commandFusion.escalationBand,
       uiPlayerInflationSalienceNudgeBand: uiSalienceNudge.nudgeBand,
+      fiscalIndexationInflationAnchorBreachBand: fiscalBreach.breachBand,
+      householdWageInflationDeanchoringBand: householdDeanchoring.deanchoringBand,
     });
   }
 
@@ -9301,7 +9564,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r29';
+  schemaVersion: '10.14.agent10.r30';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -9355,6 +9618,8 @@ export interface Agent21InflationForecastBundle {
   terminalHousingWellbeingInflationEssentialStress: HousingWellbeingInflationEssentialStressBand;
   terminalCommandCenterInflationFusionEscalation: CommandCenterInflationFusionEscalationBand;
   terminalUiPlayerInflationSalienceNudge: UiPlayerInflationSalienceNudgeBand;
+  terminalFiscalIndexationInflationAnchorBreach: FiscalIndexationInflationAnchorBreachBand;
+  terminalHouseholdWageInflationDeanchoring: HouseholdWageInflationDeanchoringBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -9383,7 +9648,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r29',
+    schemaVersion: '10.14.agent10.r30',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -9437,6 +9702,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalHousingWellbeingInflationEssentialStress: lastPoint?.housingWellbeingInflationEssentialStressBand ?? 'stable',
     terminalCommandCenterInflationFusionEscalation: lastPoint?.commandCenterInflationFusionEscalationBand ?? 'calm',
     terminalUiPlayerInflationSalienceNudge: lastPoint?.uiPlayerInflationSalienceNudgeBand ?? 'muted',
+    terminalFiscalIndexationInflationAnchorBreach: lastPoint?.fiscalIndexationInflationAnchorBreachBand ?? 'anchored',
+    terminalHouseholdWageInflationDeanchoring: lastPoint?.householdWageInflationDeanchoringBand ?? 'anchored',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -9708,6 +9975,12 @@ export function effectiveTierLoanRate(
   assessUiPlayerInflationSalienceNudge,
   uiPlayerInflationSalienceNudgeScoreAdjustment,
 } from './inflation/ui-player-inflation-salience-nudge.js';
+  assessFiscalIndexationInflationAnchorBreach,
+  fiscalIndexationInflationAnchorBreachScoreAdjustment,
+} from './inflation/fiscal-indexation-inflation-anchor-breach.js';
+  assessHouseholdWageInflationDeanchoring,
+  householdWageInflationDeanchoringScoreAdjustment,
+} from './inflation/household-wage-inflation-deanchoring.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -10112,7 +10385,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r29');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r30');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -10259,7 +10532,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -10351,7 +10624,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -10450,7 +10723,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -10548,7 +10821,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -10646,7 +10919,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -10736,7 +11009,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -10826,7 +11099,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -10916,7 +11189,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -11006,7 +11279,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -11098,7 +11371,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r16_10',
       'agent21 r16 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalFinancialServicesFee !== undefined &&
         bundle.terminalAgriculturalFarmgatePressure !== undefined,
     );
@@ -11194,7 +11467,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r17_10',
       'agent21 r17 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalPublicUtilitiesGridTariff !== undefined &&
         bundle.terminalUiInflationSalience !== undefined,
     );
@@ -11298,7 +11571,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r18_10',
       'agent21 r18 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalHousingMortgageEssential !== undefined &&
         bundle.terminalMacroTransmissionMerge !== undefined,
     );
@@ -11403,7 +11676,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r19_10',
       'agent21 r19 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalDynamicEventsInflationSpillover !== undefined &&
         bundle.terminalDashboardMapInflationOverlay !== undefined,
     );
@@ -11508,7 +11781,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r20_10',
       'agent21 r20 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalPublicFinanceDebtService !== undefined &&
         bundle.terminalPopulationLaborWage !== undefined,
     );
@@ -11618,7 +11891,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r21_10',
       'agent21 r21 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalWholesaleEnergyTransition !== undefined &&
         bundle.terminalUrbanRentDispersion !== undefined,
     );
@@ -11720,7 +11993,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r22_10',
       'agent21 r22 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalCorporatePricingPassThrough !== undefined &&
         bundle.terminalTradeExchangeImport !== undefined,
     );
@@ -11826,7 +12099,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r23_10',
       'agent21 r23 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalGuardianInflationIntervention !== undefined &&
         bundle.terminalTeamIntelligenceConsensus !== undefined,
     );
@@ -11932,7 +12205,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r24_10',
       'agent21 r24 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalStrategicGeopoliticalPremium !== undefined &&
         bundle.terminalAiMemoryInflationRecall !== undefined,
     );
@@ -12038,7 +12311,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r25_10',
       'agent21 r25 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalCalendarSeasonInflationCarryover !== undefined &&
         bundle.terminalAutomationAutopilotInflationDrift !== undefined,
     );
@@ -12154,7 +12427,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r26_10',
       'agent21 r26 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalResearchProductivityInflationOffset !== undefined &&
         bundle.terminalScenarioSandboxInflationBias !== undefined,
     );
@@ -12267,7 +12540,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r27_10',
       'agent21 r27 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalEventsNarrativeInflationPersistence !== undefined &&
         bundle.terminalMacroDemandOverheatInflationSlippage !== undefined,
     );
@@ -12376,7 +12649,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r28_10',
       'agent21 r28 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalFreightLogisticsInflationCongestion !== undefined &&
         bundle.terminalHousingWellbeingInflationEssentialStress !== undefined,
     );
@@ -12480,7 +12753,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r29_10',
       'agent21 r29 fields',
-      bundle.schemaVersion === '10.14.agent10.r29' &&
+      bundle.schemaVersion === '10.14.agent10.r30' &&
         bundle.terminalCommandCenterInflationFusionEscalation !== undefined &&
         bundle.terminalUiPlayerInflationSalienceNudge !== undefined,
     );
@@ -12507,6 +12780,114 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'command_ui_fusion_stress');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.39;
+    })(),
+  );
+
+  // --- Round 30 scale wave ---
+  {
+    const breach = assessFiscalIndexationInflationAnchorBreach({
+      consolidatedDeficitBand: 'large_deficit',
+      debtServicePressure: 'critical',
+      fiscalAnchorBreached: true,
+      debtIndexationInflationLatch: true,
+      fiscalPassThroughCascadeBand: 'runaway',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r30_01',
+      'fiscal breached or cascade',
+      breach.breachBand === 'breached' || breach.breachBand === 'cascade',
+    );
+    check('a10_r30_02', 'fiscal score adj', fiscalIndexationInflationAnchorBreachScoreAdjustment(breach.breachBand) >= 3);
+  }
+  {
+    const deanchoring = assessHouseholdWageInflationDeanchoring({
+      wageGrowthBand: 'surge',
+      costOfLivingStress: 'extreme',
+      householdExpectationsDeanchoring: true,
+      wagePriceSpiralLatch: true,
+      householdDeanchoringBand: 'unmoored',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r30_03',
+      'household deanchored or spiral',
+      deanchoring.deanchoringBand === 'deanchored' || deanchoring.deanchoringBand === 'spiral',
+    );
+    check('a10_r30_04', 'household score adj', householdWageInflationDeanchoringScoreAdjustment(deanchoring.deanchoringBand) >= 3);
+  }
+  {
+    const merged07 = mergeAgent07IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      consolidatedDeficitBand: 'moderate_deficit',
+      revenueMomentum: 'weak',
+      debtServicePressure: 'critical',
+      debtIndexationInflationLatch: true,
+      fiscalPassThroughCascadeBand: 'runaway',
+    });
+    check('a10_r30_05', 'agent07 runaway merge', merged07.highInflationScenario === true);
+    check('a10_r30_06', 'agent07 bridge note', agent07FiscalBridgeIntegrationNote().includes('Agent 07'));
+  }
+  {
+    const merged09 = mergeAgent09IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      laborParticipationBand: 'steady',
+      wageGrowthBand: 'moderate',
+      costOfLivingStress: 'moderate',
+      wagePriceSpiralLatch: true,
+      householdDeanchoringBand: 'unmoored',
+    });
+    check('a10_r30_07', 'agent09 unmoored merge', merged09.highInflationScenario === true);
+    check('a10_r30_08', 'agent09 bridge note', agent09HouseholdBridgeIntegrationNote().includes('Agent 09'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r30_09',
+      'forecast fiscal breach and household deanchoring fields',
+      path.points.every(
+        (p) => !!p.fiscalIndexationInflationAnchorBreachBand && !!p.householdWageInflationDeanchoringBand,
+      ),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r30_10',
+      'agent21 r30 fields',
+      bundle.schemaVersion === '10.14.agent10.r30' &&
+        bundle.terminalFiscalIndexationInflationAnchorBreach !== undefined &&
+        bundle.terminalHouseholdWageInflationDeanchoring !== undefined,
+    );
+  }
+  check(
+    'a10_r30_11',
+    'round30 preset fiscal indexation stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'fiscal_indexation_anchor_breach_stack');
+      return inp?.fiscalPressure === 'critical' && inp.systemicLiquidityBand === 'critical';
+    })(),
+  );
+  check(
+    'a10_r30_12',
+    'round30 preset household deanchoring stress',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'household_wage_deanchoring_stress');
+      return inp?.householdInflationScenarioActive === true && inp.creditShockActive === true;
+    })(),
+  );
+  check(
+    'a10_r30_13',
+    'round30 preset fiscal household fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'fiscal_household_fusion_stress');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.4;
     })(),
   );
 
@@ -14348,6 +14729,81 @@ export function CommandUiInflationPanel(props: CommandUiInflationPanelProps) {
       </p>
       <p data-testid="command-ui-note">{fusion.narrative}</p>
       <p>{nudge.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/FiscalHouseholdInflationPanel.tsx ---
+  assessFiscalIndexationInflationAnchorBreach,
+  fiscalIndexationInflationAnchorBreachScoreAdjustment,
+} from '../inflation/fiscal-indexation-inflation-anchor-breach.js';
+  assessHouseholdWageInflationDeanchoring,
+  householdWageInflationDeanchoringScoreAdjustment,
+} from '../inflation/household-wage-inflation-deanchoring.js';
+
+export interface FiscalHouseholdInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent07?: Agent07FiscalSnapshot | null;
+  agent09?: Agent09HouseholdSnapshot | null;
+}
+
+export function FiscalHouseholdInflationPanel(props: FiscalHouseholdInflationPanelProps) {
+  const fiscal = props.agent07 ?? {
+    turn: props.inputs.turn,
+    consolidatedDeficitBand: props.inputs.fiscalPressure === 'critical' ? ('large_deficit' as const) : ('moderate_deficit' as const),
+    revenueMomentum: 'weak' as const,
+    debtServicePressure: props.inputs.fiscalPressure === 'critical' ? ('critical' as const) : ('elevated' as const),
+    fiscalAnchorBreached: props.inputs.highInflationScenario,
+    indexedChargesInflationPassThrough: props.inputs.creditShockActive,
+    debtIndexationInflationLatch: props.inputs.householdInflationScenarioActive,
+    fiscalPassThroughCascadeBand: props.inputs.systemicLiquidityBand === 'critical' ? ('runaway' as const) : ('building' as const),
+  };
+
+  const household = props.agent09 ?? {
+    turn: props.inputs.turn,
+    laborParticipationBand: 'steady' as const,
+    wageGrowthBand: props.inputs.highInflationScenario ? ('surge' as const) : ('elevated' as const),
+    costOfLivingStress: props.inputs.publicStability < 42 ? ('extreme' as const) : ('high' as const),
+    householdExpectationsDeanchoring: props.inputs.householdInflationScenarioActive,
+    wagePriceSpiralLatch: props.inputs.creditShockActive,
+    householdDeanchoringBand: props.inputs.fiscalPressure === 'critical' ? ('unmoored' as const) : ('drifting' as const),
+  };
+
+  const breach = assessFiscalIndexationInflationAnchorBreach({
+    consolidatedDeficitBand: fiscal.consolidatedDeficitBand,
+    debtServicePressure: fiscal.debtServicePressure,
+    fiscalAnchorBreached: fiscal.fiscalAnchorBreached === true,
+    debtIndexationInflationLatch: fiscal.debtIndexationInflationLatch === true,
+    fiscalPassThroughCascadeBand: fiscal.fiscalPassThroughCascadeBand ?? 'muted',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const deanchoring = assessHouseholdWageInflationDeanchoring({
+    wageGrowthBand: household.wageGrowthBand,
+    costOfLivingStress: household.costOfLivingStress,
+    householdExpectationsDeanchoring: household.householdExpectationsDeanchoring === true,
+    wagePriceSpiralLatch: household.wagePriceSpiralLatch === true,
+    householdDeanchoringBand: household.householdDeanchoringBand ?? 'anchored',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-fiscal-household-inflation" data-testid="fiscal-household-inflation-panel">
+      <h4>Fiscal indexation & household de-anchoring (round 30)</h4>
+      <p>
+        Fiscal {breach.breachBand} · index {breach.fiscalIndex.toFixed(0)} · score adj{' '}
+        {fiscalIndexationInflationAnchorBreachScoreAdjustment(breach.breachBand)}
+      </p>
+      <p>
+        Household {deanchoring.deanchoringBand} · index {deanchoring.householdIndex.toFixed(0)} · score adj{' '}
+        {householdWageInflationDeanchoringScoreAdjustment(deanchoring.deanchoringBand)}
+      </p>
+      <p data-testid="fiscal-household-note">{breach.narrative}</p>
+      <p>{deanchoring.narrative}</p>
     </div>
   );
 }

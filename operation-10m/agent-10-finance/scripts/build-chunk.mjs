@@ -85,6 +85,8 @@ const FILES = [
   'inflation/housing-wellbeing-inflation-essential-stress.ts',
   'inflation/command-center-inflation-fusion-escalation.ts',
   'inflation/ui-player-inflation-salience-nudge.ts',
+  'inflation/fiscal-indexation-inflation-anchor-breach.ts',
+  'inflation/household-wage-inflation-deanchoring.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -148,6 +150,7 @@ const FILES = [
   'react/EventsMacroInflationPanel.tsx',
   'react/TransportHousingInflationPanel.tsx',
   'react/CommandUiInflationPanel.tsx',
+  'react/FiscalHouseholdInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {
