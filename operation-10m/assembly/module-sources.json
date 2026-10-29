@@ -1,0 +1,26 @@
+{
+  "description": "Open Operation 10M module PRs — dry-run bundle sources (not yet in assembly manifest until Agent 25 promotes a tranche).",
+  "canonicalBase": "origin/australia-game-upgrade",
+  "sources": [
+    { "moduleId": "agent-01-strategic-gameplay", "branch": "origin/op10m/agent-01-strategic-gameplay", "root": "operation-10m/agent-01-strategic-gameplay", "pr": 311 },
+    { "moduleId": "agent-02-turns-time", "branch": "origin/op10m/agent-02-turns-time", "root": "operation-10m/agent-02-turns-time", "pr": 309 },
+    { "moduleId": "agent-03-research-tech", "branch": "origin/op10m/agent-03-research-tech", "root": "operation-10m/agent-03-research-tech", "pr": 314 },
+    { "moduleId": "agent-04-modes-scenarios", "branch": "origin/op10m/agent-04-modes-scenarios", "root": "operation-10m/agent-04-modes-scenarios", "pr": 308 },
+    { "moduleId": "agent-05-events", "branch": "origin/op10m/agent-05-events", "root": "operation-10m/agent-05-events", "pr": 324 },
+    { "moduleId": "agent-06-macroeconomy", "branch": "origin/op10m/agent-06-macroeconomy", "root": "operation-10m/agent-06-macroeconomy", "pr": 323 },
+    { "moduleId": "agent-07-public-finance", "branch": "origin/op10m/agent-07-public-finance", "root": "operation-10m/agent-07-public-finance", "pr": 313 },
+    { "moduleId": "agent-08-companies", "branch": "origin/op10m/agent-08-companies", "root": "operation-10m/agent-08-companies", "pr": 317 },
+    { "moduleId": "agent-09-population", "branch": "origin/op10m/agent-09-population", "root": "operation-10m/agent-09-population", "pr": 327 },
+    { "moduleId": "agent-10-finance", "branch": "origin/op10m/agent-10-finance", "root": "operation-10m/agent-10-finance", "pr": 325 },
+    { "moduleId": "agent-11-cities", "branch": "origin/op10m/agent-11-cities", "root": "operation-10m/agent-11-cities", "pr": 315 },
+    { "moduleId": "agent-12-transport", "branch": "origin/op10m/agent-12-transport", "root": "operation-10m/agent-12-transport", "pr": 322 },
+    { "moduleId": "agent-13-energy", "branch": "origin/op10m/agent-13-energy", "root": "operation-10m/agent-13-energy", "pr": 328 },
+    { "moduleId": "agent-15-trade", "branch": "origin/op10m/agent-15-trade", "root": "operation-10m/agent-15-trade", "pr": 320 },
+    { "moduleId": "agent-16-guardian", "branch": "origin/op10m/agent-16-guardian", "root": "operation-10m/agent-16-guardian", "pr": 312 },
+    { "moduleId": "agent-17-command-center", "branch": "origin/op10m/agent-17-command-center", "root": "operation-10m/agent-17-command-center", "pr": 316 },
+    { "moduleId": "agent-18-team-ai", "branch": "origin/op10m/agent-18-team-ai", "root": "operation-10m/agent-18-team-ai", "pr": 321 },
+    { "moduleId": "agent-19-ai-memory", "branch": "origin/op10m/agent-19-ai-memory", "root": "operation-10m/agent-19-ai-memory", "pr": 329 },
+    { "moduleId": "agent-21-forecasting", "branch": "origin/op10m/agent-21-forecasting", "root": "operation-10m/agent-21-forecasting", "pr": 318 },
+    { "moduleId": "agent-24-replay", "branch": "origin/op10m/agent-24-replay", "root": "operation-10m/agent-24-replay", "pr": 326 }
+  ]
+}

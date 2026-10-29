@@ -1,0 +1,70 @@
+{
+  "analyzedAt": "2026-10-29T06:37:50.166Z",
+  "gateAuditedFunctional": 10000000,
+  "baselineCommit": "bc1adf3",
+  "baselineAuditedFunctional": 389566,
+  "fullChunksProjectedAudited": 802597,
+  "netAuditedFunctionalToGate": 9197403,
+  "workerWaveDeltaAudited": 413031,
+  "modulesInFullDryRun": 25,
+  "assemblyReadyRemote": 24,
+  "trancheEstimate": {
+    "method": "equal worker-wave increments from full-chunks dry-run",
+    "auditedFunctionalPerWave": 413031,
+    "estimatedWavesToGate": 23,
+    "note": "Assumes each future wave adds ~same audited functional as current 24/25 module splice; real tranches vary."
+  },
+  "duplicationAuditRequirements": [
+    "audit-duplication.mjs on canonical after every promote-tranche",
+    "reject duplicate contentSha256 in manifest (assembly gate)",
+    "track export symbol collisions; baseline ~6 groups at bc1adf3",
+    "block clusters heuristic; large UI boilerplate repeats expected until refactored"
+  ],
+  "buildRuntimeRisks": [
+    {
+      "risk": "Single-file bundle size",
+      "signal": "Projected ~61,992,519 bytes / 846,599 lines after worker wave",
+      "at10M": "Linear ~27× current projection bytes if structure unchanged (feasibility unknown for Vite/tsc)"
+    },
+    {
+      "risk": "Typecheck / IDE parse",
+      "signal": "Export declarations ~12970 after wave",
+      "at10M": "Editor and tsc memory limits likely binding before raw line count"
+    },
+    {
+      "risk": "Assembly splice",
+      "signal": "25 modules × multi-slot anchors",
+      "at10M": "Agent 25 controlled assembly only; slot alias map must grow with modules"
+    },
+    {
+      "risk": "Save migration",
+      "signal": "Multiple modules touchesSaveFormat",
+      "at10M": "Each promote requires audit-save-migrations + fixtures"
+    }
+  ],
+  "benchmarks": {
+    "canonicalAtBc1adf3": {
+      "path": "(V9.4) australia-game-with-ai.tsx",
+      "bytes": 37827738,
+      "lines": 419353,
+      "exportLines": 10082,
+      "readMs": 40,
+      "hashMs": 20,
+      "sha256": "15321b841ead9bdf"
+    },
+    "fullChunksProjection": {
+      "path": "build/tranche-full-chunks-projection.tsx",
+      "bytes": 61992519,
+      "lines": 846599,
+      "exportLines": 12970,
+      "readMs": 39,
+      "hashMs": 33,
+      "sha256": "723d2d9ced59fdbe"
+    },
+    "extrapolatedScanMsAt10M": 954
+  },
+  "references": {
+    "fullChunksProjection": "operation-10m/assembly/audits/tranche-projection-full-chunks.json",
+    "remoteSync": "operation-10m/assembly/audits/manifest-remote-sync.json"
+  }
+}
