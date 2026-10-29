@@ -121,6 +121,7 @@ export {
   hyperversalHarmonizationRankingBonus,
   transcendentOmniumRankingBonus,
   supremeConvergenceRankingBonus,
+  apexTranscendenceRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -446,6 +447,16 @@ export {
   applySupremeConvergenceMandateBonus,
 } from './engine/coalition-supreme-convergence.ts';
 
+export { coalitionApexTranscendenceStreakIssues } from './engine/coalition-apex-transcendence-gates.ts';
+
+export {
+  APEX_COALITION_TRANSCENDENCE_THRESHOLD,
+  advanceCoalitionApexTranscendenceStreak,
+  resetCoalitionApexTranscendenceStreak,
+  isApexCoalitionTranscendence,
+  applyApexTranscendenceMandateBonus,
+} from './engine/coalition-apex-transcendence.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '4.3.0';
+export const AGENT_01_MODULE_VERSION = '4.4.0';

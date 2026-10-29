@@ -54,6 +54,7 @@ import { resetCoalitionOmniversalSynthesisStreak } from './coalition-omniversal-
 import { resetCoalitionHyperversalHarmonizationStreak } from './coalition-hyperversal-harmonization.ts';
 import { resetCoalitionTranscendentOmniumStreak } from './coalition-transcendent-omnium.ts';
 import { resetCoalitionSupremeConvergenceStreak } from './coalition-supreme-convergence.ts';
+import { resetCoalitionApexTranscendenceStreak } from './coalition-apex-transcendence.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -103,6 +104,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionHyperversalHarmonizationStreakDays: 0,
     coalitionTranscendentOmniumStreakDays: 0,
     coalitionSupremeConvergenceStreakDays: 0,
+    coalitionApexTranscendenceStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -407,6 +409,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_supreme_continuity_covenant') {
     nextState = resetCoalitionSupremeConvergenceStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_apex_transcendence_charter') {
+    nextState = resetCoalitionApexTranscendenceStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_apex_continuity_pact') {
+    nextState = resetCoalitionApexTranscendenceStreak(nextState);
   }
 
   contracts.ui.pushToast({

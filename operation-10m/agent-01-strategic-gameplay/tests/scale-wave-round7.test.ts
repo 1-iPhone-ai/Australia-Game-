@@ -117,7 +117,7 @@ describe('scale wave round 7 — coalition recovery and prolonged crisis', () =>
       coalitionRecoveryStreakDays: 4,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(31);
+    expect(save.version).toBe(32);
     expect(save.coalitionRecoveryStreakDays).toBe(4);
   });
 });

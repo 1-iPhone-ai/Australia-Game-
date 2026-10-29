@@ -308,3 +308,13 @@ export function supremeConvergenceRankingBonus(
   if (streak >= action.minCoalitionSupremeConvergenceStreakDays) return 26;
   return 2;
 }
+
+export function apexTranscendenceRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionApexTranscendenceStreakDays === undefined) return 0;
+  const streak = state.coalitionApexTranscendenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionApexTranscendenceStreakDays) return 27;
+  return 2;
+}

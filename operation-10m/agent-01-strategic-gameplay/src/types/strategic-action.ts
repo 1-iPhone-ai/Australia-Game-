@@ -125,6 +125,8 @@ export interface StrategicActionDefinition {
   minCoalitionTranscendentOmniumStreakDays?: number;
   /** Action requires supreme convergence streak after transcendent omnium. */
   minCoalitionSupremeConvergenceStreakDays?: number;
+  /** Action requires apex transcendence streak after supreme convergence. */
+  minCoalitionApexTranscendenceStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -193,7 +195,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_omniversal_synthesis_streak'; minDays: number }
   | { kind: 'min_coalition_hyperversal_harmonization_streak'; minDays: number }
   | { kind: 'min_coalition_transcendent_omnium_streak'; minDays: number }
-  | { kind: 'min_coalition_supreme_convergence_streak'; minDays: number };
+  | { kind: 'min_coalition_supreme_convergence_streak'; minDays: number }
+  | { kind: 'min_coalition_apex_transcendence_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -293,6 +296,8 @@ export interface StrategicGameplayState {
   coalitionTranscendentOmniumStreakDays?: number;
   /** Days transcendent omnium held supreme convergence eligibility. */
   coalitionSupremeConvergenceStreakDays?: number;
+  /** Days supreme convergence held apex transcendence eligibility. */
+  coalitionApexTranscendenceStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
