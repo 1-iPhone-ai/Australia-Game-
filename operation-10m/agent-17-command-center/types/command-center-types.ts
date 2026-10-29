@@ -253,6 +253,8 @@ export interface Agent17PlanningDepthSnapshot {
   finalityAccord: Agent17FinalityAccordSnapshot;
   archiveIndex: Agent17ArchiveIndexSnapshot;
   permanenceAccord: Agent17PermanenceAccordSnapshot;
+  lineageIndex: Agent17LineageIndexSnapshot;
+  provenanceAccord: Agent17ProvenanceAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1435,6 +1437,40 @@ export interface Agent17PermanenceAccordSnapshot {
   archiveBand: Agent17ArchiveIndexSnapshot['band'];
   finalityBand: Agent17FinalityAccordSnapshot['band'];
   permanenceEnduring: boolean;
+  headline: string;
+}
+
+export interface Agent17LineageStrand {
+  id: string;
+  label: string;
+  rooted: boolean;
+  weight: number;
+}
+
+export interface Agent17LineageIndexSnapshot {
+  lineageScore: number;
+  band: 'rooted' | 'pending' | 'fractured';
+  strands: Agent17LineageStrand[];
+  permanenceBand: Agent17PermanenceAccordSnapshot['band'];
+  archiveBand: Agent17ArchiveIndexSnapshot['band'];
+  lineageRooted: boolean;
+  headline: string;
+}
+
+export interface Agent17ProvenanceProof {
+  id: string;
+  label: string;
+  verified: boolean;
+  weight: number;
+}
+
+export interface Agent17ProvenanceAccordSnapshot {
+  provenanceScore: number;
+  band: 'authenticated' | 'tentative' | 'repudiated';
+  proofs: Agent17ProvenanceProof[];
+  lineageBand: Agent17LineageIndexSnapshot['band'];
+  permanenceBand: Agent17PermanenceAccordSnapshot['band'];
+  provenanceAuthenticated: boolean;
   headline: string;
 }
 

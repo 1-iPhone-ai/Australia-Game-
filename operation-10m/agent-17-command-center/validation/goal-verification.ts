@@ -297,6 +297,14 @@ import {
   permanenceAccordBlocksArchive,
 } from '../planning/permanence-accord.ts';
 import {
+  buildAgent17LineageIndex,
+  lineageIndexBlocksProvenance,
+} from '../planning/lineage-index.ts';
+import {
+  buildAgent17ProvenanceAccord,
+  provenanceAccordBlocksLineage,
+} from '../planning/provenance-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2265,6 +2273,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const lineageIndex = depthEval.snapshot.planningDepth?.lineageIndex;
+  goalResults.push(
+    result(
+      'G17-130',
+      !!lineageIndex &&
+        lineageIndex.strands.length >= 5 &&
+        lineageIndex.lineageScore >= 0 &&
+        lineageIndex.lineageScore <= 100 &&
+        (lineageIndex.band === 'rooted' ||
+          lineageIndex.band === 'pending' ||
+          lineageIndex.band === 'fractured'),
+      `strands=${lineageIndex?.strands.length} score=${lineageIndex?.lineageScore}`
+    )
+  );
+
+  const provenanceAccord = depthEval.snapshot.planningDepth?.provenanceAccord;
+  goalResults.push(
+    result(
+      'G17-131',
+      !!provenanceAccord &&
+        provenanceAccord.proofs.length >= 5 &&
+        provenanceAccord.provenanceScore >= 0 &&
+        provenanceAccord.provenanceScore <= 100,
+      `proofs=${provenanceAccord?.proofs.length} score=${provenanceAccord?.provenanceScore}`
+    )
+  );
+
+  const fracturedLineage = buildAgent17LineageIndex({
+    permanenceAccord: dissolvedPermanence,
+    archiveIndex: exposedArchive,
+    finalityAccord: revokedFinality,
+  });
+  const repudiatedProvenance = buildAgent17ProvenanceAccord({
+    lineageIndex: fracturedLineage,
+    permanenceAccord: dissolvedPermanence,
+    archiveIndex: exposedArchive,
+  });
+  goalResults.push(
+    result(
+      'G17-132',
+      permanenceAccordBlocksArchive(dissolvedPermanence) ||
+        lineageIndexBlocksProvenance(fracturedLineage) ||
+        provenanceAccordBlocksLineage(repudiatedProvenance),
+      `${fracturedLineage.band}/${repudiatedProvenance.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2424,6 +2479,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-127',
     'G17-128',
     'G17-129',
+    'G17-130',
+    'G17-131',
+    'G17-132',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

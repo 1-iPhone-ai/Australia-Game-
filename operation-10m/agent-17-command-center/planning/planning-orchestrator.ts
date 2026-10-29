@@ -93,6 +93,8 @@ import { buildAgent17ReconciliationIndex } from './reconciliation-index.ts';
 import { buildAgent17FinalityAccord } from './finality-accord.ts';
 import { buildAgent17ArchiveIndex } from './archive-index.ts';
 import { buildAgent17PermanenceAccord } from './permanence-accord.ts';
+import { buildAgent17LineageIndex } from './lineage-index.ts';
+import { buildAgent17ProvenanceAccord } from './provenance-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -547,6 +549,16 @@ export function buildAgent17PlanningDepthSnapshot(
     finalityAccord,
     reconciliationIndex,
   });
+  const lineageIndex = buildAgent17LineageIndex({
+    permanenceAccord,
+    archiveIndex,
+    finalityAccord,
+  });
+  const provenanceAccord = buildAgent17ProvenanceAccord({
+    lineageIndex,
+    permanenceAccord,
+    archiveIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -622,6 +634,8 @@ export function buildAgent17PlanningDepthSnapshot(
     finalityAccord,
     archiveIndex,
     permanenceAccord,
+    lineageIndex,
+    provenanceAccord,
   };
 }
 

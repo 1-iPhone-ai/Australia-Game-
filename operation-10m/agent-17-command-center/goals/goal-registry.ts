@@ -907,6 +907,28 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Exposed archive or revoked finality yields permanenceAccordBlocksArchive.',
     severity: 'major',
   },
+  {
+    id: 'G17-130',
+    title: 'Lineage index on planning depth',
+    category: 'telemetry',
+    acceptance: 'lineageIndex reports lineageScore 0–100 with rooted/pending/fractured band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-131',
+    title: 'Provenance accord proofs complete',
+    category: 'telemetry',
+    acceptance: 'provenanceAccord exposes ≥5 proofs and provenanceScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-132',
+    title: 'Fractured lineage repudiates provenance accord',
+    category: 'integration',
+    acceptance:
+      'Fractured lineage or dissolved permanence yields provenanceAccordBlocksLineage.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

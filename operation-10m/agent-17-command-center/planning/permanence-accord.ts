@@ -98,3 +98,7 @@ export function buildAgent17PermanenceAccord(
 export function permanenceAccordBlocksArchive(snapshot: Agent17PermanenceAccordSnapshot): boolean {
   return snapshot.band === 'dissolved' || !snapshot.permanenceEnduring;
 }
+
+export function permanenceAccordBlocksLineage(snapshot: Agent17PermanenceAccordSnapshot): boolean {
+  return permanenceAccordBlocksArchive(snapshot);
+}
