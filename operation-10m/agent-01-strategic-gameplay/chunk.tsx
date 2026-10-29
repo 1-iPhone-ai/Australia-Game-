@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: ca16635d022215cd
+// content-sha256-prefix: e20c9223d2a61eb1
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -347,6 +347,8 @@ export interface TurnStrategicBriefing {
   coalitionMatriarchApotheosisStreakDays: number;
   matriarchCoalitionDeification: boolean;
   coalitionMatriarchDeificationStreakDays: number;
+  matriarchCoalitionOmnipotence: boolean;
+  coalitionMatriarchOmnipotenceStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;
@@ -504,6 +506,8 @@ export interface StrategicActionDefinition {
   minCoalitionMatriarchTranscendenceStreakDays?: number;
   minCoalitionMatriarchApotheosisStreakDays?: number;
   minCoalitionMatriarchDeificationStreakDays?: number;
+  /** Action requires matriarch omnipotence streak after matriarch deification. */
+  minCoalitionMatriarchOmnipotenceStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -592,7 +596,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_matriarch_infinity_streak'; minDays: number }
   | { kind: 'min_coalition_matriarch_transcendence_streak'; minDays: number }
   | { kind: 'min_coalition_matriarch_apotheosis_streak'; minDays: number }
-  | { kind: 'min_coalition_matriarch_deification_streak'; minDays: number };
+  | { kind: 'min_coalition_matriarch_deification_streak'; minDays: number }
+  | { kind: 'min_coalition_matriarch_omnipotence_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -728,6 +733,7 @@ export interface StrategicGameplayState {
   coalitionMatriarchTranscendenceStreakDays?: number;
   coalitionMatriarchApotheosisStreakDays?: number;
   coalitionMatriarchDeificationStreakDays?: number;
+  coalitionMatriarchOmnipotenceStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
@@ -1701,6 +1707,17 @@ export function matriarchDeificationRankingBonus(
   return 2;
 }
 
+
+export function matriarchOmnipotenceRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionMatriarchOmnipotenceStreakDays === undefined) return 0;
+  const streak = state.coalitionMatriarchOmnipotenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionMatriarchOmnipotenceStreakDays) return 47;
+  return 2;
+}
+
 // --- src/engine/mandate-idle-drift.ts ---
 
 const IDLE_GRACE_DAYS = 3;
@@ -2350,6 +2367,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionMatriarchApotheosisStreakDays: number;
   matriarchCoalitionDeification: boolean;
   coalitionMatriarchDeificationStreakDays: number;
+  matriarchCoalitionOmnipotence: boolean;
+  coalitionMatriarchOmnipotenceStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -2451,6 +2470,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionMatriarchApotheosisStreakDays: state.coalitionMatriarchApotheosisStreakDays ?? 0,
     matriarchCoalitionDeification: isMatriarchCoalitionDeification(state),
     coalitionMatriarchDeificationStreakDays: state.coalitionMatriarchDeificationStreakDays ?? 0,
+    matriarchCoalitionOmnipotence: isMatriarchCoalitionOmnipotence(state),
+    coalitionMatriarchOmnipotenceStreakDays: state.coalitionMatriarchOmnipotenceStreakDays ?? 0,
   };
 }
 
@@ -2552,6 +2573,8 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionMatriarchApotheosisStreakDays: raw?.coalitionMatriarchApotheosisStreakDays ?? 0,
     matriarchCoalitionDeification: raw?.matriarchCoalitionDeification ?? false,
     coalitionMatriarchDeificationStreakDays: raw?.coalitionMatriarchDeificationStreakDays ?? 0,
+    matriarchCoalitionOmnipotence: raw?.matriarchCoalitionOmnipotence ?? false,
+    coalitionMatriarchOmnipotenceStreakDays: raw?.coalitionMatriarchOmnipotenceStreakDays ?? 0,
   };
 }
 
@@ -6834,6 +6857,212 @@ export function coalitionMatriarchApotheosisStreakIssues(
   ];
 }
 
+// --- src/engine/coalition-matriarch-deification.ts ---
+
+export const MATRIARCH_COALITION_DEIFICATION_THRESHOLD = 4;
+const MATRIARCH_DEIFICATION_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isMatriarchCoalitionDeification(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionMatriarchDeificationStreakDays ?? 0) >= MATRIARCH_COALITION_DEIFICATION_THRESHOLD
+  );
+}
+
+function matriarchDeificationEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const transcendence = state.coalitionMatriarchApotheosisStreakDays ?? 0;
+  return (
+    isMatriarchCoalitionApotheosis(state) ||
+    transcendence >= MATRIARCH_COALITION_APOTHEOSIS_THRESHOLD
+  );
+}
+
+/** Matriarch deification streak after matriarch apotheosis is sustained. */
+export function advanceCoalitionMatriarchDeificationStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!matriarchDeificationEligible(state)) {
+    if ((state.coalitionMatriarchDeificationStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionMatriarchDeificationStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionMatriarchDeificationStreakDays:
+      (state.coalitionMatriarchDeificationStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionMatriarchDeificationStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionMatriarchDeificationStreakDays: 0 };
+}
+
+export function applyMatriarchDeificationMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isMatriarchCoalitionDeification(state)) return state;
+
+  const bonusTotal = daysAdvanced * MATRIARCH_DEIFICATION_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-matriarch-deification-gates.ts ---
+
+export function coalitionMatriarchDeificationStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionMatriarchDeificationStreakDays === undefined) return [];
+
+  const streak = state.coalitionMatriarchDeificationStreakDays ?? 0;
+  if (streak >= action.minCoalitionMatriarchDeificationStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_MATRIARCH_DEIFICATION_STREAK_TOO_SHORT',
+      message: `Matriarch apotheosis streak ${streak} below required ${action.minCoalitionMatriarchDeificationStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_matriarch_deification_streak',
+        minDays: action.minCoalitionMatriarchDeificationStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-matriarch-omnipotence.ts ---
+
+export const MATRIARCH_COALITION_OMNIPOTENCE_THRESHOLD = 4;
+const MATRIARCH_OMNIPOTENCE_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isMatriarchCoalitionOmnipotence(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionMatriarchOmnipotenceStreakDays ?? 0) >= MATRIARCH_COALITION_OMNIPOTENCE_THRESHOLD
+  );
+}
+
+function matriarchOmnipotenceEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const deification = state.coalitionMatriarchDeificationStreakDays ?? 0;
+  return (
+    isMatriarchCoalitionDeification(state) ||
+    deification >= MATRIARCH_COALITION_DEIFICATION_THRESHOLD
+  );
+}
+
+/** Matriarch omnipotence streak after matriarch deification is sustained. */
+export function advanceCoalitionMatriarchOmnipotenceStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!matriarchOmnipotenceEligible(state)) {
+    if ((state.coalitionMatriarchOmnipotenceStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionMatriarchOmnipotenceStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionMatriarchOmnipotenceStreakDays:
+      (state.coalitionMatriarchOmnipotenceStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionMatriarchOmnipotenceStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionMatriarchOmnipotenceStreakDays: 0 };
+}
+
+export function applyMatriarchOmnipotenceMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isMatriarchCoalitionOmnipotence(state)) return state;
+
+  const bonusTotal = daysAdvanced * MATRIARCH_OMNIPOTENCE_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-matriarch-omnipotence-gates.ts ---
+
+export function coalitionMatriarchOmnipotenceStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionMatriarchOmnipotenceStreakDays === undefined) return [];
+
+  const streak = state.coalitionMatriarchOmnipotenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionMatriarchOmnipotenceStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_MATRIARCH_OMNIPOTENCE_STREAK_TOO_SHORT',
+      message: `Matriarch deification streak ${streak} below required ${action.minCoalitionMatriarchOmnipotenceStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_matriarch_omnipotence_streak',
+        minDays: action.minCoalitionMatriarchOmnipotenceStreakDays,
+      },
+    },
+  ];
+}
+
 // --- src/engine/coalition-gates.ts ---
 
 export function coalitionBalanceIssues(
@@ -7180,6 +7409,11 @@ export interface StrategicGameplaySaveV51 extends Omit<StrategicGameplaySaveV50,
   coalitionMatriarchDeificationStreakDays: number;
 }
 
+export interface StrategicGameplaySaveV52 extends Omit<StrategicGameplaySaveV51, 'version'> {
+  version: 52;
+  coalitionMatriarchOmnipotenceStreakDays: number;
+}
+
 export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV1
   | StrategicGameplaySaveV2
@@ -7231,13 +7465,14 @@ export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV48
   | StrategicGameplaySaveV49
   | StrategicGameplaySaveV50
-  | StrategicGameplaySaveV51;
+  | StrategicGameplaySaveV51
+  | StrategicGameplaySaveV52;
 
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV51 {
+): StrategicGameplaySaveV52 {
   return {
-    version: 51,
+    version: 52,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -7299,6 +7534,7 @@ export function serializeStrategicGameplayState(
     coalitionMatriarchTranscendenceStreakDays: state.coalitionMatriarchTranscendenceStreakDays ?? 0,
     coalitionMatriarchApotheosisStreakDays: state.coalitionMatriarchApotheosisStreakDays ?? 0,
     coalitionMatriarchDeificationStreakDays: state.coalitionMatriarchDeificationStreakDays ?? 0,
+    coalitionMatriarchOmnipotenceStreakDays: state.coalitionMatriarchOmnipotenceStreakDays ?? 0,
   };
 }
 
@@ -10281,8 +10517,72 @@ export function deserializeStrategicGameplayState(
     coalitionMatriarchApotheosisStreakDays: 0,
   };
   }
-  if (save.version !== 49 && save.version !== 50 && save.version !== 51) {
+  if (save.version !== 49 && save.version !== 50 && save.version !== 51 && save.version !== 52) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
+  }
+  if (save.version === 52) {
+    return {
+    day: save.day,
+    completedActionIds: [...save.completedActionIds],
+    pendingDelayed: save.pendingDelayed.slice(),
+    journal: save.journal.slice(),
+    priorityMomentum: { ...save.priorityMomentum },
+    actionCooldowns: { ...save.actionCooldowns },
+    activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+    mandateProgress: { ...save.mandateProgress },
+    stakeholderSentiment: { ...save.stakeholderSentiment },
+    lastAlignedActionDay: save.lastAlignedActionDay,
+    coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
+    coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
+    coalitionVolatilityEvents: save.coalitionVolatilityEvents,
+    coalitionStabilizationStreakDays: save.coalitionStabilizationStreakDays,
+    coalitionLockInStreakDays: save.coalitionLockInStreakDays,
+    crossModuleSyncStreakDays: save.crossModuleSyncStreakDays,
+    integratedCoalitionMaturityStreakDays: save.integratedCoalitionMaturityStreakDays,
+    coalitionStewardshipStreakDays: save.coalitionStewardshipStreakDays,
+    coalitionAnchoredGovernanceStreakDays: save.coalitionAnchoredGovernanceStreakDays,
+    coalitionInstitutionalPermanenceStreakDays: save.coalitionInstitutionalPermanenceStreakDays,
+    coalitionGenerationalContinuityStreakDays: save.coalitionGenerationalContinuityStreakDays,
+    coalitionCivilizationalEnduranceStreakDays: save.coalitionCivilizationalEnduranceStreakDays,
+    coalitionTranscendentLegacyStreakDays: save.coalitionTranscendentLegacyStreakDays,
+    coalitionSovereignContinuumStreakDays: save.coalitionSovereignContinuumStreakDays,
+    coalitionEternalAscendanceStreakDays: save.coalitionEternalAscendanceStreakDays,
+    coalitionInfinitePersistenceStreakDays: save.coalitionInfinitePersistenceStreakDays,
+    coalitionPrimordialContinuityStreakDays: save.coalitionPrimordialContinuityStreakDays,
+    coalitionAbsoluteSanctityStreakDays: save.coalitionAbsoluteSanctityStreakDays,
+    coalitionUniversalImmortalityStreakDays: save.coalitionUniversalImmortalityStreakDays,
+    coalitionCosmicPerpetuityStreakDays: save.coalitionCosmicPerpetuityStreakDays,
+    coalitionGalacticInfinityStreakDays: save.coalitionGalacticInfinityStreakDays,
+    coalitionStellarTranscendenceStreakDays: save.coalitionStellarTranscendenceStreakDays,
+    coalitionQuantumOmnipresenceStreakDays: save.coalitionQuantumOmnipresenceStreakDays,
+    coalitionMultiversalPersistenceStreakDays: save.coalitionMultiversalPersistenceStreakDays,
+    coalitionMetaversalContinuityStreakDays: save.coalitionMetaversalContinuityStreakDays,
+    coalitionOmniversalSynthesisStreakDays: save.coalitionOmniversalSynthesisStreakDays,
+    coalitionHyperversalHarmonizationStreakDays: save.coalitionHyperversalHarmonizationStreakDays,
+    coalitionTranscendentOmniumStreakDays: save.coalitionTranscendentOmniumStreakDays,
+    coalitionSupremeConvergenceStreakDays: save.coalitionSupremeConvergenceStreakDays,
+    coalitionApexTranscendenceStreakDays: save.coalitionApexTranscendenceStreakDays,
+    coalitionZenithPerpetuityStreakDays: save.coalitionZenithPerpetuityStreakDays,
+    coalitionParagonInfinityStreakDays: save.coalitionParagonInfinityStreakDays,
+    coalitionParamountAscendancyStreakDays: save.coalitionParamountAscendancyStreakDays,
+    coalitionImperialPerpetuityStreakDays: save.coalitionImperialPerpetuityStreakDays,
+    coalitionCustodialEternityStreakDays: save.coalitionCustodialEternityStreakDays,
+    coalitionVanguardSynthesisStreakDays: save.coalitionVanguardSynthesisStreakDays,
+    coalitionSentinelAscendancyStreakDays: save.coalitionSentinelAscendancyStreakDays,
+    coalitionOraclePerpetuityStreakDays: save.coalitionOraclePerpetuityStreakDays,
+    coalitionArchonEternityStreakDays: save.coalitionArchonEternityStreakDays,
+    coalitionExarchAscendancyStreakDays: save.coalitionExarchAscendancyStreakDays,
+    coalitionPrimarchPerpetuityStreakDays: save.coalitionPrimarchPerpetuityStreakDays,
+    coalitionPatriarchEternityStreakDays: save.coalitionPatriarchEternityStreakDays,
+    coalitionMatriarchAscendancyStreakDays: save.coalitionMatriarchAscendancyStreakDays,
+    coalitionMatriarchPerpetuityStreakDays: save.coalitionMatriarchPerpetuityStreakDays,
+    coalitionMatriarchEternityStreakDays: save.coalitionMatriarchEternityStreakDays,
+    coalitionMatriarchInfinityStreakDays: save.coalitionMatriarchInfinityStreakDays,
+    coalitionMatriarchTranscendenceStreakDays: save.coalitionMatriarchTranscendenceStreakDays,
+    coalitionMatriarchApotheosisStreakDays: save.coalitionMatriarchApotheosisStreakDays,
+    coalitionMatriarchDeificationStreakDays: (save as StrategicGameplaySaveV52).coalitionMatriarchDeificationStreakDays,
+    coalitionMatriarchOmnipotenceStreakDays: (save as StrategicGameplaySaveV52).coalitionMatriarchOmnipotenceStreakDays,
+  };
   }
   if (save.version === 51) {
     return {
@@ -10858,6 +11158,7 @@ export function validateAction(
     issues.push(...coalitionMatriarchTranscendenceStreakIssues(action, state));
     issues.push(...coalitionMatriarchApotheosisStreakIssues(action, state));
     issues.push(...coalitionMatriarchDeificationStreakIssues(action, state));
+    issues.push(...coalitionMatriarchOmnipotenceStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({
@@ -11014,7 +11315,8 @@ export function rankStrategicActions(
         matriarchInfinityRankingBonus(state, action) +
         matriarchTranscendenceRankingBonus(state, action) +
         matriarchApotheosisRankingBonus(state, action) +
-        matriarchDeificationRankingBonus(state, action),
+        matriarchDeificationRankingBonus(state, action) +
+        matriarchOmnipotenceRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
@@ -11148,6 +11450,8 @@ export function buildTurnStrategicBriefing(
     coalitionMatriarchApotheosisStreakDays: state.coalitionMatriarchApotheosisStreakDays ?? 0,
     matriarchCoalitionDeification: isMatriarchCoalitionDeification(state),
     coalitionMatriarchDeificationStreakDays: state.coalitionMatriarchDeificationStreakDays ?? 0,
+    matriarchCoalitionOmnipotence: isMatriarchCoalitionOmnipotence(state),
+    coalitionMatriarchOmnipotenceStreakDays: state.coalitionMatriarchOmnipotenceStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,
@@ -11384,6 +11688,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyMatriarchApotheosisMandateBonus(next, daysAdvanced);
   next = advanceCoalitionMatriarchDeificationStreak(next, daysAdvanced);
   next = applyMatriarchDeificationMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionMatriarchOmnipotenceStreak(next, daysAdvanced);
+  next = applyMatriarchOmnipotenceMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
@@ -11452,6 +11758,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionMatriarchTranscendenceStreakDays: 0,
     coalitionMatriarchApotheosisStreakDays: 0,
     coalitionMatriarchDeificationStreakDays: 0,
+    coalitionMatriarchOmnipotenceStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -11876,6 +12183,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_matriarch_deification_covenant') {
     nextState = resetCoalitionMatriarchDeificationStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_matriarch_omnipotence_charter') {
+    nextState = resetCoalitionMatriarchOmnipotenceStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_matriarch_omnipotence_covenant') {
+    nextState = resetCoalitionMatriarchOmnipotenceStreak(nextState);
   }
 
   contracts.ui.pushToast({
@@ -14473,6 +14786,51 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
     cooldownDays: 4,
     immediateEffects: {
       economy: { cashDelta: -63_000, treasuryDelta: -152_000 },
+      government: { approvalDelta: 7 },
+      population: { publicStabilityDelta: 8, essentialAccessDelta: 5 },
+    },
+    delayedTradeOffs: [],
+  },
+  'sga_coalition_matriarch_omnipotence_charter': {
+    id: 'sga_coalition_matriarch_omnipotence_charter',
+    title: 'Matriarch Coalition Infinity Charter',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 84_000,
+    treasuryCost: 220_000,
+    minApproval: 67,
+    alignedPriorities: ['technology_competitiveness', 'economic_diversification'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'matriarch_omnipotence', 'charter'],
+    repeatable: false,
+    minCoalitionBalanceIndex: 120,
+    maxCoalitionVolatilityEvents: 0,
+    minCoalitionMatriarchTranscendenceStreakDays: 4,
+    minCoalitionMatriarchOmnipotenceStreakDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -84_000, treasuryDelta: -220_000, netWorthMultiplier: 1.046 },
+      government: { approvalDelta: 13, directiveSlotsDelta: 2, regulatoryBurdenDelta: -6 },
+      population: { publicStabilityDelta: 11, migrationDelta: 6 },
+    },
+    delayedTradeOffs: [],
+  },
+  'sga_coalition_matriarch_omnipotence_covenant': {
+    id: 'sga_coalition_matriarch_omnipotence_covenant',
+    title: 'Matriarch Coalition Infinity Covenant',
+    category: 'investment',
+    apCost: 1,
+    cashCost: 65_000,
+    treasuryCost: 154_000,
+    minApproval: 55,
+    alignedPriorities: ['energy_resilience', 'freight_modernization'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'matriarch_omnipotence', 'covenant'],
+    repeatable: true,
+    maxCoalitionVolatilityEvents: 0,
+    minCoalitionMatriarchOmnipotenceStreakDays: 2,
+    cooldownDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -65_000, treasuryDelta: -154_000 },
       government: { approvalDelta: 7 },
       population: { publicStabilityDelta: 8, essentialAccessDelta: 5 },
     },
