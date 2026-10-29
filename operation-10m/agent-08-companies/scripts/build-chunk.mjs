@@ -22,6 +22,7 @@ const FILES = [
   'integrated-production-synthesis.ts',
   'production-recovery-playbook.ts',
   'production-stabilization-outlook.ts',
+  'production-coordination-mandate.ts',
   'chunk-exports.ts',
 ];
 
