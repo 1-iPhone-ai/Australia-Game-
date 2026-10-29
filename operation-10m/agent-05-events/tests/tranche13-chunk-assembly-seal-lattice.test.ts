@@ -18,12 +18,12 @@ describe('Tranche 13 chunk-assembly-seal lattice catalog', () => {
   it('adds 320 chunk-assembly-seal lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE13_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche13Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 13640);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 13960);
   });
 
   it('uses op10m_t13 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 13640);
+    assert.equal(ids.size, 13960);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE13) {
       assert.match(c.chainId, /^op10m_t13_/);
     }

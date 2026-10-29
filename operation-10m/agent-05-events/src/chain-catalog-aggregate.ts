@@ -40,6 +40,7 @@ import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE39 } from '../generated/chain-catalo
 import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE40 } from '../generated/chain-catalog-tranche40.ts';
 import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE41 } from '../generated/chain-catalog-tranche41.ts';
 import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE42 } from '../generated/chain-catalog-tranche42.ts';
+import { OP10M_AGENT05_CHAIN_CATALOG_TRANCHE43 } from '../generated/chain-catalog-tranche43.ts';
 import type { Op10mChainDescriptor } from './types.ts';
 
 export const OP10M_AGENT05_CATALOG_STATS = {
@@ -85,6 +86,7 @@ export const OP10M_AGENT05_CATALOG_STATS = {
   tranche40Chains: OP10M_AGENT05_CHAIN_CATALOG_TRANCHE40.length,
   tranche41Chains: OP10M_AGENT05_CHAIN_CATALOG_TRANCHE41.length,
   tranche42Chains: OP10M_AGENT05_CHAIN_CATALOG_TRANCHE42.length,
+  tranche43Chains: OP10M_AGENT05_CHAIN_CATALOG_TRANCHE43.length,
   totalChains:
     OP10M_AGENT05_CHAIN_CATALOG_TRANCHE1.length +
     OP10M_AGENT05_CHAIN_CATALOG_TRANCHE2.length +
@@ -127,7 +129,8 @@ export const OP10M_AGENT05_CATALOG_STATS = {
     OP10M_AGENT05_CHAIN_CATALOG_TRANCHE39.length +
     OP10M_AGENT05_CHAIN_CATALOG_TRANCHE40.length +
     OP10M_AGENT05_CHAIN_CATALOG_TRANCHE41.length +
-    OP10M_AGENT05_CHAIN_CATALOG_TRANCHE42.length,
+    OP10M_AGENT05_CHAIN_CATALOG_TRANCHE42.length +
+    OP10M_AGENT05_CHAIN_CATALOG_TRANCHE43.length,
   regions: 8,
 } as const;
 
@@ -174,6 +177,7 @@ export const OP10M_AGENT05_CHAIN_CATALOG: Op10mChainDescriptor[] = [
   ...OP10M_AGENT05_CHAIN_CATALOG_TRANCHE40,
   ...OP10M_AGENT05_CHAIN_CATALOG_TRANCHE41,
   ...OP10M_AGENT05_CHAIN_CATALOG_TRANCHE42,
+  ...OP10M_AGENT05_CHAIN_CATALOG_TRANCHE43,
 ];
 
 export {
@@ -344,3 +348,7 @@ export {
   OP10M_AGENT05_CHAIN_CATALOG_TRANCHE42,
   OP10M_AGENT05_CATALOG_TRANCHE42_STATS,
 } from '../generated/chain-catalog-tranche42.ts';
+export {
+  OP10M_AGENT05_CHAIN_CATALOG_TRANCHE43,
+  OP10M_AGENT05_CATALOG_TRANCHE43_STATS,
+} from '../generated/chain-catalog-tranche43.ts';
