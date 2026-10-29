@@ -73,6 +73,7 @@ const FILES = [
   'sovereign-export-resilience-national-security-federation-ledger.ts',
   'national-security-strategic-reserve-defence-industrial-federation-ledger.ts',
   'strategic-reserve-carbon-neutrality-sovereign-grid-federation-ledger.ts',
+  'federated-net-zero-export-climate-resilience-orchestration-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -328,6 +329,9 @@ const EXPORT_MANIFEST = [
   'runAgent13StrategicReserveCarbonNeutralitySovereignGridScaleSelfTests',
   'runAgent13StrategicReserveCarbonNeutralitySovereignGridTurnScenario',
   'V1014_STRATEGIC_RESERVE_CARBON_NEUTRALITY_SOVEREIGN_GRID_TURN_SCENARIOS',
+  'runAgent13FederatedNetZeroExportClimateResilienceScaleSelfTests',
+  'runAgent13FederatedNetZeroExportClimateResilienceTurnScenario',
+  'V1014_FEDERATED_NET_ZERO_EXPORT_CLIMATE_RESILIENCE_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

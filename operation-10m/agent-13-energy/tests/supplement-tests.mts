@@ -250,6 +250,11 @@ import {
   V1014_STRATEGIC_RESERVE_CARBON_NEUTRALITY_SOVEREIGN_GRID_TURN_SCENARIOS,
 } from '../modules/strategic-reserve-carbon-neutrality-sovereign-grid-federation-ledger.ts';
 import {
+  runAgent13FederatedNetZeroExportClimateResilienceScaleSelfTests,
+  runAgent13FederatedNetZeroExportClimateResilienceTurnScenario,
+  V1014_FEDERATED_NET_ZERO_EXPORT_CLIMATE_RESILIENCE_TURN_SCENARIOS,
+} from '../modules/federated-net-zero-export-climate-resilience-orchestration-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -661,6 +666,14 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
     V1014_STRATEGIC_RESERVE_CARBON_NEUTRALITY_SOVEREIGN_GRID_TURN_SCENARIOS[0],
   );
   ok(carbonNeutralityGridTurn.passed);
+
+  const netZeroClimate = runAgent13FederatedNetZeroExportClimateResilienceScaleSelfTests();
+  ok(netZeroClimate.failed === 0 && netZeroClimate.passed >= 5);
+
+  const netZeroClimateTurn = runAgent13FederatedNetZeroExportClimateResilienceTurnScenario(
+    V1014_FEDERATED_NET_ZERO_EXPORT_CLIMATE_RESILIENCE_TURN_SCENARIOS[0],
+  );
+  ok(netZeroClimateTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
