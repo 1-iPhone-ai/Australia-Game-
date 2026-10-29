@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '2.40.0';
+export const O10M_AGENT21_MODULE_VERSION = '2.41.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -12554,6 +12554,209 @@ export const Ag21ForecastRound48Console: React.FC<{ seed?: number }> = ({ seed =
   );
 };
 
+// --- bundled from forecast-wave49-projection-sync.ts ---
+/**
+ * Agent 21 — wave 49 projection baseline sync tags (read-only round 49 / O10-228 → O10-229).
+ */
+
+
+export const AG21_WAVE49_PROJECTION_BASELINE_SHA = '73e5e01';
+export const AG21_WAVE49_PROJECTED_AUDITED_FUNCTIONAL = 2_727_364;
+
+export type Ag21Wave49ProjectionSyncStatus = 'aligned' | 'drift' | 'unknown';
+
+export interface Ag21Wave49ProjectionSync {
+  syncId: string;
+  moduleVersion: string;
+  status: Ag21Wave49ProjectionSyncStatus;
+  baselineSha: string;
+  projectedFunctionalLoc: number;
+  originHandoff: ReturnType<typeof handoffAg21IntegrationWave48OriginGate>['status'];
+  syncTags: string[];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+export function syncAg21Wave49ProjectionBaseline(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext,
+  observedBaselineSha: string = AG21_WAVE49_PROJECTION_BASELINE_SHA
+): Ag21Wave49ProjectionSync {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.064),
+      actorDebt: baseCtx.actorDebt + 1395
+    } satisfies Ag21ForecastContext);
+
+  const handoff = handoffAg21IntegrationWave48OriginGate(baseCtx, candidate);
+  const shaMatch = observedBaselineSha.toLowerCase().startsWith(AG21_WAVE49_PROJECTION_BASELINE_SHA.slice(0, 7));
+
+  let status: Ag21Wave49ProjectionSyncStatus = 'aligned';
+  if (!shaMatch) status = 'unknown';
+  else if (handoff.status === 'blocked') status = 'drift';
+
+  const syncId = `ag21_w49_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const syncTags = [
+    `baseline:${AG21_WAVE49_PROJECTION_BASELINE_SHA}`,
+    `projected:${AG21_WAVE49_PROJECTED_AUDITED_FUNCTIONAL}`,
+    `origin_handoff:${handoff.status}`,
+    `wave:49`,
+    `ticket:O10-229`,
+    `module:${O10M_AGENT21_MODULE_VERSION}`
+  ];
+
+  return {
+    syncId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    baselineSha: AG21_WAVE49_PROJECTION_BASELINE_SHA,
+    projectedFunctionalLoc: AG21_WAVE49_PROJECTED_AUDITED_FUNCTIONAL,
+    originHandoff: handoff.status,
+    syncTags,
+    disclaimer: '(Non-authoritative forecast.) Wave-49 projection sync for modular assembly bookkeeping only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'aligned' ? 'low' : status === 'drift' ? 'high' : 'moderate',
+      [`sync=${syncId}`, `baseline=${AG21_WAVE49_PROJECTION_BASELINE_SHA}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21Wave49ProjectionSyncSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 104, seed: 64, actorCash: 720, actorDebt: 220, regionsControlled: 4 };
+  const sync = syncAg21Wave49ProjectionBaseline(ctx);
+
+  push('w49_id', sync.syncId.startsWith('ag21_w49_'), sync.syncId);
+  push('w49_baseline', sync.baselineSha === AG21_WAVE49_PROJECTION_BASELINE_SHA, sync.baselineSha);
+  push('w49_tags', sync.syncTags.length >= 6, String(sync.syncTags.length));
+  push('w49_projected', sync.projectedFunctionalLoc === AG21_WAVE49_PROJECTED_AUDITED_FUNCTIONAL, String(sync.projectedFunctionalLoc));
+
+  return out;
+}
+
+// --- bundled from forecast-integration-wave49-origin-handoff.ts ---
+/**
+ * Agent 21 — integration wave-49 origin handoff for O10-230 (read-only round 49).
+ */
+
+
+export type Ag21IntegrationWave49OriginHandoffStatus = 'ready' | 'blocked' | 'pending';
+
+export interface Ag21IntegrationWave49OriginHandoff {
+  handoffId: string;
+  moduleVersion: string;
+  status: Ag21IntegrationWave49OriginHandoffStatus;
+  projectionSyncStatus: ReturnType<typeof syncAg21Wave49ProjectionBaseline>['status'];
+  priorOriginHandoff: ReturnType<typeof handoffAg21IntegrationWave48OriginGate>['status'];
+  handoffCopy: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+export function handoffAg21IntegrationWave49OriginGate(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21IntegrationWave49OriginHandoff {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.054),
+      actorDebt: baseCtx.actorDebt + 1400
+    } satisfies Ag21ForecastContext);
+
+  const prior = handoffAg21IntegrationWave48OriginGate(baseCtx, candidate);
+  const projection = syncAg21Wave49ProjectionBaseline(baseCtx, candidate);
+
+  let status: Ag21IntegrationWave49OriginHandoffStatus = 'ready';
+  if (prior.status === 'blocked' || projection.status === 'drift') status = 'blocked';
+  else if (prior.status === 'pending' || projection.status === 'unknown') status = 'pending';
+
+  const handoffId = `ag21_iw49_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const handoffCopy =
+    status === 'ready'
+      ? 'wave-49 origin handoff ready — Agent 21 unblocks O10-230 integration dry-run with agents 10 and 25'
+      : status === 'pending'
+        ? 'wave-49 origin handoff pending — projection sync or prior handoff partial'
+        : 'wave-49 origin handoff blocked — resolve drift before O10-230';
+
+  return {
+    handoffId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    projectionSyncStatus: projection.status,
+    priorOriginHandoff: prior.status,
+    handoffCopy,
+    disclaimer: '(Non-authoritative forecast.) Origin handoff is modular bookkeeping only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'ready' ? 'low' : status === 'pending' ? 'moderate' : 'high',
+      [`handoff=${handoffId}`, `iw49=${status}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21IntegrationWave49OriginHandoffSelfChecks(): {
+  id: string;
+  passed: boolean;
+  detail: string;
+}[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 105, seed: 82, actorCash: 640, actorDebt: 240, regionsControlled: 3 };
+  const handoff = handoffAg21IntegrationWave49OriginGate(ctx);
+
+  push('iw49_id', handoff.handoffId.startsWith('ag21_iw49_'), handoff.handoffId);
+  push('iw49_status', ['ready', 'blocked', 'pending'].includes(handoff.status), handoff.status);
+  push('iw49_copy', handoff.handoffCopy.includes('O10-230'), handoff.handoffCopy.slice(0, 40));
+  push('iw49_non_auth', handoff.authoritative === false, handoff.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-round49-console.tsx ---
+/**
+ * Agent 21 — scale wave round 49 console.
+ */
+
+
+export const Ag21ForecastRound49Console: React.FC<{ seed?: number }> = ({ seed = 149 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 64 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.074), actorDebt: base.actorDebt + 1350 }),
+    [base]
+  );
+
+  const priorHandoff = useMemo(() => handoffAg21IntegrationWave48OriginGate(base, stressed), [base, stressed]);
+  const projection = useMemo(() => syncAg21Wave49ProjectionBaseline(base, stressed), [base, stressed]);
+  const handoff = useMemo(() => handoffAg21IntegrationWave49OriginGate(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-violet-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round49-console">
+      <div className="font-bold text-violet-200">
+        🔬 Forecast Lab Round 49 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round49-prior">
+        Wave 48 handoff · {priorHandoff.status} · {priorHandoff.handoffCopy.slice(0, 44)}…
+      </div>
+      <div data-testid="ag21-round49-projection">
+        Wave 49 sync · {projection.status} · baseline {projection.baselineSha}
+      </div>
+      <div data-testid="ag21-round49-handoff">
+        Origin handoff · {handoff.status} · {handoff.handoffCopy.slice(0, 48)}…
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -12900,6 +13103,12 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21IntegrationWave48OriginHandoffSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21Wave49ProjectionSyncSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21IntegrationWave49OriginHandoffSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({
