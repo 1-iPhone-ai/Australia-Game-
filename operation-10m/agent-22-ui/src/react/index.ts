@@ -10,3 +10,4 @@ export { SimulationUiEvolutionBridge } from './SimulationUiEvolutionBridge.js';
 export { UiDensitySelector } from './UiDensitySelector.js';
 export { FocusSessionBanner } from './FocusSessionBanner.js';
 export { CognitiveLoadCoachBanner } from './CognitiveLoadCoachBanner.js';
+export { UiCalmRecoveryBanner } from './UiCalmRecoveryBanner.js';

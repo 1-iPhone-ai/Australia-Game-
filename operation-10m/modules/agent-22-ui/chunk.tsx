@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 1f6e7fed11721248
+// content-sha256-prefix: 5084b780a2ad3201
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -848,6 +848,7 @@ export interface EvolvingUiPersistedState {
   preferredDensity?: 'compact' | 'comfortable' | 'spacious' | null;
   focusSessionSnoozedUntilDay?: number;
   cognitiveLoadCoachSnoozedUntilDay?: number;
+  calmRecoveryUntilDay?: number;
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -2134,6 +2135,173 @@ export function snoozeCognitiveLoadCoachUntilDay(currentDay: number, snoozeDays 
   return Math.max(1, currentDay + snoozeDays);
 }
 
+// --- source: engine/attention-budget-scheduler.ts ---
+export type AttentionSurfaceId =
+  | 'cognitive_load_coach'
+  | 'focus_session_banner'
+  | 'panel_unlock_coach'
+  | 'sim_evolution_bridge'
+  | 'keyboard_hints_overlay';
+
+export interface AttentionSurfaceCandidate {
+  id: AttentionSurfaceId;
+  /** Lower number wins when budget is tight. */
+  priority: number;
+  requested: boolean;
+}
+
+export interface AttentionBudgetPlan {
+  maxConcurrentSurfaces: number;
+  allowedIds: AttentionSurfaceId[];
+  deferredIds: AttentionSurfaceId[];
+  bandHint: CognitiveLoadBand | 'unknown';
+}
+
+const BASE_SLOTS: Record<CognitiveLoadBand, number> = {
+  light: 4,
+  moderate: 3,
+  heavy: 2,
+};
+
+export function resolveAttentionBudgetSlots(
+  band: CognitiveLoadBand,
+  phase: V94StandardizedGamePhase
+): number {
+  let slots = BASE_SLOTS[band];
+  if (phase === 'human_turn') slots += 1;
+  if (phase === 'save_load' || phase === 'main_menu') slots = Math.max(1, slots - 1);
+  return Math.max(1, Math.min(5, slots));
+}
+
+export function planAttentionSurfaces(input: {
+  band: CognitiveLoadBand;
+  phase: V94StandardizedGamePhase;
+  candidates: AttentionSurfaceCandidate[];
+}): AttentionBudgetPlan {
+  const maxConcurrentSurfaces = resolveAttentionBudgetSlots(input.band, input.phase);
+  const active = input.candidates
+    .filter(c => c.requested)
+    .sort((a, b) => a.priority - b.priority);
+
+  const allowedIds = active.slice(0, maxConcurrentSurfaces).map(c => c.id);
+  const allowedSet = new Set(allowedIds);
+  const deferredIds = active.filter(c => !allowedSet.has(c.id)).map(c => c.id);
+
+  return {
+    maxConcurrentSurfaces,
+    allowedIds,
+    deferredIds,
+    bandHint: input.band,
+  };
+}
+
+export function isAttentionSurfaceAllowed(
+  plan: AttentionBudgetPlan,
+  surfaceId: AttentionSurfaceId
+): boolean {
+  return plan.allowedIds.includes(surfaceId);
+}
+
+// --- source: engine/ui-calm-recovery-policy.ts ---
+export interface CalmRecoveryPatch {
+  calmRecoveryUntilDay: number;
+  cognitiveLoadCoachSnoozedUntilDay: number;
+  focusSessionSnoozedUntilDay: number;
+  preferredDensity: 'spacious';
+}
+
+export function isCalmRecoveryActive(
+  persisted: Pick<EvolvingUiPersistedState, 'calmRecoveryUntilDay'>,
+  gameDay: number
+): boolean {
+  return persisted.calmRecoveryUntilDay != null && gameDay < persisted.calmRecoveryUntilDay;
+}
+
+export function buildCalmRecoveryPatch(
+  assessment: CognitiveLoadAssessment,
+  gameDay: number,
+  calmDays = 2
+): CalmRecoveryPatch | null {
+  if (assessment.band !== 'heavy') return null;
+  const untilDay = Math.max(gameDay + calmDays, gameDay + 1);
+  return {
+    calmRecoveryUntilDay: untilDay,
+    cognitiveLoadCoachSnoozedUntilDay: snoozeCognitiveLoadCoachUntilDay(gameDay, calmDays),
+    focusSessionSnoozedUntilDay: snoozeFocusSessionUntilDay(gameDay, calmDays),
+    preferredDensity: 'spacious',
+  };
+}
+
+export function mergeCalmRecoveryIntoPersisted(
+  persisted: EvolvingUiPersistedState,
+  patch: CalmRecoveryPatch
+): EvolvingUiPersistedState {
+  return {
+    ...persisted,
+    calmRecoveryUntilDay: patch.calmRecoveryUntilDay,
+    cognitiveLoadCoachSnoozedUntilDay: Math.max(
+      persisted.cognitiveLoadCoachSnoozedUntilDay ?? 0,
+      patch.cognitiveLoadCoachSnoozedUntilDay
+    ),
+    focusSessionSnoozedUntilDay: Math.max(
+      persisted.focusSessionSnoozedUntilDay ?? 0,
+      patch.focusSessionSnoozedUntilDay
+    ),
+    preferredDensity: patch.preferredDensity,
+  };
+}
+
+export function calmRecoveryCoachCopy(active: boolean): string {
+  return active
+    ? 'Calm recovery is active — coaching and focus prompts stay tucked away.'
+    : 'Interface feels crowded? Calm recovery snoozes coaching and widens spacing for a few days.';
+}
+
+// --- source: engine/touch-target-scaling.ts ---
+export interface TouchTargetProfile {
+  minHeightPx: number;
+  minWidthPx: number;
+  hitSlopPx: number;
+  dataAttributes: Record<string, string>;
+}
+
+const BASE_BY_DENSITY: Record<UiDensityTier, number> = {
+  compact: 40,
+  comfortable: 44,
+  spacious: 48,
+};
+
+export function resolveTouchTargetProfile(
+  tier: UiDensityTier,
+  accessibility: AccessibilitySettingsSnapshot
+): TouchTargetProfile {
+  let min = BASE_BY_DENSITY[tier];
+  if (accessibility.textScaleMultiplier >= 1.15) min += 4;
+  if (accessibility.textScaleMultiplier >= 1.35) min += 4;
+  const hitSlopPx = tier === 'compact' ? 4 : tier === 'comfortable' ? 6 : 8;
+
+  return {
+    minHeightPx: min,
+    minWidthPx: min,
+    hitSlopPx,
+    dataAttributes: {
+      'data-touch-min-px': String(min),
+      'data-touch-tier': tier,
+    },
+  };
+}
+
+export function touchTargetCssVars(profile: TouchTargetProfile): Record<string, string> {
+  return {
+    '--evolving-ui-touch-min-px': String(profile.minHeightPx),
+    '--evolving-ui-touch-hit-slop-px': String(profile.hitSlopPx),
+  };
+}
+
+export function meetsMinimumTouchTarget(profile: TouchTargetProfile, requestedPx: number): boolean {
+  return requestedPx >= profile.minHeightPx - profile.hitSlopPx;
+}
+
 // --- source: engine/legacy-access.ts ---
 /** Mirrors V9.4 resolveIntentNavToUiPatch targets (standalone copy for module tests). */
 export function resolveIntentNavToUiPatch(target: string): Record<string, boolean | string> {
@@ -2775,6 +2943,181 @@ export function runAgent22Round5SelfTests(): {
         motionTiming: { staggerStepMs: 200 },
       });
       return batches.length >= 2 && (batches[1]?.delayMs ?? 0) >= 200;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
+// --- source: engine/round6-self-tests.ts ---
+export function runAgent22Round6SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r6_budget_heavy_tighter',
+    'heavy band allows fewer slots than light on same phase',
+    resolveAttentionBudgetSlots('heavy', 'human_turn') <
+      resolveAttentionBudgetSlots('light', 'human_turn')
+  );
+
+  check(
+    'r6_budget_main_menu',
+    'main menu trims attention slots',
+    resolveAttentionBudgetSlots('moderate', 'main_menu') <=
+      resolveAttentionBudgetSlots('moderate', 'human_turn')
+  );
+
+  check(
+    'r6_plan_defers_low_priority',
+    'planner defers lowest-priority surfaces when over budget',
+    (() => {
+      const plan = planAttentionSurfaces({
+        band: 'heavy',
+        phase: 'human_turn',
+        candidates: [
+          { id: 'focus_session_banner', priority: 1, requested: true },
+          { id: 'cognitive_load_coach', priority: 2, requested: true },
+          { id: 'panel_unlock_coach', priority: 3, requested: true },
+          { id: 'keyboard_hints_overlay', priority: 5, requested: true },
+        ],
+      });
+      return (
+        plan.deferredIds.length >= 1 &&
+        isAttentionSurfaceAllowed(plan, 'focus_session_banner') &&
+        !isAttentionSurfaceAllowed(plan, 'keyboard_hints_overlay')
+      );
+    })()
+  );
+
+  check(
+    'r6_calm_patch_heavy_only',
+    'calm recovery patch only on heavy load',
+    (() => {
+      const heavy = assessCognitiveLoad({
+        signals: { gameDay: 12, turnCount: 12, interfaceLevel: 'advanced' },
+        policy: { ...DEFAULT_EVOLVING_UI_ACCESS_POLICY, showAllPanelsOverride: true },
+        pendingCoachAnnouncements: 5,
+      });
+      const light = assessCognitiveLoad({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+      });
+      return buildCalmRecoveryPatch(heavy, 5) != null && buildCalmRecoveryPatch(light, 1) == null;
+    })()
+  );
+
+  check(
+    'r6_calm_active_window',
+    'calm recovery active until day threshold',
+    (() => {
+      const persisted = { calmRecoveryUntilDay: 8 };
+      return isCalmRecoveryActive(persisted, 6) && !isCalmRecoveryActive(persisted, 8);
+    })()
+  );
+
+  check(
+    'r6_calm_merge_persisted',
+    'mergeCalmRecoveryIntoPersisted sets spacious density',
+    (() => {
+      const patch = buildCalmRecoveryPatch(
+        assessCognitiveLoad({
+          signals: { gameDay: 10, turnCount: 10, interfaceLevel: 'guided' },
+          policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+          pendingCoachAnnouncements: 4,
+        }),
+        10
+      );
+      if (!patch) return false;
+      const merged = mergeCalmRecoveryIntoPersisted(createDefaultEvolvingUiPersistedState(), patch);
+      return merged.preferredDensity === 'spacious' && (merged.calmRecoveryUntilDay ?? 0) > 10;
+    })()
+  );
+
+  check(
+    'r6_touch_spacious_larger',
+    'spacious touch targets exceed compact',
+    (() => {
+      const compact = resolveTouchTargetProfile(
+        'compact',
+        DEFAULT_ACCESSIBILITY_SNAPSHOT
+      );
+      const spacious = resolveTouchTargetProfile(
+        'spacious',
+        DEFAULT_ACCESSIBILITY_SNAPSHOT
+      );
+      return spacious.minHeightPx > compact.minHeightPx;
+    })()
+  );
+
+  check(
+    'r6_touch_text_scale',
+    'large text scale bumps touch minimum',
+    (() => {
+      const base = resolveTouchTargetProfile('comfortable', DEFAULT_ACCESSIBILITY_SNAPSHOT);
+      const scaled = resolveTouchTargetProfile('comfortable', {
+        ...DEFAULT_ACCESSIBILITY_SNAPSHOT,
+        textScaleMultiplier: 1.4,
+      });
+      return scaled.minHeightPx > base.minHeightPx;
+    })()
+  );
+
+  check(
+    'r6_touch_css_vars',
+    'touchTargetCssVars exposes min and slop',
+    (() => {
+      const vars = touchTargetCssVars(
+        resolveTouchTargetProfile(
+          resolveUiDensityProfile({ interfaceLevel: 'guided' }).tier,
+          DEFAULT_ACCESSIBILITY_SNAPSHOT
+        )
+      );
+      return Number(vars['--evolving-ui-touch-min-px']) >= 40 && Number(vars['--evolving-ui-touch-hit-slop-px']) >= 0;
+    })()
+  );
+
+  check(
+    'r6_touch_hit_slop',
+    'meetsMinimumTouchTarget honors hit slop',
+    (() => {
+      const profile = resolveTouchTargetProfile('compact', DEFAULT_ACCESSIBILITY_SNAPSHOT);
+      const almost = profile.minHeightPx - profile.hitSlopPx;
+      return meetsMinimumTouchTarget(profile, almost) && !meetsMinimumTouchTarget(profile, almost - 1);
+    })()
+  );
+
+  check(
+    'r6_snooze_coherence',
+    'calm patch aligns cognitive snooze with coach helper',
+    (() => {
+      const assessment = assessCognitiveLoad({
+        signals: { gameDay: 8, turnCount: 8, interfaceLevel: 'advanced' },
+        policy: { ...DEFAULT_EVOLVING_UI_ACCESS_POLICY, showAllPanelsOverride: true },
+        pendingCoachAnnouncements: 3,
+      });
+      const patch = buildCalmRecoveryPatch(assessment, 8, 2);
+      return patch?.cognitiveLoadCoachSnoozedUntilDay === snoozeCognitiveLoadCoachUntilDay(8, 2);
+    })()
+  );
+
+  check(
+    'r6_plan_empty',
+    'no requested candidates yields empty allow list',
+    (() => {
+      const plan = planAttentionSurfaces({
+        band: 'light',
+        phase: 'human_turn',
+        candidates: [{ id: 'keyboard_hints_overlay', priority: 1, requested: false }],
+      });
+      return plan.allowedIds.length === 0 && plan.deferredIds.length === 0;
     })()
   );
 
@@ -3684,8 +4027,95 @@ export function CognitiveLoadCoachBanner({
   );
 }
 
+// --- source: react/UiCalmRecoveryBanner.tsx ---
+export interface UiCalmRecoveryBannerProps {
+  phase: V94StandardizedGamePhase;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  accessibility: AccessibilitySettingsSnapshot;
+  persisted: EvolvingUiPersistedState;
+  pendingCoachAnnouncements?: number;
+  onApplyCalmRecovery?: (next: EvolvingUiPersistedState) => void;
+}
+
+export function UiCalmRecoveryBanner({
+  phase,
+  signals,
+  policy,
+  accessibility,
+  persisted,
+  pendingCoachAnnouncements = 0,
+  onApplyCalmRecovery,
+}: UiCalmRecoveryBannerProps): React.ReactElement | null {
+  const focusSessionActive = shouldActivateFocusSession({
+    phase,
+    signals,
+    policy,
+    focusSessionSnoozedUntilDay: persisted.focusSessionSnoozedUntilDay,
+  });
+
+  const assessment = assessCognitiveLoad({
+    signals,
+    policy,
+    focusSessionActive,
+    pendingCoachAnnouncements,
+  });
+
+  const calmActive = isCalmRecoveryActive(persisted, signals.gameDay);
+  const patch = buildCalmRecoveryPatch(assessment, signals.gameDay);
+
+  const budget = planAttentionSurfaces({
+    band: assessment.band,
+    phase,
+    candidates: [
+      { id: 'cognitive_load_coach', priority: 2, requested: assessment.band !== 'light' },
+      { id: 'focus_session_banner', priority: 1, requested: focusSessionActive },
+      { id: 'panel_unlock_coach', priority: 3, requested: pendingCoachAnnouncements > 0 },
+      {
+        id: 'sim_evolution_bridge',
+        priority: 4,
+        requested: !calmActive && pendingCoachAnnouncements > 0,
+      },
+    ],
+  });
+
+  const showBanner =
+    calmActive ||
+    (patch != null && isAttentionSurfaceAllowed(budget, 'cognitive_load_coach'));
+
+  if (!showBanner) return null;
+
+  const focusClass = buildFocusRingClassName({
+    highContrast: accessibility.highContrastFocusRings,
+    style: accessibility.focusRingStyle,
+  });
+
+  return (
+    <div
+      data-testid="ui-calm-recovery-banner"
+      data-calm-active={calmActive ? 'true' : 'false'}
+      data-attention-slots={budget.maxConcurrentSurfaces}
+      role="status"
+      aria-live="polite"
+      className="text-sm border border-violet-500/40 rounded p-2 space-y-2"
+    >
+      <p>{calmRecoveryCoachCopy(calmActive)}</p>
+      {!calmActive && patch && onApplyCalmRecovery ? (
+        <button
+          type="button"
+          data-testid="ui-calm-recovery-activate"
+          className={`text-xs underline ${focusClass}`}
+          onClick={() => onApplyCalmRecovery(mergeCalmRecoveryIntoPersisted(persisted, patch))}
+        >
+          Enable calm recovery
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.5.0';
+export const AGENT_22_MODULE_VERSION = '1.6.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -3751,6 +4181,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round5 = runAgent22Round5SelfTests();
   for (const r of round5.results) {
     check(`agent22_round5_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round6 = runAgent22Round6SelfTests();
+  for (const r of round6.results) {
+    check(`agent22_round6_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;
