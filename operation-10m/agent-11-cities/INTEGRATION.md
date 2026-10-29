@@ -33,6 +33,13 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 4. Persist infra slice under `gameState.op10mAgent11IntercityInfra` (`createEmptyOP10M_A11_InfraPersisted()`).
 5. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
 
+### Scale wave round 46 (O10-223, schema `10m.a11.composite.45`)
+
+- **Regional collapse omni singularity pantheism** — cosmism × depletion × ratification (`op10mA11ComputeRegionalCollapseOmniSingularityPantheism`)
+- **Interregional void total erosion exhaustion** — depletion × cosmism × void front (`op10mA11ComputeInterregionalVoidTotalErosionExhaustion`)
+- **Settlement existential absolute nullity canonization** — ratification × cosmism × nullity sentence (`op10mA11ComputeSettlementExistentialAbsoluteNullityCanonization`)
+- Derived events: `collapse_omni_singularity_pantheism`, `void_total_erosion_exhaustion`, `existential_absolute_nullity_canonization`
+
 ### Scale wave round 45 (O10-221, schema `10m.a11.composite.44`)
 
 - **Regional collapse omni singularity cosmism** — universalism × ablation × sealing (`op10mA11ComputeRegionalCollapseOmniSingularityCosmism`)
