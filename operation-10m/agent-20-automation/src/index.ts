@@ -72,6 +72,9 @@ export * from './automation-idle-governance-program-wave-scale-dispatch.js';
 export * from './automation-idle-governance-program-wave-scale-dispatch-compare.js';
 export * from './automation-idle-governance-program-wave-scale-dispatch-replay-parity.js';
 export * from './automation-idle-governance-program-wave-landing-gate.js';
+export * from './automation-idle-governance-program-wave-landing-gate-compare.js';
+export * from './automation-idle-governance-program-wave-landing-bundle.js';
+export * from './automation-idle-governance-program-wave-scale-wave-seal.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
@@ -144,6 +147,9 @@ import { runO10Agent20IdleGovernanceProgramWaveScaleDispatchSelfTests } from './
 import { runO10Agent20IdleGovernanceProgramWaveScaleDispatchCompareSelfTests } from './automation-idle-governance-program-wave-scale-dispatch-compare.js';
 import { runO10Agent20IdleGovernanceProgramWaveScaleDispatchReplayParitySelfTests } from './automation-idle-governance-program-wave-scale-dispatch-replay-parity.js';
 import { runO10Agent20IdleGovernanceProgramWaveLandingGateSelfTests } from './automation-idle-governance-program-wave-landing-gate.js';
+import { runO10Agent20IdleGovernanceProgramWaveLandingGateCompareSelfTests } from './automation-idle-governance-program-wave-landing-gate-compare.js';
+import { runO10Agent20IdleGovernanceProgramWaveLandingBundleSelfTests } from './automation-idle-governance-program-wave-landing-bundle.js';
+import { runO10Agent20IdleGovernanceProgramWaveScaleWaveSealSelfTests } from './automation-idle-governance-program-wave-scale-wave-seal.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -246,6 +252,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramWaveScaleDispatchCompareSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveScaleDispatchReplayParitySelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveLandingGateSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveLandingGateCompareSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveLandingBundleSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveScaleWaveSealSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

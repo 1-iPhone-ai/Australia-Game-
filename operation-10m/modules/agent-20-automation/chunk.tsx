@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 40a870b0875935f0a3fc6939873dd03be3aad762d15577d37b5862a9ba98f84c
-// OP10M_MODULE_VERSION: 10m.1.23.0-agent20
+// OP10M_MANIFEST_SHA256: ba19f249d216a6525130988834e229f5a53f23eb703acc774025a8af6d07e3b0
+// OP10M_MODULE_VERSION: 10m.1.24.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -11119,6 +11119,387 @@ export function runO10Agent20IdleGovernanceProgramWaveLandingGateSelfTests(): O1
 }
 
 
+// --- source: automation-idle-governance-program-wave-landing-gate-compare.ts ---
+
+export interface O10IdleGovernanceProgramWaveLandingGateCompareResult {
+  schema: '10m.agent20.idle-governance-program-wave-landing-gate-compare.v1';
+  waveRound: number;
+  parityOk: boolean;
+  mismatches: string[];
+  summaryLine: string;
+}
+
+function compareLandingGateFields(
+  baseline: O10IdleGovernanceProgramWaveLandingGateResult,
+  candidate: O10IdleGovernanceProgramWaveLandingGateResult
+): string[] {
+  const mismatches: string[] = [];
+  if (baseline.waveRound !== candidate.waveRound) {
+    mismatches.push(`wave_round ${baseline.waveRound} vs ${candidate.waveRound}`);
+  }
+  if (baseline.landingOpen !== candidate.landingOpen) {
+    mismatches.push(`landing_open ${baseline.landingOpen} vs ${candidate.landingOpen}`);
+  }
+  if (baseline.dispatchCompare.parityOk !== candidate.dispatchCompare.parityOk) {
+    mismatches.push('dispatch_compare_parity');
+  }
+  if (baseline.replayParity.replayParityOk !== candidate.replayParity.replayParityOk) {
+    mismatches.push('replay_parity');
+  }
+  if (baseline.primaryDispatch.dispatchReady !== candidate.primaryDispatch.dispatchReady) {
+    mismatches.push('primary_dispatch_ready');
+  }
+  return mismatches;
+}
+
+/** Round-24 twin landing gate regression compare. */
+export function compareIdleGovernanceProgramWaveLandingGates(
+  baseline: O10IdleGovernanceProgramWaveLandingGateResult,
+  candidate: O10IdleGovernanceProgramWaveLandingGateResult
+): O10IdleGovernanceProgramWaveLandingGateCompareResult {
+  const mismatches = compareLandingGateFields(baseline, candidate);
+  const waveRound = baseline.waveRound;
+  const parityOk = mismatches.length === 0;
+
+  const summaryLine = [
+    'gov_program_wave_landing_gate_compare',
+    `round=${waveRound}`,
+    `parity=${parityOk}`,
+    `mismatches=${mismatches.length}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-landing-gate-compare.v1',
+    waveRound,
+    parityOk,
+    mismatches,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveLandingGateCompareSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const twin = (): O10IdleGovernanceProgramWaveLandingGateResult => ({
+    schema: '10m.agent20.idle-governance-program-wave-landing-gate.v1',
+    waveRound: 24,
+    landingOpen: true,
+    landingMarkdown: 'md',
+    summaryLine: 'land',
+    primaryDispatch: {
+      dispatchReady: true,
+    } as O10IdleGovernanceProgramWaveLandingGateResult['primaryDispatch'],
+    twinDispatch: {} as O10IdleGovernanceProgramWaveLandingGateResult['twinDispatch'],
+    dispatchCompare: { parityOk: true } as O10IdleGovernanceProgramWaveLandingGateResult['dispatchCompare'],
+    replayParity: { replayParityOk: true } as O10IdleGovernanceProgramWaveLandingGateResult['replayParity'],
+  });
+
+  const ok = compareIdleGovernanceProgramWaveLandingGates(twin(), twin());
+  push('gov_prog_land_cmp_parity', 'identical landing gates report parity', ok.parityOk === true);
+
+  const bad = compareIdleGovernanceProgramWaveLandingGates(twin(), { ...twin(), landingOpen: false });
+  push(
+    'gov_prog_land_cmp_open',
+    'landing_open drift surfaces mismatch',
+    bad.parityOk === false && bad.mismatches.some(m => m.startsWith('landing_open'))
+  );
+
+  push(
+    'gov_prog_land_cmp_schema',
+    'landing gate compare schema marker',
+    ok.schema === '10m.agent20.idle-governance-program-wave-landing-gate-compare.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-landing-bundle.ts ---
+
+export interface O10IdleGovernanceProgramWaveLandingBundlePayload {
+  schema: '10m.agent20.idle-governance-program-wave-landing-bundle.v1';
+  waveRound: number;
+  landingOpen: boolean;
+  projectedLocHint: number;
+  sealHookLines: string[];
+}
+
+export interface O10IdleGovernanceProgramWaveLandingBundleResult {
+  schema: '10m.agent20.idle-governance-program-wave-landing-bundle.v1';
+  waveRound: number;
+  landing: O10IdleGovernanceProgramWaveLandingGateResult;
+  payload: O10IdleGovernanceProgramWaveLandingBundlePayload;
+  bundleMarkdown: string;
+  summaryLine: string;
+}
+
+function buildSealHookLines(
+  landing: O10IdleGovernanceProgramWaveLandingGateResult,
+  projectedLocHint: number
+): string[] {
+  const rollup = landing.primaryDispatch.projectionRollup;
+  return [
+    `O10_AGENT20_WAVE_LANDING round=${landing.waveRound}`,
+    `O10_AGENT20_WAVE_LANDING_OPEN ${landing.landingOpen}`,
+    `O10_AGENT20_WAVE_LOC_HINT ${projectedLocHint}`,
+    `O10_AGENT20_WAVE_LOC_BAND ${rollup.projectedLocBand}`,
+    `O10_AGENT20_WAVE_DISPATCH_READY ${landing.primaryDispatch.dispatchReady}`,
+  ];
+}
+
+/** Round-24 landing bundle for Agent 25 wave-24 integration seal hooks. */
+export function bundleIdleGovernanceProgramWaveLanding(
+  landing: O10IdleGovernanceProgramWaveLandingGateResult,
+  projectedLocHint: number
+): O10IdleGovernanceProgramWaveLandingBundleResult {
+  const sealHookLines = buildSealHookLines(landing, projectedLocHint);
+
+  const payload: O10IdleGovernanceProgramWaveLandingBundlePayload = {
+    schema: '10m.agent20.idle-governance-program-wave-landing-bundle.v1',
+    waveRound: landing.waveRound,
+    landingOpen: landing.landingOpen,
+    projectedLocHint,
+    sealHookLines,
+  };
+
+  const bundleMarkdown = [
+    '# Agent 20 idle governance wave landing bundle',
+    '',
+    ...sealHookLines.map(line => `- ${line}`),
+    '',
+    landing.landingMarkdown,
+  ].join('\n');
+
+  const summaryLine = [
+    'gov_program_wave_landing_bundle',
+    `round=${landing.waveRound}`,
+    `open=${landing.landingOpen}`,
+    `hooks=${sealHookLines.length}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-landing-bundle.v1',
+    waveRound: landing.waveRound,
+    landing,
+    payload,
+    bundleMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveLandingBundleSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const mockLanding = (): O10IdleGovernanceProgramWaveLandingGateResult => ({
+    schema: '10m.agent20.idle-governance-program-wave-landing-gate.v1',
+    waveRound: 24,
+    landingOpen: true,
+    landingMarkdown: '# land',
+    summaryLine: 's',
+    twinDispatch: {} as O10IdleGovernanceProgramWaveLandingGateResult['twinDispatch'],
+    dispatchCompare: {} as O10IdleGovernanceProgramWaveLandingGateResult['dispatchCompare'],
+    replayParity: {} as O10IdleGovernanceProgramWaveLandingGateResult['replayParity'],
+    primaryDispatch: {
+      dispatchReady: true,
+      projectionRollup: { projectedLocBand: 'on_track' },
+    } as O10IdleGovernanceProgramWaveLandingGateResult['primaryDispatch'],
+  });
+
+  const bundle = bundleIdleGovernanceProgramWaveLanding(mockLanding(), 1_487_095);
+  push(
+    'gov_prog_land_bundle_hooks',
+    'landing bundle includes seal hook lines',
+    bundle.payload.sealHookLines.length === 5 &&
+      bundle.payload.projectedLocHint === 1_487_095 &&
+      bundle.bundleMarkdown.includes('landing bundle')
+  );
+
+  push(
+    'gov_prog_land_bundle_schema',
+    'landing bundle schema marker',
+    bundle.schema === '10m.agent20.idle-governance-program-wave-landing-bundle.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-scale-wave-seal.ts ---
+  createEmptyIdleGovernanceProgramRegistry,
+  type O10IdleGovernanceProgramRegistry,
+} from './automation-idle-governance-program-registry.js';
+
+export type O10IdleGovernanceProgramWaveScaleWaveSealVerdict = 'sealed' | 'hold' | 'blocked';
+
+export interface O10IdleGovernanceProgramWaveScaleWaveSealResult {
+  schema: '10m.agent20.idle-governance-program-wave-scale-wave-seal.v1';
+  waveRound: number;
+  sealVerdict: O10IdleGovernanceProgramWaveScaleWaveSealVerdict;
+  primaryLanding: ReturnType<typeof gateIdleGovernanceProgramWaveLanding>;
+  twinLanding: ReturnType<typeof gateIdleGovernanceProgramWaveLanding>;
+  landingCompare: ReturnType<typeof compareIdleGovernanceProgramWaveLandingGates>;
+  landingBundle: ReturnType<typeof bundleIdleGovernanceProgramWaveLanding>;
+  sealMarkdown: string;
+  summaryLine: string;
+}
+
+function deriveSealVerdict(
+  landingOpen: boolean,
+  landingCompareParity: boolean
+): O10IdleGovernanceProgramWaveScaleWaveSealVerdict {
+  if (landingOpen && landingCompareParity) return 'sealed';
+  if (!landingCompareParity) return 'blocked';
+  return 'hold';
+}
+
+/** Round-24 scale-wave seal: landing gate + twin compare + bundle for wave 24/24 close. */
+export function sealIdleGovernanceProgramWaveScaleWave(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number,
+  waveRound: number,
+  projectedLocHint: number,
+  priorRegistry: O10IdleGovernanceProgramRegistry = createEmptyIdleGovernanceProgramRegistry()
+): O10IdleGovernanceProgramWaveScaleWaveSealResult {
+  const primaryLanding = gateIdleGovernanceProgramWaveLanding(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    projectedLocHint,
+    priorRegistry
+  );
+  const twinLanding = gateIdleGovernanceProgramWaveLanding(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    projectedLocHint,
+    priorRegistry
+  );
+  const landingCompare = compareIdleGovernanceProgramWaveLandingGates(primaryLanding, twinLanding);
+  const landingBundle = bundleIdleGovernanceProgramWaveLanding(primaryLanding, projectedLocHint);
+  const sealVerdict = deriveSealVerdict(primaryLanding.landingOpen, landingCompare.parityOk);
+
+  const sealMarkdown = [
+    '# Agent 20 idle governance scale wave seal',
+    '',
+    `- wave_round=${waveRound}`,
+    `- seal_verdict=${sealVerdict}`,
+    `- ${landingCompare.summaryLine}`,
+    '',
+    landingBundle.bundleMarkdown,
+  ].join('\n');
+
+  const summaryLine = [
+    'gov_program_wave_scale_wave_seal',
+    `round=${waveRound}`,
+    `verdict=${sealVerdict}`,
+    landingBundle.summaryLine,
+    landingCompare.summaryLine,
+  ].join(' | ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-scale-wave-seal.v1',
+    waveRound,
+    sealVerdict,
+    primaryLanding,
+    twinLanding,
+    landingCompare,
+    landingBundle,
+    sealMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveScaleWaveSealSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'seal1',
+    name: 'Scale wave seal',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const seal = sealIdleGovernanceProgramWaveScaleWave(calmSpec, sampleRule, 1, 3, 24, 1_487_095);
+  push(
+    'gov_prog_wave_seal_calm',
+    'calm spec seals wave with landing parity',
+    seal.sealVerdict === 'sealed' &&
+      seal.landingCompare.parityOk === true &&
+      seal.sealMarkdown.includes('scale wave seal')
+  );
+
+  const seal2 = sealIdleGovernanceProgramWaveScaleWave(
+    calmSpec,
+    sampleRule,
+    3,
+    2,
+    24,
+    1_487_095,
+    seal.primaryLanding.primaryDispatch.primaryCloseout.primaryGate.primaryExport.run.primaryGate
+      .primaryCloseout.subject.executive.director.operations.registry
+  );
+  push(
+    'gov_prog_wave_seal_chain',
+    'chained seal accumulates registry',
+    seal2.primaryLanding.primaryDispatch.primaryCloseout.primaryGate.primaryExport.run.primaryGate
+      .primaryCloseout.subject.executive.director.registryRollup.entryCount === 2 &&
+      seal2.summaryLine.includes('gov_program_wave_scale_wave_seal')
+  );
+
+  push(
+    'gov_prog_wave_seal_schema',
+    'scale wave seal schema marker',
+    seal.schema === '10m.agent20.idle-governance-program-wave-scale-wave-seal.v1'
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -11223,6 +11604,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramWaveScaleDispatchCompareSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveScaleDispatchReplayParitySelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveLandingGateSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveLandingGateCompareSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveLandingBundleSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveScaleWaveSealSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
