@@ -2,6 +2,8 @@
 
 Urban growth balance, regional inequality metrics, and national–local spillover links. Standalone TypeScript until Agent 25 assembly into V9.4.
 
+**Scale wave round 25:** regional ultimate collapse singularity seal, interregional void annihilation convergence, settlement existential null-state lock (schema `10m.a11.composite.24`).
+
 **Scale wave round 24:** regional absolute collapse horizon lock, interregional void finalization cascade, settlement existential obliteration threshold (schema `10m.a11.composite.23`).
 
 **Scale wave round 23:** regional collapse horizon convergence, interregional void totalization surge, settlement existential terminus lock (schema `10m.a11.composite.22`).

@@ -76,5 +76,8 @@ export * from './settlement-existential-terminus-lock.ts';
 export * from './regional-absolute-collapse-horizon-lock.ts';
 export * from './interregional-void-finalization-cascade.ts';
 export * from './settlement-existential-obliteration-threshold.ts';
+export * from './regional-ultimate-collapse-singularity-seal.ts';
+export * from './interregional-void-annihilation-convergence.ts';
+export * from './settlement-existential-null-state-lock.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';
