@@ -6333,7 +6333,8 @@ export type IntentNavTarget =
   | 'sabotage'
   | 'help'
   | 'automation'
-  | 'diplomacy';
+  | 'diplomacy'
+  | 'negotiations';
 
 export interface IntentNavAction {
   id: string;
@@ -67102,6 +67103,7 @@ export function resolveIntentNavToUiPatch(target: IntentNavTarget): Record<strin
     case 'help': return { showHelp: true };
     case 'automation': return { showSettings: true, settingsActiveTab: 'automation' };
     case 'diplomacy': return { showAiRivalryModal: true };
+    case 'negotiations': return { showNegotiationCenter: true };
     default: return {};
   }
 }
@@ -101536,6 +101538,190 @@ function compareContextualCandidates(a: ContextualActionCandidate, b: Contextual
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
+
+/** Inputs for the V9 integrated player surface catalog (mirrors action-bar + map quick actions). */
+export interface V9IntegratedPlayerSurfaceInput {
+  isPlayerTurn: boolean;
+  currentRegion: string | null | undefined;
+  playerId: string;
+  gameSettings: GameSettingsState;
+  isCompetitiveMode: boolean;
+  playerControlKey: string;
+  regionDeposits: RegionDeposits | undefined;
+  diplomacyState: DiplomacyState | null | undefined;
+  turnCounter: number;
+  actorsById: Record<string, any> | undefined;
+  getActorDisplayName: (id: string) => string;
+  pendingNegotiationCount?: number;
+  isTeamMode?: boolean;
+}
+
+/**
+ * Deterministic list of navigable player-action surfaces for the V9 Contextual Action System.
+ * Rules match the classic action bar (turn gating, feature flags, shop region, diplomacy relevance).
+ */
+export function buildV9IntegratedPlayerSurfaces(input: V9IntegratedPlayerSurfaceInput): ContextualSurfaceInput[] {
+  const turn = input.isPlayerTurn;
+  const notTurn = turn ? null : 'Not your turn';
+  const gs = input.gameSettings;
+  const onShopRegion = EQUIPMENT_SHOP_REGIONS.includes(String(input.currentRegion || ''));
+  const list: ContextualSurfaceInput[] = [
+    { id: 'travel', label: 'Travel', icon: '✈️', target: 'travel', category: 'explore', legal: turn, blockReason: notTurn },
+    { id: 'challenges', label: 'Challenges', icon: '🎯', target: 'challenges', category: 'explore', legal: turn, blockReason: notTurn },
+    { id: 'market', label: 'Market', icon: '💰', target: 'market', category: 'economy', legal: turn, blockReason: notTurn },
+    { id: 'resourceMarket', label: 'Resource Market', icon: '🛍️', target: 'resource_market', category: 'economy', legal: turn, blockReason: notTurn },
+    { id: 'workshop', label: 'Workshop', icon: '🔨', target: 'workshop', category: 'build', legal: turn, blockReason: notTurn }
+  ];
+  if (gs.regionalContractsEnabled !== false) {
+    list.push({ id: 'contracts', label: 'Contracts', icon: '📜', target: 'contracts', category: 'build', legal: turn, blockReason: notTurn });
+  }
+  if (gs.equipmentShopEnabled) {
+    list.push({ id: 'shop', label: 'Shop', icon: '🛒', target: 'shop', category: 'build', legal: turn && onShopRegion, blockReason: notTurn || (onShopRegion ? null : 'No shop in this region') });
+  }
+  if (gs.investmentsEnabled) {
+    list.push({ id: 'investments', label: 'Investments', icon: '🏦', target: 'investments', category: 'build', legal: turn, blockReason: notTurn });
+  }
+  if (gs.advancedLoansEnabled && gs.advancedLoansAccessMode !== 'ai_only') {
+    list.push({ id: 'loans', label: 'Loans', icon: '🏦', target: 'loans', category: 'economy', legal: turn, blockReason: notTurn });
+  }
+  if (gs.sabotageEnabled && input.isCompetitiveMode) {
+    list.push({ id: 'sabotage', label: 'Sabotage', icon: SABOTAGE_ICON, target: 'sabotage', category: 'compete', legal: turn, blockReason: notTurn });
+  }
+  if (gs.stateInfrastructureEnabled) {
+    list.push({ id: 'infrastructure', label: 'Infrastructure', icon: '🏗️', target: 'infrastructure', category: 'build', legal: turn, blockReason: notTurn });
+  }
+  if (gs.expeditionsRelicsEnabled) {
+    list.push({ id: 'expeditions', label: 'Expeditions', icon: '🏺', target: 'expeditions', category: 'explore', legal: turn, blockReason: notTurn });
+  }
+  list.push({ id: 'progress', label: 'Progress', icon: '📊', target: 'progress', category: 'meta', legal: true, blockReason: null });
+  if (gs.interactiveMapEnabled !== false) {
+    list.push({ id: 'map', label: 'Map', icon: '🗺️', target: 'map', category: 'explore', legal: true, blockReason: null });
+  }
+  const pendingNeg = Number(input.pendingNegotiationCount || 0);
+  if (gs.negotiationMode || pendingNeg > 0) {
+    list.push({
+      id: 'negotiations',
+      label: pendingNeg > 0 ? `Negotiations (${pendingNeg})` : 'Negotiations',
+      icon: '🤝',
+      target: 'negotiations',
+      category: 'compete',
+      legal: true,
+      blockReason: null
+    });
+  }
+  if (input.isTeamMode) {
+    list.push({ id: 'governance', label: 'Governance', icon: '🏛️', target: 'governance', category: 'team', legal: true, blockReason: null });
+  }
+  if (input.isCompetitiveMode) {
+    const deposits = sanitizeRegionDeposits(input.regionDeposits);
+    const pressured = Object.keys(REGIONS).filter(code => {
+      const e = deposits[code] || {};
+      return getRegionControlSnapshot(e).controllerId === input.playerControlKey
+        && Object.entries(e).some(([k, v]) => k !== input.playerControlKey && Number(v) > 0);
+    });
+    const names = Object.fromEntries((Object.values(input.actorsById || {}) as any[]).filter(Boolean).map(a => [String(a.id), input.getActorDisplayName(String(a.id))]));
+    const dn = diplomaticContextualSurface(input.diplomacyState, String(input.playerId || 'player'), Number(input.turnCounter || 0), pressured, names);
+    if (dn) list.push({ id: dn.id, label: dn.label, icon: '🤝', target: 'diplomacy', category: 'compete', legal: true, blockReason: null });
+  }
+  return list;
+}
+
+export interface IntegratePlayerActionCandidatesInput {
+  gameState: any;
+  player: any;
+  gameSettings: GameSettingsState;
+  playerControlKey: string;
+  isCompetitiveMode: boolean;
+  isTeamMode: boolean;
+  turn: number;
+}
+
+/**
+ * Merges canonical human player actions that Co-Pilot's sample generator may omit (region deposits,
+ * special abilities) so V9 ranking / Game Intelligence can recommend and execute them through the
+ * same integrated path as other candidates.
+ */
+export function integratePlayerActionCandidates(
+  candidates: CoPilotActionCandidate[],
+  input: IntegratePlayerActionCandidatesInput
+): CoPilotActionCandidate[] {
+  const merged = [...candidates];
+  const actor = input.player;
+  const gs = input.gameState;
+  const settings = input.gameSettings;
+  const ap = typeof getRemainingActionPoints === 'function' ? getRemainingActionPoints(actor, settings) : 3;
+  const cash = Number(actor?.money || 0);
+  const region = String(actor?.currentRegion || 'NSW');
+  const reserve = Number(settings.coPilotSettings?.spendingCaps?.minimumCashReserve ?? 250);
+  const makeId = (slug: string) => `integrated_${slug}_t${input.turn}`;
+
+  const hasDeposit = merged.some(c => c.actionType === 'region_deposit' && (c.parameters?.region === region || c.targetId === region));
+  if (!hasDeposit && input.isCompetitiveMode && !settings.negotiationMode) {
+    const winKind = WIN_METRIC_PROFILES[settings.winCondition]?.goalKind;
+    if (winKind === 'regions' || settings.regionalStandingEnabled) {
+      const deposits = sanitizeRegionDeposits(gs.regionDeposits);
+      const amount = getRequiredDepositToControl(deposits, region, input.playerControlKey);
+      const apCost = typeof getActionPointCost === 'function' ? (getActionPointCost('regional_deposit', actor, settings) || 1) : 1;
+      const postCash = cash - amount;
+      let invalid: string | undefined;
+      if (ap < apCost) invalid = `Insufficient Action Points (${ap} available, ${apCost} required)`;
+      else if (amount <= 0) invalid = 'Deposit amount unavailable';
+      else if (postCash < reserve) invalid = `Cost $${amount} breaches minimum cash reserve floor ($${reserve})`;
+      else if (cash < amount) invalid = `Need $${amount - cash} more cash`;
+      merged.push({
+        id: makeId('region_deposit'),
+        category: 'rival_interactions',
+        categoryIndex: 7,
+        categoryName: 'Regional Control',
+        title: `Deposit $${amount.toLocaleString()} in ${REGIONS[region]?.name || region}`,
+        description: winKind === 'regions' ? 'Take or defend regional control toward the win condition.' : 'Boost regional standing with a control deposit.',
+        actionType: 'region_deposit',
+        apCost,
+        costEstimate: amount,
+        expectedOutcome: `Shift control in ${REGIONS[region]?.name || region}`,
+        utilityScore: winKind === 'regions' ? 86 : 70,
+        riskFactor: 18,
+        rewardScore: 75,
+        longTermScore: 82,
+        expectedStateDelta: { cashDelta: -amount, apDelta: -apCost, influenceDelta: 8 },
+        isValid: !invalid,
+        invalidationReason: invalid,
+        targetId: region,
+        parameters: { region, regionCode: region, amount, actorId: actor?.id || input.playerControlKey }
+      });
+    }
+  }
+
+  if (actor?.character?.specialAbility && Number(actor.specialAbilityUses || 0) > 0 && !merged.some(c => c.actionType === 'special_ability')) {
+    const ability = actor.character.specialAbility;
+    const name = ability.name || 'Special Ability';
+    const apCost = typeof getActionPointCost === 'function' ? (getActionPointCost('special_ability', actor, settings) || 1) : 1;
+    const invalid = ap < apCost ? `Insufficient Action Points (${ap} available, ${apCost} required)` : undefined;
+    merged.push({
+      id: makeId('special_ability'),
+      category: 'special_abilities',
+      categoryIndex: 10,
+      categoryName: 'Special Ability',
+      title: `Activate ${name}`,
+      description: `Use your character ability (${actor.specialAbilityUses} remaining).`,
+      actionType: 'special_ability',
+      apCost,
+      costEstimate: 0,
+      expectedOutcome: `Trigger ${name}`,
+      utilityScore: 76,
+      riskFactor: 10,
+      rewardScore: 70,
+      longTermScore: 60,
+      expectedStateDelta: { cashDelta: 0, apDelta: -apCost },
+      isValid: !invalid,
+      invalidationReason: invalid,
+      parameters: { abilityId: ability.id || name }
+    });
+  }
+
+  return merged;
+}
+
 /**
  * Builds the ranked contextual action set. Pure and deterministic: no randomness, no Date.now,
  * ties broken by id. Ranking controls VISIBILITY and ORDER only — executing any candidate still
@@ -101803,7 +101989,7 @@ export function buildContextualActionSet(input: ContextualActionInput): Contextu
       return candidate;
     })
     .sort(compareContextualCandidates)
-    .slice(0, 5);
+    .slice(0, 10);
 
   const fingerprint = [...actionable, ...blocked].map(a => `${a.id}:${Math.round(a.relevance * 100) / 100}`).join('|');
   return { recommended, useful, available, blocked, ranked: actionable, fingerprint };
@@ -103156,6 +103342,35 @@ export function runV9ExperienceSelfTests(): V9SelfTestResult[] {
   check('ctx_all_actions_reachable', 'Available surfaces are exposed so the full feature set stays reachable', () => {
     const set = setFrom([cand('a', 50)], { surfaces: [{ id: 'shop', label: 'Shop', icon: '🛒', target: 'shop', category: 'tools', legal: true }, { id: 'sab', label: 'Sabotage', icon: 'x', target: 'sabotage', category: 'c', legal: false }] });
     return (set.available.length === 1 && set.available[0].navigation?.target === 'shop') || 'surfaces wrong';
+  });
+  check('ctx_integrated_surfaces', 'Integrated player surfaces include infra/expeditions when feature flags are on', () => {
+    const surfaces = buildV9IntegratedPlayerSurfaces({
+      isPlayerTurn: true,
+      currentRegion: 'NSW',
+      playerId: 'player',
+      gameSettings: { ...createDefaultGameSettings(), stateInfrastructureEnabled: true, expeditionsRelicsEnabled: true, interactiveMapEnabled: true },
+      isCompetitiveMode: true,
+      playerControlKey: 'player',
+      regionDeposits: {},
+      diplomacyState: null,
+      turnCounter: 1,
+      actorsById: {},
+      getActorDisplayName: id => id
+    });
+    const targets = new Set(surfaces.map(s => s.target));
+    return (targets.has('infrastructure') && targets.has('expeditions') && targets.has('map') && targets.has('progress')) || [...targets].join(',');
+  });
+  check('ctx_integrated_deposit_candidate', 'Region deposit is integrated into candidate pool for regions win', () => {
+    const merged = integratePlayerActionCandidates([], {
+      gameState: { regionDeposits: { NSW: { ai: 500 } } },
+      player: { id: 'player', currentRegion: 'NSW', money: 5000, actionsUsedThisTurn: 0 },
+      gameSettings: { ...createDefaultGameSettings(), winCondition: 'regions', negotiationMode: false, regionalStandingEnabled: true },
+      playerControlKey: 'player',
+      isCompetitiveMode: true,
+      isTeamMode: false,
+      turn: 2
+    });
+    return merged.some(c => c.actionType === 'region_deposit' && c.isValid) || merged.map(c => c.actionType).join(',');
   });
   check('ctx_buttons_respect_control', 'Do It is withheld while Co-Pilot controls the turn or on another actor’s turn', () => {
     const set = setFrom([cand('a', 50)]);
@@ -184379,12 +184594,22 @@ function dispatchGameSettingsChange(
         ? generateCoPilotPlayerActionCandidates(coPilotRuntimeContext)
         : { candidates: [] };
       candidates = evaluation?.candidates || [];
+      const intentActor = resolveIntentActor(gameState, player);
+      candidates = integratePlayerActionCandidates(candidates, {
+        gameState,
+        player: intentActor,
+        gameSettings,
+        playerControlKey: isTeamMode ? TEAM_PLAYER_ID : 'player',
+        isCompetitiveMode,
+        isTeamMode,
+        turn: Number(gameState.turnCounter || gameState.turn || 1)
+      });
     } catch {
       candidates = [];
     }
     intentCandidateCacheRef.current = { fingerprint, candidates };
     setIntentRecCandidates(candidates);
-  }, [isLiveIntentMatch, gameState, player, coPilotRuntimeContext]);
+  }, [isLiveIntentMatch, gameState, player, coPilotRuntimeContext, gameSettings, isCompetitiveMode, isTeamMode]);
   const intentLayerComputed = useMemo(() => {
     const actor = resolveIntentActor(gameState, player);
     const idleObjective: CurrentObjective = {
@@ -212089,32 +212314,21 @@ function dispatchGameSettingsChange(
   }, [v9StartNonce, coPilotManualOverride, takeoverSession?.manualStopLatched, handleStartCoPilot]);
 
   // Surfaces mirror the action bar's own visibility / availability rules.
-  const v9Surfaces = useMemo<ContextualSurfaceInput[]>(() => {
-    const turn = isPlayerTurnForCoPilot;
-    const notTurn = turn ? null : 'Not your turn';
-    const onShopRegion = EQUIPMENT_SHOP_REGIONS.includes(player?.currentRegion);
-    const list: ContextualSurfaceInput[] = [
-      { id: 'travel', label: 'Travel', icon: '✈️', target: 'travel', category: 'explore', legal: turn, blockReason: notTurn },
-      { id: 'challenges', label: 'Challenges', icon: '🎯', target: 'challenges', category: 'explore', legal: turn, blockReason: notTurn },
-      { id: 'market', label: 'Market', icon: '💰', target: 'market', category: 'economy', legal: turn, blockReason: notTurn },
-      { id: 'resourceMarket', label: 'Resource Market', icon: '🛍️', target: 'resource_market', category: 'economy', legal: turn, blockReason: notTurn },
-      { id: 'workshop', label: 'Workshop', icon: '🔨', target: 'workshop', category: 'build', legal: turn, blockReason: notTurn },
-      { id: 'contracts', label: 'Contracts', icon: '📜', target: 'contracts', category: 'build', legal: turn, blockReason: notTurn }
-    ];
-    if (gameSettings.equipmentShopEnabled) list.push({ id: 'shop', label: 'Shop', icon: '🛒', target: 'shop', category: 'build', legal: turn && onShopRegion, blockReason: notTurn || (onShopRegion ? null : 'No shop in this region') });
-    if (gameSettings.investmentsEnabled) list.push({ id: 'investments', label: 'Investments', icon: '🏦', target: 'investments', category: 'build', legal: turn, blockReason: notTurn });
-    if (gameSettings.advancedLoansEnabled && gameSettings.advancedLoansAccessMode !== 'ai_only') list.push({ id: 'loans', label: 'Loans', icon: '🏦', target: 'loans', category: 'economy', legal: turn, blockReason: notTurn });
-    if (gameSettings.sabotageEnabled && isCompetitiveMode) list.push({ id: 'sabotage', label: 'Sabotage', icon: SABOTAGE_ICON, target: 'sabotage', category: 'compete', legal: turn, blockReason: notTurn });
-    // Diplomacy 2.0: one entry, only when relevant (a waiting proposal, an expiring pact, or live pressure on a region you hold).
-    if (isCompetitiveMode) {
-      const deposits = sanitizeRegionDeposits(gameState.regionDeposits);
-      const pressured = Object.keys(REGIONS).filter(code => { const e = deposits[code] || {}; return getRegionControlSnapshot(e).controllerId === playerControlKey && Object.entries(e).some(([k, v]) => k !== playerControlKey && Number(v) > 0); });
-      const names = Object.fromEntries((Object.values(actorsById || {}) as any[]).filter(Boolean).map(a => [String(a.id), getActorDisplayName(String(a.id))]));
-      const dn = diplomaticContextualSurface((gameState as any).diplomacyState, String(player?.id || 'player'), Number(gameState.turnCounter || 0), pressured, names);
-      if (dn) list.push({ id: dn.id, label: dn.label, icon: '🤝', target: 'diplomacy', category: 'compete', legal: true, blockReason: null });
-    }
-    return list;
-  }, [isPlayerTurnForCoPilot, player?.currentRegion, player?.id, gameSettings.equipmentShopEnabled, gameSettings.investmentsEnabled, gameSettings.advancedLoansEnabled, gameSettings.advancedLoansAccessMode, gameSettings.sabotageEnabled, isCompetitiveMode, gameState.regionDeposits, (gameState as any).diplomacyState, gameState.turnCounter, playerControlKey, actorsById, getActorDisplayName]);
+  const v9Surfaces = useMemo<ContextualSurfaceInput[]>(() => buildV9IntegratedPlayerSurfaces({
+    isPlayerTurn: isPlayerTurnForCoPilot,
+    currentRegion: player?.currentRegion,
+    playerId: String(player?.id || 'player'),
+    gameSettings,
+    isCompetitiveMode,
+    playerControlKey,
+    regionDeposits: gameState.regionDeposits,
+    diplomacyState: (gameState as any).diplomacyState,
+    turnCounter: Number(gameState.turnCounter || 0),
+    actorsById,
+    getActorDisplayName,
+    pendingNegotiationCount: Number(gameState.negotiationCenter?.pendingProposalsCount || 0),
+    isTeamMode
+  }), [isPlayerTurnForCoPilot, player?.currentRegion, player?.id, gameSettings, isCompetitiveMode, gameState.regionDeposits, (gameState as any).diplomacyState, gameState.turnCounter, gameState.negotiationCenter?.pendingProposalsCount, playerControlKey, actorsById, getActorDisplayName, isTeamMode]);
 
   const v9ActionSet = useMemo(() => buildContextualActionSet({
     rankedRecommendations: intentLayerComputed.contextualRanked,
