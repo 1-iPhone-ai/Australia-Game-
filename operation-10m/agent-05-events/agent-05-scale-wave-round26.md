@@ -49,4 +49,4 @@ No V9.4 edits. No promote from this worker.
 
 ## Base / commit
 
-Round 25 base: **`e71decde`**. Round 26 HEAD: *(see git after push)*. On origin (push-first). **180/180** tests verified pre-push.
+Round 25 base: **`e71decde`**. Round 26 HEAD: **`b237bce2`**. On origin (push-first). **180/180** tests verified pre-push.
