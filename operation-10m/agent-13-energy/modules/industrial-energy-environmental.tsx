@@ -72,6 +72,13 @@ import {
   type V1014RegionalRezTransmissionLedger,
 } from './rez-transmission-bushfire-resilience-ledger';
 import {
+  advanceRegionalEvV2gFleet,
+  computeRegionalRooftopDerLedger,
+  scoreAgent13DerV2gGIAlignment,
+  type V1014RegionalEvV2gFleetLedger,
+  type V1014RegionalRooftopDerLedger,
+} from './distributed-rooftop-ev-v2g-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25560,6 +25567,10 @@ export interface V1014RegionalEnergyProfile {
   rezSpillRelief: number;
   bushfireResilienceBand: string;
   bushfireGridRelief: number;
+  rooftopDerBand: string;
+  rooftopDerRelief: number;
+  evV2gFleetBand: string;
+  evV2gGridRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25612,6 +25623,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalFirmingLedgers: Record<string, V1014RegionalGridFirmingLedger>;
   regionalRezLedgers: Record<string, V1014RegionalRezTransmissionLedger>;
   regionalBushfireLedgers: Record<string, V1014RegionalBushfireResilienceLedger>;
+  regionalRooftopDerLedgers: Record<string, V1014RegionalRooftopDerLedger>;
+  regionalEvV2gLedgers: Record<string, V1014RegionalEvV2gFleetLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25635,6 +25648,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalFirmingMemory: Record<string, { firmingIndex: number }>;
   regionalRezMemory: Record<string, { spillBalance: number; backboneIndex: number }>;
   regionalBushfireMemory: Record<string, { resilienceIndex: number }>;
+  regionalRooftopDerMemory: Record<string, { exportBalance: number; derIndex: number }>;
+  regionalEvV2gMemory: Record<string, { fleetIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25670,6 +25685,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalFirmingMemory: {},
     regionalRezMemory: {},
     regionalBushfireMemory: {},
+    regionalRooftopDerMemory: {},
+    regionalEvV2gMemory: {},
     history: [],
   };
 }
@@ -25703,6 +25720,9 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     regionalRezMemory: typeof raw.regionalRezMemory === 'object' && raw.regionalRezMemory ? raw.regionalRezMemory : {},
     regionalBushfireMemory:
       typeof raw.regionalBushfireMemory === 'object' && raw.regionalBushfireMemory ? raw.regionalBushfireMemory : {},
+    regionalRooftopDerMemory:
+      typeof raw.regionalRooftopDerMemory === 'object' && raw.regionalRooftopDerMemory ? raw.regionalRooftopDerMemory : {},
+    regionalEvV2gMemory: typeof raw.regionalEvV2gMemory === 'object' && raw.regionalEvV2gMemory ? raw.regionalEvV2gMemory : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -25825,6 +25845,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalFirmingLedgers: {},
       regionalRezLedgers: {},
       regionalBushfireLedgers: {},
+      regionalRooftopDerLedgers: {},
+      regionalEvV2gLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -25851,6 +25873,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const firmingLedgers: Record<string, V1014RegionalGridFirmingLedger> = {};
   const rezLedgers: Record<string, V1014RegionalRezTransmissionLedger> = {};
   const bushfireLedgers: Record<string, V1014RegionalBushfireResilienceLedger> = {};
+  const rooftopDerLedgers: Record<string, V1014RegionalRooftopDerLedger> = {};
+  const evV2gLedgers: Record<string, V1014RegionalEvV2gFleetLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -25874,6 +25898,10 @@ export function computeIndustrialEnergyEnvironmentalState(
   const nextFirmingMemory: Record<string, { firmingIndex: number }> = { ...persisted.regionalFirmingMemory };
   const nextRezMemory: Record<string, { spillBalance: number; backboneIndex: number }> = { ...persisted.regionalRezMemory };
   const nextBushfireMemory: Record<string, { resilienceIndex: number }> = { ...persisted.regionalBushfireMemory };
+  const nextRooftopDerMemory: Record<string, { exportBalance: number; derIndex: number }> = {
+    ...persisted.regionalRooftopDerMemory,
+  };
+  const nextEvV2gMemory: Record<string, { fleetIndex: number }> = { ...persisted.regionalEvV2gMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -26081,6 +26109,28 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextBushfireMemory[regionId] = bushfireStep.next;
     bushfireLedgers[regionId] = bushfireStep.ledger;
 
+    const derStep = computeRegionalRooftopDerLedger({
+      regionId,
+      renewableShareScore,
+      demandFlexRelief: demandStep.ledger.demandFlexRelief,
+      bushfireGridRelief: bushfireStep.ledger.bushfireGridRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextRooftopDerMemory[regionId] || null,
+    });
+    nextRooftopDerMemory[regionId] = derStep.next;
+    rooftopDerLedgers[regionId] = derStep.ledger;
+
+    const v2gStep = advanceRegionalEvV2gFleet({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      rooftopDerBand: derStep.ledger.band,
+      rezSpillRelief: rezStep.ledger.rezSpillRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextEvV2gMemory[regionId] || null,
+    });
+    nextEvV2gMemory[regionId] = v2gStep.next;
+    evV2gLedgers[regionId] = v2gStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26102,6 +26152,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= firmingStep.ledger.gridFirmingRelief;
     pressure -= rezStep.ledger.rezSpillRelief;
     pressure -= bushfireStep.ledger.bushfireGridRelief;
+    pressure -= derStep.ledger.rooftopDerRelief;
+    pressure -= v2gStep.ledger.evV2gGridRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26148,6 +26200,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       firmingStep.ledger.summary,
       rezStep.ledger.summary,
       bushfireStep.ledger.summary,
+      derStep.ledger.summary,
+      v2gStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26256,6 +26310,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       rezSpillRelief: rezStep.ledger.rezSpillRelief,
       bushfireResilienceBand: bushfireStep.ledger.band,
       bushfireGridRelief: bushfireStep.ledger.bushfireGridRelief,
+      rooftopDerBand: derStep.ledger.band,
+      rooftopDerRelief: derStep.ledger.rooftopDerRelief,
+      evV2gFleetBand: v2gStep.ledger.band,
+      evV2gGridRelief: v2gStep.ledger.evV2gGridRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26337,6 +26395,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalFirmingLedgers: firmingLedgers,
     regionalRezLedgers: rezLedgers,
     regionalBushfireLedgers: bushfireLedgers,
+    regionalRooftopDerLedgers: rooftopDerLedgers,
+    regionalEvV2gLedgers: evV2gLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -26360,6 +26420,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalFirmingMemory: nextFirmingMemory,
     regionalRezMemory: nextRezMemory,
     regionalBushfireMemory: nextBushfireMemory,
+    regionalRooftopDerMemory: nextRooftopDerMemory,
+    regionalEvV2gMemory: nextEvV2gMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -26662,6 +26724,37 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     fireBand: rr9.state.regions.NSW?.bushfireResilienceBand,
   });
   check('REZ GI alignment', giRez.relevanceDelta > 0.5, giRez.reason || '');
+
+  const derInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'rooftop_solar_der_cluster',
+      'home_battery_vpp',
+      'commercial_der_hub',
+      'dynamic_export_coordination',
+      'municipal_ev_v2g_fleet',
+      'fleet_depot_bidirectional',
+      'workplace_smart_v2g',
+    ],
+  };
+  const rr10 = computeIndustrialEnergyEnvironmentalState(derInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check('DER ledger tracked', !!rr10.state.regionalRooftopDerLedgers.VIC?.band, rr10.state.regionalRooftopDerLedgers.VIC?.band || '');
+  check(
+    'V2G grid relief',
+    (rr10.state.regions.VIC?.evV2gGridRelief || 0) > 0,
+    String(rr10.state.regions.VIC?.evV2gGridRelief),
+  );
+  check(
+    'DER memory persisted',
+    !!rr10.persisted.regionalRooftopDerMemory.VIC,
+    String(rr10.persisted.regionalRooftopDerMemory.VIC?.derIndex),
+  );
+  const giDer = scoreAgent13DerV2gGIAlignment({
+    actionText: 'Rooftop DER orchestration with municipal EV V2G fleet',
+    derBand: rr10.state.regions.VIC?.rooftopDerBand,
+    v2gBand: rr10.state.regions.VIC?.evV2gFleetBand,
+  });
+  check('DER V2G GI alignment', giDer.relevanceDelta > 0.5, giDer.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

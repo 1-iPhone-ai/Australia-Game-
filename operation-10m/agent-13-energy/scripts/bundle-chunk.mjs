@@ -29,6 +29,7 @@ const FILES = [
   'offshore-marine-demand-response-ledger.ts',
   'carbon-capture-grid-firming-ledger.ts',
   'rez-transmission-bushfire-resilience-ledger.ts',
+  'distributed-rooftop-ev-v2g-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -47,6 +48,8 @@ const EXPORT_MANIFEST = [
   'V1014_GRID_FIRMING_CATALOG',
   'V1014_REZ_TRANSMISSION_CATALOG',
   'V1014_BUSHFIRE_RESILIENCE_CATALOG',
+  'V1014_ROOFTOP_DER_CATALOG',
+  'V1014_EV_V2G_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -80,6 +83,9 @@ const EXPORT_MANIFEST = [
   'runAgent13RezBushfireScaleSelfTests',
   'runAgent13RezBushfireTurnScenario',
   'V1014_REZ_BUSHFIRE_TURN_SCENARIOS',
+  'runAgent13DerV2gScaleSelfTests',
+  'runAgent13DerV2gTurnScenario',
+  'V1014_DER_V2G_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

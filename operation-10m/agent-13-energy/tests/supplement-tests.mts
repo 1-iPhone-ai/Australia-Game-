@@ -30,6 +30,11 @@ import {
   V1014_REZ_BUSHFIRE_TURN_SCENARIOS,
 } from '../modules/rez-transmission-bushfire-resilience-ledger.ts';
 import {
+  runAgent13DerV2gScaleSelfTests,
+  runAgent13DerV2gTurnScenario,
+  V1014_DER_V2G_TURN_SCENARIOS,
+} from '../modules/distributed-rooftop-ev-v2g-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -173,6 +178,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const rezTurn = runAgent13RezBushfireTurnScenario(V1014_REZ_BUSHFIRE_TURN_SCENARIOS[0]);
   ok(rezTurn.passed);
+
+  const derV2g = runAgent13DerV2gScaleSelfTests();
+  ok(derV2g.failed === 0 && derV2g.passed >= 7);
+
+  const derTurn = runAgent13DerV2gTurnScenario(V1014_DER_V2G_TURN_SCENARIOS[0]);
+  ok(derTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
