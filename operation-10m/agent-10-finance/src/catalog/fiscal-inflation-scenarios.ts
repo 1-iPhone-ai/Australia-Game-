@@ -1375,6 +1375,47 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'fiscal', 'household', 'round38'],
   },
+  {
+    id: 'corporate_survival_pricing_latch_stack',
+    label: 'Corporate survival pricing latch stack',
+    description: 'Dominant markup escalation with survival pricing latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.43,
+      publicStability: 36,
+    },
+    tags: ['inflation', 'corporate', 'round39'],
+  },
+  {
+    id: 'trade_tariff_exchange_escalation_stress',
+    label: 'Trade tariff exchange escalation stress',
+    description: 'Ruptured import exchange under tariff latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.4,
+      publicStability: 32,
+    },
+    tags: ['inflation', 'trade', 'round39'],
+  },
+  {
+    id: 'corporate_trade_wave39_fusion_stress',
+    label: 'Corporate & trade wave 39 fusion stress',
+    description: 'Survival runaway pricing colliding with exchange crisis escalation.',
+    patch: {
+      inflationSettingMultiplier: 1.5,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 22,
+    },
+    tags: ['inflation', 'corporate', 'trade', 'round39'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

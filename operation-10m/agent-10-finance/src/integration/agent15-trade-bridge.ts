@@ -15,6 +15,10 @@ export interface Agent15TradeSnapshot {
   importTariffInflationLatch?: boolean;
   /** Round 31: exchange pipeline stress band. */
   exchangePipelineStressBand?: 'stable' | 'stressed' | 'ruptured';
+  /** Round 39: tariff exchange inflation latch. */
+  wave39TariffExchangeLatch?: boolean;
+  /** Round 39: import exchange escalation band. */
+  importExchangeEscalationBand?: 'stable' | 'stressed' | 'ruptured';
 }
 
 export function mergeAgent15IntoMacroFinancialInputs(
@@ -47,6 +51,13 @@ export function mergeAgent15IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
   } else if (snapshot.exchangePipelineStressBand === 'stressed' && snapshot.exchangeRatePressure === 'sharp_depreciation') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave39TariffExchangeLatch && snapshot.importExchangeEscalationBand === 'ruptured') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.importExchangeEscalationBand === 'stressed' && snapshot.exchangeRatePressure === 'sharp_depreciation') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 

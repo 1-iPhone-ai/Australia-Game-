@@ -103,6 +103,8 @@ const FILES = [
   'inflation/modes-sandbox-inflation-stress-cascade.ts',
   'inflation/fiscal-appropriation-inflation-pressure-latch.ts',
   'inflation/household-budget-inflation-stress-cascade.ts',
+  'inflation/corporate-survival-pricing-inflation-latch.ts',
+  'inflation/trade-tariff-exchange-inflation-escalation.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -175,6 +177,7 @@ const FILES = [
   'react/CommandTransportInflationPanel.tsx',
   'react/EventsModesInflationPanel.tsx',
   'react/FiscalHouseholdBudgetInflationPanel.tsx',
+  'react/CorporateTradeWaveInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {
