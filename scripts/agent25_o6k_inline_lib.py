@@ -180,6 +180,26 @@ def energy_environment_paths() -> list[str]:
     return core + catalog + engines + adapters + tail
 
 
+def scenario_packs_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/scenario-packs"
+    catalogs = sorted(str(p.relative_to(ROOT)) for p in (root / "catalog").glob("*.ts"))
+    core = [
+        "expansion/o6k-10m/scenario-packs/v1014-scenario-v2-types.ts",
+        "expansion/o6k-10m/scenario-packs/v1014-scenario-v2-persistence.ts",
+        "expansion/o6k-10m/scenario-packs/v1014-scenario-v2-engine.ts",
+        "expansion/o6k-10m/scenario-packs/v1014-scenario-v2-gates.ts",
+        "expansion/o6k-10m/scenario-packs/v1014-scenario-v2-crosswire.ts",
+    ]
+    tail = catalogs + [
+        "expansion/o6k-10m/scenario-packs/v1014-scenario-v2-catalog-aggregate.ts",
+        "expansion/o6k-10m/scenario-packs/v1014-scenario-v2-replay-manifests.ts",
+        "expansion/o6k-10m/scenario-packs/v1014-scenario-v2-coaching-ledger.ts",
+        "expansion/o6k-10m/scenario-packs/v1014-scenario-v2-fixtures.ts",
+        "expansion/o6k-10m/scenario-packs/v1014-scenario-v2-self-tests.ts",
+    ]
+    return core + tail
+
+
 def insert_before(text: str, block: str, marker: str, label: str) -> str:
     if marker in text:
         print(f"skip insert {label} (marker present)")

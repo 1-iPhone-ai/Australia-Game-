@@ -15,6 +15,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     V94,
     bundle_local_files,
     energy_environment_paths,
+    scenario_packs_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -25,6 +26,7 @@ TRADE_MARKER = "export function runV1014TradeDepthTurn"
 REPLAY_MARKER = "export function runV1014ReplayCounterfactualSelfTests"
 PUBSVC_MARKER = "export function V1014_PUBSVC_computePublicServicesCrosswalk"
 ENERGY_MARKER = "export function V1014_ENERGY_DEPTH_turnHook"
+SCENARIO_MARKER = "export function runV1014ScenarioV2SelfTests"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -47,6 +49,12 @@ PUBSVC_SECTION = (
 ENERGY_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20BC: V10.14 ENERGY DEPTH — GRID, DEPLETION, INTERMITTENCY, CARBON (T6-4)\n"
+    "// ============================================================================\n"
+)
+
+SCENARIO_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BD: V10.14 SCENARIO & OBJECTIVE ENGINE v2 (T6-2)\n"
     "// ============================================================================\n"
 )
 
@@ -344,6 +352,136 @@ def wire_pubsvc_migration(text: str) -> str:
     return text.replace(anchor, patch + anchor, 1)
 
 
+SCENARIO_HELPERS = """
+function V1014_SCENARIO_V2_readPersistedFromGameState(gs: any): V1014ScenarioV2Persisted | null {
+  const raw = (gs?.save?.meta?.v1014 as any)?.v1014_scenario_v2_state;
+  if (!raw) return null;
+  const mig = migrateV1014ScenarioV2Persisted(raw);
+  return mig.ok ? mig.persisted : null;
+}
+
+function V1014_SCENARIO_V2_applyPersistedToGameState(gs: any, persisted: V1014ScenarioV2Persisted): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1014 = { ...(meta.v1014 || {}) };
+  v1014.v1014_scenario_v2_state = persisted;
+  meta.v1014 = v1014;
+  save.meta = meta;
+  return { ...gs, save, v1014ScenarioV2: persisted };
+}
+
+export function V1014_SCENARIO_V2_turnHook(args: {
+  turn: number;
+  gameState: any;
+  settings?: GameSettingsState | undefined;
+}): { gameState: any } {
+  const { turn, settings } = args;
+  let gs = args.gameState;
+  if (settings?.scenarioV2Enabled === false) return { gameState: gs };
+  if (typeof V1014_SCENARIO_V2_CATALOG_BY_ID !== 'object') return { gameState: gs };
+  let persisted = V1014_SCENARIO_V2_readPersistedFromGameState(gs);
+  const scenarioId =
+    persisted?.activeScenarioId ??
+    (typeof gs?.activeScenarioId === 'string' ? gs.activeScenarioId : null) ??
+    (typeof gs?.selectedScenarioId === 'string' ? gs.selectedScenarioId : null);
+  if (!scenarioId) return { gameState: gs };
+  const scenario = V1014_SCENARIO_V2_CATALOG_BY_ID[scenarioId];
+  if (!scenario) return { gameState: gs };
+  const graph = V1014_SCENARIO_V2_GRAPH_BY_ID[scenario.missionGraphId];
+  if (!graph) return { gameState: gs };
+  if (!persisted || persisted.missionGraphId !== graph.id) {
+    persisted = initializeV1014ScenarioV2Run(scenario, graph, turn);
+  } else {
+    persisted = {
+      ...persisted,
+      revision: persisted.revision + 1,
+      inputHash: buildV1014ScenarioV2InputHash(scenario, graph, turn),
+    };
+  }
+  gs = V1014_SCENARIO_V2_applyPersistedToGameState(gs, persisted);
+  return { gameState: gs };
+}
+
+(function wireV1014ScenarioV2PresetSpread() {
+  if (typeof V1014_SCENARIO_V2_CATALOG === 'undefined') return;
+  const extras = V1014_SCENARIO_V2_CATALOG as PresetScenario[];
+  for (const s of extras) {
+    if (!PRESET_GAME_SCENARIOS.some((p) => p.id === s.id)) PRESET_GAME_SCENARIOS.push(s);
+  }
+})();
+"""
+
+SCENARIO_DAY_HOOK = """
+      if (typeof V1014_SCENARIO_V2_turnHook === 'function') {
+        try {
+          const sv2 = V1014_SCENARIO_V2_turnHook({
+            turn: passCtx.turnCounter,
+            gameState: mergedGameState,
+            settings,
+          });
+          mergedGameState = sv2.gameState;
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_scenario_day_hook(text: str) -> str:
+    marker = "V1014_SCENARIO_V2_turnHook({"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:20000]
+    if marker in day_slice:
+        print("skip scenario day hook (present)")
+        return text
+    energy_tail = """      if (typeof V1014_ENERGY_DEPTH_turnHook === 'function') {
+        try {
+          const eIn = buildV1014EnergyDepthInputs({
+            turn: passCtx.turnCounter,
+            enabled: settings?.energyDepthEnabled !== false,
+            gameState: mergedGameState,
+            industrialEnergyState: mergedGameState?.industrialEnergy ?? null,
+            industriesState: mergedGameState?.industries ?? null,
+            infrastructureState: mergedGameState?.infrastructureNetworks ?? null,
+            systemicRiskState: mergedGameState?.systemicRisk ?? null,
+          });
+          const eOut = V1014_ENERGY_DEPTH_turnHook({
+            inputs: eIn,
+            persisted: V1014_ENERGY_DEPTH_readPersistedFromGameState(mergedGameState),
+            prevState: mergedGameState?.energyDepth ?? null,
+          });
+          mergedGameState = V1014_ENERGY_DEPTH_applyEnergyDepthToGameState(mergedGameState, eOut);
+        } catch (_) { /* isolated */ }
+      }"""
+    if energy_tail not in text:
+        raise SystemExit("energy day hook anchor missing for scenario hook")
+    return text.replace(energy_tail, energy_tail + SCENARIO_DAY_HOOK, 1)
+
+
+def wire_scenario_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState) {\n    const energyRaw = (migrated.gameState as any)?.save?.meta?.v1014?.energy_depth;"
+    patch = (
+        "  if (migrated.gameState && typeof migrateV1014ScenarioV2Persisted === 'function') {\n"
+        "    const sv2Raw = (migrated.gameState as any)?.save?.meta?.v1014?.v1014_scenario_v2_state;\n"
+        "    if (sv2Raw) {\n"
+        "      const mig = migrateV1014ScenarioV2Persisted(sv2Raw);\n"
+        "      if (mig.ok) {\n"
+        "        const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "        const meta = { ...(save.meta || {}) };\n"
+        "        const v1014 = { ...(meta.v1014 || {}) };\n"
+        "        v1014.v1014_scenario_v2_state = mig.persisted;\n"
+        "        meta.v1014 = v1014;\n"
+        "        save.meta = meta;\n"
+        "        migrated.gameState = { ...(migrated.gameState as any), save, v1014ScenarioV2: mig.persisted };\n"
+        "      }\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1014.v1014_scenario_v2_state = mig.persisted" in text:
+        print("skip scenario §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("energy §6 anchor missing for scenario migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
 def wire_lab(text: str, lab_line: str, lab_id: str) -> str:
     token = f"{{ id: '{lab_id}'"
     if token in text:
@@ -397,6 +535,17 @@ def push_energy(text: str) -> str:
     return text
 
 
+def push_scenario(text: str) -> str:
+    block = SCENARIO_SECTION + bundle_local_files(scenario_packs_paths()) + SCENARIO_HELPERS
+    text = insert_before(text, block, SCENARIO_MARKER, "T6 push #6 scenario-packs (PR #335)")
+    text = wire_scenario_day_hook(text)
+    text = wire_scenario_migration(text)
+    lab = """  { id: 'v1014_scenarios_v2', label: 'V10.14 Scenario engine v2 (T6-2)', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV1014ScenarioV2SelfTests().map((r) => ({ id: r.id, name: r.name, passed: r.passed, detail: r.detail })) },
+"""
+    text = wire_lab(text, lab, "v1014_scenarios_v2")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -411,7 +560,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -424,6 +573,8 @@ def main() -> None:
         text = push_pubsvc(text)
     elif args.push == 5:
         text = push_energy(text)
+    elif args.push == 6:
+        text = push_scenario(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")
