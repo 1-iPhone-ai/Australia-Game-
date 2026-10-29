@@ -60,6 +60,7 @@ import {
   createExonerationSession,
   createExpungementSession,
   createVacaturSession,
+  createRemandSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -235,6 +236,22 @@ describe('scenario campaign planner round 4', () => {
     state = attachReprieveSessionToState(state, reprieve!);
     state = attachParoleSessionToState(state, parole!);
     assert.equal(planNextCampaignAction(state).kind, 'parole_step');
+  });
+
+  it('prefers active remand over vacatur, expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: remand } = createRemandSession({
+      remandId: 'o10m_remand_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_remand_order_docket', 'o10m_remand_review_chamber'],
+    });
+    const { session: vacatur } = createVacaturSession({
+      vacaturId: 'o10m_vacatur_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_vacatur_petition_docket', 'o10m_vacatur_review_chamber'],
+    });
+    let state = attachVacaturSessionToState(createEmptyO10mModesPersistedState(), vacatur!);
+    state = attachRemandSessionToState(state, remand!);
+    assert.equal(planNextCampaignAction(state).kind, 'remand_step');
   });
 
   it('prefers active vacatur over expungement, exoneration, acquittal, commutation, probation, parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
