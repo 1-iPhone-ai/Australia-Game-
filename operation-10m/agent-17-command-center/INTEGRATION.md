@@ -7,6 +7,7 @@
 ## Public entry
 
 - `index.ts` re-exports planning, evaluation, rollback, validation, and harness symbols.
+- **Assembly chunk:** `operation-10m/modules/agent-17-command-center/chunk.tsx` (`OP10M_MODULE_BEGIN agent-17-command-center`). Regenerate: `npm run build:agent17-chunk`.
 - Stable prefix for inlined symbols after assembly: `Agent17` / existing `acc17` names must remain byte-compatible with Section 15 ACC17 block where duplicated.
 
 ## Splice anchor (canonical TSX)
