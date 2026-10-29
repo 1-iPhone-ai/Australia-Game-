@@ -4820,6 +4820,293 @@ export function beaconRecoveryOrchestratorWithinCap(report: BeaconRecoveryOrches
 }
 
 
+// --- source: match-explainability-signal-bundle.ts ---
+  auditMatchExplainabilitySignalGate,
+  matchExplainabilitySignalAllowed,
+} from './match-explainability-signal-gate.ts';
+  buildMatchExplainabilityBeaconBundle,
+  matchExplainabilityBeaconReady,
+} from './match-explainability-beacon-bundle.ts';
+  buildSessionBeaconExportBundle,
+  sessionBeaconExportShipped,
+} from './session-beacon-export-bundle.ts';
+
+export const AGENT19_SIGNAL_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilitySignalBundle {
+  signalReady: boolean;
+  signalAllowed: boolean;
+  beaconReady: boolean;
+  beaconExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type SignalParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Signal bundle: signal gate and beacon export must both be green. */
+export function buildMatchExplainabilitySignalBundle(
+  packs: TurnExplainabilityPack[],
+  params: SignalParams,
+): MatchExplainabilitySignalBundle {
+  const signal = auditMatchExplainabilitySignalGate(packs, params);
+  const beacon = buildMatchExplainabilityBeaconBundle(packs, params);
+  const beaconExport = buildSessionBeaconExportBundle(packs, params);
+  const signalAllowed = matchExplainabilitySignalAllowed(signal);
+  const beaconReady = matchExplainabilityBeaconReady(beacon);
+  const beaconExportShipped = sessionBeaconExportShipped(beaconExport);
+  const signalReady = signalAllowed && beaconReady && beaconExportShipped;
+  const narrativeLines = [
+    `Match explainability signal bundle: ${signalReady ? 'READY' : 'PENDING'} (gate ${signalAllowed ? 'ok' : 'fail'}, beacon ${beaconReady ? 'ok' : 'fail'}).`,
+    ...signal.narrativeLines.slice(0, 2),
+    ...beacon.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_SIGNAL_NARRATIVE_CAP);
+  return {
+    signalReady,
+    signalAllowed,
+    beaconReady,
+    beaconExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilitySignalReady(bundle: MatchExplainabilitySignalBundle): boolean {
+  return bundle.signalReady;
+}
+
+
+// --- source: session-signal-export-bundle.ts ---
+  buildSessionBeaconExportBundle,
+  type SessionBeaconExportBundle,
+} from './session-beacon-export-bundle.ts';
+  buildMatchExplainabilitySignalBundle,
+  matchExplainabilitySignalReady,
+} from './match-explainability-signal-bundle.ts';
+
+export interface SessionSignalExportBundle extends SessionBeaconExportBundle {
+  signalReady: boolean;
+  signalSchema: string;
+}
+
+/** Signal export wraps beacon export when signal bundle is ready. */
+export function buildSessionSignalExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionSignalExportBundle {
+  const base = buildSessionBeaconExportBundle(packs, params);
+  const signal = buildMatchExplainabilitySignalBundle(packs, params);
+  const signalReady = matchExplainabilitySignalReady(signal);
+  const exports = signalReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    signalReady,
+    signalSchema: 'agent19.signal.v1',
+    releaseReady: signalReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Signal export: ${signalReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionSignalExportShipped(bundle: SessionSignalExportBundle): boolean {
+  return (
+    bundle.signalReady &&
+    bundle.exports.length > 0 &&
+    bundle.signalSchema === 'agent19.signal.v1'
+  );
+}
+
+
+// --- source: beacon-signal-bridge.ts ---
+  buildMatchExplainabilitySignalBundle,
+  matchExplainabilitySignalReady,
+} from './match-explainability-signal-bundle.ts';
+  buildMatchExplainabilityBeaconBundle,
+  matchExplainabilityBeaconReady,
+} from './match-explainability-beacon-bundle.ts';
+
+export interface BeaconSignalBridgeReport {
+  aligned: boolean;
+  signalReady: boolean;
+  beaconReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Signal-ready should match beacon-ready when beacon export stack passes. */
+export function auditBeaconSignalBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): BeaconSignalBridgeReport {
+  const signal = buildMatchExplainabilitySignalBundle(packs, params);
+  const beacon = buildMatchExplainabilityBeaconBundle(packs, params);
+  const signalReady = matchExplainabilitySignalReady(signal);
+  const beaconReady = matchExplainabilityBeaconReady(beacon);
+  const aligned = signalReady === beaconReady;
+  const narrativeLines = [
+    `Beacon/signal bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (signal ${signalReady ? 'ok' : 'fail'}, beacon ${beaconReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, signalReady, beaconReady, narrativeLines };
+}
+
+export function beaconSignalBridgeHealthy(report: BeaconSignalBridgeReport): boolean {
+  return report.signalReady && report.beaconReady && report.aligned;
+}
+
+
+// --- source: match-explainability-uplink-gate.ts ---
+  buildMatchExplainabilitySignalBundle,
+  matchExplainabilitySignalReady,
+} from './match-explainability-signal-bundle.ts';
+  buildSessionSignalExportBundle,
+  sessionSignalExportShipped,
+} from './session-signal-export-bundle.ts';
+
+export interface MatchExplainabilityUplinkGateReport {
+  uplinkAllowed: boolean;
+  signalReady: boolean;
+  signalExportShipped: boolean;
+  beaconSignalHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Uplink gate: signal bundle + signal export + beacon/signal bridge. */
+export function auditMatchExplainabilityUplinkGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityUplinkGateReport {
+  const signal = buildMatchExplainabilitySignalBundle(packs, params);
+  const signalExport = buildSessionSignalExportBundle(packs, params);
+  const bridge = auditBeaconSignalBridge(packs, params);
+  const signalReady = matchExplainabilitySignalReady(signal);
+  const signalExportShipped = sessionSignalExportShipped(signalExport);
+  const beaconSignalHealthy = beaconSignalBridgeHealthy(bridge);
+  const uplinkAllowed = signalReady && signalExportShipped && beaconSignalHealthy;
+  const narrativeLines = [
+    `Match explainability uplink: ${uplinkAllowed ? 'ALLOWED' : 'DENIED'} (signal ${signalReady ? 'ok' : 'fail'}, export ${signalExportShipped ? 'ok' : 'fail'}).`,
+    ...signal.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    uplinkAllowed,
+    signalReady,
+    signalExportShipped,
+    beaconSignalHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityUplinkAllowed(report: MatchExplainabilityUplinkGateReport): boolean {
+  return report.uplinkAllowed;
+}
+
+
+// --- source: signal-recovery-orchestrator.ts ---
+  auditMatchExplainabilitySignalGate,
+  matchExplainabilitySignalAllowed,
+} from './match-explainability-signal-gate.ts';
+
+export const AGENT19_SIGNAL_RECOVERY_CAP = 10;
+
+export interface SignalRecoveryOrchestratorReport {
+  signalBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when signal gate blocks uplink rollout. */
+export function buildSignalRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): SignalRecoveryOrchestratorReport {
+  const signal = auditMatchExplainabilitySignalGate(packs, params);
+  const signalBlocked = !matchExplainabilitySignalAllowed(signal);
+  const steps: string[] = [];
+  if (signalBlocked) {
+    if (!signal.beaconReady) {
+      steps.push('Restore beacon bundle: relay and beacon export must pass.');
+    }
+    if (!signal.beaconExportShipped) {
+      steps.push('Emit session beacon export before signal clearance.');
+    }
+    if (!signal.relayBeaconHealthy) {
+      steps.push('Reconcile relay/beacon bridge before signal.');
+    }
+    steps.push(...buildBeaconRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const beacon = buildMatchExplainabilityBeaconBundle(packs, params);
+    if (!beacon.beaconReady) {
+      steps.push('Re-run beacon readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Signal gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_SIGNAL_RECOVERY_CAP);
+  return {
+    signalBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Signal recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function signalRecoveryOrchestratorWithinCap(report: SignalRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_SIGNAL_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -5124,6 +5411,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilitySignalGate,
   matchExplainabilitySignalAllowed,
 } from '../match-explainability-signal-gate.ts';
+  buildMatchExplainabilitySignalBundle,
+  matchExplainabilitySignalReady,
+} from '../match-explainability-signal-bundle.ts';
+  buildSessionSignalExportBundle,
+  sessionSignalExportShipped,
+} from '../session-signal-export-bundle.ts';
+  buildSignalRecoveryOrchestrator,
+  signalRecoveryOrchestratorWithinCap,
+} from '../signal-recovery-orchestrator.ts';
+  auditMatchExplainabilityUplinkGate,
+  matchExplainabilityUplinkAllowed,
+} from '../match-explainability-uplink-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -8009,6 +8308,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilitySignalAllowed(report) && !report.beaconReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r20_signal_ready',
+        'Signal bundle ready when signal gate and beacon export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilitySignalBundle([pack], params);
+          return matchExplainabilitySignalReady(bundle) && bundle.signalAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r20_signal_held',
+        'Signal bundle pending when signal gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 15, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilitySignalBundle([pack], {
+            memory: null,
+            currentTurn: 15,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilitySignalReady(bundle) && !bundle.signalAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r20_signal_recovery',
+        'Signal recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 6, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 6, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildSignalRecoveryOrchestrator([pack], params);
+          return report.signalBlocked && signalRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r20_beacon_signal_bridge',
+        'Beacon signal bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditBeaconSignalBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return beaconSignalBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r20_signal_export',
+        'Signal export shipped when signal ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionSignalExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionSignalExportShipped(bundle) && bundle.signalSchema === 'agent19.signal.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r20_uplink_gate_ok',
+        'Uplink gate allowed on healthy signal stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityUplinkGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityUplinkAllowed(report) && report.signalExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r20_uplink_gate_block',
+        'Uplink gate denied when signal pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 16, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityUplinkGate([pack], {
+            memory: null,
+            currentTurn: 16,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityUplinkAllowed(report) && !report.signalReady || JSON.stringify(report);
         },
       ],
     ]),
