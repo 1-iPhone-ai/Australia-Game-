@@ -84,6 +84,10 @@ const FILES = [
   'portfolio-reprioritisation-ledger/compute.ts',
   'fiscal-buffer-coherence/types.ts',
   'fiscal-buffer-coherence/compute.ts',
+  'medium-term-revenue-anchor/types.ts',
+  'medium-term-revenue-anchor/compute.ts',
+  'appropriation-timing-coherence/types.ts',
+  'appropriation-timing-coherence/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -163,7 +167,9 @@ const FILES = [
   'efficiency-dividend-register/self-tests.ts',
   'revenue-forward-reconciliation/self-tests.ts',
   'portfolio-reprioritisation-ledger/self-tests.ts',
-  'fiscal-buffer-coherence/self-tests.ts'
+  'fiscal-buffer-coherence/self-tests.ts',
+  'medium-term-revenue-anchor/self-tests.ts',
+  'appropriation-timing-coherence/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {

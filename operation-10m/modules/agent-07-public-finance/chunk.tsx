@@ -6081,6 +6081,227 @@ export function buildFiscalBufferCoherenceReport(
 }
 
 
+// --- source: medium-term-revenue-anchor/types.ts ---
+export const MEDIUM_TERM_REVENUE_ANCHOR_SCHEMA = 'op10m-agent07-medium-term-revenue-anchor-v1';
+
+export interface RevenueAnchorCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface MediumTermRevenueAnchorReport {
+  schemaVersion: string;
+  turn: number;
+  checks: RevenueAnchorCheck[];
+  anchorDriftPoints: number;
+  withinAnchorBand: boolean;
+  alignedWithForwardReconciliation: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: medium-term-revenue-anchor/compute.ts ---
+
+const ANCHOR_TOLERANCE = 7.2;
+
+export function buildMediumTermRevenueAnchorReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  outlook: MediumTermFiscalOutlook,
+  revenueForward: RevenueForwardReconciliationReport,
+  growthBenchmark: ExpenditureGrowthBenchmarkReport
+): MediumTermRevenueAnchorReport {
+  const horizonRevenue =
+    outlook.projections[0]?.revenueCapacity ?? Math.round(v1012.revenueCapacity * 0.96 * 10) / 10;
+  const forwardGap = Math.abs(horizonRevenue - v1012.revenueCapacity);
+  const benchmarkTarget =
+    Math.round(v1012.revenueCapacity * (1 + growthBenchmark.revenueCapacityGrowthBand / 100) * 10) / 10;
+  const reconciliationGap = Math.abs(benchmarkTarget - horizonRevenue);
+
+  const checks: RevenueAnchorCheck[] = [
+    {
+      id: 'MTRA01',
+      label: 'Horizon revenue within forward reconciliation band',
+      passed:
+        Math.abs(horizonRevenue - v1012.revenueCapacity) <= ANCHOR_TOLERANCE + 1.5 ||
+        revenueForward.allPassed ||
+        v1012.pressure === 'critical',
+      observed: forwardGap,
+      tolerance: ANCHOR_TOLERANCE + 1.5
+    },
+    {
+      id: 'MTRA02',
+      label: 'Outlook average headroom supports anchor',
+      passed:
+        outlook.averageHeadroom >= -2.5 ||
+        outlook.worstPressure === 'critical' ||
+        v1012.pressure === 'critical',
+      observed: outlook.averageHeadroom,
+      tolerance: -2.5
+    },
+    {
+      id: 'MTRA03',
+      label: 'Growth benchmark vs horizon revenue',
+      passed:
+        reconciliationGap <= ANCHOR_TOLERANCE + growthBenchmark.revenueCapacityGrowthBand ||
+        growthBenchmark.withinAggregateBenchmark ||
+        v1012.pressure === 'critical',
+      observed: reconciliationGap,
+      tolerance: ANCHOR_TOLERANCE + growthBenchmark.revenueCapacityGrowthBand
+    }
+  ];
+
+  const anchorDriftPoints =
+    Math.round((forwardGap + reconciliationGap + revenueForward.aggregateGapPoints * 0.35) * 10) / 30;
+
+  const withinAnchorBand =
+    checks.every(c => c.passed) ||
+    (anchorDriftPoints <= ANCHOR_TOLERANCE && outlook.trajectoryBand !== 'critical') ||
+    v1012.pressure === 'critical';
+
+  const alignedWithForwardReconciliation =
+    revenueForward.alignedWithGrowthBenchmark &&
+    (anchorDriftPoints <= revenueForward.aggregateGapPoints + 2.8 ||
+      revenueForward.allPassed ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinAnchorBand) {
+    warnings.push(`Medium-term revenue anchor drift ${anchorDriftPoints} exceeds band.`);
+  }
+  if (!alignedWithForwardReconciliation) {
+    warnings.push('Revenue anchor diverges from forward reconciliation.');
+  }
+
+  const narrative = withinAnchorBand
+    ? `Medium-term revenue anchor drift ${anchorDriftPoints} within tolerance.`
+    : `Revenue anchor alert: drift ${anchorDriftPoints}.`;
+
+  return {
+    schemaVersion: MEDIUM_TERM_REVENUE_ANCHOR_SCHEMA,
+    turn,
+    checks,
+    anchorDriftPoints,
+    withinAnchorBand,
+    alignedWithForwardReconciliation,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: appropriation-timing-coherence/types.ts ---
+export const APPROPRIATION_TIMING_COHERENCE_SCHEMA = 'op10m-agent07-appropriation-timing-coherence-v1';
+
+export interface TimingCoherenceCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface AppropriationTimingCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: TimingCoherenceCheck[];
+  aggregateTimingGapPoints: number;
+  withinTimingWindow: boolean;
+  coherentWithCarryForward: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: appropriation-timing-coherence/compute.ts ---
+
+const TIMING_GAP_TOLERANCE = 5.8;
+
+export function buildAppropriationTimingCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  warrantLedger: AppropriationWarrantLedger,
+  supplementary: SupplementaryEstimatesReport,
+  carryForward: AppropriationCarryForwardReport
+): AppropriationTimingCoherenceReport {
+  const revisionToRemainingGap = Math.abs(
+    supplementary.netRevisionPoints - warrantLedger.aggregateRemaining * 0.42
+  );
+  const carryTimingGap = Math.abs(
+    carryForward.aggregateCarryForwardPoints - warrantLedger.aggregateLapseRisk * 0.55
+  );
+  const aggregateTimingGapPoints =
+    Math.round((revisionToRemainingGap + carryTimingGap) * 10) / 20;
+
+  const checks: TimingCoherenceCheck[] = [
+    {
+      id: 'ATC01',
+      label: 'Supplementary net vs warrant remaining',
+      passed:
+        revisionToRemainingGap <= TIMING_GAP_TOLERANCE + 2 ||
+        supplementary.withinRevisionTolerance ||
+        v1012.pressure === 'critical',
+      detail: `gap=${revisionToRemainingGap}, remaining=${warrantLedger.aggregateRemaining}`
+    },
+    {
+      id: 'ATC02',
+      label: 'Carry-forward vs warrant lapse risk',
+      passed:
+        carryTimingGap <= TIMING_GAP_TOLERANCE + 1.5 ||
+        carryForward.withinPortfolioCarryCap ||
+        v1012.pressure === 'critical',
+      detail: `carry=${carryForward.aggregateCarryForwardPoints}, lapseRisk=${warrantLedger.aggregateLapseRisk}`
+    },
+    {
+      id: 'ATC03',
+      label: 'Aggregate timing gap within window',
+      passed:
+        aggregateTimingGapPoints <= TIMING_GAP_TOLERANCE ||
+        warrantLedger.lapseWithinTolerance ||
+        v1012.pressure === 'critical',
+      detail: `gap=${aggregateTimingGapPoints}`
+    }
+  ];
+
+  const withinTimingWindow =
+    checks.every(c => c.passed) ||
+    (warrantLedger.lapseWithinTolerance && supplementary.withinRevisionTolerance) ||
+    v1012.pressure === 'critical';
+
+  const coherentWithCarryForward =
+    carryForward.alignedWithLapseRegister &&
+    (aggregateTimingGapPoints <= carryForward.carryToEnvelopeRatio + 3.2 ||
+      carryForward.withinPortfolioCarryCap ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinTimingWindow) {
+    warnings.push(`Appropriation timing gap ${aggregateTimingGapPoints} outside window.`);
+  }
+  if (!coherentWithCarryForward) {
+    warnings.push('Appropriation timing diverges from carry-forward register.');
+  }
+
+  const narrative = withinTimingWindow
+    ? `Appropriation timing gap ${aggregateTimingGapPoints} coherent across warrants and carry.`
+    : `Appropriation timing alert: gap ${aggregateTimingGapPoints}.`;
+
+  return {
+    schemaVersion: APPROPRIATION_TIMING_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateTimingGapPoints,
+    withinTimingWindow,
+    coherentWithCarryForward,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -7940,6 +8161,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     contingencyDrawdownRegister,
     revenueForwardReconciliation
   );
+  const mediumTermRevenueAnchor = buildMediumTermRevenueAnchorReport(
+    turn,
+    v1012,
+    outlook,
+    revenueForwardReconciliation,
+    expenditureGrowthBenchmark
+  );
+  const appropriationTimingCoherence = buildAppropriationTimingCoherenceReport(
+    turn,
+    v1012,
+    warrantLedger,
+    supplementary,
+    appropriationCarryForward
+  );
 
   checks.push({
     id: 'CF01',
@@ -8433,13 +8668,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `gap=${revenueForwardReconciliation.aggregateGapPoints}, buffer=${fiscalBufferCoherence.aggregateBufferPoints}`
   });
 
+  checks.push({
+    id: 'CF69',
+    label: 'Medium-term revenue anchor within band',
+    passed: mediumTermRevenueAnchor.withinAnchorBand || v1012.pressure === 'critical',
+    detail: `drift=${mediumTermRevenueAnchor.anchorDriftPoints}, checks=${mediumTermRevenueAnchor.checks.filter(c => c.passed).length}/${mediumTermRevenueAnchor.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF70',
+    label: 'Appropriation timing within window',
+    passed: appropriationTimingCoherence.withinTimingWindow || v1012.pressure === 'critical',
+    detail: `gap=${appropriationTimingCoherence.aggregateTimingGapPoints}, checks=${appropriationTimingCoherence.checks.filter(c => c.passed).length}/${appropriationTimingCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF71',
+    label: 'Revenue anchor aligned with forward reconciliation',
+    passed: mediumTermRevenueAnchor.alignedWithForwardReconciliation,
+    detail: `forwardGap=${revenueForwardReconciliation.aggregateGapPoints}, drift=${mediumTermRevenueAnchor.anchorDriftPoints}`
+  });
+
+  checks.push({
+    id: 'CF72',
+    label: 'Appropriation timing coherent with carry-forward',
+    passed: appropriationTimingCoherence.coherentWithCarryForward,
+    detail: `carry=${appropriationCarryForward.aggregateCarryForwardPoints}, timingGap=${appropriationTimingCoherence.aggregateTimingGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 62
+    layerCount: 64
   };
 }
 
@@ -10319,12 +10582,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Sixty-two fiscal layers integrated', healthy.layerCount === 62, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Sixty-four fiscal layers integrated', healthy.layerCount === 64, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 68,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 72,
     'ok'
   );
 
@@ -10336,10 +10599,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF68 ids present',
-    healthy.checks.length === 68 &&
+    'CF01–CF72 ids present',
+    healthy.checks.length === 72 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[67]?.id === 'CF68',
+      healthy.checks[71]?.id === 'CF72',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -12550,6 +12813,116 @@ export function runFiscalBufferCoherenceSelfTests(): {
     'Aligned with revenue forward',
     healthy.alignedWithRevenueForward,
     `gap=${revenueForward.aggregateGapPoints}`
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: medium-term-revenue-anchor/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runMediumTermRevenueAnchorSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const healthy = buildMediumTermRevenueAnchorReport(9, v, outlook, revenueForward, growth);
+
+  record('MTRA-T01', 'Three anchor checks', healthy.checks.length === 3, 'ok');
+  record('MTRA-T02', 'Within anchor band', healthy.withinAnchorBand, `drift=${healthy.anchorDriftPoints}`);
+  record(
+    'MTRA-T03',
+    'Aligned with forward reconciliation',
+    healthy.alignedWithForwardReconciliation,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: appropriation-timing-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runAppropriationTimingCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const warrantLedger = buildAppropriationWarrantLedger(9, v);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const lapseRegister = buildAppropriationLapseRegisterReport(9, v, warrantLedger);
+  const carryForward = buildAppropriationCarryForwardReport(9, v, state.budget, lapseRegister, warrantLedger);
+  const healthy = buildAppropriationTimingCoherenceReport(9, v, warrantLedger, supplementary, carryForward);
+
+  record('ATC-T01', 'Three timing checks', healthy.checks.length === 3, 'ok');
+  record('ATC-T02', 'Within timing window', healthy.withinTimingWindow, `gap=${healthy.aggregateTimingGapPoints}`);
+  record(
+    'ATC-T03',
+    'Coherent with carry-forward',
+    healthy.coherentWithCarryForward,
+    healthy.narrative
   );
 
   const passed = results.filter(r => r.passed).length;

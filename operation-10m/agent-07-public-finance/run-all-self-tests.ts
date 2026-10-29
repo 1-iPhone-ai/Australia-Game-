@@ -45,6 +45,8 @@ import { runEfficiencyDividendRegisterSelfTests } from './modules/efficiency-div
 import { runRevenueForwardReconciliationSelfTests } from './modules/revenue-forward-reconciliation/self-tests';
 import { runPortfolioReprioritisationLedgerSelfTests } from './modules/portfolio-reprioritisation-ledger/self-tests';
 import { runFiscalBufferCoherenceSelfTests } from './modules/fiscal-buffer-coherence/self-tests';
+import { runMediumTermRevenueAnchorSelfTests } from './modules/medium-term-revenue-anchor/self-tests';
+import { runAppropriationTimingCoherenceSelfTests } from './modules/appropriation-timing-coherence/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -99,6 +101,8 @@ ok = runSuite('Efficiency dividend register', runEfficiencyDividendRegisterSelfT
 ok = runSuite('Revenue forward reconciliation', runRevenueForwardReconciliationSelfTests) && ok;
 ok = runSuite('Portfolio reprioritisation ledger', runPortfolioReprioritisationLedgerSelfTests) && ok;
 ok = runSuite('Fiscal buffer coherence', runFiscalBufferCoherenceSelfTests) && ok;
+ok = runSuite('Medium-term revenue anchor', runMediumTermRevenueAnchorSelfTests) && ok;
+ok = runSuite('Appropriation timing coherence', runAppropriationTimingCoherenceSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

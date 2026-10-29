@@ -37,6 +37,8 @@ import { buildEfficiencyDividendRegisterReport } from '../efficiency-dividend-re
 import { buildRevenueForwardReconciliationReport } from '../revenue-forward-reconciliation/compute';
 import { buildPortfolioReprioritisationLedgerReport } from '../portfolio-reprioritisation-ledger/compute';
 import { buildFiscalBufferCoherenceReport } from '../fiscal-buffer-coherence/compute';
+import { buildMediumTermRevenueAnchorReport } from '../medium-term-revenue-anchor/compute';
+import { buildAppropriationTimingCoherenceReport } from '../appropriation-timing-coherence/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -207,6 +209,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     cashMgmt,
     contingencyDrawdownRegister,
     revenueForwardReconciliation
+  );
+  const mediumTermRevenueAnchor = buildMediumTermRevenueAnchorReport(
+    turn,
+    v1012,
+    outlook,
+    revenueForwardReconciliation,
+    expenditureGrowthBenchmark
+  );
+  const appropriationTimingCoherence = buildAppropriationTimingCoherenceReport(
+    turn,
+    v1012,
+    warrantLedger,
+    supplementary,
+    appropriationCarryForward
   );
 
   checks.push({
@@ -701,12 +717,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `gap=${revenueForwardReconciliation.aggregateGapPoints}, buffer=${fiscalBufferCoherence.aggregateBufferPoints}`
   });
 
+  checks.push({
+    id: 'CF69',
+    label: 'Medium-term revenue anchor within band',
+    passed: mediumTermRevenueAnchor.withinAnchorBand || v1012.pressure === 'critical',
+    detail: `drift=${mediumTermRevenueAnchor.anchorDriftPoints}, checks=${mediumTermRevenueAnchor.checks.filter(c => c.passed).length}/${mediumTermRevenueAnchor.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF70',
+    label: 'Appropriation timing within window',
+    passed: appropriationTimingCoherence.withinTimingWindow || v1012.pressure === 'critical',
+    detail: `gap=${appropriationTimingCoherence.aggregateTimingGapPoints}, checks=${appropriationTimingCoherence.checks.filter(c => c.passed).length}/${appropriationTimingCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF71',
+    label: 'Revenue anchor aligned with forward reconciliation',
+    passed: mediumTermRevenueAnchor.alignedWithForwardReconciliation,
+    detail: `forwardGap=${revenueForwardReconciliation.aggregateGapPoints}, drift=${mediumTermRevenueAnchor.anchorDriftPoints}`
+  });
+
+  checks.push({
+    id: 'CF72',
+    label: 'Appropriation timing coherent with carry-forward',
+    passed: appropriationTimingCoherence.coherentWithCarryForward,
+    detail: `carry=${appropriationCarryForward.aggregateCarryForwardPoints}, timingGap=${appropriationTimingCoherence.aggregateTimingGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 62
+    layerCount: 64
   };
 }
