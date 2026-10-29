@@ -76,6 +76,10 @@ const FILES = [
   'engine/phase-shell-visibility-plan.ts',
   'engine/text-scale-readability-coach.ts',
   'engine/day-advance-calm-recovery-hint.ts',
+  'engine/calm-recovery-auto-apply-bridge.ts',
+  'engine/phase-shell-attention-gate.ts',
+  'engine/text-scale-density-day-hint.ts',
+  'engine/round16-self-tests.ts',
   'engine/legacy-access.ts',
   'engine/merge-with-v94-contextual-hiding.ts',
   'engine/progression-coach.ts',
@@ -139,6 +143,9 @@ const FILES = [
   'react/PhaseShellVisibilityBanner.tsx',
   'react/TextScaleReadabilityCoachStrip.tsx',
   'react/CalmRecoveryDayAdvanceHint.tsx',
+  'react/CalmRecoveryAutoApplyBanner.tsx',
+  'react/PhaseShellAttentionCoachStrip.tsx',
+  'react/TextScaleDensityDayHintStrip.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -180,7 +187,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.15.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.16.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -298,6 +305,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round15_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round16 = runAgent22Round16SelfTests();
+  for (const r of round16.results) {
+    check(\`agent22_round16_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -324,7 +336,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.15.0',
+  moduleVersion: '1.16.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),

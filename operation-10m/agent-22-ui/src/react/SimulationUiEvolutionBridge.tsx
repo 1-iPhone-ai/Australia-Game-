@@ -61,6 +61,15 @@ export function SimulationUiEvolutionBridge({
       {result.calmRecoveryHintCopy ? (
         <div data-testid="sim-ui-evolution-calm-hint">{result.calmRecoveryHintCopy}</div>
       ) : null}
+      {result.calmRecoveryAutoApplied ? (
+        <div data-testid="sim-ui-evolution-calm-auto-applied">Calm recovery auto-applied</div>
+      ) : null}
+      {result.textScaleDensityDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-text-scale-hint">{result.textScaleDensityDayHintCopy}</div>
+      ) : null}
+      {result.phaseShellAttentionCoachCopy ? (
+        <div data-testid="sim-ui-evolution-phase-attention">{result.phaseShellAttentionCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

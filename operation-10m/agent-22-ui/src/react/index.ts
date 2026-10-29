@@ -38,3 +38,6 @@ export { LegacyNavAuditCoachStrip } from './LegacyNavAuditCoachStrip.js';
 export { PhaseShellVisibilityBanner } from './PhaseShellVisibilityBanner.js';
 export { TextScaleReadabilityCoachStrip } from './TextScaleReadabilityCoachStrip.js';
 export { CalmRecoveryDayAdvanceHint } from './CalmRecoveryDayAdvanceHint.js';
+export { CalmRecoveryAutoApplyBanner } from './CalmRecoveryAutoApplyBanner.js';
+export { PhaseShellAttentionCoachStrip } from './PhaseShellAttentionCoachStrip.js';
+export { TextScaleDensityDayHintStrip } from './TextScaleDensityDayHintStrip.js';

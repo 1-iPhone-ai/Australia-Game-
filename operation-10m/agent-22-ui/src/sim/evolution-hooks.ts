@@ -39,6 +39,12 @@ import {
   countLegacyNavPatchCoverage,
 } from '../engine/legacy-nav-audit-coach.js';
 import { evaluateDayAdvanceCalmRecoveryHint } from '../engine/day-advance-calm-recovery-hint.js';
+import { applyCalmRecoveryFromDayAdvanceHint } from '../engine/calm-recovery-auto-apply-bridge.js';
+import { buildTextScaleDensityDayHint } from '../engine/text-scale-density-day-hint.js';
+import { planPhaseShellAttentionGate } from '../engine/phase-shell-attention-gate.js';
+import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
+import type { V94StandardizedGamePhase } from '../adapters/v94-phase-bridge.js';
+import type { AccessibilitySettingsSnapshot } from '../types/accessibility.js';
 
 /** Persisted slice proposed for `gameSettings.evolvingUi` (assembly-owned). */
 export interface EvolvingUiPersistedState {
@@ -84,8 +90,17 @@ export interface DayAdvanceUiEvolutionResult {
   legacyNavPatchCoverageCount: number;
   calmRecoverySuggested: boolean;
   calmRecoveryHintCopy: string | null;
+  calmRecoveryAutoApplied: boolean;
+  textScaleDensityDayHintCopy: string | null;
+  phaseShellAttentionCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
+}
+
+export interface TickEvolvingUiDayAdvanceContext {
+  phase?: V94StandardizedGamePhase;
+  accessibility?: AccessibilitySettingsSnapshot;
+  autoApplyCalmRecovery?: boolean;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -120,7 +135,8 @@ export function tickEvolvingUiOnDayAdvance(
   priorSignals: ProgressionSignalSnapshot,
   nextSignals: ProgressionSignalSnapshot,
   policy: EvolvingUiAccessPolicy,
-  persisted: EvolvingUiPersistedState = createDefaultEvolvingUiPersistedState()
+  persisted: EvolvingUiPersistedState = createDefaultEvolvingUiPersistedState(),
+  context: TickEvolvingUiDayAdvanceContext = {}
 ): DayAdvanceUiEvolutionResult {
   const newlyUnlockedPanelIds: string[] = [];
   const coachAnnouncements: string[] = [];
@@ -231,6 +247,38 @@ export function tickEvolvingUiOnDayAdvance(
     deferredAnnouncementCount: combinedQueue.length,
   });
 
+  const calmApply = applyCalmRecoveryFromDayAdvanceHint(
+    updatedPersistedFinal,
+    calmHint,
+    nextSignals.gameDay,
+    { autoApply: context.autoApplyCalmRecovery !== false }
+  );
+  const persistedAfterCalm = calmApply.persisted;
+
+  const accessibility = context.accessibility ?? DEFAULT_ACCESSIBILITY_SNAPSHOT;
+  const textScaleDayHint = buildTextScaleDensityDayHint({
+    signals: nextSignals,
+    accessibility,
+    preferredDensity: persistedAfterCalm.preferredDensity ?? null,
+  });
+
+  let phaseShellAttentionCoachCopy: string | null = null;
+  if (context.phase) {
+    const load = assessCognitiveLoad({
+      signals: nextSignals,
+      policy,
+      pendingCoachAnnouncements: combinedQueue.length,
+    });
+    phaseShellAttentionCoachCopy = planPhaseShellAttentionGate({
+      phase: context.phase,
+      band: load.band,
+      persisted: persistedAfterCalm,
+      gameDay: nextSignals.gameDay,
+      simEvolutionBridgeRequested: newlyUnlockedPanelIds.length > 0,
+      panelUnlockCoachRequested: newlyUnlockedPanelIds.length > 0,
+    }).coachCopy;
+  }
+
   return {
     gameDay: nextSignals.gameDay,
     newlyUnlockedPanelIds,
@@ -247,8 +295,11 @@ export function tickEvolvingUiOnDayAdvance(
     guidedLearningConceptCount: guidedCount,
     legacyNavPatchCoverageCount: legacyCoverage,
     calmRecoverySuggested: calmHint.suggestCalmRecovery,
-    calmRecoveryHintCopy: calmHint.coachCopy,
-    updatedPersisted: updatedPersistedFinal,
+    calmRecoveryHintCopy: calmApply.coachCopy ?? calmHint.coachCopy,
+    calmRecoveryAutoApplied: calmApply.applied,
+    textScaleDensityDayHintCopy: textScaleDayHint.coachCopy,
+    phaseShellAttentionCoachCopy,
+    updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
 }
