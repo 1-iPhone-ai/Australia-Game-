@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: 8975c1fd02298dca
+// content-sha256-prefix: 197243d660a2022b
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -4778,6 +4778,132 @@ export function gateBatchNationalTickSessionWaveAssembly(
   };
 }
 
+// --- src/batch-national-tick-session-wave-scorecard-compare.ts ---
+
+export interface BatchNationalTickSessionWaveScorecardCompareResult {
+  ok: boolean;
+  scorecardDigestMatch: boolean;
+  waveDigestMatch: boolean;
+  sessionCountDelta: number;
+  okFlagMatch: boolean;
+}
+
+/**
+ * Round 19: compare two session wave scorecards (twin-run / regression checks).
+ */
+export function compareBatchNationalTickSessionWaveScorecards(
+  baseline: BatchNationalTickSessionWaveScorecardExport,
+  candidate: BatchNationalTickSessionWaveScorecardExport,
+): BatchNationalTickSessionWaveScorecardCompareResult {
+  const sessionCountDelta = candidate.sessionCount - baseline.sessionCount;
+  const scorecardDigestMatch = baseline.scorecardDigest === candidate.scorecardDigest;
+  const waveDigestMatch = baseline.waveDigest === candidate.waveDigest;
+  const okFlagMatch = baseline.ok === candidate.ok;
+  return {
+    ok:
+      scorecardDigestMatch &&
+      waveDigestMatch &&
+      okFlagMatch &&
+      sessionCountDelta === 0 &&
+      baseline.sessionCount === candidate.sessionCount,
+    scorecardDigestMatch,
+    waveDigestMatch,
+    sessionCountDelta,
+    okFlagMatch,
+  };
+}
+
+// --- src/batch-national-tick-session-wave-assembly-run.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyRunResult {
+  wave: BatchNationalTickSessionWaveResult;
+  gate: BatchNationalTickSessionWaveAssemblyGateResult;
+  assemblyDigest: string;
+}
+
+export function computeBatchNationalTickSessionWaveAssemblyDigest(
+  wave: BatchNationalTickSessionWaveResult,
+  gate: BatchNationalTickSessionWaveAssemblyGateResult,
+): string {
+  return fnv1a64Hex(
+    JSON.stringify({
+      wave: wave.waveDigest,
+      scorecard: gate.scorecard.scorecardDigest,
+      ok: gate.ok,
+    }),
+  );
+}
+
+/**
+ * Round 19: run session wave plus round-18 assembly gate on one engine pass.
+ */
+export function runNationalTickSessionWaveAssembly(
+  engine: TurnTimeEngine,
+  budget: TurnAdvanceBudgetState,
+  ticks: readonly NationalTickSessionWaveTickSpec[],
+): BatchNationalTickSessionWaveAssemblyRunResult {
+  const wave = runNationalTickOrchestratedSessionWave(engine, budget, ticks);
+  const gate = gateBatchNationalTickSessionWaveAssembly(engine, budget, ticks, wave);
+  const assemblyDigest = computeBatchNationalTickSessionWaveAssemblyDigest(wave, gate);
+  return { wave, gate, assemblyDigest };
+}
+
+// --- src/batch-national-tick-session-wave-assembly-export.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyExport {
+  ok: boolean;
+  assemblyDigest: string;
+  waveDigest: string;
+  scorecardDigest: string;
+  exportAllOk: boolean;
+  scorecardOk: boolean;
+  parityOk: boolean;
+}
+
+/**
+ * Round 19: flatten assembly run for Agent 25 integration hooks.
+ */
+export function exportBatchNationalTickSessionWaveAssembly(
+  run: BatchNationalTickSessionWaveAssemblyRunResult,
+): BatchNationalTickSessionWaveAssemblyExport {
+  return {
+    ok: run.gate.ok,
+    assemblyDigest: run.assemblyDigest,
+    waveDigest: run.wave.waveDigest,
+    scorecardDigest: run.gate.scorecard.scorecardDigest,
+    exportAllOk: run.gate.exportAllOk,
+    scorecardOk: run.gate.scorecardOk,
+    parityOk: run.gate.parityOk,
+  };
+}
+
+// --- src/batch-national-tick-session-wave-assembly-replay-parity.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyReplayParityResult {
+  parityOk: boolean;
+  baseline: BatchNationalTickSessionWaveAssemblyRunResult;
+  replay: BatchNationalTickSessionWaveAssemblyRunResult;
+}
+
+/**
+ * Round 19: deterministic replay — two assembly runs from the same starting snapshot.
+ */
+export function verifyBatchNationalTickSessionWaveAssemblyReplayParity(
+  engine: TurnTimeEngine,
+  budget: TurnAdvanceBudgetState,
+  ticks: readonly NationalTickSessionWaveTickSpec[],
+): BatchNationalTickSessionWaveAssemblyReplayParityResult {
+  const snapshot = engine.snapshot();
+  const baseline = runNationalTickSessionWaveAssembly(engine, budget, ticks);
+  const replayEngine = TurnTimeEngine.fromSnapshot(snapshot);
+  const replay = runNationalTickSessionWaveAssembly(replayEngine, budget, ticks);
+  const parityOk =
+    baseline.assemblyDigest === replay.assemblyDigest &&
+    baseline.gate.ok === replay.gate.ok &&
+    baseline.wave.waveDigest === replay.wave.waveDigest;
+  return { parityOk, baseline, replay };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -4928,7 +5054,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '2.7.0';
+export const AGENT_02_MODULE_VERSION = '2.8.0';
 
 
 
@@ -5607,6 +5733,54 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
       waveAssemblyRun,
 
     ).ok,
+
+  });
+
+  const waveAssemblyReplayEngine = new TurnTimeEngine();
+
+  const waveAssemblyReplayBudget = createTurnAdvanceBudget(2);
+
+  const waveAssemblyReplayTicks = [
+
+    { maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } },
+
+  ];
+
+  const waveAssemblyReplayRun = runNationalTickSessionWaveAssembly(
+
+    waveAssemblyReplayEngine,
+
+    waveAssemblyReplayBudget,
+
+    waveAssemblyReplayTicks,
+
+  );
+
+  results.push({
+
+    id: 'agent02_national_tick_session_wave_assembly_run',
+
+    name: 'national tick session wave assembly run',
+
+    passed: exportBatchNationalTickSessionWaveAssembly(waveAssemblyReplayRun).ok,
+
+  });
+
+  results.push({
+
+    id: 'agent02_national_tick_session_wave_assembly_replay_parity',
+
+    name: 'national tick session wave assembly replay parity',
+
+    passed: verifyBatchNationalTickSessionWaveAssemblyReplayParity(
+
+      new TurnTimeEngine(),
+
+      createTurnAdvanceBudget(2),
+
+      waveAssemblyReplayTicks,
+
+    ).parityOk,
 
   });
 
