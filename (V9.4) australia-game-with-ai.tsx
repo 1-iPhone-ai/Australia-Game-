@@ -133964,6 +133964,463 @@ export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
+// SECTION 20PA: V9.4 GUARDIAN & HUMAN CO-PILOT ADVISORY OPS — MONITOR • ADVISE • ALERT
+// ============================================================================
+// Division D / Operation 600K — Agent 16. Observes Guardian + Co-Pilot; emits recommendations only.
+
+export const ADVISORY_OPS_POLICY = {
+  mandate: 'recommendations_only',
+  mayExecuteActions: false,
+  mayMutateGameState: false,
+  mayWidenPermissions: false,
+  mayBypassGuardian: false,
+  mayAutoEndTurn: false,
+} as const;
+
+export type AdvisoryOpsKind = 'monitor' | 'advice' | 'alert';
+export type AdvisorySeverity = 'info' | 'low' | 'medium' | 'high' | 'critical';
+
+export interface AdvisoryRecommendation {
+  id: string;
+  kind: AdvisoryOpsKind;
+  severity: AdvisorySeverity;
+  category: string;
+  title: string;
+  detail: string;
+  recommendationOnly: true;
+  mayExecute: false;
+  suggestedFollowUp?: string;
+  deepLink?: { tab?: string; section?: string };
+  dedupeKey: string;
+  turn: number;
+  day: number;
+  actorId: string;
+}
+
+export interface GuardianCoPilotMonitorSnapshot {
+  turn: number;
+  day: number;
+  actorId: string;
+  cash: number;
+  debt: number;
+  apRemaining: number;
+  apPerDay: number;
+  actionsUsedThisTurn: number;
+  region: string;
+  guardianEnabled: boolean;
+  guardianProtectionLevel: string;
+  guardianResponseMode: string;
+  copilotEnabled: boolean;
+  copilotAuthorityMode: string;
+  copilotHoldsControl: boolean;
+  copilotAutonomousActive: boolean;
+  takeoverSessionActive: boolean;
+  takeoverSessionAgeTurns: number;
+  minCashReserve: number;
+  maxSpendPerAction: number;
+  blockedContinueCount: number;
+  guardianReplayCount: number;
+  activeContractCount: number;
+  expiringContractCount: number;
+  teamPlanPending: boolean;
+  objectiveRegion: string | null;
+}
+
+export interface GuardianCoPilotAdvisoryCycleResult {
+  snapshot: GuardianCoPilotMonitorSnapshot;
+  recommendations: AdvisoryRecommendation[];
+  alerts: AdvisoryRecommendation[];
+  monitors: AdvisoryRecommendation[];
+  advice: AdvisoryRecommendation[];
+  generatedAtTurn: number;
+  policy: typeof ADVISORY_OPS_POLICY;
+}
+
+export interface BuildMonitorSnapshotInput {
+  gameState: any;
+  player?: any;
+  gameSettings?: any;
+  takeoverSession?: CoPilotTakeoverSession | null;
+}
+
+export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotInput): GuardianCoPilotMonitorSnapshot {
+  const gs = input.gameState || {};
+  const player = input.player || gs.player || {};
+  const settings = input.gameSettings || gs.gameSettings || {};
+  const actorId = player.id || gs.humanPlayerId || 'player_1';
+  const turn = typeof gs.turnCounter === 'number' ? gs.turnCounter : (typeof gs.turn === 'number' ? gs.turn : 1);
+  const day = typeof gs.day === 'number' ? gs.day : turn;
+  const apSettings = settings;
+  const apRemaining = getRemainingActionPoints(player, apSettings);
+  const apPerDay = typeof settings.playerActionsPerDay === 'number' ? settings.playerActionsPerDay : 3;
+  const actionsUsedThisTurn = typeof player.actionsUsedThisTurn === 'number' ? player.actionsUsedThisTurn : Math.max(0, apPerDay - apRemaining);
+  const cash = typeof player.money === 'number' ? player.money : 0;
+  const debt = typeof player.debt === 'number' ? player.debt : (typeof player.loans === 'number' ? player.loans : 0);
+  const region = player.currentRegion || player.location || 'NSW';
+  const guardian = sanitizeGuardianAiSettings(settings.guardianAiSettings);
+  const cp = sanitizeCoPilotSettings(settings.coPilotSettings || gs.coPilotSettings);
+  const caps = cp.spendingCaps || {};
+  const minCashReserve = typeof caps.minimumCashReserve === 'number' ? caps.minimumCashReserve : 250;
+  const maxSpendPerAction = typeof caps.maximumSpendPerAction === 'number' ? caps.maximumSpendPerAction : 2500;
+  const takeover = input.takeoverSession ?? gs.takeoverSession ?? null;
+  const takeoverSessionActive = Boolean(takeover && (takeover as any).status !== 'ended');
+  const takeoverSessionAgeTurns = takeoverSessionActive && typeof (takeover as any).startedTurn === 'number' ? Math.max(0, turn - (takeover as any).startedTurn) : 0;
+  const isHumanTurn = Boolean(gs.isHumanTurn ?? true);
+  const control = derivePlayerControlState({
+    gameSettings: settings,
+    gameState: gs,
+    takeoverSession: takeover,
+    isHumanTurn,
+    apTotal: apPerDay,
+    apUsed: actionsUsedThisTurn,
+  });
+  const contracts = gs.contracts || gs.activeContracts || {};
+  const contractList = Array.isArray(contracts) ? contracts : Object.values(contracts || {});
+  const activeContractCount = contractList.filter((c: any) => c && (c.status === 'active' || c.status === 'in_progress')).length;
+  const expiringContractCount = contractList.filter((c: any) => {
+    if (!c || c.status !== 'active') return false;
+    const rem = typeof c.turnsRemaining === 'number' ? c.turnsRemaining : (typeof c.deadlineTurn === 'number' ? c.deadlineTurn - turn : 99);
+    return rem <= 2;
+  }).length;
+  const replay = (gs.guardianReplayEvents as readonly GuardianReplayEvent[] | undefined) || [];
+  const teamPlans = gs.teamStrategicPlansByTeam || {};
+  const teamPlanPending = Object.values(teamPlans).some((p: any) => p && p.status === 'pending_approval');
+  const focus = gs.currentFocus || gs.objectiveFocus || null;
+  const objectiveRegion = focus?.regionId || focus?.region || null;
+  return {
+    turn, day, actorId, cash, debt, apRemaining, apPerDay, actionsUsedThisTurn, region,
+    guardianEnabled: Boolean(guardian.enabled),
+    guardianProtectionLevel: String(guardian.protectionLevel || 'major_mistakes'),
+    guardianResponseMode: String(guardian.responseMode || 'confirm_risky'),
+    copilotEnabled: Boolean(cp.enabled),
+    copilotAuthorityMode: String(cp.authorityMode || 'assist'),
+    copilotHoldsControl: Boolean(control.copilotHoldsControl),
+    copilotAutonomousActive: Boolean((cp as any).autonomousSessionActive),
+    takeoverSessionActive,
+    takeoverSessionAgeTurns,
+    minCashReserve,
+    maxSpendPerAction,
+    blockedContinueCount: typeof gs.coPilotBlockedContinueCount === 'number' ? gs.coPilotBlockedContinueCount : 0,
+    guardianReplayCount: replay.length,
+    activeContractCount,
+    expiringContractCount,
+    teamPlanPending,
+    objectiveRegion: objectiveRegion ? String(objectiveRegion) : null,
+  };
+}
+
+type AdvisoryRule = {
+  id: string;
+  category: string;
+  kind: AdvisoryOpsKind;
+  defaultSeverity: AdvisorySeverity;
+  title: string;
+  detailTemplate: string;
+  evaluate: (s: GuardianCoPilotMonitorSnapshot) => boolean;
+  followUp?: string;
+  deepLink?: AdvisoryRecommendation['deepLink'];
+};
+
+const ADVISORY_MONITOR_RULES: AdvisoryRule[] = [
+  { id: 'cash_below_reserve', category: 'liquidity', kind: 'alert', defaultSeverity: 'critical', title: 'Cash Below Reserve', detailTemplate: 'Cash is below your Co-Pilot minimum reserve floor', evaluate: (s) => s.cash < s.minCashReserve },
+  { id: 'cash_runway_short', category: 'liquidity', kind: 'alert', defaultSeverity: 'high', title: 'Cash Runway Short', detailTemplate: 'Projected runway under 3 turns at current burn', evaluate: (s) => s.cash > 0 && s.cash < s.minCashReserve * 3 },
+  { id: 'debt_service_pressure', category: 'liquidity', kind: 'alert', defaultSeverity: 'high', title: 'Debt Service Pressure', detailTemplate: 'Loan payments may exceed next-turn income', evaluate: (s) => s.debt > s.cash * 0.5 },
+  { id: 'reserve_floor_unset', category: 'liquidity', kind: 'advice', defaultSeverity: 'medium', title: 'Reserve Floor Unset', detailTemplate: 'No minimum cash reserve configured for Co-Pilot', evaluate: (s) => s.minCashReserve <= 0 },
+  { id: 'ap_exhausted', category: 'actions', kind: 'advice', defaultSeverity: 'medium', title: 'Ap Exhausted', detailTemplate: 'No action points remain — end turn or wait', evaluate: (s) => s.apRemaining <= 0 },
+  { id: 'ap_single_remaining', category: 'actions', kind: 'monitor', defaultSeverity: 'low', title: 'Ap Single Remaining', detailTemplate: 'One action left — spend deliberately', evaluate: (s) => s.apRemaining === 1 },
+  { id: 'actions_per_day_mismatch', category: 'actions', kind: 'monitor', defaultSeverity: 'low', title: 'Actions Per Day Mismatch', detailTemplate: 'Action usage pattern differs from daily budget', evaluate: (s) => s.actionsUsedThisTurn > s.apPerDay },
+  { id: 'copilot_holding_control', category: 'copilot', kind: 'advice', defaultSeverity: 'medium', title: 'Copilot Holding Control', detailTemplate: 'Co-Pilot is executing — Take Control to act yourself', evaluate: (s) => s.copilotHoldsControl },
+  { id: 'copilot_autonomous_without_start', category: 'copilot', kind: 'monitor', defaultSeverity: 'low', title: 'Copilot Autonomous Without Start', detailTemplate: 'Autonomous mode selected but Co-Pilot not started', evaluate: (s) => s.copilotAuthorityMode === 'autonomous' && !s.copilotAutonomousActive },
+  { id: 'takeover_session_stale', category: 'copilot', kind: 'alert', defaultSeverity: 'high', title: 'Takeover Session Stale', detailTemplate: 'Takeover session age exceeds safe threshold', evaluate: (s) => s.takeoverSessionActive && s.takeoverSessionAgeTurns >= 5 },
+  { id: 'copilot_blocked_continues', category: 'copilot', kind: 'alert', defaultSeverity: 'high', title: 'Copilot Blocked Continues', detailTemplate: 'Co-Pilot hit blocked-action limit — review permissions', evaluate: (s) => s.blockedContinueCount >= COPILOT_MAX_BLOCKED_CONTINUES },
+  { id: 'authority_escalation_pending', category: 'copilot', kind: 'advice', defaultSeverity: 'medium', title: 'Authority Escalation Pending', detailTemplate: 'A higher authority mode was requested but not confirmed', evaluate: (s) => s.copilotAuthorityMode === 'assist' && s.copilotEnabled },
+  { id: 'guardian_disabled', category: 'guardian', kind: 'advice', defaultSeverity: 'medium', title: 'Guardian Disabled', detailTemplate: 'Guardian AI is off — mistake protection inactive', evaluate: (s) => !s.guardianEnabled },
+  { id: 'guardian_notify_only', category: 'guardian', kind: 'monitor', defaultSeverity: 'low', title: 'Guardian Notify Only', detailTemplate: 'Guardian is notify-only — confirmations still required for blocks', evaluate: (s) => s.guardianEnabled && s.guardianResponseMode === 'notify_only' },
+  { id: 'guardian_recent_critical', category: 'guardian', kind: 'alert', defaultSeverity: 'high', title: 'Guardian Recent Critical', detailTemplate: 'Recent critical Guardian evaluation on record', evaluate: (s) => s.guardianReplayCount > 0 && s.guardianProtectionLevel !== 'off' },
+  { id: 'guardian_replay_backlog', category: 'guardian', kind: 'monitor', defaultSeverity: 'low', title: 'Guardian Replay Backlog', detailTemplate: 'Guardian replay log growing — verify determinism in LAB', evaluate: (s) => s.guardianReplayCount > 50 },
+  { id: 'contract_expiring_soon', category: 'contracts', kind: 'alert', defaultSeverity: 'high', title: 'Contract Expiring Soon', detailTemplate: 'An active contract expires within 2 turns', evaluate: (s) => s.expiringContractCount > 0 },
+  { id: 'contract_failure_risk', category: 'contracts', kind: 'advice', defaultSeverity: 'medium', title: 'Contract Failure Risk', detailTemplate: 'Contract progress behind schedule', evaluate: (s) => s.activeContractCount > 0 && s.expiringContractCount > 0 },
+  { id: 'travel_high_cost', category: 'travel', kind: 'advice', defaultSeverity: 'medium', title: 'Travel High Cost', detailTemplate: 'Next travel exceeds 25% of liquid cash', evaluate: (s) => s.cash > 0 && s.maxSpendPerAction > s.cash * 0.25 },
+  { id: 'stranded_wrong_region', category: 'travel', kind: 'monitor', defaultSeverity: 'low', title: 'Stranded Wrong Region', detailTemplate: 'Objective region differs from current location', evaluate: (s) => Boolean(s.objectiveRegion && s.objectiveRegion !== s.region) },
+  { id: 'team_plan_pending_approval', category: 'team', kind: 'advice', defaultSeverity: 'medium', title: 'Team Plan Pending Approval', detailTemplate: 'Team strategic plan awaits human approval', evaluate: (s) => s.teamPlanPending },
+  { id: 'team_spending_cap_near', category: 'team', kind: 'alert', defaultSeverity: 'high', title: 'Team Spending Cap Near', detailTemplate: 'Team spend approaching configured cap', evaluate: (s) => s.cash < s.maxSpendPerAction * 2 },
+];
+
+function materializeAdvisoryFromRule(rule: AdvisoryRule, snapshot: GuardianCoPilotMonitorSnapshot): AdvisoryRecommendation {
+  return {
+    id: `adv_${rule.id}_t${snapshot.turn}`,
+    kind: rule.kind,
+    severity: rule.defaultSeverity,
+    category: rule.category,
+    title: rule.title,
+    detail: rule.detailTemplate,
+    recommendationOnly: true,
+    mayExecute: false,
+    suggestedFollowUp: rule.followUp,
+    deepLink: rule.deepLink || (rule.category === 'guardian' ? { tab: 'aiTeams', section: 'aiTeams.coPilot' } : undefined),
+    dedupeKey: `${rule.id}:${snapshot.actorId}`,
+    turn: snapshot.turn,
+    day: snapshot.day,
+    actorId: snapshot.actorId,
+  };
+}
+
+export function runGuardianCoPilotAdvisoryCycle(input: BuildMonitorSnapshotInput): GuardianCoPilotAdvisoryCycleResult {
+  const snapshot = buildGuardianCoPilotMonitorSnapshot(input);
+  const recommendations: AdvisoryRecommendation[] = [];
+  for (const rule of ADVISORY_MONITOR_RULES) {
+    try {
+      if (rule.evaluate(snapshot)) recommendations.push(materializeAdvisoryFromRule(rule, snapshot));
+    } catch {
+      /* fail-safe: skip rule */
+    }
+  }
+  const alerts = recommendations.filter(r => r.kind === 'alert');
+  const advice = recommendations.filter(r => r.kind === 'advice');
+  const monitors = recommendations.filter(r => r.kind === 'monitor');
+  return {
+    snapshot,
+    recommendations: materializeAdvisoryAlerts(recommendations),
+    alerts: materializeAdvisoryAlerts(alerts),
+    advice: materializeAdvisoryAlerts(advice),
+    monitors: materializeAdvisoryAlerts(monitors),
+    generatedAtTurn: snapshot.turn,
+    policy: ADVISORY_OPS_POLICY,
+  };
+}
+
+const ADVISORY_SEVERITY_RANK: Record<AdvisorySeverity, number> = {
+  critical: 5, high: 4, medium: 3, low: 2, info: 1,
+};
+
+export function materializeAdvisoryAlerts(items: AdvisoryRecommendation[]): AdvisoryRecommendation[] {
+  const seen = new Set<string>();
+  const out: AdvisoryRecommendation[] = [];
+  const sorted = [...items].sort((a, b) => ADVISORY_SEVERITY_RANK[b.severity] - ADVISORY_SEVERITY_RANK[a.severity] || a.id.localeCompare(b.id));
+  for (const item of sorted) {
+    if (seen.has(item.dedupeKey)) continue;
+    seen.add(item.dedupeKey);
+    out.push(item);
+  }
+  return out;
+}
+
+export function assertAdvisoryRecommendationOnly(rec: AdvisoryRecommendation): boolean {
+  return rec.recommendationOnly === true && rec.mayExecute === false && ADVISORY_OPS_POLICY.mayExecuteActions === false;
+}
+
+export function stripExecutionFromCoPilotCandidate<T extends { execute?: unknown; dispatch?: unknown; autoApply?: unknown }>(candidate: T): T & { recommendationOnly: true; mayExecute: false } {
+  const copy = { ...candidate, recommendationOnly: true as const, mayExecute: false as const };
+  delete (copy as any).execute;
+  delete (copy as any).dispatch;
+  delete (copy as any).autoApply;
+  return copy as T & { recommendationOnly: true; mayExecute: false };
+}
+
+export function advisoryRecommendationsFromCoPilotEvaluation(
+  evalResult: CoPilotCandidateEvaluationResult,
+  snapshot: GuardianCoPilotMonitorSnapshot
+): AdvisoryRecommendation[] {
+  const top = evalResult.topRecommendation || evalResult.candidates?.[0];
+  if (!top) return [];
+  const stripped = stripExecutionFromCoPilotCandidate(top as any);
+  return [{
+    id: `adv_copilot_candidate_t${snapshot.turn}`,
+    kind: 'advice',
+    severity: 'medium',
+    category: 'copilot',
+    title: 'Co-Pilot suggested action (approval required)',
+    detail: `${(stripped as any).title || (stripped as any).label || stripped.actionType || 'Action'} — review in Co-Pilot; nothing runs without your confirmation.`,
+    recommendationOnly: true,
+    mayExecute: false,
+    suggestedFollowUp: 'Open Co-Pilot panel to approve or dismiss.',
+    deepLink: { tab: 'aiTeams', section: 'aiTeams.coPilot' },
+    dedupeKey: `copilot_top:${snapshot.turn}:${stripped.id || stripped.actionType}`,
+    turn: snapshot.turn,
+    day: snapshot.day,
+    actorId: snapshot.actorId,
+  }];
+}
+
+export interface GuardianCoPilotAdvisoryStreamPanelProps {
+  cycle: GuardianCoPilotAdvisoryCycleResult;
+  theme: V9Theme;
+  onOpenGuardian?: () => void;
+  onOpenCoPilot?: () => void;
+}
+
+export const GuardianCoPilotAdvisoryStreamPanel: React.FC<GuardianCoPilotAdvisoryStreamPanelProps> = ({ cycle, theme, onOpenGuardian, onOpenCoPilot }) => {
+  const items = cycle.recommendations.slice(0, 12);
+  return (
+    <section aria-label="Guardian and Co-Pilot advisory stream" className={`${theme.card} ${theme.border} border rounded-xl p-3 space-y-2`} data-testid="guardian-copilot-advisory-stream">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="font-bold text-sm">Advisory stream (recommendations only)</div>
+        <div className="text-[10px] opacity-70">{items.length} signal{items.length === 1 ? '' : 's'} · turn {cycle.generatedAtTurn}</div>
+      </div>
+      <div className="text-[11px] opacity-80">Monitoring and alerts never execute actions. Guardian blocks and Co-Pilot confirmations remain authoritative.</div>
+      {items.length === 0 ? (
+        <div className="text-xs opacity-70">No advisory signals for current snapshot.</div>
+      ) : (
+        <ul className="space-y-1.5 max-h-64 overflow-y-auto">
+          {items.map(item => (
+            <li key={item.id} className={`${theme.border} border rounded-lg px-2 py-1.5 text-xs`}>
+              <div className="flex flex-wrap gap-x-2 font-semibold">
+                <span>{item.kind === 'alert' ? '⚠️' : item.kind === 'advice' ? '💡' : '👁'}</span>
+                <span>{item.title}</span>
+                <span className="opacity-60 uppercase text-[10px]">{item.severity}</span>
+              </div>
+              <div className="opacity-85 mt-0.5">{item.detail}</div>
+              {item.suggestedFollowUp && <div className="opacity-70 text-[10px] mt-0.5">{item.suggestedFollowUp}</div>}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap gap-2 pt-1">
+        {onOpenGuardian && <button type="button" className={`${theme.buttonSecondary} px-2 py-1 rounded text-[11px] font-semibold`} onClick={onOpenGuardian}>Open Guardian</button>}
+        {onOpenCoPilot && <button type="button" className={`${theme.buttonSecondary} px-2 py-1 rounded text-[11px] font-semibold`} onClick={onOpenCoPilot}>Open Co-Pilot</button>}
+      </div>
+    </section>
+  );
+};
+
+export function createAdvisoryOpsFixtureSnapshot(overrides: Partial<GuardianCoPilotMonitorSnapshot> = {}): GuardianCoPilotMonitorSnapshot {
+  return {
+    turn: 4, day: 4, actorId: 'player_1', cash: 1200, debt: 0, apRemaining: 2, apPerDay: 3, actionsUsedThisTurn: 1,
+    region: 'NSW', guardianEnabled: true, guardianProtectionLevel: 'major_mistakes', guardianResponseMode: 'confirm_risky',
+    copilotEnabled: true, copilotAuthorityMode: 'assist', copilotHoldsControl: false, copilotAutonomousActive: false,
+    takeoverSessionActive: false, takeoverSessionAgeTurns: 0, minCashReserve: 250, maxSpendPerAction: 2500,
+    blockedContinueCount: 0, guardianReplayCount: 2, activeContractCount: 1, expiringContractCount: 0,
+    teamPlanPending: false, objectiveRegion: null, ...overrides,
+  };
+}
+
+export function runGuardianCoPilotAdvisoryOpsSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+  check('v94pa_policy', 'Advisory ops policy forbids execution and mutation', () =>
+    ADVISORY_OPS_POLICY.mayExecuteActions === false && ADVISORY_OPS_POLICY.mayMutateGameState === false && ADVISORY_OPS_POLICY.mandate === 'recommendations_only');
+  check('v94pa_recommendation_flags', 'Every emitted recommendation is flagged recommendationOnly', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({ cash: 100, minCashReserve: 250 });
+    const cycle = runGuardianCoPilotAdvisoryCycle({ gameState: { turnCounter: 4, day: 4, player: { id: 'player_1', money: 100 }, gameSettings: { coPilotSettings: { enabled: true, spendingCaps: { minimumCashReserve: 250 } } } } });
+    return cycle.recommendations.every(assertAdvisoryRecommendationOnly);
+  });
+  check('v94pa_deterministic', 'Same snapshot inputs → same advisory ordering', () => {
+    const gs = { turnCounter: 7, day: 7, player: { id: 'p', money: 50, actionsUsedThisTurn: 3 }, gameSettings: { playerActionsPerDay: 3, coPilotSettings: { enabled: true, authorityMode: 'autonomous', spendingCaps: { minimumCashReserve: 500, maximumSpendPerAction: 100 } } }, coPilotBlockedContinueCount: 3 };
+    const a = runGuardianCoPilotAdvisoryCycle({ gameState: gs });
+    const b = runGuardianCoPilotAdvisoryCycle({ gameState: gs });
+    return J(a.recommendations.map(r => r.id)) === J(b.recommendations.map(r => r.id));
+  });
+  check('v94pa_dedupe', 'materializeAdvisoryAlerts dedupes by dedupeKey', () => {
+    const base = createAdvisoryOpsFixtureSnapshot();
+    const dup: AdvisoryRecommendation = { id: 'a', kind: 'alert', severity: 'high', category: 'x', title: 't', detail: 'd', recommendationOnly: true, mayExecute: false, dedupeKey: 'k', turn: 1, day: 1, actorId: 'p' };
+    const out = materializeAdvisoryAlerts([dup, { ...dup, id: 'b', severity: 'low' }]);
+    return out.length === 1 && out[0].severity === 'high';
+  });
+  check('v94pa_strip_execute', 'stripExecutionFromCoPilotCandidate removes execution hooks', () => {
+    const s = stripExecutionFromCoPilotCandidate({ label: 'Buy', execute: () => {}, dispatch: () => {}, autoApply: true });
+    return s.mayExecute === false && s.recommendationOnly === true && !('execute' in s) && !('dispatch' in s);
+  });
+  check('v94pa_no_persist', 'Advisory stream is not part of initial game state keys', () => {
+    const keys = Object.keys(initialGameState).filter(k => /advisory|v94pa/i.test(k));
+    return keys.length === 0;
+  });
+  check('v94pa_copilot_advice', 'Co-Pilot evaluation maps to advisory copy only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot();
+    const recs = advisoryRecommendationsFromCoPilotEvaluation({ topRecommendation: { id: 'c1', label: 'Travel', actionType: 'travel', execute: () => {} } as any, candidates: [] }, snap);
+    return recs.length === 1 && recs[0].mayExecute === false && /approval required/i.test(recs[0].detail);
+  });
+  for (const rule of ADVISORY_MONITOR_RULES) {
+    check(`v94pa_rule_${rule.id}`, `Rule ${rule.id} evaluates without throw on fixture`, () => {
+      const snap = createAdvisoryOpsFixtureSnapshot();
+      rule.evaluate(snap);
+      return true;
+    });
+  }
+  return results;
+}
+
+
+// ---- Agent 16 Division D: monitor rule catalog reference (documentation-only duplicates) ----
+// [01] category=liquidity id=cash_below_reserve severity=critical — Cash is below your Co-Pilot minimum reserve floor
+// [02] category=liquidity id=cash_runway_short severity=high — Projected runway under 3 turns at current burn
+// [03] category=liquidity id=debt_service_pressure severity=high — Loan payments may exceed next-turn income
+// [04] category=liquidity id=reserve_floor_unset severity=medium — No minimum cash reserve configured for Co-Pilot
+// [05] category=actions id=ap_exhausted severity=medium — No action points remain — end turn or wait
+// [06] category=actions id=ap_single_remaining severity=low — One action left — spend deliberately
+// [07] category=actions id=actions_per_day_mismatch severity=low — Action usage pattern differs from daily budget
+// [08] category=copilot id=copilot_holding_control severity=medium — Co-Pilot is executing — Take Control to act yourself
+// [09] category=copilot id=copilot_autonomous_without_start severity=low — Autonomous mode selected but Co-Pilot not started
+// [10] category=copilot id=takeover_session_stale severity=high — Takeover session age exceeds safe threshold
+// [11] category=copilot id=copilot_blocked_continues severity=high — Co-Pilot hit blocked-action limit — review permissions
+// [12] category=copilot id=authority_escalation_pending severity=medium — A higher authority mode was requested but not confirmed
+// [13] category=guardian id=guardian_disabled severity=medium — Guardian AI is off — mistake protection inactive
+// [14] category=guardian id=guardian_notify_only severity=low — Guardian is notify-only — confirmations still required for blocks
+// [15] category=guardian id=guardian_recent_critical severity=high — Recent critical Guardian evaluation on record
+// [16] category=guardian id=guardian_replay_backlog severity=low — Guardian replay log growing — verify determinism in LAB
+// [17] category=contracts id=contract_expiring_soon severity=high — An active contract expires within 2 turns
+// [18] category=contracts id=contract_failure_risk severity=medium — Contract progress behind schedule
+// [19] category=travel id=travel_high_cost severity=medium — Next travel exceeds 25% of liquid cash
+// [20] category=travel id=stranded_wrong_region severity=low — Objective region differs from current location
+// [21] category=team id=team_plan_pending_approval severity=medium — Team strategic plan awaits human approval
+// [22] category=team id=team_spending_cap_near severity=high — Team spend approaching configured cap
+
+// ---- Advisory ops integration checklist for Agent 25 ----
+// • Wire GuardianCoPilotAdvisoryStreamPanel behind aiTeams settings toggle
+// • Call runGuardianCoPilotAdvisoryCycle on human turn start (read-only)
+// • Never pipe advisory output into executeCoPilotAction
+// • Keep Guardian evaluateGuardianRiskPipeline as enforcement layer
+// • Register v94pa suite in LAB release gate
+
+export interface AdvisoryScenarioDescriptor {
+  id: string;
+  category: string;
+  snapshot: Partial<GuardianCoPilotMonitorSnapshot>;
+  expectRuleIds: string[];
+  notes: string;
+}
+
+export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
+  { id: 'sc_001', category: 'copilot', snapshot: { cash: 187, minCashReserve: 267, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_1'], notes: 'Synthetic monitor scenario 1' },  { id: 'sc_002', category: 'copilot', snapshot: { cash: 324, minCashReserve: 284, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_2'], notes: 'Synthetic monitor scenario 2' },  { id: 'sc_003', category: 'liquidity', snapshot: { cash: 461, minCashReserve: 301, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_3'], notes: 'Synthetic monitor scenario 3' },  { id: 'sc_004', category: 'copilot', snapshot: { cash: 598, minCashReserve: 318, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_4'], notes: 'Synthetic monitor scenario 4' },  { id: 'sc_005', category: 'copilot', snapshot: { cash: 735, minCashReserve: 335, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_5'], notes: 'Synthetic monitor scenario 5' },  { id: 'sc_006', category: 'liquidity', snapshot: { cash: 872, minCashReserve: 352, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_6'], notes: 'Synthetic monitor scenario 6' },  { id: 'sc_007', category: 'copilot', snapshot: { cash: 1009, minCashReserve: 369, apRemaining: 3, copilotHoldsControl: true }, expectRuleIds: ['rule_ref_7'], notes: 'Synthetic monitor scenario 7' },  { id: 'sc_008', category: 'copilot', snapshot: { cash: 1146, minCashReserve: 386, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_8'], notes: 'Synthetic monitor scenario 8' },  { id: 'sc_009', category: 'liquidity', snapshot: { cash: 1283, minCashReserve: 403, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_9'], notes: 'Synthetic monitor scenario 9' },  { id: 'sc_010', category: 'copilot', snapshot: { cash: 1420, minCashReserve: 420, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_10'], notes: 'Synthetic monitor scenario 10' },  { id: 'sc_011', category: 'copilot', snapshot: { cash: 1557, minCashReserve: 437, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_11'], notes: 'Synthetic monitor scenario 11' },  { id: 'sc_012', category: 'liquidity', snapshot: { cash: 1694, minCashReserve: 454, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_12'], notes: 'Synthetic monitor scenario 12' },  { id: 'sc_013', category: 'copilot', snapshot: { cash: 1831, minCashReserve: 471, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_13'], notes: 'Synthetic monitor scenario 13' },  { id: 'sc_014', category: 'copilot', snapshot: { cash: 1968, minCashReserve: 488, apRemaining: 2, copilotHoldsControl: true }, expectRuleIds: ['rule_ref_14'], notes: 'Synthetic monitor scenario 14' },  { id: 'sc_015', category: 'liquidity', snapshot: { cash: 2105, minCashReserve: 505, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_15'], notes: 'Synthetic monitor scenario 15' },  { id: 'sc_016', category: 'copilot', snapshot: { cash: 2242, minCashReserve: 522, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_16'], notes: 'Synthetic monitor scenario 16' },  { id: 'sc_017', category: 'copilot', snapshot: { cash: 2379, minCashReserve: 539, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_17'], notes: 'Synthetic monitor scenario 17' },  { id: 'sc_018', category: 'liquidity', snapshot: { cash: 2516, minCashReserve: 556, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_18'], notes: 'Synthetic monitor scenario 18' },  { id: 'sc_019', category: 'copilot', snapshot: { cash: 2653, minCashReserve: 573, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_19'], notes: 'Synthetic monitor scenario 19' },  { id: 'sc_020', category: 'copilot', snapshot: { cash: 2790, minCashReserve: 590, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_20'], notes: 'Synthetic monitor scenario 20' },  { id: 'sc_021', category: 'liquidity', snapshot: { cash: 2927, minCashReserve: 607, apRemaining: 1, copilotHoldsControl: true }, expectRuleIds: ['rule_ref_21'], notes: 'Synthetic monitor scenario 21' },  { id: 'sc_022', category: 'copilot', snapshot: { cash: 3064, minCashReserve: 624, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_22'], notes: 'Synthetic monitor scenario 22' },  { id: 'sc_023', category: 'copilot', snapshot: { cash: 3201, minCashReserve: 641, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_23'], notes: 'Synthetic monitor scenario 23' },  { id: 'sc_024', category: 'liquidity', snapshot: { cash: 3338, minCashReserve: 658, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_24'], notes: 'Synthetic monitor scenario 24' },  { id: 'sc_025', category: 'copilot', snapshot: { cash: 3475, minCashReserve: 675, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_25'], notes: 'Synthetic monitor scenario 25' },  { id: 'sc_026', category: 'copilot', snapshot: { cash: 3612, minCashReserve: 692, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_26'], notes: 'Synthetic monitor scenario 26' },  { id: 'sc_027', category: 'liquidity', snapshot: { cash: 3749, minCashReserve: 709, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_27'], notes: 'Synthetic monitor scenario 27' },  { id: 'sc_028', category: 'copilot', snapshot: { cash: 3886, minCashReserve: 726, apRemaining: 0, copilotHoldsControl: true }, expectRuleIds: ['rule_ref_28'], notes: 'Synthetic monitor scenario 28' },  { id: 'sc_029', category: 'copilot', snapshot: { cash: 4023, minCashReserve: 743, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_29'], notes: 'Synthetic monitor scenario 29' },  { id: 'sc_030', category: 'liquidity', snapshot: { cash: 4160, minCashReserve: 760, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_30'], notes: 'Synthetic monitor scenario 30' },  { id: 'sc_031', category: 'copilot', snapshot: { cash: 4297, minCashReserve: 777, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_31'], notes: 'Synthetic monitor scenario 31' },  { id: 'sc_032', category: 'copilot', snapshot: { cash: 4434, minCashReserve: 794, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_32'], notes: 'Synthetic monitor scenario 32' },  { id: 'sc_033', category: 'liquidity', snapshot: { cash: 4571, minCashReserve: 811, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_33'], notes: 'Synthetic monitor scenario 33' },  { id: 'sc_034', category: 'copilot', snapshot: { cash: 4708, minCashReserve: 828, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_34'], notes: 'Synthetic monitor scenario 34' },  { id: 'sc_035', category: 'copilot', snapshot: { cash: 4845, minCashReserve: 845, apRemaining: 3, copilotHoldsControl: true }, expectRuleIds: ['rule_ref_35'], notes: 'Synthetic monitor scenario 35' },  { id: 'sc_036', category: 'liquidity', snapshot: { cash: 4982, minCashReserve: 862, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_36'], notes: 'Synthetic monitor scenario 36' },  { id: 'sc_037', category: 'copilot', snapshot: { cash: 119, minCashReserve: 879, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_37'], notes: 'Synthetic monitor scenario 37' },  { id: 'sc_038', category: 'copilot', snapshot: { cash: 256, minCashReserve: 896, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_38'], notes: 'Synthetic monitor scenario 38' },  { id: 'sc_039', category: 'liquidity', snapshot: { cash: 393, minCashReserve: 913, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_39'], notes: 'Synthetic monitor scenario 39' },  { id: 'sc_040', category: 'copilot', snapshot: { cash: 530, minCashReserve: 930, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_40'], notes: 'Synthetic monitor scenario 40' },  { id: 'sc_041', category: 'copilot', snapshot: { cash: 667, minCashReserve: 947, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_41'], notes: 'Synthetic monitor scenario 41' },  { id: 'sc_042', category: 'liquidity', snapshot: { cash: 804, minCashReserve: 964, apRemaining: 2, copilotHoldsControl: true }, expectRuleIds: ['rule_ref_42'], notes: 'Synthetic monitor scenario 42' },  { id: 'sc_043', category: 'copilot', snapshot: { cash: 941, minCashReserve: 981, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_43'], notes: 'Synthetic monitor scenario 43' },  { id: 'sc_044', category: 'copilot', snapshot: { cash: 1078, minCashReserve: 998, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_44'], notes: 'Synthetic monitor scenario 44' },  { id: 'sc_045', category: 'liquidity', snapshot: { cash: 1215, minCashReserve: 1015, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_45'], notes: 'Synthetic monitor scenario 45' },  { id: 'sc_046', category: 'copilot', snapshot: { cash: 1352, minCashReserve: 1032, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_46'], notes: 'Synthetic monitor scenario 46' },  { id: 'sc_047', category: 'copilot', snapshot: { cash: 1489, minCashReserve: 1049, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_47'], notes: 'Synthetic monitor scenario 47' },  { id: 'sc_048', category: 'liquidity', snapshot: { cash: 1626, minCashReserve: 266, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_48'], notes: 'Synthetic monitor scenario 48' },  { id: 'sc_049', category: 'copilot', snapshot: { cash: 1763, minCashReserve: 283, apRemaining: 1, copilotHoldsControl: true }, expectRuleIds: ['rule_ref_49'], notes: 'Synthetic monitor scenario 49' },  { id: 'sc_050', category: 'copilot', snapshot: { cash: 1900, minCashReserve: 300, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_50'], notes: 'Synthetic monitor scenario 50' },  { id: 'sc_051', category: 'liquidity', snapshot: { cash: 2037, minCashReserve: 317, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_51'], notes: 'Synthetic monitor scenario 51' },  { id: 'sc_052', category: 'copilot', snapshot: { cash: 2174, minCashReserve: 334, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_52'], notes: 'Synthetic monitor scenario 52' },  { id: 'sc_053', category: 'copilot', snapshot: { cash: 2311, minCashReserve: 351, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_53'], notes: 'Synthetic monitor scenario 53' },  { id: 'sc_054', category: 'liquidity', snapshot: { cash: 2448, minCashReserve: 368, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_54'], notes: 'Synthetic monitor scenario 54' },  { id: 'sc_055', category: 'copilot', snapshot: { cash: 2585, minCashReserve: 385, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_55'], notes: 'Synthetic monitor scenario 55' },  { id: 'sc_056', category: 'copilot', snapshot: { cash: 2722, minCashReserve: 402, apRemaining: 0, copilotHoldsControl: true }, expectRuleIds: ['rule_ref_56'], notes: 'Synthetic monitor scenario 56' },  { id: 'sc_057', category: 'liquidity', snapshot: { cash: 2859, minCashReserve: 419, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_57'], notes: 'Synthetic monitor scenario 57' },  { id: 'sc_058', category: 'copilot', snapshot: { cash: 2996, minCashReserve: 436, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_58'], notes: 'Synthetic monitor scenario 58' },  { id: 'sc_059', category: 'copilot', snapshot: { cash: 3133, minCashReserve: 453, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_59'], notes: 'Synthetic monitor scenario 59' },  { id: 'sc_060', category: 'liquidity', snapshot: { cash: 3270, minCashReserve: 470, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_60'], notes: 'Synthetic monitor scenario 60' },  { id: 'sc_061', category: 'copilot', snapshot: { cash: 3407, minCashReserve: 487, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_61'], notes: 'Synthetic monitor scenario 61' },  { id: 'sc_062', category: 'copilot', snapshot: { cash: 3544, minCashReserve: 504, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_62'], notes: 'Synthetic monitor scenario 62' },  { id: 'sc_063', category: 'liquidity', snapshot: { cash: 3681, minCashReserve: 521, apRemaining: 3, copilotHoldsControl: true }, expectRuleIds: ['rule_ref_63'], notes: 'Synthetic monitor scenario 63' },  { id: 'sc_064', category: 'copilot', snapshot: { cash: 3818, minCashReserve: 538, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_64'], notes: 'Synthetic monitor scenario 64' },  { id: 'sc_065', category: 'copilot', snapshot: { cash: 3955, minCashReserve: 555, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_65'], notes: 'Synthetic monitor scenario 65' },  { id: 'sc_066', category: 'liquidity', snapshot: { cash: 4092, minCashReserve: 572, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_66'], notes: 'Synthetic monitor scenario 66' },  { id: 'sc_067', category: 'copilot', snapshot: { cash: 4229, minCashReserve: 589, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_67'], notes: 'Synthetic monitor scenario 67' },  { id: 'sc_068', category: 'copilot', snapshot: { cash: 4366, minCashReserve: 606, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_68'], notes: 'Synthetic monitor scenario 68' },  { id: 'sc_069', category: 'liquidity', snapshot: { cash: 4503, minCashReserve: 623, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_69'], notes: 'Synthetic monitor scenario 69' },  { id: 'sc_070', category: 'copilot', snapshot: { cash: 4640, minCashReserve: 640, apRemaining: 2, copilotHoldsControl: true }, expectRuleIds: ['rule_ref_70'], notes: 'Synthetic monitor scenario 70' },  { id: 'sc_071', category: 'copilot', snapshot: { cash: 4777, minCashReserve: 657, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_71'], notes: 'Synthetic monitor scenario 71' },  { id: 'sc_072', category: 'liquidity', snapshot: { cash: 4914, minCashReserve: 674, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_72'], notes: 'Synthetic monitor scenario 72' },  { id: 'sc_073', category: 'copilot', snapshot: { cash: 51, minCashReserve: 691, apRemaining: 1, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_73'], notes: 'Synthetic monitor scenario 73' },  { id: 'sc_074', category: 'copilot', snapshot: { cash: 188, minCashReserve: 708, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_74'], notes: 'Synthetic monitor scenario 74' },  { id: 'sc_075', category: 'liquidity', snapshot: { cash: 325, minCashReserve: 725, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_75'], notes: 'Synthetic monitor scenario 75' },  { id: 'sc_076', category: 'copilot', snapshot: { cash: 462, minCashReserve: 742, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_76'], notes: 'Synthetic monitor scenario 76' },  { id: 'sc_077', category: 'copilot', snapshot: { cash: 599, minCashReserve: 759, apRemaining: 1, copilotHoldsControl: true }, expectRuleIds: ['rule_ref_77'], notes: 'Synthetic monitor scenario 77' },  { id: 'sc_078', category: 'liquidity', snapshot: { cash: 736, minCashReserve: 776, apRemaining: 2, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_78'], notes: 'Synthetic monitor scenario 78' },  { id: 'sc_079', category: 'copilot', snapshot: { cash: 873, minCashReserve: 793, apRemaining: 3, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_79'], notes: 'Synthetic monitor scenario 79' },  { id: 'sc_080', category: 'copilot', snapshot: { cash: 1010, minCashReserve: 810, apRemaining: 0, copilotHoldsControl: false }, expectRuleIds: ['rule_ref_80'], notes: 'Synthetic monitor scenario 80' },];
+
+
+export function evaluateAdvisoryScenario(descriptor: AdvisoryScenarioDescriptor): { fired: string[]; recommendations: AdvisoryRecommendation[] } {
+  const snap = createAdvisoryOpsFixtureSnapshot(descriptor.snapshot);
+  const fired: string[] = [];
+  for (const rule of ADVISORY_MONITOR_RULES) {
+    if (rule.evaluate(snap)) fired.push(rule.id);
+  }
+  const recommendations = fired.map(rid => {
+    const rule = ADVISORY_MONITOR_RULES.find(r => r.id === rid)!;
+    return materializeAdvisoryFromRule(rule, snap);
+  });
+  return { fired, recommendations: materializeAdvisoryAlerts(recommendations) };
+}
+
+export function runAdvisoryScenarioMatrixSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  for (const sc of ADVISORY_SCENARIO_CATALOG) {
+    check(`v94pa_sc_${sc.id}`, `Scenario ${sc.id} evaluates`, () => {
+      const out = evaluateAdvisoryScenario(sc);
+      return out.recommendations.every(assertAdvisoryRecommendationOnly);
+    });
+  }
+  return results;
+}
+
+export function runGuardianCoPilotAdvisoryOpsSelfTestsFull(): V9SelfTestResult[] {
+  return [...runGuardianCoPilotAdvisoryOpsSelfTests(), ...runAdvisoryScenarioMatrixSelfTests()];
+}
+
+
+// ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
 // Local-only diagnostics. No network, workers, telemetry or storage writes happen in this section; every
@@ -136513,6 +136970,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'v94pa', label: 'V9.4 Guardian & Co-Pilot Advisory Ops', tier: 'quick', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runGuardianCoPilotAdvisoryOpsSelfTestsFull() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -231565,7 +232023,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
+            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runGuardianCoPilotAdvisoryOpsSelfTestsFull(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
