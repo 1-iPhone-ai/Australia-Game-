@@ -8260,6 +8260,293 @@ export function leagueRecoveryOrchestratorWithinCap(report: LeagueRecoveryOrches
 }
 
 
+// --- source: match-explainability-federation-bundle.ts ---
+  auditMatchExplainabilityFederationGate,
+  matchExplainabilityFederationAllowed,
+} from './match-explainability-federation-gate.ts';
+  buildMatchExplainabilityLeagueBundle,
+  matchExplainabilityLeagueReady,
+} from './match-explainability-league-bundle.ts';
+  buildSessionLeagueExportBundle,
+  sessionLeagueExportShipped,
+} from './session-league-export-bundle.ts';
+
+export const AGENT19_FEDERATION_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityFederationBundle {
+  federationReady: boolean;
+  federationAllowed: boolean;
+  leagueReady: boolean;
+  leagueExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type FederationParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Federation bundle: federation gate and league export must both be green. */
+export function buildMatchExplainabilityFederationBundle(
+  packs: TurnExplainabilityPack[],
+  params: FederationParams,
+): MatchExplainabilityFederationBundle {
+  const federation = auditMatchExplainabilityFederationGate(packs, params);
+  const league = buildMatchExplainabilityLeagueBundle(packs, params);
+  const leagueExport = buildSessionLeagueExportBundle(packs, params);
+  const federationAllowed = matchExplainabilityFederationAllowed(federation);
+  const leagueReady = matchExplainabilityLeagueReady(league);
+  const leagueExportShipped = sessionLeagueExportShipped(leagueExport);
+  const federationReady = federationAllowed && leagueReady && leagueExportShipped;
+  const narrativeLines = [
+    `Match explainability federation bundle: ${federationReady ? 'READY' : 'PENDING'} (gate ${federationAllowed ? 'ok' : 'fail'}, league ${leagueReady ? 'ok' : 'fail'}).`,
+    ...federation.narrativeLines.slice(0, 2),
+    ...league.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_FEDERATION_NARRATIVE_CAP);
+  return {
+    federationReady,
+    federationAllowed,
+    leagueReady,
+    leagueExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityFederationReady(bundle: MatchExplainabilityFederationBundle): boolean {
+  return bundle.federationReady;
+}
+
+
+// --- source: session-federation-export-bundle.ts ---
+  buildSessionLeagueExportBundle,
+  type SessionLeagueExportBundle,
+} from './session-league-export-bundle.ts';
+  buildMatchExplainabilityFederationBundle,
+  matchExplainabilityFederationReady,
+} from './match-explainability-federation-bundle.ts';
+
+export interface SessionFederationExportBundle extends SessionLeagueExportBundle {
+  federationReady: boolean;
+  federationSchema: string;
+}
+
+/** Federation export wraps league export when federation bundle is ready. */
+export function buildSessionFederationExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionFederationExportBundle {
+  const base = buildSessionLeagueExportBundle(packs, params);
+  const federation = buildMatchExplainabilityFederationBundle(packs, params);
+  const federationReady = matchExplainabilityFederationReady(federation);
+  const exports = federationReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    federationReady,
+    federationSchema: 'agent19.federation.v1',
+    releaseReady: federationReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Federation export: ${federationReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionFederationExportShipped(bundle: SessionFederationExportBundle): boolean {
+  return (
+    bundle.federationReady &&
+    bundle.exports.length > 0 &&
+    bundle.federationSchema === 'agent19.federation.v1'
+  );
+}
+
+
+// --- source: league-federation-bridge.ts ---
+  buildMatchExplainabilityFederationBundle,
+  matchExplainabilityFederationReady,
+} from './match-explainability-federation-bundle.ts';
+  buildMatchExplainabilityLeagueBundle,
+  matchExplainabilityLeagueReady,
+} from './match-explainability-league-bundle.ts';
+
+export interface LeagueFederationBridgeReport {
+  aligned: boolean;
+  federationReady: boolean;
+  leagueReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Federation-ready should match league-ready when league export stack passes. */
+export function auditLeagueFederationBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): LeagueFederationBridgeReport {
+  const federation = buildMatchExplainabilityFederationBundle(packs, params);
+  const league = buildMatchExplainabilityLeagueBundle(packs, params);
+  const federationReady = matchExplainabilityFederationReady(federation);
+  const leagueReady = matchExplainabilityLeagueReady(league);
+  const aligned = federationReady === leagueReady;
+  const narrativeLines = [
+    `League/federation bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (federation ${federationReady ? 'ok' : 'fail'}, league ${leagueReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, federationReady, leagueReady, narrativeLines };
+}
+
+export function leagueFederationBridgeHealthy(report: LeagueFederationBridgeReport): boolean {
+  return report.federationReady && report.leagueReady && report.aligned;
+}
+
+
+// --- source: match-explainability-union-gate.ts ---
+  buildMatchExplainabilityFederationBundle,
+  matchExplainabilityFederationReady,
+} from './match-explainability-federation-bundle.ts';
+  buildSessionFederationExportBundle,
+  sessionFederationExportShipped,
+} from './session-federation-export-bundle.ts';
+
+export interface MatchExplainabilityUnionGateReport {
+  unionAllowed: boolean;
+  federationReady: boolean;
+  federationExportShipped: boolean;
+  leagueFederationHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Union gate: federation bundle + federation export + league/federation bridge. */
+export function auditMatchExplainabilityUnionGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityUnionGateReport {
+  const federation = buildMatchExplainabilityFederationBundle(packs, params);
+  const federationExport = buildSessionFederationExportBundle(packs, params);
+  const bridge = auditLeagueFederationBridge(packs, params);
+  const federationReady = matchExplainabilityFederationReady(federation);
+  const federationExportShipped = sessionFederationExportShipped(federationExport);
+  const leagueFederationHealthy = leagueFederationBridgeHealthy(bridge);
+  const unionAllowed = federationReady && federationExportShipped && leagueFederationHealthy;
+  const narrativeLines = [
+    `Match explainability union: ${unionAllowed ? 'ALLOWED' : 'DENIED'} (federation ${federationReady ? 'ok' : 'fail'}, export ${federationExportShipped ? 'ok' : 'fail'}).`,
+    ...federation.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    unionAllowed,
+    federationReady,
+    federationExportShipped,
+    leagueFederationHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityUnionAllowed(report: MatchExplainabilityUnionGateReport): boolean {
+  return report.unionAllowed;
+}
+
+
+// --- source: federation-recovery-orchestrator.ts ---
+  auditMatchExplainabilityFederationGate,
+  matchExplainabilityFederationAllowed,
+} from './match-explainability-federation-gate.ts';
+
+export const AGENT19_FEDERATION_RECOVERY_CAP = 10;
+
+export interface FederationRecoveryOrchestratorReport {
+  federationBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when federation gate blocks union rollout. */
+export function buildFederationRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): FederationRecoveryOrchestratorReport {
+  const federation = auditMatchExplainabilityFederationGate(packs, params);
+  const federationBlocked = !matchExplainabilityFederationAllowed(federation);
+  const steps: string[] = [];
+  if (federationBlocked) {
+    if (!federation.leagueReady) {
+      steps.push('Restore league bundle: accord and league export must pass.');
+    }
+    if (!federation.leagueExportShipped) {
+      steps.push('Emit session league export before federation clearance.');
+    }
+    if (!federation.accordLeagueHealthy) {
+      steps.push('Reconcile accord/league bridge before federation.');
+    }
+    steps.push(...buildLeagueRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const league = buildMatchExplainabilityLeagueBundle(packs, params);
+    if (!league.leagueReady) {
+      steps.push('Re-run league readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Federation gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_FEDERATION_RECOVERY_CAP);
+  return {
+    federationBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Federation recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function federationRecoveryOrchestratorWithinCap(report: FederationRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_FEDERATION_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -8708,6 +8995,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityFederationGate,
   matchExplainabilityFederationAllowed,
 } from '../match-explainability-federation-gate.ts';
+  buildMatchExplainabilityFederationBundle,
+  matchExplainabilityFederationReady,
+} from '../match-explainability-federation-bundle.ts';
+  buildSessionFederationExportBundle,
+  sessionFederationExportShipped,
+} from '../session-federation-export-bundle.ts';
+  buildFederationRecoveryOrchestrator,
+  federationRecoveryOrchestratorWithinCap,
+} from '../federation-recovery-orchestrator.ts';
+  auditMatchExplainabilityUnionGate,
+  matchExplainabilityUnionAllowed,
+} from '../match-explainability-union-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -13177,6 +13476,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityFederationAllowed(report) && !report.leagueReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r32_federation_ready',
+        'Federation bundle ready when federation gate and league export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityFederationBundle([pack], params);
+          return matchExplainabilityFederationReady(bundle) && bundle.federationAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r32_federation_held',
+        'Federation bundle pending when federation gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 39, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityFederationBundle([pack], {
+            memory: null,
+            currentTurn: 39,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityFederationReady(bundle) && !bundle.federationAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r32_federation_recovery',
+        'Federation recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 18, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 18, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildFederationRecoveryOrchestrator([pack], params);
+          return report.federationBlocked && federationRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r32_league_federation_bridge',
+        'League federation bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditLeagueFederationBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return leagueFederationBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r32_federation_export',
+        'Federation export shipped when federation ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionFederationExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionFederationExportShipped(bundle) && bundle.federationSchema === 'agent19.federation.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r32_union_gate_ok',
+        'Union gate allowed on healthy federation stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityUnionGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityUnionAllowed(report) && report.federationExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r32_union_gate_block',
+        'Union gate denied when federation pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 40, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityUnionGate([pack], {
+            memory: null,
+            currentTurn: 40,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityUnionAllowed(report) && !report.federationReady || JSON.stringify(report);
         },
       ],
     ]),
