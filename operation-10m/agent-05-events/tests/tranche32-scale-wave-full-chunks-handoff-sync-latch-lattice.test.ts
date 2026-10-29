@@ -15,15 +15,15 @@ import {
 } from '../src/index.ts';
 
 describe('Tranche 32 scale-wave-full-chunks-handoff-sync-latch lattice catalog', () => {
-  it('adds 320 handoff-sync-latch chains at 14920 total', () => {
+  it('adds 320 handoff-sync-latch chains at 15240 total', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE32_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche32Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 14920);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 15240);
   });
 
   it('uses op10m_t32 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 14920);
+    assert.equal(ids.size, 15240);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE32) {
       assert.match(c.chainId, /^op10m_t32_/);
     }

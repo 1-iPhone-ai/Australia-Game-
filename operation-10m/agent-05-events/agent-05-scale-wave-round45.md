@@ -11,4 +11,4 @@ Branch: `op10m/agent-05-events` · baseline **`98bcd652`** · **`c02103fa`** @ *
 
 ## Commit
 
-Round 44 base: **`c02103fa`**. Round 45 substance: *(see store handoff after push)*. Push-first tip: **`O10-221 · wave 45 · round 45`**.
+Round 44 base: **`c02103fa`**. Round 45 substance: **`eb9db4b5`**. Push-first tip: **`96d38e9e`**.

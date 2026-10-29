@@ -553,6 +553,14 @@ export interface Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealW
   k: 'agent25_full_chunks_handoff_closure_finalize_seal_wave_ready';
 }
 
+export interface Op10mTriggerRequireScaleWaveFullChunksHandoffClosureFinalizeSealCommit {
+  k: 'scale_wave_full_chunks_handoff_closure_finalize_seal_commit';
+}
+
+export interface Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealWaveSealed {
+  k: 'agent25_full_chunks_handoff_closure_finalize_seal_wave_sealed';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -683,7 +691,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireScaleWaveFullChunksHandoffClosureFinalizeSyncCommit
   | Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSyncWaveSealed
   | Op10mTriggerRequireScaleWaveFullChunksHandoffClosureFinalizeSealLatch
-  | Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealWaveReady;
+  | Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealWaveReady
+  | Op10mTriggerRequireScaleWaveFullChunksHandoffClosureFinalizeSealCommit
+  | Op10mTriggerRequireAgent25FullChunksHandoffClosureFinalizeSealWaveSealed;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -851,6 +861,8 @@ export interface Op10mNarrativeEngineState {
     agent25FullChunksHandoffClosureFinalizeSyncWaveSealedPasses: number;
     scaleWaveFullChunksHandoffClosureFinalizeSealLatches: number;
     agent25FullChunksHandoffClosureFinalizeSealWaveReadyPasses: number;
+    scaleWaveFullChunksHandoffClosureFinalizeSealCommits: number;
+    agent25FullChunksHandoffClosureFinalizeSealWaveSealedPasses: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;
