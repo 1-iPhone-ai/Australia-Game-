@@ -4404,6 +4404,411 @@ export function runAgent24LedgerSealContinuitySelfTests(): Array<{ name: string;
 }
 
 
+// --- source: restore-commit-record.ts ---
+
+export interface Agent24RestoreCommitStepRecord {
+  stepIndex: number;
+  kind: string;
+  targetTurn: number | null;
+  committed: boolean;
+  fingerprint: string;
+}
+
+export interface Agent24RestoreCommitRecord {
+  recordId: string;
+  matchId: string;
+  currentTurn: number;
+  commitAllowed: boolean;
+  anchorTurn: number | null;
+  committedStepCount: number;
+  steps: Agent24RestoreCommitStepRecord[];
+  commitScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24RestoreCommitRecordInput {
+  matchId: string;
+  currentTurn: number;
+  replayRestorePlan: Agent24ReplayRestorePlan;
+  restoreExecutionGate: Agent24RestoreExecutionGateReport;
+}
+
+export function buildAgent24RestoreCommitRecord(input: Agent24RestoreCommitRecordInput): Agent24RestoreCommitRecord {
+  const commitAllowed = input.restoreExecutionGate.executionAllowed && input.replayRestorePlan.restoreAllowed;
+
+  const steps: Agent24RestoreCommitStepRecord[] = input.replayRestorePlan.steps.map(step => {
+    const committed =
+      commitAllowed &&
+      (step.kind === 'verify_seal' ||
+        (step.kind === 'anchor_checkpoint' && input.replayRestorePlan.anchorTurn !== null) ||
+        (step.kind === 'rewind_to_target' && step.targetTurn === input.replayRestorePlan.anchorTurn) ||
+        (step.kind === 'replay_monotonic_check' && input.restoreExecutionGate.executionScore >= 70));
+    return {
+      stepIndex: step.stepIndex,
+      kind: step.kind,
+      targetTurn: step.targetTurn,
+      committed,
+      fingerprint: o6kAgent24Fingerprint('restore_commit_step', {
+        idx: step.stepIndex,
+        kind: step.kind,
+        committed,
+      }),
+    };
+  });
+
+  const committedStepCount = steps.filter(s => s.committed).length;
+
+  let commitScore = 100;
+  if (!commitAllowed) commitScore -= 40;
+  if (committedStepCount < input.replayRestorePlan.requiredStepCount) {
+    commitScore -= (input.replayRestorePlan.requiredStepCount - committedStepCount) * 8;
+  }
+  commitScore = Math.max(0, Math.min(100, commitScore));
+
+  return {
+    recordId: o6kAgent24Fingerprint('restore_commit_record', {
+      matchId: input.matchId,
+      turn: input.currentTurn,
+    }),
+    matchId: input.matchId,
+    currentTurn: input.currentTurn,
+    commitAllowed,
+    anchorTurn: input.replayRestorePlan.anchorTurn,
+    committedStepCount,
+    steps,
+    commitScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('restore_commit_record_body', {
+      steps: steps.map(s => s.fingerprint),
+      commitAllowed,
+      anchorTurn: input.replayRestorePlan.anchorTurn,
+      commitScore,
+    }),
+  };
+}
+
+export function runAgent24RestoreCommitRecordSelfTests(): Array<{ name: string; passed: boolean }> {
+  const plan = {
+    planId: 'p',
+    matchId: 'self',
+    restoreAllowed: true,
+    anchorTurn: 10,
+    stepCount: 3,
+    requiredStepCount: 2,
+    steps: [
+      {
+        stepIndex: 0,
+        kind: 'verify_seal',
+        targetTurn: null,
+        detail: 'ok',
+        required: true,
+        fingerprint: 'a',
+      },
+      {
+        stepIndex: 1,
+        kind: 'rewind_to_target',
+        targetTurn: 10,
+        detail: 'ok',
+        required: true,
+        fingerprint: 'b',
+      },
+    ],
+    restorePlanScore: 90,
+    deterministicFingerprint: o6kAgent24Fingerprint('rp_commit', { v: 1 }),
+  };
+  const gate = {
+    reportId: 'g',
+    matchId: 'self',
+    executionAllowed: true,
+    anchorTurn: 10,
+    requiredStepCount: 2,
+    satisfiedRequiredSteps: 2,
+    blockerCount: 0,
+    blockers: [],
+    executionScore: 95,
+    deterministicFingerprint: o6kAgent24Fingerprint('eg_commit', { v: 1 }),
+  };
+
+  const record = buildAgent24RestoreCommitRecord({
+    matchId: 'self',
+    currentTurn: 14,
+    replayRestorePlan: plan,
+    restoreExecutionGate: gate,
+  });
+
+  return [
+    { name: 'commit_allowed_records_steps', passed: record.commitAllowed && record.committedStepCount >= 2 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        record.deterministicFingerprint ===
+        buildAgent24RestoreCommitRecord({
+          matchId: 'self',
+          currentTurn: 14,
+          replayRestorePlan: plan,
+          restoreExecutionGate: gate,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: fulfillment-seal-bridge.ts ---
+
+export interface Agent24FulfillmentSealBridgeLink {
+  bridgeId: string;
+  fulfillmentComplete: boolean;
+  continuityIntact: boolean;
+  sealSealed: boolean;
+  bridged: boolean;
+  fingerprint: string;
+}
+
+export interface Agent24FulfillmentSealBridgeReport {
+  reportId: string;
+  matchId: string;
+  bridgeCount: number;
+  bridgedCount: number;
+  bridgeReady: boolean;
+  links: Agent24FulfillmentSealBridgeLink[];
+  bridgeScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24FulfillmentSealBridgeInput {
+  matchId: string;
+  snapshotSeal: Agent24SnapshotSeal;
+  fulfillmentAudit: Agent24ArchiveFulfillmentAuditReport;
+  ledgerSealContinuity: Agent24LedgerSealContinuityReport;
+}
+
+export function buildAgent24FulfillmentSealBridgeReport(
+  input: Agent24FulfillmentSealBridgeInput,
+): Agent24FulfillmentSealBridgeReport {
+  const links: Agent24FulfillmentSealBridgeLink[] = [
+    {
+      bridgeId: o6kAgent24Fingerprint('fulfillment_seal_bridge', { matchId: input.matchId, idx: 0 }),
+      fulfillmentComplete: input.fulfillmentAudit.fulfillmentComplete,
+      continuityIntact: input.ledgerSealContinuity.continuityIntact,
+      sealSealed: input.snapshotSeal.sealed,
+      bridged: false,
+      fingerprint: '',
+    },
+  ];
+
+  for (const link of links) {
+    link.bridged =
+      link.fulfillmentComplete && link.continuityIntact && link.sealSealed && input.fulfillmentAudit.mismatchCount === 0;
+    link.fingerprint = o6kAgent24Fingerprint('fulfillment_seal_bridge_body', {
+      fulfillment: link.fulfillmentComplete,
+      continuity: link.continuityIntact,
+      sealed: link.sealSealed,
+      bridged: link.bridged,
+    });
+  }
+
+  const bridgedCount = links.filter(l => l.bridged).length;
+
+  let bridgeScore = 100;
+  if (!input.snapshotSeal.sealed) bridgeScore -= 30;
+  if (!input.fulfillmentAudit.fulfillmentComplete) bridgeScore -= 25;
+  if (!input.ledgerSealContinuity.continuityIntact) bridgeScore -= 25;
+  bridgeScore = Math.max(0, Math.min(100, bridgeScore));
+
+  const bridgeReady = bridgedCount === links.length && links.length > 0;
+
+  return {
+    reportId: o6kAgent24Fingerprint('fulfillment_seal_bridge_report', { matchId: input.matchId }),
+    matchId: input.matchId,
+    bridgeCount: links.length,
+    bridgedCount,
+    bridgeReady,
+    links,
+    bridgeScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('fulfillment_seal_bridge_report_body', {
+      links: links.map(l => l.fingerprint),
+      bridgeReady,
+      bridgeScore,
+    }),
+  };
+}
+
+export function runAgent24FulfillmentSealBridgeSelfTests(): Array<{ name: string; passed: boolean }> {
+  const seal = {
+    sealId: 's',
+    matchId: 'self',
+    turn: 12,
+    sealed: true,
+    linkCount: 5,
+    links: [],
+    compositeBundleFingerprint: 'c',
+    sealFingerprint: 'sf',
+    deterministicFingerprint: o6kAgent24Fingerprint('seal_brg', { v: 1 }),
+  };
+  const fulfillment = {
+    reportId: 'fa',
+    matchId: 'self',
+    dispatchedJobCount: 1,
+    ledgerEntryCount: 1,
+    alignedPairCount: 1,
+    mismatchCount: 0,
+    mismatches: [],
+    fulfillmentComplete: true,
+    fulfillmentScore: 100,
+    deterministicFingerprint: o6kAgent24Fingerprint('fa_brg', { v: 1 }),
+  };
+  const continuity = {
+    reportId: 'lc',
+    matchId: 'self',
+    linkCount: 1,
+    verifiedLinkCount: 1,
+    continuityIntact: true,
+    links: [],
+    continuityScore: 95,
+    deterministicFingerprint: o6kAgent24Fingerprint('lc_brg', { v: 1 }),
+  };
+
+  const report = buildAgent24FulfillmentSealBridgeReport({
+    matchId: 'self',
+    snapshotSeal: seal,
+    fulfillmentAudit: fulfillment,
+    ledgerSealContinuity: continuity,
+  });
+
+  return [
+    { name: 'bridge_ready_when_aligned', passed: report.bridgeReady && report.bridgedCount === 1 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        report.deterministicFingerprint ===
+        buildAgent24FulfillmentSealBridgeReport({
+          matchId: 'self',
+          snapshotSeal: seal,
+          fulfillmentAudit: fulfillment,
+          ledgerSealContinuity: continuity,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: archive-continuity-attestation.ts ---
+
+export type Agent24ArchiveContinuityAttestationStatus = 'verified' | 'partial' | 'failed';
+
+export interface Agent24ArchiveContinuityAttestation {
+  attestationId: string;
+  matchId: string;
+  status: Agent24ArchiveContinuityAttestationStatus;
+  restoreCommitOk: boolean;
+  fulfillmentBridgeOk: boolean;
+  ledgerContinuityOk: boolean;
+  attestationScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ArchiveContinuityAttestationInput {
+  matchId: string;
+  restoreCommitRecord: Agent24RestoreCommitRecord;
+  fulfillmentSealBridge: Agent24FulfillmentSealBridgeReport;
+  ledgerSealContinuity: Agent24LedgerSealContinuityReport;
+  minContinuityScore?: number;
+}
+
+export function buildAgent24ArchiveContinuityAttestation(
+  input: Agent24ArchiveContinuityAttestationInput,
+): Agent24ArchiveContinuityAttestation {
+  const minScore = input.minContinuityScore ?? 70;
+
+  const restoreCommitOk = input.restoreCommitRecord.commitAllowed && input.restoreCommitRecord.commitScore >= minScore;
+  const fulfillmentBridgeOk = input.fulfillmentSealBridge.bridgeReady && input.fulfillmentSealBridge.bridgeScore >= minScore;
+  const ledgerContinuityOk =
+    input.ledgerSealContinuity.continuityIntact && input.ledgerSealContinuity.continuityScore >= minScore;
+
+  let attestationScore = 100;
+  if (!restoreCommitOk) attestationScore -= 25;
+  if (!fulfillmentBridgeOk) attestationScore -= 35;
+  if (!ledgerContinuityOk) attestationScore -= 25;
+  attestationScore = Math.max(0, Math.min(100, attestationScore));
+
+  let status: Agent24ArchiveContinuityAttestationStatus = 'failed';
+  if (restoreCommitOk && fulfillmentBridgeOk && ledgerContinuityOk) status = 'verified';
+  else if (attestationScore >= minScore) status = 'partial';
+
+  return {
+    attestationId: o6kAgent24Fingerprint('archive_continuity_attestation', { matchId: input.matchId }),
+    matchId: input.matchId,
+    status,
+    restoreCommitOk,
+    fulfillmentBridgeOk,
+    ledgerContinuityOk,
+    attestationScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('archive_continuity_attestation_body', {
+      status,
+      restoreCommitOk,
+      fulfillmentBridgeOk,
+      ledgerContinuityOk,
+      attestationScore,
+    }),
+  };
+}
+
+export function runAgent24ArchiveContinuityAttestationSelfTests(): Array<{ name: string; passed: boolean }> {
+  const restoreCommit = {
+    recordId: 'rc',
+    matchId: 'self',
+    currentTurn: 16,
+    commitAllowed: true,
+    anchorTurn: 10,
+    committedStepCount: 3,
+    steps: [],
+    commitScore: 95,
+    deterministicFingerprint: o6kAgent24Fingerprint('rc_att', { v: 1 }),
+  };
+  const bridge = {
+    reportId: 'b',
+    matchId: 'self',
+    bridgeCount: 1,
+    bridgedCount: 1,
+    bridgeReady: true,
+    links: [],
+    bridgeScore: 92,
+    deterministicFingerprint: o6kAgent24Fingerprint('br_att', { v: 1 }),
+  };
+  const continuity = {
+    reportId: 'lc',
+    matchId: 'self',
+    linkCount: 1,
+    verifiedLinkCount: 1,
+    continuityIntact: true,
+    links: [],
+    continuityScore: 90,
+    deterministicFingerprint: o6kAgent24Fingerprint('lc_att', { v: 1 }),
+  };
+
+  const att = buildAgent24ArchiveContinuityAttestation({
+    matchId: 'self',
+    restoreCommitRecord: restoreCommit,
+    fulfillmentSealBridge: bridge,
+    ledgerSealContinuity: continuity,
+  });
+
+  return [
+    { name: 'verified_when_all_ok', passed: att.status === 'verified' && att.attestationScore >= 90 },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        att.deterministicFingerprint ===
+        buildAgent24ArchiveContinuityAttestation({
+          matchId: 'self',
+          restoreCommitRecord: restoreCommit,
+          fulfillmentSealBridge: bridge,
+          ledgerSealContinuity: continuity,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
 // --- source: history-replay-analytics.ts ---
 
 export const O6K_AGENT24_MODULE_VERSION = '1.1.0-op10m';
@@ -23928,6 +24333,12 @@ export function applyO6kHistoricalAnalyticsCachePatch(state: Record<string, unkn
   buildAgent24LedgerSealContinuityReport,
   type Agent24LedgerSealContinuityReport,
 } from './ledger-seal-continuity.ts';
+  buildAgent24FulfillmentSealBridgeReport,
+  type Agent24FulfillmentSealBridgeReport,
+} from './fulfillment-seal-bridge.ts';
+  buildAgent24ArchiveContinuityAttestation,
+  type Agent24ArchiveContinuityAttestation,
+} from './archive-continuity-attestation.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -23963,6 +24374,9 @@ export interface Agent24ReplayDeterminismBundle {
   restoreExecutionGate: Agent24RestoreExecutionGateReport;
   archiveFulfillmentAudit: Agent24ArchiveFulfillmentAuditReport;
   ledgerSealContinuity: Agent24LedgerSealContinuityReport;
+  restoreCommitRecord: Agent24RestoreCommitRecord;
+  fulfillmentSealBridge: Agent24FulfillmentSealBridgeReport;
+  archiveContinuityAttestation: Agent24ArchiveContinuityAttestation;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -24276,6 +24690,24 @@ export function buildAgent24ReplayDeterminismBundle(
     publishReceiptLedger,
     fulfillmentAudit: archiveFulfillmentAudit,
   });
+  const restoreCommitRecord = buildAgent24RestoreCommitRecord({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    replayRestorePlan,
+    restoreExecutionGate,
+  });
+  const fulfillmentSealBridge = buildAgent24FulfillmentSealBridgeReport({
+    matchId: input.matchId,
+    snapshotSeal,
+    fulfillmentAudit: archiveFulfillmentAudit,
+    ledgerSealContinuity,
+  });
+  const archiveContinuityAttestation = buildAgent24ArchiveContinuityAttestation({
+    matchId: input.matchId,
+    restoreCommitRecord,
+    fulfillmentSealBridge,
+    ledgerSealContinuity,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -24309,6 +24741,9 @@ export function buildAgent24ReplayDeterminismBundle(
     restoreExecutionGate: restoreExecutionGate.deterministicFingerprint,
     archiveFulfillmentAudit: archiveFulfillmentAudit.deterministicFingerprint,
     ledgerSealContinuity: ledgerSealContinuity.deterministicFingerprint,
+    restoreCommitRecord: restoreCommitRecord.deterministicFingerprint,
+    fulfillmentSealBridge: fulfillmentSealBridge.deterministicFingerprint,
+    archiveContinuityAttestation: archiveContinuityAttestation.deterministicFingerprint,
   });
 
   return {
@@ -24337,6 +24772,9 @@ export function buildAgent24ReplayDeterminismBundle(
     restoreExecutionGate,
     archiveFulfillmentAudit,
     ledgerSealContinuity,
+    restoreCommitRecord,
+    fulfillmentSealBridge,
+    archiveContinuityAttestation,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -24507,6 +24945,22 @@ export function verifyAgent24ReplayDeterminism(
       name: 'ledger_seal_continuity_twin',
       passed: a.ledgerSealContinuity.deterministicFingerprint === b.ledgerSealContinuity.deterministicFingerprint,
       detail: 'Twin ledger seal continuity fingerprints',
+    },
+    {
+      name: 'restore_commit_record_twin',
+      passed: a.restoreCommitRecord.deterministicFingerprint === b.restoreCommitRecord.deterministicFingerprint,
+      detail: 'Twin restore commit record fingerprints',
+    },
+    {
+      name: 'fulfillment_seal_bridge_twin',
+      passed: a.fulfillmentSealBridge.deterministicFingerprint === b.fulfillmentSealBridge.deterministicFingerprint,
+      detail: 'Twin fulfillment seal bridge fingerprints',
+    },
+    {
+      name: 'archive_continuity_attestation_twin',
+      passed:
+        a.archiveContinuityAttestation.deterministicFingerprint === b.archiveContinuityAttestation.deterministicFingerprint,
+      detail: 'Twin archive continuity attestation fingerprints',
     },
     {
       name: 'composite_twin',

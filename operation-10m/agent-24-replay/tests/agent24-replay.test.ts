@@ -85,6 +85,18 @@ import {
   buildAgent24LedgerSealContinuityReport,
   runAgent24LedgerSealContinuitySelfTests,
 } from '../src/ledger-seal-continuity.ts';
+import {
+  buildAgent24RestoreCommitRecord,
+  runAgent24RestoreCommitRecordSelfTests,
+} from '../src/restore-commit-record.ts';
+import {
+  buildAgent24FulfillmentSealBridgeReport,
+  runAgent24FulfillmentSealBridgeSelfTests,
+} from '../src/fulfillment-seal-bridge.ts';
+import {
+  buildAgent24ArchiveContinuityAttestation,
+  runAgent24ArchiveContinuityAttestationSelfTests,
+} from '../src/archive-continuity-attestation.ts';
 import { buildO6kHistoricalAnalyticsSnapshot } from '../src/history-replay-analytics.ts';
 import { o6kAgent24StableStringify, runO6kAgent24SelfTests } from '../src/history-replay-analytics.ts';
 
@@ -194,6 +206,9 @@ describe('Agent 24 replay determinism bundle', () => {
     assert.ok(result.probes.some(p => p.name === 'restore_execution_gate_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'archive_fulfillment_audit_twin' && p.passed));
     assert.ok(result.probes.some(p => p.name === 'ledger_seal_continuity_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'restore_commit_record_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'fulfillment_seal_bridge_twin' && p.passed));
+    assert.ok(result.probes.some(p => p.name === 'archive_continuity_attestation_twin' && p.passed));
   });
 
   it('includes analytics depth rollups and stable twin fingerprint', () => {
@@ -809,6 +824,89 @@ describe('Agent 24 ledger seal continuity', () => {
     });
     assert.equal(direct.deterministicFingerprint, bundle.ledgerSealContinuity.deterministicFingerprint);
     assert.ok(runAgent24LedgerSealContinuitySelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 restore commit record', () => {
+  it('records committed restore steps when execution gate allows', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 22,
+      day: 22,
+      replay: {
+        events: [
+          { eventType: 'replay_checkpoint', turn: 8, sequence: 1 },
+          { eventType: 'replay_checkpoint', turn: 22, sequence: 2 },
+        ],
+        checkpoints: { '8': {}, '22': {} },
+      },
+      deterministicMode: true,
+    });
+    assert.equal(bundle.restoreCommitRecord.commitAllowed, true);
+    const direct = buildAgent24RestoreCommitRecord({
+      matchId: 'm',
+      currentTurn: 22,
+      replayRestorePlan: bundle.replayRestorePlan,
+      restoreExecutionGate: bundle.restoreExecutionGate,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.restoreCommitRecord.deterministicFingerprint);
+    assert.ok(runAgent24RestoreCommitRecordSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 fulfillment seal bridge', () => {
+  it('bridges fulfillment audit to ledger seal continuity', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 32,
+      day: 32,
+      maxTurns: 100,
+      replay: {
+        events: [
+          { eventType: 'replay_checkpoint', turn: 8, sequence: 1 },
+          { eventType: 'replay_checkpoint', turn: 24, sequence: 2 },
+          { eventType: 'replay_checkpoint', turn: 32, sequence: 3 },
+        ],
+        checkpoints: { '8': {}, '24': {}, '32': {} },
+      },
+      deterministicMode: true,
+    });
+    const direct = buildAgent24FulfillmentSealBridgeReport({
+      matchId: 'm',
+      snapshotSeal: bundle.snapshotSeal,
+      fulfillmentAudit: bundle.archiveFulfillmentAudit,
+      ledgerSealContinuity: bundle.ledgerSealContinuity,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.fulfillmentSealBridge.deterministicFingerprint);
+    assert.ok(runAgent24FulfillmentSealBridgeSelfTests().every(t => t.passed));
+  });
+});
+
+describe('Agent 24 archive continuity attestation', () => {
+  it('attests verified continuity when restore, bridge, and ledger align', () => {
+    const bundle = buildAgent24ReplayDeterminismBundle({
+      matchId: 'm',
+      turn: 34,
+      day: 34,
+      maxTurns: 100,
+      replay: {
+        events: [
+          { eventType: 'replay_checkpoint', turn: 8, sequence: 1 },
+          { eventType: 'replay_checkpoint', turn: 26, sequence: 2 },
+          { eventType: 'replay_checkpoint', turn: 34, sequence: 3 },
+        ],
+        checkpoints: { '8': {}, '26': {}, '34': {} },
+      },
+      deterministicMode: true,
+    });
+    const direct = buildAgent24ArchiveContinuityAttestation({
+      matchId: 'm',
+      restoreCommitRecord: bundle.restoreCommitRecord,
+      fulfillmentSealBridge: bundle.fulfillmentSealBridge,
+      ledgerSealContinuity: bundle.ledgerSealContinuity,
+    });
+    assert.equal(direct.deterministicFingerprint, bundle.archiveContinuityAttestation.deterministicFingerprint);
+    assert.ok(runAgent24ArchiveContinuityAttestationSelfTests().every(t => t.passed));
   });
 });
 

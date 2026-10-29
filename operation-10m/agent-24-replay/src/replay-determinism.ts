@@ -77,6 +77,15 @@ import {
   buildAgent24LedgerSealContinuityReport,
   type Agent24LedgerSealContinuityReport,
 } from './ledger-seal-continuity.ts';
+import { buildAgent24RestoreCommitRecord, type Agent24RestoreCommitRecord } from './restore-commit-record.ts';
+import {
+  buildAgent24FulfillmentSealBridgeReport,
+  type Agent24FulfillmentSealBridgeReport,
+} from './fulfillment-seal-bridge.ts';
+import {
+  buildAgent24ArchiveContinuityAttestation,
+  type Agent24ArchiveContinuityAttestation,
+} from './archive-continuity-attestation.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -112,6 +121,9 @@ export interface Agent24ReplayDeterminismBundle {
   restoreExecutionGate: Agent24RestoreExecutionGateReport;
   archiveFulfillmentAudit: Agent24ArchiveFulfillmentAuditReport;
   ledgerSealContinuity: Agent24LedgerSealContinuityReport;
+  restoreCommitRecord: Agent24RestoreCommitRecord;
+  fulfillmentSealBridge: Agent24FulfillmentSealBridgeReport;
+  archiveContinuityAttestation: Agent24ArchiveContinuityAttestation;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -425,6 +437,24 @@ export function buildAgent24ReplayDeterminismBundle(
     publishReceiptLedger,
     fulfillmentAudit: archiveFulfillmentAudit,
   });
+  const restoreCommitRecord = buildAgent24RestoreCommitRecord({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    replayRestorePlan,
+    restoreExecutionGate,
+  });
+  const fulfillmentSealBridge = buildAgent24FulfillmentSealBridgeReport({
+    matchId: input.matchId,
+    snapshotSeal,
+    fulfillmentAudit: archiveFulfillmentAudit,
+    ledgerSealContinuity,
+  });
+  const archiveContinuityAttestation = buildAgent24ArchiveContinuityAttestation({
+    matchId: input.matchId,
+    restoreCommitRecord,
+    fulfillmentSealBridge,
+    ledgerSealContinuity,
+  });
   const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
@@ -458,6 +488,9 @@ export function buildAgent24ReplayDeterminismBundle(
     restoreExecutionGate: restoreExecutionGate.deterministicFingerprint,
     archiveFulfillmentAudit: archiveFulfillmentAudit.deterministicFingerprint,
     ledgerSealContinuity: ledgerSealContinuity.deterministicFingerprint,
+    restoreCommitRecord: restoreCommitRecord.deterministicFingerprint,
+    fulfillmentSealBridge: fulfillmentSealBridge.deterministicFingerprint,
+    archiveContinuityAttestation: archiveContinuityAttestation.deterministicFingerprint,
   });
 
   return {
@@ -486,6 +519,9 @@ export function buildAgent24ReplayDeterminismBundle(
     restoreExecutionGate,
     archiveFulfillmentAudit,
     ledgerSealContinuity,
+    restoreCommitRecord,
+    fulfillmentSealBridge,
+    archiveContinuityAttestation,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -656,6 +692,22 @@ export function verifyAgent24ReplayDeterminism(
       name: 'ledger_seal_continuity_twin',
       passed: a.ledgerSealContinuity.deterministicFingerprint === b.ledgerSealContinuity.deterministicFingerprint,
       detail: 'Twin ledger seal continuity fingerprints',
+    },
+    {
+      name: 'restore_commit_record_twin',
+      passed: a.restoreCommitRecord.deterministicFingerprint === b.restoreCommitRecord.deterministicFingerprint,
+      detail: 'Twin restore commit record fingerprints',
+    },
+    {
+      name: 'fulfillment_seal_bridge_twin',
+      passed: a.fulfillmentSealBridge.deterministicFingerprint === b.fulfillmentSealBridge.deterministicFingerprint,
+      detail: 'Twin fulfillment seal bridge fingerprints',
+    },
+    {
+      name: 'archive_continuity_attestation_twin',
+      passed:
+        a.archiveContinuityAttestation.deterministicFingerprint === b.archiveContinuityAttestation.deterministicFingerprint,
+      detail: 'Twin archive continuity attestation fingerprints',
     },
     {
       name: 'composite_twin',
