@@ -4,4 +4,4 @@
 Store handoff: `/cursor/stores/self/internal/operation-10m/agent-19-scale-wave-round39.md`
 
 **Commit subject:** O10-209 Agent 19 scale wave round 39: hegemony bundle, supremacy gate, hegemony recovery orchestrator  
-**Origin tip:** **`ca34ad94`** · baseline **`6134c6a8`** · chunk **16,772** lines · **279** self-tests · **wave depth **`6367a49f`**
+**Origin tip:** **`402f041c`** · baseline **`6134c6a8`** · chunk **16,772** lines · **279** self-tests · wave **`6367a49f`**
