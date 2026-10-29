@@ -8791,6 +8791,148 @@ export function fiscalBufferReconciliationOutlookCoherenceInflationLatchScoreAdj
 }
 
 
+// --- source: inflation/wave55-sovereign-grant-reconciliation-outlook-inflation-depth-latch.ts ---
+
+export type Wave55SovereignGrantReconciliationOutlookInflationDepthLatchBand =
+  | 'stable'
+  | 'deepening'
+  | 'critical_depth'
+  | 'rupture_stack';
+
+export interface Wave55SovereignGrantReconciliationOutlookInflationDepthLatchAssessment {
+  latchBand: Wave55SovereignGrantReconciliationOutlookInflationDepthLatchBand;
+  depthIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Wave-55 sovereign grant reconciliation outlook inflation depth latch (O10-247). */
+export function assessWave55SovereignGrantReconciliationOutlookInflationDepthLatch(input: {
+  wave54SovereignGrantReconciliationOutlookLatch: boolean;
+  wave54SovereignGrantReconciliationOutlookBand: SovereignGrantReconciliationOutlookInflationLatchBand;
+  consolidatedDeficitBand: 'surplus' | 'balanced' | 'moderate_deficit' | 'large_deficit';
+  sovereignBufferBridgeGapElevated: boolean;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): Wave55SovereignGrantReconciliationOutlookInflationDepthLatchAssessment {
+  let pressure = 0;
+  if (input.wave54SovereignGrantReconciliationOutlookLatch) pressure += 0.16;
+  if (input.wave54SovereignGrantReconciliationOutlookBand === 'sovereign_rupture') pressure += 0.24;
+  else if (input.wave54SovereignGrantReconciliationOutlookBand === 'strained') pressure += 0.12;
+  else if (input.wave54SovereignGrantReconciliationOutlookBand === 'building') pressure += 0.06;
+  if (input.consolidatedDeficitBand === 'large_deficit') pressure += 0.14;
+  else if (input.consolidatedDeficitBand === 'moderate_deficit') pressure += 0.07;
+  if (input.sovereignBufferBridgeGapElevated) pressure += 0.1;
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') pressure += 0.06;
+
+  pressure = finClamp(pressure + input.turn * 0.0043, 0, 1.08);
+  const depthIndex = finRound(100 + pressure * 17.1, 1);
+
+  let latchBand: Wave55SovereignGrantReconciliationOutlookInflationDepthLatchBand = 'stable';
+  if (pressure >= 0.62) latchBand = 'rupture_stack';
+  else if (pressure >= 0.42) latchBand = 'critical_depth';
+  else if (pressure >= 0.2) latchBand = 'deepening';
+
+  const inflationScoreNudge =
+    latchBand === 'rupture_stack'
+      ? 0.098
+      : latchBand === 'critical_depth'
+        ? 0.064
+        : latchBand === 'deepening'
+          ? 0.032
+          : 0;
+
+  const narrative =
+    latchBand === 'rupture_stack' || latchBand === 'critical_depth'
+      ? 'Wave-55 sovereign grant reconciliation depth latch stacking indexed-charges CPI pressure.'
+      : latchBand === 'deepening'
+        ? 'Sovereign grant reconciliation depth latch deepening under wave-54 outlook stress.'
+        : 'Wave-55 sovereign grant reconciliation depth latch stable versus headline CPI.';
+
+  return { latchBand, depthIndex, inflationScoreNudge, narrative };
+}
+
+export function wave55SovereignGrantReconciliationOutlookInflationDepthLatchScoreAdjustment(
+  band: Wave55SovereignGrantReconciliationOutlookInflationDepthLatchBand,
+): number {
+  if (band === 'rupture_stack') return 4;
+  if (band === 'critical_depth') return 3;
+  if (band === 'deepening') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/wave55-fiscal-buffer-reconciliation-outlook-coherence-inflation-depth-latch.ts ---
+
+export type Wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchBand =
+  | 'stable'
+  | 'deepening'
+  | 'critical_depth'
+  | 'coherence_stack_rupture';
+
+export interface Wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchAssessment {
+  latchBand: Wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchBand;
+  depthIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Wave-55 fiscal buffer reconciliation outlook coherence inflation depth latch (O10-247). */
+export function assessWave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatch(input: {
+  wave54FiscalBufferReconciliationOutlookCoherenceLatch: boolean;
+  wave54FiscalBufferReconciliationOutlookCoherenceBand: FiscalBufferReconciliationOutlookCoherenceInflationLatchBand;
+  revenueMomentum: 'weak' | 'steady' | 'strong';
+  grantFiscalCoherenceGapElevated: boolean;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): Wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchAssessment {
+  let pressure = 0;
+  if (input.wave54FiscalBufferReconciliationOutlookCoherenceLatch) pressure += 0.17;
+  if (input.wave54FiscalBufferReconciliationOutlookCoherenceBand === 'coherence_rupture') pressure += 0.23;
+  else if (input.wave54FiscalBufferReconciliationOutlookCoherenceBand === 'strained') pressure += 0.11;
+  else if (input.wave54FiscalBufferReconciliationOutlookCoherenceBand === 'building') pressure += 0.05;
+  if (input.revenueMomentum === 'weak') pressure += 0.13;
+  else if (input.revenueMomentum === 'steady') pressure += 0.05;
+  if (input.grantFiscalCoherenceGapElevated) pressure += 0.11;
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') pressure += 0.05;
+
+  pressure = finClamp(pressure + input.turn * 0.0042, 0, 1.08);
+  const depthIndex = finRound(100 + pressure * 16.8, 1);
+
+  let latchBand: Wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchBand = 'stable';
+  if (pressure >= 0.61) latchBand = 'coherence_stack_rupture';
+  else if (pressure >= 0.41) latchBand = 'critical_depth';
+  else if (pressure >= 0.19) latchBand = 'deepening';
+
+  const inflationScoreNudge =
+    latchBand === 'coherence_stack_rupture'
+      ? 0.097
+      : latchBand === 'critical_depth'
+        ? 0.063
+        : latchBand === 'deepening'
+          ? 0.031
+          : 0;
+
+  const narrative =
+    latchBand === 'coherence_stack_rupture' || latchBand === 'critical_depth'
+      ? 'Wave-55 fiscal buffer reconciliation depth latch stacking charges-indexation CPI metadata.'
+      : latchBand === 'deepening'
+        ? 'Fiscal buffer reconciliation depth latch deepening under wave-54 coherence stress.'
+        : 'Wave-55 fiscal buffer reconciliation depth latch stable versus headline CPI.';
+
+  return { latchBand, depthIndex, inflationScoreNudge, narrative };
+}
+
+export function wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchScoreAdjustment(
+  band: Wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchBand,
+): number {
+  if (band === 'coherence_stack_rupture') return 4;
+  if (band === 'critical_depth') return 3;
+  if (band === 'deepening') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -15934,6 +16076,18 @@ export function effectiveTierLoanRate(
   assessBufferGrantReconciliationOutlookCoherenceInflationLatch,
   bufferGrantReconciliationOutlookCoherenceInflationLatchScoreAdjustment,
 } from './inflation/buffer-grant-reconciliation-outlook-coherence-inflation-latch.js';
+  assessSovereignGrantReconciliationOutlookInflationLatch,
+  sovereignGrantReconciliationOutlookInflationLatchScoreAdjustment,
+} from './inflation/sovereign-grant-reconciliation-outlook-inflation-latch.js';
+  assessFiscalBufferReconciliationOutlookCoherenceInflationLatch,
+  fiscalBufferReconciliationOutlookCoherenceInflationLatchScoreAdjustment,
+} from './inflation/fiscal-buffer-reconciliation-outlook-coherence-inflation-latch.js';
+  assessWave55SovereignGrantReconciliationOutlookInflationDepthLatch,
+  wave55SovereignGrantReconciliationOutlookInflationDepthLatchScoreAdjustment,
+} from './inflation/wave55-sovereign-grant-reconciliation-outlook-inflation-depth-latch.js';
+  assessWave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatch,
+  wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchScoreAdjustment,
+} from './inflation/wave55-fiscal-buffer-reconciliation-outlook-coherence-inflation-depth-latch.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -21637,6 +21791,75 @@ export function runAgent10FinanceSelfTests(): {
     })(),
   );
 
+  {
+    const wave54Grant = assessSovereignGrantReconciliationOutlookInflationLatch({
+      consolidatedDeficitBand: 'large_deficit',
+      debtServicePressure: 'critical',
+      wave53GrantSovereignReconciliationOutlookLatch: true,
+      sovereignGrantReconciliationOutlookBand: 'ruptured',
+      sovereignBufferBridgeGapElevated: true,
+      inflationBand: 'high',
+      turn: 3,
+    });
+    const grantDepth = assessWave55SovereignGrantReconciliationOutlookInflationDepthLatch({
+      wave54SovereignGrantReconciliationOutlookLatch: true,
+      wave54SovereignGrantReconciliationOutlookBand: wave54Grant.latchBand,
+      consolidatedDeficitBand: 'large_deficit',
+      sovereignBufferBridgeGapElevated: true,
+      inflationBand: 'high',
+      turn: 3,
+    });
+    check(
+      'a10_r55_01',
+      'wave55 grant depth critical or rupture stack',
+      grantDepth.latchBand === 'critical_depth' || grantDepth.latchBand === 'rupture_stack',
+    );
+    check(
+      'a10_r55_02',
+      'wave55 grant depth score adj',
+      wave55SovereignGrantReconciliationOutlookInflationDepthLatchScoreAdjustment(grantDepth.latchBand) >= 3,
+    );
+  }
+  {
+    const wave54Buffer = assessFiscalBufferReconciliationOutlookCoherenceInflationLatch({
+      revenueMomentum: 'weak',
+      grantFiscalCoherenceGapElevated: true,
+      wave53BufferFiscalReconciliationOutlookCoherenceLatch: true,
+      fiscalBufferReconciliationOutlookCoherenceBand: 'critical',
+      grantOutlookWithinBand: false,
+      inflationBand: 'high',
+      turn: 3,
+    });
+    const bufferDepth = assessWave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatch({
+      wave54FiscalBufferReconciliationOutlookCoherenceLatch: true,
+      wave54FiscalBufferReconciliationOutlookCoherenceBand: wave54Buffer.latchBand,
+      revenueMomentum: 'weak',
+      grantFiscalCoherenceGapElevated: true,
+      inflationBand: 'high',
+      turn: 3,
+    });
+    check(
+      'a10_r55_03',
+      'wave55 buffer depth critical or stack rupture',
+      bufferDepth.latchBand === 'critical_depth' || bufferDepth.latchBand === 'coherence_stack_rupture',
+    );
+    check(
+      'a10_r55_04',
+      'wave55 buffer depth score adj',
+      wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchScoreAdjustment(bufferDepth.latchBand) >= 3,
+    );
+  }
+  check(
+    'a10_r55_05',
+    'wave54 grant score adj path',
+    sovereignGrantReconciliationOutlookInflationLatchScoreAdjustment('strained') >= 3,
+  );
+  check(
+    'a10_r55_06',
+    'wave54 buffer score adj path',
+    fiscalBufferReconciliationOutlookCoherenceInflationLatchScoreAdjustment('strained') >= 3,
+  );
+
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;
   return { passed, failed, total: results.length, allPassed: failed === 0, results };
@@ -25146,6 +25369,114 @@ export function MacroFiscalWave52InflationPanel(props: MacroFiscalWave52Inflatio
       </p>
       <p data-testid="macro-fiscal-wave52-note">{sovereign.narrative}</p>
       <p>{grantCoherence.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/MacroFiscalWave55InflationPanel.tsx ---
+  assessSovereignGrantReconciliationOutlookInflationLatch,
+  sovereignGrantReconciliationOutlookInflationLatchScoreAdjustment,
+} from '../inflation/sovereign-grant-reconciliation-outlook-inflation-latch.js';
+  assessFiscalBufferReconciliationOutlookCoherenceInflationLatch,
+  fiscalBufferReconciliationOutlookCoherenceInflationLatchScoreAdjustment,
+} from '../inflation/fiscal-buffer-reconciliation-outlook-coherence-inflation-latch.js';
+  assessWave55SovereignGrantReconciliationOutlookInflationDepthLatch,
+  wave55SovereignGrantReconciliationOutlookInflationDepthLatchScoreAdjustment,
+} from '../inflation/wave55-sovereign-grant-reconciliation-outlook-inflation-depth-latch.js';
+  assessWave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatch,
+  wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchScoreAdjustment,
+} from '../inflation/wave55-fiscal-buffer-reconciliation-outlook-coherence-inflation-depth-latch.js';
+
+export interface MacroFiscalWave55InflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent07?: Agent07FiscalSnapshot | null;
+}
+
+export function MacroFiscalWave55InflationPanel(props: MacroFiscalWave55InflationPanelProps) {
+  const a7 = props.agent07;
+  const consolidatedDeficitBand =
+    a7?.consolidatedDeficitBand ??
+    (props.inputs.fiscalPressure === 'critical' ? ('large_deficit' as const) : ('moderate_deficit' as const));
+  const revenueMomentum =
+    a7?.revenueMomentum ?? (props.inputs.fiscalPressure === 'critical' ? ('weak' as const) : ('steady' as const));
+  const debtServicePressure =
+    a7?.debtServicePressure ??
+    (props.inputs.fiscalPressure === 'critical' ? ('critical' as const) : ('elevated' as const));
+  const wave53GrantLatch =
+    a7?.wave52FiscalSovereignReconciliationOutlookLatch ?? props.inputs.creditShockActive;
+  const sovereignGrantBand =
+    a7?.fiscalSovereignReconciliationOutlookBand ??
+    (props.inputs.systemicLiquidityBand === 'critical' ? ('ruptured' as const) : ('strained' as const));
+  const wave53BufferLatch =
+    a7?.wave52BufferGrantReconciliationOutlookCoherenceLatch ?? props.inputs.householdInflationScenarioActive;
+  const fiscalBufferBand =
+    a7?.bufferGrantReconciliationOutlookCoherenceBand ??
+    (props.inputs.fiscalPressure === 'critical' ? ('critical' as const) : ('building' as const));
+  const grantOutlookWithinBand = a7?.grantOutlookWithinBand ?? !props.inputs.creditShockActive;
+  const sovereignBufferBridgeGapElevated =
+    a7?.sovereignBufferBridgeGapElevated ?? props.inputs.systemicLiquidityBand === 'critical';
+  const grantFiscalCoherenceGapElevated =
+    a7?.grantFiscalCoherenceGapElevated ?? props.inputs.fiscalPressure === 'critical';
+
+  const wave54Grant = assessSovereignGrantReconciliationOutlookInflationLatch({
+    consolidatedDeficitBand,
+    debtServicePressure,
+    wave53GrantSovereignReconciliationOutlookLatch: wave53GrantLatch === true,
+    sovereignGrantReconciliationOutlookBand: sovereignGrantBand,
+    sovereignBufferBridgeGapElevated: sovereignBufferBridgeGapElevated === true,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const wave54Buffer = assessFiscalBufferReconciliationOutlookCoherenceInflationLatch({
+    revenueMomentum,
+    grantFiscalCoherenceGapElevated: grantFiscalCoherenceGapElevated === true,
+    wave53BufferFiscalReconciliationOutlookCoherenceLatch: wave53BufferLatch === true,
+    fiscalBufferReconciliationOutlookCoherenceBand: fiscalBufferBand,
+    grantOutlookWithinBand: grantOutlookWithinBand !== false,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const grantDepth = assessWave55SovereignGrantReconciliationOutlookInflationDepthLatch({
+    wave54SovereignGrantReconciliationOutlookLatch: wave54Grant.latchBand !== 'aligned',
+    wave54SovereignGrantReconciliationOutlookBand: wave54Grant.latchBand,
+    consolidatedDeficitBand,
+    sovereignBufferBridgeGapElevated: sovereignBufferBridgeGapElevated === true,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const bufferDepth = assessWave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatch({
+    wave54FiscalBufferReconciliationOutlookCoherenceLatch: wave54Buffer.latchBand !== 'coherent',
+    wave54FiscalBufferReconciliationOutlookCoherenceBand: wave54Buffer.latchBand,
+    revenueMomentum,
+    grantFiscalCoherenceGapElevated: grantFiscalCoherenceGapElevated === true,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-macro-fiscal-wave55-inflation" data-testid="macro-fiscal-wave55-inflation-panel">
+      <h4>Sovereign grant & fiscal buffer reconciliation depth (wave 55 · O10-247)</h4>
+      <p>
+        Wave-54 grant {wave54Grant.latchBand} · depth {grantDepth.latchBand} · index {grantDepth.depthIndex.toFixed(0)}{' '}
+        · score adj{' '}
+        {wave55SovereignGrantReconciliationOutlookInflationDepthLatchScoreAdjustment(grantDepth.latchBand)}
+      </p>
+      <p>
+        Wave-54 buffer {wave54Buffer.latchBand} · depth {bufferDepth.latchBand} · index{' '}
+        {bufferDepth.depthIndex.toFixed(0)} · score adj{' '}
+        {wave55FiscalBufferReconciliationOutlookCoherenceInflationDepthLatchScoreAdjustment(bufferDepth.latchBand)}
+      </p>
+      <p data-testid="macro-fiscal-wave55-note">{grantDepth.narrative}</p>
+      <p>{bufferDepth.narrative}</p>
+      <p>
+        Wave-54 adj grant {sovereignGrantReconciliationOutlookInflationLatchScoreAdjustment(wave54Grant.latchBand)} ·
+        buffer {fiscalBufferReconciliationOutlookCoherenceInflationLatchScoreAdjustment(wave54Buffer.latchBand)}
+      </p>
     </div>
   );
 }
