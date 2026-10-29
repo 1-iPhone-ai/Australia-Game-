@@ -105586,6 +105586,14 @@ function giDetectRepair(clauses: GIClause[], entities: GIEntityRef[], concepts: 
 
 // ---- 12. Goals, problems, threats, comparisons, hypotheses --------------------------------
 
+/** Per-clause immediacy for region threats (word boundaries — corrupted `\x08` breaks matching). */
+export function giClauseThreatUrgency(clauseText: string, fallback: GIThreat['urgency'] = 'normal'): GIThreat['urgency'] {
+  const t = String(clauseText || '');
+  if (/\b(about to|right now|now|immediately|nearly|almost|close)\b/i.test(t)) return 'immediate';
+  if (/\bsoon\b|\bnext turn\b/i.test(t)) return 'soon';
+  return fallback;
+}
+
 function giBuildGoalsProblems(frame: Pick<GISemanticFrame, 'clauses' | 'concepts' | 'quantities' | 'actions' | 'time' | 'entities'> & { propositions?: GIConceptHit[] }, world: GIWorld, lowerText: string): { goals: GIGoal[]; problems: GIProblem[]; threats: GIThreat[] } {
   const goals: GIGoal[] = [];
   const problems: GIProblem[] = [];
@@ -105609,7 +105617,7 @@ function giBuildGoalsProblems(frame: Pick<GISemanticFrame, 'clauses' | 'concepts
     if (threats.some(t => t.regionId === regionId)) return;
     const actorId = hit.actorId || (hit.agentId && hit.agentId !== 'other' && hit.agentId !== 'player' ? hit.agentId : null);
     const clauseText = frame.clauses[hit.clause]?.tokens.map(t => t.t).join(' ') || lowerText;
-    const hitUrgency: GIThreat['urgency'] = hit.polarity === 'uncertain' ? 'normal' : /(about to|right now|now|immediately|nearly|almost|close)/.test(clauseText) ? 'immediate' : urgency;
+    const hitUrgency: GIThreat['urgency'] = hit.polarity === 'uncertain' ? 'normal' : giClauseThreatUrgency(clauseText, urgency);
     threats.push({ regionId, actorId: actorId || mentionedActor?.id || world.primaryRivalId, inferredActor: !actorId && !mentionedActor, urgency: hitUrgency, evidence: hit.evidence, polarity: hit.polarity || 'positive' });
     if (!problems.some(pr => pr.kind === 'region_threat')) problems.push({ kind: 'region_threat', evidence: hit.evidence });
     if (regionId) goals.push({ kind: 'prevent_loss', regionId, priority: hitUrgency === 'immediate' ? 'high' : 'normal', evidence: hit.evidence });
@@ -106909,6 +106917,10 @@ export function buildGIQueryPlan(u: GIQueryUnderstanding, world: GIWorld): GIQue
     if (want('system_explain')) add('system_state', {}, { purpose: 'Read-only summaries of team, treasury, governor, Guardian, Auto Mode and Co-Pilot' });
     if (want('team_command') || want('team_explain') || want('team_whatif')) add('team_state', {}, { purpose: 'Team Operating System: mission, objectives, tasks, roles, resources, conflicts' });
     if (want('strategy_preview') || want('strategy_status') || want('strategy_control') || want('strategy_whatif')) add('gi3_state', {}, { purpose: 'Game Intelligence 3.0: active strategy, phase, milestones, blockers (canonical state)' });
+    const gi3Active = world.gi3?.active && (world.gi3.active.status === 'active' || world.gi3.active.status === 'paused');
+    if (gi3Active && !['strategy_preview', 'strategy_status', 'strategy_control', 'strategy_whatif'].includes(u.primary) && (want('action_recommendation') || want('sequence_plan') || want('strategic_diagnosis') || want('economy_diagnosis'))) {
+      add('gi3_state', {}, { optional: true, purpose: 'GI 3.0: align tactical advice with active strategy milestones and blockers' });
+    }
     if (want('background_ai')) add('bg_state', {}, { purpose: 'Background AI: prepared assessment, attention, plan, threats, predictions (read-only)' });
     if (want('settings_intelligence')) add('si_state', {}, { purpose: 'Settings Intelligence: effective configuration, semantics, interactions and recommendations (read-only)' });
     if (want('world_reaction')) add('swr_state', {}, { purpose: 'World Reaction: causal chain of meaningful world changes, windows and conditions (viewer-filtered)' });
@@ -107420,6 +107432,9 @@ function runGITool(step: GIPlanStep, world: GIWorld, u: GIQueryUnderstanding, pr
           push(fact('gi3.cash', 'Strategy cash measure', st.progress.resourceStatus.cash, 'Game Intelligence 3.0 (canonical balances)', 'player', { unit: '$', certainty: 'calculated' }));
           st.progress.milestones.slice(0, 8).forEach(m => push(fact(`gi3.ms.${m.id}`, m.label, m.target, 'Game Intelligence 3.0 milestones', 'objectives', { unit: m.unit === '$' ? '$' : undefined, certainty: 'calculated' })));
         }
+          push(fact('gi3.onTrack', 'Strategy on track', st.progress.onTrack, 'Game Intelligence 3.0 progress', 'objectives', { certainty: 'calculated' }));
+          if (st.progress.blockers[0]) push(fact('gi3.blocker', 'Main strategy blocker', st.progress.blockers[0].label, 'Game Intelligence 3.0 blockers', 'objectives', { certainty: st.progress.blockers[0].kind === 'region_pressure' ? 'inferred' : 'confirmed' }));
+          if (st.progress.nextMove) push(fact('gi3.nextMove', 'Strategy next move', st.progress.nextMove.label, 'Game Intelligence 3.0 progress', 'objectives', { certainty: 'inferred' }));
       }
       return { ...base, ok: true, data: st || null, facts };
     }
@@ -109235,6 +109250,13 @@ export function composeGIAnswer(u: GIQueryUnderstanding, plan: GIQueryPlan, exec
       if (world.objective || world.win) {
         section('goal', shape === 'plan' ? 'Goal' : null, [claim(world.objective ? `${/^goal:/i.test(world.objective.title) ? '' : 'Goal: '}${world.objective.title} (${world.objective.progress.completed}/${world.objective.progress.total}).` : `${world.win!.label}.`, 'fact', 'confirmed', ['objective.title', 'objective.progress'].filter(id => exec.graph.facts[id]))]);
       }
+      const gi3Tactical = giResult(exec, 'gi3_state')?.data as GI3StrategyState | null;
+      if (gi3Tactical?.active && gi3Tactical.progress && (gi3Tactical.active.status === 'active' || gi3Tactical.active.status === 'paused')) {
+        const stratClaims: GIClaim[] = [claim(`${gi3OnTrackText(gi3Tactical.progress.onTrack)} for your active strategy (${gi3Tactical.active.summary}).`, 'inference', gi3Tactical.progress.onTrack === 'on_track' ? 'high' : 'moderate', ['gi3.onTrack', 'gi3.strategy'].filter(id => exec.graph.facts[id]))];
+        if (gi3Tactical.progress.blockers[0]) stratClaims.push(claim(`Main blocker: ${gi3Tactical.progress.blockers[0].label}.`, gi3Tactical.progress.blockers[0].kind === 'region_pressure' ? 'inference' : 'fact', 'confirmed', ['gi3.blocker'].filter(id => exec.graph.facts[id])));
+        if (gi3Tactical.progress.nextMove) stratClaims.push(claim(`Strategy-tracked next move: ${gi3Tactical.progress.nextMove.label} — ${gi3Tactical.progress.nextMove.reason}.`, 'recommendation', 'moderate', ['gi3.nextMove'].filter(id => exec.graph.facts[id])));
+        section('strategy', 'Active strategy', stratClaims);
+      }
       if (shape === 'plan' && seq?.steps?.length) {
         section('steps', 'Steps', seq.steps.map((c: ContextualActionCandidate, i: number) => claim(`${['Now', 'Next', 'Then', 'After that'][i] || 'Then'}: ${c.label}${c.costEstimate ? ` (${money(c.costEstimate)})` : ''} — ${c.reasons[0] || 'legal and ranked highly'}.`, 'recommendation', 'high', [`plan.${i}`], { optionLegal: true, derived: c.costEstimate ? [c.costEstimate] : [] })));
         const checkpoints: GIClaim[] = [];
@@ -110726,6 +110748,25 @@ export function runGameIntelligence21SelfTests(): V9SelfTestResult[] {
     const q = 'okay so honestly idk what to do, ive only got like 8k, riley keeps putting money into nsw, i wanna get five regions eventually and id rather not take another loan, should i dump my gold and hold nsw or just leave and try vic instead?';
     const a = run(q); const b = run(q);
     return (JSON.stringify(summarizeGIFrame(a.understanding.frame!)) === JSON.stringify(summarizeGIFrame(b.understanding.frame!)) && a.plan.planId === b.plan.planId && text(a) === text(b)) || 'non-deterministic';
+  });
+
+  check('gi21_threat_clause_urgency', 'Threat urgency: per-clause "about to take NSW" is immediate', () => {
+    const w = W();
+    const f = parseGILanguage('Riley is about to take NSW', w, createGIConversationContext());
+    const t = f.threats.find(x => x.regionId === 'NSW');
+    return (t && t.urgency === 'immediate') || JSON.stringify(f.threats);
+  });
+
+  check('gi21_gi3_tactical_coordination', 'GI 2.1 + GI 3.0: tactical next-step plans include optional gi3_state and surface strategy context', () => {
+    const w0 = createGIFixtureWorld().world;
+    const MAIN = 'Protect NSW, reach $15K, then go Victoria. No loans.';
+    const compiled = compileGI3StrategyIntent(parseGILanguage(MAIN, w0, createGIConversationContext()), w0, createGIConversationContext(), null);
+    const gi3State = evaluateGI3Strategy(activateGI3Strategy(createEmptyGI3StrategyState(), compiled.contract, w0.turn, 'test'), w0).state;
+    const world: GIWorld = { ...w0, gi3: gi3State };
+    const r = run('What should I do next?', undefined, world);
+    const hasGi3 = r.plan.steps.some(s => s.tool === 'gi3_state');
+    const strategySection = (r.answer.sections || []).find(s => s.id === 'strategy');
+    return (r.understanding.primary === 'action_recommendation' && hasGi3 && strategySection && /active strategy/i.test(strategySection.claims.map(c => c.text).join(' '))) || `${r.understanding.primary} ${r.plan.steps.map(s => s.tool).join(',')} ${(r.answer.sections || []).map(s => s.id).join(',')}`;
   });
 
   check('gi21_purity', 'Language parsing never mutates the context or the world', () => {
