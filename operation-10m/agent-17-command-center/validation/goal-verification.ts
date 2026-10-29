@@ -126,6 +126,14 @@ import {
   theaterCommitmentBlocksTheater,
 } from '../planning/theater-commitment.ts';
 import {
+  buildAgent17CampaignIndex,
+  campaignIndexBlocksLattice,
+} from '../planning/campaign-index.ts';
+import {
+  buildAgent17MissionLattice,
+  missionLatticeBlocksCampaign,
+} from '../planning/mission-lattice.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -1154,6 +1162,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const campaignIndex = depthEval.snapshot.planningDepth?.campaignIndex;
+  goalResults.push(
+    result(
+      'G17-070',
+      !!campaignIndex &&
+        campaignIndex.vectors.length >= 5 &&
+        campaignIndex.campaignScore >= 0 &&
+        campaignIndex.campaignScore <= 100 &&
+        (campaignIndex.band === 'active' ||
+          campaignIndex.band === 'forming' ||
+          campaignIndex.band === 'stalled'),
+      `vectors=${campaignIndex?.vectors.length} score=${campaignIndex?.campaignScore}`
+    )
+  );
+
+  const missionLattice = depthEval.snapshot.planningDepth?.missionLattice;
+  goalResults.push(
+    result(
+      'G17-071',
+      !!missionLattice &&
+        missionLattice.rungs.length >= 5 &&
+        missionLattice.latticeScore >= 0 &&
+        missionLattice.latticeScore <= 100,
+      `rungs=${missionLattice?.rungs.length} score=${missionLattice?.latticeScore}`
+    )
+  );
+
+  const stalledCampaign = buildAgent17CampaignIndex({
+    theaterCommitment: withdrawnTheater,
+    pulseIndex: depthEval.snapshot.planningDepth!.pulseIndex,
+    continuityBridge: depthEval.snapshot.planningDepth!.continuityBridge,
+  });
+  const collapsedLattice = buildAgent17MissionLattice({
+    campaignIndex: stalledCampaign,
+    theaterCommitment: withdrawnTheater,
+    cadenceLattice: depthEval.snapshot.planningDepth!.cadenceLattice,
+  });
+  goalResults.push(
+    result(
+      'G17-072',
+      theaterCommitmentBlocksTheater(withdrawnTheater) ||
+        campaignIndexBlocksLattice(stalledCampaign) ||
+        missionLatticeBlocksCampaign(collapsedLattice),
+      `${stalledCampaign.band}/${collapsedLattice.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1253,6 +1308,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-067',
     'G17-068',
     'G17-069',
+    'G17-070',
+    'G17-071',
+    'G17-072',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

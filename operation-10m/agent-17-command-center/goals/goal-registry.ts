@@ -485,6 +485,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Revoked summons or contested field yields theaterCommitmentBlocksTheater.',
     severity: 'major',
   },
+  {
+    id: 'G17-070',
+    title: 'Campaign index on planning depth',
+    category: 'telemetry',
+    acceptance: 'campaignIndex reports campaignScore 0–100 with active/forming/stalled band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-071',
+    title: 'Mission lattice rungs complete',
+    category: 'telemetry',
+    acceptance: 'missionLattice exposes ≥5 rungs and latticeScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-072',
+    title: 'Withdrawn theater stalls mission lattice',
+    category: 'integration',
+    acceptance: 'Withdrawn theater or stalled campaign yields missionLatticeBlocksCampaign.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

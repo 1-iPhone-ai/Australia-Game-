@@ -213,6 +213,8 @@ export interface Agent17PlanningDepthSnapshot {
   executionSummons: Agent17ExecutionSummonsSnapshot;
   fieldIndex: Agent17FieldIndexSnapshot;
   theaterCommitment: Agent17TheaterCommitmentSnapshot;
+  campaignIndex: Agent17CampaignIndexSnapshot;
+  missionLattice: Agent17MissionLatticeSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -715,6 +717,40 @@ export interface Agent17TheaterCommitmentSnapshot {
   pledges: Agent17TheaterCommitmentPledge[];
   fieldBand: Agent17FieldIndexSnapshot['band'];
   theaterBound: boolean;
+  headline: string;
+}
+
+export interface Agent17CampaignVector {
+  id: string;
+  label: string;
+  engaged: boolean;
+  weight: number;
+}
+
+export interface Agent17CampaignIndexSnapshot {
+  campaignScore: number;
+  band: 'active' | 'forming' | 'stalled';
+  vectors: Agent17CampaignVector[];
+  theaterBand: Agent17TheaterCommitmentSnapshot['band'];
+  pulseBand: Agent17PulseIndexSnapshot['band'];
+  campaignReady: boolean;
+  headline: string;
+}
+
+export interface Agent17MissionLatticeRung {
+  id: string;
+  label: string;
+  seated: boolean;
+  weight: number;
+}
+
+export interface Agent17MissionLatticeSnapshot {
+  latticeScore: number;
+  band: 'locked' | 'flexible' | 'collapsed';
+  rungs: Agent17MissionLatticeRung[];
+  campaignBand: Agent17CampaignIndexSnapshot['band'];
+  cadenceBand: Agent17CadenceLatticeSnapshot['band'];
+  missionLocked: boolean;
   headline: string;
 }
 

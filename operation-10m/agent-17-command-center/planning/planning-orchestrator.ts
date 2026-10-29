@@ -53,6 +53,8 @@ import { buildAgent17MobilizationIndex } from './mobilization-index.ts';
 import { buildAgent17ExecutionSummons } from './execution-summons.ts';
 import { buildAgent17FieldIndex } from './field-index.ts';
 import { buildAgent17TheaterCommitment } from './theater-commitment.ts';
+import { buildAgent17CampaignIndex } from './campaign-index.ts';
+import { buildAgent17MissionLattice } from './mission-lattice.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -307,6 +309,16 @@ export function buildAgent17PlanningDepthSnapshot(
     executionSummons,
     readinessGate,
   });
+  const campaignIndex = buildAgent17CampaignIndex({
+    theaterCommitment,
+    pulseIndex,
+    continuityBridge,
+  });
+  const missionLattice = buildAgent17MissionLattice({
+    campaignIndex,
+    theaterCommitment,
+    cadenceLattice,
+  });
   return {
     ...core,
     intentQueue,
@@ -342,6 +354,8 @@ export function buildAgent17PlanningDepthSnapshot(
     executionSummons,
     fieldIndex,
     theaterCommitment,
+    campaignIndex,
+    missionLattice,
   };
 }
 
