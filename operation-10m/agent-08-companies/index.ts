@@ -284,6 +284,24 @@ export type {
   RegionalProductionReadinessPortfolio,
 } from './production-readiness-portfolio';
 
+export {
+  AGENT08_TRANSITION_HORIZON_SCHEMA_VERSION,
+  buildFirmProductionTransitionOutlook,
+  classifyNationalTransitionRisk,
+  computeNationalProductionTransitionHorizon,
+  computeNationalTransitionPressure,
+  summarizeRegionalTransitionHorizon,
+  runAgent08TransitionHorizonSelfTests,
+} from './production-transition-horizon';
+
+export type {
+  FirmProductionTransitionOutlook,
+  NationalProductionTransitionHorizon,
+  RegionalTransitionHorizonSummary,
+  TransitionHorizonBand,
+  TransitionRiskBand,
+} from './production-transition-horizon';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -301,6 +319,7 @@ import { runAgent08ReconciliationSelfTests } from './production-capacity-reconci
 import { runAgent08OperatingPrioritySelfTests } from './production-operating-priorities';
 import { runAgent08OperatingDigestSelfTests } from './production-operating-digest';
 import { runAgent08ReadinessPortfolioSelfTests } from './production-readiness-portfolio';
+import { runAgent08TransitionHorizonSelfTests } from './production-transition-horizon';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -390,6 +409,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionHorizon = runAgent08TransitionHorizonSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -408,5 +432,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...operatingPriority,
     ...operatingDigest,
     ...readinessPortfolio,
+    ...transitionHorizon,
   ];
 }
