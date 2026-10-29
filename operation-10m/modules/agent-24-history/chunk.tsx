@@ -1522,6 +1522,391 @@ export function buildAgent24HistoryReconciliationReport(
 }
 
 
+// --- source: replay-playback-integrity.ts ---
+
+export interface Agent24ReplayEventLike {
+  eventType?: string;
+  turn?: number;
+  sequence?: number;
+  day?: number;
+}
+
+export interface Agent24ReplayPlaybackIssue {
+  kind: 'turn_regression' | 'duplicate_checkpoint' | 'sequence_gap' | 'missing_turn';
+  turn: number;
+  detail: string;
+  severity: 'info' | 'warn' | 'critical';
+  fingerprint: string;
+}
+
+export interface Agent24ReplayPlaybackIntegrityReport {
+  reportId: string;
+  matchId: string;
+  eventCount: number;
+  checkpointEventCount: number;
+  issueCount: number;
+  issues: Agent24ReplayPlaybackIssue[];
+  monotonicTurns: boolean;
+  integrityScore: number;
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ReplayPlaybackIntegrityInput {
+  matchId: string;
+  currentTurn: number;
+  replay?: {
+    events?: Agent24ReplayEventLike[];
+    checkpoints?: Record<string, unknown>;
+  } | null;
+}
+
+function issueSeverity(kind: Agent24ReplayPlaybackIssue['kind']): Agent24ReplayPlaybackIssue['severity'] {
+  if (kind === 'turn_regression') return 'critical';
+  if (kind === 'duplicate_checkpoint') return 'warn';
+  if (kind === 'sequence_gap') return 'warn';
+  return 'info';
+}
+
+export function buildAgent24ReplayPlaybackIntegrityReport(
+  input: Agent24ReplayPlaybackIntegrityInput,
+): Agent24ReplayPlaybackIntegrityReport {
+  const events = [...(input.replay?.events || [])].sort((a, b) => {
+    const sa = a.sequence ?? a.turn ?? 0;
+    const sb = b.sequence ?? b.turn ?? 0;
+    return sa - sb || (a.turn ?? 0) - (b.turn ?? 0);
+  });
+
+  const issues: Agent24ReplayPlaybackIssue[] = [];
+  let lastTurn = 0;
+  let lastSequence: number | null = null;
+  const checkpointTurnsSeen = new Set<number>();
+
+  for (const ev of events) {
+    const turn = typeof ev.turn === 'number' ? ev.turn : 0;
+    const seq = typeof ev.sequence === 'number' ? ev.sequence : null;
+
+    if (turn > 0 && turn < lastTurn) {
+      issues.push({
+        kind: 'turn_regression',
+        turn,
+        detail: `Replay event turn ${turn} regresses from prior turn ${lastTurn}`,
+        severity: issueSeverity('turn_regression'),
+        fingerprint: o6kAgent24Fingerprint('playback_regression', { turn, lastTurn }),
+      });
+    }
+    if (turn > lastTurn) lastTurn = turn;
+
+    if (seq != null && lastSequence != null && seq > lastSequence + 1) {
+      issues.push({
+        kind: 'sequence_gap',
+        turn,
+        detail: `Sequence jumped from ${lastSequence} to ${seq}`,
+        severity: issueSeverity('sequence_gap'),
+        fingerprint: o6kAgent24Fingerprint('playback_seq_gap', { from: lastSequence, to: seq }),
+      });
+    }
+    if (seq != null) lastSequence = seq;
+
+    if (ev.eventType === 'replay_checkpoint' && turn > 0) {
+      if (checkpointTurnsSeen.has(turn)) {
+        issues.push({
+          kind: 'duplicate_checkpoint',
+          turn,
+          detail: `Duplicate replay_checkpoint at turn ${turn}`,
+          severity: issueSeverity('duplicate_checkpoint'),
+          fingerprint: o6kAgent24Fingerprint('playback_dup_ckpt', { turn }),
+        });
+      }
+      checkpointTurnsSeen.add(turn);
+    }
+  }
+
+  const checkpointKeys = Object.keys(input.replay?.checkpoints || {})
+    .map(k => Number(k))
+    .filter(n => Number.isFinite(n) && n >= 1);
+  for (const ck of checkpointKeys) {
+    if (!checkpointTurnsSeen.has(ck) && ck <= input.currentTurn) {
+      issues.push({
+        kind: 'missing_turn',
+        turn: ck,
+        detail: `Checkpoint map includes turn ${ck} without matching replay_checkpoint event`,
+        severity: 'info',
+        fingerprint: o6kAgent24Fingerprint('playback_ckpt_orphan', { turn: ck }),
+      });
+    }
+  }
+
+  issues.sort((a, b) => a.turn - b.turn || a.kind.localeCompare(b.kind));
+  const criticalCount = issues.filter(i => i.severity === 'critical').length;
+  const warnCount = issues.filter(i => i.severity === 'warn').length;
+  let integrityScore = 100;
+  integrityScore -= criticalCount * 30;
+  integrityScore -= warnCount * 10;
+  integrityScore -= issues.filter(i => i.severity === 'info').length * 3;
+  integrityScore = Math.max(0, Math.min(100, integrityScore));
+  const monotonicTurns = criticalCount === 0;
+
+  const checkpointEventCount = events.filter(e => e.eventType === 'replay_checkpoint').length;
+
+  return {
+    reportId: o6kAgent24Fingerprint('playback_integrity', { matchId: input.matchId, turn: input.currentTurn }),
+    matchId: input.matchId,
+    eventCount: events.length,
+    checkpointEventCount,
+    issueCount: issues.length,
+    issues,
+    monotonicTurns,
+    integrityScore,
+    deterministicFingerprint: o6kAgent24Fingerprint('playback_integrity_body', {
+      issues: issues.map(i => i.fingerprint),
+      monotonicTurns,
+      integrityScore,
+    }),
+  };
+}
+
+export function runAgent24PlaybackIntegritySelfTests(): Array<{ name: string; passed: boolean }> {
+  const clean = buildAgent24ReplayPlaybackIntegrityReport({
+    matchId: 'self',
+    currentTurn: 10,
+    replay: {
+      events: [
+        { eventType: 'replay_checkpoint', turn: 4, sequence: 1 },
+        { eventType: 'replay_checkpoint', turn: 10, sequence: 2 },
+      ],
+      checkpoints: { '4': {}, '10': {} },
+    },
+  });
+  const dirty = buildAgent24ReplayPlaybackIntegrityReport({
+    matchId: 'self',
+    currentTurn: 10,
+    replay: {
+      events: [
+        { eventType: 'replay_checkpoint', turn: 8, sequence: 1 },
+        { eventType: 'replay_checkpoint', turn: 5, sequence: 2 },
+      ],
+    },
+  });
+  return [
+    { name: 'clean_monotonic', passed: clean.monotonicTurns && clean.integrityScore >= 90 },
+    { name: 'regression_detected', passed: !dirty.monotonicTurns && dirty.issues.some(i => i.kind === 'turn_regression') },
+    {
+      name: 'deterministic_fingerprint',
+      passed:
+        clean.deterministicFingerprint ===
+        buildAgent24ReplayPlaybackIntegrityReport({
+          matchId: 'self',
+          currentTurn: 10,
+          replay: clean.eventCount
+            ? {
+                events: [
+                  { eventType: 'replay_checkpoint', turn: 4, sequence: 1 },
+                  { eventType: 'replay_checkpoint', turn: 10, sequence: 2 },
+                ],
+                checkpoints: { '4': {}, '10': {} },
+              }
+            : undefined,
+        }).deterministicFingerprint,
+    },
+  ];
+}
+
+
+// --- source: branch-lineage.ts ---
+
+export interface Agent24BranchLineageNode {
+  nodeId: string;
+  parentNodeId: string | null;
+  branchTurn: number | null;
+  depthFromRoot: number;
+  lineagePath: string[];
+  label: string;
+  fingerprint: string;
+}
+
+export interface Agent24BranchLineageReport {
+  reportId: string;
+  matchId: string;
+  nodeCount: number;
+  maxDepth: number;
+  deepestNodeId: string | null;
+  nodes: Agent24BranchLineageNode[];
+  deterministicFingerprint: string;
+}
+
+export interface Agent24BranchLineageInput {
+  matchId: string;
+  registry: Agent24TimelineRegistry;
+  nodesById?: Record<string, Agent24TimelineBranchNodeLike>;
+}
+
+export function buildAgent24BranchLineageReport(input: Agent24BranchLineageInput): Agent24BranchLineageReport {
+  const nodesById = input.nodesById || {};
+  const nodeIds = new Set<string>(['root', ...input.registry.branchNodeOrder, ...Object.keys(nodesById)]);
+
+  const meta = new Map<string, Agent24TimelineBranchNodeLike & { label: string }>();
+  meta.set('root', { nodeId: 'root', label: 'Main timeline root', branchTurn: 1 });
+  for (const nodeId of nodeIds) {
+    if (nodeId === 'root') continue;
+    const raw = nodesById[nodeId];
+    const fromEntry = input.registry.entries.find(e => e.branchedAtNodeId === nodeId);
+    meta.set(nodeId, {
+      nodeId,
+      parentNodeId: raw?.parentNodeId ?? 'root',
+      branchTurn: raw?.branchTurn ?? fromEntry?.branchTurn ?? undefined,
+      label: raw?.label || fromEntry?.label || nodeId,
+    });
+  }
+
+  const lineageCache = new Map<string, string[]>();
+  function lineagePath(nodeId: string): string[] {
+    const cached = lineageCache.get(nodeId);
+    if (cached) return cached;
+    if (nodeId === 'root') {
+      lineageCache.set(nodeId, ['root']);
+      return ['root'];
+    }
+    const info = meta.get(nodeId);
+    const parent = info?.parentNodeId && info.parentNodeId !== nodeId ? info.parentNodeId : 'root';
+    const path = [...lineagePath(parent), nodeId];
+    lineageCache.set(nodeId, path);
+    return path;
+  }
+
+  const nodes: Agent24BranchLineageNode[] = [];
+  for (const nodeId of [...nodeIds].sort()) {
+    const info = meta.get(nodeId)!;
+    const path = lineagePath(nodeId);
+    const depthFromRoot = Math.max(0, path.length - 1);
+    nodes.push({
+      nodeId,
+      parentNodeId: nodeId === 'root' ? null : info.parentNodeId ?? 'root',
+      branchTurn: info.branchTurn ?? null,
+      depthFromRoot,
+      lineagePath: path,
+      label: info.label,
+      fingerprint: o6kAgent24Fingerprint('branch_lineage_node', { nodeId, depthFromRoot, path }),
+    });
+  }
+
+  nodes.sort((a, b) => a.depthFromRoot - b.depthFromRoot || a.nodeId.localeCompare(b.nodeId));
+  const maxDepth = nodes.reduce((m, n) => Math.max(m, n.depthFromRoot), 0);
+  const deepest = nodes.filter(n => n.depthFromRoot === maxDepth).sort((a, b) => a.nodeId.localeCompare(b.nodeId))[0];
+
+  return {
+    reportId: o6kAgent24Fingerprint('branch_lineage', { matchId: input.matchId, nodes: nodes.length }),
+    matchId: input.matchId,
+    nodeCount: nodes.length,
+    maxDepth,
+    deepestNodeId: deepest?.nodeId ?? null,
+    nodes,
+    deterministicFingerprint: o6kAgent24Fingerprint('branch_lineage_body', nodes.map(n => n.fingerprint)),
+  };
+}
+
+
+// --- source: export-readiness.ts ---
+
+export type Agent24ExportBlockerKind =
+  | 'attestation'
+  | 'reconciliation'
+  | 'checkpoint_coverage'
+  | 'playback_integrity'
+  | 'rewind_safety';
+
+export interface Agent24ExportReadinessBlocker {
+  kind: Agent24ExportBlockerKind;
+  detail: string;
+  fingerprint: string;
+}
+
+export interface Agent24ExportReadinessReport {
+  reportId: string;
+  matchId: string;
+  ready: boolean;
+  readinessScore: number;
+  blockerCount: number;
+  blockers: Agent24ExportReadinessBlocker[];
+  deterministicFingerprint: string;
+}
+
+export interface Agent24ExportReadinessInput {
+  matchId: string;
+  attestation: Agent24ReplayAttestation;
+  historyReconciliation: Agent24HistoryReconciliationReport;
+  checkpointCoverage: Agent24CheckpointCoverageReport;
+  playbackIntegrity: Agent24ReplayPlaybackIntegrityReport;
+  rewindSafety: Agent24RewindSafetyReport;
+  minCoverageScore?: number;
+  minIntegrityScore?: number;
+}
+
+export function buildAgent24ExportReadinessReport(input: Agent24ExportReadinessInput): Agent24ExportReadinessReport {
+  const minCoverage = input.minCoverageScore ?? 60;
+  const minIntegrity = input.minIntegrityScore ?? 70;
+  const blockers: Agent24ExportReadinessBlocker[] = [];
+
+  if (input.attestation.status !== 'verified') {
+    blockers.push({
+      kind: 'attestation',
+      detail: `Attestation status is ${input.attestation.status}, expected verified`,
+      fingerprint: o6kAgent24Fingerprint('export_block_attest', { status: input.attestation.status }),
+    });
+  }
+  if (!input.historyReconciliation.reconciled) {
+    blockers.push({
+      kind: 'reconciliation',
+      detail: `History reconciliation open (${input.historyReconciliation.issueCount} issues)`,
+      fingerprint: o6kAgent24Fingerprint('export_block_recon', { issues: input.historyReconciliation.issueCount }),
+    });
+  }
+  if (input.checkpointCoverage.coverageScore < minCoverage) {
+    blockers.push({
+      kind: 'checkpoint_coverage',
+      detail: `Checkpoint coverage score ${input.checkpointCoverage.coverageScore} below ${minCoverage}`,
+      fingerprint: o6kAgent24Fingerprint('export_block_coverage', { score: input.checkpointCoverage.coverageScore }),
+    });
+  }
+  if (!input.playbackIntegrity.monotonicTurns || input.playbackIntegrity.integrityScore < minIntegrity) {
+    blockers.push({
+      kind: 'playback_integrity',
+      detail: `Playback integrity score ${input.playbackIntegrity.integrityScore} (monotonic=${input.playbackIntegrity.monotonicTurns})`,
+      fingerprint: o6kAgent24Fingerprint('export_block_playback', {
+        score: input.playbackIntegrity.integrityScore,
+        monotonic: input.playbackIntegrity.monotonicTurns,
+      }),
+    });
+  }
+  if (input.rewindSafety.safeTargetCount === 0) {
+    blockers.push({
+      kind: 'rewind_safety',
+      detail: 'No safe rewind targets — export may not be replayable',
+      fingerprint: o6kAgent24Fingerprint('export_block_rewind', { safe: 0 }),
+    });
+  }
+
+  blockers.sort((a, b) => a.kind.localeCompare(b.kind));
+  let readinessScore = 100;
+  readinessScore -= blockers.length * 18;
+  readinessScore = Math.max(0, Math.min(100, readinessScore));
+  const ready = blockers.length === 0;
+
+  return {
+    reportId: o6kAgent24Fingerprint('export_readiness', { matchId: input.matchId, ready }),
+    matchId: input.matchId,
+    ready,
+    readinessScore,
+    blockerCount: blockers.length,
+    blockers,
+    deterministicFingerprint: o6kAgent24Fingerprint('export_readiness_body', {
+      blockers: blockers.map(b => b.fingerprint),
+      ready,
+      readinessScore,
+    }),
+  };
+}
+
+
 // --- source: history-replay-analytics.ts ---
 
 export const O6K_AGENT24_MODULE_VERSION = '1.1.0-op10m';
@@ -21016,6 +21401,9 @@ export function applyO6kHistoricalAnalyticsCachePatch(state: Record<string, unkn
   buildAgent24HistoryReconciliationReport,
   type Agent24HistoryReconciliationReport,
 } from './history-reconciliation.ts';
+  buildAgent24ReplayPlaybackIntegrityReport,
+  type Agent24ReplayPlaybackIntegrityReport,
+} from './replay-playback-integrity.ts';
 
 export interface Agent24ReplayDeterminismBundle {
   bundleId: string;
@@ -21033,6 +21421,9 @@ export interface Agent24ReplayDeterminismBundle {
   checkpointCoverage: Agent24CheckpointCoverageReport;
   rewindSafety: Agent24RewindSafetyReport;
   historyReconciliation: Agent24HistoryReconciliationReport;
+  playbackIntegrity: Agent24ReplayPlaybackIntegrityReport;
+  branchLineage: Agent24BranchLineageReport;
+  exportReadiness: Agent24ExportReadinessReport;
   twinBuildPassed: boolean;
   compositeFingerprint: string;
 }
@@ -21174,7 +21565,25 @@ export function buildAgent24ReplayDeterminismBundle(
     auditTrail,
     attestation: attestationDraft,
   });
-  const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
+  const playbackIntegrity = buildAgent24ReplayPlaybackIntegrityReport({
+    matchId: input.matchId,
+    currentTurn: input.turn,
+    replay: input.replay,
+  });
+  const branchLineage = buildAgent24BranchLineageReport({
+    matchId: input.matchId,
+    registry: timelineRegistry,
+    nodesById: input.replayBranchTree?.nodesById,
+  });
+  const exportReadiness = buildAgent24ExportReadinessReport({
+    matchId: input.matchId,
+    attestation: attestationDraft,
+    historyReconciliation,
+    checkpointCoverage,
+    playbackIntegrity,
+    rewindSafety,
+  });
+  const compositeForAttestation = o6kAgent24Fingerprint('replay_bundle', {
     snap: snapshot.integrity.fingerprint,
     causal: causalIndex.deterministicFingerprint,
     timeline: timelineRegistry.deterministicFingerprint,
@@ -21189,8 +21598,38 @@ export function buildAgent24ReplayDeterminismBundle(
     checkpointCoverage: checkpointCoverage.deterministicFingerprint,
     rewindSafety: rewindSafety.deterministicFingerprint,
     reconciliation: historyReconciliation.deterministicFingerprint,
+    playbackIntegrity: playbackIntegrity.deterministicFingerprint,
+    branchLineage: branchLineage.deterministicFingerprint,
+    exportReadiness: exportReadiness.deterministicFingerprint,
   });
-  const attestationFinal = buildAgent24ReplayAttestation({ ...partialBundle, compositeFingerprint });
+  const attestationFinal = buildAgent24ReplayAttestation({ ...partialBundle, compositeFingerprint: compositeForAttestation });
+  const exportReadinessFinal = buildAgent24ExportReadinessReport({
+    matchId: input.matchId,
+    attestation: attestationFinal,
+    historyReconciliation,
+    checkpointCoverage,
+    playbackIntegrity,
+    rewindSafety,
+  });
+  const compositeFingerprint = o6kAgent24Fingerprint('replay_bundle', {
+    snap: snapshot.integrity.fingerprint,
+    causal: causalIndex.deterministicFingerprint,
+    timeline: timelineRegistry.deterministicFingerprint,
+    late: lateGame.fingerprint,
+    depth: analyticsDepth.deterministicFingerprint,
+    scenarios: scenarioSuite.deterministicFingerprint,
+    audit: auditTrail.deterministicFingerprint,
+    sessions: multiSession.deterministicFingerprint,
+    divergence: timelineDivergence.deterministicFingerprint,
+    rollup: historyRollup.deterministicFingerprint,
+    attestation: attestationFinal.deterministicFingerprint,
+    checkpointCoverage: checkpointCoverage.deterministicFingerprint,
+    rewindSafety: rewindSafety.deterministicFingerprint,
+    reconciliation: historyReconciliation.deterministicFingerprint,
+    playbackIntegrity: playbackIntegrity.deterministicFingerprint,
+    branchLineage: branchLineage.deterministicFingerprint,
+    exportReadiness: exportReadinessFinal.deterministicFingerprint,
+  });
 
   return {
     bundleId: o6kAgent24Fingerprint('replay_bundle_id', { matchId: input.matchId, turn: input.turn }),
@@ -21200,6 +21639,9 @@ export function buildAgent24ReplayDeterminismBundle(
     checkpointCoverage,
     rewindSafety,
     historyReconciliation,
+    playbackIntegrity,
+    branchLineage,
+    exportReadiness: exportReadinessFinal,
     attestation: attestationFinal,
     compositeFingerprint,
   };
@@ -21280,6 +21722,21 @@ export function verifyAgent24ReplayDeterminism(
       name: 'history_reconciliation_twin',
       passed: a.historyReconciliation.deterministicFingerprint === b.historyReconciliation.deterministicFingerprint,
       detail: 'Twin history reconciliation fingerprints',
+    },
+    {
+      name: 'playback_integrity_twin',
+      passed: a.playbackIntegrity.deterministicFingerprint === b.playbackIntegrity.deterministicFingerprint,
+      detail: 'Twin replay playback integrity fingerprints',
+    },
+    {
+      name: 'branch_lineage_twin',
+      passed: a.branchLineage.deterministicFingerprint === b.branchLineage.deterministicFingerprint,
+      detail: 'Twin branch lineage fingerprints',
+    },
+    {
+      name: 'export_readiness_twin',
+      passed: a.exportReadiness.deterministicFingerprint === b.exportReadiness.deterministicFingerprint,
+      detail: 'Twin export readiness fingerprints',
     },
     {
       name: 'composite_twin',
