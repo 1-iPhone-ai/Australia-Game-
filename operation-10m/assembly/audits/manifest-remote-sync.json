@@ -1,5 +1,5 @@
 {
-  "scannedAt": "2026-10-29T15:10:11.946Z",
+  "scannedAt": "2026-10-29T15:27:25.566Z",
   "canonicalBase": "origin/australia-game-upgrade",
   "baselineCommit": "bc1adf3",
   "originOp10mHeadCount": 33,
@@ -55,7 +55,7 @@
       "chunkPath": "operation-10m/agent-05-events/chunk.tsx",
       "markerModuleId": "agent-05-events",
       "assemblyReady": true,
-      "contentSha256": "f7f91a0c6cf88b1692aec0a4aeecadd3e3911216d45e5923844941c3685311df",
+      "contentSha256": "725cc0b697869edbc1b48ea983a60bc48e30bda1bc3863fb82a1b7b7403fdc4c",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -275,7 +275,7 @@
       "chunkPath": "operation-10m/modules/agent-20-automation/chunk.tsx",
       "markerModuleId": "agent-20-automation",
       "assemblyReady": true,
-      "contentSha256": "a463bb9bb1deae696b094380f1befa8117bd5b642d8db4d1c962961b05222dfd",
+      "contentSha256": "cddb4c8e43bdcc7c5d904b938fee7a629a6299e120ce948f2effca874ddd1c39",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -285,7 +285,7 @@
       "chunkPath": "operation-10m/modules/agent-21-forecasting/chunk.tsx",
       "markerModuleId": "agent-21-forecasting",
       "assemblyReady": true,
-      "contentSha256": "6efa30b026cddd724548006874b771aca5e5693418b0607c3ff1cd50dcc73dc4",
+      "contentSha256": "46ee796e22a10135f69c1de3c4ac225f6599fd3330d891f9deababcf513f790c",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -305,7 +305,7 @@
       "chunkPath": "operation-10m/modules/agent-23-dashboards/chunk.tsx",
       "markerModuleId": "agent-23-dashboards",
       "assemblyReady": true,
-      "contentSha256": "d1f0a6478541654d8b970244ab6ff1b6a1e379692b1a13366fe673a14b2b68f3",
+      "contentSha256": "264210f6122e8fe8fe19b91b8bcecac0b73d1ff7dc05a7a84daa08cc1bcf2627",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -325,7 +325,7 @@
       "chunkPath": "operation-10m/modules/agent-24-history/chunk.tsx",
       "markerModuleId": "agent-24-history",
       "assemblyReady": false,
-      "contentSha256": "78e4104b12aecfcecabc391a3317f94d904d080878b38dccf226dfbb73731943",
+      "contentSha256": "3a6645c0d99065b9bf4b74d74d5799c12376984275ade399eaae087d78fad3d1",
       "defaultSlot": "pre-final-export",
       "duplicateModuleIdOf": "origin/op10m/agent-24-history",
       "skipReason": "duplicate moduleId (branch not primary)"
