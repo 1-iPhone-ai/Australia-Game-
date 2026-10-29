@@ -170,16 +170,14 @@ PUBSVC_DAY_HOOK = """
 
 def wire_day_hooks(text: str, extra_hook: str, hook_id: str) -> str:
     anchor = "        v1014SupplyChain: supplyOut?.persisted ?? mergedGameState?.v1014SupplyChain,\n      };"
-    if hook_id in text:
+    runtime_marker = extra_hook.strip().split("\n", 1)[0].strip()
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:12000]
+    if runtime_marker in day_slice:
         print(f"skip day hook {hook_id}")
         return text
     if anchor not in text:
         raise SystemExit("orchestrator supply anchor missing for day hook")
-    return text.replace(
-        anchor,
-        anchor + extra_hook,
-        1,
-    )
+    return text.replace(anchor, anchor + extra_hook, 1)
 
 
 def wire_trade_migration(text: str) -> str:
