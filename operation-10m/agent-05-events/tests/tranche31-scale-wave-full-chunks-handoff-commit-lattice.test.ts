@@ -15,15 +15,15 @@ import {
 } from '../src/index.ts';
 
 describe('Tranche 31 scale-wave-full-chunks-handoff-commit lattice catalog', () => {
-  it('adds 320 handoff-commit lattice chains at 19680 total', () => {
+  it('adds 320 handoff-commit lattice chains at 19900 total', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE31_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche31Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 19680);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 19900);
   });
 
   it('uses op10m_t31 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 19680);
+    assert.equal(ids.size, 19900);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE31) {
       assert.match(c.chainId, /^op10m_t31_/);
     }
