@@ -1,0 +1,8 @@
+{
+  "moduleId": "agent-08-companies",
+  "slot": "append-only-self-tests",
+  "touchesSaveFormat": false,
+  "anchorComment": "// O6K_AGENT08_INTEGRATION_ANCHOR",
+  "sourceRoot": "operation-10m/agent-08-companies",
+  "regenerate": "node operation-10m/agent-08-companies/scripts/build-chunk.mjs"
+}
