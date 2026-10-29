@@ -133,3 +133,7 @@ export { ProgressionCoveragePercentDayCoachStrip } from './ProgressionCoveragePe
 export { CalmRecoveryActiveStatusDayCoachStrip } from './CalmRecoveryActiveStatusDayCoachStrip.js';
 export { TextScaleHintPendingDayCoachStrip } from './TextScaleHintPendingDayCoachStrip.js';
 export { ShowAllPhaseRiskDayCoachStrip } from './ShowAllPhaseRiskDayCoachStrip.js';
+export { FirstUnlockHeadlineDayCoachStrip } from './FirstUnlockHeadlineDayCoachStrip.js';
+export { MilestoneForecastBreadthDayCoachStrip } from './MilestoneForecastBreadthDayCoachStrip.js';
+export { NotificationLaneSuppressedDayCoachStrip } from './NotificationLaneSuppressedDayCoachStrip.js';
+export { SingleDeferredCoachLineDayCoachStrip } from './SingleDeferredCoachLineDayCoachStrip.js';

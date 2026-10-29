@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 612e6f24c386499c
+// content-sha256-prefix: 356dab57652e9d0a
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -975,6 +975,10 @@ export interface DayAdvanceUiEvolutionResult {
   calmRecoveryActiveStatusDayCoachCopy: string | null;
   textScaleHintPendingDayCoachCopy: string | null;
   showAllPhaseRiskDayCoachCopy: string | null;
+  firstUnlockHeadlineDayCoachCopy: string | null;
+  milestoneForecastBreadthDayCoachCopy: string | null;
+  notificationLaneSuppressedDayCoachCopy: string | null;
+  singleDeferredCoachLineDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1765,6 +1769,27 @@ export function tickEvolvingUiOnDayAdvance(
         })
       : { riskyPhase: false, coachCopy: null };
 
+  const firstUnlockHeadlineDayCoach = buildFirstUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const milestoneForecastBreadthDayCoach = buildMilestoneForecastBreadthDayCoach({
+    entries: milestoneEntries,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const notificationLaneSuppressedDayCoach = buildNotificationLaneSuppressedDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const singleDeferredCoachLineDayCoach = buildSingleDeferredCoachLineDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1911,6 +1936,10 @@ export function tickEvolvingUiOnDayAdvance(
     calmRecoveryActiveStatusDayCoachCopy: calmRecoveryActiveStatusDayCoach.coachCopy,
     textScaleHintPendingDayCoachCopy: textScaleHintPendingDayCoach.coachCopy,
     showAllPhaseRiskDayCoachCopy: showAllPhaseRiskDayCoach.coachCopy,
+    firstUnlockHeadlineDayCoachCopy: firstUnlockHeadlineDayCoach.coachCopy,
+    milestoneForecastBreadthDayCoachCopy: milestoneForecastBreadthDayCoach.coachCopy,
+    notificationLaneSuppressedDayCoachCopy: notificationLaneSuppressedDayCoach.coachCopy,
+    singleDeferredCoachLineDayCoachCopy: singleDeferredCoachLineDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -7444,6 +7473,262 @@ export function buildShowAllPhaseRiskDayCoach(input: {
     riskyPhase: true,
     coachCopy: `Day ${input.nextGameDay}: ${assessment.coachCopy}`,
   };
+}
+
+// --- source: engine/first-unlock-headline-day-coach.ts ---
+export interface FirstUnlockHeadlineDayCoach {
+  panelId: string | null;
+  coachCopy: string | null;
+}
+
+export function buildFirstUnlockHeadlineDayCoach(input: {
+  newlyUnlockedPanelIds: string[];
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): FirstUnlockHeadlineDayCoach {
+  const panelId = input.newlyUnlockedPanelIds[0];
+  if (!panelId) {
+    return { panelId: null, coachCopy: null };
+  }
+  const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+  if (!panel) {
+    return { panelId, coachCopy: null };
+  }
+  return {
+    panelId,
+    coachCopy: `Day ${input.nextGameDay}: ${buildCoachHeadline(panel, input.signals)}`,
+  };
+}
+
+// --- source: engine/milestone-forecast-breadth-day-coach.ts ---
+export interface MilestoneForecastBreadthDayCoach {
+  forecastCount: number;
+  coachCopy: string | null;
+}
+
+export function buildMilestoneForecastBreadthDayCoach(input: {
+  entries: MilestoneForecastEntry[];
+  nextGameDay: number;
+}): MilestoneForecastBreadthDayCoach {
+  if (!input.entries.length) {
+    return { forecastCount: 0, coachCopy: null };
+  }
+  return {
+    forecastCount: input.entries.length,
+    coachCopy: `Day ${input.nextGameDay}: ${input.entries.length} upcoming milestone${input.entries.length === 1 ? '' : 's'} in the progression forecast.`,
+  };
+}
+
+// --- source: engine/notification-lane-suppressed-day-coach.ts ---
+export interface NotificationLaneSuppressedDayCoach {
+  suppressedCount: number;
+  coachCopy: string | null;
+}
+
+export function buildNotificationLaneSuppressedDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+  onboardingEnabled?: boolean;
+}): NotificationLaneSuppressedDayCoach {
+  const plan = buildNotificationLaneCoachPlan(input.signals, input.onboardingEnabled !== false);
+  if (!plan.suppressedCategories.length) {
+    return { suppressedCount: 0, coachCopy: null };
+  }
+  const base = plan.coachCopy ?? `${plan.suppressedCategories.length} notification lanes gated by progression.`;
+  return {
+    suppressedCount: plan.suppressedCategories.length,
+    coachCopy: `Day ${input.nextGameDay}: ${base}`,
+  };
+}
+
+// --- source: engine/single-deferred-coach-line-day-coach.ts ---
+export interface SingleDeferredCoachLineDayCoach {
+  queueDepth: number;
+  coachCopy: string | null;
+}
+
+export function buildSingleDeferredCoachLineDayCoach(input: {
+  combinedQueueDepth: number;
+  nextGameDay: number;
+}): SingleDeferredCoachLineDayCoach {
+  if (input.combinedQueueDepth !== 1) {
+    return { queueDepth: input.combinedQueueDepth, coachCopy: null };
+  }
+  return {
+    queueDepth: 1,
+    coachCopy: `Day ${input.nextGameDay}: One coach announcement remains queued for a later delivery tick.`,
+  };
+}
+
+// --- source: engine/round40-self-tests.ts ---
+export function runAgent22Round40SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r40_first_unlock',
+    'first unlock headline day coach',
+    (() => {
+      const coach = buildFirstUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: ['nav_map'],
+        signals: { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        nextGameDay: 3,
+      });
+      return coach.panelId === 'nav_map' && Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r40_milestone_breadth',
+    'milestone forecast breadth day coach',
+    (() => {
+      const entries = forecastUpcomingMilestones(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        5
+      );
+      const coach = buildMilestoneForecastBreadthDayCoach({
+        entries,
+        nextGameDay: 2,
+      });
+      return entries.length > 0 && coach.forecastCount === entries.length && Boolean(coach.coachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r40_lane_suppressed',
+    'notification lane suppressed day coach',
+    (() => {
+      const coach = buildNotificationLaneSuppressedDayCoach({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        nextGameDay: 1,
+      });
+      return coach.suppressedCount > 0 && Boolean(coach.coachCopy?.includes('Day 1'));
+    })()
+  );
+
+  check(
+    'r40_single_deferred',
+    'single deferred coach line day coach',
+    (() => {
+      const coach = buildSingleDeferredCoachLineDayCoach({
+        combinedQueueDepth: 1,
+        nextGameDay: 5,
+      });
+      return coach.queueDepth === 1 && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r40_tick_first_unlock',
+    'tick exposes first unlock headline day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.firstUnlockHeadlineDayCoachCopy === 'string' || r.firstUnlockHeadlineDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r40_tick_milestone_breadth',
+    'tick exposes milestone forecast breadth day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.milestoneForecastBreadthDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r40_tick_lane_suppressed',
+    'tick exposes notification lane suppressed day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.notificationLaneSuppressedDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r40_tick_single_deferred',
+    'tick exposes single deferred coach line day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.singleDeferredCoachLineDayCoachCopy === 'string' || r.singleDeferredCoachLineDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r40_first_unlock_empty',
+    'first unlock headline null when no unlocks',
+    (() => {
+      const coach = buildFirstUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: [],
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r40_milestone_breadth_empty',
+    'milestone breadth null when no entries',
+    (() => {
+      const coach = buildMilestoneForecastBreadthDayCoach({ entries: [], nextGameDay: 3 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r40_single_deferred_not_one',
+    'single deferred null when depth not one',
+    (() => {
+      const coach = buildSingleDeferredCoachLineDayCoach({ combinedQueueDepth: 2, nextGameDay: 1 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r40_lane_suppressed_expert',
+    'lane suppressed may clear on expert late game',
+    (() => {
+      const coach = buildNotificationLaneSuppressedDayCoach({
+        signals: { gameDay: 30, turnCount: 30, interfaceLevel: 'expert' },
+        nextGameDay: 30,
+      });
+      return typeof coach.coachCopy === 'string' || coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round39-self-tests.ts ---
@@ -14901,6 +15186,18 @@ export function SimulationUiEvolutionBridge({
       {result.showAllPhaseRiskDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-show-all-phase-day">{result.showAllPhaseRiskDayCoachCopy}</div>
       ) : null}
+      {result.firstUnlockHeadlineDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-first-unlock-headline-day">{result.firstUnlockHeadlineDayCoachCopy}</div>
+      ) : null}
+      {result.milestoneForecastBreadthDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-milestone-breadth-day">{result.milestoneForecastBreadthDayCoachCopy}</div>
+      ) : null}
+      {result.notificationLaneSuppressedDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-lane-suppressed-day">{result.notificationLaneSuppressedDayCoachCopy}</div>
+      ) : null}
+      {result.singleDeferredCoachLineDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-single-deferred-day">{result.singleDeferredCoachLineDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -16950,8 +17247,96 @@ export function ContextualWidgetDayCoachStrip({
   );
 }
 
+// --- source: react/FirstUnlockHeadlineDayCoachStrip.tsx ---
+export function FirstUnlockHeadlineDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: FirstUnlockHeadlineDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="first-unlock-headline-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-emerald-600/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/MilestoneForecastBreadthDayCoachStrip.tsx ---
+export function MilestoneForecastBreadthDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: MilestoneForecastBreadthDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="milestone-forecast-breadth-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-purple-600/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/NotificationLaneSuppressedDayCoachStrip.tsx ---
+export function NotificationLaneSuppressedDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: NotificationLaneSuppressedDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="notification-lane-suppressed-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-blue-600/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/SingleDeferredCoachLineDayCoachStrip.tsx ---
+export function SingleDeferredCoachLineDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: SingleDeferredCoachLineDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="single-deferred-coach-line-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-indigo-600/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.39.0';
+export const AGENT_22_MODULE_VERSION = '1.40.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -17102,6 +17487,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round40 = runAgent22Round40SelfTests();
+  for (const r of round40.results) {
+    check(`agent22_round40_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round39 = runAgent22Round39SelfTests();

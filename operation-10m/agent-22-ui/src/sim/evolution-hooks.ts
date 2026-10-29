@@ -137,6 +137,10 @@ import { buildProgressionCoveragePercentDayCoach } from '../engine/progression-c
 import { buildCalmRecoveryActiveStatusDayCoach } from '../engine/calm-recovery-active-status-day-coach.js';
 import { buildTextScaleHintPendingDayCoach } from '../engine/text-scale-hint-pending-day-coach.js';
 import { buildShowAllPhaseRiskDayCoach } from '../engine/show-all-phase-risk-day-coach.js';
+import { buildFirstUnlockHeadlineDayCoach } from '../engine/first-unlock-headline-day-coach.js';
+import { buildMilestoneForecastBreadthDayCoach } from '../engine/milestone-forecast-breadth-day-coach.js';
+import { buildNotificationLaneSuppressedDayCoach } from '../engine/notification-lane-suppressed-day-coach.js';
+import { buildSingleDeferredCoachLineDayCoach } from '../engine/single-deferred-coach-line-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -282,6 +286,10 @@ export interface DayAdvanceUiEvolutionResult {
   calmRecoveryActiveStatusDayCoachCopy: string | null;
   textScaleHintPendingDayCoachCopy: string | null;
   showAllPhaseRiskDayCoachCopy: string | null;
+  firstUnlockHeadlineDayCoachCopy: string | null;
+  milestoneForecastBreadthDayCoachCopy: string | null;
+  notificationLaneSuppressedDayCoachCopy: string | null;
+  singleDeferredCoachLineDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1072,6 +1080,27 @@ export function tickEvolvingUiOnDayAdvance(
         })
       : { riskyPhase: false, coachCopy: null };
 
+  const firstUnlockHeadlineDayCoach = buildFirstUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const milestoneForecastBreadthDayCoach = buildMilestoneForecastBreadthDayCoach({
+    entries: milestoneEntries,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const notificationLaneSuppressedDayCoach = buildNotificationLaneSuppressedDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const singleDeferredCoachLineDayCoach = buildSingleDeferredCoachLineDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1218,6 +1247,10 @@ export function tickEvolvingUiOnDayAdvance(
     calmRecoveryActiveStatusDayCoachCopy: calmRecoveryActiveStatusDayCoach.coachCopy,
     textScaleHintPendingDayCoachCopy: textScaleHintPendingDayCoach.coachCopy,
     showAllPhaseRiskDayCoachCopy: showAllPhaseRiskDayCoach.coachCopy,
+    firstUnlockHeadlineDayCoachCopy: firstUnlockHeadlineDayCoach.coachCopy,
+    milestoneForecastBreadthDayCoachCopy: milestoneForecastBreadthDayCoach.coachCopy,
+    notificationLaneSuppressedDayCoachCopy: notificationLaneSuppressedDayCoach.coachCopy,
+    singleDeferredCoachLineDayCoachCopy: singleDeferredCoachLineDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
