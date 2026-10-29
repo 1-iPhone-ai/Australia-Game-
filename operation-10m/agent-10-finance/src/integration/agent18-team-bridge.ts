@@ -11,6 +11,10 @@ export interface Agent18TeamSnapshot {
   teamForecastDeanchoringFlag?: boolean;
   /** Round 23: briefing inflation salience band. */
   briefingInflationSalienceBand?: 'muted' | 'elevated' | 'critical';
+  /** Round 33: team briefing inflation latch. */
+  teamBriefingInflationLatch?: boolean;
+  /** Round 33: consensus drift band. */
+  consensusDriftBand?: 'anchored' | 'drifting' | 'unmoored';
 }
 
 export function mergeAgent18IntoMacroFinancialInputs(
@@ -40,6 +44,13 @@ export function mergeAgent18IntoMacroFinancialInputs(
   if (snapshot.teamForecastDeanchoringFlag && snapshot.briefingInflationSalienceBand === 'critical') {
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.teamBriefingInflationLatch && snapshot.consensusDriftBand === 'unmoored') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.consensusDriftBand === 'drifting' && snapshot.briefingUrgencyBand === 'critical') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {

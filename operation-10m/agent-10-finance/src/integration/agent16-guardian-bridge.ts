@@ -13,6 +13,10 @@ export interface Agent16GuardianSnapshot {
   copilotInflationEscalationActive?: boolean;
   /** Round 23: guardrail narrative cascade band. */
   guardrailNarrativeCascadeBand?: 'none' | 'building' | 'urgent';
+  /** Round 33: guardrail inflation latch. */
+  guardrailInflationLatch?: boolean;
+  /** Round 33: co-pilot escalation band. */
+  copilotEscalationBand?: 'calm' | 'elevated' | 'critical';
 }
 
 export function mergeAgent16IntoMacroFinancialInputs(
@@ -56,6 +60,13 @@ export function mergeAgent16IntoMacroFinancialInputs(
   }
   if (snapshot.guardrailNarrativeCascadeBand === 'urgent') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.guardrailInflationLatch && snapshot.copilotEscalationBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.copilotEscalationBand === 'elevated' && snapshot.inflationGuardrailTripped) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {

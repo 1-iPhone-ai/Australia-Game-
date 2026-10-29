@@ -1131,6 +1131,47 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'cities', 'energy', 'round32'],
   },
+  {
+    id: 'guardian_guardrail_escalation_stack',
+    label: 'Guardian guardrail escalation stack',
+    description: 'Tripped guardrail with critical co-pilot escalation latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.37,
+      publicStability: 38,
+    },
+    tags: ['inflation', 'guardian', 'round33'],
+  },
+  {
+    id: 'team_briefing_consensus_drift_stress',
+    label: 'Team briefing consensus drift stress',
+    description: 'Upside consensus with unmoored drift under critical briefings.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.34,
+      publicStability: 35,
+    },
+    tags: ['inflation', 'team', 'round33'],
+  },
+  {
+    id: 'guardian_team_briefing_fusion_stress',
+    label: 'Guardian & team briefing fusion stress',
+    description: 'Critical guardrail escalation colliding with consensus shock drift.',
+    patch: {
+      inflationSettingMultiplier: 1.44,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 28,
+    },
+    tags: ['inflation', 'guardian', 'team', 'round33'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
