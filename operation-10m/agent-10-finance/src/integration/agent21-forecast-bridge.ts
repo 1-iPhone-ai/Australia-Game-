@@ -92,6 +92,8 @@ import type { ResearchBreakthroughSupplySideInflationLatchBand } from '../inflat
 import type { TradeImportExchangeInflationPipelineSurgeBand } from '../inflation/trade-import-exchange-inflation-pipeline-surge.js';
 import type { MetroRegionalRentInflationEscalationLatchBand } from '../inflation/metro-regional-rent-inflation-escalation-latch.js';
 import type { WholesaleGridTransitionInflationSurgeBand } from '../inflation/wholesale-grid-transition-inflation-surge.js';
+import type { TradeClearedForwardArcInflationHandoffLatchBand } from '../inflation/trade-cleared-forward-arc-inflation-handoff-latch.js';
+import type { GuardianEntrustmentEnvelopeInflationPressureSurgeBand } from '../inflation/guardian-entrustment-envelope-inflation-pressure-surge.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
@@ -190,6 +192,8 @@ export interface Agent21InflationForecastBundle {
   terminalTradeImportExchangeInflationPipelineSurge: TradeImportExchangeInflationPipelineSurgeBand;
   terminalMetroRegionalRentInflationEscalationLatch: MetroRegionalRentInflationEscalationLatchBand;
   terminalWholesaleGridTransitionInflationSurge: WholesaleGridTransitionInflationSurgeBand;
+  terminalTradeClearedForwardArcInflationHandoffLatch: TradeClearedForwardArcInflationHandoffLatchBand;
+  terminalGuardianEntrustmentEnvelopeInflationPressureSurge: GuardianEntrustmentEnvelopeInflationPressureSurgeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -318,6 +322,10 @@ export function buildAgent21InflationForecastBundle(input: {
       lastPoint?.metroRegionalRentInflationEscalationLatchBand ?? 'subdued',
     terminalWholesaleGridTransitionInflationSurge:
       lastPoint?.wholesaleGridTransitionInflationSurgeBand ?? 'stable',
+    terminalTradeClearedForwardArcInflationHandoffLatch:
+      lastPoint?.tradeClearedForwardArcInflationHandoffLatchBand ?? 'anchored',
+    terminalGuardianEntrustmentEnvelopeInflationPressureSurge:
+      lastPoint?.guardianEntrustmentEnvelopeInflationPressureSurgeBand ?? 'contained',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

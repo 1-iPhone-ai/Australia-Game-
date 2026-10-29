@@ -1832,6 +1832,48 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'cities', 'energy', 'round49'],
   },
+  {
+    id: 'trade_cleared_forward_arc_handoff_stack',
+    label: 'Trade cleared forward-arc handoff stack',
+    description: 'Forward-arc handoff continuity failing under import stress.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.53,
+      publicStability: 28,
+    },
+    tags: ['inflation', 'trade', 'round49'],
+  },
+  {
+    id: 'guardian_entrustment_envelope_surge_stress',
+    label: 'Guardian entrustment envelope surge stress',
+    description: 'Entrustment envelope rupture under guardrail trip.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.5,
+      publicStability: 24,
+    },
+    tags: ['inflation', 'guardian', 'round49'],
+  },
+  {
+    id: 'trade_guardian_wave49_fusion_stress',
+    label: 'Trade & guardian wave 49 fusion stress',
+    description: 'Cleared forward-arc handoff colliding with entrustment envelope surge.',
+    patch: {
+      inflationSettingMultiplier: 1.61,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 11,
+    },
+    tags: ['inflation', 'trade', 'guardian', 'round49'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

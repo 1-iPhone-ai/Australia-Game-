@@ -21,6 +21,12 @@ export interface Agent16GuardianSnapshot {
   wave41GuardianPressureLatch?: boolean;
   /** Round 41: co-pilot pressure escalation band. */
   copilotPressureEscalationBand?: 'contained' | 'elevated' | 'runaway';
+  /** Round 49: entrustment envelope inflation latch. */
+  wave49EntrustmentEnvelopeLatch?: boolean;
+  /** Round 49: entrustment envelope pressure band. */
+  entrustmentEnvelopePressureBand?: 'contained' | 'elevated' | 'ruptured';
+  /** Round 49: entrustment strain index (0–1). */
+  entrustmentStrainIndex?: number;
 }
 
 export function mergeAgent16IntoMacroFinancialInputs(
@@ -77,6 +83,16 @@ export function mergeAgent16IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.copilotPressureEscalationBand === 'elevated' && snapshot.inflationGuardrailTripped) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave49EntrustmentEnvelopeLatch && snapshot.entrustmentEnvelopePressureBand === 'ruptured') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (
+    snapshot.entrustmentEnvelopePressureBand === 'elevated' &&
+    (snapshot.entrustmentStrainIndex ?? 0) >= 0.7
+  ) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 

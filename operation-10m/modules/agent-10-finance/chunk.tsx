@@ -7622,6 +7622,437 @@ export function corporateCapacityMarkupInflationSurgeScoreAdjustment(
 }
 
 
+// --- source: inflation/research-breakthrough-supply-side-inflation-latch.ts ---
+
+export type ResearchBreakthroughSupplySideInflationLatchBand =
+  | 'offset'
+  | 'neutral'
+  | 'building'
+  | 'breakthrough_failure';
+
+export interface ResearchBreakthroughSupplySideInflationLatchAssessment {
+  latchBand: ResearchBreakthroughSupplySideInflationLatchBand;
+  pressureIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Research breakthrough supply-side inflation latch (Agent 03, round 48). */
+export function assessResearchBreakthroughSupplySideInflationLatch(input: {
+  productivityGainBand: 'flat' | 'moderate' | 'strong';
+  supplySideReliefActive: boolean;
+  wave48ResearchBreakthroughLatch: boolean;
+  researchSupplySideFailureBand: 'contained' | 'building' | 'critical';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): ResearchBreakthroughSupplySideInflationLatchAssessment {
+  let pressure = 0;
+  if (input.productivityGainBand === 'flat' && !input.supplySideReliefActive) pressure += 0.16;
+  else if (input.productivityGainBand === 'moderate' && !input.supplySideReliefActive) pressure += 0.08;
+  if (input.wave48ResearchBreakthroughLatch) pressure += 0.14;
+  if (input.researchSupplySideFailureBand === 'critical') pressure += 0.22;
+  else if (input.researchSupplySideFailureBand === 'building') pressure += 0.1;
+
+  if (input.productivityGainBand === 'strong' && input.supplySideReliefActive) pressure -= 0.12;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') pressure += 0.05;
+
+  pressure = finClamp(pressure + input.turn * 0.0037, 0, 1.05);
+  const pressureIndex = finRound(100 + pressure * 15.8, 1);
+
+  let latchBand: ResearchBreakthroughSupplySideInflationLatchBand = 'neutral';
+  if (pressure >= 0.56) latchBand = 'breakthrough_failure';
+  else if (pressure >= 0.36) latchBand = 'building';
+  else if (pressure <= 0.12 && input.productivityGainBand === 'strong') latchBand = 'offset';
+
+  const inflationScoreNudge =
+    latchBand === 'breakthrough_failure'
+      ? 0.091
+      : latchBand === 'building'
+        ? 0.057
+        : latchBand === 'offset'
+          ? -0.02
+          : 0;
+
+  const narrative =
+    latchBand === 'breakthrough_failure' || latchBand === 'building'
+      ? 'Research breakthrough latch failing to offset CPI via supply-side relief.'
+      : latchBand === 'offset'
+        ? 'Strong innovation offset holding headline CPI metadata anchored.'
+        : 'Research supply-side latch neutral versus headline CPI.';
+
+  return { latchBand, pressureIndex, inflationScoreNudge, narrative };
+}
+
+export function researchBreakthroughSupplySideInflationLatchScoreAdjustment(
+  band: ResearchBreakthroughSupplySideInflationLatchBand,
+): number {
+  if (band === 'breakthrough_failure') return 4;
+  if (band === 'building') return 3;
+  if (band === 'offset') return -1;
+  return 0;
+}
+
+
+// --- source: inflation/trade-import-exchange-inflation-pipeline-surge.ts ---
+
+export type TradeImportExchangeInflationPipelineSurgeBand =
+  | 'anchored'
+  | 'building'
+  | 'surge'
+  | 'pipeline_crisis';
+
+export interface TradeImportExchangeInflationPipelineSurgeAssessment {
+  surgeBand: TradeImportExchangeInflationPipelineSurgeBand;
+  stressIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Trade import exchange inflation pipeline surge (Agent 15, round 48). */
+export function assessTradeImportExchangeInflationPipelineSurge(input: {
+  tradeOpennessBand: 'closed' | 'mixed' | 'open';
+  exchangeRatePressure: 'appreciation' | 'stable' | 'depreciation' | 'sharp_depreciation';
+  wave48TradeImportPipelineLatch: boolean;
+  importExchangePipelineSurgeBand: 'stable' | 'stressed' | 'ruptured';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): TradeImportExchangeInflationPipelineSurgeAssessment {
+  let pressure = 0;
+  if (input.exchangeRatePressure === 'sharp_depreciation') pressure += 0.2;
+  else if (input.exchangeRatePressure === 'depreciation') pressure += 0.11;
+  if (input.tradeOpennessBand === 'open') pressure += 0.09;
+  if (input.wave48TradeImportPipelineLatch) pressure += 0.13;
+  if (input.importExchangePipelineSurgeBand === 'ruptured') pressure += 0.22;
+  else if (input.importExchangePipelineSurgeBand === 'stressed') pressure += 0.1;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') pressure += 0.05;
+
+  pressure = finClamp(pressure + input.turn * 0.0039, 0, 1.05);
+  const stressIndex = finRound(100 + pressure * 16.2, 1);
+
+  let surgeBand: TradeImportExchangeInflationPipelineSurgeBand = 'anchored';
+  if (pressure >= 0.58) surgeBand = 'pipeline_crisis';
+  else if (pressure >= 0.38) surgeBand = 'surge';
+  else if (pressure >= 0.17) surgeBand = 'building';
+
+  const inflationScoreNudge =
+    surgeBand === 'pipeline_crisis'
+      ? 0.093
+      : surgeBand === 'surge'
+        ? 0.06
+        : surgeBand === 'building'
+          ? 0.028
+          : 0;
+
+  const narrative =
+    surgeBand === 'pipeline_crisis' || surgeBand === 'surge'
+      ? 'Trade import exchange pipeline surge feeding CPI pass-through metadata.'
+      : surgeBand === 'building'
+        ? 'Import pipeline latch building under exchange stress.'
+        : 'Trade import exchange pipeline surge anchored versus headline CPI.';
+
+  return { surgeBand, stressIndex, inflationScoreNudge, narrative };
+}
+
+export function tradeImportExchangeInflationPipelineSurgeScoreAdjustment(
+  band: TradeImportExchangeInflationPipelineSurgeBand,
+): number {
+  if (band === 'pipeline_crisis') return 4;
+  if (band === 'surge') return 3;
+  if (band === 'building') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/metro-regional-rent-inflation-escalation-latch.ts ---
+
+export type MetroRegionalRentInflationEscalationLatchBand =
+  | 'subdued'
+  | 'building'
+  | 'escalated'
+  | 'regional_crisis';
+
+export interface MetroRegionalRentInflationEscalationLatchAssessment {
+  latchBand: MetroRegionalRentInflationEscalationLatchBand;
+  escalationIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Metro regional rent inflation escalation latch (Agent 11, round 49). */
+export function assessMetroRegionalRentInflationEscalationLatch(input: {
+  rentGrowthBand: 'subdued' | 'moderate' | 'strong' | 'surging';
+  regionalDispersionScore: number;
+  wave49MetroRegionalRentLatch: boolean;
+  regionalRentEscalationBand: 'contained' | 'building' | 'critical';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): MetroRegionalRentInflationEscalationLatchAssessment {
+  let pressure = 0;
+  if (input.rentGrowthBand === 'surging') pressure += 0.19;
+  else if (input.rentGrowthBand === 'strong') pressure += 0.1;
+  if (input.regionalDispersionScore > 0.55) pressure += 0.12;
+  else if (input.regionalDispersionScore > 0.35) pressure += 0.06;
+  if (input.wave49MetroRegionalRentLatch) pressure += 0.14;
+  if (input.regionalRentEscalationBand === 'critical') pressure += 0.22;
+  else if (input.regionalRentEscalationBand === 'building') pressure += 0.1;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') pressure += 0.05;
+
+  pressure = finClamp(pressure + input.turn * 0.0038, 0, 1.05);
+  const escalationIndex = finRound(100 + pressure * 16.4, 1);
+
+  let latchBand: MetroRegionalRentInflationEscalationLatchBand = 'subdued';
+  if (pressure >= 0.57) latchBand = 'regional_crisis';
+  else if (pressure >= 0.38) latchBand = 'escalated';
+  else if (pressure >= 0.17) latchBand = 'building';
+
+  const inflationScoreNudge =
+    latchBand === 'regional_crisis'
+      ? 0.092
+      : latchBand === 'escalated'
+        ? 0.058
+        : latchBand === 'building'
+          ? 0.027
+          : 0;
+
+  const narrative =
+    latchBand === 'regional_crisis' || latchBand === 'escalated'
+      ? 'Metro regional rent escalation latch elevating CPI shelter metadata.'
+      : latchBand === 'building'
+        ? 'Regional rent dispersion latch building under metro stress.'
+        : 'Metro regional rent escalation latch subdued versus headline CPI.';
+
+  return { latchBand, escalationIndex, inflationScoreNudge, narrative };
+}
+
+export function metroRegionalRentInflationEscalationLatchScoreAdjustment(
+  band: MetroRegionalRentInflationEscalationLatchBand,
+): number {
+  if (band === 'regional_crisis') return 4;
+  if (band === 'escalated') return 3;
+  if (band === 'building') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/wholesale-grid-transition-inflation-surge.ts ---
+
+export type WholesaleGridTransitionInflationSurgeBand =
+  | 'stable'
+  | 'building'
+  | 'surge'
+  | 'transition_crisis';
+
+export interface WholesaleGridTransitionInflationSurgeAssessment {
+  surgeBand: WholesaleGridTransitionInflationSurgeBand;
+  stressIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Wholesale grid transition inflation surge (Agent 13, round 49). */
+export function assessWholesaleGridTransitionInflationSurge(input: {
+  wholesaleEnergyStress: 'calm' | 'elevated' | 'severe' | 'crisis';
+  emissionsTransitionCostBand: 'low' | 'medium' | 'high';
+  wave49GridTransitionSurgeLatch: boolean;
+  gridTransitionStressBand: 'stable' | 'stressed' | 'ruptured';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): WholesaleGridTransitionInflationSurgeAssessment {
+  let pressure = 0;
+  if (input.wholesaleEnergyStress === 'crisis') pressure += 0.21;
+  else if (input.wholesaleEnergyStress === 'severe') pressure += 0.12;
+  if (input.emissionsTransitionCostBand === 'high') pressure += 0.1;
+  else if (input.emissionsTransitionCostBand === 'medium') pressure += 0.05;
+  if (input.wave49GridTransitionSurgeLatch) pressure += 0.13;
+  if (input.gridTransitionStressBand === 'ruptured') pressure += 0.22;
+  else if (input.gridTransitionStressBand === 'stressed') pressure += 0.1;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') pressure += 0.05;
+
+  pressure = finClamp(pressure + input.turn * 0.0039, 0, 1.05);
+  const stressIndex = finRound(100 + pressure * 15.9, 1);
+
+  let surgeBand: WholesaleGridTransitionInflationSurgeBand = 'stable';
+  if (pressure >= 0.58) surgeBand = 'transition_crisis';
+  else if (pressure >= 0.38) surgeBand = 'surge';
+  else if (pressure >= 0.16) surgeBand = 'building';
+
+  const inflationScoreNudge =
+    surgeBand === 'transition_crisis'
+      ? 0.094
+      : surgeBand === 'surge'
+        ? 0.06
+        : surgeBand === 'building'
+          ? 0.028
+          : 0;
+
+  const narrative =
+    surgeBand === 'transition_crisis' || surgeBand === 'surge'
+      ? 'Wholesale grid transition surge feeding CPI utility metadata.'
+      : surgeBand === 'building'
+        ? 'Grid transition latch building under wholesale stress.'
+        : 'Wholesale grid transition surge stable versus headline CPI.';
+
+  return { surgeBand, stressIndex, inflationScoreNudge, narrative };
+}
+
+export function wholesaleGridTransitionInflationSurgeScoreAdjustment(
+  band: WholesaleGridTransitionInflationSurgeBand,
+): number {
+  if (band === 'transition_crisis') return 4;
+  if (band === 'surge') return 3;
+  if (band === 'building') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/trade-cleared-forward-arc-inflation-handoff-latch.ts ---
+
+export type TradeClearedForwardArcInflationHandoffLatchBand =
+  | 'anchored'
+  | 'building'
+  | 'handoff_stress'
+  | 'continuity_rupture';
+
+export interface TradeClearedForwardArcInflationHandoffLatchAssessment {
+  latchBand: TradeClearedForwardArcInflationHandoffLatchBand;
+  continuityIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Trade cleared forward-arc inflation handoff latch (Agent 15, round 49). */
+export function assessTradeClearedForwardArcInflationHandoffLatch(input: {
+  tradeOpennessBand: 'closed' | 'mixed' | 'open';
+  exchangeRatePressure: 'appreciation' | 'stable' | 'depreciation' | 'sharp_depreciation';
+  wave49ClearedForwardArcHandoffLatch: boolean;
+  clearedForwardArcHandoffContinuityBand: 'stable' | 'strained' | 'ruptured';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): TradeClearedForwardArcInflationHandoffLatchAssessment {
+  let pressure = 0;
+  if (input.exchangeRatePressure === 'sharp_depreciation') pressure += 0.19;
+  else if (input.exchangeRatePressure === 'depreciation') pressure += 0.1;
+  if (input.tradeOpennessBand === 'open') pressure += 0.08;
+  if (input.wave49ClearedForwardArcHandoffLatch) pressure += 0.14;
+  if (input.clearedForwardArcHandoffContinuityBand === 'ruptured') pressure += 0.21;
+  else if (input.clearedForwardArcHandoffContinuityBand === 'strained') pressure += 0.09;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') pressure += 0.05;
+
+  pressure = finClamp(pressure + input.turn * 0.0038, 0, 1.05);
+  const continuityIndex = finRound(100 + pressure * 16.4, 1);
+
+  let latchBand: TradeClearedForwardArcInflationHandoffLatchBand = 'anchored';
+  if (pressure >= 0.57) latchBand = 'continuity_rupture';
+  else if (pressure >= 0.37) latchBand = 'handoff_stress';
+  else if (pressure >= 0.16) latchBand = 'building';
+
+  const inflationScoreNudge =
+    latchBand === 'continuity_rupture'
+      ? 0.094
+      : latchBand === 'handoff_stress'
+        ? 0.061
+        : latchBand === 'building'
+          ? 0.029
+          : 0;
+
+  const narrative =
+    latchBand === 'continuity_rupture' || latchBand === 'handoff_stress'
+      ? 'Cleared forward-arc handoff failing to anchor import-side CPI metadata.'
+      : latchBand === 'building'
+        ? 'Forward-arc handoff continuity building under trade stress.'
+        : 'Trade cleared forward-arc handoff latch anchored versus headline CPI.';
+
+  return { latchBand, continuityIndex, inflationScoreNudge, narrative };
+}
+
+export function tradeClearedForwardArcInflationHandoffLatchScoreAdjustment(
+  band: TradeClearedForwardArcInflationHandoffLatchBand,
+): number {
+  if (band === 'continuity_rupture') return 4;
+  if (band === 'handoff_stress') return 3;
+  if (band === 'building') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/guardian-entrustment-envelope-inflation-pressure-surge.ts ---
+
+export type GuardianEntrustmentEnvelopeInflationPressureSurgeBand =
+  | 'contained'
+  | 'building'
+  | 'surge'
+  | 'envelope_rupture';
+
+export interface GuardianEntrustmentEnvelopeInflationPressureSurgeAssessment {
+  surgeBand: GuardianEntrustmentEnvelopeInflationPressureSurgeBand;
+  strainIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Guardian entrustment envelope inflation pressure surge (Agent 16, round 49). */
+export function assessGuardianEntrustmentEnvelopeInflationPressureSurge(input: {
+  inflationGuardrailTripped: boolean;
+  stabilityInterventionBand: 'none' | 'advisory' | 'urgent';
+  wave49EntrustmentEnvelopeLatch: boolean;
+  entrustmentEnvelopePressureBand: 'contained' | 'elevated' | 'ruptured';
+  entrustmentStrainIndex: number;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): GuardianEntrustmentEnvelopeInflationPressureSurgeAssessment {
+  let pressure = 0;
+  if (input.inflationGuardrailTripped) pressure += 0.15;
+  if (input.stabilityInterventionBand === 'urgent') pressure += 0.12;
+  else if (input.stabilityInterventionBand === 'advisory') pressure += 0.06;
+  if (input.wave49EntrustmentEnvelopeLatch) pressure += 0.13;
+  if (input.entrustmentEnvelopePressureBand === 'ruptured') pressure += 0.2;
+  else if (input.entrustmentEnvelopePressureBand === 'elevated') pressure += 0.09;
+  if (input.entrustmentStrainIndex >= 0.72) pressure += 0.08;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') pressure += 0.05;
+
+  pressure = finClamp(pressure + input.turn * 0.0036, 0, 1.05);
+  const strainIndex = finRound(100 + pressure * 15.6, 1);
+
+  let surgeBand: GuardianEntrustmentEnvelopeInflationPressureSurgeBand = 'contained';
+  if (pressure >= 0.58) surgeBand = 'envelope_rupture';
+  else if (pressure >= 0.38) surgeBand = 'surge';
+  else if (pressure >= 0.17) surgeBand = 'building';
+
+  const inflationScoreNudge =
+    surgeBand === 'envelope_rupture'
+      ? 0.092
+      : surgeBand === 'surge'
+        ? 0.059
+        : surgeBand === 'building'
+          ? 0.027
+          : 0;
+
+  const narrative =
+    surgeBand === 'envelope_rupture' || surgeBand === 'surge'
+      ? 'Guardian entrustment envelope strain feeding CPI escalation metadata.'
+      : surgeBand === 'building'
+        ? 'Entrustment envelope pressure building under guardrail stress.'
+        : 'Guardian entrustment envelope pressure contained versus headline CPI.';
+
+  return { surgeBand, strainIndex, inflationScoreNudge, narrative };
+}
+
+export function guardianEntrustmentEnvelopeInflationPressureSurgeScoreAdjustment(
+  band: GuardianEntrustmentEnvelopeInflationPressureSurgeBand,
+): number {
+  if (band === 'envelope_rupture') return 4;
+  if (band === 'surge') return 3;
+  if (band === 'building') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -9692,6 +10123,48 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'cities', 'energy', 'round49'],
   },
+  {
+    id: 'trade_cleared_forward_arc_handoff_stack',
+    label: 'Trade cleared forward-arc handoff stack',
+    description: 'Forward-arc handoff continuity failing under import stress.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.53,
+      publicStability: 28,
+    },
+    tags: ['inflation', 'trade', 'round49'],
+  },
+  {
+    id: 'guardian_entrustment_envelope_surge_stress',
+    label: 'Guardian entrustment envelope surge stress',
+    description: 'Entrustment envelope rupture under guardrail trip.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.5,
+      publicStability: 24,
+    },
+    tags: ['inflation', 'guardian', 'round49'],
+  },
+  {
+    id: 'trade_guardian_wave49_fusion_stress',
+    label: 'Trade & guardian wave 49 fusion stress',
+    description: 'Cleared forward-arc handoff colliding with entrustment envelope surge.',
+    patch: {
+      inflationSettingMultiplier: 1.61,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 11,
+    },
+    tags: ['inflation', 'trade', 'guardian', 'round49'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
@@ -10758,6 +11231,10 @@ export interface Agent15TradeSnapshot {
   wave48TradeImportPipelineLatch?: boolean;
   /** Round 48: import exchange pipeline surge band. */
   importExchangePipelineSurgeBand?: 'stable' | 'stressed' | 'ruptured';
+  /** Round 49: cleared forward-arc handoff inflation latch. */
+  wave49ClearedForwardArcHandoffLatch?: boolean;
+  /** Round 49: cleared forward-arc handoff continuity band. */
+  clearedForwardArcHandoffContinuityBand?: 'stable' | 'strained' | 'ruptured';
 }
 
 export function mergeAgent15IntoMacroFinancialInputs(
@@ -10804,6 +11281,13 @@ export function mergeAgent15IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
   } else if (snapshot.importExchangePipelineSurgeBand === 'stressed' && snapshot.exchangeRatePressure === 'sharp_depreciation') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave49ClearedForwardArcHandoffLatch && snapshot.clearedForwardArcHandoffContinuityBand === 'ruptured') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.clearedForwardArcHandoffContinuityBand === 'strained' && snapshot.exchangeRatePressure === 'sharp_depreciation') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
@@ -11564,6 +12048,12 @@ export interface Agent16GuardianSnapshot {
   wave41GuardianPressureLatch?: boolean;
   /** Round 41: co-pilot pressure escalation band. */
   copilotPressureEscalationBand?: 'contained' | 'elevated' | 'runaway';
+  /** Round 49: entrustment envelope inflation latch. */
+  wave49EntrustmentEnvelopeLatch?: boolean;
+  /** Round 49: entrustment envelope pressure band. */
+  entrustmentEnvelopePressureBand?: 'contained' | 'elevated' | 'ruptured';
+  /** Round 49: entrustment strain index (0–1). */
+  entrustmentStrainIndex?: number;
 }
 
 export function mergeAgent16IntoMacroFinancialInputs(
@@ -11620,6 +12110,16 @@ export function mergeAgent16IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.copilotPressureEscalationBand === 'elevated' && snapshot.inflationGuardrailTripped) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave49EntrustmentEnvelopeLatch && snapshot.entrustmentEnvelopePressureBand === 'ruptured') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (
+    snapshot.entrustmentEnvelopePressureBand === 'elevated' &&
+    (snapshot.entrustmentStrainIndex ?? 0) >= 0.7
+  ) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
@@ -12505,6 +13005,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessWholesaleGridTransitionInflationSurge,
   type WholesaleGridTransitionInflationSurgeBand,
 } from '../inflation/wholesale-grid-transition-inflation-surge.js';
+  assessTradeClearedForwardArcInflationHandoffLatch,
+  type TradeClearedForwardArcInflationHandoffLatchBand,
+} from '../inflation/trade-cleared-forward-arc-inflation-handoff-latch.js';
+  assessGuardianEntrustmentEnvelopeInflationPressureSurge,
+  type GuardianEntrustmentEnvelopeInflationPressureSurgeBand,
+} from '../inflation/guardian-entrustment-envelope-inflation-pressure-surge.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -12603,6 +13109,8 @@ export interface InflationForecastPoint {
   tradeImportExchangeInflationPipelineSurgeBand: TradeImportExchangeInflationPipelineSurgeBand;
   metroRegionalRentInflationEscalationLatchBand: MetroRegionalRentInflationEscalationLatchBand;
   wholesaleGridTransitionInflationSurgeBand: WholesaleGridTransitionInflationSurgeBand;
+  tradeClearedForwardArcInflationHandoffLatchBand: TradeClearedForwardArcInflationHandoffLatchBand;
+  guardianEntrustmentEnvelopeInflationPressureSurgeBand: GuardianEntrustmentEnvelopeInflationPressureSurgeBand;
 }
 
 export interface InflationForecastPath {
@@ -13487,6 +13995,26 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const tradeClearedForwardArcHandoff = assessTradeClearedForwardArcInflationHandoffLatch({
+      tradeOpennessBand: inputs.highInflationScenario ? 'open' : 'mixed',
+      exchangeRatePressure: inputs.creditShockActive ? 'sharp_depreciation' : inputs.householdInflationScenarioActive ? 'depreciation' : 'stable',
+      wave49ClearedForwardArcHandoffLatch: inputs.creditShockActive,
+      clearedForwardArcHandoffContinuityBand:
+        inputs.fiscalPressure === 'critical' ? 'ruptured' : inputs.systemicLiquidityBand === 'critical' ? 'strained' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const guardianEntrustmentEnvelope = assessGuardianEntrustmentEnvelopeInflationPressureSurge({
+      inflationGuardrailTripped: inputs.highInflationScenario,
+      stabilityInterventionBand:
+        inputs.publicStability < 38 ? 'urgent' : inputs.fiscalPressure === 'critical' ? 'advisory' : 'none',
+      wave49EntrustmentEnvelopeLatch: inputs.householdInflationScenarioActive,
+      entrustmentEnvelopePressureBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'ruptured' : inputs.publicStability < 45 ? 'elevated' : 'contained',
+      entrustmentStrainIndex: inputs.publicStability < 42 ? 0.76 : 0.48,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -13585,6 +14113,8 @@ export function projectInflationForecastPath(
       tradeImportExchangeInflationPipelineSurgeBand: tradeImportPipelineSurge.surgeBand,
       metroRegionalRentInflationEscalationLatchBand: metroRegionalRentEscalation.latchBand,
       wholesaleGridTransitionInflationSurgeBand: wholesaleGridTransitionSurge.surgeBand,
+      tradeClearedForwardArcInflationHandoffLatchBand: tradeClearedForwardArcHandoff.latchBand,
+      guardianEntrustmentEnvelopeInflationPressureSurgeBand: guardianEntrustmentEnvelope.surgeBand,
     });
   }
 
@@ -13784,6 +14314,8 @@ export interface Agent21InflationForecastBundle {
   terminalTradeImportExchangeInflationPipelineSurge: TradeImportExchangeInflationPipelineSurgeBand;
   terminalMetroRegionalRentInflationEscalationLatch: MetroRegionalRentInflationEscalationLatchBand;
   terminalWholesaleGridTransitionInflationSurge: WholesaleGridTransitionInflationSurgeBand;
+  terminalTradeClearedForwardArcInflationHandoffLatch: TradeClearedForwardArcInflationHandoffLatchBand;
+  terminalGuardianEntrustmentEnvelopeInflationPressureSurge: GuardianEntrustmentEnvelopeInflationPressureSurgeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -13912,6 +14444,10 @@ export function buildAgent21InflationForecastBundle(input: {
       lastPoint?.metroRegionalRentInflationEscalationLatchBand ?? 'subdued',
     terminalWholesaleGridTransitionInflationSurge:
       lastPoint?.wholesaleGridTransitionInflationSurgeBand ?? 'stable',
+    terminalTradeClearedForwardArcInflationHandoffLatch:
+      lastPoint?.tradeClearedForwardArcInflationHandoffLatchBand ?? 'anchored',
+    terminalGuardianEntrustmentEnvelopeInflationPressureSurge:
+      lastPoint?.guardianEntrustmentEnvelopeInflationPressureSurgeBand ?? 'contained',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -14303,6 +14839,12 @@ export function effectiveTierLoanRate(
   assessWholesaleGridTransitionInflationSurge,
   wholesaleGridTransitionInflationSurgeScoreAdjustment,
 } from './inflation/wholesale-grid-transition-inflation-surge.js';
+  assessTradeClearedForwardArcInflationHandoffLatch,
+  tradeClearedForwardArcInflationHandoffLatchScoreAdjustment,
+} from './inflation/trade-cleared-forward-arc-inflation-handoff-latch.js';
+  assessGuardianEntrustmentEnvelopeInflationPressureSurge,
+  guardianEntrustmentEnvelopeInflationPressureSurgeScoreAdjustment,
+} from './inflation/guardian-entrustment-envelope-inflation-pressure-surge.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -19478,7 +20020,9 @@ export function runAgent10FinanceSelfTests(): {
       path.points.every(
         (p) =>
           !!p.metroRegionalRentInflationEscalationLatchBand &&
-          !!p.wholesaleGridTransitionInflationSurgeBand,
+          !!p.wholesaleGridTransitionInflationSurgeBand &&
+          !!p.tradeClearedForwardArcInflationHandoffLatchBand &&
+          !!p.guardianEntrustmentEnvelopeInflationPressureSurgeBand,
       ),
     );
     const bundle = buildAgent21InflationForecastBundle({
@@ -19493,9 +20037,110 @@ export function runAgent10FinanceSelfTests(): {
       'agent21 r49 fields',
       bundle.schemaVersion === '10.14.agent10.r49' &&
         bundle.terminalMetroRegionalRentInflationEscalationLatch !== undefined &&
-        bundle.terminalWholesaleGridTransitionInflationSurge !== undefined,
+        bundle.terminalWholesaleGridTransitionInflationSurge !== undefined &&
+        bundle.terminalTradeClearedForwardArcInflationHandoffLatch !== undefined &&
+        bundle.terminalGuardianEntrustmentEnvelopeInflationPressureSurge !== undefined,
     );
   }
+  {
+    const handoff = assessTradeClearedForwardArcInflationHandoffLatch({
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'sharp_depreciation',
+      wave49ClearedForwardArcHandoffLatch: true,
+      clearedForwardArcHandoffContinuityBand: 'ruptured',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r49_14',
+      'trade handoff stress or continuity rupture',
+      handoff.latchBand === 'handoff_stress' || handoff.latchBand === 'continuity_rupture',
+    );
+    check(
+      'a10_r49_15',
+      'trade cleared forward-arc score adj',
+      tradeClearedForwardArcInflationHandoffLatchScoreAdjustment(handoff.latchBand) >= 3,
+    );
+  }
+  {
+    const envelope = assessGuardianEntrustmentEnvelopeInflationPressureSurge({
+      inflationGuardrailTripped: true,
+      stabilityInterventionBand: 'urgent',
+      wave49EntrustmentEnvelopeLatch: true,
+      entrustmentEnvelopePressureBand: 'ruptured',
+      entrustmentStrainIndex: 0.8,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r49_16',
+      'guardian surge or envelope rupture',
+      envelope.surgeBand === 'surge' || envelope.surgeBand === 'envelope_rupture',
+    );
+    check(
+      'a10_r49_17',
+      'guardian entrustment envelope score adj',
+      guardianEntrustmentEnvelopeInflationPressureSurgeScoreAdjustment(envelope.surgeBand) >= 3,
+    );
+  }
+  {
+    const merged15 = mergeAgent15IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'sharp_depreciation',
+      commodityImportShare: 0.5,
+      wave49ClearedForwardArcHandoffLatch: true,
+      clearedForwardArcHandoffContinuityBand: 'ruptured',
+    });
+    check('a10_r49_18', 'agent15 ruptured handoff merge', merged15.highInflationScenario === true);
+    check('a10_r49_19', 'agent15 bridge note r49', agent15TradeBridgeIntegrationNote().includes('Agent 15'));
+  }
+  {
+    const merged16 = mergeAgent16IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      inflationGuardrailTripped: true,
+      stabilityInterventionBand: 'urgent',
+      narrativeShockSeverity: 'high',
+      wave49EntrustmentEnvelopeLatch: true,
+      entrustmentEnvelopePressureBand: 'ruptured',
+      entrustmentStrainIndex: 0.75,
+    });
+    check('a10_r49_20', 'agent16 ruptured envelope merge', merged16.highInflationScenario === true);
+    check('a10_r49_21', 'agent16 bridge note r49', agent16GuardianBridgeIntegrationNote().includes('Agent 16'));
+  }
+  check(
+    'a10_r49_22',
+    'round49 preset trade cleared forward-arc stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(
+        makeDefaultMacroFinancialTestInputs(),
+        'trade_cleared_forward_arc_handoff_stack',
+      );
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.52;
+    })(),
+  );
+  check(
+    'a10_r49_23',
+    'round49 preset guardian entrustment stress',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(
+        makeDefaultMacroFinancialTestInputs(),
+        'guardian_entrustment_envelope_surge_stress',
+      );
+      return inp?.highInflationScenario === true && inp.fiscalPressure === 'critical';
+    })(),
+  );
+  check(
+    'a10_r49_24',
+    'round49 preset trade guardian fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(
+        makeDefaultMacroFinancialTestInputs(),
+        'trade_guardian_wave49_fusion_stress',
+      );
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.6;
+    })(),
+  );
   check(
     'a10_r49_11',
     'round49 preset metro regional rent stack',
@@ -22670,6 +23315,153 @@ export function MacroCorporateWaveInflationPanel(props: MacroCorporateWaveInflat
       </p>
       <p data-testid="macro-corporate-wave-note">{latch.narrative}</p>
       <p>{surge.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/ResearchTradeWaveInflationPanel.tsx ---
+  assessResearchBreakthroughSupplySideInflationLatch,
+  researchBreakthroughSupplySideInflationLatchScoreAdjustment,
+} from '../inflation/research-breakthrough-supply-side-inflation-latch.js';
+  assessTradeImportExchangeInflationPipelineSurge,
+  tradeImportExchangeInflationPipelineSurgeScoreAdjustment,
+} from '../inflation/trade-import-exchange-inflation-pipeline-surge.js';
+
+export interface ResearchTradeWaveInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent03?: Agent03ResearchSnapshot | null;
+  agent15?: Agent15TradeSnapshot | null;
+}
+
+export function ResearchTradeWaveInflationPanel(props: ResearchTradeWaveInflationPanelProps) {
+  const research = props.agent03 ?? {
+    turn: props.inputs.turn,
+    productivityGainBand: props.inputs.highInflationScenario ? ('flat' as const) : ('moderate' as const),
+    supplySideReliefActive: !props.inputs.householdInflationScenarioActive,
+    innovationInflationOffsetScore: props.inputs.householdInflationScenarioActive ? 0.2 : 0.55,
+    wave48ResearchBreakthroughLatch: props.inputs.householdInflationScenarioActive,
+    researchSupplySideFailureBand:
+      props.inputs.systemicLiquidityBand === 'critical' ? ('critical' as const) : ('building' as const),
+  };
+
+  const trade = props.agent15 ?? {
+    turn: props.inputs.turn,
+    tradeOpennessBand: 'open' as const,
+    exchangeRatePressure: props.inputs.creditShockActive ? ('sharp_depreciation' as const) : ('depreciation' as const),
+    commodityImportShare: props.inputs.highInflationScenario ? 0.42 : 0.28,
+    wave48TradeImportPipelineLatch: props.inputs.creditShockActive,
+    importExchangePipelineSurgeBand:
+      props.inputs.fiscalPressure === 'critical' ? ('ruptured' as const) : ('stressed' as const),
+  };
+
+  const latch = assessResearchBreakthroughSupplySideInflationLatch({
+    productivityGainBand: research.productivityGainBand,
+    supplySideReliefActive: research.supplySideReliefActive,
+    wave48ResearchBreakthroughLatch: research.wave48ResearchBreakthroughLatch === true,
+    researchSupplySideFailureBand: research.researchSupplySideFailureBand ?? 'contained',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const surge = assessTradeImportExchangeInflationPipelineSurge({
+    tradeOpennessBand: trade.tradeOpennessBand,
+    exchangeRatePressure: trade.exchangeRatePressure,
+    wave48TradeImportPipelineLatch: trade.wave48TradeImportPipelineLatch === true,
+    importExchangePipelineSurgeBand: trade.importExchangePipelineSurgeBand ?? 'stable',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-research-trade-wave-inflation" data-testid="research-trade-wave-inflation-panel">
+      <h4>Research breakthrough latch & trade import pipeline surge (round 48)</h4>
+      <p>
+        Research {latch.latchBand} · index {latch.pressureIndex.toFixed(0)} · score adj{' '}
+        {researchBreakthroughSupplySideInflationLatchScoreAdjustment(latch.latchBand)}
+      </p>
+      <p>
+        Trade {surge.surgeBand} · index {surge.stressIndex.toFixed(0)} · score adj{' '}
+        {tradeImportExchangeInflationPipelineSurgeScoreAdjustment(surge.surgeBand)}
+      </p>
+      <p data-testid="research-trade-wave-note">{latch.narrative}</p>
+      <p>{surge.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/TradeGuardianWaveInflationPanel.tsx ---
+  assessTradeClearedForwardArcInflationHandoffLatch,
+  tradeClearedForwardArcInflationHandoffLatchScoreAdjustment,
+} from '../inflation/trade-cleared-forward-arc-inflation-handoff-latch.js';
+  assessGuardianEntrustmentEnvelopeInflationPressureSurge,
+  guardianEntrustmentEnvelopeInflationPressureSurgeScoreAdjustment,
+} from '../inflation/guardian-entrustment-envelope-inflation-pressure-surge.js';
+
+export interface TradeGuardianWaveInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent15?: Agent15TradeSnapshot | null;
+  agent16?: Agent16GuardianSnapshot | null;
+}
+
+export function TradeGuardianWaveInflationPanel(props: TradeGuardianWaveInflationPanelProps) {
+  const trade = props.agent15 ?? {
+    turn: props.inputs.turn,
+    tradeOpennessBand: 'open' as const,
+    exchangeRatePressure: props.inputs.creditShockActive ? ('sharp_depreciation' as const) : ('depreciation' as const),
+    commodityImportShare: props.inputs.highInflationScenario ? 0.44 : 0.3,
+    wave49ClearedForwardArcHandoffLatch: props.inputs.creditShockActive,
+    clearedForwardArcHandoffContinuityBand:
+      props.inputs.fiscalPressure === 'critical' ? ('ruptured' as const) : ('strained' as const),
+  };
+
+  const guardian = props.agent16 ?? {
+    turn: props.inputs.turn,
+    inflationGuardrailTripped: props.inputs.highInflationScenario,
+    stabilityInterventionBand:
+      props.inputs.publicStability < 35 ? ('urgent' as const) : props.inputs.fiscalPressure === 'critical' ? ('advisory' as const) : ('none' as const),
+    narrativeShockSeverity: props.inputs.systemicLiquidityBand === 'critical' ? ('high' as const) : ('medium' as const),
+    wave49EntrustmentEnvelopeLatch: props.inputs.householdInflationScenarioActive,
+    entrustmentEnvelopePressureBand:
+      props.inputs.systemicLiquidityBand === 'critical' ? ('ruptured' as const) : ('elevated' as const),
+    entrustmentStrainIndex: props.inputs.publicStability < 40 ? 0.78 : 0.52,
+  };
+
+  const handoff = assessTradeClearedForwardArcInflationHandoffLatch({
+    tradeOpennessBand: trade.tradeOpennessBand,
+    exchangeRatePressure: trade.exchangeRatePressure,
+    wave49ClearedForwardArcHandoffLatch: trade.wave49ClearedForwardArcHandoffLatch === true,
+    clearedForwardArcHandoffContinuityBand: trade.clearedForwardArcHandoffContinuityBand ?? 'stable',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const envelope = assessGuardianEntrustmentEnvelopeInflationPressureSurge({
+    inflationGuardrailTripped: guardian.inflationGuardrailTripped,
+    stabilityInterventionBand: guardian.stabilityInterventionBand,
+    wave49EntrustmentEnvelopeLatch: guardian.wave49EntrustmentEnvelopeLatch === true,
+    entrustmentEnvelopePressureBand: guardian.entrustmentEnvelopePressureBand ?? 'contained',
+    entrustmentStrainIndex: guardian.entrustmentStrainIndex ?? 0.4,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-trade-guardian-wave-inflation" data-testid="trade-guardian-wave-inflation-panel">
+      <h4>Trade cleared forward-arc handoff & guardian entrustment envelope (round 49)</h4>
+      <p>
+        Handoff {handoff.latchBand} · index {handoff.continuityIndex.toFixed(0)} · score adj{' '}
+        {tradeClearedForwardArcInflationHandoffLatchScoreAdjustment(handoff.latchBand)}
+      </p>
+      <p>
+        Envelope {envelope.surgeBand} · index {envelope.strainIndex.toFixed(0)} · score adj{' '}
+        {guardianEntrustmentEnvelopeInflationPressureSurgeScoreAdjustment(envelope.surgeBand)}
+      </p>
+      <p data-testid="trade-guardian-wave-note">{handoff.narrative}</p>
+      <p>{envelope.narrative}</p>
     </div>
   );
 }

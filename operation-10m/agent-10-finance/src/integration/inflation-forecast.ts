@@ -360,6 +360,14 @@ import {
   assessWholesaleGridTransitionInflationSurge,
   type WholesaleGridTransitionInflationSurgeBand,
 } from '../inflation/wholesale-grid-transition-inflation-surge.js';
+import {
+  assessTradeClearedForwardArcInflationHandoffLatch,
+  type TradeClearedForwardArcInflationHandoffLatchBand,
+} from '../inflation/trade-cleared-forward-arc-inflation-handoff-latch.js';
+import {
+  assessGuardianEntrustmentEnvelopeInflationPressureSurge,
+  type GuardianEntrustmentEnvelopeInflationPressureSurgeBand,
+} from '../inflation/guardian-entrustment-envelope-inflation-pressure-surge.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -458,6 +466,8 @@ export interface InflationForecastPoint {
   tradeImportExchangeInflationPipelineSurgeBand: TradeImportExchangeInflationPipelineSurgeBand;
   metroRegionalRentInflationEscalationLatchBand: MetroRegionalRentInflationEscalationLatchBand;
   wholesaleGridTransitionInflationSurgeBand: WholesaleGridTransitionInflationSurgeBand;
+  tradeClearedForwardArcInflationHandoffLatchBand: TradeClearedForwardArcInflationHandoffLatchBand;
+  guardianEntrustmentEnvelopeInflationPressureSurgeBand: GuardianEntrustmentEnvelopeInflationPressureSurgeBand;
 }
 
 export interface InflationForecastPath {
@@ -1342,6 +1352,26 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const tradeClearedForwardArcHandoff = assessTradeClearedForwardArcInflationHandoffLatch({
+      tradeOpennessBand: inputs.highInflationScenario ? 'open' : 'mixed',
+      exchangeRatePressure: inputs.creditShockActive ? 'sharp_depreciation' : inputs.householdInflationScenarioActive ? 'depreciation' : 'stable',
+      wave49ClearedForwardArcHandoffLatch: inputs.creditShockActive,
+      clearedForwardArcHandoffContinuityBand:
+        inputs.fiscalPressure === 'critical' ? 'ruptured' : inputs.systemicLiquidityBand === 'critical' ? 'strained' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const guardianEntrustmentEnvelope = assessGuardianEntrustmentEnvelopeInflationPressureSurge({
+      inflationGuardrailTripped: inputs.highInflationScenario,
+      stabilityInterventionBand:
+        inputs.publicStability < 38 ? 'urgent' : inputs.fiscalPressure === 'critical' ? 'advisory' : 'none',
+      wave49EntrustmentEnvelopeLatch: inputs.householdInflationScenarioActive,
+      entrustmentEnvelopePressureBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'ruptured' : inputs.publicStability < 45 ? 'elevated' : 'contained',
+      entrustmentStrainIndex: inputs.publicStability < 42 ? 0.76 : 0.48,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -1440,6 +1470,8 @@ export function projectInflationForecastPath(
       tradeImportExchangeInflationPipelineSurgeBand: tradeImportPipelineSurge.surgeBand,
       metroRegionalRentInflationEscalationLatchBand: metroRegionalRentEscalation.latchBand,
       wholesaleGridTransitionInflationSurgeBand: wholesaleGridTransitionSurge.surgeBand,
+      tradeClearedForwardArcInflationHandoffLatchBand: tradeClearedForwardArcHandoff.latchBand,
+      guardianEntrustmentEnvelopeInflationPressureSurgeBand: guardianEntrustmentEnvelope.surgeBand,
     });
   }
 

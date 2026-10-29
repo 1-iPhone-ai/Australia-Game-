@@ -478,6 +478,14 @@ import {
   wholesaleGridTransitionInflationSurgeScoreAdjustment,
 } from './inflation/wholesale-grid-transition-inflation-surge.js';
 import {
+  assessTradeClearedForwardArcInflationHandoffLatch,
+  tradeClearedForwardArcInflationHandoffLatchScoreAdjustment,
+} from './inflation/trade-cleared-forward-arc-inflation-handoff-latch.js';
+import {
+  assessGuardianEntrustmentEnvelopeInflationPressureSurge,
+  guardianEntrustmentEnvelopeInflationPressureSurgeScoreAdjustment,
+} from './inflation/guardian-entrustment-envelope-inflation-pressure-surge.js';
+import {
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -5654,7 +5662,9 @@ export function runAgent10FinanceSelfTests(): {
       path.points.every(
         (p) =>
           !!p.metroRegionalRentInflationEscalationLatchBand &&
-          !!p.wholesaleGridTransitionInflationSurgeBand,
+          !!p.wholesaleGridTransitionInflationSurgeBand &&
+          !!p.tradeClearedForwardArcInflationHandoffLatchBand &&
+          !!p.guardianEntrustmentEnvelopeInflationPressureSurgeBand,
       ),
     );
     const bundle = buildAgent21InflationForecastBundle({
@@ -5669,9 +5679,110 @@ export function runAgent10FinanceSelfTests(): {
       'agent21 r49 fields',
       bundle.schemaVersion === '10.14.agent10.r49' &&
         bundle.terminalMetroRegionalRentInflationEscalationLatch !== undefined &&
-        bundle.terminalWholesaleGridTransitionInflationSurge !== undefined,
+        bundle.terminalWholesaleGridTransitionInflationSurge !== undefined &&
+        bundle.terminalTradeClearedForwardArcInflationHandoffLatch !== undefined &&
+        bundle.terminalGuardianEntrustmentEnvelopeInflationPressureSurge !== undefined,
     );
   }
+  {
+    const handoff = assessTradeClearedForwardArcInflationHandoffLatch({
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'sharp_depreciation',
+      wave49ClearedForwardArcHandoffLatch: true,
+      clearedForwardArcHandoffContinuityBand: 'ruptured',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r49_14',
+      'trade handoff stress or continuity rupture',
+      handoff.latchBand === 'handoff_stress' || handoff.latchBand === 'continuity_rupture',
+    );
+    check(
+      'a10_r49_15',
+      'trade cleared forward-arc score adj',
+      tradeClearedForwardArcInflationHandoffLatchScoreAdjustment(handoff.latchBand) >= 3,
+    );
+  }
+  {
+    const envelope = assessGuardianEntrustmentEnvelopeInflationPressureSurge({
+      inflationGuardrailTripped: true,
+      stabilityInterventionBand: 'urgent',
+      wave49EntrustmentEnvelopeLatch: true,
+      entrustmentEnvelopePressureBand: 'ruptured',
+      entrustmentStrainIndex: 0.8,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r49_16',
+      'guardian surge or envelope rupture',
+      envelope.surgeBand === 'surge' || envelope.surgeBand === 'envelope_rupture',
+    );
+    check(
+      'a10_r49_17',
+      'guardian entrustment envelope score adj',
+      guardianEntrustmentEnvelopeInflationPressureSurgeScoreAdjustment(envelope.surgeBand) >= 3,
+    );
+  }
+  {
+    const merged15 = mergeAgent15IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      tradeOpennessBand: 'open',
+      exchangeRatePressure: 'sharp_depreciation',
+      commodityImportShare: 0.5,
+      wave49ClearedForwardArcHandoffLatch: true,
+      clearedForwardArcHandoffContinuityBand: 'ruptured',
+    });
+    check('a10_r49_18', 'agent15 ruptured handoff merge', merged15.highInflationScenario === true);
+    check('a10_r49_19', 'agent15 bridge note r49', agent15TradeBridgeIntegrationNote().includes('Agent 15'));
+  }
+  {
+    const merged16 = mergeAgent16IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      inflationGuardrailTripped: true,
+      stabilityInterventionBand: 'urgent',
+      narrativeShockSeverity: 'high',
+      wave49EntrustmentEnvelopeLatch: true,
+      entrustmentEnvelopePressureBand: 'ruptured',
+      entrustmentStrainIndex: 0.75,
+    });
+    check('a10_r49_20', 'agent16 ruptured envelope merge', merged16.highInflationScenario === true);
+    check('a10_r49_21', 'agent16 bridge note r49', agent16GuardianBridgeIntegrationNote().includes('Agent 16'));
+  }
+  check(
+    'a10_r49_22',
+    'round49 preset trade cleared forward-arc stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(
+        makeDefaultMacroFinancialTestInputs(),
+        'trade_cleared_forward_arc_handoff_stack',
+      );
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.52;
+    })(),
+  );
+  check(
+    'a10_r49_23',
+    'round49 preset guardian entrustment stress',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(
+        makeDefaultMacroFinancialTestInputs(),
+        'guardian_entrustment_envelope_surge_stress',
+      );
+      return inp?.highInflationScenario === true && inp.fiscalPressure === 'critical';
+    })(),
+  );
+  check(
+    'a10_r49_24',
+    'round49 preset trade guardian fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(
+        makeDefaultMacroFinancialTestInputs(),
+        'trade_guardian_wave49_fusion_stress',
+      );
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.6;
+    })(),
+  );
   check(
     'a10_r49_11',
     'round49 preset metro regional rent stack',

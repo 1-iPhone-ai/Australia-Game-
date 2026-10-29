@@ -23,6 +23,10 @@ export interface Agent15TradeSnapshot {
   wave48TradeImportPipelineLatch?: boolean;
   /** Round 48: import exchange pipeline surge band. */
   importExchangePipelineSurgeBand?: 'stable' | 'stressed' | 'ruptured';
+  /** Round 49: cleared forward-arc handoff inflation latch. */
+  wave49ClearedForwardArcHandoffLatch?: boolean;
+  /** Round 49: cleared forward-arc handoff continuity band. */
+  clearedForwardArcHandoffContinuityBand?: 'stable' | 'strained' | 'ruptured';
 }
 
 export function mergeAgent15IntoMacroFinancialInputs(
@@ -69,6 +73,13 @@ export function mergeAgent15IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
   } else if (snapshot.importExchangePipelineSurgeBand === 'stressed' && snapshot.exchangeRatePressure === 'sharp_depreciation') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave49ClearedForwardArcHandoffLatch && snapshot.clearedForwardArcHandoffContinuityBand === 'ruptured') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.clearedForwardArcHandoffContinuityBand === 'strained' && snapshot.exchangeRatePressure === 'sharp_depreciation') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
