@@ -75,6 +75,14 @@ import {
   computeTradeCorridorResilienceSnapshot,
   tradeCorridorExportScale,
 } from './trade-corridor-resilience.ts';
+import {
+  computeTradeFxHedgingSnapshot,
+  tradeFxHedgingExportScale,
+} from './trade-fx-hedging.ts';
+import {
+  computeImportLanePressureSnapshot,
+  importLanePressureExportScale,
+} from './import-lane-pressure.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -893,6 +901,40 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     const mods = deriveSanctionsSpilloverPartnerModifiers(broad);
     gtelAssert(mods.domesticStress > 0, 'expected spillover domestic stress');
     gtelAssert(sanctionsSpilloverExportScale(broad) <= sanctionsSpilloverExportScale(contained) + 0.01, 'expected spillover scale drag');
+  });
+
+  ok('trade FX hedging strengthens with supportive FX and favorable terms', () => {
+    const weak = computeTradeFxHedgingSnapshot({
+      foreignExchange: { pressureIndex: 0.88, band: 'crisis', passThroughToImports: 0.2, exportCompetitiveness: 0.4, summary: 'test' },
+      termsOfTrade: { index: 0.86, band: 'severely_unfavorable', exportBasketIndex: 90, importBasketIndex: 108, summary: 'test' },
+      tradeFinance: { ...createEmptyTradeFinanceSnapshot(), availabilityScore: 0.28, band: 'frozen' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const strong = computeTradeFxHedgingSnapshot({
+      foreignExchange: { pressureIndex: 0.92, band: 'supportive', passThroughToImports: 0.08, exportCompetitiveness: 0.72, summary: 'test' },
+      termsOfTrade: { index: 1.08, band: 'favorable', exportBasketIndex: 108, importBasketIndex: 98, summary: 'test' },
+      tradeFinance: { ...createEmptyTradeFinanceSnapshot(), availabilityScore: 0.82, band: 'fluid' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(strong.effectiveness > weak.effectiveness, 'expected stronger hedging');
+    gtelAssert(tradeFxHedgingExportScale(strong) >= tradeFxHedgingExportScale(weak), 'expected hedging scale lift');
+  });
+
+  ok('import lane pressure rises with critical dependency and congested logistics', () => {
+    const fluid = computeImportLanePressureSnapshot({
+      importDependency: { band: 'moderate', lines: [], aggregateRisk: 0.4, summary: 'test' },
+      logistics: { band: 'fluid', freightPressure: 0.2, redundancyScore: 0.8, effectiveExportThroughput: 80, networkStrain: 0.1, summary: 'test' },
+      tradeEnforcement: createEmptyTradeEnforcementSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const gridlocked = computeImportLanePressureSnapshot({
+      importDependency: { band: 'critical', lines: [], aggregateRisk: 0.82, summary: 'test' },
+      logistics: { band: 'congested', freightPressure: 0.9, redundancyScore: 0.25, effectiveExportThroughput: 150, networkStrain: 0.8, summary: 'test' },
+      tradeEnforcement: { ...createEmptyTradeEnforcementSnapshot(), band: 'sweep', intensity: 0.7, probeLoad: 0.22, clearanceDelayTurns: 2 },
+      persisted: { ...createEmptyGTELPersisted(), importLanePressureSmoothing: 0.68 },
+    }).snapshot;
+    gtelAssert(gridlocked.load > fluid.load, 'expected higher import lane load');
+    gtelAssert(importLanePressureExportScale(gridlocked) <= importLanePressureExportScale(fluid) + 0.01, 'expected import lane scale drag');
   });
 
   return { passed, failed };

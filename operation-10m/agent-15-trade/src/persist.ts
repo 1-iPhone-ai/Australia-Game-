@@ -20,6 +20,8 @@ import { sanitizeExportInsuranceStackSmoothing } from './export-credit-insurance
 import { sanitizeAccessRestorationSmoothing } from './partner-access-restoration.ts';
 import { sanitizeTradeCorridorSmoothing } from './trade-corridor-resilience.ts';
 import { sanitizeSanctionsSpilloverSmoothing } from './sanctions-spillover-depth.ts';
+import { sanitizeTradeFxHedgingSmoothing } from './trade-fx-hedging.ts';
+import { sanitizeImportLanePressureSmoothing } from './import-lane-pressure.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -58,6 +60,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     accessRestorationSmoothing: 0.3,
     tradeCorridorSmoothing: 0.54,
     sanctionsSpilloverSmoothing: 0.24,
+    tradeFxHedgingSmoothing: 0.5,
+    importLanePressureSmoothing: 0.38,
   };
 }
 
@@ -228,5 +232,7 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.accessRestorationSmoothing = sanitizeAccessRestorationSmoothing(r.accessRestorationSmoothing);
   base.tradeCorridorSmoothing = sanitizeTradeCorridorSmoothing(r.tradeCorridorSmoothing);
   base.sanctionsSpilloverSmoothing = sanitizeSanctionsSpilloverSmoothing(r.sanctionsSpilloverSmoothing);
+  base.tradeFxHedgingSmoothing = sanitizeTradeFxHedgingSmoothing(r.tradeFxHedgingSmoothing);
+  base.importLanePressureSmoothing = sanitizeImportLanePressureSmoothing(r.importLanePressureSmoothing);
   return base;
 }

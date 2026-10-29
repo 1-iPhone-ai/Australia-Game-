@@ -154,6 +154,10 @@ export interface GTELPersisted {
   tradeCorridorSmoothing?: number;
   /** Smoothed sanctions spillover intensity (0–1). */
   sanctionsSpilloverSmoothing?: number;
+  /** Smoothed trade FX / terms hedging effectiveness (0–1). */
+  tradeFxHedgingSmoothing?: number;
+  /** Smoothed import arrival lane pressure (0–1). */
+  importLanePressureSmoothing?: number;
 }
 
 export interface GTELState {
@@ -191,6 +195,8 @@ export interface GTELState {
   partnerAccessRestoration: GTELPartnerAccessRestorationSnapshot;
   tradeCorridorResilience: GTELTradeCorridorResilienceSnapshot;
   sanctionsSpillover: GTELSanctionsSpilloverSnapshot;
+  tradeFxHedging: GTELTradeFxHedgingSnapshot;
+  importLanePressure: GTELImportLanePressureSnapshot;
   inputHash: string;
 }
 
@@ -558,6 +564,26 @@ export interface GTELSanctionsSpilloverSnapshot {
   summary: string;
 }
 
+export type GTELTradeFxHedgingBand = 'well_hedged' | 'balanced' | 'exposed' | 'unhedged';
+
+export interface GTELTradeFxHedgingSnapshot {
+  effectiveness: number;
+  band: GTELTradeFxHedgingBand;
+  passThroughBuffer: number;
+  termsShield: number;
+  summary: string;
+}
+
+export type GTELImportLanePressureBand = 'fluid' | 'busy' | 'congested' | 'gridlocked';
+
+export interface GTELImportLanePressureSnapshot {
+  load: number;
+  band: GTELImportLanePressureBand;
+  clearanceBacklog: number;
+  consumerPricePassThrough: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -727,6 +753,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     accessRestorationSmoothing: 0.3,
     tradeCorridorSmoothing: 0.54,
     sanctionsSpilloverSmoothing: 0.24,
+    tradeFxHedgingSmoothing: 0.5,
+    importLanePressureSmoothing: 0.38,
   };
 }
 
@@ -897,6 +925,8 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.accessRestorationSmoothing = sanitizeAccessRestorationSmoothing(r.accessRestorationSmoothing);
   base.tradeCorridorSmoothing = sanitizeTradeCorridorSmoothing(r.tradeCorridorSmoothing);
   base.sanctionsSpilloverSmoothing = sanitizeSanctionsSpilloverSmoothing(r.sanctionsSpilloverSmoothing);
+  base.tradeFxHedgingSmoothing = sanitizeTradeFxHedgingSmoothing(r.tradeFxHedgingSmoothing);
+  base.importLanePressureSmoothing = sanitizeImportLanePressureSmoothing(r.importLanePressureSmoothing);
   return base;
 }
 
@@ -5126,6 +5156,276 @@ export function sanctionsSpilloverGiNotes(
 }
 
 
+// --- source: trade-fx-hedging.ts ---
+  GTELForeignExchangeSnapshot,
+  GTELPersisted,
+  GTELTermsOfTradeSnapshot,
+  GTELTradeFinanceSnapshot,
+  GTELTradeFxHedgingSnapshot,
+  GTELTurnResult,
+} from './types.ts';
+
+export type GTELTradeFxHedgingBand = GTELTradeFxHedgingSnapshot['band'];
+
+function hedgingBand(effectiveness: number): GTELTradeFxHedgingBand {
+  if (effectiveness >= 0.74) return 'well_hedged';
+  if (effectiveness >= 0.52) return 'balanced';
+  if (effectiveness >= 0.32) return 'exposed';
+  return 'unhedged';
+}
+
+export function sanitizeTradeFxHedgingSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.5), 0.18, 0.92);
+}
+
+export function createEmptyTradeFxHedgingSnapshot(): GTELTradeFxHedgingSnapshot {
+  return {
+    effectiveness: 0.5,
+    band: 'balanced',
+    passThroughBuffer: 0.08,
+    termsShield: 0.12,
+    summary: 'FX and terms hedging are providing moderate pass-through buffers.',
+  };
+}
+
+export function advanceTradeFxHedgingSmoothing(
+  persisted: GTELPersisted,
+  rawEffectiveness: number,
+): GTELPersisted {
+  const prev = sanitizeTradeFxHedgingSmoothing(persisted.tradeFxHedgingSmoothing);
+  const next = gtelClamp(prev * 0.73 + gtelClamp(rawEffectiveness, 0.18, 0.92) * 0.27, 0.18, 0.92);
+  return { ...persisted, tradeFxHedgingSmoothing: Math.round(next * 1000) / 1000 };
+}
+
+export function computeTradeFxHedgingSnapshot(input: {
+  foreignExchange: GTELForeignExchangeSnapshot;
+  termsOfTrade: GTELTermsOfTradeSnapshot;
+  tradeFinance: GTELTradeFinanceSnapshot;
+  persisted: GTELPersisted;
+}): { snapshot: GTELTradeFxHedgingSnapshot; persisted: GTELPersisted } {
+  const fxLift =
+    input.foreignExchange.band === 'supportive'
+      ? 0.16
+      : input.foreignExchange.band === 'neutral'
+        ? 0.08
+        : input.foreignExchange.band === 'stress'
+          ? -0.06
+          : -0.12;
+  const termsLift =
+    input.termsOfTrade.band === 'favorable'
+      ? 0.14
+      : input.termsOfTrade.band === 'neutral'
+        ? 0.06
+        : input.termsOfTrade.band === 'unfavorable'
+          ? -0.05
+          : -0.1;
+  const financeLift = gtelClamp((input.tradeFinance.availabilityScore - 0.55) * 0.22, -0.08, 0.12);
+  const rawEffectiveness = gtelClamp(0.42 + fxLift + termsLift + financeLift, 0.18, 0.92);
+  const persisted = advanceTradeFxHedgingSmoothing(input.persisted, rawEffectiveness);
+  const effectiveness = sanitizeTradeFxHedgingSmoothing(persisted.tradeFxHedgingSmoothing);
+  const band = hedgingBand(effectiveness);
+  const passThroughBuffer = gtelClamp(
+    effectiveness * 0.12 + (input.foreignExchange.band === 'crisis' ? -0.04 : 0.02),
+    0.02,
+    0.2,
+  );
+  const termsShield = gtelClamp(effectiveness * 0.14 + (input.termsOfTrade.index > 1 ? 0.03 : -0.02), 0.02, 0.22);
+
+  const summary =
+    band === 'well_hedged'
+      ? 'Treasury hedges are absorbing FX and terms shocks before they hit export quotes.'
+      : band === 'unhedged'
+        ? 'Minimal hedging — FX and terms swings are passing straight into export pricing.'
+        : band === 'exposed'
+          ? 'Hedging books are thin; terms and FX moves are leaking into commodity quotes.'
+          : 'FX and terms hedging are providing moderate pass-through buffers.';
+
+  return {
+    snapshot: {
+      effectiveness: Math.round(effectiveness * 1000) / 1000,
+      band,
+      passThroughBuffer: Math.round(passThroughBuffer * 1000) / 1000,
+      termsShield: Math.round(termsShield * 1000) / 1000,
+      summary,
+    },
+    persisted,
+  };
+}
+
+export function tradeFxHedgingHouseholdModifier(snapshot: GTELTradeFxHedgingSnapshot): number {
+  if (snapshot.band === 'well_hedged') return gtelClamp(snapshot.passThroughBuffer * 0.15, 0, 0.04);
+  if (snapshot.band === 'unhedged') return gtelClamp(-snapshot.passThroughBuffer * 0.2, -0.06, 0);
+  if (snapshot.band === 'exposed') return gtelClamp(-snapshot.passThroughBuffer * 0.12, -0.04, 0);
+  return 0;
+}
+
+export function tradeFxHedgingExportScale(snapshot: GTELTradeFxHedgingSnapshot): number {
+  if (snapshot.band === 'well_hedged') return gtelClamp(1 + snapshot.effectiveness * 0.02, 1, 1.03);
+  if (snapshot.band === 'unhedged') return gtelClamp(0.94 + snapshot.effectiveness * 0.04, 0.9, 0.98);
+  return gtelClamp(0.97 + snapshot.effectiveness * 0.03, 0.93, 1.01);
+}
+
+export function tradeFxHedgingWorldEvent(
+  snapshot: GTELTradeFxHedgingSnapshot,
+  turn: number,
+): GTELTurnResult['worldEvents'][0] | null {
+  if (snapshot.band !== 'exposed' && snapshot.band !== 'unhedged') return null;
+  if (snapshot.effectiveness > 0.38) return null;
+  return {
+    id: `gtel_fx_hedge_${turn}`,
+    turn,
+    kind: 'trade',
+    title: 'FX hedging gap widening',
+    summary: snapshot.summary,
+    regionIds: ['NSW', 'VIC', 'QLD'],
+  };
+}
+
+export function tradeFxHedgingGiNotes(hedging: GTELTradeFxHedgingSnapshot | null | undefined): string[] {
+  if (!hedging) return [];
+  return [
+    `Trade FX hedging: ${hedging.band.replace(/_/g, ' ')} (${Math.round(hedging.effectiveness * 100)}% effective).`,
+    hedging.summary,
+  ];
+}
+
+
+// --- source: import-lane-pressure.ts ---
+  GTELImportDependencySnapshot,
+  GTELLogisticsStress,
+  GTELPersisted,
+  GTELImportLanePressureSnapshot,
+  GTELTradeEnforcementSnapshot,
+  GTELTurnResult,
+} from './types.ts';
+
+export type GTELImportLanePressureBand = GTELImportLanePressureSnapshot['band'];
+
+function lanePressureBand(load: number): GTELImportLanePressureBand {
+  if (load >= 0.72) return 'gridlocked';
+  if (load >= 0.52) return 'congested';
+  if (load >= 0.32) return 'busy';
+  return 'fluid';
+}
+
+export function sanitizeImportLanePressureSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.38), 0.12, 0.88);
+}
+
+export function createEmptyImportLanePressureSnapshot(): GTELImportLanePressureSnapshot {
+  return {
+    load: 0.38,
+    band: 'busy',
+    clearanceBacklog: 0.12,
+    consumerPricePassThrough: 0.06,
+    summary: 'Import arrival lanes are busy but clearing within normal windows.',
+  };
+}
+
+export function advanceImportLanePressureSmoothing(
+  persisted: GTELPersisted,
+  rawLoad: number,
+): GTELPersisted {
+  const prev = sanitizeImportLanePressureSmoothing(persisted.importLanePressureSmoothing);
+  const next = gtelClamp(prev * 0.71 + gtelClamp(rawLoad, 0.12, 0.88) * 0.29, 0.12, 0.88);
+  return { ...persisted, importLanePressureSmoothing: Math.round(next * 1000) / 1000 };
+}
+
+export function computeImportLanePressureSnapshot(input: {
+  importDependency: GTELImportDependencySnapshot;
+  logistics: GTELLogisticsStress;
+  tradeEnforcement: GTELTradeEnforcementSnapshot;
+  persisted: GTELPersisted;
+}): { snapshot: GTELImportLanePressureSnapshot; persisted: GTELPersisted } {
+  const dependencyLoad =
+    input.importDependency.band === 'critical'
+      ? 0.24
+      : input.importDependency.band === 'elevated'
+        ? 0.16
+        : input.importDependency.band === 'moderate'
+          ? 0.08
+          : 0.04;
+  const logisticsLoad =
+    input.logistics.band === 'congested'
+      ? 0.22
+      : input.logistics.band === 'tight'
+        ? 0.14
+        : input.logistics.band === 'watch'
+          ? 0.06
+          : 0.02;
+  const enforcementLoad = gtelClamp(input.tradeEnforcement.probeLoad * 0.45 + input.tradeEnforcement.clearanceDelayTurns * 0.04, 0, 0.18);
+  const rawLoad = gtelClamp(dependencyLoad + logisticsLoad + enforcementLoad + 0.08, 0.12, 0.88);
+  const persisted = advanceImportLanePressureSmoothing(input.persisted, rawLoad);
+  const load = sanitizeImportLanePressureSmoothing(persisted.importLanePressureSmoothing);
+  const band = lanePressureBand(load);
+  const clearanceBacklog = gtelClamp(load * 0.22 + enforcementLoad * 0.15, 0.06, 0.38);
+  const consumerPricePassThrough = gtelClamp(
+    load * 0.12 + (input.importDependency.band === 'critical' ? 0.06 : 0.02),
+    0.02,
+    0.22,
+  );
+
+  const summary =
+    band === 'gridlocked'
+      ? 'Import arrival lanes are gridlocked — clearance backlogs are feeding domestic price pressure.'
+      : band === 'congested'
+        ? 'Port import slots are congested; consumer goods pass-through is elevated.'
+        : band === 'fluid'
+          ? 'Import lanes are fluid with minimal clearance backlog.'
+          : 'Import arrival lanes are busy but clearing within normal windows.';
+
+  return {
+    snapshot: {
+      load: Math.round(load * 1000) / 1000,
+      band,
+      clearanceBacklog: Math.round(clearanceBacklog * 1000) / 1000,
+      consumerPricePassThrough: Math.round(consumerPricePassThrough * 1000) / 1000,
+      summary,
+    },
+    persisted,
+  };
+}
+
+export function importLanePressureDomesticStress(snapshot: GTELImportLanePressureSnapshot): number {
+  if (snapshot.band === 'gridlocked') return gtelClamp(snapshot.consumerPricePassThrough * 0.35, 0.04, 0.1);
+  if (snapshot.band === 'congested') return gtelClamp(snapshot.consumerPricePassThrough * 0.25, 0.02, 0.07);
+  if (snapshot.band === 'busy') return gtelClamp(snapshot.consumerPricePassThrough * 0.12, 0, 0.04);
+  return 0;
+}
+
+export function importLanePressureExportScale(snapshot: GTELImportLanePressureSnapshot): number {
+  if (snapshot.band === 'gridlocked') return gtelClamp(0.9 + (1 - snapshot.load) * 0.06, 0.86, 0.94);
+  if (snapshot.band === 'congested') return gtelClamp(0.94 + (1 - snapshot.load) * 0.04, 0.9, 0.98);
+  return gtelClamp(0.98 + (1 - snapshot.load) * 0.02, 0.96, 1.01);
+}
+
+export function importLanePressureWorldEvent(
+  snapshot: GTELImportLanePressureSnapshot,
+  turn: number,
+): GTELTurnResult['worldEvents'][0] | null {
+  if (snapshot.band !== 'congested' && snapshot.band !== 'gridlocked') return null;
+  if (snapshot.load < 0.5) return null;
+  return {
+    id: `gtel_import_lane_${turn}`,
+    turn,
+    kind: 'domestic',
+    title: 'Import lane congestion',
+    summary: snapshot.summary,
+    regionIds: ['NSW', 'VIC', 'SA'],
+  };
+}
+
+export function importLanePressureGiNotes(
+  pressure: GTELImportLanePressureSnapshot | null | undefined,
+): string[] {
+  if (!pressure) return [];
+  return [
+    `Import lane pressure: ${pressure.band} (${Math.round(pressure.load * 100)}% load).`,
+    pressure.summary,
+  ];
+}
+
+
 // --- source: domestic-consequences.ts ---
   GTELCommodityQuote,
   GTELDomesticCoupling,
@@ -5363,6 +5663,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   tradeCorridorGiNotes,
   tradeCorridorWorldEvent,
 } from './trade-corridor-resilience.ts';
+  computeTradeFxHedgingSnapshot,
+  tradeFxHedgingExportScale,
+  tradeFxHedgingGiNotes,
+  tradeFxHedgingHouseholdModifier,
+  tradeFxHedgingWorldEvent,
+} from './trade-fx-hedging.ts';
+  computeImportLanePressureSnapshot,
+  importLanePressureDomesticStress,
+  importLanePressureExportScale,
+  importLanePressureGiNotes,
+  importLanePressureWorldEvent,
+} from './import-lane-pressure.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -5655,6 +5967,17 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const importDependency = dependencyStep.snapshot;
   const importPressure = importDependencyConsumerPressure(importDependency);
 
+  const importLaneStep = computeImportLanePressureSnapshot({
+    importDependency,
+    logistics,
+    tradeEnforcement,
+    persisted,
+  });
+  persisted = importLaneStep.persisted;
+  const importLanePressure = importLaneStep.snapshot;
+  const importLaneEvent = importLanePressureWorldEvent(importLanePressure, turn);
+  if (importLaneEvent) worldEvents.push(importLaneEvent);
+
   const termsStep = computeTermsOfTradeSnapshot({
     commodities,
     tradeBalance,
@@ -5688,6 +6011,17 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const foreignExchange = fxStep.snapshot;
   const fxEvent = foreignExchangeWorldEvent(foreignExchange, turn);
   if (fxEvent) worldEvents.push(fxEvent);
+
+  const fxHedgingStep = computeTradeFxHedgingSnapshot({
+    foreignExchange,
+    termsOfTrade,
+    tradeFinance,
+    persisted,
+  });
+  persisted = fxHedgingStep.persisted;
+  const tradeFxHedging = fxHedgingStep.snapshot;
+  const fxHedgingEvent = tradeFxHedgingWorldEvent(tradeFxHedging, turn);
+  if (fxHedgingEvent) worldEvents.push(fxHedgingEvent);
 
   const capacityStep = computeExportCapacitySnapshot({
     commodities,
@@ -5773,6 +6107,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         exportInsuranceStackExportScale(exportInsuranceStack) *
         tradeCorridorExportScale(tradeCorridorResilience) *
         sanctionsSpilloverExportScale(sanctionsSpillover) *
+        tradeFxHedgingExportScale(tradeFxHedging) *
+        importLanePressureExportScale(importLanePressure) *
         10,
     ) / 10;
 
@@ -5786,7 +6122,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     (avgCommodity - 95) / -80 -
       (shock.domesticStress + sanctions.domesticStress + policy.domesticStress) * 0.15 +
       termsOfTradeHouseholdModifier(termsOfTrade) +
-      foreignExchangeHouseholdModifier(foreignExchange),
+      foreignExchangeHouseholdModifier(foreignExchange) +
+      tradeFxHedgingHouseholdModifier(tradeFxHedging),
     -0.25,
     0.35,
   );
@@ -5837,7 +6174,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       enforcementMods.domesticStress +
       exportInsuranceStackDomesticStress(exportInsuranceStack) +
       tradeCorridorDomesticStress(tradeCorridorResilience) +
-      spilloverMods.domesticStress,
+      spilloverMods.domesticStress +
+      importLanePressureDomesticStress(importLanePressure),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -5872,6 +6210,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.accessRestorationSmoothing,
     persisted.tradeCorridorSmoothing,
     persisted.sanctionsSpilloverSmoothing,
+    persisted.tradeFxHedgingSmoothing,
+    persisted.importLanePressureSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -5938,6 +6278,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     partnerAccessRestoration,
     tradeCorridorResilience,
     sanctionsSpillover,
+    tradeFxHedging,
+    importLanePressure,
     inputHash,
   };
 
@@ -5983,6 +6325,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...partnerAccessRestorationGiNotes(state.partnerAccessRestoration));
   lines.push(...tradeCorridorGiNotes(state.tradeCorridorResilience));
   lines.push(...sanctionsSpilloverGiNotes(state.sanctionsSpillover));
+  lines.push(...tradeFxHedgingGiNotes(state.tradeFxHedging));
+  lines.push(...importLanePressureGiNotes(state.importLanePressure));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -6038,6 +6382,12 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   computeTradeCorridorResilienceSnapshot,
   tradeCorridorExportScale,
 } from './trade-corridor-resilience.ts';
+  computeTradeFxHedgingSnapshot,
+  tradeFxHedgingExportScale,
+} from './trade-fx-hedging.ts';
+  computeImportLanePressureSnapshot,
+  importLanePressureExportScale,
+} from './import-lane-pressure.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -6852,6 +7202,40 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     const mods = deriveSanctionsSpilloverPartnerModifiers(broad);
     gtelAssert(mods.domesticStress > 0, 'expected spillover domestic stress');
     gtelAssert(sanctionsSpilloverExportScale(broad) <= sanctionsSpilloverExportScale(contained) + 0.01, 'expected spillover scale drag');
+  });
+
+  ok('trade FX hedging strengthens with supportive FX and favorable terms', () => {
+    const weak = computeTradeFxHedgingSnapshot({
+      foreignExchange: { pressureIndex: 0.88, band: 'crisis', passThroughToImports: 0.2, exportCompetitiveness: 0.4, summary: 'test' },
+      termsOfTrade: { index: 0.86, band: 'severely_unfavorable', exportBasketIndex: 90, importBasketIndex: 108, summary: 'test' },
+      tradeFinance: { ...createEmptyTradeFinanceSnapshot(), availabilityScore: 0.28, band: 'frozen' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const strong = computeTradeFxHedgingSnapshot({
+      foreignExchange: { pressureIndex: 0.92, band: 'supportive', passThroughToImports: 0.08, exportCompetitiveness: 0.72, summary: 'test' },
+      termsOfTrade: { index: 1.08, band: 'favorable', exportBasketIndex: 108, importBasketIndex: 98, summary: 'test' },
+      tradeFinance: { ...createEmptyTradeFinanceSnapshot(), availabilityScore: 0.82, band: 'fluid' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(strong.effectiveness > weak.effectiveness, 'expected stronger hedging');
+    gtelAssert(tradeFxHedgingExportScale(strong) >= tradeFxHedgingExportScale(weak), 'expected hedging scale lift');
+  });
+
+  ok('import lane pressure rises with critical dependency and congested logistics', () => {
+    const fluid = computeImportLanePressureSnapshot({
+      importDependency: { band: 'moderate', lines: [], aggregateRisk: 0.4, summary: 'test' },
+      logistics: { band: 'fluid', freightPressure: 0.2, redundancyScore: 0.8, effectiveExportThroughput: 80, networkStrain: 0.1, summary: 'test' },
+      tradeEnforcement: createEmptyTradeEnforcementSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const gridlocked = computeImportLanePressureSnapshot({
+      importDependency: { band: 'critical', lines: [], aggregateRisk: 0.82, summary: 'test' },
+      logistics: { band: 'congested', freightPressure: 0.9, redundancyScore: 0.25, effectiveExportThroughput: 150, networkStrain: 0.8, summary: 'test' },
+      tradeEnforcement: { ...createEmptyTradeEnforcementSnapshot(), band: 'sweep', intensity: 0.7, probeLoad: 0.22, clearanceDelayTurns: 2 },
+      persisted: { ...createEmptyGTELPersisted(), importLanePressureSmoothing: 0.68 },
+    }).snapshot;
+    gtelAssert(gridlocked.load > fluid.load, 'expected higher import lane load');
+    gtelAssert(importLanePressureExportScale(gridlocked) <= importLanePressureExportScale(fluid) + 0.01, 'expected import lane scale drag');
   });
 
   return { passed, failed };

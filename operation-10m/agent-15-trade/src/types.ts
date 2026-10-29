@@ -150,6 +150,10 @@ export interface GTELPersisted {
   tradeCorridorSmoothing?: number;
   /** Smoothed sanctions spillover intensity (0–1). */
   sanctionsSpilloverSmoothing?: number;
+  /** Smoothed trade FX / terms hedging effectiveness (0–1). */
+  tradeFxHedgingSmoothing?: number;
+  /** Smoothed import arrival lane pressure (0–1). */
+  importLanePressureSmoothing?: number;
 }
 
 export interface GTELState {
@@ -187,6 +191,8 @@ export interface GTELState {
   partnerAccessRestoration: GTELPartnerAccessRestorationSnapshot;
   tradeCorridorResilience: GTELTradeCorridorResilienceSnapshot;
   sanctionsSpillover: GTELSanctionsSpilloverSnapshot;
+  tradeFxHedging: GTELTradeFxHedgingSnapshot;
+  importLanePressure: GTELImportLanePressureSnapshot;
   inputHash: string;
 }
 
@@ -551,6 +557,26 @@ export interface GTELSanctionsSpilloverSnapshot {
   band: GTELSanctionsSpilloverBand;
   activeTierCount: number;
   spilloverPartnerIds: GTELPartnerId[];
+  summary: string;
+}
+
+export type GTELTradeFxHedgingBand = 'well_hedged' | 'balanced' | 'exposed' | 'unhedged';
+
+export interface GTELTradeFxHedgingSnapshot {
+  effectiveness: number;
+  band: GTELTradeFxHedgingBand;
+  passThroughBuffer: number;
+  termsShield: number;
+  summary: string;
+}
+
+export type GTELImportLanePressureBand = 'fluid' | 'busy' | 'congested' | 'gridlocked';
+
+export interface GTELImportLanePressureSnapshot {
+  load: number;
+  band: GTELImportLanePressureBand;
+  clearanceBacklog: number;
+  consumerPricePassThrough: number;
   summary: string;
 }
 

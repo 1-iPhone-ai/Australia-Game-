@@ -31,5 +31,7 @@ export * from './export-credit-insurance-stack.ts';
 export * from './partner-access-restoration.ts';
 export * from './trade-corridor-resilience.ts';
 export * from './sanctions-spillover-depth.ts';
+export * from './trade-fx-hedging.ts';
+export * from './import-lane-pressure.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

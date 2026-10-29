@@ -151,6 +151,20 @@ import {
   tradeCorridorWorldEvent,
 } from './trade-corridor-resilience.ts';
 import {
+  computeTradeFxHedgingSnapshot,
+  tradeFxHedgingExportScale,
+  tradeFxHedgingGiNotes,
+  tradeFxHedgingHouseholdModifier,
+  tradeFxHedgingWorldEvent,
+} from './trade-fx-hedging.ts';
+import {
+  computeImportLanePressureSnapshot,
+  importLanePressureDomesticStress,
+  importLanePressureExportScale,
+  importLanePressureGiNotes,
+  importLanePressureWorldEvent,
+} from './import-lane-pressure.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -446,6 +460,17 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const importDependency = dependencyStep.snapshot;
   const importPressure = importDependencyConsumerPressure(importDependency);
 
+  const importLaneStep = computeImportLanePressureSnapshot({
+    importDependency,
+    logistics,
+    tradeEnforcement,
+    persisted,
+  });
+  persisted = importLaneStep.persisted;
+  const importLanePressure = importLaneStep.snapshot;
+  const importLaneEvent = importLanePressureWorldEvent(importLanePressure, turn);
+  if (importLaneEvent) worldEvents.push(importLaneEvent);
+
   const termsStep = computeTermsOfTradeSnapshot({
     commodities,
     tradeBalance,
@@ -479,6 +504,17 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const foreignExchange = fxStep.snapshot;
   const fxEvent = foreignExchangeWorldEvent(foreignExchange, turn);
   if (fxEvent) worldEvents.push(fxEvent);
+
+  const fxHedgingStep = computeTradeFxHedgingSnapshot({
+    foreignExchange,
+    termsOfTrade,
+    tradeFinance,
+    persisted,
+  });
+  persisted = fxHedgingStep.persisted;
+  const tradeFxHedging = fxHedgingStep.snapshot;
+  const fxHedgingEvent = tradeFxHedgingWorldEvent(tradeFxHedging, turn);
+  if (fxHedgingEvent) worldEvents.push(fxHedgingEvent);
 
   const capacityStep = computeExportCapacitySnapshot({
     commodities,
@@ -564,6 +600,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         exportInsuranceStackExportScale(exportInsuranceStack) *
         tradeCorridorExportScale(tradeCorridorResilience) *
         sanctionsSpilloverExportScale(sanctionsSpillover) *
+        tradeFxHedgingExportScale(tradeFxHedging) *
+        importLanePressureExportScale(importLanePressure) *
         10,
     ) / 10;
 
@@ -577,7 +615,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     (avgCommodity - 95) / -80 -
       (shock.domesticStress + sanctions.domesticStress + policy.domesticStress) * 0.15 +
       termsOfTradeHouseholdModifier(termsOfTrade) +
-      foreignExchangeHouseholdModifier(foreignExchange),
+      foreignExchangeHouseholdModifier(foreignExchange) +
+      tradeFxHedgingHouseholdModifier(tradeFxHedging),
     -0.25,
     0.35,
   );
@@ -628,7 +667,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       enforcementMods.domesticStress +
       exportInsuranceStackDomesticStress(exportInsuranceStack) +
       tradeCorridorDomesticStress(tradeCorridorResilience) +
-      spilloverMods.domesticStress,
+      spilloverMods.domesticStress +
+      importLanePressureDomesticStress(importLanePressure),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -663,6 +703,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.accessRestorationSmoothing,
     persisted.tradeCorridorSmoothing,
     persisted.sanctionsSpilloverSmoothing,
+    persisted.tradeFxHedgingSmoothing,
+    persisted.importLanePressureSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -729,6 +771,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     partnerAccessRestoration,
     tradeCorridorResilience,
     sanctionsSpillover,
+    tradeFxHedging,
+    importLanePressure,
     inputHash,
   };
 
@@ -774,6 +818,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...partnerAccessRestorationGiNotes(state.partnerAccessRestoration));
   lines.push(...tradeCorridorGiNotes(state.tradeCorridorResilience));
   lines.push(...sanctionsSpilloverGiNotes(state.sanctionsSpillover));
+  lines.push(...tradeFxHedgingGiNotes(state.tradeFxHedging));
+  lines.push(...importLanePressureGiNotes(state.importLanePressure));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }

@@ -47,6 +47,8 @@ const FILES = [
   'partner-access-restoration.ts',
   'trade-corridor-resilience.ts',
   'sanctions-spillover-depth.ts',
+  'trade-fx-hedging.ts',
+  'import-lane-pressure.ts',
   'domestic-consequences.ts',
   'household-bridge.ts',
   'trade-turn.ts',

@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 35);
+  assert.ok(r.passed >= 37);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -614,4 +614,43 @@ test('round 12: congested network lowers corridor score vs healthy baseline', ()
     persisted: createEmptyGTELPersisted(),
   });
   assert.ok(critical.state.tradeCorridorResilience.score <= healthy.state.tradeCorridorResilience.score + 0.05);
+});
+
+test('round 13: trade FX hedging and import lane pressure on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.tradeFxHedgingSmoothing = 0.55;
+  persisted.importLanePressureSmoothing = 0.52;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 43,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'strained', exportedCapacity: 105 } } },
+    persisted,
+  });
+  assert.ok(r.state.tradeFxHedging);
+  assert.ok(['well_hedged', 'balanced', 'exposed', 'unhedged'].includes(r.state.tradeFxHedging.band));
+  assert.ok(r.state.importLanePressure);
+  assert.ok(['fluid', 'busy', 'congested', 'gridlocked'].includes(r.state.importLanePressure.band));
+  assert.ok(r.persisted.tradeFxHedgingSmoothing != null);
+  assert.ok(r.persisted.importLanePressureSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Trade FX hedging/i.test(n)));
+  assert.ok(notes.some(n => /Import lane pressure/i.test(n)));
+});
+
+test('round 13: critical import dependency raises lane load vs healthy baseline', () => {
+  const healthy = advanceGlobalTradeEconomyTurn({
+    turn: 44,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 70 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  let persisted = createEmptyGTELPersisted();
+  persisted.partnerAccess = { asia_pacific: 'blocked', europe: 'restricted' };
+  const stressed = advanceGlobalTradeEconomyTurn({
+    turn: 44,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 160 } } },
+    persisted,
+  });
+  assert.ok(stressed.state.importLanePressure.load >= healthy.state.importLanePressure.load - 0.02);
 });
