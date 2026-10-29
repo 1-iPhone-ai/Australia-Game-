@@ -38,6 +38,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     supply_chain_resilience_paths,
     critical_infrastructure_resilience_paths,
     cyber_resilience_paths,
+    information_integrity_resilience_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -266,6 +267,15 @@ CYRES_SECTION = (
 )
 
 CYRES_MARKER = "export function runV1035CyresTurn"
+
+IIRES_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20CI: V10.36 INFORMATION INTEGRITY / NATIONAL ATTESTATION MESH RESILIENCE — ATTESTATION MESH STRESS EXPOSURE, FACILITY ZONE NODES & SEGMENT BUFFERS (O6K-86)\n"
+    "// Renumbered from shard 20CG (canonical 20CG = sovereign cyber resilience, push #35)\n"
+    "// ============================================================================\n"
+)
+
+IIRES_MARKER = "export function runV1036IiresTurn"
 
 TRADE_HELPERS = """
 export function buildV1014TradeDepthTurnInputFromGameState(gs: any, turn: number): V1014TradeDepthTurnInput {
@@ -4195,6 +4205,201 @@ def push_cyres(text: str) -> str:
     return text
 
 
+IIRES_HELPERS = """
+function V1036_IIRES_readPersistedFromGameState(gs: any): V1036IiresPersisted | null {
+  const raw = (gs?.save?.meta?.v1036 as any)?.information_integrity_resilience;
+  return raw ? sanitizeV1036IiresPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1036_IIRES_applyToGameState(gs: any, out: V1036IiresTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1036 = { ...(meta.v1036 || {}) };
+  v1036.information_integrity_resilience = out.persisted;
+  meta.v1036 = v1036;
+  save.meta = meta;
+  return { ...gs, save, v1036InformationIntegrityResilience: out.state };
+}
+
+export function buildV1036IiresTurnInputFromGameState(gs: any, turn: number): V1036IiresTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10360;
+  const inp = buildV1036IiresTurnInputFromGameStateStub(turn, seed);
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const supply = gs?.v1014SupplyChain ?? null;
+  const workforce = gs?.v1014WorkforceMigration ?? gs?.workforceHumanCapital ?? null;
+  const pubsvc = gs?.v1014PublicServicesCrosswalk ?? null;
+  const clad = gs?.v1023ClimateAdaptation ?? null;
+  const dgov = gs?.v1024DigitalGovernance ?? null;
+  const rhs = gs?.v1026RegionalHealthSystems ?? null;
+  const cyres = gs?.v1035CyberResilience ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      segmentBufferIndex: Number(
+        supply?.segmentBufferIndex ?? supply?.corridorBufferIndex ?? supply?.backboneBufferIndex ?? inp.supply20bb.segmentBufferIndex,
+      ),
+      regionalStockDays: {
+        ...inp.supply20bb.regionalStockDays,
+        ...(supply?.regionalStockDays || {}),
+      },
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+      importDependencyRatio: Number(trade?.importDependencyRatio ?? inp.trade20ba.importDependencyRatio),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+      reserveMarginPct: Number(energy?.reserveMarginPct ?? inp.energy20bc.reserveMarginPct),
+      routingCascadeRisk: Number(
+        energy?.routingCascadeRisk ?? energy?.outageCascadeRisk ?? energy?.cascadeRiskStress ?? inp.energy20bc.routingCascadeRisk,
+      ),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      specialistGap: Number(workforce?.specialistGap ?? inp.workforce20bf.specialistGap),
+      nationalReadiness: Number(workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+      mismatchIndex: Number(workforce?.mismatchIndex ?? inp.workforce20bf.mismatchIndex),
+    },
+    publicServices20az: {
+      ...inp.publicServices20az,
+      turn,
+      clinicCapacityScore: Number(pubsvc?.clinicCapacityScore ?? inp.publicServices20az.clinicCapacityScore),
+      digitalServiceCoverage: Number(
+        pubsvc?.digitalServiceCoverage ?? inp.publicServices20az.digitalServiceCoverage,
+      ),
+      serviceDeliveryReadiness: Number(
+        pubsvc?.serviceDeliveryReadiness ?? inp.publicServices20az.serviceDeliveryReadiness,
+      ),
+    },
+    climateAdaptation20br: {
+      ...inp.climateAdaptation20br,
+      turn,
+      heatStressPressure: Number(clad?.heatStressPressure ?? inp.climateAdaptation20br.heatStressPressure),
+      grantStackLoad: Number(clad?.grantStackLoad ?? inp.climateAdaptation20br.grantStackLoad),
+      resilienceDriftTurns: Number(clad?.resilienceDriftTurns ?? inp.climateAdaptation20br.resilienceDriftTurns),
+    },
+    digitalGovernance20bt: {
+      ...inp.digitalGovernance20bt,
+      turn,
+      modelGovernancePressure: Number(dgov?.modelGovernancePressure ?? inp.digitalGovernance20bt.modelGovernancePressure),
+      grantStackLoad: Number(dgov?.grantStackLoad ?? inp.digitalGovernance20bt.grantStackLoad),
+      alignmentDriftTurns: Number(dgov?.alignmentDriftTurns ?? inp.digitalGovernance20bt.alignmentDriftTurns),
+    },
+    regionalHealthSystems20bv: {
+      ...inp.regionalHealthSystems20bv,
+      turn,
+      hospitalSurgePressure: Number(
+        rhs?.hospitalSurgePressure ?? inp.regionalHealthSystems20bv.hospitalSurgePressure,
+      ),
+      grantStackLoad: Number(rhs?.grantStackLoad ?? inp.regionalHealthSystems20bv.grantStackLoad),
+      bedCapacityDriftTurns: Number(
+        rhs?.bedCapacityDriftTurns ?? inp.regionalHealthSystems20bv.bedCapacityDriftTurns,
+      ),
+    },
+    informationIntegrityResiliencePolicyFocus: Number(
+      cyres?.aggregateCyberResilienceScore ?? inp.informationIntegrityResiliencePolicyFocus,
+    ),
+    persisted: null,
+  };
+}
+"""
+
+IIRES_DAY_HOOK = """
+      if (typeof runV1036IiresTurn === 'function') {
+        try {
+          const iiresIn = buildV1036IiresTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          iiresIn.persisted = V1036_IIRES_readPersistedFromGameState(mergedGameState);
+          const iiresOut = runV1036IiresTurn(iiresIn);
+          mergedGameState = V1036_IIRES_applyToGameState(mergedGameState, iiresOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_iires_day_hook(text: str) -> str:
+    marker = "runV1036IiresTurn(iiresIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:90000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip iires day hook (present)")
+        return text
+    mega8_tail = """      if (typeof runV1022T6Mega8DepthTurn === 'function') {
+        try {
+          const m8In = buildV1022T6Mega8DepthTurnInputFromGameState(
+            mergedGameState,
+            passCtx.turnCounter,
+            settings?.t6Mega8DepthEnabled !== false,
+          );
+          m8In.persisted = V1022_T6MEGA8_readPersistedFromGameState(mergedGameState);
+          const m8Out = runV1022T6Mega8DepthTurn(m8In);
+          mergedGameState = V1022_T6MEGA8_applyToGameState(mergedGameState, m8Out);
+        } catch (_) { /* isolated */ }
+      }"""
+    if mega8_tail not in text:
+        raise SystemExit("mega8 day hook anchor missing for iires hook")
+    return text.replace(mega8_tail, mega8_tail + IIRES_DAY_HOOK, 1)
+
+
+def wire_iires_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1022T6Mega8DepthPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1036IiresPersisted === 'function') {\n"
+        "    const iiresRaw = (migrated.gameState as any)?.save?.meta?.v1036?.information_integrity_resilience;\n"
+        "    if (iiresRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1036 = { ...(meta.v1036 || {}) };\n"
+        "      v1036.information_integrity_resilience = sanitizeV1036IiresPersisted(iiresRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1036 = v1036;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1036.information_integrity_resilience = sanitizeV1036IiresPersisted" in text:
+        print("skip iires §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("mega8 §6 anchor missing for iires migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_iires(text: str) -> str:
+    block = IIRES_SECTION + bundle_local_files(information_integrity_resilience_paths()) + IIRES_HELPERS
+    text = insert_before(text, block, IIRES_MARKER, "T6 push #37 v1036-information-integrity-resilience (O6K-86)")
+    text = wire_iires_day_hook(text)
+    text = wire_iires_migration(text)
+    lab = """  { id: 'v1036_information_integrity_resilience', label: 'V10.36 Information integrity resilience (20CI attestation & mesh buffers)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1036IiresSelfTestsForLab() },
+"""
+    cyres_lab = (
+        "  { id: 'v1035_cyber_resilience', label: 'V10.35 Sovereign cyber resilience (20CG intrusion & segment buffers)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1035CyresSelfTestsForLab() },"
+    )
+    if "{ id: 'v1036_information_integrity_resilience'" not in text:
+        if cyres_lab in text:
+            text = text.replace(cyres_lab, cyres_lab + "\n" + lab.strip(), 1)
+            print("registered LAB v1036_information_integrity_resilience")
+        else:
+            text = wire_lab(text, lab, "v1036_information_integrity_resilience")
+            print("registered LAB v1036_information_integrity_resilience (fallback)")
+    if "v1036IiresEnabled" not in text and "t6Mega8DepthEnabled: true," in text:
+        text = text.replace(
+            "t6Mega8DepthEnabled: true,",
+            "t6Mega8DepthEnabled: true,\n  v1036IiresEnabled: true,",
+            1,
+        )
+        print("registered settings v1036IiresEnabled")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -4209,7 +4414,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 33, 35])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 32, 33, 35, 37])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -4268,6 +4473,8 @@ def main() -> None:
         text = push_cires(text)
     elif args.push == 35:
         text = push_cyres(text)
+    elif args.push == 37:
+        text = push_iires(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

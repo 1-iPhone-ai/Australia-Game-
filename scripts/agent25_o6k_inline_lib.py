@@ -993,6 +993,64 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1035CyresPersisted,\n  v1035CyresInputHash,\n  sanitizeV1035CyresPersisted,\n} from '../engine/cyber-resilience-orchestrator';",
             "  v1035CyresInputHash,\n} from '../engine/cyber-resilience-orchestrator';\nimport {\n  createEmptyV1035CyresPersisted,\n  sanitizeV1035CyresPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1036-information-integrity-resilience" in name.replace("\\", "/"):
+        for sec in ("20CA", "20CB", "20CD", "20CE", "20CF", "20CG", "20CH", "20BZ", "20BY", "20BX", "20BW", "20BV", "20BU", "20BT", "20BR", "20CC"):
+            src = src.replace(f"SECTION {sec}", "SECTION 20CI")
+    if "information-integrity-resilience/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1036IiresClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1036IiresClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1036_IIRES_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1036_IIRES_MIG_REGIONS", src)
+    if "information-integrity-resilience-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1036IiresPersisted, sanitizeV1036IiresPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1036_IIRES_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1036_IIRES_ORCH_REGIONS.forEach", src)
+    if "information-integrity-resilience-utils.ts" in name:
+        src = re.sub(
+            r"export function V1036_IIRES_attestationMeshGraphHash",
+            "export function V1036_IIRES_utilAttestationMeshGraphHash",
+            src,
+        )
+        src = re.sub(
+            r"export function V1036_IIRES_segmentBufferGraphHash",
+            "export function V1036_IIRES_utilAttestationMeshGraphHash",
+            src,
+        )
+    if "v1036-information-integrity-resilience/attestation-mesh-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1036_IIRES_attestationMeshGraphHash as dgovGraphHashCore",
+            "V1036_IIRES_utilAttestationMeshGraphHash as dgovGraphHashCore",
+            src,
+        )
+        src = re.sub(
+            r"V1036_IIRES_segmentBufferGraphHash as dgovGraphHashCore",
+            "V1036_IIRES_utilAttestationMeshGraphHash as dgovGraphHashCore",
+            src,
+        )
+    if "attestation-scenarios/scenario-" in name.replace("\\", "/"):
+        src = re.sub(
+            r"\n    informationIntegrityResilienceBand: V1036_IIRES_ATTESTATION_SCENARIO_\d+_META\.informationIntegrityResilienceBand,",
+            "",
+            src,
+        )
+    if "run-v1036-iires-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1036IiresSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1036IiresSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1036IiresBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1036IiresBaseInput(", src)
+        src = src.replace(
+            "  runV1036IiresTurn,\n  createEmptyV1036IiresPersisted,\n  v1036IiresInputHash,\n  sanitizeV1036IiresPersisted,\n} from '../engine/information-integrity-resilience-orchestrator';",
+            "  runV1036IiresTurn,\n  v1036IiresInputHash,\n} from '../engine/information-integrity-resilience-orchestrator';\nimport {\n  createEmptyV1036IiresPersisted,\n  sanitizeV1036IiresPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1036IiresPersisted,\n  v1036IiresInputHash,\n  sanitizeV1036IiresPersisted,\n} from '../engine/information-integrity-resilience-orchestrator';",
+            "  v1036IiresInputHash,\n} from '../engine/information-integrity-resilience-orchestrator';\nimport {\n  createEmptyV1036IiresPersisted,\n  sanitizeV1036IiresPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -2489,6 +2547,57 @@ def cyber_resilience_paths() -> list[str]:
             and "littoral-zone" not in str(p)
             and "inland-zone" not in str(p)
             and "substation-zone" not in str(p)
+            and "biodiversity-stewardship-20bu" not in str(p)
+            and (
+                "/facility-zone-nodes/" not in str(p)
+                or re.match(r"facility-zone-\d+\.ts$", p.name)
+            )
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def information_integrity_resilience_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1036-information-integrity-resilience"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/attestation-mesh-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/attestation-scenarios/" in s:
+            return (3, s)
+        if "/generated/attestation-mesh-stacks/" in s:
+            return (4, s)
+        if "attestation-registry" in s or "attestation-mesh-bundle" in s:
+            return (5, s)
+        if "/facility-zone-nodes/" in s:
+            return (6, s)
+        if "information-integrity-resilience-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "information-integrity-resilience-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "segment-buffer-stacks" not in str(p)
+            and "intrusion-scenarios" not in str(p)
             and "biodiversity-stewardship-20bu" not in str(p)
             and (
                 "/facility-zone-nodes/" not in str(p)

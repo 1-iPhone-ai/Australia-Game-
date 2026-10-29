@@ -1,0 +1,31 @@
+import type { V1036IiresAttestationMeshEdge } from '../../types/core.ts';
+
+/** Segment buffer graph shard 019 (extreme_heat/drought/dust corridor coupling). */
+export const V1036_IIRES_ATTESTATION_MESH_SHARD_019: readonly V1036IiresAttestationMeshEdge[] = [
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.258, lagTurns: 3, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.264, lagTurns: 4, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.27, lagTurns: 5, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.276, lagTurns: 6, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.282, lagTurns: 3, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.288, lagTurns: 4, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.294, lagTurns: 5, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.3, lagTurns: 6, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.204, lagTurns: 3, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.21, lagTurns: 4, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.216, lagTurns: 5, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.222, lagTurns: 6, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.228, lagTurns: 3, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.234, lagTurns: 4, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.24, lagTurns: 5, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.246, lagTurns: 6, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.252, lagTurns: 3, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.258, lagTurns: 4, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.264, lagTurns: 5, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.27, lagTurns: 6, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.276, lagTurns: 3, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.282, lagTurns: 4, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.288, lagTurns: 5, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.294, lagTurns: 6, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.3, lagTurns: 3, nodeId: 'facility_zone_19' },
+  { fromChannel: 'remote', toChannel: 'facility_zone', weight: 0.204, lagTurns: 4, nodeId: 'facility_zone_19' },
+];
