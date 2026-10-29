@@ -1,7 +1,7 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.11.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.12.0';
 export const OP10M_TURN_COMPUTE_DIGEST_FLAG = 'op10m_turn_compute_digest';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
@@ -289,6 +289,14 @@ export interface Op10mTriggerRequireHandoffManifestCommit {
   k: 'handoff_manifest_commit';
 }
 
+export interface Op10mTriggerRequireModuleManifestAnchor {
+  k: 'module_manifest_anchor';
+}
+
+export interface Op10mTriggerRequireChunkInlineReady {
+  k: 'chunk_inline_ready';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -353,7 +361,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireAssemblyHandoffWave
   | Op10mTriggerRequireSyncManifestLatch
   | Op10mTriggerRequireChunkAssemblySeal
-  | Op10mTriggerRequireHandoffManifestCommit;
+  | Op10mTriggerRequireHandoffManifestCommit
+  | Op10mTriggerRequireModuleManifestAnchor
+  | Op10mTriggerRequireChunkInlineReady;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -455,6 +465,8 @@ export interface Op10mNarrativeEngineState {
     syncManifestLatches: number;
     chunkAssemblySeals: number;
     handoffManifestCommits: number;
+    moduleManifestAnchors: number;
+    chunkInlineReadyPasses: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;

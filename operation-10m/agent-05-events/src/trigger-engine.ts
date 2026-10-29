@@ -44,6 +44,10 @@ import {
   OP10M_CHUNK_ASSEMBLY_SEAL_FLAG,
   OP10M_HANDOFF_MANIFEST_COMMIT_FLAG,
 } from './compute-turn-chunk-assembly-seal-coordinator.ts';
+import {
+  OP10M_CHUNK_INLINE_READY_FLAG,
+  OP10M_MODULE_MANIFEST_ANCHOR_FLAG,
+} from './compute-turn-module-manifest-anchor-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -304,6 +308,16 @@ export function evaluateRequirements(
       case 'handoff_manifest_commit':
         if (!sim.flags[OP10M_HANDOFF_MANIFEST_COMMIT_FLAG]) {
           return { ok: false, reason: 'handoff manifest not committed' };
+        }
+        break;
+      case 'module_manifest_anchor':
+        if (!sim.flags[OP10M_MODULE_MANIFEST_ANCHOR_FLAG]) {
+          return { ok: false, reason: 'module manifest not anchored' };
+        }
+        break;
+      case 'chunk_inline_ready':
+        if (!sim.flags[OP10M_CHUNK_INLINE_READY_FLAG]) {
+          return { ok: false, reason: 'chunk inline not ready' };
         }
         break;
       default:
