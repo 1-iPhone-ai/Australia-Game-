@@ -27,6 +27,7 @@ State-triggered crisis chains with cooldowns, passive persistent modifiers, and 
 - `generated/chain-catalog-tranche24.ts` — 320 scale-wave-tranche-sync-latch lattice chains (`scripts/generate-catalog-tranche24.py`)
 - `generated/chain-catalog-tranche25.ts` — 320 scale-wave-tranche-ready-commit lattice chains (`scripts/generate-catalog-tranche25.py`)
 - `generated/chain-catalog-tranche26.ts` — 320 scale-wave-full-chunks-latch lattice chains (`scripts/generate-catalog-tranche26.py`)
+- `generated/chain-catalog-tranche27.ts` — 320 scale-wave-full-chunks-commit lattice chains (`scripts/generate-catalog-tranche27.py`)
 - `src/pending-response-expiry-coordinator.ts` — expired dilemma prune + queue-clear flags on compute hook
 - `src/pending-response-stabilization-coordinator.ts` — post-clear calm + stabilization wave flags on compute hook
 - `src/pending-stabilization-closure-coordinator.ts` — digest closure latch after finalize on compute hook
@@ -46,6 +47,7 @@ State-triggered crisis chains with cooldowns, passive persistent modifiers, and 
 - `src/compute-turn-scale-wave-tranche-sync-latch-coordinator.ts` — tranche sync latch after post-closure commit
 - `src/compute-turn-scale-wave-tranche-ready-commit-coordinator.ts` — tranche ready commit after sync latch
 - `src/compute-turn-scale-wave-full-chunks-latch-coordinator.ts` — full-chunks wave latch after tranche ready commit
+- `src/compute-turn-scale-wave-full-chunks-commit-coordinator.ts` — full-chunks wave commit after full-chunks latch
 - `src/compute-turn-reconcile.ts` — digest drift reconcile + eligibility priming on compute turn hook
 - `src/compute-turn-drift-settle.ts` — drift settlement + turn-gap ack flags on compute turn hook
 - `generated/regional-hook-catalog.ts` — 120 cross-region hooks (`scripts/generate-regional-hooks.py`)
