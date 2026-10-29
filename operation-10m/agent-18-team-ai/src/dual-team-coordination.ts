@@ -23,6 +23,9 @@ import { combineDualTeamPersistenceChurn } from './persistence-churn-gauge.ts';
 import { combineDualTeamDuplicateGuardPressure } from './duplicate-guard-pressure.ts';
 import { combineDualTeamRoleTaskCoverageGap } from './role-task-coverage-gap.ts';
 import { combineDualTeamCompositeHealthGradient } from './composite-health-gradient.ts';
+import { combineDualTeamHandoffReadinessSpread } from './handoff-readiness-spread.ts';
+import { combineDualTeamWorkstreamParallelism } from './workstream-parallelism-index.ts';
+import { combineDualTeamEscalationRecoveryAlignment } from './escalation-recovery-alignment.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -63,6 +66,9 @@ export interface DualTeamMultiAgentResult {
   duplicateGuardPressureCombined: number;
   roleTaskCoverageGapCombined: number;
   compositeHealthGradientCombined: number;
+  handoffReadinessSpreadCombined: number;
+  workstreamParallelismCombined: number;
+  escalationRecoveryAlignmentCombined: number;
 }
 
 /**
@@ -119,6 +125,9 @@ export function evaluateDualTeamMultiAgentLayers(
       duplicateGuardPressureCombined: friendly.state.meta.duplicateGuardPressureIndex ?? 0,
       roleTaskCoverageGapCombined: friendly.state.meta.roleTaskCoverageGapIndex ?? 0,
       compositeHealthGradientCombined: friendly.state.meta.compositeHealthGradientIndex ?? 0,
+      handoffReadinessSpreadCombined: friendly.state.meta.handoffReadinessSpreadIndex ?? 0,
+      workstreamParallelismCombined: friendly.state.meta.workstreamParallelismIndex ?? 0,
+      escalationRecoveryAlignmentCombined: friendly.state.meta.escalationRecoveryAlignmentIndex ?? 0,
     };
   }
 
@@ -294,6 +303,18 @@ export function evaluateDualTeamMultiAgentLayers(
     compositeHealthGradientCombined: combineDualTeamCompositeHealthGradient(
       friendly.state.meta.compositeHealthGradientIndex ?? 0,
       enemy.state.meta.compositeHealthGradientIndex ?? 0,
+    ),
+    handoffReadinessSpreadCombined: combineDualTeamHandoffReadinessSpread(
+      friendly.state.meta.handoffReadinessSpreadIndex ?? 0,
+      enemy.state.meta.handoffReadinessSpreadIndex ?? 0,
+    ),
+    workstreamParallelismCombined: combineDualTeamWorkstreamParallelism(
+      friendly.state.meta.workstreamParallelismIndex ?? 0,
+      enemy.state.meta.workstreamParallelismIndex ?? 0,
+    ),
+    escalationRecoveryAlignmentCombined: combineDualTeamEscalationRecoveryAlignment(
+      friendly.state.meta.escalationRecoveryAlignmentIndex ?? 0,
+      enemy.state.meta.escalationRecoveryAlignmentIndex ?? 0,
     ),
   };
 }

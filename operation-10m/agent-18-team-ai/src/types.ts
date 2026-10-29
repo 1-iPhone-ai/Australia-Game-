@@ -282,6 +282,9 @@ export interface TeamMultiAgentCoordinationMeta {
   uncoveredTaskIds?: string[];
   compositeHealthGradientIndex?: number;
   compositeHealthTrend?: string;
+  handoffReadinessSpreadIndex?: number;
+  workstreamParallelismIndex?: number;
+  escalationRecoveryAlignmentIndex?: number;
 }
 
 export const AGENT18_LIMITS = {

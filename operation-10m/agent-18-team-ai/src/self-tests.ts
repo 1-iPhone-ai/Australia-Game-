@@ -64,6 +64,9 @@ import { measurePersistenceChurn } from './persistence-churn-gauge.ts';
 import { measureDuplicateGuardPressure } from './duplicate-guard-pressure.ts';
 import { computeRoleTaskCoverageGap } from './role-task-coverage-gap.ts';
 import { computeCompositeHealthGradient } from './composite-health-gradient.ts';
+import { computeHandoffReadinessSpread } from './handoff-readiness-spread.ts';
+import { measureWorkstreamParallelism } from './workstream-parallelism-index.ts';
+import { computeEscalationRecoveryAlignment } from './escalation-recovery-alignment.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -1935,6 +1938,80 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.duplicateGuardPressureCombined === 'number' &&
       typeof dual.roleTaskCoverageGapCombined === 'number' &&
       typeof dual.compositeHealthGradientCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_handoff_readiness_spread', 'Handoff readiness spread: uneven scores raise index', () => {
+    const report = computeHandoffReadinessSpread({
+      rows: [
+        { handoffId: 'h1', toActorId: 'mate', readinessScore: 95, blockers: [], ready: true },
+        { handoffId: 'h2', toActorId: 'player', readinessScore: 25, blockers: ['low_ap'], ready: false },
+      ],
+      averageReadiness: 60,
+      notReadyHandoffIds: ['h2'],
+      notes: [],
+    });
+    return report.spreadIndex >= 45;
+  });
+
+  check(results, 'a18_handoff_readiness_spread_none', 'Handoff readiness spread: single pending stays zero', () => {
+    const readiness = scoreHandoffReadiness([], baseInputs().actors, [], baseInputs().tasks);
+    const report = computeHandoffReadinessSpread(readiness);
+    return report.spreadIndex === 0;
+  });
+
+  check(results, 'a18_workstream_parallelism_high', 'Workstream parallelism: saturated cap scores high', () => {
+    const report = measureWorkstreamParallelism([
+      { id: 'ws1', actorIds: ['a'], taskIds: ['t1'], phase: 'active', barrierTaskIds: [] },
+      { id: 'ws2', actorIds: ['b'], taskIds: ['t2'], phase: 'active', barrierTaskIds: [] },
+      { id: 'ws3', actorIds: ['c'], taskIds: ['t3'], phase: 'waiting_barrier', barrierTaskIds: ['t4'] },
+      { id: 'ws4', actorIds: ['d'], taskIds: ['t5'], phase: 'waiting_barrier', barrierTaskIds: ['t6'] },
+    ]);
+    return report.parallelismIndex >= 75;
+  });
+
+  check(results, 'a18_escalation_recovery_misaligned', 'Escalation/recovery alignment: tier/urgency mismatch scores high', () => {
+    const report = computeEscalationRecoveryAlignment(3, 15);
+    return report.alignmentIndex >= 50;
+  });
+
+  check(results, 'a18_escalation_recovery_aligned', 'Escalation/recovery alignment: matched tier/urgency stays low', () => {
+    const report = computeEscalationRecoveryAlignment(1, 32);
+    return report.alignmentIndex < 30;
+  });
+
+  check(results, 'a18_eval_round13_meta', 'Layer: round-13 meta exposes spread, parallelism, alignment signals', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.handoffReadinessSpreadIndex === 'number' &&
+      typeof m.workstreamParallelismIndex === 'number' &&
+      typeof m.escalationRecoveryAlignmentIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_escalation_alignment', 'Audit: escalation/recovery misalignment surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, escalationRecoveryAlignmentIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /misalignment/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round13_combined', 'Dual team: round-13 combined spread, parallelism, alignment exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.handoffReadinessSpreadCombined === 'number' &&
+      typeof dual.workstreamParallelismCombined === 'number' &&
+      typeof dual.escalationRecoveryAlignmentCombined === 'number'
     );
   });
 

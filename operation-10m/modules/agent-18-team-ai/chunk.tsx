@@ -286,6 +286,9 @@ export interface TeamMultiAgentCoordinationMeta {
   uncoveredTaskIds?: string[];
   compositeHealthGradientIndex?: number;
   compositeHealthTrend?: string;
+  handoffReadinessSpreadIndex?: number;
+  workstreamParallelismIndex?: number;
+  escalationRecoveryAlignmentIndex?: number;
 }
 
 export const AGENT18_LIMITS = {
@@ -3221,6 +3224,115 @@ export function combineDualTeamCompositeHealthGradient(friendly: number, enemy: 
 }
 
 
+// --- source: handoff-readiness-spread.ts ---
+
+export interface HandoffReadinessSpreadReport {
+  spreadIndex: number;
+  notes: string[];
+}
+
+/**
+ * Measure dispersion of pending handoff readiness scores (uneven acceptance capacity).
+ */
+export function computeHandoffReadinessSpread(
+  report: HandoffReadinessReport,
+): HandoffReadinessSpreadReport {
+  const notes: string[] = [];
+  const scores = report.rows.map(r => r.readinessScore);
+  if (scores.length < 2) {
+    return { spreadIndex: 0, notes: ['Insufficient pending handoffs for spread'] };
+  }
+
+  const min = Math.min(...scores);
+  const max = Math.max(...scores);
+  const spread = max - min;
+  if (spread >= 35) {
+    notes.push(`Handoff readiness spread ${spread} (${min}–${max})`);
+  }
+
+  const spreadIndex = Math.round(Math.min(100, spread * 1.4 + (report.notReadyHandoffIds.length > 0 ? 12 : 0)));
+
+  return { spreadIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamHandoffReadinessSpread(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: workstream-parallelism-index.ts ---
+
+export interface WorkstreamParallelismReport {
+  parallelismIndex: number;
+  notes: string[];
+}
+
+/**
+ * Score active parallel workstream load relative to configured workstream cap.
+ */
+export function measureWorkstreamParallelism(workstreams: ParallelWorkstream[]): WorkstreamParallelismReport {
+  const notes: string[] = [];
+  const scoped = workstreams.slice(0, AGENT18_LIMITS.maxWorkstreams);
+  const active = scoped.filter(ws => ws.phase === 'active').length;
+  const waiting = scoped.filter(ws => ws.phase === 'waiting_barrier').length;
+  const inFlight = active + waiting;
+  const ratio = inFlight / Math.max(1, AGENT18_LIMITS.maxWorkstreams);
+
+  if (ratio >= 0.75) {
+    notes.push(`Workstreams in flight at ${Math.round(ratio * 100)}% of cap (${inFlight}/${AGENT18_LIMITS.maxWorkstreams})`);
+  }
+  if (waiting >= 2) {
+    notes.push(`${waiting} workstreams waiting on barriers`);
+  }
+
+  const parallelismIndex = Math.round(Math.min(100, ratio * 70 + waiting * 12));
+
+  return { parallelismIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamWorkstreamParallelism(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: escalation-recovery-alignment.ts ---
+export interface EscalationRecoveryAlignmentReport {
+  alignmentIndex: number;
+  notes: string[];
+}
+
+/**
+ * Misalignment between escalation tier and recovery urgency expectations.
+ */
+export function computeEscalationRecoveryAlignment(
+  escalationTier: number,
+  recoveryUrgency: number,
+): EscalationRecoveryAlignmentReport {
+  const notes: string[] = [];
+  const tier = Math.max(0, Math.min(3, escalationTier));
+  const expectedUrgency = tier * 24 + (tier >= 2 ? 18 : 8);
+  const delta = Math.abs(recoveryUrgency - expectedUrgency);
+
+  if (tier >= 2 && recoveryUrgency < expectedUrgency - 15) {
+    notes.push('Recovery urgency lagging escalation tier');
+  }
+  if (tier <= 1 && recoveryUrgency > expectedUrgency + 25) {
+    notes.push('Recovery urgency overshoots nominal escalation tier');
+  }
+
+  const alignmentIndex = Math.round(Math.min(100, delta * 1.35));
+
+  return { alignmentIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamEscalationRecoveryAlignment(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
 // --- source: coordination-audit.ts ---
   AGENT18_LIMITS,
   CoordinationAuditFinding,
@@ -3633,6 +3745,42 @@ export function auditTeamMultiAgentLayer(
     push({
       severity: 'warning',
       message: `Composite health declining (${state.meta.compositeHealthGradientIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.handoffReadinessSpreadIndex === 'number' &&
+    state.meta.handoffReadinessSpreadIndex >= 45
+  ) {
+    push({
+      severity: 'warning',
+      message: `Handoff readiness spread (${state.meta.handoffReadinessSpreadIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.workstreamParallelismIndex === 'number' &&
+    state.meta.workstreamParallelismIndex >= 75
+  ) {
+    push({
+      severity: 'warning',
+      message: `Workstream parallelism elevated (${state.meta.workstreamParallelismIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.escalationRecoveryAlignmentIndex === 'number' &&
+    state.meta.escalationRecoveryAlignmentIndex >= 50
+  ) {
+    push({
+      severity: 'warning',
+      message: `Escalation/recovery misalignment (${state.meta.escalationRecoveryAlignmentIndex})`,
       actorIds: [],
       regionId: null,
     });
@@ -4080,6 +4228,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
           : undefined,
       compositeHealthTrend:
         typeof metaRaw.compositeHealthTrend === 'string' ? metaRaw.compositeHealthTrend : undefined,
+      handoffReadinessSpreadIndex:
+        typeof metaRaw.handoffReadinessSpreadIndex === 'number'
+          ? metaRaw.handoffReadinessSpreadIndex
+          : undefined,
+      workstreamParallelismIndex:
+        typeof metaRaw.workstreamParallelismIndex === 'number'
+          ? metaRaw.workstreamParallelismIndex
+          : undefined,
+      escalationRecoveryAlignmentIndex:
+        typeof metaRaw.escalationRecoveryAlignmentIndex === 'number'
+          ? metaRaw.escalationRecoveryAlignmentIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -4155,6 +4315,8 @@ export function evaluateTeamMultiAgentLayer(
     inputs.tasks,
   );
   handoffReadiness.notes.forEach(n => diagnostics.push(n));
+  const handoffReadinessSpread = computeHandoffReadinessSpread(handoffReadiness);
+  handoffReadinessSpread.notes.forEach(n => diagnostics.push(n));
   const capacityLedger = buildActorCapacityLedger(inputs.actors, inputs.tasks, roles);
   suggestCapacityRebalanceNotes(capacityLedger).forEach(n => diagnostics.push(n));
   directiveResult.suppressed.forEach(s =>
@@ -4224,6 +4386,8 @@ export function evaluateTeamMultiAgentLayer(
   workstreamBarriers.notes.forEach(n => diagnostics.push(n));
   const workstreamDeadlocks = detectWorkstreamDeadlocks(coordination.workstreams);
   workstreamDeadlocks.notes.forEach(n => diagnostics.push(n));
+  const workstreamParallelism = measureWorkstreamParallelism(coordination.workstreams);
+  workstreamParallelism.notes.forEach(n => diagnostics.push(n));
   const leaseContention = computeLeaseContentionIndex(
     coordination.leases,
     coordination.handoffs,
@@ -4340,6 +4504,8 @@ export function evaluateTeamMultiAgentLayer(
       uncoveredTaskIds: roleTaskCoverage.uncoveredTaskIds,
       compositeHealthGradientIndex: compositeGradient.gradientIndex,
       compositeHealthTrend: compositeGradient.trend,
+      handoffReadinessSpreadIndex: handoffReadinessSpread.spreadIndex,
+      workstreamParallelismIndex: workstreamParallelism.parallelismIndex,
     },
   };
 
@@ -4360,11 +4526,17 @@ export function evaluateTeamMultiAgentLayer(
     handoffIntegrityScore: handoffIntegrity.integrityScore,
   });
   recoveryPlaybook.notes.forEach(n => diagnostics.push(n));
+  const escalationAlignment = computeEscalationRecoveryAlignment(
+    escalation.tier,
+    recoveryPlaybook.recoveryUrgency,
+  );
+  escalationAlignment.notes.forEach(n => diagnostics.push(n));
   state = attachAuditToState(state, auditFindings, {
     coordinationEscalationTier: escalation.tier,
     coordinationEscalationLabel: escalation.label,
     coordinationRecoveryUrgency: recoveryPlaybook.recoveryUrgency,
     coordinationRecoveryActions: recoveryPlaybook.recommendedActions,
+    escalationRecoveryAlignmentIndex: escalationAlignment.alignmentIndex,
   });
   state = { ...state, diagnostics };
 
@@ -4445,6 +4617,9 @@ export interface DualTeamMultiAgentResult {
   duplicateGuardPressureCombined: number;
   roleTaskCoverageGapCombined: number;
   compositeHealthGradientCombined: number;
+  handoffReadinessSpreadCombined: number;
+  workstreamParallelismCombined: number;
+  escalationRecoveryAlignmentCombined: number;
 }
 
 /**
@@ -4501,6 +4676,9 @@ export function evaluateDualTeamMultiAgentLayers(
       duplicateGuardPressureCombined: friendly.state.meta.duplicateGuardPressureIndex ?? 0,
       roleTaskCoverageGapCombined: friendly.state.meta.roleTaskCoverageGapIndex ?? 0,
       compositeHealthGradientCombined: friendly.state.meta.compositeHealthGradientIndex ?? 0,
+      handoffReadinessSpreadCombined: friendly.state.meta.handoffReadinessSpreadIndex ?? 0,
+      workstreamParallelismCombined: friendly.state.meta.workstreamParallelismIndex ?? 0,
+      escalationRecoveryAlignmentCombined: friendly.state.meta.escalationRecoveryAlignmentIndex ?? 0,
     };
   }
 
@@ -4676,6 +4854,18 @@ export function evaluateDualTeamMultiAgentLayers(
     compositeHealthGradientCombined: combineDualTeamCompositeHealthGradient(
       friendly.state.meta.compositeHealthGradientIndex ?? 0,
       enemy.state.meta.compositeHealthGradientIndex ?? 0,
+    ),
+    handoffReadinessSpreadCombined: combineDualTeamHandoffReadinessSpread(
+      friendly.state.meta.handoffReadinessSpreadIndex ?? 0,
+      enemy.state.meta.handoffReadinessSpreadIndex ?? 0,
+    ),
+    workstreamParallelismCombined: combineDualTeamWorkstreamParallelism(
+      friendly.state.meta.workstreamParallelismIndex ?? 0,
+      enemy.state.meta.workstreamParallelismIndex ?? 0,
+    ),
+    escalationRecoveryAlignmentCombined: combineDualTeamEscalationRecoveryAlignment(
+      friendly.state.meta.escalationRecoveryAlignmentIndex ?? 0,
+      enemy.state.meta.escalationRecoveryAlignmentIndex ?? 0,
     ),
   };
 }
@@ -6580,6 +6770,80 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.duplicateGuardPressureCombined === 'number' &&
       typeof dual.roleTaskCoverageGapCombined === 'number' &&
       typeof dual.compositeHealthGradientCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_handoff_readiness_spread', 'Handoff readiness spread: uneven scores raise index', () => {
+    const report = computeHandoffReadinessSpread({
+      rows: [
+        { handoffId: 'h1', toActorId: 'mate', readinessScore: 95, blockers: [], ready: true },
+        { handoffId: 'h2', toActorId: 'player', readinessScore: 25, blockers: ['low_ap'], ready: false },
+      ],
+      averageReadiness: 60,
+      notReadyHandoffIds: ['h2'],
+      notes: [],
+    });
+    return report.spreadIndex >= 45;
+  });
+
+  check(results, 'a18_handoff_readiness_spread_none', 'Handoff readiness spread: single pending stays zero', () => {
+    const readiness = scoreHandoffReadiness([], baseInputs().actors, [], baseInputs().tasks);
+    const report = computeHandoffReadinessSpread(readiness);
+    return report.spreadIndex === 0;
+  });
+
+  check(results, 'a18_workstream_parallelism_high', 'Workstream parallelism: saturated cap scores high', () => {
+    const report = measureWorkstreamParallelism([
+      { id: 'ws1', actorIds: ['a'], taskIds: ['t1'], phase: 'active', barrierTaskIds: [] },
+      { id: 'ws2', actorIds: ['b'], taskIds: ['t2'], phase: 'active', barrierTaskIds: [] },
+      { id: 'ws3', actorIds: ['c'], taskIds: ['t3'], phase: 'waiting_barrier', barrierTaskIds: ['t4'] },
+      { id: 'ws4', actorIds: ['d'], taskIds: ['t5'], phase: 'waiting_barrier', barrierTaskIds: ['t6'] },
+    ]);
+    return report.parallelismIndex >= 75;
+  });
+
+  check(results, 'a18_escalation_recovery_misaligned', 'Escalation/recovery alignment: tier/urgency mismatch scores high', () => {
+    const report = computeEscalationRecoveryAlignment(3, 15);
+    return report.alignmentIndex >= 50;
+  });
+
+  check(results, 'a18_escalation_recovery_aligned', 'Escalation/recovery alignment: matched tier/urgency stays low', () => {
+    const report = computeEscalationRecoveryAlignment(1, 32);
+    return report.alignmentIndex < 30;
+  });
+
+  check(results, 'a18_eval_round13_meta', 'Layer: round-13 meta exposes spread, parallelism, alignment signals', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.handoffReadinessSpreadIndex === 'number' &&
+      typeof m.workstreamParallelismIndex === 'number' &&
+      typeof m.escalationRecoveryAlignmentIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_escalation_alignment', 'Audit: escalation/recovery misalignment surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, escalationRecoveryAlignmentIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /misalignment/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round13_combined', 'Dual team: round-13 combined spread, parallelism, alignment exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.handoffReadinessSpreadCombined === 'number' &&
+      typeof dual.workstreamParallelismCombined === 'number' &&
+      typeof dual.escalationRecoveryAlignmentCombined === 'number'
     );
   });
 

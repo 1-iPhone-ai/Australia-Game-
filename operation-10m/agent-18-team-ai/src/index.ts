@@ -42,4 +42,7 @@ export * from './persistence-churn-gauge.ts';
 export * from './duplicate-guard-pressure.ts';
 export * from './role-task-coverage-gap.ts';
 export * from './composite-health-gradient.ts';
+export * from './handoff-readiness-spread.ts';
+export * from './workstream-parallelism-index.ts';
+export * from './escalation-recovery-alignment.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

@@ -56,6 +56,9 @@ import { measurePersistenceChurn } from './persistence-churn-gauge.ts';
 import { measureDuplicateGuardPressure } from './duplicate-guard-pressure.ts';
 import { computeRoleTaskCoverageGap } from './role-task-coverage-gap.ts';
 import { computeCompositeHealthGradient } from './composite-health-gradient.ts';
+import { computeHandoffReadinessSpread } from './handoff-readiness-spread.ts';
+import { measureWorkstreamParallelism } from './workstream-parallelism-index.ts';
+import { computeEscalationRecoveryAlignment } from './escalation-recovery-alignment.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -308,6 +311,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
           : undefined,
       compositeHealthTrend:
         typeof metaRaw.compositeHealthTrend === 'string' ? metaRaw.compositeHealthTrend : undefined,
+      handoffReadinessSpreadIndex:
+        typeof metaRaw.handoffReadinessSpreadIndex === 'number'
+          ? metaRaw.handoffReadinessSpreadIndex
+          : undefined,
+      workstreamParallelismIndex:
+        typeof metaRaw.workstreamParallelismIndex === 'number'
+          ? metaRaw.workstreamParallelismIndex
+          : undefined,
+      escalationRecoveryAlignmentIndex:
+        typeof metaRaw.escalationRecoveryAlignmentIndex === 'number'
+          ? metaRaw.escalationRecoveryAlignmentIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -383,6 +398,8 @@ export function evaluateTeamMultiAgentLayer(
     inputs.tasks,
   );
   handoffReadiness.notes.forEach(n => diagnostics.push(n));
+  const handoffReadinessSpread = computeHandoffReadinessSpread(handoffReadiness);
+  handoffReadinessSpread.notes.forEach(n => diagnostics.push(n));
   const capacityLedger = buildActorCapacityLedger(inputs.actors, inputs.tasks, roles);
   suggestCapacityRebalanceNotes(capacityLedger).forEach(n => diagnostics.push(n));
   directiveResult.suppressed.forEach(s =>
@@ -452,6 +469,8 @@ export function evaluateTeamMultiAgentLayer(
   workstreamBarriers.notes.forEach(n => diagnostics.push(n));
   const workstreamDeadlocks = detectWorkstreamDeadlocks(coordination.workstreams);
   workstreamDeadlocks.notes.forEach(n => diagnostics.push(n));
+  const workstreamParallelism = measureWorkstreamParallelism(coordination.workstreams);
+  workstreamParallelism.notes.forEach(n => diagnostics.push(n));
   const leaseContention = computeLeaseContentionIndex(
     coordination.leases,
     coordination.handoffs,
@@ -568,6 +587,8 @@ export function evaluateTeamMultiAgentLayer(
       uncoveredTaskIds: roleTaskCoverage.uncoveredTaskIds,
       compositeHealthGradientIndex: compositeGradient.gradientIndex,
       compositeHealthTrend: compositeGradient.trend,
+      handoffReadinessSpreadIndex: handoffReadinessSpread.spreadIndex,
+      workstreamParallelismIndex: workstreamParallelism.parallelismIndex,
     },
   };
 
@@ -588,11 +609,17 @@ export function evaluateTeamMultiAgentLayer(
     handoffIntegrityScore: handoffIntegrity.integrityScore,
   });
   recoveryPlaybook.notes.forEach(n => diagnostics.push(n));
+  const escalationAlignment = computeEscalationRecoveryAlignment(
+    escalation.tier,
+    recoveryPlaybook.recoveryUrgency,
+  );
+  escalationAlignment.notes.forEach(n => diagnostics.push(n));
   state = attachAuditToState(state, auditFindings, {
     coordinationEscalationTier: escalation.tier,
     coordinationEscalationLabel: escalation.label,
     coordinationRecoveryUrgency: recoveryPlaybook.recoveryUrgency,
     coordinationRecoveryActions: recoveryPlaybook.recommendedActions,
+    escalationRecoveryAlignmentIndex: escalationAlignment.alignmentIndex,
   });
   state = { ...state, diagnostics };
 
