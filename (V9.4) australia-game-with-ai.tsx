@@ -18208,7 +18208,7 @@ export function sanitizeAccessibilitySettings(input: unknown): AccessibilitySett
   const validRingStyles: FocusRingStyle[] = ['emerald', 'cyan', 'amber', 'white'];
   const validAnnounceVerbosities: ScreenReaderAnnounceVerbosity[] = ['off', 'minimal', 'polite', 'assertive'];
 
-  return {
+  const out: AccessibilitySettings = {
     highContrastFocusRings: typeof src.highContrastFocusRings === 'boolean' ? src.highContrastFocusRings : defaults.highContrastFocusRings,
     focusRingStyle: typeof src.focusRingStyle === 'string' && validRingStyles.includes(src.focusRingStyle as any)
       ? (src.focusRingStyle as FocusRingStyle)
@@ -18227,6 +18227,7 @@ export function sanitizeAccessibilitySettings(input: unknown): AccessibilitySett
       ? src.textScaleMultiplier
       : defaults.textScaleMultiplier,
   };
+  return normalizeAccessibilityMotionFields(out);
 }
 
 // --- 7. Standardized Game Phase & Contextual Hiding Engine ---
@@ -133964,6 +133965,133 @@ export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
+// SECTION 20P-A68: OPERATION 111 ACCESSIBILITY ENGINEER — PLAY A11Y PROFILE
+// ============================================================================
+// Centralizes player accessibility preferences (profile-scoped, not saved in match files).
+// Presentation only: never changes rules, timing, or canonical state.
+
+export interface O111AccessibilityPresentation {
+  motionMode: UiMotionMode;
+  focusStrong: boolean;
+  focusRingStyle: FocusRingStyle;
+  textScale: number;
+  screenReaderEnabled: boolean;
+  announcePoliteness: 'off' | 'polite' | 'assertive';
+  showKeyboardHints: boolean;
+  trapFocusInModals: boolean;
+  restoreFocusOnClose: boolean;
+}
+
+/** Keeps reduceMotion / reducedMotion aligned for settings UI, saves, and resolveUiMotionMode. */
+export function normalizeAccessibilityMotionFields(settings: AccessibilitySettings): AccessibilitySettings {
+  const reduced = settings.reducedMotion === true || settings.reduceMotion === true;
+  return { ...settings, reducedMotion: reduced, reduceMotion: reduced };
+}
+
+export function resolveO111AccessibilityPresentation(gameSettings: any): O111AccessibilityPresentation {
+  const a = normalizeAccessibilityMotionFields(sanitizeAccessibilitySettings(gameSettings?.accessibilitySettings));
+  const highContrast = a.highContrastFocusRings !== false;
+  let announcePoliteness: O111AccessibilityPresentation['announcePoliteness'] = 'off';
+  if (a.screenReaderAnnouncements) {
+    if (a.announceVerbosity === 'assertive') announcePoliteness = 'assertive';
+    else if (a.announceVerbosity === 'off') announcePoliteness = 'off';
+    else announcePoliteness = 'polite';
+  }
+  return {
+    motionMode: resolveUiMotionMode({ accessibilitySettings: a }),
+    focusStrong: highContrast,
+    focusRingStyle: a.focusRingStyle,
+    textScale: a.textScaleMultiplier,
+    screenReaderEnabled: a.screenReaderAnnouncements && announcePoliteness !== 'off',
+    announcePoliteness,
+    showKeyboardHints: a.keyboardNavigationHints !== false,
+    trapFocusInModals: modalShouldTrapFocus(a),
+    restoreFocusOnClose: a.restoreFocusOnClose !== false,
+  };
+}
+
+export const O111_MAIN_CONTENT_ID = 'o111-main-content';
+
+export const O111_A11Y_STYLESHEET = `
+[data-v94] { --o111-text-scale: 1; font-size: calc(16px * var(--o111-text-scale)); }
+[data-v94][data-focus-ring="cyan"] button:focus-visible, [data-v94][data-focus-ring="cyan"] a:focus-visible, [data-v94][data-focus-ring="cyan"] [role="button"]:focus-visible, [data-v94][data-focus-ring="cyan"] select:focus-visible, [data-v94][data-focus-ring="cyan"] input:focus-visible { outline-color: rgba(34, 211, 238, 0.95) !important; }
+[data-v94][data-focus-ring="amber"] button:focus-visible, [data-v94][data-focus-ring="amber"] a:focus-visible, [data-v94][data-focus-ring="amber"] [role="button"]:focus-visible, [data-v94][data-focus-ring="amber"] select:focus-visible, [data-v94][data-focus-ring="amber"] input:focus-visible { outline-color: rgba(251, 191, 36, 0.95) !important; }
+[data-v94][data-focus-ring="white"] button:focus-visible, [data-v94][data-focus-ring="white"] a:focus-visible, [data-v94][data-focus-ring="white"] [role="button"]:focus-visible, [data-v94][data-focus-ring="white"] select:focus-visible, [data-v94][data-focus-ring="white"] input:focus-visible { outline-color: rgba(255, 255, 255, 0.95) !important; }
+.o111-skip-link { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.o111-skip-link:focus { position: fixed; left: 12px; top: 12px; z-index: 100000; width: auto; height: auto; margin: 0; padding: 10px 16px; overflow: visible; clip: auto; white-space: normal; background: #0f172a; color: #f8fafc; border: 2px solid #38bdf8; border-radius: 8px; font-weight: 700; font-size: 14px; }
+`;
+
+export function pickO111ScreenReaderAnnouncement(
+  major: UiFeedbackEvent | null,
+  presentation: O111AccessibilityPresentation
+): string | null {
+  if (!major || !presentation.screenReaderEnabled) return null;
+  if (presentation.announcePoliteness === 'off') return null;
+  if (major.importance === 'minor' && presentation.announcePoliteness !== 'assertive') return null;
+  const lines = major.lines.filter(Boolean).slice(0, 2).join('. ');
+  return lines ? `${major.title}. ${lines}` : major.title;
+}
+
+export const O111SkipToMainLink: React.FC<{ targetId?: string; label?: string }> = ({ targetId = O111_MAIN_CONTENT_ID, label = 'Skip to main content' }) => (
+  <a href={`#${targetId}`} className="o111-skip-link" data-testid="o111-skip-link">
+    {label}
+  </a>
+);
+
+export const O111ScreenReaderLiveRegion: React.FC<{ politeness: 'polite' | 'assertive'; message: string | null }> = ({ politeness, message }) => (
+  <div
+    aria-live={politeness}
+    aria-atomic="true"
+    className="sr-only"
+    data-testid="o111-sr-live"
+    role="status"
+  >
+    {message || ''}
+  </div>
+);
+
+export function runO111AccessibilitySelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+
+  check('a68_motion_alias', 'reduceMotion and reducedMotion stay aligned for motion resolution', () => {
+    const synced = normalizeAccessibilityMotionFields({ ...createDefaultAccessibilitySettings(), reduceMotion: true, reducedMotion: false });
+    const mode = resolveUiMotionMode({ accessibilitySettings: synced });
+    return synced.reducedMotion === true && synced.reduceMotion === true && mode === 'reduced';
+  });
+  check('a68_presentation_profile', 'Accessibility presentation resolves motion, focus, text scale, and SR policy', () => {
+    const p = resolveO111AccessibilityPresentation({ accessibilitySettings: { ...createDefaultAccessibilitySettings(), textScaleMultiplier: 1.25, screenReaderAnnouncements: true, announceVerbosity: 'polite' } });
+    return p.textScale === 1.25 && p.focusStrong === true && p.motionMode === 'system' && p.screenReaderEnabled === true && p.trapFocusInModals === true;
+  });
+  check('a68_sr_pick', 'Screen reader announcements respect importance and the off switch', () => {
+    const on = resolveO111AccessibilityPresentation({ accessibilitySettings: createDefaultAccessibilitySettings() });
+    const off = resolveO111AccessibilityPresentation({ accessibilitySettings: { ...createDefaultAccessibilitySettings(), screenReaderAnnouncements: false } });
+    const major: UiFeedbackEvent = { importance: 'major', title: 'YOUR TURN', lines: ['Day 5'], kind: 'turn_start', id: 'x', subject: 'turn', before: null, after: null, icon: '▶', tone: 'selected', createdTurn: 1, createdAt: 1, expiresAt: 2, regions: [] };
+    const minor: UiFeedbackEvent = { ...major, importance: 'minor', title: 'Rival moved' };
+    return Boolean(pickO111ScreenReaderAnnouncement(major, on)) && pickO111ScreenReaderAnnouncement(minor, on) === null && pickO111ScreenReaderAnnouncement(major, off) === null;
+  });
+  check('a68_stylesheet', 'A11y stylesheet wires text scale and skip-link focus without remote assets', () => {
+    const css = O111_A11Y_STYLESHEET;
+    return /--o111-text-scale/.test(css) && /\.o111-skip-link:focus/.test(css) && !/https?:/.test(css);
+  });
+  check('a68_modal_trap_setting', 'Modal trapping follows trapFocusInModals through the presentation resolver', () => {
+    const trapped = resolveO111AccessibilityPresentation({ accessibilitySettings: { ...createDefaultAccessibilitySettings(), trapFocusInModals: true } });
+    const free = resolveO111AccessibilityPresentation({ accessibilitySettings: { ...createDefaultAccessibilitySettings(), trapFocusInModals: false } });
+    return trapped.trapFocusInModals && !free.trapFocusInModals;
+  });
+  check('a68_not_persisted', 'O111 a11y presentation keys are profile settings only (not match genome fields)', () => {
+    const keys = Object.keys(DEFAULT_GAME_SETTINGS).filter(k => /o111|srLive|skipLink/i.test(k));
+    return keys.length === 0;
+  });
+  return results;
+}
+
+
+// ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
 // Local-only diagnostics. No network, workers, telemetry or storage writes happen in this section; every
@@ -136513,6 +136641,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'o111_a68', label: 'O111 Accessibility (Agent 68)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111AccessibilitySelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -215061,8 +215190,10 @@ function dispatchGameSettingsChange(
   const contentLiveCtx = useMemo(() => (contentState && isLiveIntentMatch ? buildLiveContentContext(gameStateLiveRef.current || gameState, Number(gameState.day || 1)) : null), [contentState?.revision, isLiveIntentMatch, gameState.day]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- V9.4 Game feel: presentation-only feedback derived from canonical deltas (never persisted) ----
-  const v94MotionMode = resolveUiMotionMode(gameSettings);
-  const v94FocusStrong = Boolean(gameSettings.accessibilitySettings?.highContrastFocusRings);
+  const o111A11y = useMemo(() => resolveO111AccessibilityPresentation(gameSettings), [gameSettings.accessibilitySettings]);
+  const v94MotionMode = o111A11y.motionMode;
+  const v94FocusStrong = o111A11y.focusStrong;
+  const [o111SrMessage, setO111SrMessage] = useState<string | null>(null);
   const [v94DebugSlow, setV94DebugSlow] = useState(false); // LAB-only; slows presentation, never gameplay
   const [v94Queue, setV94Queue] = useState<UiFeedbackEvent[]>([]);
   const [v94Now, setV94Now] = useState(() => Date.now());
@@ -215129,6 +215260,10 @@ function dispatchGameSettingsChange(
     return () => clearTimeout(id);
   }, [v94Queue]);
   const v94Visible = useMemo(() => selectVisibleFeedback(v94Queue, Date.now()), [v94Queue, v94Now]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const msg = pickO111ScreenReaderAnnouncement(v94Visible.major, o111A11y);
+    if (msg) setO111SrMessage(msg);
+  }, [v94Visible.major?.id, v94Visible.major?.title, o111A11y.screenReaderEnabled, o111A11y.announcePoliteness]);
   const dismissV94 = useCallback((id: string) => setV94Queue(q => q.filter(e => e.id !== id)), []);
   const v94CashDelta = currentDeltaFor(v94Queue, 'cash', feelSnapshot?.cash ?? null, v94Now);
   const v94ApDelta = currentDeltaFor(v94Queue, 'ap', feelSnapshot?.ap ?? null, v94Now);
@@ -218819,9 +218954,9 @@ function dispatchGameSettingsChange(
                         const updated = { ...current, highContrastFocusRings: !current.highContrastFocusRings };
                         updateGameSetting('accessibilitySettings', updated, { settingLabel: 'High Contrast Focus Rings', section: 'Interface → Accessibility', source: 'direct_player_change' });
                       }}
-                      className={`px-4 py-2 rounded font-semibold ${(gameSettings.accessibilitySettings?.highContrastFocusRings ?? false) ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      className={`px-4 py-2 rounded font-semibold ${(gameSettings.accessibilitySettings?.highContrastFocusRings ?? true) ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
-                      {(gameSettings.accessibilitySettings?.highContrastFocusRings ?? false) ? 'ON' : 'OFF'}
+                      {(gameSettings.accessibilitySettings?.highContrastFocusRings ?? true) ? 'ON' : 'OFF'}
                     </button>
                   </div>
 
@@ -218833,12 +218968,55 @@ function dispatchGameSettingsChange(
                     <button
                       onClick={() => {
                         const current = gameSettings.accessibilitySettings || createDefaultAccessibilitySettings();
-                        const updated = { ...current, reduceMotion: !current.reduceMotion };
+                        const reduced = !(current.reducedMotion || current.reduceMotion);
+                        const updated = normalizeAccessibilityMotionFields({ ...current, reducedMotion: reduced, reduceMotion: reduced });
                         updateGameSetting('accessibilitySettings', updated, { settingLabel: 'Reduce Motion', section: 'Interface → Accessibility', source: 'direct_player_change' });
                       }}
-                      className={`px-4 py-2 rounded font-semibold ${(gameSettings.accessibilitySettings?.reduceMotion ?? false) ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                      className={`px-4 py-2 rounded font-semibold ${(gameSettings.accessibilitySettings?.reducedMotion || gameSettings.accessibilitySettings?.reduceMotion) ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
                     >
-                      {(gameSettings.accessibilitySettings?.reduceMotion ?? false) ? 'ON' : 'OFF'}
+                      {(gameSettings.accessibilitySettings?.reducedMotion || gameSettings.accessibilitySettings?.reduceMotion) ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">Text size</div>
+                      <div className="text-sm opacity-75">Scales PLAY interface text (profile only; not stored in save files).</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="range"
+                        min={0.8}
+                        max={1.5}
+                        step={0.05}
+                        value={gameSettings.accessibilitySettings?.textScaleMultiplier ?? 1}
+                        aria-label="Text size multiplier"
+                        onChange={(e) => {
+                          const current = gameSettings.accessibilitySettings || createDefaultAccessibilitySettings();
+                          const updated = { ...current, textScaleMultiplier: Number(e.target.value) };
+                          updateGameSetting('accessibilitySettings', updated, { settingLabel: 'Text Size', section: 'Interface → Accessibility', source: 'direct_player_change' });
+                        }}
+                        className="w-32"
+                      />
+                      <span className="text-sm font-mono w-12 text-right">{Math.round((gameSettings.accessibilitySettings?.textScaleMultiplier ?? 1) * 100)}%</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">Screen reader announcements</div>
+                      <div className="text-sm opacity-75">Major gameplay moments (your turn, completions) are announced via a live region.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const current = gameSettings.accessibilitySettings || createDefaultAccessibilitySettings();
+                        const updated = { ...current, screenReaderAnnouncements: !current.screenReaderAnnouncements };
+                        updateGameSetting('accessibilitySettings', updated, { settingLabel: 'Screen Reader Announcements', section: 'Interface → Accessibility', source: 'direct_player_change' });
+                      }}
+                      className={`px-4 py-2 rounded font-semibold ${(gameSettings.accessibilitySettings?.screenReaderAnnouncements ?? true) ? `${themeStyles.success} text-white` : themeStyles.buttonSecondary}`}
+                    >
+                      {(gameSettings.accessibilitySettings?.screenReaderAnnouncements ?? true) ? 'ON' : 'OFF'}
                     </button>
                   </div>
 
@@ -242639,8 +242817,13 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
   }
 
   return (
-    <div className="font-sans" data-v94="" data-motion={v94MotionMode} data-focus={v94FocusStrong ? 'strong' : 'normal'} style={v94DebugSlow ? ({ ['--v94-speed' as any]: 6 } as React.CSSProperties) : undefined}>
+    <div id={O111_MAIN_CONTENT_ID} className="font-sans" data-v94="" data-motion={v94MotionMode} data-focus={v94FocusStrong ? 'strong' : 'normal'} data-focus-ring={o111A11y.focusRingStyle} style={(v94DebugSlow ? ({ ['--v94-speed' as any]: 6, ['--o111-text-scale' as any]: o111A11y.textScale } as React.CSSProperties) : ({ ['--o111-text-scale' as any]: o111A11y.textScale } as React.CSSProperties))}>
+      <O111SkipToMainLink />
+      {o111A11y.screenReaderEnabled && o111A11y.announcePoliteness !== 'off' ? (
+        <O111ScreenReaderLiveRegion politeness={o111A11y.announcePoliteness === 'assertive' ? 'assertive' : 'polite'} message={o111SrMessage} />
+      ) : null}
       <style>{V94_STYLESHEET}</style>
+      <style>{O111_A11Y_STYLESHEET}</style>
       <style>{`
         @keyframes notificationSlideIn {
           from { opacity: 0; transform: translateY(-10px); }
