@@ -126,6 +126,12 @@ import { nrDashBuildDependencyProviderSpan } from '../core/dependency-provider-s
 import { nrDashBuildEconomyResilienceSpan } from '../core/economy-resilience-span.ts';
 import { nrDashBuildCorridorPulseSpread } from '../core/corridor-pulse-spread.ts';
 import { nrDashBuildHistoryTurnSpan } from '../core/history-turn-span.ts';
+import { nrDashBuildModerateNeedsSpread } from '../core/moderate-needs-spread.ts';
+import { nrDashBuildNationalHistoryGap } from '../core/national-history-gap.ts';
+import { nrDashBuildLinkPulseSpan } from '../core/link-pulse-span.ts';
+import { nrDashBuildOwnerPortfolioSpan } from '../core/owner-portfolio-span.ts';
+import { nrDashBuildConstraintBandSpan } from '../core/constraint-band-span.ts';
+import { nrDashBuildDerivedEventTurnSpan } from '../core/derived-event-turn-span.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -288,6 +294,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const portfolioSpan = nrDashBuildOwnerPortfolioSpan(snap);
+      return portfolioSpan ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-owner-portfolio-span">
+          Owner portfolio span {portfolioSpan.portfolioSpread} · min {portfolioSpan.minPortfolio} · max{' '}
+          {portfolioSpan.maxPortfolio} regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const derivedLoad = nrDashBuildDerivedEventLoad(lrView);
       return derivedLoad ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-derived-event-load">
@@ -368,6 +383,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const modNeedsSpread = nrDashBuildModerateNeedsSpread(lrView);
+      return modNeedsSpread ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-moderate-needs-spread">
+          Moderate needs spread σ {modNeedsSpread.stdDev} · μ {modNeedsSpread.meanModerateNeeds} across{' '}
+          {modNeedsSpread.regionCount} regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const resGap = nrDashBuildNationalResilienceGap(snap);
       return resGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-resilience-gap">
@@ -397,6 +421,14 @@ export const NrDashOverviewTab: React.FC<{
       return historyLoad && historyLoad.snippetCount > 0 ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-history-snippet-load">
           History snippet load {historyLoad.loadRatio} · {historyLoad.snippetCount}/{historyLoad.maxSnippets} slots
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const histGap = nrDashBuildNationalHistoryGap(lrView, nsState, snap);
+      return histGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-history-gap">
+          National history gap {histGap.gap} · sources {histGap.sourceEventCount} vs surfaced {histGap.surfacedSnippetCount}
         </div>
       ) : null;
     })()}
@@ -582,6 +614,15 @@ export const NrDashRegionsTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const bandSpan = nrDashBuildConstraintBandSpan(nsState);
+      return bandSpan ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-constraint-band-span">
+          Constraint band span {bandSpan.rankSpread} · rank {bandSpan.minRank}–{bandSpan.maxRank} across {bandSpan.regionCount}{' '}
+          regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const gap = nrDashBuildMomentumLeaderGap(snap, nsState);
       return gap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-momentum-leader-gap">
@@ -748,6 +789,15 @@ export const NrDashNetworksTab: React.FC<{
           {Math.round(constraintConc.dominantShare * 100)}%)
         </div>
       )}
+      {(() => {
+        const bandSpan = nrDashBuildConstraintBandSpan(ns);
+        return bandSpan ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-constraint-band-span-networks">
+            Constraint band span {bandSpan.rankSpread} · rank {bandSpan.minRank}–{bandSpan.maxRank} across {bandSpan.regionCount}{' '}
+            regions
+          </div>
+        ) : null;
+      })()}
       {bottleneckSpan && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-network-span">
           Bottleneck network span {bottleneckSpan.distinctNetworks}/{bottleneckSpan.bottleneckCount} ·{' '}
@@ -1050,6 +1100,18 @@ export const NrDashTrendsTab: React.FC<{
           </div>
         ) : null;
       })()}
+      {(() => {
+        const derivedTurnSpan = nrDashBuildDerivedEventTurnSpan(lrView);
+        return derivedTurnSpan ? (
+          <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-derived-event-turn-span">
+            <div className="font-semibold mb-1">Derived event turn span</div>
+            <div>
+              turn spread {derivedTurnSpan.turnSpread} · min R{derivedTurnSpan.minTurn} · max R{derivedTurnSpan.maxTurn} ·{' '}
+              {derivedTurnSpan.eventCount} events
+            </div>
+          </div>
+        ) : null;
+      })()}
       {movers.length > 0 && (
         <div className="text-xs mb-3" data-testid="nr-dash-trend-movers">
           <div className="font-semibold mb-1">Largest momentum history deltas (authoritative)</div>
@@ -1187,6 +1249,15 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-corridor-pulse-spread">
             Corridor pulse spread σ {corridorPulse.stdDev} · μ blend {corridorPulse.meanBlend} · {corridorPulse.corridorCount}{' '}
             corridors
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const linkPulse = nrDashBuildLinkPulseSpan(stressedLinks, baseNodes);
+        return linkPulse && linkPulse.intensitySpread > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-link-pulse-span">
+            Link pulse span {linkPulse.intensitySpread} · min {linkPulse.minBlend} · max {linkPulse.maxBlend} ·{' '}
+            {linkPulse.linkCount} links
           </p>
         ) : null;
       })()}

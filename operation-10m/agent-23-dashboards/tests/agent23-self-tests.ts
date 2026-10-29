@@ -122,6 +122,12 @@ import { nrDashBuildDependencyProviderSpan } from '../core/dependency-provider-s
 import { nrDashBuildEconomyResilienceSpan } from '../core/economy-resilience-span.ts';
 import { nrDashBuildCorridorPulseSpread } from '../core/corridor-pulse-spread.ts';
 import { nrDashBuildHistoryTurnSpan } from '../core/history-turn-span.ts';
+import { nrDashBuildModerateNeedsSpread } from '../core/moderate-needs-spread.ts';
+import { nrDashBuildNationalHistoryGap } from '../core/national-history-gap.ts';
+import { nrDashBuildLinkPulseSpan } from '../core/link-pulse-span.ts';
+import { nrDashBuildOwnerPortfolioSpan } from '../core/owner-portfolio-span.ts';
+import { nrDashBuildConstraintBandSpan } from '../core/constraint-band-span.ts';
+import { nrDashBuildDerivedEventTurnSpan } from '../core/derived-event-turn-span.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -969,6 +975,46 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_history_turn_span', 'History turn span covers LR derived and NS history', () => {
     const span = nrDashBuildHistoryTurnSpan(createAgent23LrFixture(), createAgent23NsFixture())!;
     return span.eventCount === 2 && span.turnSpread === 1 && span.minTurn === 4;
+  });
+
+  check('a23_moderate_needs_spread', 'Moderate needs spread is zero on uniform fixture', () => {
+    const spread = nrDashBuildModerateNeedsSpread(createAgent23LrFixture())!;
+    return spread.totalModerateNeeds === 8 && spread.stdDev === 0;
+  });
+
+  check('a23_national_history_gap', 'National history gap is zero when sources match snippets', () => {
+    const lr = createAgent23LrFixture();
+    const ns = createAgent23NsFixture();
+    const snap = nrDashBuildAuthSnapshot(5, lr, ns, null)!;
+    const gap = nrDashBuildNationalHistoryGap(lr, ns, snap)!;
+    return gap.sourceEventCount === 2 && gap.surfacedSnippetCount === 2 && gap.gap === 0;
+  });
+
+  check('a23_link_pulse_span', 'Link pulse span is positive on merged map links', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    const links = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(createAgent23NsFixture(), AGENT23_REGION_MAP_LAYOUT)
+    );
+    const span = nrDashBuildLinkPulseSpan(links, nodes)!;
+    return span.linkCount > 0 && span.intensitySpread > 0.02;
+  });
+
+  check('a23_owner_portfolio_span', 'Owner portfolio span is eight on all-unknown fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const span = nrDashBuildOwnerPortfolioSpan(snap)!;
+    return span.portfolioSpread === 8 && span.maxPortfolio === 8;
+  });
+
+  check('a23_constraint_band_span', 'Constraint band span is zero on uniform freight fixture', () => {
+    const span = nrDashBuildConstraintBandSpan(createAgent23NsFixture())!;
+    return span.rankSpread === 0 && span.regionCount === 8;
+  });
+
+  check('a23_derived_event_turn_span', 'Derived event turn span is zero on single major event', () => {
+    const span = nrDashBuildDerivedEventTurnSpan(createAgent23LrFixture())!;
+    return span.eventCount === 1 && span.turnSpread === 0 && span.minTurn === 4;
   });
 
   return results;
