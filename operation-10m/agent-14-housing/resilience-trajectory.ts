@@ -10,7 +10,7 @@ const DEFAULT_EMA_ALPHA = 0.32;
 
 export function createInitialResilienceTrajectory(): ResilienceTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.27-scale-wave-27' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.28-scale-wave-28' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     resilienceIndexEma: 58,
@@ -31,7 +31,7 @@ export function sanitizeResilienceTrajectory(
       ? Math.max(0, Math.min(100, raw.resilienceIndexEma))
       : 58;
   return {
-    schemaVersion: '10.14.27-scale-wave-27' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.28-scale-wave-28' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     resilienceIndexEma,

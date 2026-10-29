@@ -18,7 +18,7 @@ function stressSample(brief: PortfolioStabilizationBrief): number {
 
 export function createInitialStabilizationTrajectory(): StabilizationTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.27-scale-wave-27' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.28-scale-wave-28' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     stabilizationStressEma: 50,
@@ -39,7 +39,7 @@ export function sanitizeStabilizationTrajectory(
       ? Math.max(0, Math.min(100, raw.stabilizationStressEma))
       : 50;
   return {
-    schemaVersion: '10.14.27-scale-wave-27' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.28-scale-wave-28' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     stabilizationStressEma,

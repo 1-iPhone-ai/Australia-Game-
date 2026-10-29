@@ -83,4 +83,7 @@ export * from './agent25-wave26-projection-handoff-brief.ts';
 export * from './wave27-gate-trajectory.ts';
 export * from './wave27-integration-monitor.ts';
 export * from './agent25-wave27-projection-handoff-brief.ts';
+export * from './wave28-gate-trajectory.ts';
+export * from './wave28-integration-monitor.ts';
+export * from './agent25-wave28-projection-handoff-brief.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';
