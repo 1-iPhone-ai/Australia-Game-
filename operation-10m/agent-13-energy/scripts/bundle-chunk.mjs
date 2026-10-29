@@ -51,6 +51,7 @@ const FILES = [
   'critical-minerals-circular-battery-supply-ledger.ts',
   'offshore-shore-port-green-corridor-ledger.ts',
   'national-decarbon-federation-relief-arbitration-ledger.ts',
+  'net-zero-pathway-export-carbon-intensity-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -113,6 +114,8 @@ const EXPORT_MANIFEST = [
   'V1014_PORT_GREEN_CORRIDOR_CATALOG',
   'V1014_DECARBON_FEDERATION_CATALOG',
   'V1014_RELIEF_ARBITRATION_CATALOG',
+  'V1014_NET_ZERO_PATHWAY_CATALOG',
+  'V1014_EXPORT_CARBON_INTENSITY_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -212,6 +215,9 @@ const EXPORT_MANIFEST = [
   'runAgent13FederationArbitrationScaleSelfTests',
   'runAgent13FederationArbitrationTurnScenario',
   'V1014_FEDERATION_ARBITRATION_TURN_SCENARIOS',
+  'runAgent13PathwayExportCiScaleSelfTests',
+  'runAgent13PathwayExportCiTurnScenario',
+  'V1014_PATHWAY_EXPORT_CI_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

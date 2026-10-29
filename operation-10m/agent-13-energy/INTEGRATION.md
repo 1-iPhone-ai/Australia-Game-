@@ -37,6 +37,7 @@ operation-10m/agent-13-energy/
   modules/critical-minerals-circular-battery-supply-ledger.ts  # scale wave round 29 (O10-189)
   modules/offshore-shore-port-green-corridor-ledger.ts  # scale wave round 30 (O10-191)
   modules/national-decarbon-federation-relief-arbitration-ledger.ts  # scale wave round 31 (O10-193)
+  modules/net-zero-pathway-export-carbon-intensity-ledger.ts  # scale wave round 32 (O10-195)
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge
@@ -79,6 +80,7 @@ operation-10m/agent-13-energy/
 - Round 29 slices: `regionalMineralsCircularRecoveryMemory`, `regionalBatterySupplyChainMemory`
 - Round 30 slices: `regionalOffshoreShoreElectrificationMemory`, `regionalPortGreenCorridorMemory`
 - Round 31 slices: `regionalDecarbonFederationMemory`, `regionalReliefArbitrationMemory`
+- Round 32 slices: `regionalNetZeroPathwayMemory`, `regionalExportCarbonIntensityMemory`
 - Regression id: `v1014_energy` → `runV1014IndustrialEnergyEnvironmentalSelfTests()`
 
 ## Boundaries

@@ -226,6 +226,13 @@ import {
   type V1014RegionalReliefArbitrationLedger,
 } from './national-decarbon-federation-relief-arbitration-ledger';
 import {
+  advanceRegionalExportCarbonIntensityOrchestration,
+  computeRegionalNetZeroPathwayLedger,
+  scoreAgent13PathwayExportCiGIAlignment,
+  type V1014RegionalExportCarbonIntensityLedger,
+  type V1014RegionalNetZeroPathwayLedger,
+} from './net-zero-pathway-export-carbon-intensity-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25802,6 +25809,10 @@ export interface V1014RegionalEnergyProfile {
   decarbonFederationRelief: number;
   reliefArbitrationBand: string;
   reliefArbitrationRelief: number;
+  netZeroPathwayBand: string;
+  netZeroPathwayRelief: number;
+  exportCarbonIntensityBand: string;
+  exportCarbonIntensityRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25898,6 +25909,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalPortGreenCorridorLedgers: Record<string, V1014RegionalPortGreenCorridorLedger>;
   regionalDecarbonFederationLedgers: Record<string, V1014RegionalDecarbonFederationLedger>;
   regionalReliefArbitrationLedgers: Record<string, V1014RegionalReliefArbitrationLedger>;
+  regionalNetZeroPathwayLedgers: Record<string, V1014RegionalNetZeroPathwayLedger>;
+  regionalExportCarbonIntensityLedgers: Record<string, V1014RegionalExportCarbonIntensityLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25965,6 +25978,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalPortGreenCorridorMemory: Record<string, { corridorIndex: number }>;
   regionalDecarbonFederationMemory: Record<string, { federationBalance: number; federationIndex: number }>;
   regionalReliefArbitrationMemory: Record<string, { arbitrationIndex: number }>;
+  regionalNetZeroPathwayMemory: Record<string, { abatementBalance: number; pathwayIndex: number }>;
+  regionalExportCarbonIntensityMemory: Record<string, { intensityIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26044,6 +26059,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalPortGreenCorridorMemory: {},
     regionalDecarbonFederationMemory: {},
     regionalReliefArbitrationMemory: {},
+    regionalNetZeroPathwayMemory: {},
+    regionalExportCarbonIntensityMemory: {},
     history: [],
   };
 }
@@ -26208,6 +26225,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     regionalReliefArbitrationMemory:
       typeof raw.regionalReliefArbitrationMemory === 'object' && raw.regionalReliefArbitrationMemory
         ? raw.regionalReliefArbitrationMemory
+        : {},
+    regionalNetZeroPathwayMemory:
+      typeof raw.regionalNetZeroPathwayMemory === 'object' && raw.regionalNetZeroPathwayMemory
+        ? raw.regionalNetZeroPathwayMemory
+        : {},
+    regionalExportCarbonIntensityMemory:
+      typeof raw.regionalExportCarbonIntensityMemory === 'object' && raw.regionalExportCarbonIntensityMemory
+        ? raw.regionalExportCarbonIntensityMemory
         : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
@@ -26375,6 +26400,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalPortGreenCorridorLedgers: {},
       regionalDecarbonFederationLedgers: {},
       regionalReliefArbitrationLedgers: {},
+      regionalNetZeroPathwayLedgers: {},
+      regionalExportCarbonIntensityLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26445,6 +26472,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const portGreenCorridorLedgers: Record<string, V1014RegionalPortGreenCorridorLedger> = {};
   const decarbonFederationLedgers: Record<string, V1014RegionalDecarbonFederationLedger> = {};
   const reliefArbitrationLedgers: Record<string, V1014RegionalReliefArbitrationLedger> = {};
+  const netZeroPathwayLedgers: Record<string, V1014RegionalNetZeroPathwayLedger> = {};
+  const exportCarbonIntensityLedgers: Record<string, V1014RegionalExportCarbonIntensityLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26579,6 +26608,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextReliefArbitrationMemory: Record<string, { arbitrationIndex: number }> = {
     ...persisted.regionalReliefArbitrationMemory,
+  };
+  const nextNetZeroPathwayMemory: Record<string, { abatementBalance: number; pathwayIndex: number }> = {
+    ...persisted.regionalNetZeroPathwayMemory,
+  };
+  const nextExportCarbonIntensityMemory: Record<string, { intensityIndex: number }> = {
+    ...persisted.regionalExportCarbonIntensityMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -27374,8 +27409,6 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= reliefArbitrationStep.ledger.reliefArbitrationRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
-    nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
-
     const extractionBand = v1014BandExtraction(extractionScore);
     const renewableBand = v1014BandRenewable(renewableShareScore / 100);
 
@@ -27388,6 +27421,36 @@ export function computeIndustrialEnergyEnvironmentalState(
     });
     pressure -= climateTransition.momentum > 0 ? climateTransition.momentum * 3 : 0;
     pressure = v1014Clamp(pressure, 0, 100);
+
+    const netZeroPathwayStep = computeRegionalNetZeroPathwayLedger({
+      regionId,
+      decarbonFederationRelief: decarbonFederationStep.ledger.decarbonFederationRelief,
+      reliefArbitrationRelief: reliefArbitrationStep.ledger.reliefArbitrationRelief,
+      emissionsCreditRelief: emissionsStep.ledger.pressureRelief,
+      ccsEmissionsRelief: ccsStep.ledger.ccsEmissionsRelief,
+      renewableShareScore,
+      climateTransitionMomentum: climateTransition.momentum,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextNetZeroPathwayMemory[regionId] || null,
+    });
+    nextNetZeroPathwayMemory[regionId] = netZeroPathwayStep.next;
+    netZeroPathwayLedgers[regionId] = netZeroPathwayStep.ledger;
+    pressure -= netZeroPathwayStep.ledger.netZeroPathwayRelief;
+
+    const exportCarbonIntensityStep = advanceRegionalExportCarbonIntensityOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      pathwayBand: netZeroPathwayStep.ledger.band,
+      greenHydrogenExportRelief: greenHydrogenExportStep.ledger.greenHydrogenExportRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextExportCarbonIntensityMemory[regionId] || null,
+    });
+    nextExportCarbonIntensityMemory[regionId] = exportCarbonIntensityStep.next;
+    exportCarbonIntensityLedgers[regionId] = exportCarbonIntensityStep.ledger;
+    pressure -= exportCarbonIntensityStep.ledger.exportCarbonIntensityRelief;
+    pressure = v1014Clamp(pressure, 0, 100);
+
+    nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
 
     const constraintBand = v1014BandConstraint(pressure);
 
@@ -27457,6 +27520,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       portGreenCorridorStep.ledger.summary,
       decarbonFederationStep.ledger.summary,
       reliefArbitrationStep.ledger.summary,
+      netZeroPathwayStep.ledger.summary,
+      exportCarbonIntensityStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -27653,6 +27718,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       decarbonFederationRelief: decarbonFederationStep.ledger.decarbonFederationRelief,
       reliefArbitrationBand: reliefArbitrationStep.ledger.band,
       reliefArbitrationRelief: reliefArbitrationStep.ledger.reliefArbitrationRelief,
+      netZeroPathwayBand: netZeroPathwayStep.ledger.band,
+      netZeroPathwayRelief: netZeroPathwayStep.ledger.netZeroPathwayRelief,
+      exportCarbonIntensityBand: exportCarbonIntensityStep.ledger.band,
+      exportCarbonIntensityRelief: exportCarbonIntensityStep.ledger.exportCarbonIntensityRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -27778,6 +27847,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalPortGreenCorridorLedgers: portGreenCorridorLedgers,
     regionalDecarbonFederationLedgers: decarbonFederationLedgers,
     regionalReliefArbitrationLedgers: reliefArbitrationLedgers,
+    regionalNetZeroPathwayLedgers: netZeroPathwayLedgers,
+    regionalExportCarbonIntensityLedgers: exportCarbonIntensityLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -27845,6 +27916,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalPortGreenCorridorMemory: nextPortGreenCorridorMemory,
     regionalDecarbonFederationMemory: nextDecarbonFederationMemory,
     regionalReliefArbitrationMemory: nextReliefArbitrationMemory,
+    regionalNetZeroPathwayMemory: nextNetZeroPathwayMemory,
+    regionalExportCarbonIntensityMemory: nextExportCarbonIntensityMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -28971,6 +29044,45 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     arbitrationBand: rr31.state.regions.NSW?.reliefArbitrationBand,
   });
   check('FEDERATION ARBITRATION GI alignment', giFa.relevanceDelta > 0.5, giFa.reason || '');
+
+  const peInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'scope12_pathway_orchestration_hub',
+      'federation_net_zero_pathway_tie',
+      'cbam_alignment_export_corridor',
+      'trade_exposed_abatement_mesh',
+      'renewable_matched_net_zero_pathway',
+      'low_carbon_certificate_stacking_layer',
+      'decarbon_federation_orchestration_hub',
+      'inter_regional_relief_arbitration_layer',
+      'green_hydrogen_export_terminal_backbone',
+      'renewable_grid',
+      'industrial_ccs_cluster',
+    ],
+  };
+  const rr32 = computeIndustrialEnergyEnvironmentalState(peInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check(
+    'NET ZERO pathway ledger tracked',
+    !!rr32.state.regionalNetZeroPathwayLedgers.QLD?.band,
+    rr32.state.regionalNetZeroPathwayLedgers.QLD?.band || '',
+  );
+  check(
+    'EXPORT carbon intensity relief',
+    (rr32.state.regions.QLD?.exportCarbonIntensityRelief || 0) > 0,
+    String(rr32.state.regions.QLD?.exportCarbonIntensityRelief),
+  );
+  check(
+    'NET ZERO pathway memory persisted',
+    !!rr32.persisted.regionalNetZeroPathwayMemory.QLD,
+    String(rr32.persisted.regionalNetZeroPathwayMemory.QLD?.pathwayIndex),
+  );
+  const giPe = scoreAgent13PathwayExportCiGIAlignment({
+    actionText: 'Scope 1-2 pathway with CBAM alignment export corridor and trade-exposed abatement mesh',
+    pathwayBand: rr32.state.regions.QLD?.netZeroPathwayBand,
+    intensityBand: rr32.state.regions.QLD?.exportCarbonIntensityBand,
+  });
+  check('PATHWAY EXPORT CI GI alignment', giPe.relevanceDelta > 0.5, giPe.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

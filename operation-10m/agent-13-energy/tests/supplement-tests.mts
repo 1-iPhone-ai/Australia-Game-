@@ -140,6 +140,11 @@ import {
   V1014_FEDERATION_ARBITRATION_TURN_SCENARIOS,
 } from '../modules/national-decarbon-federation-relief-arbitration-ledger.ts';
 import {
+  runAgent13PathwayExportCiScaleSelfTests,
+  runAgent13PathwayExportCiTurnScenario,
+  V1014_PATHWAY_EXPORT_CI_TURN_SCENARIOS,
+} from '../modules/net-zero-pathway-export-carbon-intensity-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -415,6 +420,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const faTurn = runAgent13FederationArbitrationTurnScenario(V1014_FEDERATION_ARBITRATION_TURN_SCENARIOS[0]);
   ok(faTurn.passed);
+
+  const pathwayExportCi = runAgent13PathwayExportCiScaleSelfTests();
+  ok(pathwayExportCi.failed === 0 && pathwayExportCi.passed >= 7);
+
+  const pathwayCiTurn = runAgent13PathwayExportCiTurnScenario(V1014_PATHWAY_EXPORT_CI_TURN_SCENARIOS[0]);
+  ok(pathwayCiTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
