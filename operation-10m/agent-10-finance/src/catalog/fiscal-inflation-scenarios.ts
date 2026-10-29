@@ -1254,6 +1254,47 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'ui', 'dashboard', 'round35'],
   },
+  {
+    id: 'command_fusion_latch_escalation_stack',
+    label: 'Command fusion latch escalation stack',
+    description: 'Critical command inflation escalation with wave fusion latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.4,
+      publicStability: 37,
+    },
+    tags: ['inflation', 'command', 'round36'],
+  },
+  {
+    id: 'transport_freight_congestion_cascade_stress',
+    label: 'Transport freight congestion cascade stress',
+    description: 'Ruptured freight cascade with logistics inflation latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.37,
+      publicStability: 34,
+    },
+    tags: ['inflation', 'transport', 'round36'],
+  },
+  {
+    id: 'command_transport_wave36_fusion_stress',
+    label: 'Command & transport wave 36 fusion stress',
+    description: 'Fusion runaway latch colliding with logistics rupture cascade.',
+    patch: {
+      inflationSettingMultiplier: 1.47,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 25,
+    },
+    tags: ['inflation', 'command', 'transport', 'round36'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

@@ -16,6 +16,10 @@ export interface Agent12TransportSnapshot {
   utilitiesGridCapacityMarginThin?: boolean;
   /** Round 17: severe rolling utility outages feeding tariff CPI metadata. */
   utilitiesOutageBandSevere?: boolean;
+  /** Round 36: wave logistics inflation latch. */
+  wave36LogisticsInflationLatch?: boolean;
+  /** Round 36: freight cascade congestion band. */
+  freightCascadeCongestionBand?: 'clear' | 'building' | 'ruptured';
 }
 
 export function mergeAgent12IntoMacroFinancialInputs(
@@ -60,6 +64,13 @@ export function mergeAgent12IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.freightCongestionBand === 'building' && snapshot.fuelSurchargeActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave36LogisticsInflationLatch && snapshot.freightCascadeCongestionBand === 'ruptured') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.freightCascadeCongestionBand === 'building' && snapshot.freightCapacityBand === 'critical') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
