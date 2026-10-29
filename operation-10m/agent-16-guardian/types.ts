@@ -102,6 +102,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   charterStrainIndex: number;
   authorityIntegrityScore: number;
   governancePersistenceScore: number;
+  legitimacyStrainIndex: number;
+  oversightIntegrityScore: number;
+  governanceContinuityScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

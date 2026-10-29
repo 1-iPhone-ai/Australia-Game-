@@ -687,6 +687,62 @@ export function buildGuardianDepthCharterReport(snapshot: GuardianCoPilotMonitor
   return lines.slice(0, 3);
 }
 
+export function computeLegitimacyStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governancePersistenceScore < 50) load += Math.min(25, 50 - snapshot.governancePersistenceScore);
+  if (snapshot.governancePersistenceScore < 35) load += 10;
+  if (snapshot.authorityIntegrityScore < 45) load += 20;
+  if (snapshot.authorityIntegrityScore < 35) load += 10;
+  if (snapshot.charterStrainIndex >= 55) load += 20;
+  if (snapshot.charterStrainIndex >= 70) load += 10;
+  if (snapshot.escalationLatchScore >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.containmentBurdenIndex >= 55) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeOversightIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.legitimacyStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.legitimacyStrainIndex * 0.35));
+  if (snapshot.authorityIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.authorityIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.oversightCommitmentScore < 40) score -= 10;
+  if (snapshot.governancePersistenceScore < 40) score -= 15;
+  if (snapshot.humanRelayPressure >= 50) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceContinuityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.legitimacyStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.legitimacyStrainIndex * 0.32));
+  if (snapshot.oversightIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.oversightIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceTenacityScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthLegitimacyReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.legitimacyStrainIndex >= 55) {
+    lines.push(
+      `Legitimacy strain ${snapshot.legitimacyStrainIndex} — stacked legitimacy review may exceed operator oversight capacity`
+    );
+  }
+  if (snapshot.oversightIntegrityScore < 45) {
+    lines.push(
+      `Oversight integrity ${snapshot.oversightIntegrityScore} — align Co-Pilot oversight with Guardian legitimacy posture`
+    );
+  }
+  if (snapshot.governanceContinuityScore < 40) {
+    lines.push(
+      `Governance continuity ${snapshot.governanceContinuityScore} — little continuity to sustain legitimacy oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -804,9 +860,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withCharterStrain: GuardianCoPilotMonitorSnapshot = { ...withTenacity, charterStrainIndex };
   const authorityIntegrityScore = computeAuthorityIntegrityScore(withCharterStrain);
   const withAuthority: GuardianCoPilotMonitorSnapshot = { ...withCharterStrain, authorityIntegrityScore };
-  return {
+  const withPersistence: GuardianCoPilotMonitorSnapshot = {
     ...withAuthority,
     governancePersistenceScore: computeGovernancePersistenceScore(withAuthority),
+    legitimacyStrainIndex: 0,
+    oversightIntegrityScore: 100,
+    governanceContinuityScore: 100,
+  };
+  const legitimacyStrainIndex = computeLegitimacyStrainIndex(withPersistence);
+  const withLegitimacyStrain: GuardianCoPilotMonitorSnapshot = { ...withPersistence, legitimacyStrainIndex };
+  const oversightIntegrityScore = computeOversightIntegrityScore(withLegitimacyStrain);
+  const withOversightIntegrity: GuardianCoPilotMonitorSnapshot = { ...withLegitimacyStrain, oversightIntegrityScore };
+  return {
+    ...withOversightIntegrity,
+    governanceContinuityScore: computeGovernanceContinuityScore(withOversightIntegrity),
   };
 }
 
@@ -1197,6 +1264,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernancePersistenceScore(snap) < 35;
+  });
+  ok('gd_legitimacy_strain', () => {
+    const snap = {
+      governancePersistenceScore: 30,
+      authorityIntegrityScore: 32,
+      charterStrainIndex: 72,
+      escalationLatchScore: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      containmentBurdenIndex: 58,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeLegitimacyStrainIndex(snap) >= 70;
+  });
+  ok('gd_oversight_integrity', () => {
+    const snap = {
+      legitimacyStrainIndex: 72,
+      authorityIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      oversightCommitmentScore: 32,
+      governancePersistenceScore: 32,
+      humanRelayPressure: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeOversightIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_continuity', () => {
+    const snap = {
+      legitimacyStrainIndex: 78,
+      oversightIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceTenacityScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceContinuityScore(snap) < 35;
   });
   return out;
 }
