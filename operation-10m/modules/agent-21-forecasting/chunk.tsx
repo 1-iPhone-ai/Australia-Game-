@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '1.5.0';
+export const O10M_AGENT21_MODULE_VERSION = '1.6.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -1693,6 +1693,346 @@ export function runAg21TrajectoryFusionSelfChecks(): { id: string; passed: boole
   return out;
 }
 
+// --- bundled from forecast-residual-backtest.ts ---
+/**
+ * Agent 21 — ensemble residual backtest (p50 vs isolated one-turn realization).
+ */
+
+
+export interface Ag21ResidualBacktestRow {
+  metric: 'cash' | 'debt';
+  predicted: number;
+  realized: number;
+  residualPct: number;
+  withinBand: boolean;
+}
+
+export interface Ag21ResidualBacktestReport {
+  baselineFingerprint: string;
+  rows: Ag21ResidualBacktestRow[];
+  meanAbsoluteResidualPct: number;
+  calibrationTone: 'tight' | 'balanced' | 'loose';
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritativeMutationDetected: boolean;
+}
+
+function ag21PctResidual(predicted: number, realized: number): number {
+  return Math.abs(realized - predicted) / Math.max(1, Math.abs(predicted));
+}
+
+function ag21RealizeOneTurn(copy: Ag21ForecastContext): { cash: number; debt: number } {
+  const income = 32 + copy.regionsControlled * 9 + (copy.seed % 6);
+  const spend = 20 + copy.actorDebt * 0.045;
+  const momentum = copy.nationalPriorityMomentum ?? 'stable';
+  const factor = momentum === 'rising' ? 1.04 : momentum === 'falling' ? 0.95 : 1;
+  const cash = Math.round((copy.actorCash + income - spend) * factor);
+  const debt = Math.max(0, Math.round(copy.actorDebt * 0.988 - copy.regionsControlled));
+  return { cash, debt };
+}
+
+function ag21ToneFromMean(mean: number): Ag21ResidualBacktestReport['calibrationTone'] {
+  if (mean <= 0.12) return 'tight';
+  if (mean <= 0.32) return 'balanced';
+  return 'loose';
+}
+
+function ag21BandFromMean(mean: number): Ag21UncertaintyBand {
+  if (mean > 0.38) return 'high';
+  if (mean > 0.18) return 'moderate';
+  return 'low';
+}
+
+/** Compare ensemble p50 to an isolated one-turn realization (lab backtest, read-only). */
+export function runAg21EnsembleResidualBacktest(ctx: Ag21ForecastContext): Ag21ResidualBacktestReport {
+  const subject: Ag21ForecastContext = { ...ctx, nationalPriorityMomentum: ctx.nationalPriorityMomentum ?? 'stable' };
+  const baselineFingerprint = ag21FingerprintSnapshot(subject);
+
+  const iso = ag21VerifyIsolatedExperiment(subject, copy => {
+    const ensemble = buildAg21EnsembleProjection(copy);
+    const p10 = ensemble.bands.find(b => b.label === 'p10');
+    const p50 = ensemble.bands.find(b => b.label === 'p50');
+    const p90 = ensemble.bands.find(b => b.label === 'p90');
+    const realized = ag21RealizeOneTurn(copy);
+    const sensitivity = runAg21PolicySensitivitySweep(copy);
+    const baselineRow = sensitivity.rows[0];
+
+    const cashPredicted = p50?.projectedCash ?? baselineRow?.projectedCash ?? copy.actorCash;
+    const debtPredicted = p50?.projectedDebt ?? baselineRow?.projectedDebt ?? copy.actorDebt;
+
+    const cashLow = Math.min(p10?.projectedCash ?? cashPredicted, cashPredicted);
+    const cashHigh = Math.max(p90?.projectedCash ?? cashPredicted, cashPredicted);
+    const debtLow = Math.min(p10?.projectedDebt ?? debtPredicted, debtPredicted);
+    const debtHigh = Math.max(p90?.projectedDebt ?? debtPredicted, debtPredicted);
+
+    const rows: Ag21ResidualBacktestRow[] = [
+      {
+        metric: 'cash',
+        predicted: cashPredicted,
+        realized: realized.cash,
+        residualPct: ag21PctResidual(cashPredicted, realized.cash),
+        withinBand: realized.cash >= cashLow && realized.cash <= cashHigh
+      },
+      {
+        metric: 'debt',
+        predicted: debtPredicted,
+        realized: realized.debt,
+        residualPct: ag21PctResidual(debtPredicted, realized.debt),
+        withinBand: realized.debt >= debtLow && realized.debt <= debtHigh
+      }
+    ];
+
+    const meanAbsoluteResidualPct =
+      rows.reduce((sum, r) => sum + r.residualPct, 0) / Math.max(1, rows.length);
+
+    return { rows, meanAbsoluteResidualPct };
+  });
+
+  const payload = iso.result as { rows: Ag21ResidualBacktestRow[]; meanAbsoluteResidualPct: number };
+  const tone = ag21ToneFromMean(payload.meanAbsoluteResidualPct);
+
+  return {
+    baselineFingerprint,
+    rows: payload.rows,
+    meanAbsoluteResidualPct: payload.meanAbsoluteResidualPct,
+    calibrationTone: tone,
+    overallUncertainty: ag21LabelUncertainty(ag21BandFromMean(payload.meanAbsoluteResidualPct), [`tone=${tone}`]),
+    authoritativeMutationDetected: baselineFingerprint !== ag21FingerprintSnapshot(subject)
+  };
+}
+
+export function runAg21ResidualBacktestSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 8, seed: 31, actorCash: 880, actorDebt: 90, regionsControlled: 3 };
+  const before = ag21FingerprintSnapshot(ctx);
+  const report = runAg21EnsembleResidualBacktest(ctx);
+
+  push('backtest_rows', report.rows.length === 2, String(report.rows.length));
+  push('backtest_mean_range', report.meanAbsoluteResidualPct >= 0 && report.meanAbsoluteResidualPct <= 2, String(report.meanAbsoluteResidualPct));
+  push('backtest_no_mutation', before === ag21FingerprintSnapshot(ctx), 'fp');
+  push('backtest_non_auth', report.overallUncertainty.playerFacing.includes('Non-authoritative'), 'copy');
+
+  return out;
+}
+
+// --- bundled from forecast-policy-regret.ts ---
+/**
+ * Agent 21 — policy regret ranking (counterfactual branches vs baseline ladder).
+ */
+
+
+export interface Ag21PolicyRegretRow {
+  branchId: string;
+  label: string;
+  regretScore: number;
+  cashDeltaVsBaseline: number;
+  debtDeltaVsBaseline: number;
+  uncertainty: Ag21UncertaintyBand;
+}
+
+export interface Ag21PolicyRegretRanking {
+  baselineFingerprint: string;
+  baselineHorizonCash: number;
+  rows: Ag21PolicyRegretRow[];
+  lowestRegretBranchId: string | null;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritativeMutationDetected: boolean;
+}
+
+const AG21_REGRET_BRANCHES = [
+  { branchId: 'ag21_regret_fiscal_tight', label: 'Fiscal tightening fork', cashScale: 0.92, debtBump: 30 },
+  { branchId: 'ag21_regret_invest_regions', label: 'Region investment fork', cashScale: 0.88, debtBump: 10, regionBump: 1 },
+  { branchId: 'ag21_regret_debt_relief', label: 'Debt relief fork', cashScale: 1.02, debtBump: -40 },
+  { branchId: 'ag21_regret_momentum_push', label: 'Momentum push fork', cashScale: 1.05, debtBump: 15, momentum: 'rising' as const }
+] as const;
+
+function ag21BandFromRegret(score: number): Ag21UncertaintyBand {
+  if (score > 0.55) return 'high';
+  if (score > 0.28) return 'moderate';
+  return 'low';
+}
+
+function ag21HorizonTail(ctx: Ag21ForecastContext): { cash: number; debt: number } {
+  const ladder = buildAg21MultiHorizonProjection(ctx);
+  const last = ladder.steps[ladder.steps.length - 1];
+  return {
+    cash: last?.projectedCash ?? ctx.actorCash,
+    debt: last?.projectedDebt ?? ctx.actorDebt
+  };
+}
+
+/** Rank isolated counterfactual branches by regret vs baseline horizon cash (lab-only). */
+export function rankAg21PolicyRegret(ctx: Ag21ForecastContext): Ag21PolicyRegretRanking {
+  const subject: Ag21ForecastContext = { ...ctx, nationalPriorityMomentum: ctx.nationalPriorityMomentum ?? 'stable' };
+  const baselineFingerprint = ag21FingerprintSnapshot(subject);
+
+  const iso = ag21VerifyIsolatedExperiment(subject, copy => {
+    const baseline = ag21HorizonTail(copy);
+    const rows: Ag21PolicyRegretRow[] = AG21_REGRET_BRANCHES.map(spec => {
+      const forkCtx: Ag21ForecastContext = {
+        ...copy,
+        actorCash: Math.round(copy.actorCash * spec.cashScale),
+        actorDebt: Math.max(0, copy.actorDebt + spec.debtBump),
+        regionsControlled: copy.regionsControlled + ('regionBump' in spec ? spec.regionBump ?? 0 : 0),
+        nationalPriorityMomentum: 'momentum' in spec ? spec.momentum : copy.nationalPriorityMomentum
+      };
+      const branch = ag21HorizonTail(forkCtx);
+      const cashDeltaVsBaseline = branch.cash - baseline.cash;
+      const debtDeltaVsBaseline = branch.debt - baseline.debt;
+      const regretScore = Math.min(
+        1,
+        Math.abs(cashDeltaVsBaseline) / Math.max(1, baseline.cash) * 0.65 +
+          Math.abs(debtDeltaVsBaseline) / Math.max(1, baseline.debt) * 0.35
+      );
+
+      return {
+        branchId: spec.branchId,
+        label: spec.label,
+        regretScore,
+        cashDeltaVsBaseline,
+        debtDeltaVsBaseline,
+        uncertainty: ag21BandFromRegret(regretScore)
+      };
+    }).sort((a, b) => a.regretScore - b.regretScore);
+
+    return { baselineHorizonCash: baseline.cash, rows };
+  });
+
+  const payload = iso.result as { baselineHorizonCash: number; rows: Ag21PolicyRegretRow[] };
+  const bands = payload.rows.map(r => r.uncertainty);
+  const overallBand: Ag21UncertaintyBand = bands.includes('high')
+    ? 'high'
+    : bands.includes('moderate')
+      ? 'moderate'
+      : 'low';
+
+  return {
+    baselineFingerprint,
+    baselineHorizonCash: payload.baselineHorizonCash,
+    rows: payload.rows,
+    lowestRegretBranchId: payload.rows[0]?.branchId ?? null,
+    overallUncertainty: ag21LabelUncertainty(overallBand, [`branches=${payload.rows.length}`]),
+    authoritativeMutationDetected: baselineFingerprint !== ag21FingerprintSnapshot(subject)
+  };
+}
+
+export function runAg21PolicyRegretSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 7, seed: 52, actorCash: 920, actorDebt: 110, regionsControlled: 2 };
+  const before = ag21FingerprintSnapshot(ctx);
+  const ranking = rankAg21PolicyRegret(ctx);
+
+  push('regret_row_count', ranking.rows.length === AG21_REGRET_BRANCHES.length, String(ranking.rows.length));
+  push('regret_sorted', ranking.rows.every((r, i, arr) => !i || arr[i - 1].regretScore <= r.regretScore), 'order');
+  push('regret_lowest', ranking.lowestRegretBranchId === ranking.rows[0]?.branchId, ranking.lowestRegretBranchId ?? 'none');
+  push('regret_no_mutation', before === ag21FingerprintSnapshot(ctx), 'fp');
+
+  return out;
+}
+
+// --- bundled from forecast-reliability-gates.ts ---
+/**
+ * Agent 21 — reliability gates (ensemble + drift + fusion composite, read-only).
+ */
+
+
+export interface Ag21ReliabilityGate {
+  id: 'ensemble_dispersion' | 'calibration_drift' | 'trajectory_fusion';
+  passed: boolean;
+  score: number;
+  detail: string;
+}
+
+export interface Ag21ReliabilityGateReport {
+  gates: Ag21ReliabilityGate[];
+  passCount: number;
+  overallPass: boolean;
+  playerGuidance: 'proceed_with_caution' | 'hold_for_review' | 'do_not_surface';
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21GuidanceFromGates(passCount: number, gates: Ag21ReliabilityGate[]): Ag21ReliabilityGateReport['playerGuidance'] {
+  if (passCount >= 3) return 'proceed_with_caution';
+  if (passCount >= 1) return 'hold_for_review';
+  return 'do_not_surface';
+}
+
+function ag21BandFromPass(passCount: number): Ag21UncertaintyBand {
+  if (passCount >= 3) return 'low';
+  if (passCount >= 2) return 'moderate';
+  return 'high';
+}
+
+/** Evaluate whether lab signals are reliable enough for player-facing surfacing (non-authoritative). */
+export function evaluateAg21ReliabilityGates(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21ReliabilityGateReport {
+  const ensemble = buildAg21EnsembleProjection(baseCtx);
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.82),
+      actorDebt: baseCtx.actorDebt + 150
+    } satisfies Ag21ForecastContext);
+
+  const drift = measureAg21CalibrationDrift(baseCtx, candidate);
+  const fusion = fuseAg21ScenarioTrajectories(baseCtx, ['ag21_sc_004', 'ag21_sc_011', 'ag21_sc_018', 'ag21_sc_022']);
+
+  const gates: Ag21ReliabilityGate[] = [
+    {
+      id: 'ensemble_dispersion',
+      passed: ensemble.dispersion <= 0.62,
+      score: Math.max(0, 1 - ensemble.dispersion),
+      detail: `dispersion=${ensemble.dispersion.toFixed(2)}`
+    },
+    {
+      id: 'calibration_drift',
+      passed: drift.severity === 'stable' || drift.severity === 'watch',
+      score: Math.max(0, 1 - drift.driftScore),
+      detail: `severity=${drift.severity}`
+    },
+    {
+      id: 'trajectory_fusion',
+      passed: fusion.fusionScore >= 0.42,
+      score: fusion.fusionScore,
+      detail: `fusion=${fusion.fusionScore.toFixed(2)}`
+    }
+  ];
+
+  const passCount = gates.filter(g => g.passed).length;
+  const overallPass = passCount === gates.length;
+
+  return {
+    gates,
+    passCount,
+    overallPass,
+    playerGuidance: ag21GuidanceFromGates(passCount, gates),
+    overallUncertainty: ag21LabelUncertainty(ag21BandFromPass(passCount), [`pass=${passCount}/${gates.length}`]),
+    authoritative: false
+  };
+}
+
+export function runAg21ReliabilityGatesSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 9, seed: 18, actorCash: 1000, actorDebt: 70, regionsControlled: 3 };
+  const report = evaluateAg21ReliabilityGates(ctx);
+
+  push('gates_count', report.gates.length === 3, String(report.gates.length));
+  push('gates_pass_range', report.passCount >= 0 && report.passCount <= 3, String(report.passCount));
+  push('gates_non_auth', report.authoritative === false, String(report.overallPass));
+  push('gates_guidance', ['proceed_with_caution', 'hold_for_review', 'do_not_surface'].includes(report.playerGuidance), report.playerGuidance);
+
+  return out;
+}
+
 // --- bundled from scenario-comparison-ui.tsx ---
 /**
  * Agent 21 — scenario comparison UI fragment (non-authoritative lab review).
@@ -1977,6 +2317,41 @@ export const Ag21ForecastRound3Console: React.FC<{ seed?: number }> = ({ seed = 
   );
 };
 
+// --- bundled from forecast-round4-console.tsx ---
+/**
+ * Agent 21 — scale wave round 4 console (backtest residuals + regret + reliability gates).
+ */
+
+
+export const Ag21ForecastRound4Console: React.FC<{ seed?: number }> = ({ seed = 37 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 14 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.75), actorDebt: base.actorDebt + 180 }),
+    [base]
+  );
+
+  const backtest = useMemo(() => runAg21EnsembleResidualBacktest(base), [base]);
+  const regret = useMemo(() => rankAg21PolicyRegret(base), [base]);
+  const gates = useMemo(() => evaluateAg21ReliabilityGates(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-amber-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round4-console">
+      <div className="font-bold text-amber-200">
+        🔬 Forecast Lab Round 4 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round4-backtest">
+        Backtest · tone {backtest.calibrationTone} · mean residual {(backtest.meanAbsoluteResidualPct * 100).toFixed(0)}%
+      </div>
+      <div data-testid="ag21-round4-regret">
+        Regret · lowest {regret.lowestRegretBranchId ?? 'none'} · branches {regret.rows.length}
+      </div>
+      <div data-testid="ag21-round4-gates">
+        Gates · {gates.passCount}/3 · guidance {gates.playerGuidance}
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -2011,6 +2386,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21TrajectoryFusionSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21ResidualBacktestSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21PolicyRegretSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21ReliabilityGatesSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({

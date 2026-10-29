@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `1.5.0`
+- `O10M_AGENT21_MODULE_VERSION` = `1.6.0`
 
 ## Assembly chunk
 
@@ -39,6 +39,9 @@
 | `buildAg21EnsembleProjection` / `measureAg21CalibrationDrift` | Round 3 ensemble bands + drift diagnostics |
 | `fuseAg21ScenarioTrajectories` | Scenario trajectory fusion report |
 | `Ag21ForecastRound3Console` | Round 3 UI (`data-testid="ag21-round3-console"`) |
+| `runAg21EnsembleResidualBacktest` / `rankAg21PolicyRegret` | Round 4 residual backtest + policy regret ranking |
+| `evaluateAg21ReliabilityGates` | Round 4 composite reliability gates |
+| `Ag21ForecastRound4Console` | Round 4 UI (`data-testid="ag21-round4-console"`) |
 
 ## Upstream dependencies (canonical only)
 
