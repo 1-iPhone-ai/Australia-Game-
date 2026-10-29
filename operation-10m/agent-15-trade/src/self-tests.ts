@@ -359,6 +359,16 @@ import {
   createEmptyBilateralPrimedWaveLaunchGateSnapshot,
   bilateralPrimedWaveLaunchGateExportScale,
 } from './bilateral-primed-wave-launch-gate.ts';
+import {
+  computePrimedWaveLaunchContinuitySnapshot,
+  createEmptyPrimedWaveLaunchContinuitySnapshot,
+  primedWaveLaunchContinuityExportScale,
+} from './primed-wave-launch-continuity.ts';
+import {
+  computeBilateralLaunchedWaveSustainGateSnapshot,
+  createEmptyBilateralLaunchedWaveSustainGateSnapshot,
+  bilateralLaunchedWaveSustainGateExportScale,
+} from './bilateral-launched-wave-sustain-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -2454,6 +2464,55 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralPrimedWaveLaunchGateExportScale(launched) >= bilateralPrimedWaveLaunchGateExportScale(blocked),
       'expected wave launch scale lift',
+    );
+  });
+
+  ok('primed wave launch continuity improves when launch gate is launched', () => {
+    const gate = {
+      ...createEmptyBilateralPrimedWaveLaunchGateSnapshot(),
+      score: 0.95,
+      band: 'launched' as const,
+    };
+    const priming = { ...createEmptyNextWavePrimingContinuitySnapshot(), score: 0.93, band: 'settled' as const };
+    const sustained = computePrimedWaveLaunchContinuitySnapshot({
+      bilateralPrimedWaveLaunchGate: gate,
+      nextWavePrimingContinuity: priming,
+      persisted: { ...createEmptyGTELPersisted(), primedWaveLaunchContinuitySmoothing: 0.98 },
+    }).snapshot;
+    const collapsed = computePrimedWaveLaunchContinuitySnapshot({
+      bilateralPrimedWaveLaunchGate: { ...gate, score: 0.1, band: 'blocked' },
+      nextWavePrimingContinuity: { ...priming, score: 0.08, band: 'void' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(sustained.score > collapsed.score, 'expected sustained launch continuity');
+    gtelAssert(
+      primedWaveLaunchContinuityExportScale(sustained) >= primedWaveLaunchContinuityExportScale(collapsed),
+      'expected launch continuity scale lift',
+    );
+  });
+
+  ok('bilateral launched wave sustain gate improves when launch continuity is sustained', () => {
+    const continuity = {
+      ...createEmptyPrimedWaveLaunchContinuitySnapshot(),
+      score: 0.96,
+      band: 'sustained' as const,
+    };
+    const stab = { ...createEmptyCycleReentryStabilizationSnapshot(), score: 0.9, band: 'stable' as const };
+    const sustaining = computeBilateralLaunchedWaveSustainGateSnapshot({
+      primedWaveLaunchContinuity: continuity,
+      cycleReentryStabilization: stab,
+      persisted: { ...createEmptyGTELPersisted(), bilateralLaunchedWaveSustainGateSmoothing: 0.99 },
+    }).snapshot;
+    const blocked = computeBilateralLaunchedWaveSustainGateSnapshot({
+      primedWaveLaunchContinuity: { ...continuity, score: 0.11, band: 'collapsed' },
+      cycleReentryStabilization: { ...stab, score: 0.08, band: 'volatile' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(sustaining.score > blocked.score, 'expected wave sustain when sustained');
+    gtelAssert(
+      bilateralLaunchedWaveSustainGateExportScale(sustaining) >=
+        bilateralLaunchedWaveSustainGateExportScale(blocked),
+      'expected wave sustain scale lift',
     );
   });
 

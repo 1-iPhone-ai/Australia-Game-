@@ -224,6 +224,8 @@ export interface GTELPersisted {
   bilateralNextWavePrimingGateSmoothing?: number;
   nextWavePrimingContinuitySmoothing?: number;
   bilateralPrimedWaveLaunchGateSmoothing?: number;
+  primedWaveLaunchContinuitySmoothing?: number;
+  bilateralLaunchedWaveSustainGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -317,6 +319,8 @@ export interface GTELState {
   bilateralNextWavePrimingGate: GTELBilateralNextWavePrimingGateSnapshot;
   nextWavePrimingContinuity: GTELNextWavePrimingContinuitySnapshot;
   bilateralPrimedWaveLaunchGate: GTELBilateralPrimedWaveLaunchGateSnapshot;
+  primedWaveLaunchContinuity: GTELPrimedWaveLaunchContinuitySnapshot;
+  bilateralLaunchedWaveSustainGate: GTELBilateralLaunchedWaveSustainGateSnapshot;
   inputHash: string;
 }
 
@@ -1241,6 +1245,26 @@ export interface GTELBilateralPrimedWaveLaunchGateSnapshot {
   band: GTELBilateralPrimedWaveLaunchGateBand;
   continuityFeed: number;
   cycleReentryLift: number;
+  summary: string;
+}
+
+export type GTELPrimedWaveLaunchContinuityBand = 'sustained' | 'tracking' | 'drifting' | 'collapsed';
+
+export interface GTELPrimedWaveLaunchContinuitySnapshot {
+  score: number;
+  band: GTELPrimedWaveLaunchContinuityBand;
+  launchSupport: number;
+  primingAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralLaunchedWaveSustainGateBand = 'sustaining' | 'ramping' | 'paused' | 'blocked';
+
+export interface GTELBilateralLaunchedWaveSustainGateSnapshot {
+  score: number;
+  band: GTELBilateralLaunchedWaveSustainGateBand;
+  continuityFeed: number;
+  stabilizationLift: number;
   summary: string;
 }
 
