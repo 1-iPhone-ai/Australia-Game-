@@ -237,6 +237,18 @@ export interface Op10mTriggerRequirePendingArbitration {
   k: 'pending_arbitration';
 }
 
+export interface Op10mTriggerRequirePendingExpiryWave {
+  k: 'pending_expiry_wave';
+}
+
+export interface Op10mTriggerRequirePendingQueueClear {
+  k: 'pending_queue_clear';
+}
+
+export interface Op10mTriggerRequireNoPendingBacklog {
+  k: 'no_pending_backlog';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -288,7 +300,10 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireComputeTurnGapAck
   | Op10mTriggerRequireMinPendingResponses
   | Op10mTriggerRequirePendingBacklog
-  | Op10mTriggerRequirePendingArbitration;
+  | Op10mTriggerRequirePendingArbitration
+  | Op10mTriggerRequirePendingExpiryWave
+  | Op10mTriggerRequirePendingQueueClear
+  | Op10mTriggerRequireNoPendingBacklog;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -378,6 +393,8 @@ export interface Op10mNarrativeEngineState {
     deferredMutationsFired: number;
     pendingBacklogSurges: number;
     responsesArbitrated: number;
+    pendingResponsesExpired: number;
+    pendingQueueClears: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;

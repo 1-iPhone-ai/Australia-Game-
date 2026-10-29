@@ -20,6 +20,10 @@ import {
   OP10M_PENDING_BACKLOG_FLAG,
   countPendingResponses,
 } from './pending-response-orchestrator.ts';
+import {
+  OP10M_PENDING_EXPIRY_WAVE_FLAG,
+  OP10M_PENDING_QUEUE_CLEARED_FLAG,
+} from './pending-response-expiry-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -215,6 +219,21 @@ export function evaluateRequirements(
       case 'pending_arbitration':
         if (!sim.flags[OP10M_PENDING_ARBITRATION_FLAG]) {
           return { ok: false, reason: 'no pending arbitration' };
+        }
+        break;
+      case 'pending_expiry_wave':
+        if (!sim.flags[OP10M_PENDING_EXPIRY_WAVE_FLAG]) {
+          return { ok: false, reason: 'no pending expiry wave' };
+        }
+        break;
+      case 'pending_queue_clear':
+        if (!sim.flags[OP10M_PENDING_QUEUE_CLEARED_FLAG]) {
+          return { ok: false, reason: 'pending queue not cleared' };
+        }
+        break;
+      case 'no_pending_backlog':
+        if (sim.flags[OP10M_PENDING_BACKLOG_FLAG]) {
+          return { ok: false, reason: 'pending backlog active' };
         }
         break;
       default:
