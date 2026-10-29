@@ -167,3 +167,7 @@ export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './
 export * from './synthesis-convergence-harmony-index.ts';
 
 export * from './harmony-resonance-synthesis-index.ts';
+
+export * from './harmony-resonance-convergence-index.ts';
+
+export * from './resonance-harmony-convergence-index.ts';
