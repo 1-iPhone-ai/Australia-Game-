@@ -135673,6 +135673,134 @@ export function runO111ContextualInformationSelfTests(): V9SelfTestResult[] {
   check('a67_aria', 'Aria label mentions ranking-not-legality framing', () => /Ranking context/.test(formatContextualInformationAriaLabel(buildContextualInformationSnippetsFromCandidate(cand))));
   return results;
 }
+// SECTION 20P-A68: OPERATION 111 ACCESSIBILITY ENGINEER — PLAY A11Y PROFILE
+// ============================================================================
+// Centralizes player accessibility preferences (profile-scoped, not saved in match files).
+// Presentation only: never changes rules, timing, or canonical state.
+
+export interface O111AccessibilityPresentation {
+  motionMode: UiMotionMode;
+  focusStrong: boolean;
+  focusRingStyle: FocusRingStyle;
+  textScale: number;
+  screenReaderEnabled: boolean;
+  announcePoliteness: 'off' | 'polite' | 'assertive';
+  showKeyboardHints: boolean;
+  trapFocusInModals: boolean;
+  restoreFocusOnClose: boolean;
+}
+
+/** Keeps reduceMotion / reducedMotion aligned for settings UI, saves, and resolveUiMotionMode. */
+export function normalizeAccessibilityMotionFields(settings: AccessibilitySettings): AccessibilitySettings {
+  const reduced = settings.reducedMotion === true || settings.reduceMotion === true;
+  return { ...settings, reducedMotion: reduced, reduceMotion: reduced };
+}
+
+export function resolveO111AccessibilityPresentation(gameSettings: any): O111AccessibilityPresentation {
+  const a = normalizeAccessibilityMotionFields(sanitizeAccessibilitySettings(gameSettings?.accessibilitySettings));
+  const highContrast = a.highContrastFocusRings !== false;
+  let announcePoliteness: O111AccessibilityPresentation['announcePoliteness'] = 'off';
+  if (a.screenReaderAnnouncements) {
+    if (a.announceVerbosity === 'assertive') announcePoliteness = 'assertive';
+    else if (a.announceVerbosity === 'off') announcePoliteness = 'off';
+    else announcePoliteness = 'polite';
+  }
+  return {
+    motionMode: resolveUiMotionMode({ accessibilitySettings: a }),
+    focusStrong: highContrast,
+    focusRingStyle: a.focusRingStyle,
+    textScale: a.textScaleMultiplier,
+    screenReaderEnabled: a.screenReaderAnnouncements && announcePoliteness !== 'off',
+    announcePoliteness,
+    showKeyboardHints: a.keyboardNavigationHints !== false,
+    trapFocusInModals: modalShouldTrapFocus(a),
+    restoreFocusOnClose: a.restoreFocusOnClose !== false,
+  };
+}
+
+export const O111_MAIN_CONTENT_ID = 'o111-main-content';
+
+export const O111_A11Y_STYLESHEET = `
+[data-v94] { --o111-text-scale: 1; font-size: calc(16px * var(--o111-text-scale)); }
+[data-v94][data-focus-ring="cyan"] button:focus-visible, [data-v94][data-focus-ring="cyan"] a:focus-visible, [data-v94][data-focus-ring="cyan"] [role="button"]:focus-visible, [data-v94][data-focus-ring="cyan"] select:focus-visible, [data-v94][data-focus-ring="cyan"] input:focus-visible { outline-color: rgba(34, 211, 238, 0.95) !important; }
+[data-v94][data-focus-ring="amber"] button:focus-visible, [data-v94][data-focus-ring="amber"] a:focus-visible, [data-v94][data-focus-ring="amber"] [role="button"]:focus-visible, [data-v94][data-focus-ring="amber"] select:focus-visible, [data-v94][data-focus-ring="amber"] input:focus-visible { outline-color: rgba(251, 191, 36, 0.95) !important; }
+[data-v94][data-focus-ring="white"] button:focus-visible, [data-v94][data-focus-ring="white"] a:focus-visible, [data-v94][data-focus-ring="white"] [role="button"]:focus-visible, [data-v94][data-focus-ring="white"] select:focus-visible, [data-v94][data-focus-ring="white"] input:focus-visible { outline-color: rgba(255, 255, 255, 0.95) !important; }
+.o111-skip-link { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.o111-skip-link:focus { position: fixed; left: 12px; top: 12px; z-index: 100000; width: auto; height: auto; margin: 0; padding: 10px 16px; overflow: visible; clip: auto; white-space: normal; background: #0f172a; color: #f8fafc; border: 2px solid #38bdf8; border-radius: 8px; font-weight: 700; font-size: 14px; }
+`;
+
+export function pickO111ScreenReaderAnnouncement(
+  major: UiFeedbackEvent | null,
+  presentation: O111AccessibilityPresentation
+): string | null {
+  if (!major || !presentation.screenReaderEnabled) return null;
+  if (presentation.announcePoliteness === 'off') return null;
+  if (major.importance === 'minor' && presentation.announcePoliteness !== 'assertive') return null;
+  const lines = major.lines.filter(Boolean).slice(0, 2).join('. ');
+  return lines ? `${major.title}. ${lines}` : major.title;
+}
+
+export const O111SkipToMainLink: React.FC<{ targetId?: string; label?: string }> = ({ targetId = O111_MAIN_CONTENT_ID, label = 'Skip to main content' }) => (
+  <a href={`#${targetId}`} className="o111-skip-link" data-testid="o111-skip-link">
+    {label}
+  </a>
+);
+
+export const O111ScreenReaderLiveRegion: React.FC<{ politeness: 'polite' | 'assertive'; message: string | null }> = ({ politeness, message }) => (
+  <div
+    aria-live={politeness}
+    aria-atomic="true"
+    className="sr-only"
+    data-testid="o111-sr-live"
+    role="status"
+  >
+    {message || ''}
+  </div>
+);
+
+export function runO111AccessibilitySelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+
+  check('a68_motion_alias', 'reduceMotion and reducedMotion stay aligned for motion resolution', () => {
+    const synced = normalizeAccessibilityMotionFields({ ...createDefaultAccessibilitySettings(), reduceMotion: true, reducedMotion: false });
+    const mode = resolveUiMotionMode({ accessibilitySettings: synced });
+    return synced.reducedMotion === true && synced.reduceMotion === true && mode === 'reduced';
+  });
+  check('a68_presentation_profile', 'Accessibility presentation resolves motion, focus, text scale, and SR policy', () => {
+    const p = resolveO111AccessibilityPresentation({ accessibilitySettings: { ...createDefaultAccessibilitySettings(), textScaleMultiplier: 1.25, screenReaderAnnouncements: true, announceVerbosity: 'polite' } });
+    return p.textScale === 1.25 && p.focusStrong === true && p.motionMode === 'system' && p.screenReaderEnabled === true && p.trapFocusInModals === true;
+  });
+  check('a68_sr_pick', 'Screen reader announcements respect importance and the off switch', () => {
+    const on = resolveO111AccessibilityPresentation({ accessibilitySettings: createDefaultAccessibilitySettings() });
+    const off = resolveO111AccessibilityPresentation({ accessibilitySettings: { ...createDefaultAccessibilitySettings(), screenReaderAnnouncements: false } });
+    const major: UiFeedbackEvent = { importance: 'major', title: 'YOUR TURN', lines: ['Day 5'], kind: 'turn_start', id: 'x', subject: 'turn', before: null, after: null, icon: '▶', tone: 'selected', createdTurn: 1, createdAt: 1, expiresAt: 2, regions: [] };
+    const minor: UiFeedbackEvent = { ...major, importance: 'minor', title: 'Rival moved' };
+    return Boolean(pickO111ScreenReaderAnnouncement(major, on)) && pickO111ScreenReaderAnnouncement(minor, on) === null && pickO111ScreenReaderAnnouncement(major, off) === null;
+  });
+  check('a68_stylesheet', 'A11y stylesheet wires text scale and skip-link focus without remote assets', () => {
+    const css = O111_A11Y_STYLESHEET;
+    return /--o111-text-scale/.test(css) && /\.o111-skip-link:focus/.test(css) && !/https?:/.test(css);
+  });
+  check('a68_modal_trap_setting', 'Modal trapping follows trapFocusInModals through the presentation resolver', () => {
+    const trapped = resolveO111AccessibilityPresentation({ accessibilitySettings: { ...createDefaultAccessibilitySettings(), trapFocusInModals: true } });
+    const free = resolveO111AccessibilityPresentation({ accessibilitySettings: { ...createDefaultAccessibilitySettings(), trapFocusInModals: false } });
+    return trapped.trapFocusInModals && !free.trapFocusInModals;
+  });
+  check('a68_not_persisted', 'O111 a11y presentation keys are profile settings only (not match genome fields)', () => {
+    const keys = Object.keys(DEFAULT_GAME_SETTINGS).filter(k => /o111|srLive|skipLink/i.test(k));
+    return keys.length === 0;
+  });
+  return results;
+}
+
+
+// ============================================================================
+
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
 // Local-only diagnostics. No network, workers, telemetry or storage writes happen in this section; every
@@ -138222,6 +138350,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'o111_a68', label: 'O111 Accessibility (Agent 68)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111AccessibilitySelfTests() },
   { id: 'o111_a67', label: 'O111 Agent 67 Contextual Information', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111ContextualInformationSelfTests() },
   { id: 'o111a66', label: 'O111 Agent 66 Data Viz', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111Agent66DataVizSelfTests() },
   { id: 'o111_a69', label: 'O111 Responsive UI (Agent 69)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111ResponsiveUiSelfTests() },
