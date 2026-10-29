@@ -218,6 +218,81 @@ export interface OP10M_A11_InfraPersisted {
   inputHash: string;
 }
 
+/** Composite cities/regions depth slice (scale wave). */
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.1' as const;
+
+export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
+
+export type OP10M_A11_LinkageBand = 'weak' | 'moderate' | 'strong' | 'structural';
+
+export type OP10M_A11_CompositeDerivedKind =
+  | 'primate_concentration_risk'
+  | 'regional_linkage_fragility'
+  | 'integrated_relief_priority';
+
+export interface OP10M_A11_UrbanHierarchyRow {
+  regionId: OP10M_A11_RegionId;
+  primateIndex: number;
+  primateBand: OP10M_A11_PrimateBand;
+  gatewayShare: number;
+  secondaryMomentum: number;
+  narrative: string;
+}
+
+export interface OP10M_A11_RegionalLinkageEdge {
+  fromRegion: OP10M_A11_RegionId;
+  toRegion: OP10M_A11_RegionId;
+  strength: number;
+  band: OP10M_A11_LinkageBand;
+  viaLinks: number;
+}
+
+export interface OP10M_A11_ReliefPlaybookItem {
+  regionId: OP10M_A11_RegionId;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  actions: string[];
+  rationale: string;
+}
+
+export interface OP10M_A11_CompositeDerivedEvent {
+  id: string;
+  turn: number;
+  kind: OP10M_A11_CompositeDerivedKind;
+  regionIds: OP10M_A11_RegionId[];
+  text: string;
+  significance: 'minor' | 'meaningful' | 'major';
+}
+
+export interface OP10M_A11_CompositeInputs {
+  urban: OP10M_A11_Inputs;
+  infra: OP10M_A11_InfraInputs;
+}
+
+export interface OP10M_A11_CompositeState {
+  schemaVersion: typeof OP10M_A11_COMPOSITE_SCHEMA_VERSION;
+  revision: number;
+  turn: number;
+  urban: OP10M_A11_State;
+  infra: OP10M_A11_InfraState;
+  hierarchy: OP10M_A11_UrbanHierarchyRow[];
+  linkages: OP10M_A11_RegionalLinkageEdge[];
+  reliefPlaybook: OP10M_A11_ReliefPlaybookItem[];
+  fragilityIndex: number;
+  nationalPrimateIndex: number;
+  summary: string;
+  inputHash: string;
+}
+
+export interface OP10M_A11_CompositePersisted {
+  schemaVersion: typeof OP10M_A11_COMPOSITE_SCHEMA_VERSION;
+  revision: number;
+  initializedTurn: number | null;
+  urban: OP10M_A11_Persisted;
+  infra: OP10M_A11_InfraPersisted;
+  lastFragilityIndex: number;
+  inputHash: string;
+}
+
 
 // --- source: constants.ts ---
 
@@ -1085,6 +1160,378 @@ export function op10mA11InfraBindPenalty(state: OP10M_A11_InfraState | null, reg
 }
 
 
+// --- source: urban-hierarchy.ts ---
+  OP10M_A11_CORE_REGIONS,
+  type OP10M_A11_CityGrowthSlice,
+  type OP10M_A11_PrimateBand,
+  type OP10M_A11_RegionId,
+  type OP10M_A11_UrbanHierarchyRow,
+} from './types.ts';
+
+function primateBand(index: number): OP10M_A11_PrimateBand {
+  if (index < 22) return 'decentralized';
+  if (index < 40) return 'balanced';
+  if (index < 62) return 'concentrated';
+  return 'hyper_concentrated';
+}
+
+export function op10mA11ComputeUrbanHierarchy(cities: OP10M_A11_CityGrowthSlice[]): OP10M_A11_UrbanHierarchyRow[] {
+  const rows: OP10M_A11_UrbanHierarchyRow[] = [];
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const regionCities = cities.filter((c) => c.regionId === rid);
+    if (!regionCities.length) {
+      rows.push({
+        regionId: rid,
+        primateIndex: 30,
+        primateBand: 'balanced',
+        gatewayShare: 0,
+        secondaryMomentum: 40,
+        narrative: `${rid}: no tracked cities — neutral hierarchy prior.`,
+      });
+      continue;
+    }
+
+    const gateways = regionCities.filter((c) => c.gateway);
+    const secondaries = regionCities.filter((c) => !c.gateway);
+    const totalGrowth = regionCities.reduce((a, c) => a + c.growthScore, 0) || 1;
+    const gatewayGrowth = gateways.reduce((a, c) => a + c.growthScore, 0);
+    const gatewayShare = op10mA11Clamp((gatewayGrowth / totalGrowth) * 100);
+    const secondaryMomentum =
+      secondaries.length > 0
+        ? secondaries.reduce((a, c) => a + c.growthScore, 0) / secondaries.length
+        : gatewayGrowth / Math.max(1, gateways.length);
+
+    const top = Math.max(...regionCities.map((c) => c.growthScore));
+    const restAvg =
+      regionCities.length > 1
+        ? (totalGrowth - top) / (regionCities.length - 1)
+        : top * 0.6;
+    const primateIndex = op10mA11Clamp((top / Math.max(1, restAvg) - 1) * 28 + gatewayShare * 0.35);
+    const band = primateBand(primateIndex);
+
+    rows.push({
+      regionId: rid,
+      primateIndex: op10mA11Round(primateIndex),
+      primateBand: band,
+      gatewayShare: op10mA11Round(gatewayShare),
+      secondaryMomentum: op10mA11Round(secondaryMomentum),
+      narrative: `${rid} primate ${band} (index ${op10mA11Round(primateIndex)}); gateway share ${op10mA11Round(gatewayShare)}%.`,
+    });
+  }
+
+  return rows;
+}
+
+export function op10mA11NationalPrimateIndex(hierarchy: OP10M_A11_UrbanHierarchyRow[]): number {
+  if (!hierarchy.length) return 0;
+  const avg = hierarchy.reduce((a, h) => a + h.primateIndex, 0) / hierarchy.length;
+  const hyper = hierarchy.filter((h) => h.primateBand === 'hyper_concentrated' || h.primateBand === 'concentrated').length;
+  return op10mA11Round(op10mA11Clamp(avg + hyper * 4));
+}
+
+
+// --- source: regional-linkage-matrix.ts ---
+  OP10M_A11_CORE_REGIONS,
+  type OP10M_A11_IntercityLinkSlice,
+  type OP10M_A11_LinkageBand,
+  type OP10M_A11_RegionId,
+  type OP10M_A11_RegionalLinkageEdge,
+} from './types.ts';
+
+function linkageBand(strength: number): OP10M_A11_LinkageBand {
+  if (strength < 18) return 'weak';
+  if (strength < 38) return 'moderate';
+  if (strength < 58) return 'strong';
+  return 'structural';
+}
+
+export function op10mA11BuildRegionalLinkageMatrix(
+  links: OP10M_A11_IntercityLinkSlice[],
+): OP10M_A11_RegionalLinkageEdge[] {
+  const acc = new Map<string, { strength: number; count: number }>();
+
+  for (const link of links) {
+    if (link.regionA === link.regionB) continue;
+    const key = [link.regionA, link.regionB].sort().join('::');
+    const healthPenalty =
+      link.health === 'severed' ? 0.15 : link.health === 'degraded' ? 0.55 : link.health === 'operational' ? 0.85 : 1;
+    const add = op10mA11Clamp(link.utilization * 0.45 * healthPenalty + (link.strategic ? 8 : 0));
+    const prev = acc.get(key) || { strength: 0, count: 0 };
+    prev.strength += add;
+    prev.count += 1;
+    acc.set(key, prev);
+  }
+
+  const out: OP10M_A11_RegionalLinkageEdge[] = [];
+  for (const [key, val] of acc) {
+    const [fromRegion, toRegion] = key.split('::') as [OP10M_A11_RegionId, OP10M_A11_RegionId];
+    const strength = op10mA11Clamp(val.strength / Math.max(1, val.count) + val.count * 2);
+    out.push({
+      fromRegion,
+      toRegion,
+      strength: op10mA11Round(strength),
+      band: linkageBand(strength),
+      viaLinks: val.count,
+    });
+  }
+
+  return out.sort((a, b) => b.strength - a.strength);
+}
+
+export function op10mA11LinkageFragilityIndex(
+  linkages: OP10M_A11_RegionalLinkageEdge[],
+  corridorStress: number,
+): number {
+  const pairsPossible = (OP10M_A11_CORE_REGIONS.length * (OP10M_A11_CORE_REGIONS.length - 1)) / 2;
+  const weakShare = linkages.filter((l) => l.band === 'weak').length / Math.max(1, pairsPossible);
+  const strongShare = linkages.filter((l) => l.band === 'strong' || l.band === 'structural').length / Math.max(1, pairsPossible);
+  return op10mA11Round(op10mA11Clamp(weakShare * 55 + corridorStress * 0.35 - strongShare * 18 + 12));
+}
+
+export function op10mA11RegionsWithWeakLinkage(
+  linkages: OP10M_A11_RegionalLinkageEdge[],
+): OP10M_A11_RegionId[] {
+  const weakCount = {} as Record<OP10M_A11_RegionId, number>;
+  for (const rid of OP10M_A11_CORE_REGIONS) weakCount[rid] = 0;
+  for (const l of linkages) {
+    if (l.band !== 'weak') continue;
+    weakCount[l.fromRegion] += 1;
+    weakCount[l.toRegion] += 1;
+  }
+  return OP10M_A11_CORE_REGIONS.filter((r) => weakCount[r] >= 2);
+}
+
+
+// --- source: relief-playbook.ts ---
+  OP10M_A11_RegionalBottleneck,
+  OP10M_A11_RegionId,
+  OP10M_A11_ReliefPlaybookItem,
+  OP10M_A11_UrbanHierarchyRow,
+} from './types.ts';
+
+export function op10mA11BuildReliefPlaybook(args: {
+  bottlenecks: OP10M_A11_RegionalBottleneck[];
+  hierarchy: OP10M_A11_UrbanHierarchyRow[];
+  weakLinkageRegions: OP10M_A11_RegionId[];
+}): OP10M_A11_ReliefPlaybookItem[] {
+  const out: OP10M_A11_ReliefPlaybookItem[] = [];
+
+  for (const rid of args.weakLinkageRegions) {
+    out.push({
+      regionId: rid,
+      priority: 'medium',
+      actions: [
+        'Restore redundant intercity corridor capacity',
+        'Prioritize strategic freight/digital backbone upgrades',
+      ],
+      rationale: `${rid} sits on multiple weak regional linkages — growth spillovers are fragile.`,
+    });
+  }
+
+  for (const b of args.bottlenecks) {
+    const h = args.hierarchy.find((x) => x.regionId === b.regionId);
+    const actions: string[] = [];
+    if (b.drivers.some((d) => d.includes('transport need'))) {
+      actions.push('Clear open transport infrastructure needs before new urban projects');
+    }
+    if (b.drivers.some((d) => d.includes('headroom'))) {
+      actions.push('Sequence housing/transport absorption projects in gateway cities');
+    }
+    if (b.drivers.some((d) => d.includes('infrastructure'))) {
+      actions.push('Target regional infrastructure quality uplift (not cash transfers)');
+    }
+    if (h && (h.primateBand === 'concentrated' || h.primateBand === 'hyper_concentrated')) {
+      actions.push('Seed secondary-city growth programs to reduce primate concentration');
+    }
+    if (!actions.length) actions.push('Monitor binding constraints; no automatic capital dispatch');
+
+    const priority =
+      b.severity === 'critical' ? 'urgent' : b.severity === 'meaningful' ? 'high' : 'medium';
+
+    out.push({
+      regionId: b.regionId,
+      priority,
+      actions: actions.slice(0, 4),
+      rationale: b.explanation,
+    });
+  }
+
+  const byRegion = new Map<OP10M_A11_RegionId, OP10M_A11_ReliefPlaybookItem>();
+  for (const item of out) {
+    const prev = byRegion.get(item.regionId);
+    if (!prev || item.priority === 'urgent' || (item.priority === 'high' && prev.priority !== 'urgent')) {
+      byRegion.set(item.regionId, item);
+    }
+  }
+  return [...byRegion.values()].sort((a, b) => {
+    const rank = { urgent: 4, high: 3, medium: 2, low: 1 };
+    return rank[b.priority] - rank[a.priority];
+  });
+}
+
+
+// --- source: composite-recompute.ts ---
+  op10mA11BuildRegionalLinkageMatrix,
+  op10mA11LinkageFragilityIndex,
+  op10mA11RegionsWithWeakLinkage,
+} from './regional-linkage-matrix.ts';
+  buildOP10M_A11_InfraInputsFromFixtures,
+  createEmptyOP10M_A11_InfraPersisted,
+  recomputeOP10M_A11_IntercityInfraLayer,
+} from './recompute-intercity-infra.ts';
+  buildOP10M_A11_InputsFromFixtures,
+  createEmptyOP10M_A11_Persisted,
+  recomputeOP10M_A11_RegionalUrbanLayer,
+} from './recompute.ts';
+  OP10M_A11_COMPOSITE_SCHEMA_VERSION,
+  type OP10M_A11_CompositeDerivedEvent,
+  type OP10M_A11_CompositeInputs,
+  type OP10M_A11_CompositePersisted,
+  type OP10M_A11_CompositeState,
+  type OP10M_A11_RegionId,
+} from './types.ts';
+
+export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePersisted {
+  return {
+    schemaVersion: OP10M_A11_COMPOSITE_SCHEMA_VERSION,
+    revision: 0,
+    initializedTurn: null,
+    urban: createEmptyOP10M_A11_Persisted(),
+    infra: createEmptyOP10M_A11_InfraPersisted(),
+    lastFragilityIndex: 0,
+    inputHash: '',
+  };
+}
+
+export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState | null): string[] {
+  if (!state) return ['null composite state'];
+  const errs: string[] = [];
+  if (state.schemaVersion !== OP10M_A11_COMPOSITE_SCHEMA_VERSION) errs.push('composite schema mismatch');
+  if (state.fragilityIndex < 0 || state.fragilityIndex > 100) errs.push('fragility out of range');
+  if (state.hierarchy.length !== 8) errs.push('hierarchy row count');
+  return errs;
+}
+
+function pushCompositeDerived(
+  list: Omit<OP10M_A11_CompositeDerivedEvent, 'id'>[],
+  turn: number,
+  kind: OP10M_A11_CompositeDerivedEvent['kind'],
+  regionIds: OP10M_A11_RegionId[],
+  text: string,
+  significance: OP10M_A11_CompositeDerivedEvent['significance'] = 'meaningful',
+) {
+  if (list.length >= 12) return;
+  list.push({ turn, kind, regionIds, text, significance });
+}
+
+export function recomputeOP10M_A11_CitiesRegionsComposite(
+  inputs: OP10M_A11_CompositeInputs,
+  persisted: OP10M_A11_CompositePersisted | null,
+): {
+  state: OP10M_A11_CompositeState;
+  derived: OP10M_A11_CompositeDerivedEvent[];
+  persisted: OP10M_A11_CompositePersisted;
+} {
+  const base = persisted
+    ? {
+        ...persisted,
+        urban: { ...persisted.urban, history: [...persisted.urban.history] },
+        infra: { ...persisted.infra, stressedLinkIds: [...persisted.infra.stressedLinkIds] },
+      }
+    : createEmptyOP10M_A11_CompositePersisted();
+
+  if (base.initializedTurn === null) base.initializedTurn = inputs.urban.turn;
+
+  const urbanOut = recomputeOP10M_A11_RegionalUrbanLayer(inputs.urban, base.urban);
+  const infraOut = recomputeOP10M_A11_IntercityInfraLayer(inputs.infra, base.infra);
+
+  const hierarchy = op10mA11ComputeUrbanHierarchy(inputs.urban.cities);
+  const nationalPrimateIndex = op10mA11NationalPrimateIndex(hierarchy);
+  const linkages = op10mA11BuildRegionalLinkageMatrix(inputs.infra.links);
+  const fragilityIndex = op10mA11LinkageFragilityIndex(linkages, infraOut.state.corridorStressIndex);
+  const weakRegions = op10mA11RegionsWithWeakLinkage(linkages);
+  const reliefPlaybook = op10mA11BuildReliefPlaybook({
+    bottlenecks: infraOut.state.bottlenecks,
+    hierarchy,
+    weakLinkageRegions: weakRegions,
+  });
+
+  const derivedRaw: Omit<OP10M_A11_CompositeDerivedEvent, 'id'>[] = [];
+  if (nationalPrimateIndex >= 58) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'primate_concentration_risk',
+      hierarchy.filter((h) => h.primateBand === 'concentrated' || h.primateBand === 'hyper_concentrated').map((h) => h.regionId),
+      `National primate concentration elevated (index ${nationalPrimateIndex}).`,
+      nationalPrimateIndex >= 68 ? 'major' : 'meaningful',
+    );
+  }
+  if (fragilityIndex >= 45 || (base.revision > 0 && fragilityIndex > base.lastFragilityIndex + 5)) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'regional_linkage_fragility',
+      weakRegions,
+      `Regional linkage fragility index ${fragilityIndex.toFixed(1)}.`,
+    );
+  }
+  const urgent = reliefPlaybook.filter((r) => r.priority === 'urgent' || r.priority === 'high');
+  if (urgent.length) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'integrated_relief_priority',
+      urgent.map((u) => u.regionId),
+      `Integrated relief priorities: ${urgent.map((u) => u.regionId).join(', ')}.`,
+    );
+  }
+
+  base.revision += 1;
+  base.urban = urbanOut.persisted;
+  base.infra = infraOut.persisted;
+  base.lastFragilityIndex = fragilityIndex;
+  base.inputHash = op10mA11HashInputs({
+    turn: inputs.urban.turn,
+    cityCount: inputs.urban.cities.length,
+    regionKeys: 'composite',
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}`,
+  });
+
+  const state: OP10M_A11_CompositeState = {
+    schemaVersion: OP10M_A11_COMPOSITE_SCHEMA_VERSION,
+    revision: base.revision,
+    turn: inputs.urban.turn,
+    urban: urbanOut.state,
+    infra: infraOut.state,
+    hierarchy,
+    linkages,
+    reliefPlaybook,
+    fragilityIndex,
+    nationalPrimateIndex,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}.`,
+    inputHash: base.inputHash,
+  };
+
+  const derived: OP10M_A11_CompositeDerivedEvent[] = derivedRaw.map((d, i) => ({
+    ...d,
+    id: `a11c_${inputs.urban.turn}_${i}_${d.kind}`,
+  }));
+
+  return { state, derived, persisted: base };
+}
+
+export function buildOP10M_A11_CompositeInputsFromFixtures(
+  partial: Partial<OP10M_A11_CompositeInputs> & { turn: number },
+): OP10M_A11_CompositeInputs {
+  return {
+    urban: buildOP10M_A11_InputsFromFixtures({ turn: partial.turn, ...partial.urban }),
+    infra: buildOP10M_A11_InfraInputsFromFixtures({ turn: partial.turn, ...partial.infra }),
+  };
+}
+
+
 // --- source: self-tests.ts ---
   OP10M_A11_CORE_REGIONS,
   type OP10M_A11_CityGrowthSlice,
@@ -1104,6 +1551,10 @@ export function op10mA11InfraBindPenalty(state: OP10M_A11_InfraState | null, reg
   recomputeOP10M_A11_IntercityInfraLayer,
   validateOP10M_A11_InfraState,
 } from './recompute-intercity-infra.ts';
+  buildOP10M_A11_CompositeInputsFromFixtures,
+  recomputeOP10M_A11_CitiesRegionsComposite,
+  validateOP10M_A11_CompositeState,
+} from './composite-recompute.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -1351,6 +1802,53 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_16',
     infra1.state.dependencies.every((d) => d.dependentRegions.length === 2),
     'dependency region pairs',
+  );
+
+  const hierarchy = op10mA11ComputeUrbanHierarchy(sampleCities);
+  push(
+    out,
+    'a11_17',
+    hierarchy.length === 8 && hierarchy.some((h) => h.regionId === 'NSW' && h.gatewayShare > 50),
+    `NSW gateway share ${hierarchy.find((h) => h.regionId === 'NSW')?.gatewayShare}`,
+  );
+
+  const nationalPrimate = op10mA11NationalPrimateIndex(hierarchy);
+  push(out, 'a11_18', nationalPrimate > 0, `national primate ${nationalPrimate}`);
+
+  const linkMatrix = op10mA11BuildRegionalLinkageMatrix(infraLinks);
+  push(out, 'a11_19', linkMatrix.length >= 1 && linkMatrix[0].viaLinks >= 1, `link edges ${linkMatrix.length}`);
+
+  const compositeIn = buildOP10M_A11_CompositeInputsFromFixtures({
+    turn: 7,
+    urban: inputs,
+    infra: infraInputs,
+  });
+  const composite = recomputeOP10M_A11_CitiesRegionsComposite(compositeIn, null);
+  push(
+    out,
+    'a11_20',
+    validateOP10M_A11_CompositeState(composite.state).length === 0 &&
+      composite.state.reliefPlaybook.length > 0,
+    composite.state.summary.slice(0, 120),
+  );
+
+  push(
+    out,
+    'a11_21',
+    composite.derived.some((d) => d.kind === 'integrated_relief_priority') ||
+      composite.derived.some((d) => d.kind === 'primate_concentration_risk'),
+    composite.derived.map((d) => d.kind).join(', ') || 'none',
+  );
+
+  const composite2 = recomputeOP10M_A11_CitiesRegionsComposite(
+    buildOP10M_A11_CompositeInputsFromFixtures({ turn: 8, urban: inputs, infra: infraInputs }),
+    composite.persisted,
+  );
+  push(
+    out,
+    'a11_22',
+    composite2.state.revision === composite.state.revision + 1,
+    `revision ${composite.state.revision}→${composite2.state.revision}`,
   );
 
   return out;
