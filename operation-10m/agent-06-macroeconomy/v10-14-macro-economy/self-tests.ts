@@ -423,11 +423,12 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
   }
 
   const round55 = runAgent06Round55SelfTests();
-  const round56 = runAgent06Round56SelfTests();
   for (const r of round55.results) {
-    results.push(r);
+    check(r.id, r.name, r.passed, r.detail);
   }
-  for (const r of round56.results {
+
+  const round56 = runAgent06Round56SelfTests();
+  for (const r of round56.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 
