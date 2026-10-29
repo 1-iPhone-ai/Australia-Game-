@@ -60,6 +60,7 @@ import { coalitionParamountAscendancyStreakIssues } from './coalition-paramount-
 import { coalitionImperialPerpetuityStreakIssues } from './coalition-imperial-perpetuity-gates.ts';
 import { coalitionCustodialEternityStreakIssues } from './coalition-custodial-eternity-gates.ts';
 import { coalitionVanguardSynthesisStreakIssues } from './coalition-vanguard-synthesis-gates.ts';
+import { coalitionSentinelAscendancyStreakIssues } from './coalition-sentinel-ascendancy-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -343,6 +344,7 @@ export function validateAction(
     issues.push(...coalitionImperialPerpetuityStreakIssues(action, state));
     issues.push(...coalitionCustodialEternityStreakIssues(action, state));
     issues.push(...coalitionVanguardSynthesisStreakIssues(action, state));
+    issues.push(...coalitionSentinelAscendancyStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

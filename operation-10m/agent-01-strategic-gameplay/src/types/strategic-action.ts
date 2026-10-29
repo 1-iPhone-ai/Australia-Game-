@@ -139,6 +139,8 @@ export interface StrategicActionDefinition {
   minCoalitionCustodialEternityStreakDays?: number;
   /** Action requires vanguard synthesis streak after custodial eternity. */
   minCoalitionVanguardSynthesisStreakDays?: number;
+  /** Action requires sentinel ascendancy streak after vanguard synthesis. */
+  minCoalitionSentinelAscendancyStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -214,7 +216,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_paramount_ascendancy_streak'; minDays: number }
   | { kind: 'min_coalition_imperial_perpetuity_streak'; minDays: number }
   | { kind: 'min_coalition_custodial_eternity_streak'; minDays: number }
-  | { kind: 'min_coalition_vanguard_synthesis_streak'; minDays: number };
+  | { kind: 'min_coalition_vanguard_synthesis_streak'; minDays: number }
+  | { kind: 'min_coalition_sentinel_ascendancy_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -328,6 +331,8 @@ export interface StrategicGameplayState {
   coalitionCustodialEternityStreakDays?: number;
   /** Days custodial eternity held vanguard synthesis eligibility. */
   coalitionVanguardSynthesisStreakDays?: number;
+  /** Days vanguard synthesis held sentinel ascendancy eligibility. */
+  coalitionSentinelAscendancyStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

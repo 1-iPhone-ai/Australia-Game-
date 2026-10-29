@@ -158,7 +158,7 @@ describe('scale wave round 39 — custodial coalition eternity', () => {
       coalitionCustodialEternityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(38);
+    expect(save.version).toBe(39);
     expect(save.coalitionCustodialEternityStreakDays).toBe(5);
   });
 });

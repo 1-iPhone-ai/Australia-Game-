@@ -146,7 +146,7 @@ describe('scale wave round 35 — zenith coalition perpetuity', () => {
       coalitionZenithPerpetuityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(38);
+    expect(save.version).toBe(39);
     expect(save.coalitionZenithPerpetuityStreakDays).toBe(5);
   });
 });

@@ -378,3 +378,13 @@ export function vanguardSynthesisRankingBonus(
   if (streak >= action.minCoalitionVanguardSynthesisStreakDays) return 33;
   return 2;
 }
+
+export function sentinelAscendancyRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionSentinelAscendancyStreakDays === undefined) return 0;
+  const streak = state.coalitionSentinelAscendancyStreakDays ?? 0;
+  if (streak >= action.minCoalitionSentinelAscendancyStreakDays) return 34;
+  return 2;
+}

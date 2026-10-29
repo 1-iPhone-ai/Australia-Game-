@@ -128,6 +128,7 @@ export {
   imperialPerpetuityRankingBonus,
   custodialEternityRankingBonus,
   vanguardSynthesisRankingBonus,
+  sentinelAscendancyRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -523,6 +524,16 @@ export {
   applyVanguardSynthesisMandateBonus,
 } from './engine/coalition-vanguard-synthesis.ts';
 
+export { coalitionSentinelAscendancyStreakIssues } from './engine/coalition-sentinel-ascendancy-gates.ts';
+
+export {
+  SENTINEL_COALITION_ASCENDANCY_THRESHOLD,
+  advanceCoalitionSentinelAscendancyStreak,
+  resetCoalitionSentinelAscendancyStreak,
+  isSentinelCoalitionAscendancy,
+  applySentinelAscendancyMandateBonus,
+} from './engine/coalition-sentinel-ascendancy.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '5.0.0';
+export const AGENT_01_MODULE_VERSION = '5.1.0';

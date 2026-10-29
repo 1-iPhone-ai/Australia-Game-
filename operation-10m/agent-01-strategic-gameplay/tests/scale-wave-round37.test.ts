@@ -154,7 +154,7 @@ describe('scale wave round 37 — paramount coalition ascendancy', () => {
       coalitionParamountAscendancyStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(38);
+    expect(save.version).toBe(39);
     expect(save.coalitionParamountAscendancyStreakDays).toBe(5);
   });
 });

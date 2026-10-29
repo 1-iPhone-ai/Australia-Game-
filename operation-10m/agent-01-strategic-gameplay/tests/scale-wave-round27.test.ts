@@ -134,7 +134,7 @@ describe('scale wave round 27 — quantum coalition omnipresence', () => {
       coalitionQuantumOmnipresenceStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(38);
+    expect(save.version).toBe(39);
     expect(save.coalitionQuantumOmnipresenceStreakDays).toBe(5);
   });
 });
