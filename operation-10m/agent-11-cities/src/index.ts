@@ -97,5 +97,8 @@ export * from './settlement-existential-absolute-nullity-verdict.ts';
 export * from './regional-collapse-total-singularity-nexus.ts';
 export * from './interregional-void-absolute-erosion-termination.ts';
 export * from './settlement-existential-final-nullity-sentence.ts';
+export * from './regional-collapse-absolute-singularity-culmination.ts';
+export * from './interregional-void-complete-erosion-extinction.ts';
+export * from './settlement-existential-total-nullity-decree.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';
