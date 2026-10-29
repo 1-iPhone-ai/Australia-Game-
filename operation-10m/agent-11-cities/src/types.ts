@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.8' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.9' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -245,7 +245,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'settlement_relocation_burden'
   | 'employment_anchor_fragility'
   | 'commute_affordability_wedge'
-  | 'settlement_reception_strain';
+  | 'settlement_reception_strain'
+  | 'land_use_regulatory_gridlock'
+  | 'mobility_affordability_trap'
+  | 'infrastructure_absorption_gap';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -402,6 +405,36 @@ export interface OP10M_A11_ReceptionStrainRow {
   narrative: string;
 }
 
+export type OP10M_A11_LandUseGridlockBand = 'fluid' | 'slowing' | 'gridlocked' | 'paralyzed';
+
+export interface OP10M_A11_LandUseGridlockRow {
+  regionId: OP10M_A11_RegionId;
+  gridlockScore: number;
+  band: OP10M_A11_LandUseGridlockBand;
+  blockers: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_MobilityTrapBand = 'mobile' | 'constrained' | 'trapped' | 'immobilized';
+
+export interface OP10M_A11_MobilityTrapRow {
+  regionId: OP10M_A11_RegionId;
+  trapScore: number;
+  band: OP10M_A11_MobilityTrapBand;
+  binds: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_AbsorptionGapBand = 'aligned' | 'widening' | 'critical' | 'rupture';
+
+export interface OP10M_A11_AbsorptionGapRow {
+  regionId: OP10M_A11_RegionId;
+  gapScore: number;
+  band: OP10M_A11_AbsorptionGapBand;
+  gaps: string[];
+  narrative: string;
+}
+
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
 export interface OP10M_A11_MigrationPressureRow {
@@ -542,6 +575,12 @@ export interface OP10M_A11_CompositeState {
   nationalCommuteWedgeIndex: number;
   receptionStrain: OP10M_A11_ReceptionStrainRow[];
   nationalReceptionStrainIndex: number;
+  landUseGridlock: OP10M_A11_LandUseGridlockRow[];
+  nationalLandUseGridlockIndex: number;
+  mobilityTrap: OP10M_A11_MobilityTrapRow[];
+  nationalMobilityTrapIndex: number;
+  absorptionGap: OP10M_A11_AbsorptionGapRow[];
+  nationalAbsorptionGapIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -566,5 +605,8 @@ export interface OP10M_A11_CompositePersisted {
   lastEmploymentAnchorIndex: number;
   lastCommuteWedgeIndex: number;
   lastReceptionStrainIndex: number;
+  lastLandUseGridlockIndex: number;
+  lastMobilityTrapIndex: number;
+  lastAbsorptionGapIndex: number;
   inputHash: string;
 }

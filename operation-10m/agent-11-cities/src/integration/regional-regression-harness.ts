@@ -21,6 +21,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   employmentAnchorIndex: number;
   commuteWedgeIndex: number;
   receptionStrainIndex: number;
+  landUseGridlockIndex: number;
+  mobilityTrapIndex: number;
+  absorptionGapIndex: number;
   validationErrors: number;
 };
 
@@ -68,6 +71,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       employmentAnchorIndex: out.state.nationalEmploymentAnchorIndex,
       commuteWedgeIndex: out.state.nationalCommuteWedgeIndex,
       receptionStrainIndex: out.state.nationalReceptionStrainIndex,
+      landUseGridlockIndex: out.state.nationalLandUseGridlockIndex,
+      mobilityTrapIndex: out.state.nationalMobilityTrapIndex,
+      absorptionGapIndex: out.state.nationalAbsorptionGapIndex,
       validationErrors,
     });
   }
@@ -86,6 +92,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const employmentAnchorStable = snapshots.every((s) => s.employmentAnchorIndex >= 8 && s.employmentAnchorIndex <= 100);
   const commuteWedgeStable = snapshots.every((s) => s.commuteWedgeIndex >= 8 && s.commuteWedgeIndex <= 100);
   const receptionStrainStable = snapshots.every((s) => s.receptionStrainIndex >= 8 && s.receptionStrainIndex <= 100);
+  const landUseGridlockStable = snapshots.every((s) => s.landUseGridlockIndex >= 8 && s.landUseGridlockIndex <= 100);
+  const mobilityTrapStable = snapshots.every((s) => s.mobilityTrapIndex >= 8 && s.mobilityTrapIndex <= 100);
+  const absorptionGapStable = snapshots.every((s) => s.absorptionGapIndex >= 8 && s.absorptionGapIndex <= 100);
 
   const ok =
     monotonicRevision &&
@@ -101,10 +110,13 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     relocationStable &&
     employmentAnchorStable &&
     commuteWedgeStable &&
-    receptionStrainStable;
+    receptionStrainStable &&
+    landUseGridlockStable &&
+    mobilityTrapStable &&
+    absorptionGapStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, reception ${snapshots[snapshots.length - 1].receptionStrainIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, absorption gap ${snapshots[snapshots.length - 1].absorptionGapIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable}`;
 
   return { ok, snapshots, detail };
 }

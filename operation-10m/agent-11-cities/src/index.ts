@@ -31,5 +31,8 @@ export * from './settlement-relocation-burden.ts';
 export * from './regional-employment-anchor-stress.ts';
 export * from './interregional-commute-affordability-wedge.ts';
 export * from './settlement-reception-capacity-strain.ts';
+export * from './regional-land-use-regulatory-gridlock.ts';
+export * from './interregional-mobility-affordability-trap.ts';
+export * from './settlement-infrastructure-absorption-gap.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

@@ -33,6 +33,14 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 4. Persist infra slice under `gameState.op10mAgent11IntercityInfra` (`createEmptyOP10M_A11_InfraPersisted()`).
 5. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
 
+### Scale wave round 10 (schema `10m.a11.composite.9`)
+
+- **Regional land-use regulatory gridlock** — governance friction × peri-urban × housing spillover (`op10mA11ComputeRegionalLandUseRegulatoryGridlock`)
+- **Interregional mobility affordability trap** — commute wedge × migration × amenity cost (`op10mA11ComputeInterregionalMobilityAffordabilityTrap`)
+- **Settlement infrastructure absorption gap** — infra backlog × reception strain × absorption (`op10mA11ComputeSettlementInfrastructureAbsorptionGap`)
+- **10-turn regression harness** — extended bounds for land-use gridlock, mobility trap, absorption gap
+- Derived events: `land_use_regulatory_gridlock`, `mobility_affordability_trap`, `infrastructure_absorption_gap`
+
 ### Scale wave round 9 (schema `10m.a11.composite.8`)
 
 - **Regional employment anchor stress** — decentralization × talent retention × hub isolation (`op10mA11ComputeRegionalEmploymentAnchorStress`)

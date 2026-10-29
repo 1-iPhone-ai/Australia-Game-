@@ -69,6 +69,9 @@ import { op10mA11ComputeSettlementRelocationBurden } from './settlement-relocati
 import { op10mA11ComputeRegionalEmploymentAnchorStress } from './regional-employment-anchor-stress.ts';
 import { op10mA11ComputeInterregionalCommuteAffordabilityWedge } from './interregional-commute-affordability-wedge.ts';
 import { op10mA11ComputeSettlementReceptionCapacityStrain } from './settlement-reception-capacity-strain.ts';
+import { op10mA11ComputeRegionalLandUseRegulatoryGridlock } from './regional-land-use-regulatory-gridlock.ts';
+import { op10mA11ComputeInterregionalMobilityAffordabilityTrap } from './interregional-mobility-affordability-trap.ts';
+import { op10mA11ComputeSettlementInfrastructureAbsorptionGap } from './settlement-infrastructure-absorption-gap.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -395,7 +398,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.8',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.9',
     composite.state.schemaVersion,
   );
 
@@ -495,7 +498,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastRelocationBurdenIndex === composite.state.nationalRelocationBurdenIndex &&
       composite.persisted.lastEmploymentAnchorIndex === composite.state.nationalEmploymentAnchorIndex &&
       composite.persisted.lastCommuteWedgeIndex === composite.state.nationalCommuteWedgeIndex &&
-      composite.persisted.lastReceptionStrainIndex === composite.state.nationalReceptionStrainIndex,
+      composite.persisted.lastReceptionStrainIndex === composite.state.nationalReceptionStrainIndex &&
+      composite.persisted.lastLandUseGridlockIndex === composite.state.nationalLandUseGridlockIndex &&
+      composite.persisted.lastMobilityTrapIndex === composite.state.nationalMobilityTrapIndex &&
+      composite.persisted.lastAbsorptionGapIndex === composite.state.nationalAbsorptionGapIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -885,6 +891,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_77',
     composite.state.commuteWedge.every((c) => c.narrative.includes('commute affordability wedge')),
     composite.state.commuteWedge[0]?.band ?? 'none',
+  );
+
+  const landUseGridlock = op10mA11ComputeRegionalLandUseRegulatoryGridlock({
+    governanceFriction: composite.state.governanceFriction,
+    periUrbanPressure: composite.state.periUrbanPressure,
+    housingSpillover: composite.state.housingSpillover,
+  });
+  push(
+    out,
+    'a11_78',
+    composite.state.landUseGridlock.length === 8 &&
+      composite.state.nationalLandUseGridlockIndex === landUseGridlock.nationalIndex,
+    `land-use gridlock ${composite.state.nationalLandUseGridlockIndex}`,
+  );
+
+  const mobilityTrap = op10mA11ComputeInterregionalMobilityAffordabilityTrap({
+    commuteWedge: composite.state.commuteWedge,
+    migrationPressure: composite.state.migrationPressure,
+    amenityCost: composite.state.amenityCost,
+  });
+  push(
+    out,
+    'a11_79',
+    composite.state.mobilityTrap.length === 8 &&
+      composite.state.nationalMobilityTrapIndex === mobilityTrap.nationalIndex,
+    `mobility trap ${composite.state.nationalMobilityTrapIndex}`,
+  );
+
+  const absorptionGap = op10mA11ComputeSettlementInfrastructureAbsorptionGap({
+    infrastructureBacklog: composite.state.infrastructureBacklog,
+    receptionStrain: composite.state.receptionStrain,
+    absorptionStress: composite.state.absorptionStress,
+  });
+  push(
+    out,
+    'a11_80',
+    composite.state.absorptionGap.length === 8 &&
+      composite.state.nationalAbsorptionGapIndex === absorptionGap.nationalIndex,
+    `absorption gap ${composite.state.nationalAbsorptionGapIndex}`,
+  );
+
+  push(
+    out,
+    'a11_81',
+    composite.state.landUseGridlock.every((l) => l.narrative.includes('land-use regulatory')),
+    composite.state.landUseGridlock[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_82',
+    composite.derived.some((d) => d.kind === 'land_use_regulatory_gridlock') ||
+      composite.state.landUseGridlock.some((l) => l.band === 'gridlocked' || l.band === 'paralyzed'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_83',
+    composite.derived.some((d) => d.kind === 'mobility_affordability_trap') ||
+      composite.state.mobilityTrap.some((m) => m.band === 'trapped' || m.band === 'immobilized'),
+    composite.state.mobilityTrap[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_84',
+    composite.persisted.lastLandUseGridlockIndex === composite.state.nationalLandUseGridlockIndex,
+    `persisted gridlock ${composite.persisted.lastLandUseGridlockIndex}`,
+  );
+
+  push(
+    out,
+    'a11_85',
+    composite.derived.some((d) => d.kind === 'infrastructure_absorption_gap') ||
+      composite.state.absorptionGap.some((g) => g.band === 'critical' || g.band === 'rupture'),
+    composite.state.absorptionGap[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_86',
+    composite.state.mobilityTrap.every((m) => m.narrative.includes('mobility affordability')),
+    composite.state.mobilityTrap[0]?.band ?? 'none',
   );
 
   return out;
