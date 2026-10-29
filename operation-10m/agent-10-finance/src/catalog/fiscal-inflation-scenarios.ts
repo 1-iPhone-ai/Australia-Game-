@@ -1498,6 +1498,47 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'guardian', 'team', 'round41'],
   },
+  {
+    id: 'memory_realm_persistence_latch_stack',
+    label: 'Memory realm persistence latch stack',
+    description: 'Ruptured realm gate with memory recall latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.46,
+      publicStability: 33,
+    },
+    tags: ['inflation', 'memory', 'round42'],
+  },
+  {
+    id: 'automation_synthesis_cascade_surge_stress',
+    label: 'Automation synthesis cascade surge stress',
+    description: 'Autopilot surge under synthesis cascade latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.43,
+      publicStability: 29,
+    },
+    tags: ['inflation', 'automation', 'round42'],
+  },
+  {
+    id: 'memory_automation_wave42_fusion_stress',
+    label: 'Memory & automation wave 42 fusion stress',
+    description: 'Realm rupture latch colliding with autopilot runaway surge.',
+    patch: {
+      inflationSettingMultiplier: 1.53,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 19,
+    },
+    tags: ['inflation', 'memory', 'automation', 'round42'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

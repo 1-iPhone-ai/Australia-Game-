@@ -296,6 +296,14 @@ import {
   assessTeamBriefingConsensusInflationUnmooring,
   type TeamBriefingConsensusInflationUnmooringBand,
 } from '../inflation/team-briefing-consensus-inflation-unmooring.js';
+import {
+  assessMemoryRealmInflationPersistenceLatch,
+  type MemoryRealmInflationPersistenceLatchBand,
+} from '../inflation/memory-realm-inflation-persistence-latch.js';
+import {
+  assessAutomationSynthesisInflationCascadeSurge,
+  type AutomationSynthesisInflationCascadeSurgeBand,
+} from '../inflation/automation-synthesis-inflation-cascade-surge.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -378,6 +386,8 @@ export interface InflationForecastPoint {
   gridWholesaleTariffInflationSurgeBand: GridWholesaleTariffInflationSurgeBand;
   guardianCopilotInflationPressureLatchBand: GuardianCopilotInflationPressureLatchBand;
   teamBriefingConsensusInflationUnmooringBand: TeamBriefingConsensusInflationUnmooringBand;
+  memoryRealmInflationPersistenceLatchBand: MemoryRealmInflationPersistenceLatchBand;
+  automationSynthesisInflationCascadeSurgeBand: AutomationSynthesisInflationCascadeSurgeBand;
 }
 
 export interface InflationForecastPath {
@@ -1099,6 +1109,24 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const memoryRealmPersistence = assessMemoryRealmInflationPersistenceLatch({
+      recalledInflationRegimeConfidence: inputs.highInflationScenario ? 0.8 : 0.5,
+      narrativeDriftTowardHigherInflation: inputs.highInflationScenario,
+      wave42MemoryRecallLatch: inputs.householdInflationScenarioActive,
+      realmPersistenceGateBand:
+        inputs.fiscalPressure === 'critical' ? 'ruptured' : inputs.creditShockActive ? 'slipping' : 'anchored',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const automationCascadeSurge = assessAutomationSynthesisInflationCascadeSurge({
+      macroAutopilotInflationBias: inputs.highInflationScenario ? 'inflate' : inputs.creditShockActive ? 'neutral' : 'deflate',
+      unattendedShockDriftActive: inputs.creditShockActive,
+      wave42SynthesisCascadeLatch: inputs.creditShockActive,
+      autopilotStackSurgeBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'surge' : inputs.fiscalPressure === 'critical' ? 'stacking' : 'stable',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -1181,6 +1209,8 @@ export function projectInflationForecastPath(
       gridWholesaleTariffInflationSurgeBand: gridWholesaleTariff.surgeBand,
       guardianCopilotInflationPressureLatchBand: guardianCopilotPressure.latchBand,
       teamBriefingConsensusInflationUnmooringBand: teamBriefingUnmooring.unmooringBand,
+      memoryRealmInflationPersistenceLatchBand: memoryRealmPersistence.latchBand,
+      automationSynthesisInflationCascadeSurgeBand: automationCascadeSurge.surgeBand,
     });
   }
 
