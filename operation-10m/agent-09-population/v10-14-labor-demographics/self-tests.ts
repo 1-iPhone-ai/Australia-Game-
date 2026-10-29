@@ -206,6 +206,10 @@ import { computeNationalRetentionReengagementCouplingBrief } from './retention-r
 import { computeNationalReengagementAlignmentOutlook } from './reengagement-alignment-outlook';
 import { computeNationalSubjectReengagementReadinessBrief } from './subject-reengagement-readiness-brief';
 import { computeNationalWorkforceReengagementIndex } from './national-workforce-reengagement-index';
+import { computeNationalReengagementMentorshipCouplingBrief } from './reengagement-mentorship-coupling-brief';
+import { computeNationalMentorshipSustainOutlook } from './mentorship-sustain-outlook';
+import { computeNationalSubjectMentorshipReadinessBrief } from './subject-mentorship-readiness-brief';
+import { computeNationalWorkforceMentorshipIndex } from './national-workforce-mentorship-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2381,6 +2385,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'reengagement steward note'
   );
   check('R3816', reengagementPullForRegion('NSW', 'technology') > 0, 'reengagement pull for region');
+
+  check('R3901', Boolean(r1.state.reengagementMentorshipCouplingBrief?.band), 'reengagement mentorship on state');
+  check(
+    'R3902',
+    (r1.state.reengagementMentorshipCouplingBrief?.reengagementDrag ?? 0) >= 0,
+    'reengagement mentorship drag'
+  );
+  check('R3903', Boolean(r1.state.mentorshipSustainOutlook?.band), 'mentorship sustain on state');
+  check(
+    'R3904',
+    (r1.state.mentorshipSustainOutlook?.reengagementDrag ?? 0) >= 0,
+    'mentorship sustain reengagement drag'
+  );
+  check('R3905', Boolean(r1.state.subjectMentorshipReadinessBrief?.band), 'subject mentorship on state');
+  check('R3906', Boolean(r1.state.nationalWorkforceMentorshipIndex?.band), 'workforce mentorship on state');
+  check(
+    'R3907',
+    detectLaborDemographicsQuery('reengagement mentorship coupling') === 'reengagement_mentorship_coupling',
+    'GI reengagement mentorship detect'
+  );
+  check(
+    'R3908',
+    detectLaborDemographicsQuery('mentorship sustain') === 'mentorship_sustain',
+    'GI mentorship sustain detect'
+  );
+  check(
+    'R3909',
+    detectLaborDemographicsQuery('subject mentorship readiness') === 'subject_mentorship_readiness',
+    'GI subject mentorship detect'
+  );
+  check(
+    'R3910',
+    detectLaborDemographicsQuery('workforce mentorship') === 'workforce_mentorship',
+    'GI workforce mentorship detect'
+  );
+  check(
+    'R3911',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_mentorship').headline.length > 5,
+    'GI workforce mentorship answer'
+  );
+  const reengagementMentorshipOnly = computeNationalReengagementMentorshipCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceReengagementIndex
+  );
+  check('R3912', reengagementMentorshipOnly.summary.length > 10, 'reengagement mentorship standalone summary');
+  const mentorshipSustainOnly = computeNationalMentorshipSustainOutlook(
+    r1.state,
+    r1.state.reengagementAlignmentOutlook
+  );
+  check('R3913', mentorshipSustainOnly.band.length > 3, 'mentorship sustain band string');
+  const subjectMentorshipOnly = computeNationalSubjectMentorshipReadinessBrief(
+    r1.state,
+    r1.state.subjectReengagementReadinessBrief,
+    r1.state.nationalWorkforceReengagementIndex
+  );
+  check('R3914', subjectMentorshipOnly.mentorshipDrag >= 0, 'subject mentorship drag');
+  check(
+    'R3915',
+    computeNationalWorkforceMentorshipIndex(
+      rHhBad.state,
+      rHhBad.state.reengagementMentorshipCouplingBrief,
+      rHhBad.state.mentorshipSustainOutlook,
+      rHhBad.state.subjectMentorshipReadinessBrief
+    ).stewardNote.length > 8,
+    'mentorship steward note'
+  );
+  check('R3916', mentorshipEaseForRegion('NSW', 'technology') > 0, 'mentorship ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

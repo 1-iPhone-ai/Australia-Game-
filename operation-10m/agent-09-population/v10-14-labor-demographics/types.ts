@@ -321,6 +321,10 @@ export interface NationalLaborDemographicsState {
   reengagementAlignmentOutlook?: NationalReengagementAlignmentOutlook;
   subjectReengagementReadinessBrief?: NationalSubjectReengagementReadinessBrief;
   nationalWorkforceReengagementIndex?: NationalWorkforceReengagementIndex;
+  reengagementMentorshipCouplingBrief?: NationalReengagementMentorshipCouplingBrief;
+  mentorshipSustainOutlook?: NationalMentorshipSustainOutlook;
+  subjectMentorshipReadinessBrief?: NationalSubjectMentorshipReadinessBrief;
+  nationalWorkforceMentorshipIndex?: NationalWorkforceMentorshipIndex;
 }
 
 export type MigrationShockKind =
@@ -1853,6 +1857,54 @@ export interface NationalWorkforceReengagementIndex {
   reengagementIndex: number;
   band: WorkforceReengagementBand;
   reengagementDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ReengagementMentorshipCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalReengagementMentorshipCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ReengagementMentorshipCouplingBand;
+  reengagementDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type MentorshipSustainBand = 'ebbing' | 'patchy' | 'rising' | 'sustained';
+
+export interface NationalMentorshipSustainOutlook {
+  turn: number;
+  sustainIndex: number;
+  band: MentorshipSustainBand;
+  reengagementDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectMentorshipReadinessBand =
+  | 'below_mentorship'
+  | 'approaching'
+  | 'mentorship_ready'
+  | 'reengagement_locked';
+
+export interface NationalSubjectMentorshipReadinessBrief {
+  turn: number;
+  mentorshipIndex: number;
+  band: SubjectMentorshipReadinessBand;
+  mentorshipDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceMentorshipBand = 'fragile' | 'thin' | 'elevated' | 'mentorship';
+
+export interface NationalWorkforceMentorshipIndex {
+  turn: number;
+  mentorshipIndex: number;
+  band: WorkforceMentorshipBand;
+  mentorshipDrag: number;
   summary: string;
   stewardNote: string;
 }

@@ -162,6 +162,10 @@ import { computeNationalRetentionReengagementCouplingBrief } from './retention-r
 import { computeNationalReengagementAlignmentOutlook } from './reengagement-alignment-outlook';
 import { computeNationalSubjectReengagementReadinessBrief } from './subject-reengagement-readiness-brief';
 import { computeNationalWorkforceReengagementIndex } from './national-workforce-reengagement-index';
+import { computeNationalReengagementMentorshipCouplingBrief } from './reengagement-mentorship-coupling-brief';
+import { computeNationalMentorshipSustainOutlook } from './mentorship-sustain-outlook';
+import { computeNationalSubjectMentorshipReadinessBrief } from './subject-mentorship-readiness-brief';
+import { computeNationalWorkforceMentorshipIndex } from './national-workforce-mentorship-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -1080,6 +1084,25 @@ export function computeNationalLaborDemographics(
     state.reengagementAlignmentOutlook,
     state.subjectReengagementReadinessBrief
   );
+  state.reengagementMentorshipCouplingBrief = computeNationalReengagementMentorshipCouplingBrief(
+    state,
+    state.nationalWorkforceReengagementIndex
+  );
+  state.mentorshipSustainOutlook = computeNationalMentorshipSustainOutlook(
+    state,
+    state.reengagementAlignmentOutlook
+  );
+  state.subjectMentorshipReadinessBrief = computeNationalSubjectMentorshipReadinessBrief(
+    state,
+    state.subjectReengagementReadinessBrief,
+    state.nationalWorkforceReengagementIndex
+  );
+  state.nationalWorkforceMentorshipIndex = computeNationalWorkforceMentorshipIndex(
+    state,
+    state.reengagementMentorshipCouplingBrief,
+    state.mentorshipSustainOutlook,
+    state.subjectMentorshipReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -1930,6 +1953,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceReengagementIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.reengagementMentorshipCouplingBrief?.band === 'decoupled' ||
+      state.reengagementMentorshipCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.reengagementMentorshipCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.mentorshipSustainOutlook?.band === 'ebbing' ||
+      state.mentorshipSustainOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.mentorshipSustainOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectMentorshipReadinessBrief?.band === 'below_mentorship' ||
+      state.subjectMentorshipReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectMentorshipReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceMentorshipIndex?.band === 'fragile' ||
+      state.nationalWorkforceMentorshipIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceMentorshipIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

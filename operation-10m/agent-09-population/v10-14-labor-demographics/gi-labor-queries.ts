@@ -139,7 +139,11 @@ export type LaborGiQueryTopic =
   | 'retention_reengagement_coupling'
   | 'reengagement_alignment'
   | 'subject_reengagement_readiness'
-  | 'workforce_reengagement';
+  | 'workforce_reengagement'
+  | 'reengagement_mentorship_coupling'
+  | 'mentorship_sustain'
+  | 'subject_mentorship_readiness'
+  | 'workforce_mentorship';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -286,6 +290,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_reengagement_readiness';
   }
   if (/\b(workforce reengagement|reengagement index labor workforce)/.test(q)) return 'workforce_reengagement';
+  if (/\b(reengagement mentorship|reengagement-mentorship coupling)/.test(q)) return 'reengagement_mentorship_coupling';
+  if (/\b(mentorship sustain|mentorship pipeline sustain)/.test(q)) return 'mentorship_sustain';
+  if (/\b(subject mentorship readiness|mentorship readiness subject)/.test(q)) {
+    return 'subject_mentorship_readiness';
+  }
+  if (/\b(workforce mentorship|mentorship index labor workforce)/.test(q)) return 'workforce_mentorship';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1392,6 +1402,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Reengagement band ${state.nationalWorkforceReengagementIndex?.band ?? 'unknown'}; reengagement drag ${Math.round(state.nationalWorkforceReengagementIndex?.reengagementDrag ?? 0)}.`,
         inference: state.nationalWorkforceReengagementIndex?.stewardNote || state.summary,
         projection: 'Workforce reengagement synthesizes retention-reengagement coupling, reengagement alignment, and subject reengagement.'
+      };
+    case 'reengagement_mentorship_coupling':
+      return {
+        topic,
+        headline: state.reengagementMentorshipCouplingBrief?.summary || 'Reengagement-mentorship coupling unavailable.',
+        fact: `Coupling band ${state.reengagementMentorshipCouplingBrief?.band ?? 'unknown'}; reengagement drag ${Math.round(state.reengagementMentorshipCouplingBrief?.reengagementDrag ?? 0)}.`,
+        inference: state.reengagementMentorshipCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce reengagement with mentorship levers — wave 39 / O10-209 depth.'
+      };
+    case 'mentorship_sustain':
+      return {
+        topic,
+        headline: state.mentorshipSustainOutlook?.summary || 'Mentorship sustain unavailable.',
+        fact: `Sustain band ${state.mentorshipSustainOutlook?.band ?? 'unknown'}; reengagement drag ${Math.round(state.mentorshipSustainOutlook?.reengagementDrag ?? 0)}.`,
+        inference: state.mentorshipSustainOutlook?.stewardNote || state.outlook,
+        projection: 'Sustain blends mentorship levers with reengagement alignment — bounded indices only.'
+      };
+    case 'subject_mentorship_readiness':
+      return {
+        topic,
+        headline: state.subjectMentorshipReadinessBrief?.summary || 'Subject mentorship readiness unavailable.',
+        fact: `Mentorship band ${state.subjectMentorshipReadinessBrief?.band ?? 'unknown'}; mentorship drag ${Math.round(state.subjectMentorshipReadinessBrief?.mentorshipDrag ?? 0)}.`,
+        inference: state.subjectMentorshipReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject mentorship readiness gates subject reengagement against workforce reengagement for O10-209 wave 39.'
+      };
+    case 'workforce_mentorship':
+      return {
+        topic,
+        headline: state.nationalWorkforceMentorshipIndex?.summary || 'Workforce mentorship unavailable.',
+        fact: `Mentorship band ${state.nationalWorkforceMentorshipIndex?.band ?? 'unknown'}; mentorship drag ${Math.round(state.nationalWorkforceMentorshipIndex?.mentorshipDrag ?? 0)}.`,
+        inference: state.nationalWorkforceMentorshipIndex?.stewardNote || state.summary,
+        projection: 'Workforce mentorship synthesizes reengagement-mentorship coupling, mentorship sustain, and subject mentorship.'
       };
     default:
       return {

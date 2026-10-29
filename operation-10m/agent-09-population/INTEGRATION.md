@@ -43,7 +43,7 @@ From `v10-14-labor-demographics/index.ts`:
 - Household budget: `computeNationalHouseholdBudgetDetail`, `householdBudgetLaborAdjustments`
 - Migration shocks: `detectMigrationShocks`, `applyMigrationShocksToRegions`, persisted `activeMigrationShocks`
 - UI (optional inline): `LaborDemographicsCenterPanel`
-- Tests: `runV1014LaborDemographicsSelfTests` (**650** cases)
+- Tests: `runV1014LaborDemographicsSelfTests` (**666** cases)
 
 ## Namespace on merge
 

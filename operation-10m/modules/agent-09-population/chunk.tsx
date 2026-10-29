@@ -325,6 +325,10 @@ export interface NationalLaborDemographicsState {
   reengagementAlignmentOutlook?: NationalReengagementAlignmentOutlook;
   subjectReengagementReadinessBrief?: NationalSubjectReengagementReadinessBrief;
   nationalWorkforceReengagementIndex?: NationalWorkforceReengagementIndex;
+  reengagementMentorshipCouplingBrief?: NationalReengagementMentorshipCouplingBrief;
+  mentorshipSustainOutlook?: NationalMentorshipSustainOutlook;
+  subjectMentorshipReadinessBrief?: NationalSubjectMentorshipReadinessBrief;
+  nationalWorkforceMentorshipIndex?: NationalWorkforceMentorshipIndex;
 }
 
 export type MigrationShockKind =
@@ -1861,6 +1865,54 @@ export interface NationalWorkforceReengagementIndex {
   stewardNote: string;
 }
 
+export type ReengagementMentorshipCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalReengagementMentorshipCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ReengagementMentorshipCouplingBand;
+  reengagementDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type MentorshipSustainBand = 'ebbing' | 'patchy' | 'rising' | 'sustained';
+
+export interface NationalMentorshipSustainOutlook {
+  turn: number;
+  sustainIndex: number;
+  band: MentorshipSustainBand;
+  reengagementDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectMentorshipReadinessBand =
+  | 'below_mentorship'
+  | 'approaching'
+  | 'mentorship_ready'
+  | 'reengagement_locked';
+
+export interface NationalSubjectMentorshipReadinessBrief {
+  turn: number;
+  mentorshipIndex: number;
+  band: SubjectMentorshipReadinessBand;
+  mentorshipDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceMentorshipBand = 'fragile' | 'thin' | 'elevated' | 'mentorship';
+
+export interface NationalWorkforceMentorshipIndex {
+  turn: number;
+  mentorshipIndex: number;
+  band: WorkforceMentorshipBand;
+  mentorshipDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3063,7 +3115,11 @@ export type LaborGiQueryTopic =
   | 'retention_reengagement_coupling'
   | 'reengagement_alignment'
   | 'subject_reengagement_readiness'
-  | 'workforce_reengagement';
+  | 'workforce_reengagement'
+  | 'reengagement_mentorship_coupling'
+  | 'mentorship_sustain'
+  | 'subject_mentorship_readiness'
+  | 'workforce_mentorship';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3210,6 +3266,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_reengagement_readiness';
   }
   if (/\b(workforce reengagement|reengagement index labor workforce)/.test(q)) return 'workforce_reengagement';
+  if (/\b(reengagement mentorship|reengagement-mentorship coupling)/.test(q)) return 'reengagement_mentorship_coupling';
+  if (/\b(mentorship sustain|mentorship pipeline sustain)/.test(q)) return 'mentorship_sustain';
+  if (/\b(subject mentorship readiness|mentorship readiness subject)/.test(q)) {
+    return 'subject_mentorship_readiness';
+  }
+  if (/\b(workforce mentorship|mentorship index labor workforce)/.test(q)) return 'workforce_mentorship';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -4317,6 +4379,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceReengagementIndex?.stewardNote || state.summary,
         projection: 'Workforce reengagement synthesizes retention-reengagement coupling, reengagement alignment, and subject reengagement.'
       };
+    case 'reengagement_mentorship_coupling':
+      return {
+        topic,
+        headline: state.reengagementMentorshipCouplingBrief?.summary || 'Reengagement-mentorship coupling unavailable.',
+        fact: `Coupling band ${state.reengagementMentorshipCouplingBrief?.band ?? 'unknown'}; reengagement drag ${Math.round(state.reengagementMentorshipCouplingBrief?.reengagementDrag ?? 0)}.`,
+        inference: state.reengagementMentorshipCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce reengagement with mentorship levers — wave 39 / O10-209 depth.'
+      };
+    case 'mentorship_sustain':
+      return {
+        topic,
+        headline: state.mentorshipSustainOutlook?.summary || 'Mentorship sustain unavailable.',
+        fact: `Sustain band ${state.mentorshipSustainOutlook?.band ?? 'unknown'}; reengagement drag ${Math.round(state.mentorshipSustainOutlook?.reengagementDrag ?? 0)}.`,
+        inference: state.mentorshipSustainOutlook?.stewardNote || state.outlook,
+        projection: 'Sustain blends mentorship levers with reengagement alignment — bounded indices only.'
+      };
+    case 'subject_mentorship_readiness':
+      return {
+        topic,
+        headline: state.subjectMentorshipReadinessBrief?.summary || 'Subject mentorship readiness unavailable.',
+        fact: `Mentorship band ${state.subjectMentorshipReadinessBrief?.band ?? 'unknown'}; mentorship drag ${Math.round(state.subjectMentorshipReadinessBrief?.mentorshipDrag ?? 0)}.`,
+        inference: state.subjectMentorshipReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject mentorship readiness gates subject reengagement against workforce reengagement for O10-209 wave 39.'
+      };
+    case 'workforce_mentorship':
+      return {
+        topic,
+        headline: state.nationalWorkforceMentorshipIndex?.summary || 'Workforce mentorship unavailable.',
+        fact: `Mentorship band ${state.nationalWorkforceMentorshipIndex?.band ?? 'unknown'}; mentorship drag ${Math.round(state.nationalWorkforceMentorshipIndex?.mentorshipDrag ?? 0)}.`,
+        inference: state.nationalWorkforceMentorshipIndex?.stewardNote || state.summary,
+        projection: 'Workforce mentorship synthesizes reengagement-mentorship coupling, mentorship sustain, and subject mentorship.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -5377,6 +5471,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceReengagementIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceReengagementIndex.stewardNote);
+  }
+  if (
+    state.reengagementMentorshipCouplingBrief?.band === 'decoupled' ||
+    state.reengagementMentorshipCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.reengagementMentorshipCouplingBrief.stewardNote);
+  }
+  if (
+    state.mentorshipSustainOutlook?.band === 'ebbing' ||
+    state.mentorshipSustainOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.mentorshipSustainOutlook.stewardNote);
+  }
+  if (
+    state.subjectMentorshipReadinessBrief?.band === 'below_mentorship' ||
+    state.subjectMentorshipReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectMentorshipReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceMentorshipIndex?.band === 'fragile' ||
+    state.nationalWorkforceMentorshipIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceMentorshipIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -15702,6 +15820,278 @@ export function computeNationalWorkforceReengagementIndex(
 }
 
 
+// --- source: reengagement-mentorship-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalReengagementMentorshipCouplingBrief,
+  type NationalWorkforceReengagementIndex,
+  type ReengagementMentorshipCouplingBand
+} from './types';
+
+function couplingBand(index: number): ReengagementMentorshipCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-39 / wave-39 reengagement-mentorship coupling — reengagement × mentorship (O10-209). */
+export function computeNationalReengagementMentorshipCouplingBrief(
+  state: NationalLaborDemographicsState,
+  reengagement: NationalWorkforceReengagementIndex | null | undefined
+): NationalReengagementMentorshipCouplingBrief {
+  if (!state.enabled || !reengagement) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      reengagementDrag: 0,
+      summary: 'Reengagement-mentorship coupling idle — workforce reengagement unavailable.',
+      stewardNote: 'Compute workforce reengagement before mentorship coupling guidance.'
+    };
+  }
+
+  let mentorshipLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    mentorshipLift += mentorshipEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  mentorshipLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const reengagementDrag = v1014laborClamp(
+    reengagement.reengagementDrag * 0.48 + (reengagement.band === 'fragile' || reengagement.band === 'thin' ? 11 : 3)
+  );
+  const reengagementLift =
+    reengagement.band === 'elevated' || reengagement.band === 'reengagement'
+      ? reengagement.reengagementIndex * 0.24
+      : reengagement.reengagementIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + mentorshipLift * 21 + reengagementLift - reengagementDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained reengagement-mentorship link — deploy mentorship levers before wave-39 mentorship commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard mentorship sustain spikes that drain reengagement buffers.'
+        : 'Amplified coupling — pair mentorship packs with subject mentorship readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    reengagementDrag,
+    summary: `Reengagement-mentorship coupling ${band} (index ${Math.round(couplingIndex)}); reengagement drag ${Math.round(reengagementDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: mentorship-sustain-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type MentorshipSustainBand,
+  type NationalLaborDemographicsState,
+  type NationalMentorshipSustainOutlook,
+  type NationalReengagementAlignmentOutlook
+} from './types';
+
+function sustainBand(index: number): MentorshipSustainBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'sustained';
+}
+
+export function computeNationalMentorshipSustainOutlook(
+  state: NationalLaborDemographicsState,
+  reengagementAlignment: NationalReengagementAlignmentOutlook | null | undefined
+): NationalMentorshipSustainOutlook {
+  if (!state.enabled || !reengagementAlignment) {
+    return {
+      turn: state.turn,
+      sustainIndex: 50,
+      band: 'patchy',
+      reengagementDrag: 0,
+      summary: 'Mentorship sustain idle — reengagement alignment unavailable.',
+      stewardNote: 'Compute reengagement alignment before mentorship sustain guidance.'
+    };
+  }
+
+  let mentorshipLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    mentorshipLift += mentorshipEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  mentorshipLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const reengagementDrag = v1014laborClamp(
+    reengagementAlignment.retentionDrag * 0.46 +
+      (reengagementAlignment.band === 'ebbing' || reengagementAlignment.band === 'patchy' ? 10 : 3)
+  );
+  const alignmentLift =
+    reengagementAlignment.band === 'rising' || reengagementAlignment.band === 'aligned'
+      ? reengagementAlignment.alignmentIndex * 0.2
+      : reengagementAlignment.alignmentIndex * 0.1;
+
+  const sustainIndex = v1014laborClamp(24 + mentorshipLift * 22 + alignmentLift - reengagementDrag);
+  const band = sustainBand(sustainIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy mentorship sustain — deploy mentorship levers before subject mentorship assembly.'
+      : band === 'sustained'
+        ? 'Sustained band — verify reengagement-mentorship coupling before auto workforce pushes.'
+        : 'Rising sustain — align with reengagement alignment outlook checks.';
+
+  return {
+    turn: state.turn,
+    sustainIndex,
+    band,
+    reengagementDrag,
+    summary: `National mentorship sustain ${band} (index ${Math.round(sustainIndex)}); reengagement drag ${Math.round(reengagementDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-mentorship-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectMentorshipReadinessBrief,
+  type NationalSubjectReengagementReadinessBrief,
+  type NationalWorkforceReengagementIndex,
+  type SubjectMentorshipReadinessBand
+} from './types';
+
+function mentorshipBand(index: number): SubjectMentorshipReadinessBand {
+  if (index <= 34) return 'below_mentorship';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'mentorship_ready';
+  return 'reengagement_locked';
+}
+
+/** Round-39 / wave-39 subject mentorship readiness — reengagement × workforce reengagement (O10-209). */
+export function computeNationalSubjectMentorshipReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectReengagement: NationalSubjectReengagementReadinessBrief | null | undefined,
+  workforceReengagement: NationalWorkforceReengagementIndex | null | undefined
+): NationalSubjectMentorshipReadinessBrief {
+  if (!state.enabled || !subjectReengagement || !workforceReengagement) {
+    return {
+      turn: state.turn,
+      mentorshipIndex: 50,
+      band: 'approaching',
+      mentorshipDrag: 0,
+      summary: 'Subject mentorship readiness idle — subject reengagement or workforce reengagement unavailable.',
+      stewardNote: 'Compute subject reengagement and workforce reengagement before mentorship guidance.'
+    };
+  }
+
+  const mentorshipDrag = v1014laborClamp(
+    subjectReengagement.reengagementDrag * 0.38 +
+      workforceReengagement.reengagementDrag * 0.38 +
+      (subjectReengagement.band === 'below_reengagement' || workforceReengagement.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectReengagement.band === 'reengagement_ready' || subjectReengagement.band === 'retention_locked'
+      ? subjectReengagement.reengagementIndex * 0.27
+      : subjectReengagement.reengagementIndex * 0.14;
+  const workforceLift =
+    workforceReengagement.band === 'elevated' || workforceReengagement.band === 'reengagement'
+      ? workforceReengagement.reengagementIndex * 0.25
+      : workforceReengagement.reengagementIndex * 0.12;
+
+  const mentorshipIndex = v1014laborClamp(20 + subjectLift + workforceLift - mentorshipDrag);
+  const band = mentorshipBand(mentorshipIndex);
+
+  const stewardNote =
+    band === 'below_mentorship' || band === 'approaching'
+      ? 'Approaching mentorship — hold O10-209 wave-39 scale until reengagement-mentorship syncs.'
+      : band === 'reengagement_locked'
+        ? 'Reengagement-locked mentorship — still monitor mentorship sustain during corridor peaks.'
+        : 'Mentorship-ready — pair with workforce mentorship index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    mentorshipIndex,
+    band,
+    mentorshipDrag,
+    summary: `Subject mentorship readiness ${band} (index ${Math.round(mentorshipIndex)}); mentorship drag ${Math.round(mentorshipDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-mentorship-index.ts ---
+  type NationalLaborDemographicsState,
+  type NationalMentorshipSustainOutlook,
+  type NationalReengagementMentorshipCouplingBrief,
+  type NationalSubjectMentorshipReadinessBrief,
+  type NationalWorkforceMentorshipIndex,
+  type WorkforceMentorshipBand
+} from './types';
+
+function mentorshipBand(index: number): WorkforceMentorshipBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'mentorship';
+}
+
+export function computeNationalWorkforceMentorshipIndex(
+  state: NationalLaborDemographicsState,
+  mentorshipCoupling: NationalReengagementMentorshipCouplingBrief | null | undefined,
+  mentorshipSustain: NationalMentorshipSustainOutlook | null | undefined,
+  subjectMentorship: NationalSubjectMentorshipReadinessBrief | null | undefined
+): NationalWorkforceMentorshipIndex {
+  if (!state.enabled || !mentorshipCoupling || !mentorshipSustain || !subjectMentorship) {
+    return {
+      turn: state.turn,
+      mentorshipIndex: 50,
+      band: 'thin',
+      mentorshipDrag: 0,
+      summary: 'Workforce mentorship idle — mentorship coupling, sustain, or subject mentorship unavailable.',
+      stewardNote: 'Compute O10-209 wave-39 depth stack before mentorship guidance.'
+    };
+  }
+
+  const mentorshipDrag = v1014laborClamp(
+    subjectMentorship.mentorshipDrag * 0.35 +
+      mentorshipCoupling.reengagementDrag * 0.3 +
+      mentorshipSustain.reengagementDrag * 0.25 +
+      (subjectMentorship.band === 'below_mentorship' || mentorshipCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    mentorshipCoupling.band === 'amplified' || mentorshipCoupling.band === 'elevated'
+      ? mentorshipCoupling.couplingIndex * 0.2
+      : mentorshipCoupling.couplingIndex * 0.1;
+  const sustainLift =
+    mentorshipSustain.band === 'rising' || mentorshipSustain.band === 'sustained'
+      ? mentorshipSustain.sustainIndex * 0.18
+      : mentorshipSustain.sustainIndex * 0.09;
+  const subjectLift =
+    subjectMentorship.band === 'mentorship_ready' || subjectMentorship.band === 'reengagement_locked'
+      ? subjectMentorship.mentorshipIndex * 0.22
+      : subjectMentorship.mentorshipIndex * 0.11;
+
+  const mentorshipIndex = v1014laborClamp(18 + couplingLift + sustainLift + subjectLift - mentorshipDrag);
+  const band = mentorshipBand(mentorshipIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce mentorship — sequence reengagement-mentorship, mentorship sustain, and subject mentorship before post-6134c6a tranche.'
+      : band === 'mentorship'
+        ? 'Mentorship band — avoid corridor overload that breaks subject mentorship bands.'
+        : 'Elevated mentorship — refresh subject mentorship checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    mentorshipIndex,
+    band,
+    mentorshipDrag,
+    summary: `National workforce mentorship ${band} (index ${Math.round(mentorshipIndex)}); mentorship drag ${Math.round(mentorshipDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -16791,6 +17181,25 @@ export function computeNationalLaborDemographics(
     state.reengagementAlignmentOutlook,
     state.subjectReengagementReadinessBrief
   );
+  state.reengagementMentorshipCouplingBrief = computeNationalReengagementMentorshipCouplingBrief(
+    state,
+    state.nationalWorkforceReengagementIndex
+  );
+  state.mentorshipSustainOutlook = computeNationalMentorshipSustainOutlook(
+    state,
+    state.reengagementAlignmentOutlook
+  );
+  state.subjectMentorshipReadinessBrief = computeNationalSubjectMentorshipReadinessBrief(
+    state,
+    state.subjectReengagementReadinessBrief,
+    state.nationalWorkforceReengagementIndex
+  );
+  state.nationalWorkforceMentorshipIndex = computeNationalWorkforceMentorshipIndex(
+    state,
+    state.reengagementMentorshipCouplingBrief,
+    state.mentorshipSustainOutlook,
+    state.subjectMentorshipReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -17641,6 +18050,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceReengagementIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.reengagementMentorshipCouplingBrief?.band === 'decoupled' ||
+      state.reengagementMentorshipCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.reengagementMentorshipCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.mentorshipSustainOutlook?.band === 'ebbing' ||
+      state.mentorshipSustainOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.mentorshipSustainOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectMentorshipReadinessBrief?.band === 'below_mentorship' ||
+      state.subjectMentorshipReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectMentorshipReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceMentorshipIndex?.band === 'fragile' ||
+      state.nationalWorkforceMentorshipIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceMentorshipIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -19885,6 +20322,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'reengagement steward note'
   );
   check('R3816', reengagementPullForRegion('NSW', 'technology') > 0, 'reengagement pull for region');
+
+  check('R3901', Boolean(r1.state.reengagementMentorshipCouplingBrief?.band), 'reengagement mentorship on state');
+  check(
+    'R3902',
+    (r1.state.reengagementMentorshipCouplingBrief?.reengagementDrag ?? 0) >= 0,
+    'reengagement mentorship drag'
+  );
+  check('R3903', Boolean(r1.state.mentorshipSustainOutlook?.band), 'mentorship sustain on state');
+  check(
+    'R3904',
+    (r1.state.mentorshipSustainOutlook?.reengagementDrag ?? 0) >= 0,
+    'mentorship sustain reengagement drag'
+  );
+  check('R3905', Boolean(r1.state.subjectMentorshipReadinessBrief?.band), 'subject mentorship on state');
+  check('R3906', Boolean(r1.state.nationalWorkforceMentorshipIndex?.band), 'workforce mentorship on state');
+  check(
+    'R3907',
+    detectLaborDemographicsQuery('reengagement mentorship coupling') === 'reengagement_mentorship_coupling',
+    'GI reengagement mentorship detect'
+  );
+  check(
+    'R3908',
+    detectLaborDemographicsQuery('mentorship sustain') === 'mentorship_sustain',
+    'GI mentorship sustain detect'
+  );
+  check(
+    'R3909',
+    detectLaborDemographicsQuery('subject mentorship readiness') === 'subject_mentorship_readiness',
+    'GI subject mentorship detect'
+  );
+  check(
+    'R3910',
+    detectLaborDemographicsQuery('workforce mentorship') === 'workforce_mentorship',
+    'GI workforce mentorship detect'
+  );
+  check(
+    'R3911',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_mentorship').headline.length > 5,
+    'GI workforce mentorship answer'
+  );
+  const reengagementMentorshipOnly = computeNationalReengagementMentorshipCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceReengagementIndex
+  );
+  check('R3912', reengagementMentorshipOnly.summary.length > 10, 'reengagement mentorship standalone summary');
+  const mentorshipSustainOnly = computeNationalMentorshipSustainOutlook(
+    r1.state,
+    r1.state.reengagementAlignmentOutlook
+  );
+  check('R3913', mentorshipSustainOnly.band.length > 3, 'mentorship sustain band string');
+  const subjectMentorshipOnly = computeNationalSubjectMentorshipReadinessBrief(
+    r1.state,
+    r1.state.subjectReengagementReadinessBrief,
+    r1.state.nationalWorkforceReengagementIndex
+  );
+  check('R3914', subjectMentorshipOnly.mentorshipDrag >= 0, 'subject mentorship drag');
+  check(
+    'R3915',
+    computeNationalWorkforceMentorshipIndex(
+      rHhBad.state,
+      rHhBad.state.reengagementMentorshipCouplingBrief,
+      rHhBad.state.mentorshipSustainOutlook,
+      rHhBad.state.subjectMentorshipReadinessBrief
+    ).stewardNote.length > 8,
+    'mentorship steward note'
+  );
+  check('R3916', mentorshipEaseForRegion('NSW', 'technology') > 0, 'mentorship ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
