@@ -27424,6 +27424,7 @@ export const GUARDIAN_RISK_CATEGORIES: readonly GuardianRiskCategory[] = [
   'opportunity_cost',
   'sequence_integrity',
   'rule_conflict',
+  'system_error',
 ] as const;
 
 export interface GuardianEvaluatorToggles {
@@ -37823,6 +37824,52 @@ export interface GuardianEvaluationContext {
   readonly isReplay: boolean;
 }
 
+export interface BuildGuardianEvaluationContextParams {
+  readonly settings: GuardianAiSettings;
+  readonly gameState: any;
+  readonly player: { readonly id?: string; readonly money: number; readonly actionPoints?: number };
+  readonly actionType: string;
+  readonly actionPayload?: Record<string, unknown>;
+  readonly source?: GuardianEvaluationContext['source'];
+  readonly activeContracts?: readonly string[];
+  readonly activeExpeditions?: readonly string[];
+  readonly activePlans?: readonly string[];
+  readonly isReplay?: boolean;
+}
+
+/** Canonical factory for inline Guardian evaluations (UI warnings and human action gates). */
+export function buildGuardianEvaluationContext(params: BuildGuardianEvaluationContextParams): GuardianEvaluationContext {
+  const {
+    settings,
+    gameState,
+    player,
+    actionType,
+    actionPayload = {},
+    source = 'human_direct',
+    activeContracts = [],
+    activeExpeditions = [],
+    activePlans = [],
+    isReplay = false,
+  } = params;
+  const actionPoints = (player as { actionPoints?: number }).actionPoints;
+  return {
+    settings,
+    gameState,
+    actorId: player.id || 'player',
+    actionType,
+    actionPayload,
+    source,
+    day: typeof gameState?.day === 'number' ? gameState.day : 1,
+    turn: typeof gameState?.turn === 'number' ? gameState.turn : 1,
+    currentActionTokens: typeof actionPoints === 'number' ? actionPoints : 3,
+    currentCash: player.money,
+    activeContracts,
+    activeExpeditions,
+    activePlans,
+    isReplay,
+  };
+}
+
 export interface GuardianDetectedRisk {
   readonly id: string;
   readonly category: GuardianRiskCategory;
@@ -43009,12 +43056,17 @@ export function safeExecuteGuardianEvaluator(
     const errorMessage = err instanceof Error ? err.message : String(err);
     const errorName = err instanceof Error ? err.name : 'GuardianEvaluatorError';
     const evaluatorName = evaluatorId;
+    const deterministicNonce = context.settings.strictDeterminism
+      ? `t${context.turn}_d${context.day}_${evaluatorName}`
+      : String(Date.now());
     const failureMode: GuardianFailureMode = {
       failed: true,
       errorName,
       errorMessage,
       fallbackBehavior,
-      timestamp: Date.now(),
+      timestamp: context.settings.strictDeterminism
+        ? context.turn * 86_400_000 + context.day
+        : Date.now(),
       evaluatorId,
       evaluatorName,
     };
@@ -43024,7 +43076,7 @@ export function safeExecuteGuardianEvaluator(
     let fallbackRisks: GuardianDetectedRisk[] = [];
     if (fallbackBehavior === 'block_safety') {
       fallbackRisks = [{
-        id: `risk_fallback_${evaluatorName}_${Date.now()}`,
+        id: `risk_fallback_${evaluatorName}_${deterministicNonce}`,
         category: 'rule_conflict',
         severity: 'critical',
         title: `Guardian AI Evaluator Error (${evaluatorName})`,
@@ -43041,7 +43093,7 @@ export function safeExecuteGuardianEvaluator(
       }];
     } else if (fallbackBehavior === 'allow_with_warning') {
       fallbackRisks = [{
-        id: `risk_fallback_${evaluatorName}_${Date.now()}`,
+        id: `risk_fallback_${evaluatorName}_${deterministicNonce}`,
         category: 'system_error',
         severity: 'caution',
         title: `Guardian AI Evaluator Warning (${evaluatorName})`,
@@ -182012,6 +182064,22 @@ export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
     const value = getCraftedOutputRealizableValue(recipe, {});
     return (value === calculateInventoryMarketValue([recipe.output], {}) && value < recipe.baseValue) || `${value} vs inputs ${inputs}`;
   });
+  check('ru_guardian_risk_vocab', 'GUARDIAN_RISK_CATEGORIES includes system_error (matches GuardianRiskCategory union)', () => {
+    return GUARDIAN_RISK_CATEGORIES.includes('system_error') || 'missing system_error';
+  });
+  check('ru_guardian_sanitize_system_error', 'sanitizeGuardianAiSettings preserves ignoredCategories system_error', () => {
+    const s = sanitizeGuardianAiSettings({ ...createDefaultGuardianAiSettings(), ignoredCategories: ['system_error'] });
+    return s.ignoredCategories.includes('system_error') || String(s.ignoredCategories);
+  });
+  check('ru_guardian_eval_context_factory', 'buildGuardianEvaluationContext wires actor, turn, and tokens for inline UI checks', () => {
+    const ctx = buildGuardianEvaluationContext({
+      settings: createDefaultGuardianAiSettings(),
+      gameState: { day: 4, turn: 4 },
+      player: { id: 'player', money: 900, actionPoints: 2 },
+      actionType: 'travel',
+    });
+    return ctx.actorId === 'player' && ctx.turn === 4 && ctx.currentActionTokens === 2 && ctx.currentCash === 900;
+  });
   check('ru_guardian_cache_mode', "Guardian's cached verdict is per response mode (notify-only never blocks after an adaptive check)", () => {
     const base = { ...createDefaultGuardianAiSettings(), enabled: true, protectionLevel: 'major_mistakes' as any };
     const ctx = (responseMode: any): any => ({ gameState: { day: 9, turn: 9 }, settings: { ...base, responseMode }, actorId: 'ru_guardian', actionType: 'launch_expedition', actionPayload: { cost: 5000 }, source: 'co_pilot', day: 9, turn: 9, currentActionTokens: 3, currentCash: 1000, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false });
@@ -228501,7 +228569,7 @@ function dispatchGameSettingsChange(
     
     return (
       <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-40 flex flex-col items-center gap-1" style={{ marginTop: 'env(safe-area-inset-top, 0px)' }} data-testid="v96-turn-indicator">
-        {!isSoloRival && <GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />}
+        {!isSoloRival && <GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline(buildGuardianEvaluationContext({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, player, actionType: 'end_turn' }))} compact />}
         <div role="status" aria-live="polite" data-testid="v96-turn-pill" data-turn-owner={isPlayerTurn ? 'human' : 'ai'} data-ai-phase={isAiTurn ? soloAiPhase : 'idle'} className={`${isPlayerTurn ? themeStyles.success : themeStyles.ai} ${themeStyles.shadow} rounded-full px-6 py-3 flex items-center space-x-3 ${isSoloRival ? 'v96-turn-owner-pulse' : 'animate-pulse'}`}>
           <span className="text-2xl">{isPlayerTurn ? '👤' : '🤖'}</span>
           <div>
@@ -228515,7 +228583,7 @@ function dispatchGameSettingsChange(
             </div>
           </div>
         </div>
-        {isSoloRival && isPlayerTurn && <GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />}
+        {isSoloRival && isPlayerTurn && <GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline(buildGuardianEvaluationContext({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, player, actionType: 'end_turn' }))} compact />}
       </div>
     );
   };
@@ -230546,7 +230614,7 @@ function dispatchGameSettingsChange(
     };
     const renderContextualActionButtons = () => (
       <>
-        <GuardianInlineWarning actionType="travel" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'travel', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />
+        <GuardianInlineWarning actionType="travel" evaluationResult={evaluateGuardianRiskPipeline(buildGuardianEvaluationContext({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, player, actionType: 'travel' }))} compact />
         {player?.character?.specialAbility && (
           <button
             onClick={activateSpecialAbility}
@@ -231158,7 +231226,7 @@ function dispatchGameSettingsChange(
             c={v9Cohesion}
             theme={themeStyles}
             onEndTurn={v9HumanCanAct ? v9EndTurn : null}
-            endTurnExtra={<GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'end_turn', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} compact />}
+            endTurnExtra={<GuardianInlineWarning actionType="end_turn" evaluationResult={evaluateGuardianRiskPipeline(buildGuardianEvaluationContext({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, player, actionType: 'end_turn' }))} compact />}
             onStanding={() => void submitIntelligenceQuery('Who is winning and why?')}
             coachNode={glInHeader ? glCoachNode : null}
             cashDelta={v94CashDelta}
@@ -234309,7 +234377,7 @@ function dispatchGameSettingsChange(
               {/* Fixed Header */}
               <div className={`flex justify-between items-center p-6 pb-4 border-b ${themeStyles.border} shrink-0`}>
 	                <h3 className="text-xl font-bold">💰 Sell Market</h3>
-                  <GuardianInlineWarning actionType="sell_resource" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'sell_resource', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} />
+                  <GuardianInlineWarning actionType="sell_resource" evaluationResult={evaluateGuardianRiskPipeline(buildGuardianEvaluationContext({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, player, actionType: 'sell_resource' }))} />
                 <button
                   onClick={() => updateUiState({ showMarket: false })}
                   className={`${themeStyles.buttonSecondary} px-3 py-1 rounded`}
@@ -241243,7 +241311,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
               <h2 className="text-xl font-bold text-emerald-400 flex items-center gap-2">
                 📜 Regional Contracts & Agreements
               </h2>
-              <GuardianInlineWarning actionType="fulfill_contract" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'fulfill_contract', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} />
+              <GuardianInlineWarning actionType="fulfill_contract" evaluationResult={evaluateGuardianRiskPipeline(buildGuardianEvaluationContext({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, player, actionType: 'fulfill_contract' }))} />
               <p className="text-xs text-gray-400">Fulfill regional economic demands and private sector contracts for capital & prestige bonuses.</p>
             </div>
             <button onClick={() => updateUiState({ showRegionalContractsModal: false })} className="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded text-gray-300 text-sm font-semibold">
@@ -241417,7 +241485,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
               <h2 className="text-xl font-bold text-amber-400 flex items-center gap-2">
                 🏗️ Infrastructure & Mega-Projects
               </h2>
-              <GuardianInlineWarning actionType="fund_infrastructure" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'fund_infrastructure', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} />
+              <GuardianInlineWarning actionType="fund_infrastructure" evaluationResult={evaluateGuardianRiskPipeline(buildGuardianEvaluationContext({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, player, actionType: 'fund_infrastructure' }))} />
               <p className="text-xs text-gray-400">Fund regional public works, transport grids, and industrial installations for permanent structural passive perks.</p>
             </div>
             <button onClick={() => updateUiState({ showInfrastructureProjectsModal: false })} className="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded text-gray-300 text-sm font-semibold">
@@ -241547,7 +241615,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
               <h2 className="text-xl font-bold text-purple-400 flex items-center gap-2">
                 🧭 Expeditions & Ancient Relics
               </h2>
-              <GuardianInlineWarning actionType="launch_expedition" evaluationResult={evaluateGuardianRiskPipeline({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, actorId: player.id || 'player', actionType: 'launch_expedition', actionPayload: {}, source: 'human_direct', day: gameState.day || 1, turn: gameState.turn || 1, currentActionTokens: (player as any).actionPoints || 3, currentCash: player.money, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false })} />
+              <GuardianInlineWarning actionType="launch_expedition" evaluationResult={evaluateGuardianRiskPipeline(buildGuardianEvaluationContext({ settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(), gameState, player, actionType: 'launch_expedition' }))} />
               <p className="text-xs text-gray-400">Dispatch outback survey teams to unearth rare artifacts and equip relics into loadout slots.</p>
             </div>
             <button onClick={() => updateUiState({ showExpeditionsRelicsModal: false })} className="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded text-gray-300 text-sm font-semibold">
