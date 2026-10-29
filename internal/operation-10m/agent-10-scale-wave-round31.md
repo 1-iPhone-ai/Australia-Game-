@@ -1,6 +1,6 @@
 # Agent 10 — scale wave round 31 (O10-193)
 
-**Integration baseline:** **`81b50b8`** (O10-192) · **Projected scale:** **1,760,131** · **Base commit:** `e8076a8` (round 30) · **This commit:** `e2e9385` · **Task:** O10-193  
+**Integration baseline:** **`81b50b8`** (O10-192) · **Projected scale:** **1,760,131** · **Base commit:** `e8076a8` (round 30) · **This commit:** `9c5c5ff` · **Task:** O10-193  
 **Branch:** `op10m/agent-10-finance-inflation` · **PR:** [#339](https://github.com/1-iPhone-ai/Australia-Game-/pull/339) open  
 **Worker:** `bc-a6e81555-35b9-5c07-90b7-85271f8f175b`
 
