@@ -8,6 +8,9 @@ import { combineDualTeamRoleChurn } from './role-churn-index.ts';
 import { combineDualTeamDirectiveCollision } from './directive-collision-index.ts';
 import { combineDualTeamHandoffIntegrity } from './handoff-chain-integrity.ts';
 import { combineDualTeamEscalationTier } from './coordination-escalation-tier.ts';
+import { combineDualTeamRecoveryUrgency } from './coordination-recovery-playbook.ts';
+import { combineDualTeamPriorityInversion } from './directive-priority-inversion.ts';
+import { combineDualTeamHandoffOrphans } from './handoff-orphan-detector.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -33,6 +36,9 @@ export interface DualTeamMultiAgentResult {
   directiveCollisionCombined: number;
   handoffIntegrityCombined: number;
   escalationTierCombined: number;
+  recoveryUrgencyCombined: number;
+  priorityInversionCombined: number;
+  handoffOrphanCombined: number;
 }
 
 /**
@@ -74,6 +80,9 @@ export function evaluateDualTeamMultiAgentLayers(
       directiveCollisionCombined: friendly.state.meta.directiveCollisionIndex ?? 0,
       handoffIntegrityCombined: friendly.state.meta.handoffIntegrityScore ?? 100,
       escalationTierCombined: friendly.state.meta.coordinationEscalationTier ?? 0,
+      recoveryUrgencyCombined: friendly.state.meta.coordinationRecoveryUrgency ?? 0,
+      priorityInversionCombined: friendly.state.meta.directivePriorityInversionIndex ?? 0,
+      handoffOrphanCombined: friendly.state.meta.handoffOrphanCount ?? 0,
     };
   }
 
@@ -189,6 +198,18 @@ export function evaluateDualTeamMultiAgentLayers(
     escalationTierCombined: combineDualTeamEscalationTier(
       friendly.state.meta.coordinationEscalationTier ?? 0,
       enemy.state.meta.coordinationEscalationTier ?? 0,
+    ),
+    recoveryUrgencyCombined: combineDualTeamRecoveryUrgency(
+      friendly.state.meta.coordinationRecoveryUrgency ?? 0,
+      enemy.state.meta.coordinationRecoveryUrgency ?? 0,
+    ),
+    priorityInversionCombined: combineDualTeamPriorityInversion(
+      friendly.state.meta.directivePriorityInversionIndex ?? 0,
+      enemy.state.meta.directivePriorityInversionIndex ?? 0,
+    ),
+    handoffOrphanCombined: combineDualTeamHandoffOrphans(
+      friendly.state.meta.handoffOrphanCount ?? 0,
+      enemy.state.meta.handoffOrphanCount ?? 0,
     ),
   };
 }

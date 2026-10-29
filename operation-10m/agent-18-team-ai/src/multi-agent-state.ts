@@ -41,6 +41,9 @@ import { computeCoordinationComposite } from './coordination-composite-score.ts'
 import { computeDirectiveCollisionIndex } from './directive-collision-index.ts';
 import { evaluateHandoffChainIntegrity } from './handoff-chain-integrity.ts';
 import { computeCoordinationEscalationTier } from './coordination-escalation-tier.ts';
+import { buildCoordinationRecoveryPlaybook } from './coordination-recovery-playbook.ts';
+import { computeDirectivePriorityInversion } from './directive-priority-inversion.ts';
+import { detectHandoffOrphans } from './handoff-orphan-detector.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -210,6 +213,25 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.coordinationEscalationLabel === 'string'
           ? metaRaw.coordinationEscalationLabel
           : undefined,
+      coordinationRecoveryUrgency:
+        typeof metaRaw.coordinationRecoveryUrgency === 'number'
+          ? metaRaw.coordinationRecoveryUrgency
+          : undefined,
+      coordinationRecoveryActions: Array.isArray(metaRaw.coordinationRecoveryActions)
+        ? metaRaw.coordinationRecoveryActions.map(String).slice(0, 8)
+        : undefined,
+      directivePriorityInversionIndex:
+        typeof metaRaw.directivePriorityInversionIndex === 'number'
+          ? metaRaw.directivePriorityInversionIndex
+          : undefined,
+      invertedDirectiveIds: Array.isArray(metaRaw.invertedDirectiveIds)
+        ? metaRaw.invertedDirectiveIds.map(String).slice(0, 8)
+        : undefined,
+      handoffOrphanCount:
+        typeof metaRaw.handoffOrphanCount === 'number' ? metaRaw.handoffOrphanCount : undefined,
+      orphanHandoffIds: Array.isArray(metaRaw.orphanHandoffIds)
+        ? metaRaw.orphanHandoffIds.map(String).slice(0, 8)
+        : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -261,6 +283,17 @@ export function evaluateTeamMultiAgentLayer(
   const handoffIntegrity = evaluateHandoffChainIntegrity(coordination.handoffs, scope);
   handoffIntegrity.notes.forEach(n => diagnostics.push(n));
   const directiveResult = coordinateTeammateDirectives(proposals, coordination, roles);
+  const priorityInversion = computeDirectivePriorityInversion(
+    proposals,
+    directiveCollisions.collidingProposalIds,
+    {
+      allowed: directiveResult.allowed,
+      suppressed: directiveResult.suppressed.map(s => s.proposal),
+    },
+  );
+  priorityInversion.notes.forEach(n => diagnostics.push(n));
+  const handoffOrphans = detectHandoffOrphans(coordination.handoffs, inputs.tasks, roles);
+  handoffOrphans.notes.forEach(n => diagnostics.push(n));
   const handoffSla = evaluateHandoffSla(inputs.turn, coordination.handoffs, {
     maxPendingTurns: AGENT18_LIMITS.handoffSlaMaxPendingTurns,
   });
@@ -389,6 +422,10 @@ export function evaluateTeamMultiAgentLayer(
       handoffIntegrityScore: handoffIntegrity.integrityScore,
       brokenHandoffIds: handoffIntegrity.brokenHandoffIds,
       duplicatePendingHandoffTaskIds: handoffIntegrity.duplicatePendingTaskIds,
+      directivePriorityInversionIndex: priorityInversion.inversionIndex,
+      invertedDirectiveIds: priorityInversion.invertedProposalIds,
+      handoffOrphanCount: handoffOrphans.orphanCount,
+      orphanHandoffIds: handoffOrphans.orphanHandoffIds,
     },
   };
 
@@ -401,9 +438,19 @@ export function evaluateTeamMultiAgentLayer(
     handoffIntegrityScore: handoffIntegrity.integrityScore,
   });
   escalation.notes.forEach(n => diagnostics.push(n));
+  const recoveryPlaybook = buildCoordinationRecoveryPlaybook({
+    escalationTier: escalation.tier,
+    coordinationCompositeScore: coordinationComposite.compositeScore,
+    coordinationWeakestDimension: coordinationComposite.weakestDimension,
+    directiveCollisionIndex: directiveCollisions.collisionIndex,
+    handoffIntegrityScore: handoffIntegrity.integrityScore,
+  });
+  recoveryPlaybook.notes.forEach(n => diagnostics.push(n));
   state = attachAuditToState(state, auditFindings, {
     coordinationEscalationTier: escalation.tier,
     coordinationEscalationLabel: escalation.label,
+    coordinationRecoveryUrgency: recoveryPlaybook.recoveryUrgency,
+    coordinationRecoveryActions: recoveryPlaybook.recommendedActions,
   });
   state = { ...state, diagnostics };
 

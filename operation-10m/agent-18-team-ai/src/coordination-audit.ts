@@ -261,6 +261,36 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (typeof state.meta.coordinationRecoveryUrgency === 'number' && state.meta.coordinationRecoveryUrgency >= 75) {
+    push({
+      severity: 'warning',
+      message: `High coordination recovery urgency (${state.meta.coordinationRecoveryUrgency})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.directivePriorityInversionIndex === 'number' &&
+    state.meta.directivePriorityInversionIndex >= 50
+  ) {
+    push({
+      severity: 'warning',
+      message: `Directive priority inversion index (${state.meta.directivePriorityInversionIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.handoffOrphanCount === 'number' && state.meta.handoffOrphanCount > 0) {
+    push({
+      severity: 'warning',
+      message: `Orphan handoffs pending: ${(state.meta.orphanHandoffIds || []).join(', ') || state.meta.handoffOrphanCount}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({

@@ -27,4 +27,7 @@ export * from './coordination-composite-score.ts';
 export * from './directive-collision-index.ts';
 export * from './handoff-chain-integrity.ts';
 export * from './coordination-escalation-tier.ts';
+export * from './coordination-recovery-playbook.ts';
+export * from './directive-priority-inversion.ts';
+export * from './handoff-orphan-detector.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

@@ -261,6 +261,12 @@ export interface TeamMultiAgentCoordinationMeta {
   duplicatePendingHandoffTaskIds?: string[];
   coordinationEscalationTier?: number;
   coordinationEscalationLabel?: string;
+  coordinationRecoveryUrgency?: number;
+  coordinationRecoveryActions?: string[];
+  directivePriorityInversionIndex?: number;
+  invertedDirectiveIds?: string[];
+  handoffOrphanCount?: number;
+  orphanHandoffIds?: string[];
 }
 
 export const AGENT18_LIMITS = {
@@ -1564,6 +1570,36 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (typeof state.meta.coordinationRecoveryUrgency === 'number' && state.meta.coordinationRecoveryUrgency >= 75) {
+    push({
+      severity: 'warning',
+      message: `High coordination recovery urgency (${state.meta.coordinationRecoveryUrgency})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.directivePriorityInversionIndex === 'number' &&
+    state.meta.directivePriorityInversionIndex >= 50
+  ) {
+    push({
+      severity: 'warning',
+      message: `Directive priority inversion index (${state.meta.directivePriorityInversionIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.handoffOrphanCount === 'number' && state.meta.handoffOrphanCount > 0) {
+    push({
+      severity: 'warning',
+      message: `Orphan handoffs pending: ${(state.meta.orphanHandoffIds || []).join(', ') || state.meta.handoffOrphanCount}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
@@ -1923,6 +1959,25 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.coordinationEscalationLabel === 'string'
           ? metaRaw.coordinationEscalationLabel
           : undefined,
+      coordinationRecoveryUrgency:
+        typeof metaRaw.coordinationRecoveryUrgency === 'number'
+          ? metaRaw.coordinationRecoveryUrgency
+          : undefined,
+      coordinationRecoveryActions: Array.isArray(metaRaw.coordinationRecoveryActions)
+        ? metaRaw.coordinationRecoveryActions.map(String).slice(0, 8)
+        : undefined,
+      directivePriorityInversionIndex:
+        typeof metaRaw.directivePriorityInversionIndex === 'number'
+          ? metaRaw.directivePriorityInversionIndex
+          : undefined,
+      invertedDirectiveIds: Array.isArray(metaRaw.invertedDirectiveIds)
+        ? metaRaw.invertedDirectiveIds.map(String).slice(0, 8)
+        : undefined,
+      handoffOrphanCount:
+        typeof metaRaw.handoffOrphanCount === 'number' ? metaRaw.handoffOrphanCount : undefined,
+      orphanHandoffIds: Array.isArray(metaRaw.orphanHandoffIds)
+        ? metaRaw.orphanHandoffIds.map(String).slice(0, 8)
+        : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -1974,6 +2029,17 @@ export function evaluateTeamMultiAgentLayer(
   const handoffIntegrity = evaluateHandoffChainIntegrity(coordination.handoffs, scope);
   handoffIntegrity.notes.forEach(n => diagnostics.push(n));
   const directiveResult = coordinateTeammateDirectives(proposals, coordination, roles);
+  const priorityInversion = computeDirectivePriorityInversion(
+    proposals,
+    directiveCollisions.collidingProposalIds,
+    {
+      allowed: directiveResult.allowed,
+      suppressed: directiveResult.suppressed.map(s => s.proposal),
+    },
+  );
+  priorityInversion.notes.forEach(n => diagnostics.push(n));
+  const handoffOrphans = detectHandoffOrphans(coordination.handoffs, inputs.tasks, roles);
+  handoffOrphans.notes.forEach(n => diagnostics.push(n));
   const handoffSla = evaluateHandoffSla(inputs.turn, coordination.handoffs, {
     maxPendingTurns: AGENT18_LIMITS.handoffSlaMaxPendingTurns,
   });
@@ -2102,6 +2168,10 @@ export function evaluateTeamMultiAgentLayer(
       handoffIntegrityScore: handoffIntegrity.integrityScore,
       brokenHandoffIds: handoffIntegrity.brokenHandoffIds,
       duplicatePendingHandoffTaskIds: handoffIntegrity.duplicatePendingTaskIds,
+      directivePriorityInversionIndex: priorityInversion.inversionIndex,
+      invertedDirectiveIds: priorityInversion.invertedProposalIds,
+      handoffOrphanCount: handoffOrphans.orphanCount,
+      orphanHandoffIds: handoffOrphans.orphanHandoffIds,
     },
   };
 
@@ -2114,9 +2184,19 @@ export function evaluateTeamMultiAgentLayer(
     handoffIntegrityScore: handoffIntegrity.integrityScore,
   });
   escalation.notes.forEach(n => diagnostics.push(n));
+  const recoveryPlaybook = buildCoordinationRecoveryPlaybook({
+    escalationTier: escalation.tier,
+    coordinationCompositeScore: coordinationComposite.compositeScore,
+    coordinationWeakestDimension: coordinationComposite.weakestDimension,
+    directiveCollisionIndex: directiveCollisions.collisionIndex,
+    handoffIntegrityScore: handoffIntegrity.integrityScore,
+  });
+  recoveryPlaybook.notes.forEach(n => diagnostics.push(n));
   state = attachAuditToState(state, auditFindings, {
     coordinationEscalationTier: escalation.tier,
     coordinationEscalationLabel: escalation.label,
+    coordinationRecoveryUrgency: recoveryPlaybook.recoveryUrgency,
+    coordinationRecoveryActions: recoveryPlaybook.recommendedActions,
   });
   state = { ...state, diagnostics };
 
@@ -2295,6 +2375,9 @@ export interface DualTeamMultiAgentResult {
   directiveCollisionCombined: number;
   handoffIntegrityCombined: number;
   escalationTierCombined: number;
+  recoveryUrgencyCombined: number;
+  priorityInversionCombined: number;
+  handoffOrphanCombined: number;
 }
 
 /**
@@ -2336,6 +2419,9 @@ export function evaluateDualTeamMultiAgentLayers(
       directiveCollisionCombined: friendly.state.meta.directiveCollisionIndex ?? 0,
       handoffIntegrityCombined: friendly.state.meta.handoffIntegrityScore ?? 100,
       escalationTierCombined: friendly.state.meta.coordinationEscalationTier ?? 0,
+      recoveryUrgencyCombined: friendly.state.meta.coordinationRecoveryUrgency ?? 0,
+      priorityInversionCombined: friendly.state.meta.directivePriorityInversionIndex ?? 0,
+      handoffOrphanCombined: friendly.state.meta.handoffOrphanCount ?? 0,
     };
   }
 
@@ -2451,6 +2537,18 @@ export function evaluateDualTeamMultiAgentLayers(
     escalationTierCombined: combineDualTeamEscalationTier(
       friendly.state.meta.coordinationEscalationTier ?? 0,
       enemy.state.meta.coordinationEscalationTier ?? 0,
+    ),
+    recoveryUrgencyCombined: combineDualTeamRecoveryUrgency(
+      friendly.state.meta.coordinationRecoveryUrgency ?? 0,
+      enemy.state.meta.coordinationRecoveryUrgency ?? 0,
+    ),
+    priorityInversionCombined: combineDualTeamPriorityInversion(
+      friendly.state.meta.directivePriorityInversionIndex ?? 0,
+      enemy.state.meta.directivePriorityInversionIndex ?? 0,
+    ),
+    handoffOrphanCombined: combineDualTeamHandoffOrphans(
+      friendly.state.meta.handoffOrphanCount ?? 0,
+      enemy.state.meta.handoffOrphanCount ?? 0,
     ),
   };
 }
@@ -4744,6 +4842,106 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.directiveCollisionCombined === 'number' &&
       typeof dual.handoffIntegrityCombined === 'number' &&
       typeof dual.escalationTierCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_recovery_playbook_critical', 'Recovery playbook: critical tier yields halt actions', () => {
+    const report = buildCoordinationRecoveryPlaybook({
+      escalationTier: 3,
+      coordinationCompositeScore: 40,
+      coordinationWeakestDimension: 'mutexStability',
+      directiveCollisionIndex: 60,
+      handoffIntegrityScore: 40,
+    });
+    return report.recoveryUrgency >= 75 && report.recommendedActions.includes('halt_noncritical_directives');
+  });
+
+  check(results, 'a18_recovery_playbook_nominal', 'Recovery playbook: nominal tier stays low urgency', () => {
+    const report = buildCoordinationRecoveryPlaybook({
+      escalationTier: 0,
+      coordinationCompositeScore: 92,
+      directiveCollisionIndex: 0,
+      handoffIntegrityScore: 100,
+    });
+    return report.recoveryUrgency < 40;
+  });
+
+  check(results, 'a18_priority_inversion_detect', 'Priority inversion: suppressed higher priority than allowed peer', () => {
+    const proposals = [
+      { id: 'd_hi', actorId: 'a', goalKind: 'take_region', targetRegionId: 'NSW', taskId: 't_shared', priority: 1 },
+      { id: 'd_lo', actorId: 'b', goalKind: 'defend_region', targetRegionId: 'NSW', taskId: 't_shared', priority: 4 },
+    ];
+    const report = computeDirectivePriorityInversion(proposals, ['d_hi', 'd_lo'], {
+      allowed: [proposals[1]],
+      suppressed: [proposals[0]],
+    });
+    return report.inversionIndex > 0 && report.invertedProposalIds.includes('d_hi');
+  });
+
+  check(results, 'a18_priority_inversion_none', 'Priority inversion: aligned allow/suppress scores zero', () => {
+    const proposals = [
+      { id: 'd_hi', actorId: 'a', goalKind: 'take_region', targetRegionId: 'NSW', taskId: 't_shared', priority: 1 },
+      { id: 'd_lo', actorId: 'b', goalKind: 'defend_region', targetRegionId: 'NSW', taskId: 't_shared', priority: 4 },
+    ];
+    const report = computeDirectivePriorityInversion(proposals, ['d_hi', 'd_lo'], {
+      allowed: [proposals[0]],
+      suppressed: [proposals[1]],
+    });
+    return report.inversionIndex === 0;
+  });
+
+  check(results, 'a18_handoff_orphan_detect', 'Handoff orphan: target not assigned to task', () => {
+    const report = detectHandoffOrphans(
+      [
+        {
+          id: 'h_orphan',
+          fromActorId: 'player',
+          toActorId: 'mate',
+          regionId: 'NSW',
+          taskId: 'task_defend_NSW',
+          status: 'pending',
+          requestedTurn: 1,
+          reason: 'test',
+        },
+      ],
+      baseInputs().tasks,
+      [{ actorId: 'player', primaryRole: 'controller', responsibility: 'lead', taskIds: ['task_defend_NSW'], lockedUntilTurn: null }],
+    );
+    return report.orphanCount === 1 && report.orphanHandoffIds.includes('h_orphan');
+  });
+
+  check(results, 'a18_eval_round8_meta', 'Layer: round-8 meta exposes recovery, inversion, orphan signals', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.coordinationRecoveryUrgency === 'number' &&
+      typeof m.directivePriorityInversionIndex === 'number' &&
+      typeof m.handoffOrphanCount === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_recovery_urgency', 'Audit: high recovery urgency surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, coordinationRecoveryUrgency: 90 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /recovery urgency/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round8_combined', 'Dual team: round-8 combined recovery, inversion, orphan exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.recoveryUrgencyCombined === 'number' &&
+      typeof dual.priorityInversionCombined === 'number' &&
+      typeof dual.handoffOrphanCombined === 'number'
     );
   });
 

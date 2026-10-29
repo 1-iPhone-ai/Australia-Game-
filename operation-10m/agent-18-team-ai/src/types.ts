@@ -257,6 +257,12 @@ export interface TeamMultiAgentCoordinationMeta {
   duplicatePendingHandoffTaskIds?: string[];
   coordinationEscalationTier?: number;
   coordinationEscalationLabel?: string;
+  coordinationRecoveryUrgency?: number;
+  coordinationRecoveryActions?: string[];
+  directivePriorityInversionIndex?: number;
+  invertedDirectiveIds?: string[];
+  handoffOrphanCount?: number;
+  orphanHandoffIds?: string[];
 }
 
 export const AGENT18_LIMITS = {

@@ -49,6 +49,9 @@ import { computeCoordinationComposite } from './coordination-composite-score.ts'
 import { computeDirectiveCollisionIndex } from './directive-collision-index.ts';
 import { evaluateHandoffChainIntegrity } from './handoff-chain-integrity.ts';
 import { computeCoordinationEscalationTier } from './coordination-escalation-tier.ts';
+import { buildCoordinationRecoveryPlaybook } from './coordination-recovery-playbook.ts';
+import { computeDirectivePriorityInversion } from './directive-priority-inversion.ts';
+import { detectHandoffOrphans } from './handoff-orphan-detector.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -1372,6 +1375,106 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.directiveCollisionCombined === 'number' &&
       typeof dual.handoffIntegrityCombined === 'number' &&
       typeof dual.escalationTierCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_recovery_playbook_critical', 'Recovery playbook: critical tier yields halt actions', () => {
+    const report = buildCoordinationRecoveryPlaybook({
+      escalationTier: 3,
+      coordinationCompositeScore: 40,
+      coordinationWeakestDimension: 'mutexStability',
+      directiveCollisionIndex: 60,
+      handoffIntegrityScore: 40,
+    });
+    return report.recoveryUrgency >= 75 && report.recommendedActions.includes('halt_noncritical_directives');
+  });
+
+  check(results, 'a18_recovery_playbook_nominal', 'Recovery playbook: nominal tier stays low urgency', () => {
+    const report = buildCoordinationRecoveryPlaybook({
+      escalationTier: 0,
+      coordinationCompositeScore: 92,
+      directiveCollisionIndex: 0,
+      handoffIntegrityScore: 100,
+    });
+    return report.recoveryUrgency < 40;
+  });
+
+  check(results, 'a18_priority_inversion_detect', 'Priority inversion: suppressed higher priority than allowed peer', () => {
+    const proposals = [
+      { id: 'd_hi', actorId: 'a', goalKind: 'take_region', targetRegionId: 'NSW', taskId: 't_shared', priority: 1 },
+      { id: 'd_lo', actorId: 'b', goalKind: 'defend_region', targetRegionId: 'NSW', taskId: 't_shared', priority: 4 },
+    ];
+    const report = computeDirectivePriorityInversion(proposals, ['d_hi', 'd_lo'], {
+      allowed: [proposals[1]],
+      suppressed: [proposals[0]],
+    });
+    return report.inversionIndex > 0 && report.invertedProposalIds.includes('d_hi');
+  });
+
+  check(results, 'a18_priority_inversion_none', 'Priority inversion: aligned allow/suppress scores zero', () => {
+    const proposals = [
+      { id: 'd_hi', actorId: 'a', goalKind: 'take_region', targetRegionId: 'NSW', taskId: 't_shared', priority: 1 },
+      { id: 'd_lo', actorId: 'b', goalKind: 'defend_region', targetRegionId: 'NSW', taskId: 't_shared', priority: 4 },
+    ];
+    const report = computeDirectivePriorityInversion(proposals, ['d_hi', 'd_lo'], {
+      allowed: [proposals[0]],
+      suppressed: [proposals[1]],
+    });
+    return report.inversionIndex === 0;
+  });
+
+  check(results, 'a18_handoff_orphan_detect', 'Handoff orphan: target not assigned to task', () => {
+    const report = detectHandoffOrphans(
+      [
+        {
+          id: 'h_orphan',
+          fromActorId: 'player',
+          toActorId: 'mate',
+          regionId: 'NSW',
+          taskId: 'task_defend_NSW',
+          status: 'pending',
+          requestedTurn: 1,
+          reason: 'test',
+        },
+      ],
+      baseInputs().tasks,
+      [{ actorId: 'player', primaryRole: 'controller', responsibility: 'lead', taskIds: ['task_defend_NSW'], lockedUntilTurn: null }],
+    );
+    return report.orphanCount === 1 && report.orphanHandoffIds.includes('h_orphan');
+  });
+
+  check(results, 'a18_eval_round8_meta', 'Layer: round-8 meta exposes recovery, inversion, orphan signals', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.coordinationRecoveryUrgency === 'number' &&
+      typeof m.directivePriorityInversionIndex === 'number' &&
+      typeof m.handoffOrphanCount === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_recovery_urgency', 'Audit: high recovery urgency surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, coordinationRecoveryUrgency: 90 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /recovery urgency/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round8_combined', 'Dual team: round-8 combined recovery, inversion, orphan exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.recoveryUrgencyCombined === 'number' &&
+      typeof dual.priorityInversionCombined === 'number' &&
+      typeof dual.handoffOrphanCombined === 'number'
     );
   });
 
