@@ -128554,7 +128554,7 @@ export interface V9PlayHandlers {
 
 export interface V9AfterAction { rootId: string; did: string; changed: string[]; affected: string[] }
 
-export const V9CohesionPlay: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHandlers; simple: boolean; humanCanAct: boolean; afterAction?: V9AfterAction | null; onDismissAfter?: () => void; coach?: { target: LearningCoachTarget; node: React.ReactNode } | null }> = ({ c, theme, h, simple, humanCanAct, afterAction = null, onDismissAfter, coach = null }) => {
+export const V9CohesionPlay: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHandlers; simple: boolean; humanCanAct: boolean; afterAction?: V9AfterAction | null; onDismissAfter?: () => void; coach?: { target: LearningCoachTarget; node: React.ReactNode } | null; ringRecommendation?: boolean }> = ({ c, theme, h, simple, humanCanAct, afterAction = null, onDismissAfter, coach = null, ringRecommendation = false }) => {
   // Guided Learning coach callout sits beside the element it explains (never modal; the section stays usable).
   const coachAtFocus = coach && coach.target === 'focus' && !c.decision && !c.waiting ? coach.node : null;
   const coachAtRec = coach && !coachAtFocus ? coach.node : null;
@@ -128655,7 +128655,7 @@ export const V9CohesionPlay: React.FC<{ c: V9Cohesion; theme: any; h: V9PlayHand
             {!simple && <div className="text-[11px] opacity-70">{c.recommended.strength}{c.recommended.provenance.length ? ` — ${c.recommended.provenance.join(', ')}` : ''}</div>}
             {c.recommended.alternativeNote && <div className="text-xs mt-1 rounded border border-amber-500/50 px-2 py-1" data-testid="v9-alt-note">{c.recommended.alternativeNote}</div>}
             <div className="flex flex-wrap gap-2 mt-2">
-              <button type="button" disabled={!humanCanAct} className={`${theme.button} px-4 py-1.5 rounded-lg text-sm font-bold disabled:opacity-50`} data-testid="v9-rec-do" title={!humanCanAct ? 'Not available: it is not your turn (or the Co-Pilot is in control)' : undefined} onClick={() => h.onDo(c.recommended!.candidateId)}>Do It</button>
+              <button type="button" disabled={!humanCanAct} className={`${theme.button} px-4 py-1.5 rounded-lg text-sm font-bold disabled:opacity-50${ringRecommendation ? ' v94-ring' : ''}`} data-testid="v9-rec-do" title={!humanCanAct ? 'Not available: it is not your turn (or the Co-Pilot is in control)' : undefined} onClick={() => h.onDo(c.recommended!.candidateId)}>Do It</button>
               <button type="button" className={`${theme.buttonSecondary} px-3 py-1.5 rounded-lg text-xs`} onClick={() => h.onWhyAction(c.recommended!.candidateId)}>Why?</button>
               <button type="button" className={`${theme.buttonSecondary} px-3 py-1.5 rounded-lg text-xs`} data-testid="v9-rec-whatif" onClick={() => h.onWhatIf(c.recommended!.label)}>What If?</button>
             </div>
@@ -133427,7 +133427,13 @@ export const V94_STYLESHEET = `
 [data-v94] .v96-turn-owner-pulse { animation: v96TurnOwnerPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite }
 [data-v94][data-motion="reduced"] .v96-turn-owner-pulse { animation: none !important; opacity: 1 }
 @media (prefers-reduced-motion: reduce) { [data-v94] .v96-turn-owner-pulse { animation: none !important; opacity: 1 } }
-`;
+/* Agent 62: moment-class layout emphasis (presentation only; all controls stay available). */
+[data-v94][data-play-moment="crisis"] [data-testid="v9-decision"],
+[data-v94][data-play-moment="diplomacy_window"] [data-testid="v9-decision"] { box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.35); border-radius: 0.75rem; }
+[data-v94][data-play-moment="liquidity"] [data-testid="v9-match-header"] { box-shadow: inset 0 -3px 0 rgba(244, 63, 94, 0.45); }
+[data-v94][data-play-moment="expansion"] [data-testid="v9-region-context"] { order: -1; }
+[data-v94][data-v62-emphasis="ring"] [data-testid="v9-rec-do"] { animation: v94-ring calc(900ms * var(--v94-speed)) cubic-bezier(0.2, 0.8, 0.2, 1) 2; }
+`
 
 // ---- Shared visual semantics (color is never the only channel: icon + sign + label) ------------------------
 
@@ -133961,6 +133967,311 @@ export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
   });
   return results;
 }
+
+
+// ============================================================================
+// SECTION 20P-A62: DYNAMIC EVOLUTIONARY UI — MOMENT CLASS • ADAPTIVE PLAY EMPHASIS (O111 / AGENT 62)
+// ============================================================================
+// Presentation only. Maps canonical intent/cohesion signals to a PlayMomentKind and a ranked surface list,
+// then to a bounded UI patch (which panels expand, which metrics promote, v94-ring on recommendations).
+// Never persisted to save; never bypasses LEGAL checks; never introduces new action types.
+
+export type PlayMomentKind = 'crisis' | 'expansion' | 'liquidity' | 'diplomacy_window' | 'learning_beat' | 'steady';
+
+export type PlaySurfaceId =
+  | 'hero_strip'
+  | 'feedback'
+  | 'decision'
+  | 'current_focus'
+  | 'recommended'
+  | 'national_strip'
+  | 'region_context'
+  | 'useful_actions'
+  | 'upcoming'
+  | 'map_hint';
+
+export interface PlayMomentSnapshot {
+  isHumanTurn: boolean;
+  presentation: V9Presentation;
+  attentionState: 'good' | 'needs_attention' | 'critical' | null;
+  attentionLabel: string | null;
+  objectiveBlocked: boolean;
+  activeCrises: number;
+  pendingApprovals: number;
+  diplomacyExpiring: number;
+  factionDilemmaOpen: boolean;
+  cohesionDecision: boolean;
+  cash: number;
+  debt: number;
+  liquidityPressure: boolean;
+  strategyExpansion: boolean;
+  nationalBottleneck: boolean;
+  guidedLearningActive: boolean;
+  contentDilemmaOpen: boolean;
+  recommendedId: string | null;
+}
+
+export interface PlayMomentClassification {
+  kind: PlayMomentKind;
+  /** Highest emphasis first — every surface stays reachable; order is layout emphasis only. */
+  surfaces: PlaySurfaceId[];
+  headline: string;
+  ringRecommendation: boolean;
+  expandDecision: boolean;
+  promoteNationalStrip: boolean;
+  openPlayDetails: boolean;
+}
+
+export interface PlayMomentUiPatch {
+  dataMoment: PlayMomentKind;
+  expandSurfaces: PlaySurfaceId[];
+  heroMetrics: Array<'cash' | 'ap' | 'win' | 'national'>;
+  ringRecommendation: boolean;
+  openPlayDetails: boolean;
+}
+
+const PLAY_MOMENT_DEFAULT_SURFACES: PlaySurfaceId[] = [
+  'hero_strip', 'feedback', 'current_focus', 'recommended', 'useful_actions', 'upcoming', 'region_context', 'map_hint'
+];
+
+const PLAY_MOMENT_SURFACES: Record<PlayMomentKind, PlaySurfaceId[]> = {
+  crisis: ['hero_strip', 'decision', 'feedback', 'current_focus', 'recommended', 'national_strip', 'upcoming', 'useful_actions', 'region_context', 'map_hint'],
+  liquidity: ['hero_strip', 'feedback', 'recommended', 'current_focus', 'useful_actions', 'national_strip', 'upcoming', 'region_context', 'map_hint'],
+  diplomacy_window: ['decision', 'hero_strip', 'current_focus', 'recommended', 'upcoming', 'feedback', 'useful_actions', 'region_context', 'map_hint'],
+  expansion: ['current_focus', 'recommended', 'region_context', 'hero_strip', 'map_hint', 'useful_actions', 'feedback', 'upcoming', 'national_strip'],
+  learning_beat: ['current_focus', 'recommended', 'hero_strip', 'feedback', 'useful_actions', 'upcoming', 'region_context', 'map_hint'],
+  steady: PLAY_MOMENT_DEFAULT_SURFACES
+};
+
+export function classifyPlayMoment(s: PlayMomentSnapshot): PlayMomentClassification {
+  if (!s.isHumanTurn) {
+    const waiting: PlaySurfaceId[] = ['hero_strip', 'feedback', 'upcoming', 'current_focus', 'recommended', 'useful_actions', 'region_context', 'map_hint'];
+    return {
+      kind: 'steady',
+      surfaces: waiting,
+      headline: 'Watching the match unfold',
+      ringRecommendation: false,
+      expandDecision: false,
+      promoteNationalStrip: s.nationalBottleneck,
+      openPlayDetails: false
+    };
+  }
+
+  let kind: PlayMomentKind = 'steady';
+  if (s.guidedLearningActive || s.presentation === 'simple') kind = 'learning_beat';
+  else if (s.attentionState === 'critical' || s.activeCrises > 0 || (s.cohesionDecision && s.pendingApprovals > 0)) kind = 'crisis';
+  else if (s.factionDilemmaOpen || s.diplomacyExpiring > 0 || s.contentDilemmaOpen) kind = 'diplomacy_window';
+  else if (s.liquidityPressure || (s.cash < 2500 && s.debt > 0)) kind = 'liquidity';
+  else if (s.strategyExpansion || s.nationalBottleneck) kind = 'expansion';
+
+  const surfaces = [...PLAY_MOMENT_SURFACES[kind]];
+  const headline =
+    kind === 'crisis' ? (s.attentionLabel || 'Crisis — stabilise first')
+      : kind === 'liquidity' ? 'Cash and credit need attention'
+        : kind === 'diplomacy_window' ? 'Diplomatic window — decide before it closes'
+          : kind === 'expansion' ? 'Expansion beat — grow where it counts'
+            : kind === 'learning_beat' ? 'Learning beat — one clear next step'
+              : 'Steady play — keep momentum';
+
+  return {
+    kind,
+    surfaces,
+    headline,
+    ringRecommendation: kind === 'crisis' || kind === 'liquidity' || (kind === 'steady' && Boolean(s.recommendedId)),
+    expandDecision: kind === 'crisis' || kind === 'diplomacy_window',
+    promoteNationalStrip: s.nationalBottleneck && (kind === 'crisis' || kind === 'expansion' || kind === 'liquidity'),
+    openPlayDetails: kind === 'expansion' && s.strategyExpansion
+  };
+}
+
+/** Bounded session evolution: nudge surface order from automation preference (never saved). */
+export function evolvePlayMomentSurfaces(
+  base: PlaySurfaceId[],
+  pref: AutomationPreference | undefined,
+  sessionNudges: Partial<Record<PlaySurfaceId, number>> = {}
+): PlaySurfaceId[] {
+  const weight = (id: PlaySurfaceId) => {
+    let w = base.indexOf(id);
+    if (w < 0) w = 99;
+    if (pref === 'mostly_automatic' && (id === 'recommended' || id === 'useful_actions')) w -= 2;
+    if (pref === 'manual' && (id === 'map_hint' || id === 'region_context')) w -= 1;
+    w += sessionNudges[id] || 0;
+    return w;
+  };
+  return Array.from(new Set([...base, ...PLAY_MOMENT_DEFAULT_SURFACES])).sort((a, b) => weight(a) - weight(b) || a.localeCompare(b));
+}
+
+export function resolvePlayMomentToUiPatch(c: PlayMomentClassification): PlayMomentUiPatch {
+  const heroMetrics: PlayMomentUiPatch['heroMetrics'] = ['cash', 'ap', 'win'];
+  if (c.promoteNationalStrip) heroMetrics.splice(1, 0, 'national');
+  return {
+    dataMoment: c.kind,
+    expandSurfaces: c.surfaces.filter(id => c.expandDecision ? true : id !== 'decision').slice(0, 6),
+    heroMetrics,
+    ringRecommendation: c.ringRecommendation,
+    openPlayDetails: c.openPlayDetails
+  };
+}
+
+export function buildPlayMomentSnapshot(input: {
+  cohesion: V9CohesionInputs;
+  presentation?: V9Presentation;
+  attention?: { state: string; label?: string } | null;
+  liquidityPressure?: boolean;
+  strategyExpansion?: boolean;
+  nationalBottleneck?: boolean;
+  guidedLearningActive?: boolean;
+  contentDilemmaOpen?: boolean;
+  recommendedId?: string | null;
+  debt?: number;
+}): PlayMomentSnapshot {
+  const att = input.attention;
+  const attState = att?.state === 'critical' ? 'critical' : att?.state === 'needs_attention' ? 'needs_attention' : att?.state === 'good' ? 'good' : null;
+  return {
+    isHumanTurn: input.cohesion.isHumanTurn,
+    presentation: input.presentation || input.cohesion.presentation,
+    attentionState: attState,
+    attentionLabel: att?.label || null,
+    objectiveBlocked: Boolean(input.cohesion.objective?.blocked),
+    activeCrises: input.cohesion.crises.length,
+    pendingApprovals: input.cohesion.pendingApprovals,
+    diplomacyExpiring: input.cohesion.diplomacy.filter(d => d.kind === 'expiring' || d.kind === 'payment_due').length,
+    factionDilemmaOpen: Boolean(input.cohesion.factions.dilemma),
+    cohesionDecision: Boolean(input.cohesion.factions.dilemma) || input.cohesion.pendingApprovals > 0,
+    cash: input.cohesion.cash,
+    debt: input.debt ?? 0,
+    liquidityPressure: Boolean(input.liquidityPressure),
+    strategyExpansion: Boolean(input.strategyExpansion),
+    nationalBottleneck: Boolean(input.nationalBottleneck),
+    guidedLearningActive: Boolean(input.guidedLearningActive),
+    contentDilemmaOpen: Boolean(input.contentDilemmaOpen),
+    recommendedId: input.recommendedId ?? input.cohesion.actions.recommendedId
+  };
+}
+
+export function createPlayMomentFixture(o: Partial<PlayMomentSnapshot> = {}): PlayMomentSnapshot {
+  return {
+    isHumanTurn: true,
+    presentation: 'guided',
+    attentionState: 'good',
+    attentionLabel: null,
+    objectiveBlocked: false,
+    activeCrises: 0,
+    pendingApprovals: 0,
+    diplomacyExpiring: 0,
+    factionDilemmaOpen: false,
+    cohesionDecision: false,
+    cash: 12000,
+    debt: 0,
+    liquidityPressure: false,
+    strategyExpansion: false,
+    nationalBottleneck: false,
+    guidedLearningActive: false,
+    contentDilemmaOpen: false,
+    recommendedId: 'act_1',
+    ...o
+  };
+}
+
+export const V62_PLAY_MOMENT_FIXTURES: Array<{ id: string; label: string; snap: PlayMomentSnapshot }> = [
+  { id: 'steady', label: 'Steady mid-game', snap: createPlayMomentFixture() },
+  { id: 'crisis', label: 'Critical attention + crisis', snap: createPlayMomentFixture({ attentionState: 'critical', attentionLabel: 'Bankruptcy risk', activeCrises: 1, liquidityPressure: true }) },
+  { id: 'liquidity', label: 'Low cash / debt', snap: createPlayMomentFixture({ cash: 800, debt: 4000, liquidityPressure: true }) },
+  { id: 'diplomacy', label: 'Faction dilemma window', snap: createPlayMomentFixture({ factionDilemmaOpen: true, diplomacyExpiring: 2, contentDilemmaOpen: true }) },
+  { id: 'expansion', label: 'Expansion + national bottleneck', snap: createPlayMomentFixture({ strategyExpansion: true, nationalBottleneck: true }) },
+  { id: 'learning', label: 'Guided learning beat', snap: createPlayMomentFixture({ guidedLearningActive: true, presentation: 'simple' }) },
+  { id: 'waiting', label: 'Not your turn', snap: createPlayMomentFixture({ isHumanTurn: false }) }
+];
+
+export const V62PlayMomentInspector: React.FC<{
+  classification: PlayMomentClassification;
+  patch: PlayMomentUiPatch;
+  snapshot: PlayMomentSnapshot;
+  theme: any;
+  fixtureId: string;
+  onFixture: (id: string) => void;
+}> = ({ classification, patch, snapshot, theme, fixtureId, onFixture }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <section aria-labelledby="v62-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="v62-play-moment-inspector">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id="v62-lab-h" className="font-bold text-sm">🎛 Dynamic PLAY moment (Agent 62)</h2>
+        <span className="opacity-70">kind {classification.kind} · {classification.surfaces.slice(0, 4).join(' → ')}…</span>
+        <label className="ml-auto flex items-center gap-1">
+          <span className="opacity-70">Fixture</span>
+          <select className="rounded border px-1 py-0.5 text-xs" value={fixtureId} onChange={e => onFixture(e.target.value)} data-testid="v62-moment-fixture">
+            <option value="live">Live match</option>
+            {V62_PLAY_MOMENT_FIXTURES.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </select>
+        </label>
+        <button type="button" className="underline" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Hide' : 'Inspect'}</button>
+      </div>
+      {open && (
+        <div className="mt-2 space-y-1">
+          <div><b>Headline:</b> {classification.headline}</div>
+          <div><b>Surfaces:</b> {classification.surfaces.join(' · ')}</div>
+          <div><b>Patch:</b> ring={String(patch.ringRecommendation)} · hero={patch.heroMetrics.join('+')} · expand={patch.expandSurfaces.join(', ')}</div>
+          <pre className="whitespace-pre-wrap break-words max-h-48 overflow-auto opacity-80">{JSON.stringify(snapshot, null, 1)}</pre>
+        </div>
+      )}
+    </section>
+  );
+};
+
+export function runV62DynamicEvolutionaryUiSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+
+  check('v62_crisis_priority', 'Critical attention classifies as crisis with decision emphasis first', () => {
+    const c = classifyPlayMoment(createPlayMomentFixture({ attentionState: 'critical', attentionLabel: 'Insolvent' }));
+    return c.kind === 'crisis' && c.surfaces[0] === 'hero_strip' && c.surfaces.includes('decision') && c.ringRecommendation;
+  });
+  check('v62_diplomacy_window', 'Faction dilemma maps to diplomacy_window and elevates decision panel', () => {
+    const c = classifyPlayMoment(createPlayMomentFixture({ factionDilemmaOpen: true, diplomacyExpiring: 1 }));
+    return c.kind === 'diplomacy_window' && c.surfaces[0] === 'decision' && c.expandDecision;
+  });
+  check('v62_liquidity', 'Low cash + debt maps to liquidity with recommendation ring', () => {
+    const c = classifyPlayMoment(createPlayMomentFixture({ cash: 500, debt: 9000, liquidityPressure: true }));
+    return c.kind === 'liquidity' && c.ringRecommendation && c.surfaces.indexOf('recommended') < c.surfaces.indexOf('map_hint');
+  });
+  check('v62_learning_beats_crisis', 'Guided learning beat takes precedence over crisis signals (teaching mode)', () => {
+    const c = classifyPlayMoment(createPlayMomentFixture({ guidedLearningActive: true, attentionState: 'critical', activeCrises: 2 }));
+    return c.kind === 'learning_beat';
+  });
+  check('v62_patch_bounded', 'UI patch exposes only presentation keys (no save/settings fields)', () => {
+    const p = resolvePlayMomentToUiPatch(classifyPlayMoment(createPlayMomentFixture({ nationalBottleneck: true, strategyExpansion: true })));
+    const keys = Object.keys(p);
+    return keys.every(k => ['dataMoment', 'expandSurfaces', 'heroMetrics', 'ringRecommendation', 'openPlayDetails'].includes(k)) && p.heroMetrics.includes('national');
+  });
+  check('v62_evolution_bounded', 'Automation preference nudges order without dropping surfaces', () => {
+    const base = PLAY_MOMENT_SURFACES.steady;
+    const auto = evolvePlayMomentSurfaces(base, 'mostly_automatic');
+    const manual = evolvePlayMomentSurfaces(base, 'manual');
+    return auto.includes('recommended') && manual.includes('map_hint') && J(auto) !== J(manual);
+  });
+  check('v62_cohesion_bridge', 'buildPlayMomentSnapshot reads cohesion inputs deterministically', () => {
+    const inp = createV9CohesionFixture({ crises: [{ id: 'c1', name: 'Flood', regions: ['QLD'], stage: 1 }], factions: { ...createV9CohesionFixture().factions, dilemma: { id: 'd1', title: 'Port strike', regionId: 'NSW', need: 'labour', options: [{ id: 'a', label: 'A', summary: 's' }] } } });
+    const snap = buildPlayMomentSnapshot({ cohesion: inp, nationalBottleneck: true });
+    return snap.activeCrises === 1 && snap.factionDilemmaOpen && classifyPlayMoment(snap).kind !== 'steady';
+  });
+  check('v62_not_persisted', 'Moment classifier does not introduce persisted game/settings keys', () => {
+    const stateKeys = Object.keys(initialGameState).filter(k => /playMoment|v62|evolvingUi/i.test(k));
+    const settingsKeys = Object.keys(DEFAULT_GAME_SETTINGS).filter(k => /playMoment|v62|evolvingUi/i.test(k));
+    return stateKeys.length === 0 && settingsKeys.length === 0;
+  });
+  check('v62_deterministic', 'Same snapshot → same classification and patch', () => {
+    const s = createPlayMomentFixture({ strategyExpansion: true });
+    const a = resolvePlayMomentToUiPatch(classifyPlayMoment(s));
+    const b = resolvePlayMomentToUiPatch(classifyPlayMoment(s));
+    return J(a) === J(b) && !/Math\.random/.test(String(classifyPlayMoment));
+  });
+  return results;
+}
+
 
 
 // ============================================================================
@@ -136513,6 +136824,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'v62', label: 'V9.4 Dynamic Evolutionary UI', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV62DynamicEvolutionaryUiSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -215143,6 +215455,38 @@ function dispatchGameSettingsChange(
 
   // ---- V9.2 Guided Learning: learn by playing (reads visible state; never acts; never changes authority) ----
   const glLearning = useMemo(() => sanitizeLearningState(gameSettings.guidedLearning), [gameSettings.guidedLearning]);
+  const [v62LabFixtureId, setV62LabFixtureId] = useState('live');
+  const v62SessionNudgesRef = useRef<Partial<Record<PlaySurfaceId, number>>>({});
+  const playMomentLive = useMemo(() => {
+    const nationalBottleneck = Boolean(nsState?.bottlenecks?.some((b: any) => b.severity === 'major' || b.severity === 'critical'));
+    const liquidityPressure = intentLayerComputed.attention?.state === 'critical' || Number(player?.money || 0) < 1500;
+    const strategyExpansion = Boolean(v9CohesionInputs.strategy?.regions?.length || gi3Live?.active);
+    const snap = buildPlayMomentSnapshot({
+      cohesion: v9CohesionInputs,
+      attention: intentLayerComputed.attention,
+      liquidityPressure,
+      strategyExpansion,
+      nationalBottleneck,
+      guidedLearningActive: glLearning.basicsStep !== null || glLearning.welcome === 'pending',
+      contentDilemmaOpen: Boolean(contentState?.activeDilemma),
+      recommendedId: v9CohesionInputs.actions.recommendedId,
+      debt: Number((player as any)?.debt || (player as any)?.totalDebt || 0)
+    });
+    const base = classifyPlayMoment(snap);
+    const autoPref = (gameSettings.smartSettingsProfile?.automation as AutomationPreference) || 'recommendations';
+    const classification = { ...base, surfaces: evolvePlayMomentSurfaces(base.surfaces, autoPref, v62SessionNudgesRef.current) };
+    return { snap, classification, patch: resolvePlayMomentToUiPatch(classification) };
+  }, [v9CohesionSig, v9CohesionInputs, intentLayerComputed.attention, nsState, player?.money, glLearning.basicsStep, glLearning.welcome, contentState?.activeDilemma, gameSettings.smartSettingsProfile?.automation, gi3Live?.active, player]);
+  const playMomentDisplay = useMemo(() => {
+    if (v62LabFixtureId === 'live') return playMomentLive;
+    const fx = V62_PLAY_MOMENT_FIXTURES.find(f => f.id === v62LabFixtureId);
+    if (!fx) return playMomentLive;
+    const classification = classifyPlayMoment(fx.snap);
+    return { snap: fx.snap, classification, patch: resolvePlayMomentToUiPatch(classification) };
+  }, [v62LabFixtureId, playMomentLive]);
+  useEffect(() => {
+    if (playMomentLive.patch.openPlayDetails) setV9PlayDetailsOpen(true);
+  }, [playMomentLive.classification.kind]);
   const glPresentation = getIntentPresentationLevel(gameSettings);
   const glTurn = dnRound;
   const glDispatch = useCallback((evs: Array<Parameters<typeof applyLearningEvent>[1]>) => {
@@ -231153,7 +231497,19 @@ function dispatchGameSettingsChange(
       const glInPlay = glCoachNode && (glCoachTarget === 'focus' || glCoachTarget === 'recommended' || glCoachTarget === 'useful');
       const glAtTop = glCoachNode && !glInHeader && !glInPlay;
       return (
-        <div role="tabpanel" id="v9-layer-panel-play" aria-labelledby="v9-layer-tab-play" className="mb-4 space-y-3 v94-fade" data-testid="v9-play-hud">
+        <div role="tabpanel" id="v9-layer-panel-play" aria-labelledby="v9-layer-tab-play" className="mb-4 space-y-3 v94-fade" data-testid="v9-play-hud" data-v62-moment={playMomentDisplay.classification.kind} aria-label={playMomentDisplay.classification.headline}>
+          <div className={`${themeStyles.card} ${themeStyles.border} border rounded-lg px-3 py-1.5 text-xs flex flex-wrap items-center gap-2`} data-testid="v62-moment-headline" role="status">
+            <span className="font-bold uppercase tracking-wide opacity-80">Moment</span>
+            <span>{playMomentDisplay.classification.headline}</span>
+            {!playMomentLive.snap.isHumanTurn && v62LabFixtureId === 'live' && <span className="opacity-70">· layout adapts when it is your turn</span>}
+          </div>
+          {playMomentDisplay.patch.heroMetrics.includes('national') && nsState?.bottlenecks?.[0] && (
+            <div className={`${themeStyles.card} ${themeStyles.border} border rounded-lg px-3 py-2 text-xs`} data-testid="v62-national-strip">
+              <span className="font-semibold">National pressure: </span>
+              {NATIONAL_NETWORK_LABEL[(nsState.bottlenecks[0] as any).network] || 'Network'} bottleneck
+              {(nsState.bottlenecks[0] as any).regionId ? ` · ${REGIONS[(nsState.bottlenecks[0] as any).regionId]?.name || (nsState.bottlenecks[0] as any).regionId}` : ''}
+            </div>
+          )}
           <V9MatchHeader
             c={v9Cohesion}
             theme={themeStyles}
@@ -231216,6 +231572,7 @@ function dispatchGameSettingsChange(
             afterAction={v9AfterAction}
             onDismissAfter={() => v9AfterAction && setV9AfterDismissed(x => [...x, v9AfterAction.rootId].slice(-20))}
             coach={glInPlay && glCoachTarget ? { target: glCoachTarget, node: glCoachNode } : null}
+            ringRecommendation={playMomentDisplay.patch.ringRecommendation}
           />
 
           {pf12Enabled && pf12View && <PublicFinancePlayChip view={pf12View} onClick={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
@@ -231565,7 +231922,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
+            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV62DynamicEvolutionaryUiSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -231603,6 +231960,7 @@ function dispatchGameSettingsChange(
         <OptionalSurfaceBoundary surface="LivingRegionsInspector"><LivingRegionsInspector view={lrViewRef.current} theme={themeStyles} /></OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="FactionInspector"><FactionInspector view={rfViewRef.current} theme={themeStyles} /></OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V9CohesionInspector"><V9CohesionInspector c={v9Cohesion} inputs={v9CohesionInputs} theme={themeStyles} /></OptionalSurfaceBoundary>
+        <OptionalSurfaceBoundary surface="V62PlayMomentInspector"><V62PlayMomentInspector classification={playMomentDisplay.classification} patch={playMomentDisplay.patch} snapshot={playMomentDisplay.snap} theme={themeStyles} fixtureId={v62LabFixtureId} onFixture={setV62LabFixtureId} /></OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="GuidedLearningInspector"><GuidedLearningInspector theme={themeStyles} learning={glLearning} selection={glSelection} ctx={glCtx} /></OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="Content & Replayability Inspector"><ContentReplayabilityInspector theme={themeStyles} st={contentState} ctx={contentLiveCtx} /></OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="Game Feel Inspector"><GameFeelInspector theme={themeStyles} mode={v94MotionMode} focusStrong={v94FocusStrong} queue={v94Queue} visible={v94Visible} diag={v94DiagRef.current} slow={v94DebugSlow} onSlow={setV94DebugSlow} notificationLane={String((gameSettings as any).notificationSettings?.position || 'top-right')} /></OptionalSurfaceBoundary>
@@ -242639,7 +242997,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
   }
 
   return (
-    <div className="font-sans" data-v94="" data-motion={v94MotionMode} data-focus={v94FocusStrong ? 'strong' : 'normal'} style={v94DebugSlow ? ({ ['--v94-speed' as any]: 6 } as React.CSSProperties) : undefined}>
+    <div className="font-sans" data-v94="" data-motion={v94MotionMode} data-focus={v94FocusStrong ? 'strong' : 'normal'} data-play-moment={playMomentDisplay.patch.dataMoment} data-v62-emphasis={playMomentDisplay.patch.ringRecommendation ? 'ring' : 'normal'} style={v94DebugSlow ? ({ ['--v94-speed' as any]: 6 } as React.CSSProperties) : undefined}>
       <style>{V94_STYLESHEET}</style>
       <style>{`
         @keyframes notificationSlideIn {
