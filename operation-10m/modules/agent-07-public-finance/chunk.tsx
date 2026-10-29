@@ -5192,6 +5192,196 @@ export function buildBudgetNeutralPackagesReport(
 }
 
 
+// --- source: infrastructure-fiscal-load/types.ts ---
+export const INFRASTRUCTURE_FISCAL_LOAD_SCHEMA = 'op10m-agent07-infrastructure-fiscal-load-v1';
+
+export interface InfrastructureFiscalLoadLine {
+  projectId: string;
+  capitalPoints: number;
+  serviceLoadPoints: number;
+  envelopeShare: number;
+  withinLoadBand: boolean;
+}
+
+export interface InfrastructureFiscalLoadReport {
+  schemaVersion: string;
+  turn: number;
+  lines: InfrastructureFiscalLoadLine[];
+  aggregateCapital: number;
+  aggregateServiceLoad: number;
+  envelopeCapacityPoints: number;
+  loadToCapacityRatio: number;
+  withinPortfolioLoadCap: boolean;
+  feasibleUnderEnvelope: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: infrastructure-fiscal-load/compute.ts ---
+
+const LOAD_RATIO_CAP = 0.38;
+
+export function buildInfrastructureFiscalLoadReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  infraSummary: InfrastructureFinancingSummary,
+  envelope: BudgetEnvelope
+): InfrastructureFiscalLoadReport {
+  const envelopeCapacityPoints = envelope.totalCapacityPoints;
+  const lines: InfrastructureFiscalLoadLine[] = infraSummary.plans.map(plan => {
+    const serviceLoadPoints =
+      Math.round(plan.stack.reduce((s, l) => s + l.serviceLoadDelta, 0) * 10) / 10;
+    const envelopeShare =
+      envelopeCapacityPoints <= 0 ? 0 : Math.round((serviceLoadPoints / envelopeCapacityPoints) * 1000) / 1000;
+    return {
+      projectId: plan.projectId,
+      capitalPoints: plan.totalCapitalPoints,
+      serviceLoadPoints,
+      envelopeShare,
+      withinLoadBand: envelopeShare <= 0.12 || v1012.pressure === 'critical'
+    };
+  });
+
+  const aggregateCapital = infraSummary.aggregateCapital;
+  const aggregateServiceLoad = infraSummary.aggregateServiceLoad;
+  const loadToCapacityRatio =
+    envelopeCapacityPoints <= 0
+      ? 0
+      : Math.round((aggregateServiceLoad / envelopeCapacityPoints) * 1000) / 1000;
+
+  const withinPortfolioLoadCap =
+    loadToCapacityRatio <= LOAD_RATIO_CAP ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && loadToCapacityRatio <= LOAD_RATIO_CAP * 1.1);
+
+  const feasibleUnderEnvelope =
+    infraSummary.plans.every(p => p.feasible) || withinPortfolioLoadCap || v1012.pressure === 'critical';
+
+  const warnings: string[] = [];
+  if (!withinPortfolioLoadCap) {
+    warnings.push(`Infra service load ratio ${loadToCapacityRatio} exceeds ${LOAD_RATIO_CAP}.`);
+  }
+  if (!feasibleUnderEnvelope) {
+    warnings.push('At least one infrastructure plan infeasible under envelope.');
+  }
+
+  const narrative = withinPortfolioLoadCap
+    ? `Infrastructure fiscal load ${loadToCapacityRatio} of envelope; service ${aggregateServiceLoad}.`
+    : `Infrastructure load alert: ratio ${loadToCapacityRatio}.`;
+
+  return {
+    schemaVersion: INFRASTRUCTURE_FISCAL_LOAD_SCHEMA,
+    turn,
+    lines,
+    aggregateCapital,
+    aggregateServiceLoad,
+    envelopeCapacityPoints,
+    loadToCapacityRatio,
+    withinPortfolioLoadCap,
+    feasibleUnderEnvelope,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: revenue-integrity-audit/types.ts ---
+export const REVENUE_INTEGRITY_AUDIT_SCHEMA = 'op10m-agent07-revenue-integrity-audit-v1';
+
+export interface RevenueIntegrityFinding {
+  id: string;
+  label: string;
+  severity: 'info' | 'caution' | 'major';
+  passed: boolean;
+  detail: string;
+}
+
+export interface RevenueIntegrityAuditReport {
+  schemaVersion: string;
+  turn: number;
+  findings: RevenueIntegrityFinding[];
+  allPassed: boolean;
+  aggregateDeltaGap: number;
+  coherentWithTaxSensitivity: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: revenue-integrity-audit/compute.ts ---
+
+export function buildRevenueIntegrityAuditReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  ledger: NationalRevenueLedger,
+  taxSensitivity: TaxPolicySensitivityReport
+): RevenueIntegrityAuditReport {
+  const streamDelta = ledger.streams.reduce((s, st) => s + st.deltaPoints, 0);
+  const aggregateDeltaGap = Math.round(Math.abs(streamDelta - taxSensitivity.modeledUpliftPoints * 1.4) * 10) / 10;
+
+  const findings: RevenueIntegrityFinding[] = [
+    {
+      id: 'ria_ledger_flag',
+      label: 'Revenue ledger reconciled flag set',
+      severity: ledger.reconciledToV1012 ? 'info' : 'caution',
+      passed: ledger.reconciledToV1012 || v1012.pressure === 'critical',
+      detail: ledger.reconciliationNotes[0] ?? 'reconciled'
+    },
+    {
+      id: 'ria_stream_count',
+      label: 'At least one revenue stream modeled',
+      severity: 'info',
+      passed: ledger.streams.length >= 1,
+      detail: `streams=${ledger.streams.length}`
+    },
+    {
+      id: 'ria_delta_gap',
+      label: 'Ledger delta gap vs tax sensitivity bounded',
+      severity: aggregateDeltaGap > 6 ? 'caution' : 'info',
+      passed: aggregateDeltaGap <= 7.5 || v1012.pressure === 'critical',
+      detail: `gap=${aggregateDeltaGap}, uplift=${taxSensitivity.modeledUpliftPoints}`
+    },
+    {
+      id: 'ria_high_vol',
+      label: 'High-volatility streams flagged when headroom tight',
+      severity: 'caution',
+      passed:
+        v1012.fiscalHeadroom > -6 ||
+        ledger.streams.filter(s => s.volatilityBand === 'high').length <= 1 ||
+        v1012.pressure === 'critical',
+      detail: `headroom=${v1012.fiscalHeadroom}`
+    }
+  ];
+
+  const coherentWithTaxSensitivity =
+    taxSensitivity.coherentWithLedgerDelta &&
+    (aggregateDeltaGap <= 6 || taxSensitivity.withinAggregateBand || v1012.pressure === 'critical');
+
+  const allPassed = findings.every(f => f.passed) && coherentWithTaxSensitivity;
+
+  const warnings: string[] = [];
+  if (!coherentWithTaxSensitivity) {
+    warnings.push(`Integrity gap ${aggregateDeltaGap} vs tax sensitivity uplift.`);
+  }
+
+  const narrative = allPassed
+    ? `Revenue integrity audit passed (${findings.filter(f => f.passed).length}/${findings.length} findings).`
+    : 'Revenue integrity audit flagged items for review.';
+
+  return {
+    schemaVersion: REVENUE_INTEGRITY_AUDIT_SCHEMA,
+    turn,
+    findings,
+    allPassed,
+    aggregateDeltaGap,
+    coherentWithTaxSensitivity,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -7007,6 +7197,9 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     actorCashProbe: 0
   });
 
+  const infrastructureFiscalLoad = buildInfrastructureFiscalLoadReport(turn, v1012, infraSummary, state.budget);
+  const revenueIntegrityAudit = buildRevenueIntegrityAuditReport(turn, v1012, ledger, taxPolicySensitivity);
+
   checks.push({
     id: 'CF01',
     label: 'Tax expenditure net below gross structural capacity',
@@ -7387,13 +7580,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `offsets=${budgetNeutralPackages.aggregateOffsets}, portfolio=${spendingOffsets.aggregateOffsets}`
   });
 
+  checks.push({
+    id: 'CF53',
+    label: 'Infrastructure fiscal load within portfolio cap',
+    passed: infrastructureFiscalLoad.withinPortfolioLoadCap || v1012.pressure === 'critical',
+    detail: `ratio=${infrastructureFiscalLoad.loadToCapacityRatio}, service=${infrastructureFiscalLoad.aggregateServiceLoad}`
+  });
+
+  checks.push({
+    id: 'CF54',
+    label: 'Revenue integrity audit passes',
+    passed: revenueIntegrityAudit.allPassed || v1012.pressure === 'critical',
+    detail: `findings=${revenueIntegrityAudit.findings.filter(f => f.passed).length}/${revenueIntegrityAudit.findings.length}`
+  });
+
+  checks.push({
+    id: 'CF55',
+    label: 'Infra load feasible under consolidated envelope',
+    passed: infrastructureFiscalLoad.feasibleUnderEnvelope,
+    detail: `capital=${infrastructureFiscalLoad.aggregateCapital}, cap=${infrastructureFiscalLoad.envelopeCapacityPoints}`
+  });
+
+  checks.push({
+    id: 'CF56',
+    label: 'Revenue audit coherent with tax sensitivity',
+    passed: revenueIntegrityAudit.coherentWithTaxSensitivity,
+    detail: `gap=${revenueIntegrityAudit.aggregateDeltaGap}, uplift=${taxPolicySensitivity.modeledUpliftPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 50
+    layerCount: 54
   };
 }
 
@@ -9273,12 +9494,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Fifty fiscal layers integrated', healthy.layerCount === 50, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Fifty-four fiscal layers integrated', healthy.layerCount === 54, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 52,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 56,
     'ok'
   );
 
@@ -9290,10 +9511,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF52 ids present',
-    healthy.checks.length === 52 &&
+    'CF01–CF56 ids present',
+    healthy.checks.length === 56 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[51]?.id === 'CF52',
+      healthy.checks[55]?.id === 'CF56',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -10954,6 +11175,153 @@ export function runBudgetNeutralPackagesSelfTests(): {
     healthy.packages.every(p => p.withinNeutralityBand),
     'ok'
   );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: infrastructure-fiscal-load/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 8,
+    revenueCapacity: partial.revenueCapacity ?? 67,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 6,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 22,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+const SAMPLE_PROJECT = {
+  projectId: 'ifl_sample',
+  title: 'Sample corridor',
+  regionIds: ['national'],
+  capitalPoints: 12,
+  maintenancePointsPerTurn: 1.2,
+  strategicWeight: 0.6,
+  preferredVehicle: 'sovereign_bond_series' as const
+};
+
+export function runInfrastructureFiscalLoadSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(8);
+  const { state } = computeFiscalOutcomesLayer({ turn: 8, v1012: v }, persisted);
+  const infra = summarizeInfrastructureFinancing(8, [SAMPLE_PROJECT], v, state.budget);
+  const healthy = buildInfrastructureFiscalLoadReport(8, v, infra, state.budget);
+
+  record('IFL01', 'At least one infra load line', healthy.lines.length >= 1, 'ok');
+  record('IFL02', 'Healthy within portfolio load cap', healthy.withinPortfolioLoadCap, healthy.narrative);
+  record('IFL03', 'Feasible under envelope', healthy.feasibleUnderEnvelope, 'ok');
+
+  const heavy = buildInfrastructureFiscalLoadReport(
+    8,
+    snap({ maintenanceLoad: 18, fiscalHeadroom: -5 }),
+    summarizeInfrastructureFinancing(
+      8,
+      [{ ...SAMPLE_PROJECT, capitalPoints: 28, maintenancePointsPerTurn: 3.5 }],
+      snap({ maintenanceLoad: 18 }),
+      computeFiscalOutcomesLayer({ turn: 8, v1012: snap({ maintenanceLoad: 18 }) }, createInitialFiscalOutcomesPersisted(8)).state.budget
+    ),
+    computeFiscalOutcomesLayer({ turn: 8, v1012: snap({ maintenanceLoad: 18 }) }, createInitialFiscalOutcomesPersisted(8)).state.budget
+  );
+  record(
+    'IFL04',
+    'Heavier project raises load ratio vs healthy',
+    heavy.loadToCapacityRatio >= healthy.loadToCapacityRatio,
+    `${heavy.loadToCapacityRatio} vs ${healthy.loadToCapacityRatio}`
+  );
+
+  const critical = buildInfrastructureFiscalLoadReport(8, snap({ pressure: 'critical' }), infra, state.budget);
+  record('IFL05', 'Critical overrides load cap', critical.withinPortfolioLoadCap, 'ok');
+
+  record(
+    'IFL06',
+    'Envelope capacity positive',
+    healthy.envelopeCapacityPoints > 0,
+    `cap=${healthy.envelopeCapacityPoints}`
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: revenue-integrity-audit/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 12,
+    revenueCapacity: partial.revenueCapacity ?? 71,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 5,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 7,
+    debtLevel: partial.debtLevel ?? 27,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 8,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+function bundle(turn: number, v1012: V1012FiscalSnapshot) {
+  const persisted = createInitialFiscalOutcomesPersisted(turn);
+  const { state } = computeFiscalOutcomesLayer({ turn, v1012 }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn, v1012, taxInstruments: state.taxInstruments });
+  const tax = buildTaxPolicySensitivityReport(turn, v1012, ledger);
+  return { ledger, tax };
+}
+
+export function runRevenueIntegrityAuditSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const { ledger, tax } = bundle(12, v);
+  const healthy = buildRevenueIntegrityAuditReport(12, v, ledger, tax);
+
+  record('RIA01', 'Four integrity findings', healthy.findings.length === 4, 'ok');
+  record('RIA02', 'Healthy audit passes', healthy.allPassed, healthy.narrative);
+  record('RIA03', 'Coherent with tax sensitivity', healthy.coherentWithTaxSensitivity, 'ok');
+
+  const tight = buildRevenueIntegrityAuditReport(
+    12,
+    snap({ fiscalHeadroom: -8, pressure: 'strained' }),
+    bundle(12, snap({ fiscalHeadroom: -8, pressure: 'strained' })).ledger,
+    bundle(12, snap({ fiscalHeadroom: -8, pressure: 'strained' })).tax
+  );
+  record('RIA04', 'Strained headroom still runs audit', tight.findings.length === 4, `passed=${tight.allPassed}`);
+
+  const critical = buildRevenueIntegrityAuditReport(12, snap({ pressure: 'critical' }), ledger, tax);
+  record('RIA05', 'Critical override path', critical.allPassed || critical.coherentWithTaxSensitivity, 'ok');
+
+  record('RIA06', 'Delta gap non-negative', healthy.aggregateDeltaGap >= 0, `gap=${healthy.aggregateDeltaGap}`);
 
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
