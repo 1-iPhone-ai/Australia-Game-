@@ -2848,6 +2848,288 @@ export function matchExplainabilityShipmentAllowed(report: MatchExplainabilitySh
 }
 
 
+// --- source: match-explainability-release-bundle.ts ---
+  buildMatchExplainabilityDeliveryBundle,
+  matchExplainabilityDeliveryShippable,
+} from './match-explainability-delivery-bundle.ts';
+  auditMatchExplainabilityShipmentGate,
+  matchExplainabilityShipmentAllowed,
+} from './match-explainability-shipment-gate.ts';
+
+export const AGENT19_RELEASE_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityReleaseBundle {
+  releaseReady: boolean;
+  deliveryShippable: boolean;
+  shipmentAllowed: boolean;
+  giDeliveryReady: boolean;
+  narrativeLines: string[];
+}
+
+type ReleaseParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Release bundle: delivery + shipment + GI delivery must all agree before player launch. */
+export function buildMatchExplainabilityReleaseBundle(
+  packs: TurnExplainabilityPack[],
+  params: ReleaseParams,
+): MatchExplainabilityReleaseBundle {
+  const delivery = buildMatchExplainabilityDeliveryBundle(packs, params);
+  const shipment = auditMatchExplainabilityShipmentGate(packs, params);
+  const giDelivery = buildSessionGiDeliveryBundle(packs, params);
+  const deliveryShippable = matchExplainabilityDeliveryShippable(delivery);
+  const shipmentAllowed = matchExplainabilityShipmentAllowed(shipment);
+  const giDeliveryReady = sessionGiDeliveryReady(giDelivery);
+  const releaseReady = deliveryShippable && shipmentAllowed && giDeliveryReady;
+  const narrativeLines = [
+    `Match explainability release: ${releaseReady ? 'READY' : 'HELD'} (delivery ${deliveryShippable ? 'ok' : 'fail'}, shipment ${shipmentAllowed ? 'ok' : 'fail'}, GI ${giDeliveryReady ? 'ok' : 'fail'}).`,
+    ...delivery.narrativeLines.slice(0, 2),
+    ...shipment.narrativeLines.slice(0, 1),
+    ...giDelivery.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_RELEASE_NARRATIVE_CAP);
+  return {
+    releaseReady,
+    deliveryShippable,
+    shipmentAllowed,
+    giDeliveryReady,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityReleaseReady(bundle: MatchExplainabilityReleaseBundle): boolean {
+  return bundle.releaseReady;
+}
+
+
+// --- source: shipment-recovery-playbook-bridge.ts ---
+  auditMatchExplainabilityShipmentGate,
+  matchExplainabilityShipmentAllowed,
+} from './match-explainability-shipment-gate.ts';
+
+export const AGENT19_SHIPMENT_RECOVERY_CAP = 8;
+
+export interface ShipmentRecoveryPlaybookBridge {
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+/** When shipment is blocked, merge final-gate hints and match recovery playbook steps. */
+export function buildShipmentRecoveryPlaybookBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): ShipmentRecoveryPlaybookBridge {
+  const shipment = auditMatchExplainabilityShipmentGate(packs, params);
+  const steps: string[] = [];
+  if (!matchExplainabilityShipmentAllowed(shipment)) {
+    if (!shipment.finalGateOpen) {
+      steps.push(...buildFinalGateRecoveryHints(auditMatchExplainabilityFinalGate(packs, params)));
+    }
+    if (!shipment.confidenceExportOk) {
+      steps.push('Raise session confidence or reopen export gate before shipment.');
+    }
+    if (!shipment.negotiationAligned) {
+      steps.push('Align negotiation threshold shifts with relationship influence slices.');
+    }
+    steps.push(...buildMatchRecoveryPlaybook(packs, params).steps);
+  } else {
+    steps.push('Shipment gate open — no recovery steps required.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_SHIPMENT_RECOVERY_CAP);
+  return {
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Shipment recovery bridge: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function shipmentRecoveryNeeded(
+  packs: TurnExplainabilityPack[],
+  params: Parameters<typeof buildShipmentRecoveryPlaybookBridge>[1],
+): boolean {
+  return !matchExplainabilityShipmentAllowed(auditMatchExplainabilityShipmentGate(packs, params));
+}
+
+
+// --- source: delivery-shipment-bridge.ts ---
+  buildMatchExplainabilityDeliveryBundle,
+  matchExplainabilityDeliveryShippable,
+} from './match-explainability-delivery-bundle.ts';
+  auditMatchExplainabilityShipmentGate,
+  matchExplainabilityShipmentAllowed,
+} from './match-explainability-shipment-gate.ts';
+
+export interface DeliveryShipmentBridgeReport {
+  aligned: boolean;
+  deliveryShippable: boolean;
+  shipmentAllowed: boolean;
+  narrativeLines: string[];
+}
+
+/** Documents whether delivery and shipment gates agree (both must pass for aligned release). */
+export function auditDeliveryShipmentBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): DeliveryShipmentBridgeReport {
+  const delivery = buildMatchExplainabilityDeliveryBundle(packs, params);
+  const shipment = auditMatchExplainabilityShipmentGate(packs, params);
+  const deliveryShippable = matchExplainabilityDeliveryShippable(delivery);
+  const shipmentAllowed = matchExplainabilityShipmentAllowed(shipment);
+  const aligned = deliveryShippable === shipmentAllowed;
+  const narrativeLines = [
+    `Delivery/shipment bridge: ${aligned ? 'ALIGNED' : 'DIVERGED'} (delivery ${deliveryShippable ? 'ship' : 'block'}, shipment ${shipmentAllowed ? 'allow' : 'deny'}).`,
+  ];
+  return { aligned, deliveryShippable, shipmentAllowed, narrativeLines };
+}
+
+export function deliveryShipmentBridgeAligned(report: DeliveryShipmentBridgeReport): boolean {
+  return report.aligned;
+}
+
+
+// --- source: session-release-export-bundle.ts ---
+  buildMatchExplainabilityReleaseBundle,
+  matchExplainabilityReleaseReady,
+} from './match-explainability-release-bundle.ts';
+
+export const AGENT19_SESSION_RELEASE_EXPORT_CAP = 12;
+
+export interface SessionReleaseExportBundle {
+  schema: string;
+  releaseReady: boolean;
+  turnCount: number;
+  exports: Record<string, unknown>[];
+  giClaimIds: string[];
+  narrativeLines: string[];
+}
+
+/** JSON-safe session release payload when release bundle is ready. */
+export function buildSessionReleaseExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionReleaseExportBundle {
+  const release = buildMatchExplainabilityReleaseBundle(packs, params);
+  const exportBundle = buildSessionExportBundle(packs, params);
+  const gi = buildSessionGiClaimsRollup(packs, { memoryInfluenceEnabled: params.memoryInfluenceEnabled });
+  const releaseReady = matchExplainabilityReleaseReady(release);
+  const exports = releaseReady
+    ? exportBundle.exports.slice(0, AGENT19_SESSION_RELEASE_EXPORT_CAP)
+    : [];
+  const narrativeLines = [
+    `Session release export: ${releaseReady ? 'EMITTED' : 'EMPTY'} (${exports.length} turn record(s), ${gi.claimCount} GI claim(s)).`,
+    ...release.narrativeLines.slice(0, 1),
+  ];
+  return {
+    schema: 'agent19.release.v1',
+    releaseReady,
+    turnCount: packs.length,
+    exports,
+    giClaimIds: gi.uniqueIds.slice(0, AGENT19_SESSION_RELEASE_EXPORT_CAP),
+    narrativeLines,
+  };
+}
+
+export function sessionReleaseExportEmitted(bundle: SessionReleaseExportBundle): boolean {
+  return bundle.releaseReady && bundle.exports.length > 0;
+}
+
+
+// --- source: match-explainability-launch-gate.ts ---
+  buildMatchExplainabilityReleaseBundle,
+  matchExplainabilityReleaseReady,
+} from './match-explainability-release-bundle.ts';
+  buildSessionReleaseExportBundle,
+  sessionReleaseExportEmitted,
+} from './session-release-export-bundle.ts';
+
+export interface MatchExplainabilityLaunchGateReport {
+  launchAllowed: boolean;
+  releaseReady: boolean;
+  releaseExportEmitted: boolean;
+  recoveryStepCount: number;
+  narrativeLines: string[];
+}
+
+type LaunchParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Launch gate: release bundle ready and session release export emitted. */
+export function auditMatchExplainabilityLaunchGate(
+  packs: TurnExplainabilityPack[],
+  params: LaunchParams,
+): MatchExplainabilityLaunchGateReport {
+  const release = buildMatchExplainabilityReleaseBundle(packs, params);
+  const releaseExport = buildSessionReleaseExportBundle(packs, params);
+  const recovery = buildShipmentRecoveryPlaybookBridge(packs, params);
+  const releaseReady = matchExplainabilityReleaseReady(release);
+  const releaseExportEmitted = sessionReleaseExportEmitted(releaseExport);
+  const launchAllowed = releaseReady && releaseExportEmitted;
+  const narrativeLines = [
+    `Match explainability launch: ${launchAllowed ? 'GO' : 'NO-GO'} (release ${releaseReady ? 'ok' : 'fail'}, export ${releaseExportEmitted ? 'ok' : 'fail'}).`,
+    ...release.narrativeLines.slice(0, 2),
+    ...(launchAllowed ? releaseExport.narrativeLines.slice(0, 1) : recovery.narrativeLines.slice(0, 2)),
+  ];
+  return {
+    launchAllowed,
+    releaseReady,
+    releaseExportEmitted,
+    recoveryStepCount: recovery.stepCount,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityLaunchAllowed(report: MatchExplainabilityLaunchGateReport): boolean {
+  return report.launchAllowed;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -3059,6 +3341,19 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityShipmentGate,
   matchExplainabilityShipmentAllowed,
 } from '../match-explainability-shipment-gate.ts';
+  buildMatchExplainabilityReleaseBundle,
+  matchExplainabilityReleaseReady,
+} from '../match-explainability-release-bundle.ts';
+  buildShipmentRecoveryPlaybookBridge,
+  shipmentRecoveryNeeded,
+  AGENT19_SHIPMENT_RECOVERY_CAP,
+} from '../shipment-recovery-playbook-bridge.ts';
+  buildSessionReleaseExportBundle,
+  sessionReleaseExportEmitted,
+} from '../session-release-export-bundle.ts';
+  auditMatchExplainabilityLaunchGate,
+  matchExplainabilityLaunchAllowed,
+} from '../match-explainability-launch-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -4883,6 +5178,200 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityShipmentAllowed(report) && !report.finalGateOpen || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r13_release_ready',
+        'Release bundle ready when delivery shipment and GI align',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const params = {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium' as const,
+            memoryInfluenceEnabled: true,
+          };
+          const release = buildMatchExplainabilityReleaseBundle([pack], params);
+          return matchExplainabilityReleaseReady(release) && release.giDeliveryReady || JSON.stringify(release);
+        },
+      ],
+      [
+        'a19_r13_release_held',
+        'Release bundle held when trace continuity fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const release = buildMatchExplainabilityReleaseBundle([pack], {
+            memory: null,
+            currentTurn: 2,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityReleaseReady(release) && !release.deliveryShippable || JSON.stringify(release);
+        },
+      ],
+      [
+        'a19_r13_shipment_recovery',
+        'Shipment recovery bridge lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'a', score: 1 }, { type: 'b', score: 1 }];
+          const decisionsAfter = [{ type: 'a', score: 3, memoryInfluence: 1, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 1, reason: 't' }] }];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const params = {
+            memory: null,
+            currentTurn: 1,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium' as const,
+            memoryInfluenceEnabled: true,
+          };
+          const bridge = buildShipmentRecoveryPlaybookBridge([pack], params);
+          return (
+            shipmentRecoveryNeeded([pack], params) &&
+            bridge.stepCount >= 1 &&
+            bridge.stepCount <= AGENT19_SHIPMENT_RECOVERY_CAP
+          ) || bridge.steps.join('|');
+        },
+      ],
+      [
+        'a19_r13_delivery_shipment_bridge',
+        'Delivery and shipment gates align on healthy session',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'm' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditDeliveryShipmentBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return deliveryShipmentBridgeAligned(report) && report.deliveryShippable || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r13_session_release_export',
+        'Session release export emits when release ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const params = {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium' as const,
+            memoryInfluenceEnabled: true,
+          };
+          const bundle = buildSessionReleaseExportBundle([pack], params);
+          return (
+            sessionReleaseExportEmitted(bundle) &&
+            bundle.schema === 'agent19.release.v1' &&
+            bundle.exports.length === 1
+          ) || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r13_launch_gate_ok',
+        'Launch gate GO when release export emitted',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditMatchExplainabilityLaunchGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityLaunchAllowed(report) && report.releaseExportEmitted || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r13_launch_gate_no',
+        'Launch gate NO-GO when shipment blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({
+            turn: 4,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditMatchExplainabilityLaunchGate([pack], {
+            memory: null,
+            currentTurn: 4,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityLaunchAllowed(report) && report.recoveryStepCount >= 1 || JSON.stringify(report);
         },
       ],
     ]),
