@@ -49,6 +49,7 @@ import { coalitionStellarTranscendenceStreakIssues } from './coalition-stellar-t
 import { coalitionQuantumOmnipresenceStreakIssues } from './coalition-quantum-omnipresence-gates.ts';
 import { coalitionMultiversalPersistenceStreakIssues } from './coalition-multiversal-persistence-gates.ts';
 import { coalitionMetaversalContinuityStreakIssues } from './coalition-metaversal-continuity-gates.ts';
+import { coalitionOmniversalSynthesisStreakIssues } from './coalition-omniversal-synthesis-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -321,6 +322,7 @@ export function validateAction(
     issues.push(...coalitionQuantumOmnipresenceStreakIssues(action, state));
     issues.push(...coalitionMultiversalPersistenceStreakIssues(action, state));
     issues.push(...coalitionMetaversalContinuityStreakIssues(action, state));
+    issues.push(...coalitionOmniversalSynthesisStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

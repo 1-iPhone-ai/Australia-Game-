@@ -36,6 +36,7 @@ import {
   quantumOmnipresenceRankingBonus,
   multiversalPersistenceRankingBonus,
   metaversalContinuityRankingBonus,
+  omniversalSynthesisRankingBonus,
 } from './coalition-balance.ts';
 import { scoreNationalPriorityAlignment, validateAction } from './validation.ts';
 
@@ -89,7 +90,8 @@ export function rankStrategicActions(
         stellarTranscendenceRankingBonus(state, action) +
         quantumOmnipresenceRankingBonus(state, action) +
         multiversalPersistenceRankingBonus(state, action) +
-        metaversalContinuityRankingBonus(state, action),
+        metaversalContinuityRankingBonus(state, action) +
+        omniversalSynthesisRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });

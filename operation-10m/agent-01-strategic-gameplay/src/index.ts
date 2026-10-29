@@ -117,6 +117,7 @@ export {
   quantumOmnipresenceRankingBonus,
   multiversalPersistenceRankingBonus,
   metaversalContinuityRankingBonus,
+  omniversalSynthesisRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -402,6 +403,16 @@ export {
   applyMetaversalContinuityMandateBonus,
 } from './engine/coalition-metaversal-continuity.ts';
 
+export { coalitionOmniversalSynthesisStreakIssues } from './engine/coalition-omniversal-synthesis-gates.ts';
+
+export {
+  OMNIVERSAL_COALITION_SYNTHESIS_THRESHOLD,
+  advanceCoalitionOmniversalSynthesisStreak,
+  resetCoalitionOmniversalSynthesisStreak,
+  isOmniversalCoalitionSynthesis,
+  applyOmniversalSynthesisMandateBonus,
+} from './engine/coalition-omniversal-synthesis.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '3.9.0';
+export const AGENT_01_MODULE_VERSION = '4.0.0';

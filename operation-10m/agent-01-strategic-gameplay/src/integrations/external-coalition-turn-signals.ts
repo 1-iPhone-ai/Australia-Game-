@@ -24,6 +24,7 @@ import { isStellarCoalitionTranscendence } from '../engine/coalition-stellar-tra
 import { isQuantumCoalitionOmnipresence } from '../engine/coalition-quantum-omnipresence.ts';
 import { isMultiversalCoalitionPersistence } from '../engine/coalition-multiversal-persistence.ts';
 import { isMetaversalCoalitionContinuity } from '../engine/coalition-metaversal-continuity.ts';
+import { isOmniversalCoalitionSynthesis } from '../engine/coalition-omniversal-synthesis.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -72,6 +73,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionMultiversalPersistenceStreakDays: number;
   metaversalCoalitionContinuity: boolean;
   coalitionMetaversalContinuityStreakDays: number;
+  omniversalCoalitionSynthesis: boolean;
+  coalitionOmniversalSynthesisStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -124,6 +127,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionMultiversalPersistenceStreakDays: state.coalitionMultiversalPersistenceStreakDays ?? 0,
     metaversalCoalitionContinuity: isMetaversalCoalitionContinuity(state),
     coalitionMetaversalContinuityStreakDays: state.coalitionMetaversalContinuityStreakDays ?? 0,
+    omniversalCoalitionSynthesis: isOmniversalCoalitionSynthesis(state),
+    coalitionOmniversalSynthesisStreakDays: state.coalitionOmniversalSynthesisStreakDays ?? 0,
   };
 }
 
@@ -176,5 +181,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionMultiversalPersistenceStreakDays: raw?.coalitionMultiversalPersistenceStreakDays ?? 0,
     metaversalCoalitionContinuity: raw?.metaversalCoalitionContinuity ?? false,
     coalitionMetaversalContinuityStreakDays: raw?.coalitionMetaversalContinuityStreakDays ?? 0,
+    omniversalCoalitionSynthesis: raw?.omniversalCoalitionSynthesis ?? false,
+    coalitionOmniversalSynthesisStreakDays: raw?.coalitionOmniversalSynthesisStreakDays ?? 0,
   };
 }
