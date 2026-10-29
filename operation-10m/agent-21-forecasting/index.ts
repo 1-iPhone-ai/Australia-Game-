@@ -29,4 +29,8 @@ export * from './forecast-surface-decision';
 export * from './forecast-lab-telemetry';
 export * from './forecast-crosslink-packet';
 export * from './forecast-round7-console';
+export * from './forecast-packet-validation';
+export * from './forecast-operator-escalation';
+export * from './forecast-lab-replay-seed';
+export * from './forecast-round8-console';
 export * from './strategic-forecast-policy-lab';

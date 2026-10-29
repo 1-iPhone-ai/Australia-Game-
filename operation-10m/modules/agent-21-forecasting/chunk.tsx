@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '1.9.0';
+export const O10M_AGENT21_MODULE_VERSION = '2.0.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -3337,6 +3337,307 @@ export const Ag21ForecastRound7Console: React.FC<{ seed?: number }> = ({ seed = 
   );
 };
 
+// --- bundled from forecast-packet-validation.ts ---
+/**
+ * Agent 21 — crosslink packet validation against telemetry (read-only round 8).
+ */
+
+
+export type Ag21PacketValidationStatus = 'aligned' | 'drift' | 'blocked';
+
+export interface Ag21PacketValidationReport {
+  status: Ag21PacketValidationStatus;
+  mismatchCount: number;
+  mismatches: string[];
+  packetId: string;
+  telemetryHealth: ReturnType<typeof collectAg21LabTelemetry>['telemetryHealth'];
+  surfaceDecision: ReturnType<typeof collectAg21LabTelemetry>['surfaceDecision'];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21TagValue(tags: string[], prefix: string): string | undefined {
+  const hit = tags.find(t => t.startsWith(`${prefix}:`));
+  return hit?.slice(prefix.length + 1);
+}
+
+/** Validate dashboard crosslink tags against live telemetry + surface decision. */
+export function validateAg21CrosslinkHandoff(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21PacketValidationReport {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.83),
+      actorDebt: baseCtx.actorDebt + 120
+    } satisfies Ag21ForecastContext);
+
+  const packet = buildAg21CrosslinkPacket(baseCtx, candidate);
+  const telemetry = collectAg21LabTelemetry(baseCtx, candidate);
+
+  const mismatches: string[] = [];
+  const tagDecision = ag21TagValue(packet.dashboardTags, 'decision');
+  const tagHealth = ag21TagValue(packet.dashboardTags, 'health');
+
+  if (tagDecision !== telemetry.surfaceDecision) {
+    mismatches.push(`decision tag ${tagDecision} vs telemetry ${telemetry.surfaceDecision}`);
+  }
+  if (tagHealth !== telemetry.telemetryHealth) {
+    mismatches.push(`health tag ${tagHealth} vs telemetry ${telemetry.telemetryHealth}`);
+  }
+  if (packet.surfaceDecision !== telemetry.surfaceDecision) {
+    mismatches.push(`packet decision ${packet.surfaceDecision} vs telemetry ${telemetry.surfaceDecision}`);
+  }
+  if (packet.telemetryHealth !== telemetry.telemetryHealth) {
+    mismatches.push(`packet health ${packet.telemetryHealth} vs telemetry ${telemetry.telemetryHealth}`);
+  }
+
+  let status: Ag21PacketValidationStatus = 'aligned';
+  if (telemetry.surfaceDecision === 'suppress' || telemetry.telemetryHealth === 'critical') {
+    status = mismatches.length > 0 ? 'blocked' : 'aligned';
+  } else if (mismatches.length > 0) {
+    status = 'drift';
+  }
+
+  return {
+    status,
+    mismatchCount: mismatches.length,
+    mismatches,
+    packetId: packet.packetId,
+    telemetryHealth: telemetry.telemetryHealth,
+    surfaceDecision: telemetry.surfaceDecision,
+    disclaimer: '(Non-authoritative forecast.) Packet validation for dashboard wiring only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'aligned' ? 'low' : status === 'drift' ? 'moderate' : 'high',
+      [`validation=${status}`, `mismatches=${mismatches.length}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21PacketValidationSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 16, seed: 33, actorCash: 990, actorDebt: 95, regionsControlled: 3 };
+  const report = validateAg21CrosslinkHandoff(ctx);
+
+  push('validation_status', ['aligned', 'drift', 'blocked'].includes(report.status), report.status);
+  push('validation_id', report.packetId.startsWith('ag21_xlink_'), report.packetId);
+  push('validation_mismatch_nonneg', report.mismatchCount >= 0, String(report.mismatchCount));
+  push('validation_non_auth', report.authoritative === false, report.disclaimer.slice(0, 30));
+
+  return out;
+}
+
+// --- bundled from forecast-operator-escalation.ts ---
+/**
+ * Agent 21 — operator escalation ladder from validation + telemetry (read-only round 8).
+ */
+
+
+export type Ag21OperatorEscalationTier = 'none' | 'watch' | 'review' | 'incident';
+
+export interface Ag21OperatorEscalation {
+  tier: Ag21OperatorEscalationTier;
+  validationStatus: ReturnType<typeof validateAg21CrosslinkHandoff>['status'];
+  operatorMode: ReturnType<typeof buildAg21LabPlaybook>['operatorMode'];
+  actionHint: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21TierFromSignals(
+  validationStatus: Ag21OperatorEscalation['validationStatus'],
+  health: ReturnType<typeof collectAg21LabTelemetry>['telemetryHealth'],
+  decision: ReturnType<typeof collectAg21LabTelemetry>['surfaceDecision'],
+  highPriorityHints: number
+): Ag21OperatorEscalationTier {
+  if (validationStatus === 'blocked' || health === 'critical' || decision === 'suppress') return 'incident';
+  if (validationStatus === 'drift' || health === 'degraded' || decision === 'hold' || highPriorityHints >= 2) {
+    return 'review';
+  }
+  if (decision === 'hold' || highPriorityHints >= 1) return 'watch';
+  return 'none';
+}
+
+/** Resolve operator escalation tier for lab dashboards (round 8). */
+export function resolveAg21OperatorEscalation(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21OperatorEscalation {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.8),
+      actorDebt: baseCtx.actorDebt + 140
+    } satisfies Ag21ForecastContext);
+
+  const validation = validateAg21CrosslinkHandoff(baseCtx, candidate);
+  const telemetry = collectAg21LabTelemetry(baseCtx, candidate);
+  const playbook = buildAg21LabPlaybook(baseCtx, candidate);
+  const highPriorityHints = playbook.hints.filter(h => h.priority === 'high').length;
+
+  const tier = ag21TierFromSignals(
+    validation.status,
+    telemetry.telemetryHealth,
+    telemetry.surfaceDecision,
+    highPriorityHints
+  );
+
+  const actionHint =
+    tier === 'incident'
+      ? 'Pause surfacing; reconcile crosslink packet with telemetry before next turn.'
+      : tier === 'review'
+        ? 'Schedule operator review; confirm playbook hints against validation drift.'
+        : tier === 'watch'
+          ? 'Monitor gates and convergence; no dashboard promotion yet.'
+          : 'No escalation; lab outputs may follow round 7 surface decision.';
+
+  return {
+    tier,
+    validationStatus: validation.status,
+    operatorMode: playbook.operatorMode,
+    actionHint,
+    overallUncertainty: ag21LabelUncertainty(
+      tier === 'none' ? 'low' : tier === 'watch' ? 'moderate' : 'high',
+      [`tier=${tier}`, `validation=${validation.status}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21OperatorEscalationSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 11, seed: 52, actorCash: 880, actorDebt: 160, regionsControlled: 2 };
+  const escalation = resolveAg21OperatorEscalation(ctx);
+
+  push('escalation_tier', ['none', 'watch', 'review', 'incident'].includes(escalation.tier), escalation.tier);
+  push('escalation_hint', escalation.actionHint.length > 10, escalation.actionHint.slice(0, 40));
+  push('escalation_validation', ['aligned', 'drift', 'blocked'].includes(escalation.validationStatus), escalation.validationStatus);
+  push('escalation_non_auth', escalation.authoritative === false, escalation.operatorMode);
+
+  return out;
+}
+
+// --- bundled from forecast-lab-replay-seed.ts ---
+/**
+ * Agent 21 — deterministic replay seed bundle for history modules (read-only round 8).
+ */
+
+
+export interface Ag21LabReplaySeed {
+  seedId: string;
+  turn: number;
+  labSeed: number;
+  packetId: string;
+  validationStatus: ReturnType<typeof validateAg21CrosslinkHandoff>['status'];
+  escalationTier: ReturnType<typeof resolveAg21OperatorEscalation>['tier'];
+  telemetryHealth: ReturnType<typeof collectAg21LabTelemetry>['telemetryHealth'];
+  fingerprint: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21ReplayFingerprint(ctx: Ag21ForecastContext, packetId: string, tier: Ag21LabReplaySeed['escalationTier']): string {
+  return `ag21_replay_${ctx.turn}_${ctx.seed}_${packetId.split('_').pop()}_${tier}`;
+}
+
+/** Build a compact replay seed for Agent 24 history wiring (non-authoritative). */
+export function buildAg21LabReplaySeed(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21LabReplaySeed {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.82),
+      actorDebt: baseCtx.actorDebt + 110
+    } satisfies Ag21ForecastContext);
+
+  const packet = buildAg21CrosslinkPacket(baseCtx, candidate);
+  const validation = validateAg21CrosslinkHandoff(baseCtx, candidate);
+  const escalation = resolveAg21OperatorEscalation(baseCtx, candidate);
+  const telemetry = collectAg21LabTelemetry(baseCtx, candidate);
+
+  const seedId = `ag21_lab_seed_${baseCtx.turn}_${baseCtx.seed}`;
+
+  return {
+    seedId,
+    turn: baseCtx.turn,
+    labSeed: baseCtx.seed,
+    packetId: packet.packetId,
+    validationStatus: validation.status,
+    escalationTier: escalation.tier,
+    telemetryHealth: telemetry.telemetryHealth,
+    fingerprint: ag21ReplayFingerprint(baseCtx, packet.packetId, escalation.tier),
+    disclaimer: '(Non-authoritative forecast.) Replay seed for history modules only.',
+    overallUncertainty: ag21LabelUncertainty(
+      escalation.tier === 'incident' ? 'high' : escalation.tier === 'none' ? 'low' : 'moderate',
+      [`replay=${seedId}`, `health=${telemetry.telemetryHealth}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21LabReplaySeedSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 19, seed: 8, actorCash: 1120, actorDebt: 70, regionsControlled: 4 };
+  const replay = buildAg21LabReplaySeed(ctx);
+
+  push('replay_seed_id', replay.seedId.startsWith('ag21_lab_seed_'), replay.seedId);
+  push('replay_fingerprint', replay.fingerprint.startsWith('ag21_replay_'), replay.fingerprint);
+  push('replay_packet', replay.packetId.startsWith('ag21_xlink_'), replay.packetId);
+  push('replay_non_auth', replay.authoritative === false, replay.disclaimer.slice(0, 30));
+
+  return out;
+}
+
+// --- bundled from forecast-round8-console.tsx ---
+/**
+ * Agent 21 — scale wave round 8 console (validation + escalation + replay seed).
+ */
+
+
+export const Ag21ForecastRound8Console: React.FC<{ seed?: number }> = ({ seed = 51 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 18 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.72), actorDebt: base.actorDebt + 260 }),
+    [base]
+  );
+
+  const validation = useMemo(() => validateAg21CrosslinkHandoff(base, stressed), [base, stressed]);
+  const escalation = useMemo(() => resolveAg21OperatorEscalation(base, stressed), [base, stressed]);
+  const replay = useMemo(() => buildAg21LabReplaySeed(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-fuchsia-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round8-console">
+      <div className="font-bold text-fuchsia-200">
+        🔬 Forecast Lab Round 8 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round8-validation">
+        Validation · {validation.status} · mismatches {validation.mismatchCount}
+      </div>
+      <div data-testid="ag21-round8-escalation">
+        Escalation · {escalation.tier} · mode {escalation.operatorMode}
+      </div>
+      <div data-testid="ag21-round8-replay">
+        Replay · {replay.seedId} · {replay.fingerprint.slice(0, 28)}…
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -3407,6 +3708,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21CrosslinkPacketSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21PacketValidationSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21OperatorEscalationSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabReplaySeedSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({
