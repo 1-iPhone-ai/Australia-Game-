@@ -120,6 +120,12 @@ import { nrDashBuildModerateRiskShare } from '../core/moderate-risk-share.ts';
 import { nrDashBuildNationalBottleneckGap } from '../core/national-bottleneck-gap.ts';
 import { nrDashBuildDependencyConsumerSpan } from '../core/dependency-consumer-span.ts';
 import { nrDashBuildMapPulseSpan } from '../core/map-pulse-span.ts';
+import { nrDashBuildLowRiskShare } from '../core/low-risk-share.ts';
+import { nrDashBuildNationalDependencyGap } from '../core/national-dependency-gap.ts';
+import { nrDashBuildDependencyProviderSpan } from '../core/dependency-provider-span.ts';
+import { nrDashBuildEconomyResilienceSpan } from '../core/economy-resilience-span.ts';
+import { nrDashBuildCorridorPulseSpread } from '../core/corridor-pulse-spread.ts';
+import { nrDashBuildHistoryTurnSpan } from '../core/history-turn-span.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -330,10 +336,26 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const lowRisk = nrDashBuildLowRiskShare(lrView);
+      return lowRisk ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-low-risk-share">
+          Low risk share {lowRisk.lowShare} · {lowRisk.lowCount}/{lowRisk.riskCount} risks
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const bnGap = nrDashBuildNationalBottleneckGap(nsState);
       return bnGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-bottleneck-gap">
           National bottleneck gap {bnGap.gap} · national bars {bnGap.nationalBarTotal} vs list {bnGap.activeListCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const depGap = nrDashBuildNationalDependencyGap(nsState, snap);
+      return depGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-dependency-gap">
+          National dependency gap {depGap.gap} · list {depGap.listCount} vs snapshot {depGap.snapshotCount}
         </div>
       ) : null;
     })()}
@@ -521,6 +543,15 @@ export const NrDashRegionsTab: React.FC<{
         return consumerSpan ? (
           <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-consumer-span">
             Dependency consumer span {consumerSpan.spanRatio} · {consumerSpan.distinctConsumers}/{consumerSpan.regionSlots}{' '}
+            slots
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const providerSpan = nrDashBuildDependencyProviderSpan(nsState);
+        return providerSpan ? (
+          <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-provider-span">
+            Dependency provider span {providerSpan.spanRatio} · {providerSpan.distinctProviders}/{providerSpan.regionSlots}{' '}
             slots
           </div>
         ) : null;
@@ -902,7 +933,11 @@ export const NrDashNetworksTab: React.FC<{
   );
 };
 
-export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }) => {
+export const NrDashTrendsTab: React.FC<{
+  snap: NrDashAuthSnapshot;
+  lrView: LivingRegionsWorldView | null;
+  nsState: NationalSystemsState | null;
+}> = ({ snap, lrView, nsState }) => {
   const movers = nrDashTopTrendMovers(snap.regions, 5);
   const coherence = nrDashBuildTrendCoherence(snap);
   const acceleration = nrDashBuildTrendAcceleration(snap);
@@ -987,6 +1022,30 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
             <div>
               rank spread {bandSpan.rankSpread} · min {bandSpan.minRank} · max {bandSpan.maxRank} across{' '}
               {bandSpan.regionCount} regions
+            </div>
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const erSpan = nrDashBuildEconomyResilienceSpan(snap);
+        return erSpan ? (
+          <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-economy-resilience-span">
+            <div className="font-semibold mb-1">Economy ↔ resilience span</div>
+            <div>
+              drift spread {erSpan.driftSpread} · min {erSpan.minDrift} · max {erSpan.maxDrift} across {erSpan.regionCount}{' '}
+              regions
+            </div>
+          </div>
+        ) : null;
+      })()}
+      {(() => {
+        const turnSpan = nrDashBuildHistoryTurnSpan(lrView, nsState);
+        return turnSpan ? (
+          <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-history-turn-span">
+            <div className="font-semibold mb-1">History turn span</div>
+            <div>
+              turn spread {turnSpan.turnSpread} · min R{turnSpan.minTurn} · max R{turnSpan.maxTurn} · {turnSpan.eventCount}{' '}
+              events
             </div>
           </div>
         ) : null;
@@ -1122,6 +1181,15 @@ export const NrDashMapTab: React.FC<{
           </p>
         ) : null;
       })()}
+      {(() => {
+        const corridorPulse = nrDashBuildCorridorPulseSpread(nsState, baseNodes);
+        return corridorPulse && corridorPulse.stdDev > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-corridor-pulse-spread">
+            Corridor pulse spread σ {corridorPulse.stdDev} · μ blend {corridorPulse.meanBlend} · {corridorPulse.corridorCount}{' '}
+            corridors
+          </p>
+        ) : null;
+      })()}
       {hubConc && hubConc.concentrationIndex > 0 && (
         <p className="text-[10px] opacity-75" data-testid="nr-dash-map-hub-concentration">
           Hub score concentration {hubConc.concentrationIndex} · top {hubConc.topRegionId ?? '—'} (
@@ -1234,7 +1302,7 @@ export const NationalRegionalDashboardModal: React.FC<NationalRegionalDashboardM
           ) : tab === 'map' ? (
             <NrDashMapTab snap={snap} nsState={nsState} focusRegionId={focusRegionId} onFocusRegion={onFocusRegion} />
           ) : (
-            <NrDashTrendsTab snap={snap} />
+            <NrDashTrendsTab snap={snap} lrView={lrView} nsState={nsState} />
           )}
         </div>
         <div className={`p-3 border-t ${border} flex justify-end`}>
