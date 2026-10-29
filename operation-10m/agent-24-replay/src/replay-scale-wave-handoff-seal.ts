@@ -94,7 +94,7 @@ export function runAgent24ReplayScaleWaveHandoffSealSelfTests(): Array<{ name: s
   const waveAcceptance = {
     reportId: 'wa',
     matchId: 'self',
-    waveRound: 46,
+    waveRound: 47,
     accepted: true,
     blockerCount: 0,
     blockers: [],
@@ -132,7 +132,7 @@ export function runAgent24ReplayScaleWaveHandoffSealSelfTests(): Array<{ name: s
 
   return [
     { name: 'handoff_ready_when_wave_release_aligned', passed: seal.handoffReady && seal.readyLinkCount === 3 },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 46 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 47 },
     {
       name: 'deterministic_fingerprint',
       passed:

@@ -28,6 +28,7 @@ import {
   O6K_AGENT24_WAVE44_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE47_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 /** @deprecated use integration-closeout WAVE21 constant */
@@ -66,7 +67,9 @@ export function buildAgent24ReplayScaleWaveDryrunHandoffReport(
   const waveRound = input.replayScaleWaveProjectionVerification.waveRound;
   const dryrunBaselineSha =
     input.dryrunBaselineSha ??
-    (waveRound >= 46
+    (waveRound >= 47
+      ? O6K_AGENT24_WAVE47_INTEGRATION_BASELINE_SHA
+      : waveRound >= 46
       ? O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA
       : waveRound >= 45
       ? O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA
@@ -186,8 +189,8 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
   const projectionVerification = {
     reportId: 'pv',
     matchId: 'self',
-    waveRound: 46,
-    projectionBaselineSha: O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA,
+    waveRound: 47,
+    projectionBaselineSha: O6K_AGENT24_WAVE47_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -217,9 +220,9 @@ export function runAgent24ReplayScaleWaveDryrunHandoffSelfTests(): Array<{ name:
       name: 'dryrun_handoff_complete_at_wave32_baseline',
       passed:
         report.handoffComplete &&
-        report.dryrunBaselineSha === O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA,
+        report.dryrunBaselineSha === O6K_AGENT24_WAVE47_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 46 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 47 },
     {
       name: 'deterministic_fingerprint',
       passed:
