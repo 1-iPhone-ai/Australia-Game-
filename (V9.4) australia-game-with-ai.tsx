@@ -136548,7 +136548,8 @@ export const V95_SUITE_GATE_INDEX: Array<{ id: string; gate: 'in' | 'out'; reaso
   { id: 'runStrategyPlannerM5DevTests', gate: 'out', reason: 'Strategy planner M5 harness. Not part of the release gate.' },
   { id: 'runAiCommandCenterM4DevTests', gate: 'out', reason: 'Command center M4 harness. Not part of the release gate.' },
   { id: 'runAiCommandCenterM5DevTests', gate: 'out', reason: 'Command center M5 harness. Not part of the release gate.' },
-  { id: 'runGlobalUISurfaceManagerDevTests', gate: 'out', reason: 'Global UI surface manager harness. Not part of the release gate.' }
+  { id: 'runGlobalUISurfaceManagerDevTests', gate: 'out', reason: 'Global UI surface manager harness. Not part of the release gate.' },
+  { id: 'runO111TransportLayerSelfTests', gate: 'out', reason: 'Operation 111 Agent 35 transportation cross-layer harness. Not part of the release gate.' }
 ];
 
 export function runV95ExistingSuite(spec: V95SuiteSpec): V95CheckResult[] {
@@ -140078,6 +140079,80 @@ export function nationalTransportRoutes(ns: NationalSystemsState, network: Natio
   const links = Object.values(ns.links).filter(l => l.network === network).sort((a, b) => a.id.localeCompare(b.id));
   const headroom: Record<string, number> = Object.fromEntries(links.map(l => [l.id, Math.max(0, l.effectiveCapacity - l.used, l.effectiveCapacity * congestedFloor)]));
   return nsFindPaths(from, links, headroom).map(p => ({ to: p.to, hops: p.hops, linkIds: p.linkIds, path: p.path }));
+}
+
+/** Operation 111 / Agent 35 — merge marker for transportation-layer integration checks. */
+export const O111_TRANSPORT_LAYER_MARKER = 'op111-agent-35-transport-v1';
+
+/** LR project types whose transport capacity feeds national freight through `nationalProjectNetworkEffects`. */
+export function listO111TransportInfrastructureProjectTypes(): string[] {
+  return Object.keys(LR_PROJECT_PROFILE).filter(k => (LR_PROJECT_PROFILE[k].capacity.transport || 0) > 0).sort();
+}
+
+/** Cross-layer invariants for player travel, Living Regions transport, and V10/V10.1 freight (LAB / Agent 111). */
+export function runO111TransportLayerSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
+    catch (err) { results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` }); }
+  };
+  const nsProj = (id: string, regionId: string, projectType: string, status = 'active') => ({ id, title: id, regionId, projectType, status });
+  const fx = createNationalSystemsFixtureInputs;
+  const runNs = (i: NationalSystemsInputs) => computeNationalSystems(i).state;
+  const directCorridorsForIndustries = (f = 10): NationalCorridorDef[] => [
+    { a: 'VIC', b: 'WA', base: { freight: f, energy: 10, digital: 10, trade: 6 }, label: 't' },
+    { a: 'NSW', b: 'VIC', base: { energy: 10, digital: 10 }, label: 't' }
+  ];
+
+  check('o111_tl01_marker', 'Transport layer integration marker is set', () => O111_TRANSPORT_LAYER_MARKER.startsWith('op111-agent-35') || O111_TRANSPORT_LAYER_MARKER);
+  check('o111_tl02_lr_catalog', 'Living Regions transport projects are catalogued for national freight', () => {
+    const types = listO111TransportInfrastructureProjectTypes();
+    return (types.includes('inland_rail_hub') && types.includes('freight_rail_upgrade') && types.length >= 6) || types.join(',');
+  });
+  check('o111_tl03_lr_to_ns', 'LR transport capacity maps to national freight via nationalProjectNetworkEffects', () => {
+    const fxEff = nationalProjectNetworkEffects('inland_rail_hub').find(e => e.network === 'freight');
+    return (Boolean(fxEff) && (fxEff!.capacity > 0) && NATIONAL_NETWORK_LR_CAPACITY.freight === 'transport') || JSON.stringify(fxEff);
+  });
+  check('o111_tl04_adjacency', 'Player travel adjacency graph is symmetric on mainland region codes', () => {
+    const bad: string[] = [];
+    Object.entries(ADJACENT_REGIONS as Record<string, string[]>).forEach(([from, adj]) => {
+      adj.forEach(to => { if (!(ADJACENT_REGIONS as Record<string, string[]>)[to]?.includes(from)) bad.push(`${from}->${to}`); });
+    });
+    return bad.length === 0 || bad.slice(0, 6).join(';');
+  });
+  check('o111_tl05_travel_fare', 'Adjacent player travel uses the canonical $200 base fare (QLD→NSW)', () => {
+    const fare = computeTravelCostCore({ from: 'QLD', to: 'NSW' });
+    return fare === 200 || `fare=${fare}`;
+  });
+  check('o111_tl06_bass_strait', 'Canonical corridors include a Bass Strait freight link for Tasmania', () => {
+    const link = buildNationalCorridors().find(c => (c.a === 'TAS' && c.b === 'VIC') || (c.a === 'VIC' && c.b === 'TAS'));
+    return (Boolean(link) && (link!.base.freight || 0) > 0) || 'missing TAS–VIC corridor';
+  });
+  check('o111_tl07_route_network', 'nationalTransportRoutes only traverses links on the requested network', () => {
+    const ns = runNs(fx({ projects: [nsProj('rail', 'QLD', 'inland_rail_hub')] }));
+    const routes = nationalTransportRoutes(ns, 'freight', 'QLD');
+    const bad = routes.flatMap(r => r.linkIds.filter(id => ns.links[id]?.network !== 'freight'));
+    return (routes.length > 0 && bad.length === 0) || `bad links: ${bad.join(',') || 'no routes'}`;
+  });
+  check('o111_tl08_supply_network', 'Strategic bulk supplies ride the freight network (not invented locally)', () => {
+    const bulk: StrategicSupplyKind[] = ['minerals', 'agricultural_goods', 'manufactured_goods'];
+    return bulk.every(s => SUPPLY_TRANSPORT_NETWORK[s] === 'freight') || JSON.stringify(bulk.map(s => SUPPLY_TRANSPORT_NETWORK[s]));
+  });
+  check('o111_tl09_routes_determinism', 'nationalTransportRoutes is deterministic for identical snapshots', () => {
+    const ns = runNs(fx({ modifiers: { WA: { freight: -20 } } }));
+    const a = nationalTransportRoutes(ns, 'freight', 'WA').map(r => `${r.to}:${r.hops}:${r.path.join('>')}`).join('|');
+    const b = nationalTransportRoutes(ns, 'freight', 'WA').map(r => `${r.to}:${r.hops}:${r.path.join('>')}`).join('|');
+    return a === b || `${a} vs ${b}`;
+  });
+  check('o111_tl10_null_national', 'V10.1 supply chains do not invent interregional routes without a V10 snapshot', () => {
+    const w = createIndustriesFixtureWorld({ sectors: { VIC: { manufacturing: 80 } }, corridors: directCorridorsForIndustries(10), modifiers: { WA: { mining: 90 } } as IndustriesInputs['modifiers'] });
+    const withNs = computeIndustriesSupplyChains(w.ii).state;
+    const noNs = computeIndustriesSupplyChains({ ...w.ii, national: null }).state;
+    const importedWith = noNs.supplies.VIC?.find(x => x.supply === 'minerals')?.imported || 0;
+    const importedHas = withNs.supplies.VIC?.find(x => x.supply === 'minerals')?.imported || 0;
+    return (importedWith === 0 && importedHas > 0) || `${importedWith} vs ${importedHas}`;
+  });
+  return results;
 }
 
 /** Compact, order-stable digest of everything V10.1 reads (own inputs + the V10.0 structure it rides on). */
