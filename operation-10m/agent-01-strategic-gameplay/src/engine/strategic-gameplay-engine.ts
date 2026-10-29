@@ -8,6 +8,10 @@ import type {
   StrategicGameplayState,
 } from '../types/strategic-action.ts';
 import {
+  appendJournalEntry,
+  DEFAULT_MAX_PENDING_TRADE_OFFS,
+} from './commitment-journal.ts';
+import {
   applyDomainEffects,
   scheduleDelayedTradeOffs,
 } from './delayed-effects.ts';
@@ -22,6 +26,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     day,
     pendingDelayed: [],
     completedActionIds: [],
+    journal: [],
     activeChoice: null,
   };
 }
@@ -108,9 +113,12 @@ export function executeStrategicAction(
   contracts: StrategicGameplayContracts,
   budget: PlayerActionBudget,
   priorityCtx: NationalPriorityRankingContext | null,
-  options?: { delayDays?: number },
+  options?: { delayDays?: number; maxPendingTradeOffs?: number },
 ): ExecuteActionResult {
-  const issues = validateAction(action, contracts, budget);
+  const maxPending = options?.maxPendingTradeOffs ?? DEFAULT_MAX_PENDING_TRADE_OFFS;
+  const issues = validateAction(action, contracts, budget, [], state, {
+    maxPendingTradeOffs: maxPending,
+  });
   if (issues.length > 0) return { ok: false, issues, state };
 
   applyDomainEffects(contracts, action.immediateEffects);
@@ -133,6 +141,12 @@ export function executeStrategicAction(
     ...nextState,
     completedActionIds: [...nextState.completedActionIds, action.id],
   };
+  nextState = appendJournalEntry(
+    nextState,
+    action,
+    alignment?.band ?? null,
+    action.delayedTradeOffs.length,
+  );
 
   contracts.ui.pushToast({
     id: `action_${action.id}_${state.day}`,

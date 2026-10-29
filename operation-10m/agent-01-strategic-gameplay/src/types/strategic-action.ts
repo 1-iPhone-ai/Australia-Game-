@@ -2,7 +2,10 @@ import type { EconomyPatch } from '../contracts/economy.ts';
 import type { GovernancePatch } from '../contracts/government.ts';
 import type { PopulationPatch } from '../contracts/population.ts';
 import type { TechPatch } from '../contracts/tech.ts';
-import type { NationalPriorityId } from './national-priority.ts';
+import type {
+  NationalPriorityAlignmentBand,
+  NationalPriorityId,
+} from './national-priority.ts';
 
 export type StrategicActionCategory =
   | 'investment'
@@ -41,6 +44,10 @@ export interface StrategicActionDefinition {
   immediateEffects: DomainEffectBundle;
   delayedTradeOffs: Omit<DelayedTradeOff, 'id' | 'firesOnDay' | 'sourceActionId'>[];
   tags: string[];
+  /** When false, action may run only once per save (default true). */
+  repeatable?: boolean;
+  /** Optional cap guard — validated against gameplay state pending queue. */
+  requiresMaxPendingTradeOffs?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -74,7 +81,9 @@ export type StrategicValidationRequirement =
   | { kind: 'max_affordability_stress'; max: number }
   | { kind: 'tech_readiness'; track: import('../contracts/tech.ts').TechTrackId; min: number }
   | { kind: 'no_investment_lockout' }
-  | { kind: 'directive_slot_available' };
+  | { kind: 'directive_slot_available' }
+  | { kind: 'max_pending_tradeoffs'; max: number }
+  | { kind: 'action_not_yet_completed'; actionId: string };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -87,14 +96,32 @@ export interface PlayerActionBudget {
   actionsPerTurn: number;
 }
 
+export interface StrategicActionJournalEntry {
+  day: number;
+  actionId: string;
+  title: string;
+  alignmentBand: NationalPriorityAlignmentBand | null;
+  scheduledTradeOffCount: number;
+}
+
 export interface StrategicGameplayState {
   day: number;
   pendingDelayed: DelayedTradeOff[];
   completedActionIds: string[];
+  journal: StrategicActionJournalEntry[];
   activeChoice: {
     choiceId: string;
     stageId: string;
   } | null;
+}
+
+export interface StrategicActionRecommendation {
+  actionId: string;
+  title: string;
+  feasible: boolean;
+  alignmentScore: number;
+  alignmentBand: NationalPriorityAlignmentBand | 'unknown';
+  blockerCodes: string[];
 }
 
 export interface ExecuteActionResult {

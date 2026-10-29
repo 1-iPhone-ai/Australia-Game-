@@ -12,6 +12,16 @@ export {
 } from './engine/delayed-effects.ts';
 
 export {
+  actionAlreadyCompleted,
+  appendJournalEntry,
+  computeCommitmentPressure,
+  DEFAULT_MAX_PENDING_TRADE_OFFS,
+  pendingTradeOffCount,
+} from './engine/commitment-journal.ts';
+
+export { rankStrategicActions } from './engine/strategic-recommendations.ts';
+
+export {
   scoreNationalPriorityAlignment,
   validateAction,
   validateChoiceOption,
@@ -36,4 +46,4 @@ export {
 export { createMemoryStrategicContracts } from './adapters/memory-contracts.ts';
 
 export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
-export const AGENT_01_MODULE_VERSION = '1.0.0';
+export const AGENT_01_MODULE_VERSION = '1.1.0';

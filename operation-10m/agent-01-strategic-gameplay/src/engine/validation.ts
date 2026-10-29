@@ -7,9 +7,14 @@ import type {
   MultiStageChoiceDefinition,
   PlayerActionBudget,
   StrategicActionDefinition,
+  StrategicGameplayState,
   StrategicValidationIssue,
   StrategicValidationRequirement,
 } from '../types/strategic-action.ts';
+import {
+  actionAlreadyCompleted,
+  pendingTradeOffCount,
+} from './commitment-journal.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -19,6 +24,8 @@ export function evaluateRequirements(
     StrategicActionDefinition,
     'apCost' | 'cashCost' | 'treasuryCost' | 'minApproval'
   >,
+  state?: StrategicGameplayState,
+  options?: { maxPendingTradeOffs?: number },
 ): StrategicValidationIssue[] {
   const issues: StrategicValidationIssue[] = [];
   const econ = contracts.economy.snapshot();
@@ -115,6 +122,24 @@ export function evaluateRequirements(
           });
         }
         break;
+      case 'max_pending_tradeoffs':
+        if (state && pendingTradeOffCount(state) >= req.max) {
+          issues.push({
+            code: 'TOO_MANY_PENDING_TRADEOFFS',
+            message: `Cannot schedule more than ${req.max} delayed trade-offs.`,
+            requirement: req,
+          });
+        }
+        break;
+      case 'action_not_yet_completed':
+        if (state && !actionAlreadyCompleted(state, req.actionId)) {
+          issues.push({
+            code: 'PREREQUISITE_ACTION',
+            message: `Requires completing ${req.actionId} first.`,
+            requirement: req,
+          });
+        }
+        break;
       default:
         break;
     }
@@ -128,8 +153,37 @@ export function validateAction(
   contracts: StrategicGameplayContracts,
   budget: PlayerActionBudget,
   extraRequirements: StrategicValidationRequirement[] = [],
+  state?: StrategicGameplayState,
+  options?: { maxPendingTradeOffs?: number },
 ): StrategicValidationIssue[] {
-  return evaluateRequirements(extraRequirements, contracts, budget, action);
+  const issues = evaluateRequirements(
+    extraRequirements,
+    contracts,
+    budget,
+    action,
+    state,
+    options,
+  );
+
+  if (state && action.repeatable === false && actionAlreadyCompleted(state, action.id)) {
+    issues.push({
+      code: 'ALREADY_COMPLETED',
+      message: `${action.title} cannot be repeated.`,
+      requirement: { kind: 'action_not_yet_completed', actionId: action.id },
+    });
+  }
+
+  const maxPending =
+    action.requiresMaxPendingTradeOffs ?? options?.maxPendingTradeOffs;
+  if (state && maxPending !== undefined && pendingTradeOffCount(state) >= maxPending) {
+    issues.push({
+      code: 'TOO_MANY_PENDING_TRADEOFFS',
+      message: `Delayed trade-off queue full (max ${maxPending}).`,
+      requirement: { kind: 'max_pending_tradeoffs', max: maxPending },
+    });
+  }
+
+  return issues;
 }
 
 export function validateChoiceOption(
