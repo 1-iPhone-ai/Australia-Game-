@@ -117,7 +117,7 @@ describe('scale wave round 11 — integrated coalition maturity', () => {
       integratedCoalitionMaturityStreakDays: 4,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(16);
+    expect(save.version).toBe(17);
     expect(save.integratedCoalitionMaturityStreakDays).toBe(4);
   });
 });

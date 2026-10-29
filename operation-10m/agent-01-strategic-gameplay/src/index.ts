@@ -106,6 +106,7 @@ export {
   civilizationalEnduranceRankingBonus,
   transcendentLegacyRankingBonus,
   sovereignContinuumRankingBonus,
+  eternalAscendanceRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -281,6 +282,16 @@ export {
   applySovereignContinuumMandateBonus,
 } from './engine/coalition-sovereign-continuum.ts';
 
+export { coalitionEternalAscendanceStreakIssues } from './engine/coalition-eternal-ascendance-gates.ts';
+
+export {
+  ETERNAL_COALITION_ASCENDANCE_THRESHOLD,
+  advanceCoalitionEternalAscendanceStreak,
+  resetCoalitionEternalAscendanceStreak,
+  isEternalCoalitionAscendance,
+  applyEternalAscendanceMandateBonus,
+} from './engine/coalition-eternal-ascendance.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '2.8.0';
+export const AGENT_01_MODULE_VERSION = '2.9.0';

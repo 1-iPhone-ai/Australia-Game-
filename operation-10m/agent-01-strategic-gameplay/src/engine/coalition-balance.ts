@@ -158,3 +158,13 @@ export function sovereignContinuumRankingBonus(
   if (streak >= action.minCoalitionSovereignContinuumStreakDays) return 11;
   return 2;
 }
+
+export function eternalAscendanceRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionEternalAscendanceStreakDays === undefined) return 0;
+  const streak = state.coalitionEternalAscendanceStreakDays ?? 0;
+  if (streak >= action.minCoalitionEternalAscendanceStreakDays) return 12;
+  return 2;
+}

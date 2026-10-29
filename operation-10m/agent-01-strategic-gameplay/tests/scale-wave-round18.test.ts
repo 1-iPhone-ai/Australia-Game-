@@ -116,7 +116,7 @@ describe('scale wave round 18 — sovereign coalition continuum', () => {
       coalitionSovereignContinuumStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(16);
+    expect(save.version).toBe(17);
     expect(save.coalitionSovereignContinuumStreakDays).toBe(5);
   });
 });
