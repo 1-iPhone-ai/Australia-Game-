@@ -4,6 +4,8 @@ import { gtelClamp, gtelNum } from './util.ts';
 import { sanitizePartnerSanctionRegime } from './sanctions.ts';
 import { createEmptyTradeComplianceRecord, sanitizeTradeComplianceRecord } from './trade-compliance.ts';
 import { sanitizeImportDependencySmoothing } from './import-dependency.ts';
+import { sanitizePartnerMixSmoothing } from './market-diversification.ts';
+import { sanitizeTradeFinanceSmoothing } from './trade-finance.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -26,6 +28,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     tradeCompliance: createEmptyTradeComplianceRecord(),
     importDependencySmoothing: {},
     diplomaticEngagement: {},
+    tradeFinanceSmoothing: 0.62,
+    partnerMixSmoothing: {},
   };
 }
 
@@ -178,5 +182,7 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
       };
     });
   }
+  base.tradeFinanceSmoothing = sanitizeTradeFinanceSmoothing(r.tradeFinanceSmoothing);
+  base.partnerMixSmoothing = sanitizePartnerMixSmoothing(r.partnerMixSmoothing);
   return base;
 }

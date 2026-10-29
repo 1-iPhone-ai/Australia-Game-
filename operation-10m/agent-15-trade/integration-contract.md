@@ -14,6 +14,8 @@ Deterministic **global trade economy linkage (GTEL)** between:
 - **Domestic consequences** (regional employment / price / stability spillover)
 - **Import dependency** (commodity import exposure vs partner access)
 - **Diplomatic engagement tracks** (momentum, summit pulse, outreach events)
+- **Trade finance** (export credit availability, financing premium, smoothed persist)
+- **Market diversification** (partner concentration index, mix memory, spillover stress)
 
 ## Merge targets (Agent 25)
 

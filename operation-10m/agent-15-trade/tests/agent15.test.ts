@@ -43,7 +43,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 17);
+  assert.ok(r.passed >= 19);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -197,4 +197,48 @@ test('round 4: blocked partner elevates import risk band', () => {
     persisted,
   });
   assert.ok(['elevated', 'critical', 'moderate'].includes(r.state.importDependency.band));
+});
+
+test('round 5: trade finance and market diversification on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.partnerMixSmoothing = {
+    asia_pacific: 0.68,
+    india_ocean: 0.1,
+    north_america: 0.1,
+    europe: 0.08,
+  };
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 24,
+    diplomacyState: {
+      deals: [{ id: 'v', type: 'resource_trade', status: 'violated', participants: ['player', 'ai'], compliance: 'violated' }],
+      events: [{ kind: 'violation', turn: 23, text: 'breach' }],
+    },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 150 } } },
+    persisted,
+  });
+  assert.ok(r.state.tradeFinance);
+  assert.ok(['fluid', 'watch', 'tight', 'frozen'].includes(r.state.tradeFinance.band));
+  assert.ok(r.state.marketDiversification);
+  assert.equal(typeof r.state.marketDiversification.concentrationIndex, 'number');
+  assert.ok(r.persisted.tradeFinanceSmoothing != null);
+  assert.ok(r.persisted.partnerMixSmoothing);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Export finance/i.test(n)));
+  assert.ok(notes.some(n => /Market diversification/i.test(n)));
+});
+
+test('round 5: congested logistics lowers finance-scaled throughput', () => {
+  const healthy = advanceGlobalTradeEconomyTurn({
+    turn: 26,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 90 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  const critical = advanceGlobalTradeEconomyTurn({
+    turn: 26,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 90 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  assert.ok(critical.state.exportThroughput <= healthy.state.exportThroughput + 0.01);
 });

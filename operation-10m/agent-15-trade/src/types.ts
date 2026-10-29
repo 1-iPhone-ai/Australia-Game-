@@ -118,6 +118,10 @@ export interface GTELPersisted {
   diplomaticEngagement: Partial<
     Record<GTELPartnerId, { momentum: number; lastEventTurn: number; highlights?: string[] }>
   >;
+  /** Smoothed export credit availability (0–1). */
+  tradeFinanceSmoothing?: number;
+  /** Smoothed partner export mix shares. */
+  partnerMixSmoothing?: Partial<Record<GTELPartnerId, number>>;
 }
 
 export interface GTELState {
@@ -139,6 +143,8 @@ export interface GTELState {
   tradeCompliance: TradeComplianceRecord;
   importDependency: GTELImportDependencySnapshot;
   diplomaticEngagement: GTELDiplomaticEngagementState;
+  tradeFinance: GTELTradeFinanceSnapshot;
+  marketDiversification: GTELMarketDiversificationSnapshot;
   inputHash: string;
 }
 
@@ -343,6 +349,26 @@ export interface DiplomaticEngagementTrack {
 export interface GTELDiplomaticEngagementState {
   tracks: Partial<Record<GTELPartnerId, DiplomaticEngagementTrack>>;
   summitPulse: number;
+  summary: string;
+}
+
+export type GTELTradeFinanceBand = 'fluid' | 'watch' | 'tight' | 'frozen';
+
+export interface GTELTradeFinanceSnapshot {
+  availabilityScore: number;
+  band: GTELTradeFinanceBand;
+  financingPremium: number;
+  exportCreditCeiling: number;
+  summary: string;
+}
+
+export type GTELDiversificationBand = 'well_spread' | 'moderate' | 'concentrated' | 'critical';
+
+export interface GTELMarketDiversificationSnapshot {
+  concentrationIndex: number;
+  band: GTELDiversificationBand;
+  dominantPartnerId: GTELPartnerId | null;
+  effectivePartnerCount: number;
   summary: string;
 }
 

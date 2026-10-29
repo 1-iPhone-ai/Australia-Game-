@@ -122,6 +122,10 @@ export interface GTELPersisted {
   diplomaticEngagement: Partial<
     Record<GTELPartnerId, { momentum: number; lastEventTurn: number; highlights?: string[] }>
   >;
+  /** Smoothed export credit availability (0–1). */
+  tradeFinanceSmoothing?: number;
+  /** Smoothed partner export mix shares. */
+  partnerMixSmoothing?: Partial<Record<GTELPartnerId, number>>;
 }
 
 export interface GTELState {
@@ -143,6 +147,8 @@ export interface GTELState {
   tradeCompliance: TradeComplianceRecord;
   importDependency: GTELImportDependencySnapshot;
   diplomaticEngagement: GTELDiplomaticEngagementState;
+  tradeFinance: GTELTradeFinanceSnapshot;
+  marketDiversification: GTELMarketDiversificationSnapshot;
   inputHash: string;
 }
 
@@ -350,6 +356,26 @@ export interface GTELDiplomaticEngagementState {
   summary: string;
 }
 
+export type GTELTradeFinanceBand = 'fluid' | 'watch' | 'tight' | 'frozen';
+
+export interface GTELTradeFinanceSnapshot {
+  availabilityScore: number;
+  band: GTELTradeFinanceBand;
+  financingPremium: number;
+  exportCreditCeiling: number;
+  summary: string;
+}
+
+export type GTELDiversificationBand = 'well_spread' | 'moderate' | 'concentrated' | 'critical';
+
+export interface GTELMarketDiversificationSnapshot {
+  concentrationIndex: number;
+  band: GTELDiversificationBand;
+  dominantPartnerId: GTELPartnerId | null;
+  effectivePartnerCount: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -503,6 +529,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     tradeCompliance: createEmptyTradeComplianceRecord(),
     importDependencySmoothing: {},
     diplomaticEngagement: {},
+    tradeFinanceSmoothing: 0.62,
+    partnerMixSmoothing: {},
   };
 }
 
@@ -655,6 +683,8 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
       };
     });
   }
+  base.tradeFinanceSmoothing = sanitizeTradeFinanceSmoothing(r.tradeFinanceSmoothing);
+  base.partnerMixSmoothing = sanitizePartnerMixSmoothing(r.partnerMixSmoothing);
   return base;
 }
 
@@ -2601,6 +2631,17 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   importDependencyConsumerPressure,
   importDependencyGiNotes,
 } from './import-dependency.ts';
+  advancePartnerMixMemory,
+  computeMarketDiversificationSnapshot,
+  deriveDiversificationPartnerModifiers,
+  diversificationWorldEvent,
+  marketDiversificationGiNotes,
+} from './market-diversification.ts';
+  computeTradeFinanceSnapshot,
+  tradeFinanceDomesticStress,
+  tradeFinanceExportScale,
+  tradeFinanceGiNotes,
+} from './trade-finance.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -2783,6 +2824,26 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     exportThroughput: net.throughput,
   });
 
+  persisted = advancePartnerMixMemory(partners, persisted);
+  const marketDiversification = computeMarketDiversificationSnapshot({ partners, persisted });
+  const diversificationMods = deriveDiversificationPartnerModifiers(marketDiversification);
+  const diversificationEvent = diversificationWorldEvent(marketDiversification, turn);
+  if (diversificationEvent) worldEvents.push(diversificationEvent);
+
+  const activeSanctionCount = Object.values(sanctions.activeTiers).filter(t => t && t !== 'none').length;
+  const financeStep = computeTradeFinanceSnapshot({
+    logistics,
+    tradeBalance,
+    tradeCompliance: persisted.tradeCompliance,
+    openDisputeCount: openDisputes,
+    activeSanctionCount,
+    persisted,
+  });
+  persisted = financeStep.persisted;
+  const tradeFinance = financeStep.snapshot;
+  const financeScaledThroughput =
+    Math.round(logistics.effectiveExportThroughput * tradeFinanceExportScale(tradeFinance) * 10) / 10;
+
   const dependencyStep = computeImportDependencySnapshot({ partners, commodities, persisted });
   persisted = dependencyStep.persisted;
   const importDependency = dependencyStep.snapshot;
@@ -2832,7 +2893,9 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       shock.domesticStress +
       sanctions.domesticStress +
       Math.max(0, policy.domesticStress) +
-      importPressure,
+      importPressure +
+      diversificationMods.domesticStress +
+      tradeFinanceDomesticStress(tradeFinance),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -2851,6 +2914,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.tradeCompliance?.score,
     persisted.importDependencySmoothing,
     engagementStep.state.summitPulse,
+    persisted.tradeFinanceSmoothing,
+    persisted.partnerMixSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -2889,7 +2954,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     domestic,
     regionalImpacts,
     nationalTradeCondition: net.condition,
-    exportThroughput: logistics.effectiveExportThroughput,
+    exportThroughput: financeScaledThroughput,
     diplomacyTradeDealsActive: gtelActiveDeals(input.diplomacyState).filter(d => d.type === 'resource_trade').length,
     violationsLastWindow: gtelRecentViolations(input.diplomacyState, turn),
     activeSanctionTiers: sanctions.activeTiers,
@@ -2901,6 +2966,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     tradeCompliance: persisted.tradeCompliance,
     importDependency,
     diplomaticEngagement: engagementStep.state,
+    tradeFinance,
+    marketDiversification,
     inputHash,
   };
 
@@ -2930,6 +2997,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...tradeBalanceGiNotes(state.tradeBalance));
   lines.push(...importDependencyGiNotes(state.importDependency));
   lines.push(...diplomaticEngagementGiNotes(state.diplomaticEngagement));
+  lines.push(...tradeFinanceGiNotes(state.tradeFinance));
+  lines.push(...marketDiversificationGiNotes(state.marketDiversification));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -2942,6 +3011,9 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   deriveTradeAgreementModifiers,
   ratifyTradeAgreement,
 } from './trade-agreements.ts';
+  computeMarketDiversificationSnapshot,
+  deriveDiversificationPartnerModifiers,
+} from './market-diversification.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -3243,6 +3315,62 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(asiaTrack!.momentum > 0.45, 'expected engagement momentum lift');
     const mods = deriveEngagementPartnerModifiers(step.state);
     gtelAssert((mods.partnerDeltas.asia_pacific || 0) >= 0, 'asia engagement should not penalize active deal');
+  });
+
+  ok('trade finance tightens under congested logistics', () => {
+    const partners = GTEL_PARTNER_DEFS.map(p => ({ ...p, access: 'normal' as const, accessScore: 0.55 }));
+    const logistics = computeLogisticsStress({
+      nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 140 } } },
+      partners,
+      exportThroughput: 140,
+      openDisputeCount: 2,
+    });
+    const balance = computeTradeBalanceSnapshot({
+      commodities: GTEL_COMMODITIES.map(c => ({
+        commodity: c,
+        baseIndex: 100,
+        partnerModifier: 0,
+        diplomacyModifier: 0,
+        networkModifier: 0,
+        shockModifier: 0,
+        agreementModifier: 0,
+        effectiveIndex: 102,
+        trend: 'stable' as const,
+        evidence: [],
+      })),
+      partners,
+      logistics,
+      exportThroughput: 140,
+    });
+    const step = computeTradeFinanceSnapshot({
+      logistics,
+      tradeBalance: balance,
+      tradeCompliance: createEmptyGTELPersisted().tradeCompliance,
+      openDisputeCount: 2,
+      activeSanctionCount: 1,
+      persisted: createEmptyGTELPersisted(),
+    });
+    gtelAssert(step.snapshot.band !== 'fluid', 'expected non-fluid finance under stress');
+    gtelAssert(step.snapshot.financingPremium > 0.35, 'expected financing premium');
+  });
+
+  ok('market diversification flags concentrated partner mix', () => {
+    const persisted = createEmptyGTELPersisted();
+    persisted.partnerMixSmoothing = {
+      asia_pacific: 0.78,
+      india_ocean: 0.07,
+      north_america: 0.07,
+      europe: 0.06,
+    };
+    const partners = GTEL_PARTNER_DEFS.map(p => ({
+      ...p,
+      access: p.id === 'asia_pacific' ? ('blocked' as const) : ('normal' as const),
+      accessScore: p.id === 'asia_pacific' ? 0.12 : 0.5,
+    }));
+    const snapshot = computeMarketDiversificationSnapshot({ partners, persisted });
+    gtelAssert(snapshot.band === 'concentrated' || snapshot.band === 'critical', 'expected concentration band');
+    const mods = deriveDiversificationPartnerModifiers(snapshot);
+    gtelAssert(mods.domesticStress > 0, 'expected diversification domestic stress');
   });
 
   return { passed, failed };

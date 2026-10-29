@@ -42,6 +42,19 @@ import {
   importDependencyGiNotes,
 } from './import-dependency.ts';
 import {
+  advancePartnerMixMemory,
+  computeMarketDiversificationSnapshot,
+  deriveDiversificationPartnerModifiers,
+  diversificationWorldEvent,
+  marketDiversificationGiNotes,
+} from './market-diversification.ts';
+import {
+  computeTradeFinanceSnapshot,
+  tradeFinanceDomesticStress,
+  tradeFinanceExportScale,
+  tradeFinanceGiNotes,
+} from './trade-finance.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -227,6 +240,26 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     exportThroughput: net.throughput,
   });
 
+  persisted = advancePartnerMixMemory(partners, persisted);
+  const marketDiversification = computeMarketDiversificationSnapshot({ partners, persisted });
+  const diversificationMods = deriveDiversificationPartnerModifiers(marketDiversification);
+  const diversificationEvent = diversificationWorldEvent(marketDiversification, turn);
+  if (diversificationEvent) worldEvents.push(diversificationEvent);
+
+  const activeSanctionCount = Object.values(sanctions.activeTiers).filter(t => t && t !== 'none').length;
+  const financeStep = computeTradeFinanceSnapshot({
+    logistics,
+    tradeBalance,
+    tradeCompliance: persisted.tradeCompliance,
+    openDisputeCount: openDisputes,
+    activeSanctionCount,
+    persisted,
+  });
+  persisted = financeStep.persisted;
+  const tradeFinance = financeStep.snapshot;
+  const financeScaledThroughput =
+    Math.round(logistics.effectiveExportThroughput * tradeFinanceExportScale(tradeFinance) * 10) / 10;
+
   const dependencyStep = computeImportDependencySnapshot({ partners, commodities, persisted });
   persisted = dependencyStep.persisted;
   const importDependency = dependencyStep.snapshot;
@@ -276,7 +309,9 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       shock.domesticStress +
       sanctions.domesticStress +
       Math.max(0, policy.domesticStress) +
-      importPressure,
+      importPressure +
+      diversificationMods.domesticStress +
+      tradeFinanceDomesticStress(tradeFinance),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -295,6 +330,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.tradeCompliance?.score,
     persisted.importDependencySmoothing,
     engagementStep.state.summitPulse,
+    persisted.tradeFinanceSmoothing,
+    persisted.partnerMixSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -333,7 +370,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     domestic,
     regionalImpacts,
     nationalTradeCondition: net.condition,
-    exportThroughput: logistics.effectiveExportThroughput,
+    exportThroughput: financeScaledThroughput,
     diplomacyTradeDealsActive: gtelActiveDeals(input.diplomacyState).filter(d => d.type === 'resource_trade').length,
     violationsLastWindow: gtelRecentViolations(input.diplomacyState, turn),
     activeSanctionTiers: sanctions.activeTiers,
@@ -345,6 +382,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     tradeCompliance: persisted.tradeCompliance,
     importDependency,
     diplomaticEngagement: engagementStep.state,
+    tradeFinance,
+    marketDiversification,
     inputHash,
   };
 
@@ -374,6 +413,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...tradeBalanceGiNotes(state.tradeBalance));
   lines.push(...importDependencyGiNotes(state.importDependency));
   lines.push(...diplomaticEngagementGiNotes(state.diplomaticEngagement));
+  lines.push(...tradeFinanceGiNotes(state.tradeFinance));
+  lines.push(...marketDiversificationGiNotes(state.marketDiversification));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }

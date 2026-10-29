@@ -22,6 +22,8 @@ npm run build:agent15-chunk
 | `diplomacy-linkage.ts` | Deal → partner/commodity deltas |
 | `import-dependency.ts` | Import exposure snapshot & domestic CPI pressure |
 | `diplomatic-engagement.ts` | Partner engagement tracks & summit pulse |
+| `trade-finance.ts` | Export credit availability & financing premium |
+| `market-diversification.ts` | Partner concentration & mix memory |
 | `household-bridge.ts` | Household economy input overrides |
 
 See `integration-contract.md`.
