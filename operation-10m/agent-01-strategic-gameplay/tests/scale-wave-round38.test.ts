@@ -156,7 +156,7 @@ describe('scale wave round 38 — imperial coalition perpetuity', () => {
       coalitionImperialPerpetuityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(42);
+    expect(save.version).toBe(43);
     expect(save.coalitionImperialPerpetuityStreakDays).toBe(5);
   });
 });

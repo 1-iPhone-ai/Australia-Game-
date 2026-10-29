@@ -136,7 +136,7 @@ describe('scale wave round 28 — multiversal coalition persistence', () => {
       coalitionMultiversalPersistenceStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(42);
+    expect(save.version).toBe(43);
     expect(save.coalitionMultiversalPersistenceStreakDays).toBe(5);
   });
 });

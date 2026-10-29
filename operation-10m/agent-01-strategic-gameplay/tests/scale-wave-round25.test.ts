@@ -128,7 +128,7 @@ describe('scale wave round 25 — galactic coalition infinity', () => {
       coalitionGalacticInfinityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(42);
+    expect(save.version).toBe(43);
     expect(save.coalitionGalacticInfinityStreakDays).toBe(5);
   });
 });

@@ -418,3 +418,13 @@ export function exarchAscendancyRankingBonus(
   if (streak >= action.minCoalitionExarchAscendancyStreakDays) return 37;
   return 2;
 }
+
+export function primarchPerpetuityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionPrimarchPerpetuityStreakDays === undefined) return 0;
+  const streak = state.coalitionPrimarchPerpetuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionPrimarchPerpetuityStreakDays) return 38;
+  return 2;
+}

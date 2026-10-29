@@ -120,7 +120,7 @@ describe('scale wave round 8 — sustained recovery and coalition volatility', (
       coalitionVolatilityEvents: 3,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(42);
+    expect(save.version).toBe(43);
     expect(save.coalitionVolatilityEvents).toBe(3);
   });
 });
