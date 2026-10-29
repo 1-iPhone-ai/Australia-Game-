@@ -12557,6 +12557,289 @@ export function zenithRecoveryOrchestratorWithinCap(report: ZenithRecoveryOrches
 }
 
 
+// --- source: match-explainability-summit-bundle.ts ---
+  auditMatchExplainabilitySummitGate,
+  matchExplainabilitySummitAllowed,
+} from './match-explainability-summit-gate.ts';
+  buildMatchExplainabilityZenithBundle,
+  matchExplainabilityZenithReady,
+} from './match-explainability-zenith-bundle.ts';
+  buildSessionZenithExportBundle,
+  sessionZenithExportShipped,
+} from './session-zenith-export-bundle.ts';
+
+export const AGENT19_SUMMIT_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilitySummitBundle {
+  summitReady: boolean;
+  summitAllowed: boolean;
+  zenithReady: boolean;
+  zenithExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type SummitParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Summit bundle: summit gate and zenith export must both be green. */
+export function buildMatchExplainabilitySummitBundle(
+  packs: TurnExplainabilityPack[],
+  params: SummitParams,
+): MatchExplainabilitySummitBundle {
+  const summit = auditMatchExplainabilitySummitGate(packs, params);
+  const zenith = buildMatchExplainabilityZenithBundle(packs, params);
+  const zenithExport = buildSessionZenithExportBundle(packs, params);
+  const summitAllowed = matchExplainabilitySummitAllowed(summit);
+  const zenithReady = matchExplainabilityZenithReady(zenith);
+  const zenithExportShipped = sessionZenithExportShipped(zenithExport);
+  const summitReady = summitAllowed && zenithReady && zenithExportShipped;
+  const narrativeLines = [
+    `Match explainability summit bundle: ${summitReady ? 'READY' : 'PENDING'} (gate ${summitAllowed ? 'ok' : 'fail'}, zenith ${zenithReady ? 'ok' : 'fail'}).`,
+    ...summit.narrativeLines.slice(0, 2),
+    ...zenith.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_SUMMIT_NARRATIVE_CAP);
+  return {
+    summitReady,
+    summitAllowed,
+    zenithReady,
+    zenithExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilitySummitReady(bundle: MatchExplainabilitySummitBundle): boolean {
+  return bundle.summitReady;
+}
+
+
+// --- source: session-summit-export-bundle.ts ---
+  buildSessionZenithExportBundle,
+  type SessionZenithExportBundle,
+} from './session-zenith-export-bundle.ts';
+  buildMatchExplainabilitySummitBundle,
+  matchExplainabilitySummitReady,
+} from './match-explainability-summit-bundle.ts';
+
+export interface SessionSummitExportBundle extends SessionZenithExportBundle {
+  summitReady: boolean;
+  summitSchema: string;
+}
+
+/** Summit export wraps zenith export when summit bundle is ready. */
+export function buildSessionSummitExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionSummitExportBundle {
+  const base = buildSessionZenithExportBundle(packs, params);
+  const summit = buildMatchExplainabilitySummitBundle(packs, params);
+  const summitReady = matchExplainabilitySummitReady(summit);
+  const exports = summitReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    summitReady,
+    summitSchema: 'agent19.summit.v1',
+    releaseReady: summitReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Summit export: ${summitReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionSummitExportShipped(bundle: SessionSummitExportBundle): boolean {
+  return bundle.summitReady && bundle.exports.length > 0 && bundle.summitSchema === 'agent19.summit.v1';
+}
+
+
+// --- source: zenith-summit-bridge.ts ---
+  buildMatchExplainabilitySummitBundle,
+  matchExplainabilitySummitReady,
+} from './match-explainability-summit-bundle.ts';
+  buildMatchExplainabilityZenithBundle,
+  matchExplainabilityZenithReady,
+} from './match-explainability-zenith-bundle.ts';
+
+export interface ZenithSummitBridgeReport {
+  aligned: boolean;
+  summitReady: boolean;
+  zenithReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Summit-ready should match zenith-ready when zenith export stack passes. */
+export function auditZenithSummitBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): ZenithSummitBridgeReport {
+  const summit = buildMatchExplainabilitySummitBundle(packs, params);
+  const zenith = buildMatchExplainabilityZenithBundle(packs, params);
+  const summitReady = matchExplainabilitySummitReady(summit);
+  const zenithReady = matchExplainabilityZenithReady(zenith);
+  const aligned = summitReady === zenithReady;
+  const narrativeLines = [
+    `Zenith/summit bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (summit ${summitReady ? 'ok' : 'fail'}, zenith ${zenithReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, summitReady, zenithReady, narrativeLines };
+}
+
+export function zenithSummitBridgeHealthy(report: ZenithSummitBridgeReport): boolean {
+  return report.summitReady && report.zenithReady && report.aligned;
+}
+
+
+// --- source: match-explainability-acme-gate.ts ---
+  buildMatchExplainabilitySummitBundle,
+  matchExplainabilitySummitReady,
+} from './match-explainability-summit-bundle.ts';
+  buildSessionSummitExportBundle,
+  sessionSummitExportShipped,
+} from './session-summit-export-bundle.ts';
+
+export interface MatchExplainabilityAcmeGateReport {
+  acmeAllowed: boolean;
+  summitReady: boolean;
+  summitExportShipped: boolean;
+  zenithSummitHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Acme gate: summit bundle + summit export + zenith/summit bridge. */
+export function auditMatchExplainabilityAcmeGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityAcmeGateReport {
+  const summit = buildMatchExplainabilitySummitBundle(packs, params);
+  const summitExport = buildSessionSummitExportBundle(packs, params);
+  const bridge = auditZenithSummitBridge(packs, params);
+  const summitReady = matchExplainabilitySummitReady(summit);
+  const summitExportShipped = sessionSummitExportShipped(summitExport);
+  const zenithSummitHealthy = zenithSummitBridgeHealthy(bridge);
+  const acmeAllowed = summitReady && summitExportShipped && zenithSummitHealthy;
+  const narrativeLines = [
+    `Match explainability acme: ${acmeAllowed ? 'ALLOWED' : 'DENIED'} (summit ${summitReady ? 'ok' : 'fail'}, export ${summitExportShipped ? 'ok' : 'fail'}).`,
+    ...summit.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    acmeAllowed,
+    summitReady,
+    summitExportShipped,
+    zenithSummitHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityAcmeAllowed(report: MatchExplainabilityAcmeGateReport): boolean {
+  return report.acmeAllowed;
+}
+
+
+// --- source: summit-recovery-orchestrator.ts ---
+  auditMatchExplainabilitySummitGate,
+  matchExplainabilitySummitAllowed,
+} from './match-explainability-summit-gate.ts';
+
+export const AGENT19_SUMMIT_RECOVERY_CAP = 10;
+
+export interface SummitRecoveryOrchestratorReport {
+  summitBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when summit gate blocks acme rollout. */
+export function buildSummitRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): SummitRecoveryOrchestratorReport {
+  const summit = auditMatchExplainabilitySummitGate(packs, params);
+  const summitBlocked = !matchExplainabilitySummitAllowed(summit);
+  const steps: string[] = [];
+  if (summitBlocked) {
+    if (!summit.zenithReady) {
+      steps.push('Restore zenith bundle: apex and zenith export must pass.');
+    }
+    if (!summit.zenithExportShipped) {
+      steps.push('Emit session zenith export before summit clearance.');
+    }
+    if (!summit.apexZenithHealthy) {
+      steps.push('Reconcile apex/zenith bridge before summit.');
+    }
+    steps.push(...buildZenithRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const zenith = buildMatchExplainabilityZenithBundle(packs, params);
+    if (!zenith.zenithReady) {
+      steps.push('Re-run zenith readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Summit gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_SUMMIT_RECOVERY_CAP);
+  return {
+    summitBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Summit recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function summitRecoveryOrchestratorWithinCap(report: SummitRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_SUMMIT_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -13173,6 +13456,30 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityZenithGate,
   matchExplainabilityZenithAllowed,
 } from '../match-explainability-zenith-gate.ts';
+  buildMatchExplainabilityZenithBundle,
+  matchExplainabilityZenithReady,
+} from '../match-explainability-zenith-bundle.ts';
+  buildSessionZenithExportBundle,
+  sessionZenithExportShipped,
+} from '../session-zenith-export-bundle.ts';
+  buildZenithRecoveryOrchestrator,
+  zenithRecoveryOrchestratorWithinCap,
+} from '../zenith-recovery-orchestrator.ts';
+  auditMatchExplainabilitySummitGate,
+  matchExplainabilitySummitAllowed,
+} from '../match-explainability-summit-gate.ts';
+  buildMatchExplainabilitySummitBundle,
+  matchExplainabilitySummitReady,
+} from '../match-explainability-summit-bundle.ts';
+  buildSessionSummitExportBundle,
+  sessionSummitExportShipped,
+} from '../session-summit-export-bundle.ts';
+  buildSummitRecoveryOrchestrator,
+  summitRecoveryOrchestratorWithinCap,
+} from '../summit-recovery-orchestrator.ts';
+  auditMatchExplainabilityAcmeGate,
+  matchExplainabilityAcmeAllowed,
+} from '../match-explainability-acme-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -19490,6 +19797,270 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityZenithAllowed(report) && !report.apexReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r46_zenith_ready',
+        'Zenith bundle ready when zenith gate and apex export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityZenithBundle([pack], params);
+          return matchExplainabilityZenithReady(bundle) && bundle.zenithAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r46_zenith_held',
+        'Zenith bundle pending when zenith gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 67, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityZenithBundle([pack], {
+            memory: null,
+            currentTurn: 67,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityZenithReady(bundle) && !bundle.zenithAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r46_zenith_recovery',
+        'Zenith recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 25, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 25, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildZenithRecoveryOrchestrator([pack], params);
+          return report.zenithBlocked && zenithRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r46_apex_zenith_bridge',
+        'Apex zenith bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditApexZenithBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return apexZenithBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r46_zenith_export',
+        'Zenith export shipped when zenith ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionZenithExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionZenithExportShipped(bundle) && bundle.zenithSchema === 'agent19.zenith.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r46_summit_gate_ok',
+        'Summit gate allowed on healthy zenith stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilitySummitGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilitySummitAllowed(report) && report.zenithExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r46_summit_gate_block',
+        'Summit gate denied when zenith pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 68, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilitySummitGate([pack], {
+            memory: null,
+            currentTurn: 68,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilitySummitAllowed(report) && !report.zenithReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r47_summit_ready',
+        'Summit bundle ready when summit gate and zenith export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilitySummitBundle([pack], params);
+          return matchExplainabilitySummitReady(bundle) && bundle.summitAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r47_summit_held',
+        'Summit bundle pending when summit gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 69, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilitySummitBundle([pack], {
+            memory: null,
+            currentTurn: 69,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilitySummitReady(bundle) && !bundle.summitAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r47_summit_recovery',
+        'Summit recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 26, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 26, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildSummitRecoveryOrchestrator([pack], params);
+          return report.summitBlocked && summitRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r47_zenith_summit_bridge',
+        'Zenith summit bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditZenithSummitBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return zenithSummitBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r47_summit_export',
+        'Summit export shipped when summit ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionSummitExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionSummitExportShipped(bundle) && bundle.summitSchema === 'agent19.summit.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r47_acme_gate_ok',
+        'Acme gate allowed on healthy summit stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityAcmeGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityAcmeAllowed(report) && report.summitExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r47_acme_gate_block',
+        'Acme gate denied when summit pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 70, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityAcmeGate([pack], {
+            memory: null,
+            currentTurn: 70,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityAcmeAllowed(report) && !report.summitReady || JSON.stringify(report);
         },
       ],
     ]),
