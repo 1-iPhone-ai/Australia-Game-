@@ -20,6 +20,16 @@ From repo root:
 npm run test:agent10
 ```
 
+## Assembly chunk
+
+Regenerate inline-ready TSX for Agent 25:
+
+```bash
+npm run build:agent10-chunk
+```
+
+Output: `operation-10m/modules/agent-10-finance/chunk.tsx` (`OP10M_MODULE_BEGIN agent-10-finance`).
+
 ## Integration
 
 See [`../INTEGRATION.md`](../INTEGRATION.md).
