@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 101);
+  assert.ok(r.passed >= 103);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -2126,5 +2126,53 @@ test('round 46: sealed opening gate weakens continuity vs opened baseline', () =
   assert.ok(
     opened.state.primedHandoffArcOpeningContinuity.score >=
       sealed.state.primedHandoffArcOpeningContinuity.score - 0.14,
+  );
+});
+
+test('round 47: admission continuity and admitted forward arc sustain gate on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralEngagedArcForwardAdmissionGateSmoothing = 0.74;
+  persisted.engagedArcForwardAdmissionContinuitySmoothing = 0.72;
+  persisted.bilateralAdmittedForwardArcSustainGateSmoothing = 0.7;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 111,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 145 } } },
+    persisted,
+  });
+  assert.ok(r.state.engagedArcForwardAdmissionContinuity);
+  assert.ok(['stable', 'holding', 'drifting', 'broken'].includes(r.state.engagedArcForwardAdmissionContinuity.band));
+  assert.ok(r.state.bilateralAdmittedForwardArcSustainGate);
+  assert.ok(
+    ['sustained', 'stabilizing', 'fading', 'lost'].includes(r.state.bilateralAdmittedForwardArcSustainGate.band),
+  );
+  assert.ok(r.persisted.engagedArcForwardAdmissionContinuitySmoothing != null);
+  assert.ok(r.persisted.bilateralAdmittedForwardArcSustainGateSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Engaged arc forward admission continuity/i.test(n)));
+  assert.ok(notes.some(n => /Bilateral admitted forward arc sustain gate/i.test(n)));
+});
+
+test('round 47: blocked admission gate weakens continuity vs admitted baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralEngagedArcForwardAdmissionGateSmoothing = 0.98;
+  persisted.primedHandoffArcOpeningContinuitySmoothing = 0.96;
+  const admitted = advanceGlobalTradeEconomyTurn({
+    turn: 112,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 125 } } },
+    persisted: { ...persisted },
+  });
+  persisted.bilateralEngagedArcForwardAdmissionGateSmoothing = 0.26;
+  persisted.primedHandoffArcOpeningContinuitySmoothing = 0.23;
+  const blocked = advanceGlobalTradeEconomyTurn({
+    turn: 112,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 275 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    admitted.state.engagedArcForwardAdmissionContinuity.score >=
+      blocked.state.engagedArcForwardAdmissionContinuity.score - 0.14,
   );
 });

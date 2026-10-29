@@ -627,6 +627,20 @@ import {
   bilateralEngagedArcForwardAdmissionGateWorldEvent,
 } from './bilateral-engaged-arc-forward-admission-gate.ts';
 import {
+  computeEngagedArcForwardAdmissionContinuitySnapshot,
+  engagedArcForwardAdmissionContinuityDomesticStress,
+  engagedArcForwardAdmissionContinuityExportScale,
+  engagedArcForwardAdmissionContinuityGiNotes,
+  engagedArcForwardAdmissionContinuityWorldEvent,
+} from './engaged-arc-forward-admission-continuity.ts';
+import {
+  computeBilateralAdmittedForwardArcSustainGateSnapshot,
+  bilateralAdmittedForwardArcSustainGateDomesticStressRelief,
+  bilateralAdmittedForwardArcSustainGateExportScale,
+  bilateralAdmittedForwardArcSustainGateGiNotes,
+  bilateralAdmittedForwardArcSustainGateWorldEvent,
+} from './bilateral-admitted-forward-arc-sustain-gate.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -1777,6 +1791,32 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   );
   if (engagedArcForwardAdmissionEvent) worldEvents.push(engagedArcForwardAdmissionEvent);
 
+  const engagedArcForwardAdmissionContinuityStep = computeEngagedArcForwardAdmissionContinuitySnapshot({
+    bilateralEngagedArcForwardAdmissionGate,
+    primedHandoffArcOpeningContinuity,
+    persisted,
+  });
+  persisted = engagedArcForwardAdmissionContinuityStep.persisted;
+  const engagedArcForwardAdmissionContinuity = engagedArcForwardAdmissionContinuityStep.snapshot;
+  const engagedArcForwardAdmissionContinuityEvent = engagedArcForwardAdmissionContinuityWorldEvent(
+    engagedArcForwardAdmissionContinuity,
+    turn,
+  );
+  if (engagedArcForwardAdmissionContinuityEvent) worldEvents.push(engagedArcForwardAdmissionContinuityEvent);
+
+  const admittedForwardArcSustainStep = computeBilateralAdmittedForwardArcSustainGateSnapshot({
+    engagedArcForwardAdmissionContinuity,
+    bilateralEngagedArcForwardAdmissionGate,
+    persisted,
+  });
+  persisted = admittedForwardArcSustainStep.persisted;
+  const bilateralAdmittedForwardArcSustainGate = admittedForwardArcSustainStep.snapshot;
+  const admittedForwardArcSustainEvent = bilateralAdmittedForwardArcSustainGateWorldEvent(
+    bilateralAdmittedForwardArcSustainGate,
+    turn,
+  );
+  if (admittedForwardArcSustainEvent) worldEvents.push(admittedForwardArcSustainEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -1858,6 +1898,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralPrimedHandoffArcOpeningGateExportScale(bilateralPrimedHandoffArcOpeningGate) *
         primedHandoffArcOpeningContinuityExportScale(primedHandoffArcOpeningContinuity) *
         bilateralEngagedArcForwardAdmissionGateExportScale(bilateralEngagedArcForwardAdmissionGate) *
+        engagedArcForwardAdmissionContinuityExportScale(engagedArcForwardAdmissionContinuity) *
+        bilateralAdmittedForwardArcSustainGateExportScale(bilateralAdmittedForwardArcSustainGate) *
         10,
     ) / 10;
 
@@ -1951,6 +1993,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       bilateralHandedWaveCyclePrimingGateDomesticStressRelief(bilateralHandedWaveCyclePrimingGate) +
       bilateralPrimedHandoffArcOpeningGateDomesticStressRelief(bilateralPrimedHandoffArcOpeningGate) +
       bilateralEngagedArcForwardAdmissionGateDomesticStressRelief(bilateralEngagedArcForwardAdmissionGate) +
+      bilateralAdmittedForwardArcSustainGateDomesticStressRelief(bilateralAdmittedForwardArcSustainGate) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -1990,7 +2033,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       sustainedWaveThroughputContinuityDomesticStress(sustainedWaveThroughputContinuity) +
       clearedWaveHandoffContinuityDomesticStress(clearedWaveHandoffContinuity) +
       handedWaveCyclePrimingContinuityDomesticStress(handedWaveCyclePrimingContinuity) +
-      primedHandoffArcOpeningContinuityDomesticStress(primedHandoffArcOpeningContinuity),
+      primedHandoffArcOpeningContinuityDomesticStress(primedHandoffArcOpeningContinuity) +
+      engagedArcForwardAdmissionContinuityDomesticStress(engagedArcForwardAdmissionContinuity),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -2093,6 +2137,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.bilateralPrimedHandoffArcOpeningGateSmoothing,
     persisted.primedHandoffArcOpeningContinuitySmoothing,
     persisted.bilateralEngagedArcForwardAdmissionGateSmoothing,
+    persisted.engagedArcForwardAdmissionContinuitySmoothing,
+    persisted.bilateralAdmittedForwardArcSustainGateSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -2227,6 +2273,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     bilateralPrimedHandoffArcOpeningGate,
     primedHandoffArcOpeningContinuity,
     bilateralEngagedArcForwardAdmissionGate,
+    engagedArcForwardAdmissionContinuity,
+    bilateralAdmittedForwardArcSustainGate,
     inputHash,
   };
 
@@ -2340,6 +2388,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...bilateralPrimedHandoffArcOpeningGateGiNotes(state.bilateralPrimedHandoffArcOpeningGate));
   lines.push(...primedHandoffArcOpeningContinuityGiNotes(state.primedHandoffArcOpeningContinuity));
   lines.push(...bilateralEngagedArcForwardAdmissionGateGiNotes(state.bilateralEngagedArcForwardAdmissionGate));
+  lines.push(...engagedArcForwardAdmissionContinuityGiNotes(state.engagedArcForwardAdmissionContinuity));
+  lines.push(...bilateralAdmittedForwardArcSustainGateGiNotes(state.bilateralAdmittedForwardArcSustainGate));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }

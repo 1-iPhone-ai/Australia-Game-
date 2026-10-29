@@ -419,6 +419,16 @@ import {
   createEmptyBilateralEngagedArcForwardAdmissionGateSnapshot,
   bilateralEngagedArcForwardAdmissionGateExportScale,
 } from './bilateral-engaged-arc-forward-admission-gate.ts';
+import {
+  computeEngagedArcForwardAdmissionContinuitySnapshot,
+  createEmptyEngagedArcForwardAdmissionContinuitySnapshot,
+  engagedArcForwardAdmissionContinuityExportScale,
+} from './engaged-arc-forward-admission-continuity.ts';
+import {
+  computeBilateralAdmittedForwardArcSustainGateSnapshot,
+  createEmptyBilateralAdmittedForwardArcSustainGateSnapshot,
+  bilateralAdmittedForwardArcSustainGateExportScale,
+} from './bilateral-admitted-forward-arc-sustain-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -2819,6 +2829,64 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralEngagedArcForwardAdmissionGateExportScale(admitted) >=
         bilateralEngagedArcForwardAdmissionGateExportScale(blocked),
       'expected engaged arc admission scale lift',
+    );
+  });
+
+  ok('engaged arc forward admission continuity improves when admission gate is admitted', () => {
+    const gate = {
+      ...createEmptyBilateralEngagedArcForwardAdmissionGateSnapshot(),
+      score: 0.95,
+      band: 'admitted' as const,
+    };
+    const opening = {
+      ...createEmptyPrimedHandoffArcOpeningContinuitySnapshot(),
+      score: 0.94,
+      band: 'engaged' as const,
+    };
+    const stable = computeEngagedArcForwardAdmissionContinuitySnapshot({
+      bilateralEngagedArcForwardAdmissionGate: gate,
+      primedHandoffArcOpeningContinuity: opening,
+      persisted: { ...createEmptyGTELPersisted(), engagedArcForwardAdmissionContinuitySmoothing: 0.98 },
+    }).snapshot;
+    const broken = computeEngagedArcForwardAdmissionContinuitySnapshot({
+      bilateralEngagedArcForwardAdmissionGate: { ...gate, score: 0.12, band: 'blocked' },
+      primedHandoffArcOpeningContinuity: { ...opening, score: 0.1, band: 'broken' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(stable.score > broken.score, 'expected stable admission continuity');
+    gtelAssert(
+      engagedArcForwardAdmissionContinuityExportScale(stable) >=
+        engagedArcForwardAdmissionContinuityExportScale(broken),
+      'expected admission continuity scale lift',
+    );
+  });
+
+  ok('bilateral admitted forward arc sustain gate improves when admission continuity is stable', () => {
+    const continuity = {
+      ...createEmptyEngagedArcForwardAdmissionContinuitySnapshot(),
+      score: 0.96,
+      band: 'stable' as const,
+    };
+    const gate = {
+      ...createEmptyBilateralEngagedArcForwardAdmissionGateSnapshot(),
+      score: 0.92,
+      band: 'admitted' as const,
+    };
+    const sustained = computeBilateralAdmittedForwardArcSustainGateSnapshot({
+      engagedArcForwardAdmissionContinuity: continuity,
+      bilateralEngagedArcForwardAdmissionGate: gate,
+      persisted: { ...createEmptyGTELPersisted(), bilateralAdmittedForwardArcSustainGateSmoothing: 0.99 },
+    }).snapshot;
+    const lost = computeBilateralAdmittedForwardArcSustainGateSnapshot({
+      engagedArcForwardAdmissionContinuity: { ...continuity, score: 0.11, band: 'broken' },
+      bilateralEngagedArcForwardAdmissionGate: { ...gate, score: 0.09, band: 'blocked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(sustained.score > lost.score, 'expected forward arc sustain when stable');
+    gtelAssert(
+      bilateralAdmittedForwardArcSustainGateExportScale(sustained) >=
+        bilateralAdmittedForwardArcSustainGateExportScale(lost),
+      'expected admitted forward arc sustain scale lift',
     );
   });
 
