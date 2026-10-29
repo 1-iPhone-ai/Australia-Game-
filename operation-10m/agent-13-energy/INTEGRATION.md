@@ -14,6 +14,8 @@ operation-10m/agent-13-energy/
   modules/grid-coupling.ts
   modules/grid-recovery-extraction-efficiency.ts
   modules/regional-grid-scenarios-climate-transition.ts
+  modules/turn-simulation-depth.ts
+  modules/storage-permit-lifecycle.ts
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge
