@@ -124882,6 +124882,8 @@ export interface LRInputs {
   /** World Reaction windows (referenced, never duplicated). */
   windows: Array<{ id: string; type: string; subject: string; status: string; expiresTurn: number | null; reason: string }>;
   winRegionsTarget: number | null;
+  /** Day-level REGIONAL_EVENTS from canonical `gameState.activeEvents` (read-only bridge into Living Regions). */
+  legacyRegionalEvents: Array<{ id: string; region: string; name: string; remainingDays: number }>;
 }
 
 export const LR_LIMITS = { needs: 4, opportunities: 3, risks: 3, conditions: 5, history: 12, evidence: 8, derived: 24, milestones: 12, momentumHistory: 6, investmentHistory: 4 };
@@ -125524,6 +125526,39 @@ function lrAddMilestone(state: LivingRegionsState, turn: number, code: string, l
   state.milestones = [...state.milestones, { id: `lrm_${code}_${label.replace(/\W+/g, '_').toLowerCase()}`, turn, regionId: code, label }].slice(-LR_LIMITS.milestones);
 }
 
+/** Maps legacy REGIONAL_EVENTS ids → Living Regions condition/opportunity semantics (Agent 32 bridge). */
+export const LR_LEGACY_REGIONAL_EVENT_BRIDGE: Record<string, { condition: LRConditionKind; opportunity?: LROpportunityKind; pulse?: number; opportunityLabel?: string }> = {
+  mining_boom: { condition: 'commodity_boom', opportunity: 'commodity_boom', pulse: 0.12, opportunityLabel: 'Mining boom' },
+  coral_bleaching: { condition: 'crisis_active', pulse: -0.08 },
+  wine_festival: { condition: 'technology_expansion', opportunity: 'export_expansion', pulse: 0.06, opportunityLabel: 'Wine festival trade' },
+  tech_conference: { condition: 'technology_expansion', pulse: 0.08 },
+  outback_drought: { condition: 'regional_stagnation', pulse: -0.1 },
+  seafood_boom: { condition: 'commodity_boom', opportunity: 'commodity_boom', pulse: 0.1, opportunityLabel: 'Seafood export boom' },
+  tourism_surge: { condition: 'diplomatic_safety_window', opportunity: 'export_expansion', pulse: 0.05, opportunityLabel: 'Tourism surge' },
+  energy_crisis: { condition: 'infrastructure_bottleneck', pulse: -0.05 },
+};
+
+function lrApplyLegacyRegionalEventOverlays(reg: DynamicRegionalState, events: LRInputs['legacyRegionalEvents'], turn: number): void {
+  reg.conditions = reg.conditions.filter(c => c.source !== 'legacy_regional_event');
+  reg.opportunities = reg.opportunities.filter(o => !o.id.startsWith('opp_legacy_'));
+  const local = (events || []).filter(e => e.region === reg.regionId && e.remainingDays > 0);
+  local.forEach(ev => {
+    const prof = LR_LEGACY_REGIONAL_EVENT_BRIDGE[ev.id];
+    if (!prof) return;
+    if (prof.pulse) reg.momentum.value = lrR(lrClamp(reg.momentum.value + prof.pulse * 0.5, -1, 1));
+    reg.conditions = [...reg.conditions, {
+      id: `cond_legacy_${ev.id}`, kind: prof.condition, label: ev.name, source: 'legacy_regional_event', sourceEventId: ev.id,
+      startTurn: turn, expiresTurn: turn + Math.max(1, ev.remainingDays), severity: 'moderate', effects: LR_CONDITION_EFFECTS[prof.condition]
+    }].sort((a, b) => LR_SEV_RANK[b.severity] - LR_SEV_RANK[a.severity] || a.kind.localeCompare(b.kind)).slice(0, LR_LIMITS.conditions);
+    if (prof.opportunity) {
+      reg.opportunities = [...reg.opportunities, {
+        id: `opp_legacy_${ev.id}`, kind: prof.opportunity, label: prof.opportunityLabel || ev.name,
+        reason: `${ev.name} is active in ${reg.name}.`, strength: 'moderate', sinceTurn: turn
+      }].slice(-LR_LIMITS.opportunities);
+    }
+  });
+}
+
 /** Round boundary: momentum settles (decay + economic direction), evidence decays toward the seed, persistence rules fire. */
 export function lrAdvanceRound(stateIn: LivingRegionsState, s: LRInputs): { state: LivingRegionsState; derived: LRDerivedEvent[] } {
   if (stateIn.lastRound !== null && s.turn <= stateIn.lastRound) return { state: stateIn, derived: [] };
@@ -125563,6 +125598,7 @@ export function lrAdvanceRound(stateIn: LivingRegionsState, s: LRInputs): { stat
       reg.conditions = [...reg.conditions.filter(c => c.kind !== 'regional_stagnation'), stag].slice(-LR_LIMITS.conditions);
     }
     const out = lrRecompute(reg, s, { boundary: true });
+    lrApplyLegacyRegionalEventOverlays(out.region, s.legacyRegionalEvents || [], turn);
     state.regions[code] = out.region;
     out.derived.forEach(d => derived.push({ ...d, id: `lre_${turn}_${lrHash([d.kind, d.regionId, 'round'])}`, turn, causedByEventId: null, rootEventId: null, reactionDepth: 0 }));
     out.milestones.forEach(m => lrAddMilestone(state, turn, code, m));
@@ -125579,7 +125615,7 @@ export function lrAdvanceRound(stateIn: LivingRegionsState, s: LRInputs): { stat
 export function lrInputHashes(s: LRInputs): Record<string, string> {
   const out: Record<string, string> = {};
   s.regions.forEach(r => {
-    out[r.code] = lrHash([r.controller, r.devTier, Math.round(r.devProgress * 10), r.stability === null ? null : Math.round(r.stability), s.projects.filter(p => p.regionId === r.code).map(p => [p.id, p.status]), s.contracts.filter(c => c.regionId === r.code).map(c => [c.id, c.status]), lrRegionCrises(s, r.code).map(c => c.id), s.windows.filter(w => w.subject === r.code && w.status === 'open').map(w => w.id), r.resources.map(x => Math.round(((s.prices[x] || 0) / (s.basePrices[x] || 1)) * 20))]);
+    out[r.code] = lrHash([r.controller, r.devTier, Math.round(r.devProgress * 10), r.stability === null ? null : Math.round(r.stability), s.projects.filter(p => p.regionId === r.code).map(p => [p.id, p.status]), s.contracts.filter(c => c.regionId === r.code).map(c => [c.id, c.status]), lrRegionCrises(s, r.code).map(c => c.id), s.windows.filter(w => w.subject === r.code && w.status === 'open').map(w => w.id), r.resources.map(x => Math.round(((s.prices[x] || 0) / (s.basePrices[x] || 1)) * 20)), (s.legacyRegionalEvents || []).filter(e => e.region === r.code).map(e => [e.id, e.remainingDays])]);
   });
   return out;
 }
@@ -126310,7 +126346,7 @@ export function createLRFixtureInputs(o: Partial<LRInputs> = {}): LRInputs {
     projects: PRESET_INFRASTRUCTURE_PROJECTS.map(p => ({ id: p.id, title: p.title, regionId: p.regionId, projectType: p.projectType, status: p.status, progress: 0, remainingCost: p.totalCost, completionTurn: null })),
     contracts: PRESET_REGIONAL_CONTRACTS.map(c => ({ id: c.id, title: c.title, regionId: c.issuingRegionId, contractType: c.contractType, status: c.status, assignedActorId: null, completedAtTurn: null, rewardMoney: c.rewards.money || 0 })),
     standing: {}, prices: { ...basePrices }, basePrices, crises: [], nationalStability: 60,
-    ownerNames: { player: 'You', ai: 'Riley', ai2: 'Jordan' }, ownerTeams: { player: null, ai: null, ai2: null }, windows: [], winRegionsTarget: null,
+    ownerNames: { player: 'You', ai: 'Riley', ai2: 'Jordan' }, ownerTeams: { player: null, ai: null, ai2: null }, windows: [], winRegionsTarget: null, legacyRegionalEvents: [],
     ...o
   };
 }
@@ -126665,6 +126701,17 @@ export function runLivingRegions2SelfTests(): V9SelfTestResult[] {
     const a = lrRawEconomy(boom, 'WA', st.regions.WA) - lrRawEconomy(s, 'WA', st.regions.WA);
     const b = lrRawEconomy(boom, 'WA', { ...plain.regions.WA, sectors: {} }) - lrRawEconomy(s, 'WA', { ...plain.regions.WA, sectors: {} });
     return (a > b && canon(boom.basePrices) === canon(s.basePrices)) || canon({ a, b });
+  });
+
+  check('lr_legacy_regional_events', 'Legacy REGIONAL_EVENTS overlay Living Regions while active, then clear', () => {
+    const s0 = createLRFixtureInputs({ legacyRegionalEvents: [{ id: 'mining_boom', region: 'WA', name: 'Mining Boom', remainingDays: 2 }] });
+    let st = initializeLivingRegions(s0);
+    st = round(st, s0, 6);
+    const active = st.regions.WA.conditions.some(c => c.source === 'legacy_regional_event' && c.kind === 'commodity_boom')
+      && st.regions.WA.opportunities.some(o => o.id === 'opp_legacy_mining_boom');
+    st = round(st, { ...s0, legacyRegionalEvents: [] }, 7);
+    const cleared = !st.regions.WA.conditions.some(c => c.source === 'legacy_regional_event');
+    return (active && cleared) || canon({ active, cleared, c: st.regions.WA.conditions });
   });
 
   return results;
@@ -213650,9 +213697,15 @@ function dispatchGameSettingsChange(
       prices: swrInputs.prices, basePrices: swrInputs.basePrices, crises, nationalStability: swrInputs.stability?.national ?? null,
       ownerNames: swrInputs.ownerNames, ownerTeams: swrInputs.ownerTeams,
       windows: swrState.windows.map(w => ({ id: w.id, type: w.type, subject: w.subject, status: w.status, expiresTurn: w.expiresTurn, reason: w.reason })),
-      winRegionsTarget: swrInputs.win?.target ?? null
+      winRegionsTarget: swrInputs.win?.target ?? null,
+      legacyRegionalEvents: (Array.isArray(gameState.activeEvents) ? gameState.activeEvents : []).map((e: any) => ({
+        id: String(e?.id || ''),
+        region: String(e?.region || '').trim().toUpperCase(),
+        name: String(e?.name || e?.id || 'Regional event'),
+        remainingDays: Math.max(0, Number(e?.remainingDays ?? e?.duration ?? 0))
+      })).filter(e => e.id && e.region && REGIONS[e.region] && e.remainingDays > 0)
     };
-  }, [swrInputs, swrState.windows, gameState.regionalDevLevels, gameState.publicStabilityState, gameState.infrastructureProjects, (gameState as any).regionalContracts, (gameState as any).crisisChainState, (gameState as any).standingPerActor, gameSettings.publicStabilityEnabled, gameSettings.dynamicCrisisChainsEnabled, gameSettings.regionalStandingEnabled, gameSettings.fogOfWarEnabled, dnRound]);
+  }, [swrInputs, swrState.windows, gameState.regionalDevLevels, gameState.publicStabilityState, gameState.infrastructureProjects, (gameState as any).regionalContracts, (gameState as any).crisisChainState, (gameState as any).standingPerActor, gameState.activeEvents, gameSettings.publicStabilityEnabled, gameSettings.dynamicCrisisChainsEnabled, gameSettings.regionalStandingEnabled, gameSettings.fogOfWarEnabled, dnRound]);
   const lrViewerKeys = useMemo(() => [String(player?.id || 'player'), ...(isTeamMode && player?.teamId ? [String(player.teamId)] : [])], [player?.id, player?.teamId, isTeamMode]);
   lrViewRef.current = swrEnabled && lrState ? { state: lrState, inputs: lrInputs, viewerId: String(player?.id || 'player'), viewerKeys: lrViewerKeys, names: swrInputs.ownerNames } : null;
   const lrInputsRef = useRef(lrInputs); lrInputsRef.current = lrInputs;
