@@ -14359,6 +14359,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   stateCapacityEnabled: true,
   publicFinanceEnabled: true,
   householdsEnabled: true,
+  nationalMacroeconomyEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26927,6 +26928,8 @@ export type GameSettingsState = {
   publicFinanceEnabled?: boolean;
   /** V10.13 Households, Living Standards & Domestic Demand (needs National Systems; off = no households layer, V10.0–V10.12 unchanged). */
   householdsEnabled?: boolean;
+  /** V10.14 National Macroeconomy & Aggregate Balance (needs National Systems; off = no macro synthesis layer, V10.0–V10.13 unchanged). */
+  nationalMacroeconomyEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36758,6 +36761,8 @@ export const initialGameState = {
   publicFinance: null as any,
   /** V10.13: household-economy lifecycle memory (band hysteresis, pinned concerns, transitions, history). Living standards and demand are derived. */
   householdEconomy: null as any,
+  /** V10.14: national macroeconomy lifecycle memory (band hysteresis, cycle phase, bounded history). Aggregate momentum and balance are derived. */
+  nationalMacroeconomy: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -66893,7 +66898,7 @@ export function isRoutineActivityNotification(n: any): boolean {
 export function rankContextualRecommendations(
   candidates: any[] | null | undefined,
   objective: CurrentObjective | null,
-  options?: { apRemaining?: number; cash?: number; limit?: number; settings?: any; actor?: any; state?: any; strategy?: GI3RankingContext | null; nationalPriority?: NationalPriorityRankingContext | null; economicGeography?: EconomicGeographyState | null; stateCapacity?: NationalStateCapacityState | null; publicFinance?: NationalPublicFinanceState | null; households?: NationalHouseholdEconomyState | null }
+  options?: { apRemaining?: number; cash?: number; limit?: number; settings?: any; actor?: any; state?: any; strategy?: GI3RankingContext | null; nationalPriority?: NationalPriorityRankingContext | null; economicGeography?: EconomicGeographyState | null; stateCapacity?: NationalStateCapacityState | null; publicFinance?: NationalPublicFinanceState | null; households?: NationalHouseholdEconomyState | null; nationalMacroeconomy?: NationalMacroeconomyState | null }
 ): ContextualRecommendation[] {
   const apRemaining = options?.apRemaining;
   const limit = options?.limit ?? 3;
@@ -66945,8 +66950,10 @@ export function rankContextualRecommendations(
     const pf = options?.publicFinance ? publicFinanceActionAlignment(options.publicFinance, { kind: String(c.actionType || ''), category: c.category, programId: c.programId }) : null;
     // V10.13: household living standards, affordability & essential access fit is a small bounded tie-breaker (≤ ±2.0).
     const hh = options?.households ? householdActionAlignment(options.households, { id: c.id, title: c.title, category: c.category, regionId: c.regionId || c.targetRegion || c.targetId, description: c.description }) : null;
-    const score = (c.utilityScore || 0) + alignment - (c.riskFactor || 0) * 0.15 + (strategy ? strategy.score * 0.6 : 0) + (np ? np.score * 0.25 : 0) + (eg ? eg.score * 0.25 : 0) + (sc ? sc.score * 0.25 : 0) + (pf ? pf.scoreDelta * 0.2 : 0) + (hh ? hh.relevanceDelta * 0.25 : 0);
-    return { c, score, alignment, strategy, np, eg, sc, pf, hh };
+    // V10.14: national macro momentum & balance fit is a small bounded tie-breaker (≤ ±2.0).
+    const macro = options?.nationalMacroeconomy ? nationalMacroeconomyActionAlignment(options.nationalMacroeconomy, { id: c.id, title: c.title, category: c.category, regionId: c.regionId || c.targetRegion || c.targetId, description: c.description }) : null;
+    const score = (c.utilityScore || 0) + alignment - (c.riskFactor || 0) * 0.15 + (strategy ? strategy.score * 0.6 : 0) + (np ? np.score * 0.25 : 0) + (eg ? eg.score * 0.25 : 0) + (sc ? sc.score * 0.25 : 0) + (pf ? pf.scoreDelta * 0.2 : 0) + (hh ? hh.relevanceDelta * 0.25 : 0) + (macro ? macro.scoreDelta * 0.2 : 0);
+    return { c, score, alignment, strategy, np, eg, sc, pf, hh, macro };
   }).sort((a, b) => b.score - a.score);
 
   const picked: typeof scored = [];
@@ -80973,6 +80980,8 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.publicFinance = sanitizePublicFinancePersisted(migrated.gameState.publicFinance);
   // V10.13: pre-V10.13 saves carry NO household-economy memory (null) — current living standards and domestic demand are derived on load.
   if (migrated.gameState) migrated.gameState.householdEconomy = migrated.gameState.householdEconomy ? sanitizeHouseholdEconomyPersisted(migrated.gameState.householdEconomy) : null;
+  // V10.14: pre-V10.14 saves carry NO macroeconomy memory (null) — current macro momentum and balance are derived on load.
+  if (migrated.gameState) migrated.gameState.nationalMacroeconomy = migrated.gameState.nationalMacroeconomy ? sanitizeNationalMacroeconomyPersisted(migrated.gameState.nationalMacroeconomy) : null;
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -125910,7 +125919,7 @@ export interface LivingRegionsWorldView {
 }
 
 export type LRQueryTopic = 'status' | 'value' | 'fastest' | 'decline' | 'growth_why' | 'needs' | 'contract_why' | 'rival_invested' | 'infra_problems' | 'invest_where' | 'project_preview' | 'national';
-export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery; nationalDev?: NationalDevelopmentQuery; capability?: CapabilityQuery; systemic?: SystemicQuery; priority?: NationalPriorityQuery; geography?: EconomicGeographyQuery; stateCapacity?: StateCapacityQuery; publicFinance?: PublicFinanceQuery; households?: { topic: V1013HouseholdQueryTopic; question: string; regionId: string | null } }
+export interface LRQuery { topic: LRQueryTopic; regionId: string | null; actorKey: string | null; projectId: string | null; contractId: string | null; national?: NationalQuery; industry?: IndustryQuery; infra?: InfraQuery; megaproject?: MegaprojectQuery; nationalDev?: NationalDevelopmentQuery; capability?: CapabilityQuery; systemic?: SystemicQuery; priority?: NationalPriorityQuery; geography?: EconomicGeographyQuery; stateCapacity?: StateCapacityQuery; publicFinance?: PublicFinanceQuery; households?: { topic: V1013HouseholdQueryTopic; question: string; regionId: string | null }; nationalMacroeconomy?: { topic: NationalMacroeconomyQueryTopic; question: string } }
 
 function lrRegionInText(q: string, v: LivingRegionsWorldView): string | null {
   const regs = Object.values(v.state.regions);
@@ -125961,6 +125970,9 @@ export function detectLivingRegionsQuery(raw: string, gw: GIWorld): LRQuery | nu
   // V10.13: households, living standards, affordability, and domestic demand questions.
   const hh13t = detectHouseholdEconomyQuery(raw);
   if (hh13t && (gw.national as any)?.households) return mk('national', { households: { topic: hh13t, question: raw, regionId }, regionId });
+  // V10.14: national macroeconomy & aggregate balance questions.
+  const macro14t = detectNationalMacroeconomyQuery(raw);
+  if (macro14t && (gw.national as any)?.nationalMacroeconomy) return mk('national', { nationalMacroeconomy: { topic: macro14t, question: raw }, regionId });
   // What-if on an existing infrastructure project.
   if (/\bwhat (happens|would happen|if)\b.{0,30}\b(build|complete|finish|fund)\b|\bif i (build|complete|finish|fund)\b/.test(q) && v.inputs) {
     const words = q.replace(/\b(the|a|an|what|happens|would|happen|if|i|build|complete|finish|fund|project|in)\b/g, ' ').split(/\s+/).filter(w => w.length > 2);
@@ -125993,6 +126005,19 @@ function lrScorecard(reg: DynamicRegionalState): string {
 
 export function composeLivingRegionsAnswer(query: LRQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
   if (query.topic === 'national' && query.publicFinance && (gw.national as any)?.publicFinance) return composePublicFinanceGIAnswer(query.publicFinance, gw);
+  if (query.topic === 'national' && query.nationalMacroeconomy && (gw.national as any)?.nationalMacroeconomy) {
+    const macroView = (gw.national as any).nationalMacroeconomy as NationalMacroeconomyWorldView;
+    const ans = answerNationalMacroeconomyQuestion(macroView?.state, query.nationalMacroeconomy.topic);
+    return {
+      title: `National Macroeconomy: ${query.nationalMacroeconomy.topic.replace(/_/g, ' ')}`,
+      shape: 'explanation',
+      sections: [
+        { id: 'macro14_fact', heading: 'Fact & Calculated Macro State', claims: [claim(ans.fact, 'fact', 'confirmed', ['v1014.macroeconomy']), claim(ans.calculated, 'fact', 'high', ['v1014.macroeconomy'])] },
+        { id: 'macro14_infer', heading: 'Inference & Outlook', claims: [claim(ans.inference, 'inference', 'moderate', ['v1014.macroeconomy']), claim(ans.projection, 'projection', 'moderate', ['v1014.macroeconomy'])] }
+      ],
+      claims: [claim(ans.fact, 'fact', 'confirmed', ['v1014.macroeconomy']), claim(ans.calculated, 'fact', 'high', ['v1014.macroeconomy']), claim(ans.inference, 'inference', 'moderate', ['v1014.macroeconomy']), claim(ans.projection, 'projection', 'moderate', ['v1014.macroeconomy'])]
+    };
+  }
   if (query.topic === 'national' && query.households && (gw.national as any)?.households) {
     const hhView = (gw.national as any).households as HouseholdEconomyWorldView;
     const ans = answerHouseholdEconomyQuestion(hhView?.state, query.households.question);
@@ -134060,7 +134085,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'strategicCapitalEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'nationalMacroeconomyEnabled', 'strategicCapitalEnabled'
 ] as const;
 
 /**
@@ -136510,6 +136535,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1011', label: 'V10.11 Adaptive Governance & State Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1011AdaptiveGovernanceSelfTests() },
   { id: 'v1012', label: 'V10.12 Public Finance & Fiscal Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1012PublicFinanceSelfTests() },
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
+  { id: 'v1014', label: 'V10.14 National Macroeconomy', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014NationalMacroeconomySelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -139367,6 +139393,8 @@ export interface NationalSystemsWorldView {
   publicFinance?: PublicFinanceWorldView | null;
   /** V10.13 Households, Living Standards & Domestic Demand (null when off). */
   households?: HouseholdEconomyWorldView | null;
+  /** V10.14 National Macroeconomy & Aggregate Balance (null when off). */
+  nationalMacroeconomy?: NationalMacroeconomyWorldView | null;
 }
 export type NationalQueryTopic = 'overview' | 'bottlenecks' | 'region_network' | 'dependency' | 'resilience' | 'what_if';
 export interface NationalQuery { topic: NationalQueryTopic; regionId: string | null; network: NationalNetworkKind | null; projectType: string | null }
@@ -181905,6 +181933,799 @@ export function runV1013HouseholdsLivingStandardsSelfTests(): {
  * Downloads `data` as a JSON file. Never throws: sandboxed embeds and some browsers block downloads or lack
  * URL.createObjectURL, and a throw here used to abort match finalisation (replay) mid AI turn.
  */
+// ============================================================================
+// SECTION 20AG: V10.14 NATIONAL MACROECONOMY & AGGREGATE BALANCE
+// ============================================================================
+// Synthesizes a read-only national macro view from Living Regions, Industries, Economic Geography,
+// Workforce, Public Finance, Households, Systemic Risk and Development Direction — without duplicating
+// player cash, Team Treasury, commodity CPI, or fiscal authority (those stay in their owning systems).
+
+export const V1014_SCHEMA_VERSION = '10.14.0';
+
+export const V1014_CORE_REGIONS: readonly string[] = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'] as const;
+
+export const V1014_LIMITS = {
+  maxEvidence: 10,
+  maxHistory: 16,
+  maxDrivers: 8,
+  maxRisks: 6,
+  hysteresisDeadband: 2.5
+} as const;
+
+export type NationalMacroOutputBand =
+  | 'contracting'
+  | 'soft'
+  | 'moderate'
+  | 'expanding'
+  | 'surging';
+
+export type NationalMacroCyclePhase =
+  | 'slowdown'
+  | 'steady'
+  | 'expansion'
+  | 'overheating'
+  | 'adjustment';
+
+export type NationalMacroBalanceBand =
+  | 'fragile'
+  | 'strained'
+  | 'balanced'
+  | 'resilient'
+  | 'robust';
+
+export interface NationalMacroeconomyEvidence {
+  id: string;
+  sourceSystem: string;
+  sourceId: string;
+  factor: string;
+  contribution: number;
+  regionIds: string[];
+  turn: number;
+  visibility: 'public';
+}
+
+export interface NationalMacroeconomyHistoryEntry {
+  turn: number;
+  outputBand: NationalMacroOutputBand;
+  cyclePhase: NationalMacroCyclePhase;
+  summary: string;
+}
+
+export interface NationalMacroeconomyPersisted {
+  schemaVersion: string;
+  revision: number;
+  initializedTurn: number | null;
+  lastInputHash: string | null;
+  lastUpdatedTurn: number;
+  outputBand: NationalMacroOutputBand;
+  cyclePhase: NationalMacroCyclePhase;
+  balanceBand: NationalMacroBalanceBand;
+  history: NationalMacroeconomyHistoryEntry[];
+}
+
+export interface NationalMacroeconomyState {
+  schemaVersion: string;
+  turn: number;
+  revision: number;
+  inputHash: string;
+  outputMomentum: number;
+  outputBand: NationalMacroOutputBand;
+  cyclePhase: NationalMacroCyclePhase;
+  balanceBand: NationalMacroBalanceBand;
+  diversificationIndex: number;
+  externalExposure: number;
+  internalDemandStrength: number;
+  laborUtilizationProxy: number;
+  regionalBalanceIndex: number;
+  fiscalCompatibility: number;
+  headline: string;
+  primaryDriver: string;
+  primaryRisk: string | null;
+  evidence: NationalMacroeconomyEvidence[];
+  drivers: string[];
+  risks: string[];
+}
+
+export interface NationalMacroeconomyInputs {
+  turn: number;
+  enabled?: boolean;
+  livingRegions?: LivingRegionsState | null;
+  industries?: any;
+  economicGeography?: EconomicGeographyState | null;
+  workforce?: any;
+  publicFinance?: NationalPublicFinanceState | null;
+  households?: NationalHouseholdEconomyState | null;
+  systemicRisk?: any;
+  nationalDevelopment?: any;
+  highInflationScenarioActive?: boolean;
+  activeCrisesCount?: number;
+}
+
+export interface NationalMacroeconomyWorldView {
+  state: NationalMacroeconomyState;
+  persisted: NationalMacroeconomyPersisted;
+  inputs: NationalMacroeconomyInputs;
+}
+
+function v1014Round(n: number, d = 1): number {
+  const p = 10 ** d;
+  return Math.round(n * p) / p;
+}
+
+function v1014Clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function v1014BandFromScore(score: number, bands: Array<[number, NationalMacroOutputBand]>): NationalMacroOutputBand {
+  for (const [min, band] of bands) {
+    if (score >= min) return band;
+  }
+  return bands[bands.length - 1][1];
+}
+
+const V1014_OUTPUT_BANDS: Array<[number, NationalMacroOutputBand]> = [
+  [78, 'surging'],
+  [62, 'expanding'],
+  [46, 'moderate'],
+  [32, 'soft'],
+  [0, 'contracting']
+];
+
+const V1014_BALANCE_BANDS: Array<[number, NationalMacroBalanceBand]> = [
+  [72, 'robust'],
+  [58, 'resilient'],
+  [44, 'balanced'],
+  [30, 'strained'],
+  [0, 'fragile']
+];
+
+export function createInitialNationalMacroeconomyPersisted(turn = 1): NationalMacroeconomyPersisted {
+  return {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: 0,
+    initializedTurn: null,
+    lastInputHash: null,
+    lastUpdatedTurn: Math.max(1, turn),
+    outputBand: 'moderate',
+    cyclePhase: 'steady',
+    balanceBand: 'balanced',
+    history: []
+  };
+}
+
+export function sanitizeNationalMacroeconomyPersisted(raw: any, turn = 1): NationalMacroeconomyPersisted {
+  if (!raw || typeof raw !== 'object') return createInitialNationalMacroeconomyPersisted(turn);
+  const hist = Array.isArray(raw.history)
+    ? raw.history
+        .filter((h: any) => h && typeof h.turn === 'number')
+        .slice(-V1014_LIMITS.maxHistory)
+        .map((h: any) => ({
+          turn: Math.floor(h.turn),
+          outputBand: (h.outputBand as NationalMacroOutputBand) || 'moderate',
+          cyclePhase: (h.cyclePhase as NationalMacroCyclePhase) || 'steady',
+          summary: String(h.summary || '').slice(0, 240)
+        }))
+    : [];
+  return {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: Math.max(0, Math.floor(Number(raw.revision) || 0)),
+    initializedTurn: raw.initializedTurn == null ? null : Math.max(1, Math.floor(Number(raw.initializedTurn) || 1)),
+    lastInputHash: typeof raw.lastInputHash === 'string' ? raw.lastInputHash : null,
+    lastUpdatedTurn: Math.max(1, Math.floor(Number(raw.lastUpdatedTurn) || turn)),
+    outputBand: (raw.outputBand as NationalMacroOutputBand) || 'moderate',
+    cyclePhase: (raw.cyclePhase as NationalMacroCyclePhase) || 'steady',
+    balanceBand: (raw.balanceBand as NationalMacroBalanceBand) || 'balanced',
+    history: hist
+  };
+}
+
+export function nationalMacroeconomyInputHash(inputs: NationalMacroeconomyInputs): string {
+  const lr = inputs.livingRegions;
+  const trend = lrNationalTrend(lr);
+  const hh = inputs.households?.nationalSummary;
+  const pf = inputs.publicFinance?.revenueCapacity;
+  const wf = inputs.workforce?.nationalSummary;
+  const sr = inputs.systemicRisk?.overallExposure;
+  const sig = {
+    turn: inputs.turn,
+    trend: trend.label,
+    growing: trend.growing.length,
+    declining: trend.declining.length,
+    ind: inputs.industries?.national?.output ? Object.keys(inputs.industries.national.output).length : 0,
+    eg: inputs.economicGeography?.nationalSummary?.diversificationScore ?? null,
+    hhDemand: hh?.domesticDemandBand ?? null,
+    pfCap: pf?.currentCapacity ?? null,
+    wfPressure: wf?.overallPressureBand ?? null,
+    sr,
+    crises: inputs.activeCrisesCount ?? 0,
+    infl: Boolean(inputs.highInflationScenarioActive)
+  };
+  return `v1014:${JSON.stringify(sig)}`;
+}
+
+export function buildNationalMacroeconomyInputs(params: {
+  turn: number;
+  gameState?: any;
+  gameSettings?: any;
+  livingRegions?: LivingRegionsState | null;
+  industries?: any;
+  economicGeography?: EconomicGeographyState | null;
+  workforce?: any;
+  publicFinance?: NationalPublicFinanceState | null;
+  households?: NationalHouseholdEconomyState | null;
+  systemicRisk?: any;
+  nationalDevelopment?: any;
+}): NationalMacroeconomyInputs {
+  const gs = params.gameState || {};
+  const gset = params.gameSettings || {};
+  const crisesRaw = gs.crisisChainState?.activeCrisisChains;
+  const activeCrisesCount = Array.isArray(crisesRaw)
+    ? crisesRaw.filter((c: any) => c && c.status !== 'resolved' && c.status !== 'failed').length
+    : 0;
+  return {
+    turn: Math.max(1, Math.floor(Number(params.turn) || 1)),
+    enabled: gset.nationalMacroeconomyEnabled !== false && gset.nationalSystemsEnabled !== false,
+    livingRegions: params.livingRegions ?? gs.livingRegionsState ?? gs.livingRegions ?? null,
+    industries: params.industries ?? gs.industriesState ?? gs.industries ?? null,
+    economicGeography: params.economicGeography ?? gs.economicGeographyState ?? null,
+    workforce: params.workforce ?? gs.workforceState ?? null,
+    publicFinance: params.publicFinance ?? gs.publicFinanceState ?? null,
+    households: params.households ?? gs.householdEconomyState ?? null,
+    systemicRisk: params.systemicRisk ?? gs.systemicRiskState ?? null,
+    nationalDevelopment: params.nationalDevelopment ?? gs.nationalDevelopmentProfile ?? null,
+    highInflationScenarioActive: Boolean(gset.selectedScenarioId === 'high_inflation' || gs.highInflationScenarioActive),
+    activeCrisesCount
+  };
+}
+
+function v1014ApplyHysteresis<T extends string>(raw: T, prev: T | undefined, score: number, upThreshold: number, downThreshold: number): T {
+  if (!prev || prev === raw) return raw;
+  const db = V1014_LIMITS.hysteresisDeadband;
+  if (prev === 'expanding' && raw === 'moderate' && score >= 62 - db) return prev as T;
+  if (prev === 'moderate' && raw === 'soft' && score >= 46 - db) return prev as T;
+  if (prev === 'surging' && raw === 'expanding' && score >= 78 - db) return prev as T;
+  if (score >= upThreshold && raw < prev) return prev as T;
+  if (score <= downThreshold && raw > prev) return prev as T;
+  return raw;
+}
+
+export function computeNationalMacroeconomy(
+  inputs: NationalMacroeconomyInputs,
+  rawPersisted?: NationalMacroeconomyPersisted | null,
+  prevState?: NationalMacroeconomyState | null
+): { state: NationalMacroeconomyState; persisted: NationalMacroeconomyPersisted; events: NationalMacroeconomyHistoryEntry[] } {
+  const turn = Math.max(1, Math.floor(Number(inputs.turn) || 1));
+  const persisted = sanitizeNationalMacroeconomyPersisted(rawPersisted, turn);
+  const inputHash = nationalMacroeconomyInputHash(inputs);
+
+  if (persisted.lastInputHash === inputHash && prevState && prevState.inputHash === inputHash) {
+    return { state: prevState, persisted, events: [] };
+  }
+
+  const evidence: NationalMacroeconomyEvidence[] = [];
+  const pushEv = (sourceSystem: string, sourceId: string, factor: string, contribution: number, regionIds: string[] = []) => {
+    if (Math.abs(contribution) < 0.05) return;
+    evidence.push({
+      id: `macro_${sourceSystem}_${sourceId}_${evidence.length}`,
+      sourceSystem,
+      sourceId,
+      factor,
+      contribution: v1014Round(contribution),
+      regionIds: regionIds.filter(r => V1014_CORE_REGIONS.includes(r)),
+      turn,
+      visibility: 'public'
+    });
+  };
+
+  let momentum = 50;
+  const drivers: string[] = [];
+  const risks: string[] = [];
+
+  const trend = lrNationalTrend(inputs.livingRegions);
+  if (trend.label === 'broad national expansion') {
+    momentum += 12;
+    pushEv('living_regions', 'national_trend', 'Broad regional expansion lifts national output momentum', 12, trend.growing);
+    drivers.push('Broad regional expansion');
+  } else if (trend.label === 'national slowdown') {
+    momentum -= 14;
+    pushEv('living_regions', 'national_trend', 'National slowdown weighs on aggregate output', -14, trend.declining);
+    risks.push('National slowdown across multiple regions');
+  } else if (trend.label === 'modest growth') {
+    momentum += 5;
+    pushEv('living_regions', 'national_trend', 'Modest national growth', 5, trend.growing);
+    drivers.push('Modest national growth');
+  } else if (trend.label === 'softening') {
+    momentum -= 6;
+    pushEv('living_regions', 'national_trend', 'Softening regional momentum', -6, trend.declining);
+  }
+
+  const lrRegs = Object.values(inputs.livingRegions?.regions || {});
+  if (lrRegs.length) {
+    const econAvg =
+      lrRegs.reduce((s, r) => s + (r.economy?.score ?? 50), 0) / lrRegs.length;
+    const momAvg =
+      lrRegs.reduce((s, r) => s + (r.momentum?.value ?? 0), 0) / lrRegs.length;
+    const econAdj = (econAvg - 50) * 0.35;
+    const momAdj = momAvg * 18;
+    momentum += econAdj + momAdj;
+    pushEv('living_regions', 'regional_economy', `Average regional economy score ${Math.round(econAvg)}`, econAdj);
+    pushEv('living_regions', 'regional_momentum', `Average regional momentum ${v1014Round(momAvg, 2)}`, momAdj);
+  }
+
+  let diversificationIndex = 58;
+  const indOut: Record<string, number> = inputs.industries?.national?.output || inputs.industries?.output || {};
+  const outVals = Object.values(indOut).map(v => Math.max(0, Number(v) || 0));
+  const outTotal = outVals.reduce((a, b) => a + b, 0);
+  if (outTotal > 0) {
+    const shares = outVals.map(v => v / outTotal);
+    const hhi = shares.reduce((s, sh) => s + sh * sh, 0);
+    diversificationIndex = v1014Clamp(Math.round((1 - hhi) * 140), 18, 95);
+    momentum += (diversificationIndex - 50) * 0.12;
+    pushEv('industries', 'diversification', `Industrial diversification index ${diversificationIndex}`, (diversificationIndex - 50) * 0.12);
+    if (diversificationIndex < 38) risks.push('Concentrated industrial base');
+    else if (diversificationIndex >= 72) drivers.push('Diversified industrial base');
+  }
+
+  let externalExposure = 42;
+  const geoDiv = Number(inputs.economicGeography?.nationalSummary?.diversificationScore ?? inputs.economicGeography?.diversificationScore);
+  if (Number.isFinite(geoDiv)) {
+    externalExposure = v1014Clamp(Math.round(100 - geoDiv * 0.85), 15, 90);
+    pushEv('economic_geography', 'cluster_exposure', 'Geographic concentration affects external exposure', (50 - externalExposure) * 0.08);
+  }
+
+  let internalDemandStrength = 52;
+  const hhNat = inputs.households?.nationalSummary;
+  if (hhNat) {
+    const demandMap: Record<string, number> = {
+      contracting: 28,
+      soft: 38,
+      weak: 44,
+      moderate: 54,
+      strong: 68,
+      very_strong: 78,
+      surging: 86
+    };
+    internalDemandStrength = demandMap[String(hhNat.domesticDemandBand)] ?? 52;
+    momentum += (internalDemandStrength - 52) * 0.22;
+    pushEv('households', 'domestic_demand', `Domestic demand band ${hhNat.domesticDemandBand}`, (internalDemandStrength - 52) * 0.22);
+    if (internalDemandStrength >= 68) drivers.push('Strong domestic demand');
+    if (internalDemandStrength <= 40) risks.push('Weak domestic demand');
+  }
+
+  let laborUtilizationProxy = 55;
+  const wfSum = inputs.workforce?.nationalSummary;
+  if (wfSum?.overallPressureBand) {
+    const wfMap: Record<string, number> = {
+      critical_shortage: 82,
+      strained: 68,
+      tight: 58,
+      healthy: 52,
+      surplus: 44
+    };
+    laborUtilizationProxy = wfMap[String(wfSum.overallPressureBand)] ?? 55;
+    momentum += (laborUtilizationProxy - 55) * 0.15;
+    pushEv('workforce', 'labor_pressure', `Workforce pressure ${wfSum.overallPressureBand}`, (laborUtilizationProxy - 55) * 0.15);
+  }
+
+  let fiscalCompatibility = 58;
+  const pfCap = inputs.publicFinance?.revenueCapacity;
+  if (pfCap) {
+    fiscalCompatibility = v1014Clamp(Math.round((Number(pfCap.currentCapacity) + Number(pfCap.resilience)) / 2), 20, 95);
+    momentum += (fiscalCompatibility - 58) * 0.1;
+    pushEv('public_finance', 'revenue_capacity', 'Public revenue capacity supports macro stability', (fiscalCompatibility - 58) * 0.1);
+    if (fiscalCompatibility < 40) risks.push('Thin fiscal capacity for macro shocks');
+  }
+
+  const sysExp = Number(inputs.systemicRisk?.overallExposure ?? inputs.systemicRisk?.nationalExposure ?? 0);
+  if (sysExp > 0) {
+    const adj = -Math.min(18, sysExp * 0.22);
+    momentum += adj;
+    pushEv('systemic_risk', 'exposure', `Systemic exposure ${Math.round(sysExp)}`, adj);
+    if (sysExp >= 55) risks.push('Elevated systemic exposure');
+  }
+
+  if ((inputs.activeCrisesCount || 0) > 0) {
+    momentum -= Math.min(16, (inputs.activeCrisesCount || 0) * 5);
+    pushEv('crises', 'active', `${inputs.activeCrisesCount} active crisis chain(s)`, -Math.min(16, (inputs.activeCrisesCount || 0) * 5));
+    risks.push('Active national crises');
+  }
+
+  if (inputs.highInflationScenarioActive) {
+    momentum -= 8;
+    pushEv('scenarios', 'high_inflation', 'High inflation scenario pressure', -8);
+    risks.push('Inflation scenario pressure');
+  }
+
+  momentum = v1014Clamp(v1014Round(momentum), 8, 92);
+
+  let regionalBalanceIndex = 60;
+  if (lrRegs.length >= 4) {
+    const scores = lrRegs.map(r => r.economy?.score ?? 50);
+    const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const dev = Math.sqrt(scores.reduce((s, x) => s + (x - avg) ** 2, 0) / scores.length);
+    regionalBalanceIndex = v1014Clamp(Math.round(100 - dev * 1.4), 20, 95);
+    if (regionalBalanceIndex < 42) risks.push('Uneven regional development');
+  }
+
+  let balanceScore = v1014Clamp(
+    Math.round(diversificationIndex * 0.28 + fiscalCompatibility * 0.22 + regionalBalanceIndex * 0.2 + (100 - externalExposure) * 0.15 + (100 - sysExp) * 0.15),
+    10,
+    95
+  );
+
+  const rawOutputBand = v1014BandFromScore(momentum, V1014_OUTPUT_BANDS);
+  const outputBand = v1014ApplyHysteresis(rawOutputBand, persisted.outputBand, momentum, 62, 46) as NationalMacroOutputBand;
+
+  let cyclePhase: NationalMacroCyclePhase = 'steady';
+  if (momentum >= 74 && internalDemandStrength >= 65 && laborUtilizationProxy >= 62) cyclePhase = 'overheating';
+  else if (momentum >= 62) cyclePhase = 'expansion';
+  else if (momentum <= 34) cyclePhase = 'slowdown';
+  else if (momentum <= 42 && sysExp >= 45) cyclePhase = 'adjustment';
+  if (persisted.cyclePhase === 'expansion' && cyclePhase === 'steady' && momentum >= 58 - V1014_LIMITS.hysteresisDeadband) {
+    cyclePhase = 'expansion';
+  }
+
+  const rawBalanceBand = v1014BandFromScore(balanceScore, V1014_BALANCE_BANDS);
+  const balanceBand = v1014ApplyHysteresis(rawBalanceBand, persisted.balanceBand, balanceScore, 58, 44) as NationalMacroBalanceBand;
+
+  const headline =
+    outputBand === 'surging'
+      ? 'National economy surging with broad momentum'
+      : outputBand === 'expanding'
+      ? 'National economy expanding'
+      : outputBand === 'contracting'
+      ? 'National economy contracting'
+      : outputBand === 'soft'
+      ? 'National economy softening'
+      : 'National economy growing at a moderate pace';
+
+  const primaryDriver = drivers[0] || (trend.label !== 'steady' ? `Regional trend: ${trend.label}` : 'Balanced regional activity');
+  const primaryRisk = risks[0] || null;
+
+  const state: NationalMacroeconomyState = {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    turn,
+    revision: persisted.revision + (persisted.lastInputHash === inputHash ? 0 : 1),
+    inputHash,
+    outputMomentum: momentum,
+    outputBand,
+    cyclePhase,
+    balanceBand,
+    diversificationIndex,
+    externalExposure,
+    internalDemandStrength,
+    laborUtilizationProxy,
+    regionalBalanceIndex,
+    fiscalCompatibility,
+    headline,
+    primaryDriver,
+    primaryRisk,
+    evidence: evidence.slice(-V1014_LIMITS.maxEvidence),
+    drivers: drivers.slice(0, V1014_LIMITS.maxDrivers),
+    risks: risks.slice(0, V1014_LIMITS.maxRisks)
+  };
+
+  const events: NationalMacroeconomyHistoryEntry[] = [];
+  const bandChanged = outputBand !== persisted.outputBand || cyclePhase !== persisted.cyclePhase;
+  const nextHistory = [...persisted.history];
+  if (bandChanged || persisted.initializedTurn === null) {
+    const entry: NationalMacroeconomyHistoryEntry = {
+      turn,
+      outputBand,
+      cyclePhase,
+      summary: `${headline} (${cyclePhase} phase)`
+    };
+    nextHistory.push(entry);
+    events.push(entry);
+  }
+
+  const nextPersisted: NationalMacroeconomyPersisted = {
+    ...persisted,
+    revision: state.revision,
+    initializedTurn: persisted.initializedTurn ?? turn,
+    lastInputHash: inputHash,
+    lastUpdatedTurn: turn,
+    outputBand,
+    cyclePhase,
+    balanceBand,
+    history: nextHistory.slice(-V1014_LIMITS.maxHistory)
+  };
+
+  return { state, persisted: nextPersisted, events };
+}
+
+export function validateNationalMacroeconomyState(state: NationalMacroeconomyState | null | undefined): { valid: boolean; issues: string[] } {
+  const issues: string[] = [];
+  if (!state) return { valid: false, issues: ['NationalMacroeconomyState is null or undefined'] };
+  if (state.schemaVersion !== V1014_SCHEMA_VERSION) issues.push(`Unexpected schema ${state.schemaVersion}`);
+  for (const k of ['outputMomentum', 'diversificationIndex', 'externalExposure', 'internalDemandStrength'] as const) {
+    const v = state[k];
+    if (!Number.isFinite(v)) issues.push(`Non-finite ${k}`);
+  }
+  return { valid: issues.length === 0, issues };
+}
+
+/** GI3 / contextual ranking: small bounded macro fit (≤ ±2.0). */
+export function nationalMacroeconomyActionAlignment(
+  macro: NationalMacroeconomyState | null | undefined,
+  action: { category?: string; regionId?: string; title?: string; description?: string }
+): { scoreDelta: number; reason: string | null } {
+  if (!macro) return { scoreDelta: 0, reason: null };
+  const blob = `${action.category || ''} ${action.title || ''} ${action.description || ''}`.toLowerCase();
+  let delta = 0;
+  if (macro.outputBand === 'contracting' || macro.cyclePhase === 'slowdown') {
+    if (/recovery|resilien|stabil|relief|diversif/.test(blob)) delta += 1.5;
+    if (/speculative|leverag|overextend/.test(blob)) delta -= 1.2;
+  }
+  if (macro.cyclePhase === 'overheating' && /housing|overheat|speculative/.test(blob)) delta -= 1.4;
+  if (macro.balanceBand === 'fragile' && /resilien|redundan|backup|diversif/.test(blob)) delta += 1.6;
+  if (macro.internalDemandStrength >= 68 && /manufactur|domestic|workforce|skills/.test(blob)) delta += 0.8;
+  delta = v1014Clamp(delta, -2, 2);
+  return { scoreDelta: v1014Round(delta), reason: delta !== 0 ? macro.headline : null };
+}
+
+export type NationalMacroeconomyQueryTopic = 'overview' | 'momentum' | 'cycle' | 'balance' | 'diversification' | 'risk';
+
+export function detectNationalMacroeconomyQuery(raw: string): NationalMacroeconomyQueryTopic | null {
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  if (!/\b(national economy|macroeconom|macro economy|aggregate economy|overall economy|gdp|economic cycle|business cycle)\b/.test(q)) return null;
+  if (/\b(diversif|concentrat|depend)\b/.test(q)) return 'diversification';
+  if (/\b(risk|fragile|vulnerab|exposure)\b/.test(q)) return 'risk';
+  if (/\b(cycle|phase|overheat|slowdown|expansion)\b/.test(q)) return 'cycle';
+  if (/\b(momentum|growth|contract|surge|soften)\b/.test(q)) return 'momentum';
+  if (/\b(balance|resilien|robust|strained)\b/.test(q)) return 'balance';
+  return 'overview';
+}
+
+export function answerNationalMacroeconomyQuestion(
+  state: NationalMacroeconomyState | null | undefined,
+  topic: NationalMacroeconomyQueryTopic
+): { fact: string; calculated: string; inference: string; projection: string } {
+  if (!state) {
+    return {
+      fact: 'National macroeconomy layer is off or not yet computed.',
+      calculated: 'Enable National Systems and V10.14 National Macroeconomy in settings.',
+      inference: 'No macro synthesis is available this turn.',
+      projection: 'Turn the layer on to see aggregate momentum and balance.'
+    };
+  }
+  const fact = `${state.headline} Output momentum ${state.outputMomentum}/100 (${state.outputBand.replace(/_/g, ' ')}).`;
+  const calculated = `Cycle phase: ${state.cyclePhase.replace(/_/g, ' ')} · Balance: ${state.balanceBand.replace(/_/g, ' ')} · Diversification ${state.diversificationIndex}/100 · Domestic demand strength ${state.internalDemandStrength}/100.`;
+  const inference = state.primaryRisk
+    ? `Primary macro risk: ${state.primaryRisk}. Main driver: ${state.primaryDriver}.`
+    : `Main driver: ${state.primaryDriver}. No dominant macro risk flagged this turn.`;
+  const projection =
+    state.cyclePhase === 'overheating'
+      ? 'Without cooling investment or capacity relief, overheating could tighten labor and fiscal headroom.'
+      : state.cyclePhase === 'slowdown'
+      ? 'Recovery-oriented infrastructure and diversification would improve macro momentum over several turns.'
+      : 'Current macro balance suggests steady pacing — watch regional divergence and systemic exposure.';
+  if (topic === 'diversification') {
+    return { fact, calculated: `Diversification index ${state.diversificationIndex}/100 · External exposure ${state.externalExposure}/100.`, inference, projection };
+  }
+  if (topic === 'risk') {
+    return { fact, calculated: `Systemic macro risks: ${state.risks.length ? state.risks.join('; ') : 'none flagged'}.`, inference, projection };
+  }
+  if (topic === 'cycle') {
+    return { fact, calculated: `Business-cycle phase: ${state.cyclePhase.replace(/_/g, ' ')} (output band ${state.outputBand}).`, inference, projection };
+  }
+  if (topic === 'momentum') {
+    return { fact, calculated: `Output momentum ${state.outputMomentum}/100 with ${state.drivers.slice(0, 2).join(' · ') || 'mixed drivers'}.`, inference, projection };
+  }
+  if (topic === 'balance') {
+    return { fact, calculated: `Macro balance band ${state.balanceBand} (regional balance ${state.regionalBalanceIndex}/100, fiscal compatibility ${state.fiscalCompatibility}/100).`, inference, projection };
+  }
+  return { fact, calculated, inference, projection };
+}
+
+export function runV1014NationalMacroeconomySelfTests(): {
+  passed: number;
+  failed: number;
+  total: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  const boomLr: any = {
+    regions: Object.fromEntries(
+      V1014_CORE_REGIONS.map((code, i) => [
+        code,
+        {
+          regionId: code,
+          name: code,
+          economy: { score: 70 + (i % 3), band: 'strong' },
+          momentum: { value: 0.25, band: 'accelerating' },
+          sectors: {},
+          specializations: {},
+          development: { tier: 'developing', score: 50 },
+          infrastructure: { capacity: {}, band: 'adequate', quality: 50, active: [], damaged: [] },
+          conditions: [],
+          needs: [],
+          opportunities: [],
+          risks: [],
+          history: [],
+          evidence: [],
+          identity: { label: 'Test' },
+          core: {},
+          investment: { band: 'balanced' },
+          stability: { value: 60, band: 'stable' },
+          strategicValue: { score: 55, band: 'moderate', inputs: {} },
+          lastMeaningfulTurn: 1
+        }
+      ])
+    )
+  };
+
+  const bustLr: any = {
+    regions: Object.fromEntries(
+      V1014_CORE_REGIONS.map(code => [
+        code,
+        {
+          regionId: code,
+          name: code,
+          economy: { score: 28, band: 'weak' },
+          momentum: { value: -0.2, band: 'declining' },
+          sectors: {},
+          specializations: {},
+          development: { tier: 'emerging', score: 30 },
+          infrastructure: { capacity: {}, band: 'weak', quality: 30, active: [], damaged: [] },
+          conditions: [],
+          needs: [],
+          opportunities: [],
+          risks: [],
+          history: [],
+          evidence: [],
+          identity: { label: 'Test' },
+          core: {},
+          investment: { band: 'low' },
+          stability: { value: 40, band: 'fragile' },
+          strategicValue: { score: 30, band: 'low', inputs: {} },
+          lastMeaningfulTurn: 1
+        }
+      ])
+    )
+  };
+
+  check('NE01', 'Baseline compute returns valid state', () => {
+    const r = computeNationalMacroeconomy({ turn: 1, livingRegions: boomLr }, null, null);
+    const v = validateNationalMacroeconomyState(r.state);
+    return v.valid && r.state.outputMomentum > 40 || JSON.stringify(v.issues);
+  });
+
+  check('NE02', 'Deterministic recompute', () => {
+    const inp = { turn: 3, livingRegions: boomLr };
+    const a = computeNationalMacroeconomy(inp, null, null);
+    const b = computeNationalMacroeconomy(inp, null, null);
+    return JSON.stringify(a.state) === JSON.stringify(b.state) || 'mismatch';
+  });
+
+  check('NE03', 'Input-hash cache skips revision bump', () => {
+    const inp = { turn: 4, livingRegions: boomLr };
+    const r1 = computeNationalMacroeconomy(inp, null, null);
+    const r2 = computeNationalMacroeconomy(inp, r1.persisted, r1.state);
+    return r2.state.revision === r1.state.revision && r2.events.length === 0 || 'cache miss';
+  });
+
+  check('NE04', 'Slowdown regions reduce momentum vs boom', () => {
+    const boom = computeNationalMacroeconomy({ turn: 2, livingRegions: boomLr }, null, null);
+    const bust = computeNationalMacroeconomy({ turn: 2, livingRegions: bustLr }, null, null);
+    return boom.state.outputMomentum > bust.state.outputMomentum || `${boom.state.outputMomentum} vs ${bust.state.outputMomentum}`;
+  });
+
+  check('NE05', 'Diversified industries raise diversification index', () => {
+    const conc = computeNationalMacroeconomy(
+      { turn: 2, livingRegions: boomLr, industries: { national: { output: { mining: 90, agriculture: 5 } } } },
+      null,
+      null
+    );
+    const div = computeNationalMacroeconomy(
+      {
+        turn: 2,
+        livingRegions: boomLr,
+        industries: { national: { output: { mining: 30, agriculture: 25, manufacturing: 25, technology: 20 } } }
+      },
+      null,
+      null
+    );
+    return div.state.diversificationIndex > conc.state.diversificationIndex || `${div.state.diversificationIndex} vs ${conc.state.diversificationIndex}`;
+  });
+
+  check('NE06', 'Strong domestic demand lifts momentum', () => {
+    const weak = computeNationalMacroeconomy({ turn: 2, livingRegions: boomLr }, null, null);
+    const strong = computeNationalMacroeconomy(
+      {
+        turn: 2,
+        livingRegions: boomLr,
+        households: { nationalSummary: { domesticDemandBand: 'very_strong' } } as any
+      },
+      null,
+      null
+    );
+    return strong.state.outputMomentum > weak.state.outputMomentum || 'no lift';
+  });
+
+  check('NE07', 'Systemic exposure drags momentum', () => {
+    const calm = computeNationalMacroeconomy({ turn: 2, livingRegions: boomLr }, null, null);
+    const stressed = computeNationalMacroeconomy(
+      { turn: 2, livingRegions: boomLr, systemicRisk: { overallExposure: 72 } },
+      null,
+      null
+    );
+    return calm.state.outputMomentum > stressed.state.outputMomentum || 'no drag';
+  });
+
+  check('NE08', 'Active crises reduce momentum', () => {
+    const a = computeNationalMacroeconomy({ turn: 2, livingRegions: boomLr, activeCrisesCount: 0 }, null, null);
+    const b = computeNationalMacroeconomy({ turn: 2, livingRegions: boomLr, activeCrisesCount: 2 }, null, null);
+    return a.state.outputMomentum > b.state.outputMomentum || 'no effect';
+  });
+
+  check('NE09', 'Hysteresis prevents band flicker', () => {
+    const p = createInitialNationalMacroeconomyPersisted(1);
+    p.outputBand = 'expanding';
+    const r = computeNationalMacroeconomy({ turn: 2, livingRegions: boomLr }, p, null);
+    return r.state.outputBand === 'expanding' || r.state.outputBand === 'surging' || r.state.outputBand;
+  });
+
+  check('NE10', 'History records band transitions', () => {
+    const r = computeNationalMacroeconomy({ turn: 2, livingRegions: bustLr }, null, null);
+    return r.persisted.history.length >= 1 || 'no history';
+  });
+
+  check('NE11', 'buildNationalMacroeconomyInputs respects enabled flag', () => {
+    const inp = buildNationalMacroeconomyInputs({ turn: 1, gameSettings: { nationalSystemsEnabled: false, nationalMacroeconomyEnabled: true } });
+    return inp.enabled === false || 'enabled wrong';
+  });
+
+  check('NE12', 'Macro action alignment bounded', () => {
+    const st = computeNationalMacroeconomy({ turn: 2, livingRegions: bustLr, systemicRisk: { overallExposure: 80 } }, null, null).state;
+    const al = nationalMacroeconomyActionAlignment(st, { title: 'Resilience redundancy backup plan', category: 'resilience' });
+    return al.scoreDelta <= 2 && al.scoreDelta >= -2 || String(al.scoreDelta);
+  });
+
+  check('NE13', 'Query detector finds macro questions', () => {
+    return detectNationalMacroeconomyQuery('How is the national economy doing?') === 'overview' || 'miss';
+  });
+
+  check('NE14', 'Query answer includes four claim layers', () => {
+    const st = computeNationalMacroeconomy({ turn: 2, livingRegions: boomLr }, null, null).state;
+    const ans = answerNationalMacroeconomyQuestion(st, 'overview');
+    return Boolean(ans.fact && ans.calculated && ans.inference && ans.projection) || 'incomplete';
+  });
+
+  check('NE15', 'Sanitize persists bounded history', () => {
+    const huge = sanitizeNationalMacroeconomyPersisted({
+      history: Array.from({ length: 40 }, (_, i) => ({ turn: i, outputBand: 'moderate', cyclePhase: 'steady', summary: 'x' }))
+    });
+    return huge.history.length <= V1014_LIMITS.maxHistory || String(huge.history.length);
+  });
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, failed: results.length - passed, total: results.length, results };
+}
+
+export function NationalMacroeconomyBrief(props: { state: NationalMacroeconomyState | null | undefined; className?: string }) {
+  const st = props.state;
+  if (!st) return null;
+  return (
+    <div className={props.className || 'text-sm space-y-1'} data-testid="v1014-macro-brief">
+      <div className="font-semibold">{st.headline}</div>
+      <div className="text-xs opacity-90">
+        Momentum {st.outputMomentum}/100 · {st.cyclePhase.replace(/_/g, ' ')} · Balance {st.balanceBand.replace(/_/g, ' ')}
+      </div>
+      <div className="text-xs opacity-80">{st.primaryDriver}{st.primaryRisk ? ` · Risk: ${st.primaryRisk}` : ''}</div>
+    </div>
+  );
+}
+
 export function triggerJsonFileDownload(filename: string, data: unknown): boolean {
   try {
     if (typeof document === 'undefined' || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return false;
@@ -184424,6 +185245,7 @@ function dispatchGameSettingsChange(
     const sc11Ranking = gameSettings.stateCapacityEnabled !== false && gameSettings.nationalSystemsEnabled !== false ? ((gameState as any).stateCapacityState as NationalStateCapacityState | undefined) || null : null;
     const pf12Ranking = gameSettings.publicFinanceEnabled !== false && gameSettings.nationalSystemsEnabled !== false ? ((gameState as any).publicFinanceState as NationalPublicFinanceState | undefined) || null : null;
     const hh13Ranking = gameSettings.householdsEnabled !== false && gameSettings.nationalSystemsEnabled !== false ? ((gameState as any).householdEconomyState as NationalHouseholdEconomyState | undefined) || null : null;
+    const macro14Ranking = gameSettings.nationalMacroeconomyEnabled !== false && gameSettings.nationalSystemsEnabled !== false ? ((gameState as any).nationalMacroeconomyState as NationalMacroeconomyState | undefined) || null : null;
     const apLeft = typeof getRemainingActionPoints === 'function' ? getRemainingActionPoints(actor, gameSettings) : 3;
     const recs = rankContextualRecommendations(intentRecCandidates, objective, {
       apRemaining: apLeft,
@@ -184437,7 +185259,8 @@ function dispatchGameSettingsChange(
       economicGeography: egRanking,
       stateCapacity: sc11Ranking,
       publicFinance: pf12Ranking,
-      households: hh13Ranking
+      households: hh13Ranking,
+      nationalMacroeconomy: macro14Ranking
     });
     // V9 Contextual Action System: the same canonical ranking, widened so PLAY can show
     // Recommended / Useful Now and Game Intelligence can offer real alternatives.
@@ -184453,7 +185276,8 @@ function dispatchGameSettingsChange(
       economicGeography: egRanking,
       stateCapacity: sc11Ranking,
       publicFinance: pf12Ranking,
-      households: hh13Ranking
+      households: hh13Ranking,
+      nationalMacroeconomy: macro14Ranking
     });
     return {
       actor,
@@ -214782,6 +215606,50 @@ function dispatchGameSettingsChange(
   }, [hh13State, hh13Persisted, hh13Inputs]);
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, households: hh13Enabled ? hh13View : null };
 
+  const macro14Enabled = Boolean(nsEnabled && gameSettings.nationalMacroeconomyEnabled !== false);
+  const macro14StoredRaw = (gameState as any).nationalMacroeconomy;
+  const macro14Persisted = useMemo(() => sanitizeNationalMacroeconomyPersisted(macro14StoredRaw, lrInputs.turn), [macro14StoredRaw, lrInputs.turn]);
+  const macro14PersistedRef = useRef<NationalMacroeconomyPersisted>(macro14Persisted); macro14PersistedRef.current = macro14Persisted;
+  const macro14Inputs = useMemo<NationalMacroeconomyInputs | null>(() => {
+    if (!macro14Enabled || !nsState) return null;
+    return buildNationalMacroeconomyInputs({
+      turn: lrInputs.turn,
+      gameState,
+      gameSettings,
+      livingRegions: lrState,
+      industries: scState,
+      economicGeography: egEnabled ? egState : null,
+      workforce: wfEnabled ? wfState : null,
+      publicFinance: pf12Enabled ? pf12State : null,
+      households: hh13Enabled ? hh13State : null,
+      systemicRisk: srEnabled ? srState : null,
+      nationalDevelopment: ndEnabled ? ndProfile : null
+    });
+  }, [macro14Enabled, nsState, lrInputs.turn, gameState.crisisChainState, gameSettings.selectedScenarioId, lrState, scState, egEnabled, egState, wfEnabled, wfState, pf12Enabled, pf12State, hh13Enabled, hh13State, srEnabled, srState, ndEnabled, ndProfile, macro14Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  const macro14Hash = useMemo(() => (macro14Inputs ? nationalMacroeconomyInputHash(macro14Inputs) : ''), [macro14Inputs]);
+  const macro14StateRef = useRef<NationalMacroeconomyState | null>(null);
+  const macro14State = useMemo<NationalMacroeconomyState | null>(() => {
+    if (!macro14Inputs) return null;
+    const out = computeNationalMacroeconomy(macro14Inputs, macro14PersistedRef.current, macro14StateRef.current);
+    return out.state;
+  }, [macro14Hash, macro14Inputs, macro14Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  macro14StateRef.current = macro14State;
+  useEffect(() => {
+    if (!macro14Enabled || !macro14Inputs || gameState.gameMode !== 'game') return;
+    const prev = macro14PersistedRef.current;
+    if (prev && prev.lastInputHash === macro14Hash) return;
+    const res = computeNationalMacroeconomy(macro14Inputs, prev, macro14StateRef.current);
+    macro14PersistedRef.current = res.persisted;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { nationalMacroeconomy: res.persisted, nationalMacroeconomyState: res.state } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [macro14Hash, macro14Enabled, gameState.gameMode]);
+  const macro14View = useMemo<NationalMacroeconomyWorldView | null>(() => {
+    if (!macro14State || !macro14Inputs) return null;
+    return { state: macro14State, persisted: macro14Persisted, inputs: macro14Inputs };
+  }, [macro14State, macro14Persisted, macro14Inputs]);
+  if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, nationalMacroeconomy: macro14Enabled ? macro14View : null };
+
+
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
 
@@ -219671,6 +220539,10 @@ function dispatchGameSettingsChange(
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v1013-setting-households">
                     <input type="checkbox" checked={gameSettings.householdsEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🏠 Households & Living Standards', prev => ({ ...prev, householdsEnabled: e.target.checked }))} />
                     Households, Living Standards &amp; Domestic Demand (V10.13): household prosperity, affordability, housing pressure, essential access and domestic demand feedback (needs National Systems)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm mt-2" data-testid="v1014-setting-national-macroeconomy">
+                    <input type="checkbox" checked={gameSettings.nationalMacroeconomyEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '📈 National Macroeconomy', prev => ({ ...prev, nationalMacroeconomyEnabled: e.target.checked }))} />
+                    National Macroeconomy &amp; Aggregate Balance (V10.14): synthesized national output momentum, cycle phase, diversification and macro balance from canonical systems (needs National Systems)
                   </label>
                   {([
                     ['v93StartingPackage', 'Starting conditions', STARTING_CONDITION_PACKAGES.map(p => [p.id, `${p.label} — ${p.summary}`])],
