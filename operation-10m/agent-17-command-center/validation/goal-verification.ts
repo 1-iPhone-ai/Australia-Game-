@@ -180,7 +180,16 @@ import {
 import {
   buildAgent17ImperialAccord,
   imperialAccordBlocksCrown,
+  imperialAccordBlocksThrone,
 } from '../planning/imperial-accord.ts';
+import {
+  buildAgent17ThroneIndex,
+  throneIndexBlocksDynasty,
+} from '../planning/throne-index.ts';
+import {
+  buildAgent17DynastyAccord,
+  dynastyAccordBlocksThrone,
+} from '../planning/dynasty-accord.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -1539,6 +1548,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const throneIndex = depthEval.snapshot.planningDepth?.throneIndex;
+  goalResults.push(
+    result(
+      'G17-091',
+      !!throneIndex &&
+        throneIndex.regalia.length >= 5 &&
+        throneIndex.throneScore >= 0 &&
+        throneIndex.throneScore <= 100 &&
+        (throneIndex.band === 'seated' ||
+          throneIndex.band === 'vacant' ||
+          throneIndex.band === 'usurped'),
+      `regalia=${throneIndex?.regalia.length} score=${throneIndex?.throneScore}`
+    )
+  );
+
+  const dynastyAccord = depthEval.snapshot.planningDepth?.dynastyAccord;
+  goalResults.push(
+    result(
+      'G17-092',
+      !!dynastyAccord &&
+        dynastyAccord.charters.length >= 5 &&
+        dynastyAccord.dynastyScore >= 0 &&
+        dynastyAccord.dynastyScore <= 100,
+      `charters=${dynastyAccord?.charters.length} score=${dynastyAccord?.dynastyScore}`
+    )
+  );
+
+  const usurpedThrone = buildAgent17ThroneIndex({
+    imperialAccord: dissolvedImperial,
+    crownIndex: uncrownedCrown,
+    coalitionAccord: brokenCoalition,
+  });
+  const extinctDynasty = buildAgent17DynastyAccord({
+    throneIndex: usurpedThrone,
+    imperialAccord: dissolvedImperial,
+    crownIndex: uncrownedCrown,
+  });
+  goalResults.push(
+    result(
+      'G17-093',
+      imperialAccordBlocksThrone(dissolvedImperial) ||
+        throneIndexBlocksDynasty(usurpedThrone) ||
+        dynastyAccordBlocksThrone(extinctDynasty),
+      `${usurpedThrone.band}/${extinctDynasty.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1659,6 +1715,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-088',
     'G17-089',
     'G17-090',
+    'G17-091',
+    'G17-092',
+    'G17-093',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

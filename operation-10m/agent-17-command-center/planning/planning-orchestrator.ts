@@ -67,6 +67,8 @@ import { buildAgent17CompactIndex } from './compact-index.ts';
 import { buildAgent17SovereignAccord } from './sovereign-accord.ts';
 import { buildAgent17CrownIndex } from './crown-index.ts';
 import { buildAgent17ImperialAccord } from './imperial-accord.ts';
+import { buildAgent17ThroneIndex } from './throne-index.ts';
+import { buildAgent17DynastyAccord } from './dynasty-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -391,6 +393,16 @@ export function buildAgent17PlanningDepthSnapshot(
     sovereignAccord,
     compactIndex,
   });
+  const throneIndex = buildAgent17ThroneIndex({
+    imperialAccord,
+    crownIndex,
+    coalitionAccord,
+  });
+  const dynastyAccord = buildAgent17DynastyAccord({
+    throneIndex,
+    imperialAccord,
+    crownIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -440,6 +452,8 @@ export function buildAgent17PlanningDepthSnapshot(
     sovereignAccord,
     crownIndex,
     imperialAccord,
+    throneIndex,
+    dynastyAccord,
   };
 }
 

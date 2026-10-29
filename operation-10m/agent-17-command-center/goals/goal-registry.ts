@@ -632,6 +632,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Uncrowned crown or abdicated sovereign yields imperialAccordBlocksCrown.',
     severity: 'major',
   },
+  {
+    id: 'G17-091',
+    title: 'Throne index on planning depth',
+    category: 'telemetry',
+    acceptance: 'throneIndex reports throneScore 0–100 with seated/vacant/usurped band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-092',
+    title: 'Dynasty accord charters complete',
+    category: 'telemetry',
+    acceptance: 'dynastyAccord exposes ≥5 charters and dynastyScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-093',
+    title: 'Usurped throne extinguishes dynasty accord',
+    category: 'integration',
+    acceptance: 'Usurped throne or dissolved imperial yields dynastyAccordBlocksThrone.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

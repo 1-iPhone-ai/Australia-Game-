@@ -99,3 +99,7 @@ export function buildAgent17ImperialAccord(
 export function imperialAccordBlocksCrown(snapshot: Agent17ImperialAccordSnapshot): boolean {
   return snapshot.band === 'dissolved' || !snapshot.empireProclaimed;
 }
+
+export function imperialAccordBlocksThrone(snapshot: Agent17ImperialAccordSnapshot): boolean {
+  return snapshot.band === 'dissolved' || !snapshot.empireProclaimed;
+}
