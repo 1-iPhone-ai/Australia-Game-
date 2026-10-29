@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   O10M_SCENARIO_CHAINS,
+  attachCircuitSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
   campaignProgressSummary,
   createEmptyO10mModesPersistedState,
+  createCircuitSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -34,6 +36,39 @@ describe('scenario campaign planner round 4', () => {
     assert.equal(plan.kind, 'chain_step');
     assert.equal(plan.scenarioId, 'o10m_continuity_drill');
     assert.equal(plan.chainId, 'o10m_chain_continuity_arc');
+  });
+
+  it('prefers active circuit over relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: circuit } = createCircuitSession({
+      circuitId: 'o10m_circuit_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_circuit_warmup_laps', 'o10m_circuit_ridge_climb'],
+    });
+    const { session: relay } = createRelaySession({
+      relayId: 'o10m_relay_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_relay_dust_corridor', 'o10m_relay_coastal_handoff'],
+    });
+    const { session: gauntlet } = createGauntletSession({
+      gauntletId: 'o10m_gauntlet_top',
+      label: 'Top',
+      scenarioIds: ['o10m_gauntlet_opening_gate'],
+    });
+    const { queue } = createMarathonQueue({
+      queueId: 'o10m_marathon_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_marathon_pace_setter', 'o10m_marathon_rhythm_hold'],
+    });
+    let state = pinCampaignSlot(createEmptyO10mModesPersistedState(), {
+      slotId: 'o10m_slot_lab',
+      scenarioId: 'o10m_slot_rotation_lab',
+      turn: 4,
+    }).state;
+    state = attachMarathonQueueToState(state, queue!);
+    state = attachGauntletSessionToState(state, gauntlet!);
+    state = attachRelaySessionToState(state, relay!);
+    state = attachCircuitSessionToState(state, circuit!);
+    assert.equal(planNextCampaignAction(state).kind, 'circuit_step');
   });
 
   it('prefers active relay over gauntlet, marathon queue, and campaign slot', () => {

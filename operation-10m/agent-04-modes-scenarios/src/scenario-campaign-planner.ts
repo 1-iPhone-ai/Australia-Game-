@@ -16,8 +16,13 @@ import {
   relaySessionSummary,
   sanitizeRelaySession,
 } from './save-format-relay.js';
+import {
+  getCircuitScenarioAtCursor,
+  circuitSessionSummary,
+  sanitizeCircuitSession,
+} from './save-format-circuit.js';
 import { objectiveProgressCompletionRatio } from './save-format-objective-sync.js';
-import type { O10mCampaignPlan, O10mModesPersistedState } from './types.js';
+import type { O10mCampaignPlan, O10mCircuitPhase, O10mModesPersistedState } from './types.js';
 
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -28,9 +33,31 @@ const emptyQueuePlan = {
   relayId: null as string | null,
   relayCursor: null as number | null,
   relayCarryMoney: null as number | null,
+  circuitId: null as string | null,
+  circuitCursor: null as number | null,
+  circuitPhase: null as O10mCircuitPhase | null,
+  circuitMomentum: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const circuit = sanitizeCircuitSession(state.circuitSession);
+  const circuitScenario = getCircuitScenarioAtCursor(circuit);
+  if (circuit && circuit.active && circuitScenario) {
+    return {
+      kind: 'circuit_step',
+      scenarioId: circuitScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      circuitId: circuit.circuitId,
+      circuitCursor: circuit.cursor,
+      circuitPhase: circuit.phaseTag,
+      circuitMomentum: circuit.momentumScore,
+      reason: `Circuit "${circuit.label}" ${circuit.phaseTag} leg ${circuit.cursor + 1}/${circuit.scenarioIds.length} (momentum ${circuit.momentumScore}).`,
+    };
+  }
+
   const relay = sanitizeRelaySession(state.relaySession);
   const relayScenario = getRelayScenarioAtCursor(relay);
   if (relay && relay.active && relayScenario) {
@@ -58,14 +85,10 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       chainId: state.chainProgress?.chainId ?? null,
       chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
       slotId: state.activeCampaignSlotId ?? null,
-      marathonQueueId: null,
-      marathonCursor: null,
+      ...emptyQueuePlan,
       gauntletId: gauntlet.gauntletId,
       gauntletCursor: gauntlet.cursor,
       gauntletLives: gauntlet.livesRemaining,
-      relayId: null,
-      relayCursor: null,
-      relayCarryMoney: null,
       reason: `Gauntlet "${gauntlet.label}" step ${gauntlet.cursor + 1}/${gauntlet.scenarioIds.length} (${gauntlet.livesRemaining} lives).`,
     };
   }
@@ -79,14 +102,9 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       chainId: state.chainProgress?.chainId ?? null,
       chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
       slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
       marathonQueueId: marathon.queueId,
       marathonCursor: marathon.cursor,
-      gauntletId: null,
-      gauntletCursor: null,
-      gauntletLives: null,
-      relayId: null,
-      relayCursor: null,
-      relayCarryMoney: null,
       reason: `Marathon "${marathon.label}" step ${marathon.cursor + 1}/${marathon.scenarioIds.length}.`,
     };
   }
@@ -162,6 +180,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   marathonActive: boolean;
   gauntletActive: boolean;
   relayActive: boolean;
+  circuitActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -172,6 +191,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const marathon = sanitizeMarathonQueue(state.marathonQueue);
   const gauntlet = gauntletSessionSummary(state);
   const relay = relaySessionSummary(state);
+  const circuit = circuitSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -180,6 +200,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     marathonActive: marathon?.active === true,
     gauntletActive: gauntlet.active,
     relayActive: relay.active,
+    circuitActive: circuit.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

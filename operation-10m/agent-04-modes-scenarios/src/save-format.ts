@@ -7,6 +7,7 @@ import {
 import { sanitizeMarathonQueue, sanitizeReplayLedger } from './save-format-marathon.js';
 import { sanitizeCatalogUnlockTokens, sanitizeGauntletSession } from './save-format-gauntlet.js';
 import { sanitizeRelaySession } from './save-format-relay.js';
+import { sanitizeCircuitSession } from './save-format-circuit.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -25,7 +26,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 7;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 8;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -131,6 +132,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     gauntletSession: null,
     catalogUnlockTokens: [],
     relaySession: null,
+    circuitSession: null,
   };
 }
 
@@ -157,6 +159,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       gauntletSession: merged.gauntletSession ?? null,
       catalogUnlockTokens: merged.catalogUnlockTokens ?? [],
       relaySession: merged.relaySession ?? null,
+      circuitSession: merged.circuitSession ?? null,
     };
     return upgraded;
   }
@@ -207,6 +210,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     gauntletSession: sanitizeGauntletSession(o.gauntletSession),
     catalogUnlockTokens: sanitizeCatalogUnlockTokens(o.catalogUnlockTokens),
     relaySession: sanitizeRelaySession(o.relaySession),
+    circuitSession: sanitizeCircuitSession(o.circuitSession),
   };
 }
 
@@ -262,6 +266,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Relay session failed sanitization; planner will ignore it.');
   } else if (relay && relay.cursor >= relay.scenarioIds.length) {
     warnings.push('Relay cursor out of range; clamp on next sanitize.');
+  }
+
+  const circuit = sanitizeCircuitSession(state.circuitSession);
+  if (state.circuitSession && !circuit) {
+    warnings.push('Circuit session failed sanitization; planner will ignore it.');
+  } else if (circuit && circuit.cursor >= circuit.scenarioIds.length) {
+    warnings.push('Circuit cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

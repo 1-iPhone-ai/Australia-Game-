@@ -14,10 +14,10 @@ import {
 } from '../src/index.js';
 
 describe('scenario chains', () => {
-  it('defines eight multi-step chains with unique ids', () => {
-    assert.equal(O10M_SCENARIO_CHAINS.length, 8);
+  it('defines nine multi-step chains with unique ids', () => {
+    assert.equal(O10M_SCENARIO_CHAINS.length, 9);
     const ids = O10M_SCENARIO_CHAINS.map(c => c.id);
-    assert.equal(new Set(ids).size, 8);
+    assert.equal(new Set(ids).size, 9);
     for (const chain of O10M_SCENARIO_CHAINS) {
       assert.ok(chain.steps.length >= 3);
     }

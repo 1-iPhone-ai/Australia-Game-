@@ -351,6 +351,19 @@ export interface O10mScenarioReplayRow {
   lastPlayedTurn: number;
 }
 
+export type O10mCircuitPhase = 'warmup' | 'ascent' | 'summit';
+
+/** Schema v8 — phased summit circuit with momentum accrual between legs. */
+export interface O10mCircuitSession {
+  circuitId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  momentumScore: number;
+  phaseTag: O10mCircuitPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -374,7 +387,14 @@ export interface O10mGauntletSession {
 }
 
 export interface O10mCampaignPlan {
-  kind: 'relay_step' | 'gauntlet_step' | 'marathon_step' | 'chain_step' | 'slot_resume' | 'free_play';
+  kind:
+    | 'circuit_step'
+    | 'relay_step'
+    | 'gauntlet_step'
+    | 'marathon_step'
+    | 'chain_step'
+    | 'slot_resume'
+    | 'free_play';
   scenarioId: string | null;
   chainId: string | null;
   chainStepIndex: number | null;
@@ -387,6 +407,10 @@ export interface O10mCampaignPlan {
   relayId: string | null;
   relayCursor: number | null;
   relayCarryMoney: number | null;
+  circuitId: string | null;
+  circuitCursor: number | null;
+  circuitPhase: O10mCircuitPhase | null;
+  circuitMomentum: number | null;
   reason: string;
 }
 
@@ -424,6 +448,8 @@ export interface O10mModesPersistedState {
   catalogUnlockTokens?: string[];
   /** Schema v7 — active relay convoy (mutually exclusive with marathon / gauntlet). */
   relaySession?: O10mRelaySession | null;
+  /** Schema v8 — active summit circuit (mutually exclusive with marathon / gauntlet / relay). */
+  circuitSession?: O10mCircuitSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

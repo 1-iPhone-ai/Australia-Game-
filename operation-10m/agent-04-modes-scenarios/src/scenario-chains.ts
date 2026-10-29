@@ -280,6 +280,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_summit_circuit',
+    title: 'Summit Circuit',
+    description:
+      'Three-phase summit circuit with momentum accrual between legs — round-8 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_summit_circuit',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_circuit_warmup_laps',
+        title: 'Warmup Laps',
+        narrativeBridge: 'Build circuit rhythm before the ridge climb.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 200 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_circuit_ridge_climb',
+        title: 'Ridge Climb',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, ACT: 6 },
+          forcedSettingsPatch: { o10mCircuitMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_circuit_summit_push',
+        title: 'Summit Push',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainSummitCircuitComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

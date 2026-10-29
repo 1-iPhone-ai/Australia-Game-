@@ -355,6 +355,19 @@ export interface O10mScenarioReplayRow {
   lastPlayedTurn: number;
 }
 
+export type O10mCircuitPhase = 'warmup' | 'ascent' | 'summit';
+
+/** Schema v8 — phased summit circuit with momentum accrual between legs. */
+export interface O10mCircuitSession {
+  circuitId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  momentumScore: number;
+  phaseTag: O10mCircuitPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -378,7 +391,14 @@ export interface O10mGauntletSession {
 }
 
 export interface O10mCampaignPlan {
-  kind: 'relay_step' | 'gauntlet_step' | 'marathon_step' | 'chain_step' | 'slot_resume' | 'free_play';
+  kind:
+    | 'circuit_step'
+    | 'relay_step'
+    | 'gauntlet_step'
+    | 'marathon_step'
+    | 'chain_step'
+    | 'slot_resume'
+    | 'free_play';
   scenarioId: string | null;
   chainId: string | null;
   chainStepIndex: number | null;
@@ -391,6 +411,10 @@ export interface O10mCampaignPlan {
   relayId: string | null;
   relayCursor: number | null;
   relayCarryMoney: number | null;
+  circuitId: string | null;
+  circuitCursor: number | null;
+  circuitPhase: O10mCircuitPhase | null;
+  circuitMomentum: number | null;
   reason: string;
 }
 
@@ -428,6 +452,8 @@ export interface O10mModesPersistedState {
   catalogUnlockTokens?: string[];
   /** Schema v7 — active relay convoy (mutually exclusive with marathon / gauntlet). */
   relaySession?: O10mRelaySession | null;
+  /** Schema v8 — active summit circuit (mutually exclusive with marathon / gauntlet / relay). */
+  circuitSession?: O10mCircuitSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -1654,6 +1680,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Relay finales', 'Carry ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_circuit_warmup_laps',
+    title: 'Circuit Warmup Laps',
+    description: 'Open a summit circuit with low-pressure pacing before the ridge climb.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100426,
+    startingMoney: 2200,
+    startingRegions: ['VIC', 'TAS'],
+    badgeId: 'badge_o10m_circuit_warmup_laps',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100426),
+      o10mCircuitWarmupLaps: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_cwl_obj_day',
+        label: 'Warmup Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Summit circuits', 'Momentum pacing', 'Phase warmup'],
+  },
+  {
+    id: 'o10m_circuit_ridge_climb',
+    title: 'Circuit Ridge Climb',
+    description: 'Mid-circuit standing climb with accrued momentum applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100427,
+    startingMoney: 2800,
+    startingRegions: ['NSW', 'ACT'],
+    startingStanding: { NSW: 44, ACT: 46 },
+    badgeId: 'badge_o10m_circuit_ridge_climb',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100427),
+      regionalStandingEnabled: true,
+      o10mCircuitRidgeClimb: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_crc_obj_avg',
+        label: 'Ridge Threshold',
+        description: 'Average standing of 50',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 50,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Circuit ascent', 'Momentum carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_circuit_summit_push',
+    title: 'Circuit Summit Push',
+    description: 'Finale circuit leg — net worth gate with full momentum bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100428,
+    startingMoney: 3200,
+    startingRegions: ['QLD', 'NT', 'WA'],
+    badgeId: 'badge_o10m_circuit_summit_push',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100428),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mCircuitSummitPush: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_csp_obj_net',
+        label: 'Summit Net Worth',
+        description: 'Reach $15,500 net worth',
+        targetType: 'netWorth',
+        targetValue: 15500,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Circuit finales', 'Momentum ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -2371,6 +2494,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
         title: 'Terminal Sprint',
         requiresPrimaryVictory: true,
         carryBonusOnComplete: { forcedSettingsPatch: { o10mChainRelayConvoyComplete: true } },
+      },
+    ],
+  },
+  {
+    id: 'o10m_chain_summit_circuit',
+    title: 'Summit Circuit',
+    description:
+      'Three-phase summit circuit with momentum accrual between legs — round-8 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_summit_circuit',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_circuit_warmup_laps',
+        title: 'Warmup Laps',
+        narrativeBridge: 'Build circuit rhythm before the ridge climb.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 200 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_circuit_ridge_climb',
+        title: 'Ridge Climb',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, ACT: 6 },
+          forcedSettingsPatch: { o10mCircuitMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_circuit_summit_push',
+        title: 'Summit Push',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainSummitCircuitComplete: true } },
       },
     ],
   },
@@ -3200,7 +3357,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 7;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 8;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -3306,6 +3463,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     gauntletSession: null,
     catalogUnlockTokens: [],
     relaySession: null,
+    circuitSession: null,
   };
 }
 
@@ -3332,6 +3490,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       gauntletSession: merged.gauntletSession ?? null,
       catalogUnlockTokens: merged.catalogUnlockTokens ?? [],
       relaySession: merged.relaySession ?? null,
+      circuitSession: merged.circuitSession ?? null,
     };
     return upgraded;
   }
@@ -3382,6 +3541,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     gauntletSession: sanitizeGauntletSession(o.gauntletSession),
     catalogUnlockTokens: sanitizeCatalogUnlockTokens(o.catalogUnlockTokens),
     relaySession: sanitizeRelaySession(o.relaySession),
+    circuitSession: sanitizeCircuitSession(o.circuitSession),
   };
 }
 
@@ -3437,6 +3597,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Relay session failed sanitization; planner will ignore it.');
   } else if (relay && relay.cursor >= relay.scenarioIds.length) {
     warnings.push('Relay cursor out of range; clamp on next sanitize.');
+  }
+
+  const circuit = sanitizeCircuitSession(state.circuitSession);
+  if (state.circuitSession && !circuit) {
+    warnings.push('Circuit session failed sanitization; planner will ignore it.');
+  } else if (circuit && circuit.cursor >= circuit.scenarioIds.length) {
+    warnings.push('Circuit cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -4054,6 +4221,7 @@ export function attachMarathonQueueToState(
     marathonQueue: sanitized,
     gauntletSession: null,
     relaySession: null,
+    circuitSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -4171,6 +4339,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceCircuitSessionAfterRun(next, run);
   next = advanceRelaySessionAfterRun(next, run);
   next = advanceMarathonQueueAfterRun(next, run);
   next = advanceGauntletSessionAfterRun(next, run);
@@ -4301,6 +4470,7 @@ export function attachGauntletSessionToState(
     gauntletSession: sanitized,
     marathonQueue: null,
     relaySession: null,
+    circuitSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -4530,6 +4700,7 @@ export function attachRelaySessionToState(
     relaySession: sanitized,
     marathonQueue: null,
     gauntletSession: null,
+    circuitSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -4610,6 +4781,212 @@ export function relaySessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-circuit.ts ---
+export const O10M_CIRCUIT_SCENARIO_CAP = 6;
+export const O10M_CIRCUIT_MOMENTUM_CAP = 900;
+export const O10M_CIRCUIT_MOMENTUM_MONEY_CAP = 800;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mCircuitPhase>(['warmup', 'ascent', 'summit']);
+
+export function unlockTokenForCircuitId(circuitId: string): string | null {
+  if (!circuitId.startsWith('o10m_circuit_')) return null;
+  return `o10m_unlock_${circuitId.slice('o10m_circuit_'.length)}`;
+}
+
+export function circuitPhaseForCursor(cursor: number, scenarioCount: number): O10mCircuitPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'summit';
+  if (clamped >= Math.floor(total / 2)) return 'ascent';
+  return 'warmup';
+}
+
+export function circuitMomentumFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  return Math.min(120, Math.max(15, Math.floor(run.playerNetWorth / 180)));
+}
+
+export function sanitizeCircuitSession(raw: unknown): O10mCircuitSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const circuitId =
+    typeof o.circuitId === 'string' && o.circuitId.startsWith('o10m_circuit_') ? o.circuitId : null;
+  if (!circuitId) return null;
+  const label = typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : circuitId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_CIRCUIT_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const momentumScore = Math.min(O10M_CIRCUIT_MOMENTUM_CAP, Math.max(0, Math.floor(num(o.momentumScore, 0))));
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mCircuitPhase)
+      ? (phaseRaw as O10mCircuitPhase)
+      : circuitPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    circuitId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    momentumScore,
+    phaseTag,
+  };
+}
+
+export function createCircuitSession(params: {
+  circuitId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mCircuitSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.circuitId.startsWith('o10m_circuit_')) {
+    return { session: null, warnings: ['Circuit ids must start with o10m_circuit_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_CIRCUIT_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return { session: null, warnings: [...warnings, 'Circuit requires at least one valid scenario.'] };
+  }
+  return {
+    session: {
+      circuitId: params.circuitId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      momentumScore: 0,
+      phaseTag: circuitPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachCircuitSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mCircuitSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeCircuitSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    circuitSession: sanitized,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearCircuitSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, circuitSession: null };
+}
+
+export function getCircuitScenarioAtCursor(session: O10mCircuitSession | null | undefined): string | null {
+  const circuit = sanitizeCircuitSession(session);
+  if (!circuit || !circuit.active) return null;
+  return circuit.scenarioIds[circuit.cursor] ?? null;
+}
+
+export function buildCircuitScenarioStartOverrides(session: O10mCircuitSession | null | undefined): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const circuit = sanitizeCircuitSession(session);
+  if (!circuit) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_CIRCUIT_MOMENTUM_MONEY_CAP,
+    Math.floor(circuit.momentumScore * 0.85),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveCircuitId: circuit.circuitId,
+      o10mActiveCircuitStep: circuit.cursor,
+      o10mActiveCircuitPhase: circuit.phaseTag,
+      o10mCircuitMomentum: circuit.momentumScore,
+    },
+  };
+}
+
+export function advanceCircuitSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeCircuitSession(state.circuitSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const momentumScore = Math.min(
+    O10M_CIRCUIT_MOMENTUM_CAP,
+    session.momentumScore + circuitMomentumFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      circuitSession: {
+        ...session,
+        cursor,
+        momentumScore,
+        phaseTag: circuitPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForCircuitId(session.circuitId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    circuitSession: { ...session, active: false, momentumScore, phaseTag: 'summit' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function circuitSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  momentum: number;
+  phase: O10mCircuitPhase | null;
+} {
+  const session = sanitizeCircuitSession(state.circuitSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    momentum: session?.momentumScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -4620,9 +4997,31 @@ const emptyQueuePlan = {
   relayId: null as string | null,
   relayCursor: null as number | null,
   relayCarryMoney: null as number | null,
+  circuitId: null as string | null,
+  circuitCursor: null as number | null,
+  circuitPhase: null as O10mCircuitPhase | null,
+  circuitMomentum: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const circuit = sanitizeCircuitSession(state.circuitSession);
+  const circuitScenario = getCircuitScenarioAtCursor(circuit);
+  if (circuit && circuit.active && circuitScenario) {
+    return {
+      kind: 'circuit_step',
+      scenarioId: circuitScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      circuitId: circuit.circuitId,
+      circuitCursor: circuit.cursor,
+      circuitPhase: circuit.phaseTag,
+      circuitMomentum: circuit.momentumScore,
+      reason: `Circuit "${circuit.label}" ${circuit.phaseTag} leg ${circuit.cursor + 1}/${circuit.scenarioIds.length} (momentum ${circuit.momentumScore}).`,
+    };
+  }
+
   const relay = sanitizeRelaySession(state.relaySession);
   const relayScenario = getRelayScenarioAtCursor(relay);
   if (relay && relay.active && relayScenario) {
@@ -4650,14 +5049,10 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       chainId: state.chainProgress?.chainId ?? null,
       chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
       slotId: state.activeCampaignSlotId ?? null,
-      marathonQueueId: null,
-      marathonCursor: null,
+      ...emptyQueuePlan,
       gauntletId: gauntlet.gauntletId,
       gauntletCursor: gauntlet.cursor,
       gauntletLives: gauntlet.livesRemaining,
-      relayId: null,
-      relayCursor: null,
-      relayCarryMoney: null,
       reason: `Gauntlet "${gauntlet.label}" step ${gauntlet.cursor + 1}/${gauntlet.scenarioIds.length} (${gauntlet.livesRemaining} lives).`,
     };
   }
@@ -4671,14 +5066,9 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       chainId: state.chainProgress?.chainId ?? null,
       chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
       slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
       marathonQueueId: marathon.queueId,
       marathonCursor: marathon.cursor,
-      gauntletId: null,
-      gauntletCursor: null,
-      gauntletLives: null,
-      relayId: null,
-      relayCursor: null,
-      relayCarryMoney: null,
       reason: `Marathon "${marathon.label}" step ${marathon.cursor + 1}/${marathon.scenarioIds.length}.`,
     };
   }
@@ -4754,6 +5144,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   marathonActive: boolean;
   gauntletActive: boolean;
   relayActive: boolean;
+  circuitActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -4764,6 +5155,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const marathon = sanitizeMarathonQueue(state.marathonQueue);
   const gauntlet = gauntletSessionSummary(state);
   const relay = relaySessionSummary(state);
+  const circuit = circuitSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -4772,6 +5164,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     marathonActive: marathon?.active === true,
     gauntletActive: gauntlet.active,
     relayActive: relay.active,
+    circuitActive: circuit.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -4790,7 +5183,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 8, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 9, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -4842,16 +5235,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const relayState = relay ? attachRelaySessionToState(createEmptyO10mModesPersistedState(), relay) : null;
   push('agent04_chunk_15', relayState !== null && planNextCampaignAction(relayState!).kind === 'relay_step');
 
+  const circuit = createCircuitSession({
+    circuitId: 'o10m_circuit_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_circuit_warmup_laps'],
+  }).session;
+  const circuitState = circuit ? attachCircuitSessionToState(createEmptyO10mModesPersistedState(), circuit) : null;
+  push('agent04_chunk_16', circuitState !== null && planNextCampaignAction(circuitState!).kind === 'circuit_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v8',
+  schemaVersion: 'op10m-agent04-v9',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 7,
+  saveSchemaVersion: 8,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

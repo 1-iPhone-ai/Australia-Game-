@@ -133,6 +133,7 @@ export function attachRelaySessionToState(
     relaySession: sanitized,
     marathonQueue: null,
     gauntletSession: null,
+    circuitSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
