@@ -72043,18 +72043,33 @@ export function generateCoPilotPlayerActionCandidates(
   }
 
   // Category 6: Expedition / Discovery
+  // Preset targets have `name`, not `title`, and their prep cost is the external-territory price.
+  // Offering the first one as a $250 "inland" start_expedition made Do It verify as a no-op, so
+  // the action point never moved. An affordable target uses that real price. Otherwise the card
+  // is the $250 inland launch the label describes, which does spend one action.
   const expedTargets = gs.expeditionTargets ? Object.values(gs.expeditionTargets) : [];
-  const targetExped: any = expedTargets[0];
-  const expedSiteId = targetExped?.id || targetExped?.siteId || `site_${currentRegion}_${currentTurn}`;
-  const expedCost = 250;
+  const expeditionRegionBlocked = (target: any) => Boolean(
+    target?.externalTerritoryId && currentRegion !== target.externalTerritoryId && (
+      currentRegion === 'SYD' || (EXTERNAL_TERRITORIES && EXTERNAL_TERRITORIES[currentRegion] && currentRegion !== target.externalTerritoryId)
+    )
+  );
+  const affordableExped: any = expedTargets.find((target: any) => {
+    const id = target?.id || target?.siteId;
+    if (!id || expeditionRegionBlocked(target)) return false;
+    const prep = calculateExpeditionPrepCost(target);
+    return Number.isFinite(prep) && prep > 0 && cash >= prep;
+  });
+  const expedSiteId = affordableExped ? (affordableExped.id || affordableExped.siteId) : `inland_${currentRegion}_${currentTurn}`;
+  const expedCost = affordableExped ? calculateExpeditionPrepCost(affordableExped) : 250;
+  const expedBlocker = !affordableExped && cash < expedCost ? 'Insufficient cash for expedition' : null;
   candidates.push({
     id: makeId(6, 'expedition'),
     category: 'expeditions',
     categoryIndex: 6,
     categoryName: 'Expedition / Discovery',
-    title: targetExped?.title ? `Launch ${targetExped.title}` : 'Dispatch Inland Discovery Expedition',
+    title: affordableExped ? `Launch ${affordableExped.name || affordableExped.title || expedSiteId}` : 'Dispatch Inland Discovery Expedition',
     description: 'Send exploration team into target territory to survey ancient artifact sites.',
-    actionType: 'start_expedition',
+    actionType: affordableExped ? 'start_expedition' : 'launch_expedition',
     apCost: 1,
     costEstimate: expedCost,
     expectedOutcome: 'Recover rare relic artifact and unlock strategic research data',
@@ -72063,9 +72078,10 @@ export function generateCoPilotPlayerActionCandidates(
     rewardScore: 95,
     longTermScore: 85,
     expectedStateDelta: { cashDelta: -expedCost, apDelta: -1, progressDelta: 25 },
-    isValid: true,
+    isValid: !expedBlocker,
+    invalidationReason: expedBlocker || undefined,
     targetId: expedSiteId,
-    parameters: { siteId: expedSiteId, targetId: expedSiteId }
+    parameters: { siteId: expedSiteId, targetId: expedSiteId, initialCost: expedCost, cost: expedCost }
   });
 
   // Category 7: Competitive Action / Sabotage / Intel
@@ -137212,6 +137228,29 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; pr
     const moved = computeCanonicalStateHash({ day: 6, turnCounter: 6, actorsById: { player: { money: 99999 } } });
     return (poor !== rich && poor !== later && poor !== 'd0fe2bdd' && stable === again && stable === poor && moved === rich && stable !== moved) || JSON.stringify({ poor, rich, later, stable, moved });
   });
+  check('u_return_to_menu_is_initialized', 'Return to Main Menu does not name handleReturnToMenu before it exists (SIM-028)', () => {
+    const src = Function.prototype.toString.call(AustraliaGame);
+    const decl = src.indexOf('const handleReturnToMenu');
+    const uses = ['handleReturnToMenu()', 'onClick={handleReturnToMenu}', 'onClick: handleReturnToMenu', 'onReturnToMenu={handleReturnToMenu}', 'onReturnToMenu: handleReturnToMenu']
+      .map(token => src.indexOf(token))
+      .filter(index => index >= 0);
+    const menu = src.indexOf('Return to Main Menu');
+    const button = menu < 0 ? '' : src.slice(Math.max(0, menu - 500), menu);
+    const ordered = uses.every(index => decl >= 0 && decl < index);
+    const buttonUsesRef = button.includes('handleReturnToMenuRef.current') && !button.includes('handleReturnToMenu()');
+    return (decl !== -1 && uses.length > 0 && ordered && buttonUsesRef) || `decl=${decl} uses=${uses.join(',')} button=${button.slice(-160)}`;
+  });
+  check('u_inland_expedition_spends_an_action', 'Dispatch Inland Discovery Expedition spends one action when it commits (SIM-029)', () => {
+    const player = { id: 'player', money: 1000, currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3, teamId: 'team_player' };
+    const state: any = { day: 1, turn: 1, turnCounter: 1, selectedMode: 'team_human_ai_vs_ai_ai', currentTurn: 'player', currentActorId: 'player', player, actorsById: { player: { ...player } }, teamsById: { team_player: { id: 'team_player', money: 1000 } }, expeditionTargets: getBuiltinExpeditionTargets(), gameSettings: { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 3 } };
+    const card = generateCoPilotPlayerActionCandidates(state, player, state.gameSettings).candidates.find((c: any) => c.title === 'Dispatch Inland Discovery Expedition');
+    const executed = card ? executeCoPilotActionIntent(state, { actionType: card.actionType, actorId: 'player', parameters: card.parameters, targetId: card.targetId, costEstimate: card.costEstimate, expectedCashDelta: card.expectedStateDelta?.cashDelta, expectedAPDelta: -(card.apCost ?? 1) }, { forceExecution: true }) : null;
+    const after = executed?.updatedState?.player;
+    const remaining = after ? getRemainingActionPoints(after, state.gameSettings) : -1;
+    const launched = Boolean(executed?.updatedState?.activeExpeditions && Object.keys(executed.updatedState.activeExpeditions).length);
+    const ok = Boolean(card && card.isValid && card.actionType === 'launch_expedition' && card.apCost === 1 && card.costEstimate === 250 && executed?.executionResult?.success && after?.money === 750 && remaining === 2 && launched);
+    return ok || JSON.stringify({ card: card && { type: card.actionType, cost: card.costEstimate, ap: card.apCost, valid: card.isValid }, success: executed?.executionResult?.success, error: executed?.executionResult?.error, money: after?.money, remaining, launched });
+  });
 
 
 
@@ -182629,6 +182668,9 @@ function AustraliaGame() {
   // Keyboard shortcuts list handleEndTurn before that callback exists. The ref is assigned
   // once the callback is created, so the shortcut effect can depend on the ref instead of the binding.
   const handleEndTurnRef = useRef<(() => void) | null>(null);
+  // Scenario game-over returns before the menu callback. The button calls the ref, which is
+  // assigned once that callback exists, so the click cannot read the const during its dead zone.
+  const handleReturnToMenuRef = useRef<(() => void) | null>(null);
   const updatePersonalRecordsRef = useRef<((type: string, value: any) => void) | null>(null);
   const getCompetitiveMetricValueRef = useRef<((metric: WinMetric, options: any) => number) | null>(null);
   const bankDrawEligibilityRef = useRef<((actorId: string, decision: any | null) => { eligible: boolean; reasonLabel: string }) | null>(null);
@@ -241941,6 +241983,11 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	  // Game Over Screen
 	  const renderGameOver = () => {
       const isDark = resolveIsDarkTheme(uiState.theme, systemPrefersDark);
+      const handleReturnToMenu = () => {
+        handleRestartGame();
+        dispatchGameState({ type: 'SET_GAME_MODE', payload: 'menu' });
+      };
+      handleReturnToMenuRef.current = handleReturnToMenu;
 
       if (gameState.selectedMode === 'scenario' || gameState.scenarioOutcome || gameSettings.scenarioModeEnabled) {
         const activeScenario = findActiveScenario(gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios);
@@ -242012,7 +242059,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                 <button
                   onClick={() => {
                     restorePreScenarioSettings();
-                    handleReturnToMenu();
+                    handleReturnToMenuRef.current?.();
                   }}
                   className={`flex-1 py-3.5 rounded-xl font-semibold text-sm transition-all ${
                     isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-200 border border-gray-600' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
@@ -242032,11 +242079,6 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
       const playerContributors = isTeamMode ? getTeamActors(TEAM_PLAYER_ID) : [];
       const playerContributionSummary = isTeamMode ? getTeamContributionSummary(TEAM_PLAYER_ID) : null;
       const outcomeMetricLabel = (WIN_METRIC_LABELS as Record<string, string>)[outcome.decidingMetric];
-	    
-      const handleReturnToMenu = () => {
-        handleRestartGame();
-        dispatchGameState({ type: 'SET_GAME_MODE', payload: 'menu' });
-      };
 
       const renderLegacyStatsContent = () => (
         <div className="space-y-4 text-left text-sm">
