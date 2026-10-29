@@ -85,6 +85,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   advisorySaturationIndex: number;
   escalationLatchScore: number;
   governanceCoherenceScore: number;
+  containmentBurdenIndex: number;
+  humanRelayPressure: number;
+  recoveryHeadroomScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -665,6 +668,62 @@ export function buildGuardianDepthStabilityReport(snapshot: GuardianCoPilotMonit
   return lines.slice(0, 3);
 }
 
+export function computeContainmentBurdenIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let burden = 0;
+  if (snapshot.advisorySaturationIndex >= 50) burden += 25;
+  if (snapshot.advisorySaturationIndex >= 70) burden += 15;
+  if (snapshot.escalationLatchScore >= 45) burden += 20;
+  if (snapshot.escalationLatchScore >= 65) burden += 10;
+  if (snapshot.governanceCoherenceScore < 50) burden += 15;
+  if (snapshot.governanceCoherenceScore < 35) burden += 10;
+  if (snapshot.compositePressureIndex >= 55) burden += 15;
+  if (snapshot.guardianRiskBand === 'critical') burden += 20;
+  if (snapshot.takeoverSessionActive) burden += 10;
+  return Math.min(100, burden);
+}
+
+export function computeHumanRelayPressure(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let pressure = 0;
+  if (snapshot.guardianConfirmationLikelyRequired) pressure += 20;
+  if (snapshot.takeoverSessionActive) pressure += 25;
+  if (snapshot.copilotHoldsControl && snapshot.automationReadinessScore < 45) pressure += 20;
+  if (snapshot.blockedContinueCount >= 1) pressure += 15;
+  if (snapshot.escalationLatchScore >= 50) pressure += 15;
+  if (snapshot.containmentBurdenIndex >= 55) pressure += 10;
+  if (snapshot.teamPlanPending) pressure += 10;
+  if (snapshot.guardianReplayCount >= 2) pressure += 10;
+  return Math.min(100, pressure);
+}
+
+export function computeRecoveryHeadroomScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.containmentBurdenIndex >= 45) score -= Math.min(30, Math.round(snapshot.containmentBurdenIndex * 0.35));
+  if (snapshot.humanRelayPressure >= 40) score -= Math.min(25, Math.round(snapshot.humanRelayPressure * 0.3));
+  if (snapshot.liquidityStressIndex >= 50) score -= 15;
+  if (snapshot.automationReadinessScore < 40) score -= 15;
+  if (snapshot.governanceCoherenceScore < 40) score -= 10;
+  if (snapshot.actionBurnPressure >= 50) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthResilienceReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.containmentBurdenIndex >= 55) {
+    lines.push(
+      `Containment burden ${snapshot.containmentBurdenIndex} — advisory envelope may need manual triage before automation`
+    );
+  }
+  if (snapshot.humanRelayPressure >= 50) {
+    lines.push(`Human relay pressure ${snapshot.humanRelayPressure} — expect repeated Guardian or Co-Pilot handoffs`);
+  }
+  if (snapshot.recoveryHeadroomScore < 40) {
+    lines.push(
+      `Recovery headroom ${snapshot.recoveryHeadroomScore} — limited slack to absorb another advisory shock`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -705,9 +764,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withSaturation: GuardianCoPilotMonitorSnapshot = { ...withInterlock, advisorySaturationIndex };
   const governanceCoherenceScore = computeGovernanceCoherenceScore(withSaturation);
   const withGovernance: GuardianCoPilotMonitorSnapshot = { ...withSaturation, governanceCoherenceScore };
-  return {
+  const withLatch: GuardianCoPilotMonitorSnapshot = {
     ...withGovernance,
     escalationLatchScore: computeEscalationLatchScore(withGovernance),
+    containmentBurdenIndex: 0,
+    humanRelayPressure: 0,
+    recoveryHeadroomScore: 100,
+  };
+  const containmentBurdenIndex = computeContainmentBurdenIndex(withLatch);
+  const withBurden: GuardianCoPilotMonitorSnapshot = { ...withLatch, containmentBurdenIndex };
+  const humanRelayPressure = computeHumanRelayPressure(withBurden);
+  const withRelay: GuardianCoPilotMonitorSnapshot = { ...withBurden, humanRelayPressure };
+  return {
+    ...withRelay,
+    recoveryHeadroomScore: computeRecoveryHeadroomScore(withRelay),
   };
 }
 
@@ -854,6 +924,42 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       advisorySaturationIndex: 65,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceCoherenceScore(snap) < 35;
+  });
+  ok('gd_containment_burden', () => {
+    const snap = {
+      advisorySaturationIndex: 72,
+      escalationLatchScore: 68,
+      governanceCoherenceScore: 30,
+      compositePressureIndex: 62,
+      guardianRiskBand: 'critical' as const,
+      takeoverSessionActive: true,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeContainmentBurdenIndex(snap) >= 70;
+  });
+  ok('gd_human_relay', () => {
+    const snap = {
+      guardianConfirmationLikelyRequired: true,
+      takeoverSessionActive: true,
+      copilotHoldsControl: true,
+      automationReadinessScore: 30,
+      blockedContinueCount: 2,
+      escalationLatchScore: 55,
+      containmentBurdenIndex: 60,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeHumanRelayPressure(snap) >= 65;
+  });
+  ok('gd_recovery_headroom', () => {
+    const snap = {
+      containmentBurdenIndex: 75,
+      humanRelayPressure: 70,
+      liquidityStressIndex: 60,
+      automationReadinessScore: 25,
+      governanceCoherenceScore: 30,
+      actionBurnPressure: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeRecoveryHeadroomScore(snap) < 35;
   });
   return out;
 }
@@ -1700,6 +1806,138 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_5: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_5_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_5.length;
 
 
+// --- source: monitor-rules-scale-wave-6.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_6: AdvisoryMonitorRule[] = [
+  {
+    id: 'containment_burden_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Containment Burden High',
+    detailTemplate: 'Advisory containment burden is in the high band — triage overlapping warnings',
+    evidenceFields: ['containmentBurdenIndex', 'advisorySaturationIndex', 'escalationLatchScore'],
+    evaluate: s => s.containmentBurdenIndex >= 70,
+  },
+  {
+    id: 'containment_burden_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Containment Burden Elevated',
+    detailTemplate: 'Containment burden is elevated — expect stacked Guardian and Co-Pilot advisories',
+    evidenceFields: ['containmentBurdenIndex', 'governanceCoherenceScore'],
+    evaluate: s => s.containmentBurdenIndex >= 45 && s.containmentBurdenIndex < 70,
+  },
+  {
+    id: 'human_relay_pressure_critical',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Human Relay Pressure Critical',
+    detailTemplate: 'Human operator relay load is critical — defer autonomous actions',
+    evidenceFields: ['humanRelayPressure', 'takeoverSessionActive', 'guardianConfirmationLikelyRequired'],
+    evaluate: s => s.humanRelayPressure >= 65,
+  },
+  {
+    id: 'human_relay_pressure_elevated',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Human Relay Pressure Elevated',
+    detailTemplate: 'Human relay pressure is elevated — batch confirmations when possible',
+    evidenceFields: ['humanRelayPressure', 'blockedContinueCount', 'escalationLatchScore'],
+    evaluate: s => s.humanRelayPressure >= 40 && s.humanRelayPressure < 65,
+    followUp: 'Advisory only — review takeover and confirmation settings manually.',
+  },
+  {
+    id: 'recovery_headroom_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Recovery Headroom Low',
+    detailTemplate: 'Little slack remains to absorb another advisory shock',
+    evidenceFields: ['recoveryHeadroomScore', 'containmentBurdenIndex', 'liquidityStressIndex'],
+    evaluate: s => s.recoveryHeadroomScore < 35,
+  },
+  {
+    id: 'recovery_headroom_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Recovery While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate recovery headroom',
+    evidenceFields: ['recoveryHeadroomScore', 'copilotAutonomousActive', 'automationReadinessScore'],
+    evaluate: s => s.copilotAutonomousActive && s.recoveryHeadroomScore >= 35 && s.recoveryHeadroomScore < 55,
+  },
+  {
+    id: 'resilience_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Resilience Envelope Pressured',
+    detailTemplate: 'Containment burden and human relay pressure align in the pressured envelope band',
+    evidenceFields: ['containmentBurdenIndex', 'humanRelayPressure', 'recoveryHeadroomScore'],
+    evaluate: s => s.containmentBurdenIndex >= 55 && s.humanRelayPressure >= 50,
+  },
+  {
+    id: 'rival_containment_burden',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Containment Burden',
+    detailTemplate: 'Rival victory progress plus elevated containment burden',
+    evidenceFields: ['rivalVictoryProgressPct', 'containmentBurdenIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.7 &&
+      s.containmentBurdenIndex >= 50,
+  },
+  {
+    id: 'team_plan_human_relay',
+    category: 'team',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Team Plan Human Relay Load',
+    detailTemplate: 'Pending team plan while human relay pressure is elevated',
+    evidenceFields: ['teamPlanPending', 'humanRelayPressure', 'recoveryHeadroomScore'],
+    evaluate: s => s.teamPlanPending && s.humanRelayPressure >= 50,
+  },
+  {
+    id: 'guardian_resilience_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Resilience Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low recovery headroom',
+    evidenceFields: ['guardianRiskBand', 'recoveryHeadroomScore', 'containmentBurdenIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.recoveryHeadroomScore < 40,
+  },
+  {
+    id: 'copilot_burden_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Containment Burden',
+    detailTemplate: 'Autonomous Co-Pilot while containment burden is high',
+    evidenceFields: ['copilotAutonomousActive', 'containmentBurdenIndex', 'humanRelayPressure'],
+    evaluate: s => s.copilotAutonomousActive && s.containmentBurdenIndex >= 55,
+  },
+  {
+    id: 'contracts_recovery_headroom',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Recovery Headroom',
+    detailTemplate: 'Expiring contracts while recovery headroom is low',
+    evidenceFields: ['expiringContractCount', 'recoveryHeadroomScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.recoveryHeadroomScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_6_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_6.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -1934,6 +2172,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_3,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_4,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_5,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_6,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -2265,6 +2504,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     advisorySaturationIndex: 0,
     escalationLatchScore: 0,
     governanceCoherenceScore: 100,
+    containmentBurdenIndex: 0,
+    humanRelayPressure: 0,
+    recoveryHeadroomScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -2336,6 +2578,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     advisorySaturationIndex: 0,
     escalationLatchScore: 0,
     governanceCoherenceScore: 100,
+    containmentBurdenIndex: 0,
+    humanRelayPressure: 0,
+    recoveryHeadroomScore: 100,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
@@ -2837,6 +3082,70 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['stability_lattice_pressured', 'team_plan_escalation_latch'],
     notes: 'Pressured stability lattice with team plan pending',
   },
+  {
+    id: 'sc_containment_burden_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 20,
+      minCashReserve: 500,
+      debt: 1200,
+      maxSpendPerAction: 8000,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      guardianProtectionLevel: 'maximum_protection',
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+    },
+    expectRuleIds: ['containment_burden_high', 'human_relay_pressure_critical'],
+    notes: 'High containment burden with critical human relay pressure',
+  },
+  {
+    id: 'sc_recovery_headroom_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 35,
+      minCashReserve: 500,
+      debt: 900,
+      maxSpendPerAction: 7000,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+    },
+    expectRuleIds: ['recovery_headroom_low', 'contracts_recovery_headroom'],
+    notes: 'Low recovery headroom with expiring contracts',
+  },
+  {
+    id: 'sc_resilience_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 28,
+      minCashReserve: 500,
+      debt: 1000,
+      maxSpendPerAction: 7500,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['resilience_envelope_pressured', 'guardian_resilience_envelope_critical'],
+    notes: 'Pressured resilience envelope with critical Guardian band',
+  },
 ];
 
 
@@ -3012,8 +3321,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 5 scale wave brings monitor catalog to 94+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 94;
+  check(results, 'a16_expansion_count', 'Round 6 scale wave brings monitor catalog to 106+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 106;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -3078,6 +3387,45 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       snap.escalationLatchScore >= 30 &&
       snap.governanceCoherenceScore <= 100
     );
+  });
+
+  check(results, 'a16_round6_metrics', 'Round 6 resilience envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 25,
+      minCashReserve: 500,
+      debt: 1000,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+    });
+    return (
+      snap.containmentBurdenIndex >= 40 &&
+      snap.humanRelayPressure >= 35 &&
+      snap.recoveryHeadroomScore <= 100
+    );
+  });
+
+  check(results, 'a16_resilience_report', 'Guardian depth resilience report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 25,
+      minCashReserve: 500,
+      debt: 1000,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+    });
+    const report = buildGuardianDepthResilienceReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
   check(results, 'a16_interlock_report', 'Guardian depth interlock report stays advisory-only', () => {

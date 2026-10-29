@@ -25,6 +25,7 @@ import {
   buildGuardianDepthCouplingReport,
   buildGuardianDepthInterlockReport,
   buildGuardianDepthStabilityReport,
+  buildGuardianDepthResilienceReport,
   runGuardianDepthUnitSelfTests,
 } from './guardian-depth.js';
 import type { AdvisoryRecommendation, Agent16SelfTestResult, AiSuggestedAction } from './types.js';
@@ -199,8 +200,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 5 scale wave brings monitor catalog to 94+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 94;
+  check(results, 'a16_expansion_count', 'Round 6 scale wave brings monitor catalog to 106+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 106;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -265,6 +266,45 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       snap.escalationLatchScore >= 30 &&
       snap.governanceCoherenceScore <= 100
     );
+  });
+
+  check(results, 'a16_round6_metrics', 'Round 6 resilience envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 25,
+      minCashReserve: 500,
+      debt: 1000,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+    });
+    return (
+      snap.containmentBurdenIndex >= 40 &&
+      snap.humanRelayPressure >= 35 &&
+      snap.recoveryHeadroomScore <= 100
+    );
+  });
+
+  check(results, 'a16_resilience_report', 'Guardian depth resilience report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 25,
+      minCashReserve: 500,
+      debt: 1000,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+    });
+    const report = buildGuardianDepthResilienceReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
   check(results, 'a16_interlock_report', 'Guardian depth interlock report stays advisory-only', () => {

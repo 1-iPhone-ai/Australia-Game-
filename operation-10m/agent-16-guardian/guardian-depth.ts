@@ -297,6 +297,62 @@ export function buildGuardianDepthStabilityReport(snapshot: GuardianCoPilotMonit
   return lines.slice(0, 3);
 }
 
+export function computeContainmentBurdenIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let burden = 0;
+  if (snapshot.advisorySaturationIndex >= 50) burden += 25;
+  if (snapshot.advisorySaturationIndex >= 70) burden += 15;
+  if (snapshot.escalationLatchScore >= 45) burden += 20;
+  if (snapshot.escalationLatchScore >= 65) burden += 10;
+  if (snapshot.governanceCoherenceScore < 50) burden += 15;
+  if (snapshot.governanceCoherenceScore < 35) burden += 10;
+  if (snapshot.compositePressureIndex >= 55) burden += 15;
+  if (snapshot.guardianRiskBand === 'critical') burden += 20;
+  if (snapshot.takeoverSessionActive) burden += 10;
+  return Math.min(100, burden);
+}
+
+export function computeHumanRelayPressure(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let pressure = 0;
+  if (snapshot.guardianConfirmationLikelyRequired) pressure += 20;
+  if (snapshot.takeoverSessionActive) pressure += 25;
+  if (snapshot.copilotHoldsControl && snapshot.automationReadinessScore < 45) pressure += 20;
+  if (snapshot.blockedContinueCount >= 1) pressure += 15;
+  if (snapshot.escalationLatchScore >= 50) pressure += 15;
+  if (snapshot.containmentBurdenIndex >= 55) pressure += 10;
+  if (snapshot.teamPlanPending) pressure += 10;
+  if (snapshot.guardianReplayCount >= 2) pressure += 10;
+  return Math.min(100, pressure);
+}
+
+export function computeRecoveryHeadroomScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.containmentBurdenIndex >= 45) score -= Math.min(30, Math.round(snapshot.containmentBurdenIndex * 0.35));
+  if (snapshot.humanRelayPressure >= 40) score -= Math.min(25, Math.round(snapshot.humanRelayPressure * 0.3));
+  if (snapshot.liquidityStressIndex >= 50) score -= 15;
+  if (snapshot.automationReadinessScore < 40) score -= 15;
+  if (snapshot.governanceCoherenceScore < 40) score -= 10;
+  if (snapshot.actionBurnPressure >= 50) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthResilienceReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.containmentBurdenIndex >= 55) {
+    lines.push(
+      `Containment burden ${snapshot.containmentBurdenIndex} — advisory envelope may need manual triage before automation`
+    );
+  }
+  if (snapshot.humanRelayPressure >= 50) {
+    lines.push(`Human relay pressure ${snapshot.humanRelayPressure} — expect repeated Guardian or Co-Pilot handoffs`);
+  }
+  if (snapshot.recoveryHeadroomScore < 40) {
+    lines.push(
+      `Recovery headroom ${snapshot.recoveryHeadroomScore} — limited slack to absorb another advisory shock`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -337,9 +393,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withSaturation: GuardianCoPilotMonitorSnapshot = { ...withInterlock, advisorySaturationIndex };
   const governanceCoherenceScore = computeGovernanceCoherenceScore(withSaturation);
   const withGovernance: GuardianCoPilotMonitorSnapshot = { ...withSaturation, governanceCoherenceScore };
-  return {
+  const withLatch: GuardianCoPilotMonitorSnapshot = {
     ...withGovernance,
     escalationLatchScore: computeEscalationLatchScore(withGovernance),
+    containmentBurdenIndex: 0,
+    humanRelayPressure: 0,
+    recoveryHeadroomScore: 100,
+  };
+  const containmentBurdenIndex = computeContainmentBurdenIndex(withLatch);
+  const withBurden: GuardianCoPilotMonitorSnapshot = { ...withLatch, containmentBurdenIndex };
+  const humanRelayPressure = computeHumanRelayPressure(withBurden);
+  const withRelay: GuardianCoPilotMonitorSnapshot = { ...withBurden, humanRelayPressure };
+  return {
+    ...withRelay,
+    recoveryHeadroomScore: computeRecoveryHeadroomScore(withRelay),
   };
 }
 
@@ -486,6 +553,42 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       advisorySaturationIndex: 65,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceCoherenceScore(snap) < 35;
+  });
+  ok('gd_containment_burden', () => {
+    const snap = {
+      advisorySaturationIndex: 72,
+      escalationLatchScore: 68,
+      governanceCoherenceScore: 30,
+      compositePressureIndex: 62,
+      guardianRiskBand: 'critical' as const,
+      takeoverSessionActive: true,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeContainmentBurdenIndex(snap) >= 70;
+  });
+  ok('gd_human_relay', () => {
+    const snap = {
+      guardianConfirmationLikelyRequired: true,
+      takeoverSessionActive: true,
+      copilotHoldsControl: true,
+      automationReadinessScore: 30,
+      blockedContinueCount: 2,
+      escalationLatchScore: 55,
+      containmentBurdenIndex: 60,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeHumanRelayPressure(snap) >= 65;
+  });
+  ok('gd_recovery_headroom', () => {
+    const snap = {
+      containmentBurdenIndex: 75,
+      humanRelayPressure: 70,
+      liquidityStressIndex: 60,
+      automationReadinessScore: 25,
+      governanceCoherenceScore: 30,
+      actionBurnPressure: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeRecoveryHeadroomScore(snap) < 35;
   });
   return out;
 }

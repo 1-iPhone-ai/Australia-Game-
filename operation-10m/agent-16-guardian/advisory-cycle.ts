@@ -80,6 +80,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     advisorySaturationIndex: 0,
     escalationLatchScore: 0,
     governanceCoherenceScore: 100,
+    containmentBurdenIndex: 0,
+    humanRelayPressure: 0,
+    recoveryHeadroomScore: 100,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
