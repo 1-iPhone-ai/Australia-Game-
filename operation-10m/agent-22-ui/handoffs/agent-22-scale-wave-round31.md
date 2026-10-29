@@ -35,6 +35,8 @@ Regenerate: `npm run build:agent22-chunk`
 
 Wave commit: **`0c9464ea`** — `feat(agent-22-ui): O10-193 scale wave round 31 (v1.31.0)`
 
+Handoff commit: **`121d8b7d`** — `docs(agent-22-ui): O10-193 scale wave round 31 handoff on origin`
+
 ## Round 31 depth
 
 - **Coach live region delivery day coach** — tick `coachLiveRegionDeliveryDayCoachCopy` (`coach-live-region-delivery-day-coach.ts`, `CoachLiveRegionDeliveryDayCoachStrip`)
