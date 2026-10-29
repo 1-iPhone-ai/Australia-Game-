@@ -1,0 +1,31 @@
+import type { V1028DresEvacuationCapacityEdge } from '../../types/core.ts';
+
+/** Evacuation capacity graph shard 076 (flood/bushfire/cyclone corridor coupling). */
+export const V1028_DRES_EVACUATION_CAPACITY_SHARD_076: readonly V1028DresEvacuationCapacityEdge[] = [
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.408, lagTurns: 6, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.414, lagTurns: 7, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.42, lagTurns: 8, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.426, lagTurns: 9, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.432, lagTurns: 6, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.438, lagTurns: 7, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.444, lagTurns: 8, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.45, lagTurns: 9, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.456, lagTurns: 6, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.462, lagTurns: 7, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.468, lagTurns: 8, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.474, lagTurns: 9, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.48, lagTurns: 6, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.486, lagTurns: 7, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.492, lagTurns: 8, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.396, lagTurns: 9, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.402, lagTurns: 6, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.408, lagTurns: 7, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.414, lagTurns: 8, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.42, lagTurns: 9, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.426, lagTurns: 6, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.432, lagTurns: 7, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.438, lagTurns: 8, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.444, lagTurns: 9, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.45, lagTurns: 6, nodeId: 'emergency_response_04' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.456, lagTurns: 7, nodeId: 'emergency_response_04' },
+];
