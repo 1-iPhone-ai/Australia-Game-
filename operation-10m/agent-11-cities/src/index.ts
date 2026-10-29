@@ -88,5 +88,8 @@ export * from './settlement-existential-final-nullity-lock.ts';
 export * from './regional-collapse-total-singularity-vertex.ts';
 export * from './interregional-void-terminal-erosion-cascade.ts';
 export * from './settlement-existential-ultimate-nullity-seal.ts';
+export * from './regional-collapse-absolute-singularity-apex.ts';
+export * from './interregional-void-complete-erosion-terminality.ts';
+export * from './settlement-existential-final-nullity-closure.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

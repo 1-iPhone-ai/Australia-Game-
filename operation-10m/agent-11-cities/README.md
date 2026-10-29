@@ -2,6 +2,8 @@
 
 Urban growth balance, regional inequality metrics, and national–local spillover links. Standalone TypeScript until Agent 25 assembly into V9.4.
 
+**Scale wave round 29:** regional collapse absolute singularity apex, interregional void complete erosion terminality, settlement existential final nullity closure (schema `10m.a11.composite.28`).
+
 **Scale wave round 28:** regional collapse total singularity vertex, interregional void terminal erosion cascade, settlement existential ultimate nullity seal (schema `10m.a11.composite.27`).
 
 **Scale wave round 27:** regional collapse omni singularity node, interregional void absolute erosion surge, settlement existential final nullity lock (schema `10m.a11.composite.26`).
