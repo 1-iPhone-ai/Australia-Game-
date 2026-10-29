@@ -58,6 +58,7 @@ const FILES = [
   'industrial-electrification-interconnection-orchestration-ledger.ts',
   'community-energy-resilience-distributed-backup-ledger.ts',
   'export-hydrogen-maritime-shore-power-ledger.ts',
+  'circular-stewardship-symbiosis-federation-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -132,6 +133,8 @@ const EXPORT_MANIFEST = [
   'V1014_INTERREGIONAL_INTERCONNECTION_CATALOG',
   'V1014_COMMUNITY_RESILIENCE_ENERGY_CATALOG',
   'V1014_DISTRIBUTED_BACKUP_ORCHESTRATION_CATALOG',
+  'V1014_EXPORT_H2_CORRIDOR_CATALOG',
+  'V1014_MARITIME_SHORE_POWER_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -249,6 +252,9 @@ const EXPORT_MANIFEST = [
   'runAgent13ResilienceBackupScaleSelfTests',
   'runAgent13ResilienceBackupTurnScenario',
   'V1014_RESILIENCE_BACKUP_TURN_SCENARIOS',
+  'runAgent13H2MaritimeScaleSelfTests',
+  'runAgent13H2MaritimeTurnScenario',
+  'V1014_H2_MARITIME_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

@@ -44,6 +44,7 @@ operation-10m/agent-13-energy/
   modules/industrial-electrification-interconnection-orchestration-ledger.ts  # scale wave round 36 (O10-203)
   modules/community-energy-resilience-distributed-backup-ledger.ts  # scale wave round 37 (O10-205)
   modules/export-hydrogen-maritime-shore-power-ledger.ts  # scale wave round 38 (O10-207)
+  modules/circular-stewardship-symbiosis-federation-ledger.ts  # scale wave round 39 (O10-209)
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge

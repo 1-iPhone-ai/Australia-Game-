@@ -175,6 +175,11 @@ import {
   V1014_H2_MARITIME_TURN_SCENARIOS,
 } from '../modules/export-hydrogen-maritime-shore-power-ledger.ts';
 import {
+  runAgent13StewardshipSymbiosisScaleSelfTests,
+  runAgent13StewardshipSymbiosisTurnScenario,
+  V1014_STEWARDSHIP_SYMBIOSIS_TURN_SCENARIOS,
+} from '../modules/circular-stewardship-symbiosis-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -486,6 +491,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const rbTurn = runAgent13ResilienceBackupTurnScenario(V1014_RESILIENCE_BACKUP_TURN_SCENARIOS[0]);
   ok(rbTurn.passed);
+
+  const h2Maritime = runAgent13H2MaritimeScaleSelfTests();
+  ok(h2Maritime.failed === 0 && h2Maritime.passed >= 5);
+
+  const hmTurn = runAgent13H2MaritimeTurnScenario(V1014_H2_MARITIME_TURN_SCENARIOS[0]);
+  ok(hmTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

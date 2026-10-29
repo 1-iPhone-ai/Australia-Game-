@@ -275,6 +275,13 @@ import {
   type V1014RegionalMaritimeShorePowerLedger,
 } from './export-hydrogen-maritime-shore-power-ledger';
 import {
+  advanceRegionalSymbiosisFederationOrchestration,
+  computeRegionalCircularStewardshipLedger,
+  scoreAgent13StewardshipSymbiosisGIAlignment,
+  type V1014RegionalCircularStewardshipLedger,
+  type V1014RegionalSymbiosisFederationLedger,
+} from './circular-stewardship-symbiosis-federation-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25879,6 +25886,10 @@ export interface V1014RegionalEnergyProfile {
   exportHydrogenCorridorRelief: number;
   maritimeShorePowerBand: string;
   maritimeShorePowerRelief: number;
+  circularStewardshipBand: string;
+  circularStewardshipRelief: number;
+  symbiosisFederationBand: string;
+  symbiosisFederationRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25989,6 +26000,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalDistributedBackupLedgers: Record<string, V1014RegionalDistributedBackupLedger>;
   regionalExportHydrogenCorridorLedgers: Record<string, V1014RegionalExportHydrogenCorridorLedger>;
   regionalMaritimeShorePowerLedgers: Record<string, V1014RegionalMaritimeShorePowerLedger>;
+  regionalCircularStewardshipLedgers: Record<string, V1014RegionalCircularStewardshipLedger>;
+  regionalSymbiosisFederationLedgers: Record<string, V1014RegionalSymbiosisFederationLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -26070,6 +26083,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalDistributedBackupMemory: Record<string, { backupIndex: number }>;
   regionalExportHydrogenCorridorMemory: Record<string, { exportBalance: number; exportIndex: number }>;
   regionalMaritimeShorePowerMemory: Record<string, { shoreIndex: number }>;
+  regionalCircularStewardshipMemory: Record<string, { stewardshipBalance: number; stewardshipIndex: number }>;
+  regionalSymbiosisFederationMemory: Record<string, { symbiosisIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26163,6 +26178,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalDistributedBackupMemory: {},
     regionalExportHydrogenCorridorMemory: {},
     regionalMaritimeShorePowerMemory: {},
+    regionalCircularStewardshipMemory: {},
+    regionalSymbiosisFederationMemory: {},
     history: [],
   };
 }
@@ -26384,6 +26401,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalMaritimeShorePowerMemory === 'object' && raw.regionalMaritimeShorePowerMemory
         ? raw.regionalMaritimeShorePowerMemory
         : {},
+    regionalCircularStewardshipMemory:
+      typeof raw.regionalCircularStewardshipMemory === 'object' && raw.regionalCircularStewardshipMemory
+        ? raw.regionalCircularStewardshipMemory
+        : {},
+    regionalSymbiosisFederationMemory:
+      typeof raw.regionalSymbiosisFederationMemory === 'object' && raw.regionalSymbiosisFederationMemory
+        ? raw.regionalSymbiosisFederationMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26564,6 +26589,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalDistributedBackupLedgers: {},
       regionalExportHydrogenCorridorLedgers: {},
       regionalMaritimeShorePowerLedgers: {},
+      regionalCircularStewardshipLedgers: {},
+      regionalSymbiosisFederationLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26648,6 +26675,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const distributedBackupLedgers: Record<string, V1014RegionalDistributedBackupLedger> = {};
   const exportHydrogenCorridorLedgers: Record<string, V1014RegionalExportHydrogenCorridorLedger> = {};
   const maritimeShorePowerLedgers: Record<string, V1014RegionalMaritimeShorePowerLedger> = {};
+  const circularStewardshipLedgers: Record<string, V1014RegionalCircularStewardshipLedger> = {};
+  const symbiosisFederationLedgers: Record<string, V1014RegionalSymbiosisFederationLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26824,6 +26853,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextMaritimeShorePowerMemory: Record<string, { shoreIndex: number }> = {
     ...persisted.regionalMaritimeShorePowerMemory,
+  };
+  const nextCircularStewardshipMemory: Record<string, { stewardshipBalance: number; stewardshipIndex: number }> = {
+    ...persisted.regionalCircularStewardshipMemory,
+  };
+  const nextSymbiosisFederationMemory: Record<string, { symbiosisIndex: number }> = {
+    ...persisted.regionalSymbiosisFederationMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -27829,6 +27864,33 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextMaritimeShorePowerMemory[regionId] = maritimeShorePowerStep.next;
     maritimeShorePowerLedgers[regionId] = maritimeShorePowerStep.ledger;
     pressure -= maritimeShorePowerStep.ledger.maritimeShorePowerRelief;
+
+    const circularStewardshipStep = computeRegionalCircularStewardshipLedger({
+      regionId,
+      maritimeShorePowerRelief: maritimeShorePowerStep.ledger.maritimeShorePowerRelief,
+      exportHydrogenCorridorRelief: exportHydrogenCorridorStep.ledger.exportHydrogenCorridorRelief,
+      greenProductPassportRelief: greenProductPassportStep.ledger.greenProductPassportRelief,
+      mineralsCircularRecoveryRelief: mineralsCircularRecoveryStep.ledger.mineralsCircularRecoveryRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextCircularStewardshipMemory[regionId] || null,
+    });
+    nextCircularStewardshipMemory[regionId] = circularStewardshipStep.next;
+    circularStewardshipLedgers[regionId] = circularStewardshipStep.ledger;
+    pressure -= circularStewardshipStep.ledger.circularStewardshipRelief;
+
+    const symbiosisFederationStep = advanceRegionalSymbiosisFederationOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      stewardshipBand: circularStewardshipStep.ledger.band,
+      industrialSymbiosisRelief: industrialSymbiosisStep.ledger.industrialSymbiosisRelief,
+      wasteHeatRecoveryRelief: wasteHeatRecoveryStep.ledger.wasteHeatRecoveryRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextSymbiosisFederationMemory[regionId] || null,
+    });
+    nextSymbiosisFederationMemory[regionId] = symbiosisFederationStep.next;
+    symbiosisFederationLedgers[regionId] = symbiosisFederationStep.ledger;
+    pressure -= symbiosisFederationStep.ledger.symbiosisFederationRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
