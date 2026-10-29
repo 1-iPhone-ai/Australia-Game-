@@ -15,6 +15,7 @@ Modular **V10.14 Labor Market, Demographics, Employment, Wages & Migration** lay
 - **Automation feedback** from V10.10 workforce automation shift into bounded labor adjustments (presentation + index deltas only)
 - **Household budget detail** — affordability/resilience/essentials pressure indices (no currency) feeding wages and migration attractiveness
 - **Migration shocks** — persisted episodic regional flow shocks with turn decay
+- **Scale wave depth** — regional labor baselines, stress scenario catalog, wage–migration coupling, migration spillovers, GI query slice, multi-turn projection
 
 ## Layout
 

@@ -30,7 +30,10 @@ import {
   computeRegionalAttractiveness,
   nationalMigrationAverage
 } from './migration';
+import { applyRegionalMigrationSpillovers } from './regional-migration-spillovers';
+import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
+import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
 import { computeRegionalWagePressureRaw, workforceStrainForRegion } from './wages';
 import {
   EMPLOYMENT_LINKAGE_LABEL,
@@ -120,6 +123,13 @@ export function computeNationalLaborDemographics(
     let wageRaw = computeRegionalWagePressureRaw({ wfStrain, outputIndex, momentumBoost });
     wageRaw = v1014laborClamp(wageRaw + budgetAdj.wagePressureDelta);
     let demoRaw = computeRegionalDemographicRaw({ momentumBoost, dominant });
+    const baseline = lookupRegionalLaborBaseline(regionId);
+    if (baseline) {
+      demoRaw = v1014laborClamp(
+        demoRaw * (1 - baseline.demographicInertia / 400) + 50 * (baseline.demographicInertia / 400)
+      );
+      empLinkageRaw = v1014laborClamp(empLinkageRaw * (0.92 + baseline.laborMobilityIndex / 1200));
+    }
     ({ empLinkageRaw, wageRaw, demoRaw } = mergeAutomationFeedbackIntoRegionalScores(
       { empLinkageRaw, wageRaw, demoRaw },
       automationFeedback
@@ -153,7 +163,7 @@ export function computeNationalLaborDemographics(
     };
   });
 
-  applyMigrationScoresToRegions(regions, attractiveness);
+  applyMigrationScoresToRegions(regions, applyRegionalMigrationSpillovers(attractiveness));
 
   const tickedShocks = (persisted.activeMigrationShocks || [])
     .map(s => ({
@@ -175,6 +185,11 @@ export function computeNationalLaborDemographics(
     events.push(
       `Migration shocks active in ${shockApply.regionsTouched.join(', ')} (${activeShocks.length} shock(s)).`
     );
+  }
+
+  const coupling = applyWageMigrationCouplingToRegions(regions);
+  if (coupling.explanations.length) {
+    events.push(`Wage–migration coupling adjusted ${coupling.explanations.length} region(s).`);
   }
 
   V1014_LABOR_CORE_REGIONS.forEach(regionId => {
@@ -314,7 +329,8 @@ export function computeNationalLaborDemographics(
       ...formatIndustryEvidence(industryLinks),
       ...(householdBudget.nationalBudgetPressureScore >= 60
         ? [`Household budget pressure elevated (${Math.round(householdBudget.nationalBudgetPressureScore)})`]
-        : [])
+        : []),
+      ...coupling.explanations.slice(0, 2)
     ],
     automationFeedbackSummary: automationFeedback.playerFacingSummary,
     householdBudgetSummary: householdBudget.summary,

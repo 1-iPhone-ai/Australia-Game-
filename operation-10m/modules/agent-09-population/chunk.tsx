@@ -682,6 +682,232 @@ export function mergeAutomationFeedbackIntoRegionalScores(
 }
 
 
+// --- source: catalog/regional-labor-baselines.ts ---
+
+/** Static regional labor-market character (indices 0..100 — not population). */
+export interface RegionalLaborBaseline {
+  regionId: string;
+  name: string;
+  laborMobilityIndex: number;
+  wageStickinessIndex: number;
+  migrationElasticity: number;
+  demographicInertia: number;
+  anchorIndustries: StrategicIndustryKind[];
+  narrative: string;
+}
+
+export const REGION_LABOR_BASELINES: Record<string, RegionalLaborBaseline> = {
+  NSW: {
+    regionId: 'NSW',
+    name: 'New South Wales',
+    laborMobilityIndex: 78,
+    wageStickinessIndex: 62,
+    migrationElasticity: 0.82,
+    demographicInertia: 55,
+    anchorIndustries: ['technology', 'trade', 'research'],
+    narrative: 'Metro services and tech anchor a mobile, wage-responsive labor pool.'
+  },
+  VIC: {
+    regionId: 'VIC',
+    name: 'Victoria',
+    laborMobilityIndex: 74,
+    wageStickinessIndex: 58,
+    migrationElasticity: 0.78,
+    demographicInertia: 52,
+    anchorIndustries: ['manufacturing', 'technology', 'research'],
+    narrative: 'Manufacturing–research mix with strong internal mobility.'
+  },
+  QLD: {
+    regionId: 'QLD',
+    name: 'Queensland',
+    laborMobilityIndex: 68,
+    wageStickinessIndex: 48,
+    migrationElasticity: 0.88,
+    demographicInertia: 46,
+    anchorIndustries: ['mining', 'tourism', 'agriculture'],
+    narrative: 'Resource and tourism cycles drive elastic migration swings.'
+  },
+  WA: {
+    regionId: 'WA',
+    name: 'Western Australia',
+    laborMobilityIndex: 62,
+    wageStickinessIndex: 44,
+    migrationElasticity: 0.92,
+    demographicInertia: 42,
+    anchorIndustries: ['mining', 'energy', 'trade'],
+    narrative: 'Fly-in fly-out dynamics amplify migration sensitivity to mining output.'
+  },
+  SA: {
+    regionId: 'SA',
+    name: 'South Australia',
+    laborMobilityIndex: 58,
+    wageStickinessIndex: 54,
+    migrationElasticity: 0.65,
+    demographicInertia: 58,
+    anchorIndustries: ['manufacturing', 'agriculture', 'research'],
+    narrative: 'Smaller pool with moderate outflow when affordability strains.'
+  },
+  TAS: {
+    regionId: 'TAS',
+    name: 'Tasmania',
+    laborMobilityIndex: 50,
+    wageStickinessIndex: 60,
+    migrationElasticity: 0.55,
+    demographicInertia: 64,
+    anchorIndustries: ['agriculture', 'tourism', 'energy'],
+    narrative: 'Island inertia limits rapid migration despite tourism demand.'
+  },
+  NT: {
+    regionId: 'NT',
+    name: 'Northern Territory',
+    laborMobilityIndex: 70,
+    wageStickinessIndex: 40,
+    migrationElasticity: 0.95,
+    demographicInertia: 38,
+    anchorIndustries: ['mining', 'energy', 'agriculture'],
+    narrative: 'Frontier labor market with high turnover tied to resource projects.'
+  },
+  ACT: {
+    regionId: 'ACT',
+    name: 'Australian Capital Territory',
+    laborMobilityIndex: 72,
+    wageStickinessIndex: 68,
+    migrationElasticity: 0.72,
+    demographicInertia: 50,
+    anchorIndustries: ['research', 'technology', 'trade'],
+    narrative: 'Public–research employment stabilizes wages; moderate migration pull.'
+  }
+};
+
+export function lookupRegionalLaborBaseline(regionId: string): RegionalLaborBaseline | null {
+  return REGION_LABOR_BASELINES[regionId] ?? null;
+}
+
+
+// --- source: catalog/labor-stress-scenarios.ts ---
+
+export type LaborStressScenarioId =
+  | 'ld_sc_mining_supercycle'
+  | 'ld_sc_housing_affordability_crunch'
+  | 'ld_sc_automation_displacement'
+  | 'ld_sc_metro_talent_war'
+  | 'ld_sc_frontier_recovery'
+  | 'ld_sc_tourism_reopening'
+  | 'ld_sc_energy_transition_skills'
+  | 'ld_sc_essential_access_crisis';
+
+export interface LaborStressScenario {
+  id: LaborStressScenarioId;
+  title: string;
+  narrative: string;
+  primaryRegions: string[];
+  expectedShockKinds: MigrationShockKind[];
+  wagePressureBias: number;
+  migrationFlowBias: number;
+  employmentLinkageBias: number;
+  tags: readonly string[];
+}
+
+export const LABOR_STRESS_SCENARIO_CATALOG: LaborStressScenario[] = [
+  {
+    id: 'ld_sc_mining_supercycle',
+    title: 'Mining supercycle labor pull',
+    narrative: 'Sustained mining effectiveOutput concentrates inflow pressure on WA and QLD without inventing headcounts.',
+    primaryRegions: ['WA', 'QLD'],
+    expectedShockKinds: ['resource_boom_inflow'],
+    wagePressureBias: 6,
+    migrationFlowBias: 10,
+    employmentLinkageBias: 4,
+    tags: ['agent-09', 'v10.14', 'mining']
+  },
+  {
+    id: 'ld_sc_housing_affordability_crunch',
+    title: 'Housing affordability crunch',
+    narrative: 'Severe household budget pressure triggers outflow shocks in metro regions.',
+    primaryRegions: ['NSW', 'VIC'],
+    expectedShockKinds: ['housing_affordability_outflow'],
+    wagePressureBias: 8,
+    migrationFlowBias: -12,
+    employmentLinkageBias: -3,
+    tags: ['agent-09', 'v10.14', 'households']
+  },
+  {
+    id: 'ld_sc_automation_displacement',
+    title: 'Automation displacement wave',
+    narrative: 'High capability automationShift reduces employment linkage while wage paths bifurcate by strain.',
+    primaryRegions: ['NSW', 'VIC', 'QLD'],
+    expectedShockKinds: [],
+    wagePressureBias: 4,
+    migrationFlowBias: -4,
+    employmentLinkageBias: -8,
+    tags: ['agent-09', 'v10.14', 'automation']
+  },
+  {
+    id: 'ld_sc_metro_talent_war',
+    title: 'Metro talent war',
+    narrative: 'Tech output with manageable budgets pulls talent toward NSW/VIC metros.',
+    primaryRegions: ['NSW', 'VIC'],
+    expectedShockKinds: ['metro_talent_pull'],
+    wagePressureBias: 5,
+    migrationFlowBias: 7,
+    employmentLinkageBias: 2,
+    tags: ['agent-09', 'v10.14', 'technology']
+  },
+  {
+    id: 'ld_sc_frontier_recovery',
+    title: 'Frontier recovery redirect',
+    narrative: 'National household shock sensitivity redirects modest recovery inflow to a frontier region.',
+    primaryRegions: ['NT', 'TAS', 'SA'],
+    expectedShockKinds: ['frontier_recovery_inflow'],
+    wagePressureBias: 0,
+    migrationFlowBias: 5,
+    employmentLinkageBias: 1,
+    tags: ['agent-09', 'v10.14', 'migration']
+  },
+  {
+    id: 'ld_sc_tourism_reopening',
+    title: 'Tourism reopening surge',
+    narrative: 'Tourism effectiveOutput recovery lifts employment linkage in QLD and TAS.',
+    primaryRegions: ['QLD', 'TAS'],
+    expectedShockKinds: [],
+    wagePressureBias: 3,
+    migrationFlowBias: 4,
+    employmentLinkageBias: 5,
+    tags: ['agent-09', 'v10.14', 'tourism']
+  },
+  {
+    id: 'ld_sc_energy_transition_skills',
+    title: 'Energy transition skills gap',
+    narrative: 'Energy and manufacturing mismatch elevates wage pressure under workforce strain.',
+    primaryRegions: ['SA', 'VIC', 'WA'],
+    expectedShockKinds: [],
+    wagePressureBias: 7,
+    migrationFlowBias: 2,
+    employmentLinkageBias: -2,
+    tags: ['agent-09', 'v10.14', 'energy']
+  },
+  {
+    id: 'ld_sc_essential_access_crisis',
+    title: 'Essential access crisis',
+    narrative: 'Essentials gap triggers outflow shocks and weakens employment fit.',
+    primaryRegions: ['NSW', 'QLD', 'NT'],
+    expectedShockKinds: ['essential_access_outflow'],
+    wagePressureBias: 5,
+    migrationFlowBias: -9,
+    employmentLinkageBias: -5,
+    tags: ['agent-09', 'v10.14', 'households']
+  }
+];
+
+export function lookupLaborStressScenario(id: string): LaborStressScenario | null {
+  return LABOR_STRESS_SCENARIO_CATALOG.find(s => s.id === id) ?? null;
+}
+
+export function laborStressScenariosForRegion(regionId: string): LaborStressScenario[] {
+  return LABOR_STRESS_SCENARIO_CATALOG.filter(s => s.primaryRegions.includes(regionId));
+}
+
+
 // --- source: household-budget-detail.ts ---
   V1014_LABOR_CORE_REGIONS,
   type NationalHouseholdBudgetDetail,
@@ -983,6 +1209,279 @@ export function toMigrationShockViews(shocks: LaborMigrationShock[]): LaborMigra
 }
 
 
+// --- source: wage-migration-coupling.ts ---
+
+/** Coupling index: high wages + high budget pressure → stronger outflow feedback. */
+export function computeRegionalWageMigrationCoupling(snapshot: LaborDemographicsRegionSnapshot): {
+  couplingIndex: number;
+  wageMigrationFeedback: number;
+  explanation: string;
+} {
+  const baseline = lookupRegionalLaborBaseline(snapshot.regionId);
+  const elasticity = baseline?.migrationElasticity ?? 0.7;
+  const stickiness = (baseline?.wageStickinessIndex ?? 50) / 100;
+  const budgetPressure = snapshot.householdBudgetPressureScore ?? 50;
+
+  const wageHot =
+    snapshot.wagePressure === 'elevated' ||
+    snapshot.wagePressure === 'surging' ||
+    snapshot.wagePressureScore >= 62;
+  const wageCool =
+    snapshot.wagePressure === 'deflationary' ||
+    snapshot.wagePressure === 'soft' ||
+    snapshot.wagePressureScore <= 38;
+
+  let feedback = 0;
+  if (wageHot && budgetPressure >= 55) {
+    feedback = -v1014laborClamp((snapshot.wagePressureScore - 50) * 0.12 * elasticity + budgetPressure * 0.05);
+  } else if (wageHot && budgetPressure <= 40) {
+    feedback = v1014laborClamp((snapshot.wagePressureScore - 50) * 0.1 * elasticity);
+  } else if (wageCool && budgetPressure >= 60) {
+    feedback = -v1014laborClamp(budgetPressure * 0.08 * elasticity);
+  }
+
+  feedback *= 1 - stickiness * 0.25;
+  const couplingIndex = v1014laborClamp(50 + Math.abs(feedback) * 3 + (wageHot ? 8 : 0));
+
+  const explanation = wageHot
+    ? `Wage pressure (${snapshot.wagePressure}) interacts with budget pressure ${Math.round(budgetPressure)} → migration feedback ${feedback.toFixed(1)}.`
+    : `Wage–migration coupling muted (${snapshot.wagePressure}).`;
+
+  return { couplingIndex, wageMigrationFeedback: feedback, explanation };
+}
+
+export function applyWageMigrationCouplingToRegions(
+  regions: Record<string, LaborDemographicsRegionSnapshot>
+): { explanations: string[] } {
+  const explanations: string[] = [];
+  Object.values(regions).forEach(reg => {
+    const { wageMigrationFeedback, explanation } = computeRegionalWageMigrationCoupling(reg);
+    if (Math.abs(wageMigrationFeedback) < 0.5) return;
+    const nextMig = v1014laborClamp(reg.migrationFlowScore + wageMigrationFeedback);
+    reg.migrationFlowScore = nextMig;
+    reg.migrationFlow = v1014laborBandMigration(nextMig);
+    const wageAdj = v1014laborClamp(reg.wagePressureScore + wageMigrationFeedback * 0.15);
+    reg.wagePressureScore = wageAdj;
+    reg.wagePressure = v1014laborBandWage(wageAdj) as WagePressureBand;
+    explanations.push(`${reg.regionId}: ${explanation}`);
+  });
+  return { explanations };
+}
+
+
+// --- source: regional-migration-spillovers.ts ---
+
+/** Neighbor spillover weights for migration attractiveness (structural, not geographic simulation). */
+const SPILLOVER_NEIGHBORS: Record<string, string[]> = {
+  NSW: ['VIC', 'QLD', 'ACT'],
+  VIC: ['NSW', 'SA', 'TAS'],
+  QLD: ['NSW', 'NT'],
+  WA: ['SA', 'NT'],
+  SA: ['VIC', 'WA', 'NT'],
+  TAS: ['VIC'],
+  NT: ['QLD', 'WA', 'SA'],
+  ACT: ['NSW']
+};
+
+export function applyRegionalMigrationSpillovers(
+  attractiveness: Record<string, number>,
+  strength = 0.12
+): Record<string, number> {
+  const out: Record<string, number> = { ...attractiveness };
+  Object.entries(SPILLOVER_NEIGHBORS).forEach(([regionId, neighbors]) => {
+    const base = attractiveness[regionId] ?? 50;
+    const neighborAvg =
+      neighbors.reduce((a, n) => a + (attractiveness[n] ?? 50), 0) / Math.max(1, neighbors.length);
+    const diff = neighborAvg - base;
+    out[regionId] = v1014laborClamp(base + diff * strength);
+  });
+  return out;
+}
+
+export function spilloverNeighborList(regionId: string): string[] {
+  return SPILLOVER_NEIGHBORS[regionId] ?? [];
+}
+
+
+// --- source: gi-labor-queries.ts ---
+  DEMOGRAPHIC_STRUCTURE_LABEL,
+  EMPLOYMENT_LINKAGE_LABEL,
+  MIGRATION_FLOW_LABEL,
+  WAGE_PRESSURE_LABEL,
+  type NationalLaborDemographicsState
+} from './types';
+
+export type LaborGiQueryTopic =
+  | 'national_summary'
+  | 'wage_pressure'
+  | 'migration_flow'
+  | 'employment_linkage'
+  | 'demographics'
+  | 'migration_shocks'
+  | 'household_budget';
+
+export interface LaborGiAnswer {
+  topic: LaborGiQueryTopic;
+  headline: string;
+  fact: string;
+  inference: string;
+  projection: string;
+}
+
+export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | null {
+  const q = raw.toLowerCase();
+  if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
+  if (/\b(household budget|affordability|cost of living)/.test(q)) return 'household_budget';
+  if (/\b(wage|pay pressure|salary pressure)/.test(q)) return 'wage_pressure';
+  if (/\b(migrat|inflow|outflow|relocate)/.test(q)) return 'migration_flow';
+  if (/\b(employment link|jobs.*output|labor market tight)/.test(q)) return 'employment_linkage';
+  if (/\b(demograph|aging|youth)/.test(q)) return 'demographics';
+  if (/\b(labor demo|workforce structure|v10\.14)/.test(q)) return 'national_summary';
+  return null;
+}
+
+export function answerLaborDemographicsQuestion(
+  state: NationalLaborDemographicsState | null | undefined,
+  topic: LaborGiQueryTopic
+): LaborGiAnswer {
+  if (!state || !state.enabled) {
+    return {
+      topic,
+      headline: 'Labor demographics unavailable',
+      fact: 'The V10.14 labor demographics layer is disabled or not computed.',
+      inference: 'Enable National Systems, Industries, and Labor Demographics to answer.',
+      projection: 'No projection until the layer is active.'
+    };
+  }
+
+  switch (topic) {
+    case 'wage_pressure':
+      return {
+        topic,
+        headline: WAGE_PRESSURE_LABEL[state.nationalWagePressure],
+        fact: `National wage pressure score ${Math.round(state.wagePressureScore)} on turn ${state.turn}. ${state.summary}`,
+        inference: state.outlook,
+        projection: 'Wage bands move with workforce strain and industry output momentum (bounded indices only).'
+      };
+    case 'migration_flow':
+      return {
+        topic,
+        headline: MIGRATION_FLOW_LABEL[state.nationalMigrationFlow],
+        fact: `Migration flow score ${Math.round(state.migrationFlowScore)}; ${(state.activeMigrationShocks || []).length} active shock(s).`,
+        inference: state.outlook,
+        projection: 'Attractiveness differentials shift flow bands — not literal population counts.'
+      };
+    case 'employment_linkage':
+      return {
+        topic,
+        headline: EMPLOYMENT_LINKAGE_LABEL[state.nationalEmploymentLinkage],
+        fact: `Employment linkage score ${Math.round(state.employmentLinkageScore)} tied to industry effectiveOutput.`,
+        inference: state.summary,
+        projection: 'Dominant industry shares in industryLinks drive national linkage narrative.'
+      };
+    case 'demographics':
+      return {
+        topic,
+        headline: DEMOGRAPHIC_STRUCTURE_LABEL[state.nationalDemographicStructure],
+        fact: `Demographic structure score ${Math.round(state.demographicScore)}.`,
+        inference: 'Structure derives from industry mix and Living Regions momentum — not census data.',
+        projection: 'Hysteresis dampens rapid band flips.'
+      };
+    case 'migration_shocks':
+      return {
+        topic,
+        headline: 'Active migration shocks',
+        fact:
+          (state.activeMigrationShocks || [])
+            .map(s => `${s.regionId}: ${s.label} (${s.magnitude >= 0 ? '+' : ''}${Math.round(s.magnitude)})`)
+            .join('; ') || 'No active migration shocks.',
+        inference: 'Shocks decay over turns when persisted.',
+        projection: 'Resource booms and household strain are primary shock detectors.'
+      };
+    case 'household_budget':
+      return {
+        topic,
+        headline: 'Household budget pressure (labor lens)',
+        fact: state.householdBudgetSummary || 'Household budget detail not attached.',
+        inference: 'Budget pressure adjusts wages and migration attractiveness without currency fields.',
+        projection: 'Severe affordability increases outflow shock risk.'
+      };
+    default:
+      return {
+        topic: 'national_summary',
+        headline: 'National labor market & demographics',
+        fact: `${state.summary} ${state.automationFeedbackSummary || ''}`.trim(),
+        inference: state.outlook,
+        projection: state.evidence.slice(0, 2).join(' · ') || 'Stable industry-linked outlook.'
+      };
+  }
+}
+
+
+// --- source: turn-projection.ts ---
+  LaborDemographicsInputs,
+  LaborDemographicsPersisted,
+  NationalLaborDemographicsState
+} from './types';
+
+export interface LaborTurnProjectionStep {
+  turn: number;
+  employmentLinkageScore: number;
+  wagePressureScore: number;
+  migrationFlowScore: number;
+  nationalEmploymentLinkage: string;
+  nationalWagePressure: string;
+  nationalMigrationFlow: string;
+}
+
+export interface LaborTurnProjectionBundle {
+  horizonTurns: number;
+  steps: LaborTurnProjectionStep[];
+  summary: string;
+}
+
+/** Read-only multi-turn replay projection (does not mutate caller persisted state). */
+export function projectLaborDemographicsTurns(
+  baseInputs: LaborDemographicsInputs,
+  horizonTurns: number,
+  seedPersisted?: LaborDemographicsPersisted | null
+): LaborTurnProjectionBundle {
+  const steps: LaborTurnProjectionStep[] = [];
+  const persistedClone = seedPersisted
+    ? (JSON.parse(JSON.stringify(seedPersisted)) as LaborDemographicsPersisted)
+    : undefined;
+  let pers: LaborDemographicsPersisted | undefined = persistedClone ?? createInitialLaborDemographicsPersisted(start);
+  let prev: NationalLaborDemographicsState | null = null;
+  const start = Math.max(1, Math.floor(baseInputs.turn || 1));
+  const end = start + Math.max(1, Math.min(8, horizonTurns));
+
+  for (let t = start; t <= end; t++) {
+    const stepInputs = { ...baseInputs, turn: t };
+    const res = computeNationalLaborDemographics(stepInputs, pers ?? null, prev);
+    pers = res.persisted;
+    prev = res.state;
+    steps.push({
+      turn: t,
+      employmentLinkageScore: res.state.employmentLinkageScore,
+      wagePressureScore: res.state.wagePressureScore,
+      migrationFlowScore: res.state.migrationFlowScore,
+      nationalEmploymentLinkage: res.state.nationalEmploymentLinkage,
+      nationalWagePressure: res.state.nationalWagePressure,
+      nationalMigrationFlow: res.state.nationalMigrationFlow
+    });
+  }
+
+  const last = steps[steps.length - 1];
+  return {
+    horizonTurns: steps.length,
+    steps,
+    summary: last
+      ? `Projected to turn ${last.turn}: emp=${last.nationalEmploymentLinkage}, wage=${last.nationalWagePressure}, mig=${last.nationalMigrationFlow}.`
+      : 'Empty projection.'
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -1246,6 +1745,13 @@ export function computeNationalLaborDemographics(
     let wageRaw = computeRegionalWagePressureRaw({ wfStrain, outputIndex, momentumBoost });
     wageRaw = v1014laborClamp(wageRaw + budgetAdj.wagePressureDelta);
     let demoRaw = computeRegionalDemographicRaw({ momentumBoost, dominant });
+    const baseline = lookupRegionalLaborBaseline(regionId);
+    if (baseline) {
+      demoRaw = v1014laborClamp(
+        demoRaw * (1 - baseline.demographicInertia / 400) + 50 * (baseline.demographicInertia / 400)
+      );
+      empLinkageRaw = v1014laborClamp(empLinkageRaw * (0.92 + baseline.laborMobilityIndex / 1200));
+    }
     ({ empLinkageRaw, wageRaw, demoRaw } = mergeAutomationFeedbackIntoRegionalScores(
       { empLinkageRaw, wageRaw, demoRaw },
       automationFeedback
@@ -1279,7 +1785,7 @@ export function computeNationalLaborDemographics(
     };
   });
 
-  applyMigrationScoresToRegions(regions, attractiveness);
+  applyMigrationScoresToRegions(regions, applyRegionalMigrationSpillovers(attractiveness));
 
   const tickedShocks = (persisted.activeMigrationShocks || [])
     .map(s => ({
@@ -1301,6 +1807,11 @@ export function computeNationalLaborDemographics(
     events.push(
       `Migration shocks active in ${shockApply.regionsTouched.join(', ')} (${activeShocks.length} shock(s)).`
     );
+  }
+
+  const coupling = applyWageMigrationCouplingToRegions(regions);
+  if (coupling.explanations.length) {
+    events.push(`Wage–migration coupling adjusted ${coupling.explanations.length} region(s).`);
   }
 
   V1014_LABOR_CORE_REGIONS.forEach(regionId => {
@@ -1440,7 +1951,8 @@ export function computeNationalLaborDemographics(
       ...formatIndustryEvidence(industryLinks),
       ...(householdBudget.nationalBudgetPressureScore >= 60
         ? [`Household budget pressure elevated (${Math.round(householdBudget.nationalBudgetPressureScore)})`]
-        : [])
+        : []),
+      ...coupling.explanations.slice(0, 2)
     ],
     automationFeedbackSummary: automationFeedback.playerFacingSummary,
     householdBudgetSummary: householdBudget.summary,
@@ -1674,6 +2186,49 @@ export function runV1014LaborDemographicsSelfTests(): {
     }).length > 0,
     'detector emits under strain'
   );
+
+  check('SW01', REGION_LABOR_BASELINES.NSW.laborMobilityIndex > REGION_LABOR_BASELINES.TAS.laborMobilityIndex, 'baseline mobility ordering');
+  check('SW02', Boolean(lookupRegionalLaborBaseline('WA')?.narrative), 'WA baseline narrative');
+  check('SW03', LABOR_STRESS_SCENARIO_CATALOG.length >= 8, 'stress scenario catalog');
+  check('SW04', Boolean(lookupLaborStressScenario('ld_sc_mining_supercycle')?.expectedShockKinds.length), 'mining scenario shocks');
+
+  const spilled = applyRegionalMigrationSpillovers({ NSW: 70, VIC: 40, QLD: 50, ACT: 55, WA: 50, SA: 50, TAS: 50, NT: 50 });
+  check('SW05', spilled.NSW !== 70, 'spillover moves NSW attractiveness');
+  check('SW06', spilloverNeighborList('NSW').includes('VIC'), 'NSW neighbors');
+
+  const coupling = computeRegionalWageMigrationCoupling({
+    ...rHhBad.state.regions.NSW,
+    wagePressure: 'surging',
+    wagePressureScore: 78
+  });
+  check('SW07', coupling.couplingIndex >= 50, 'coupling index under wage+budget stress');
+
+  check('SW08', detectLaborDemographicsQuery('What is wage pressure nationally?') === 'wage_pressure', 'GI wage detect');
+  const giAns = answerLaborDemographicsQuestion(r1.state, 'migration_flow');
+  check('SW09', giAns.headline.length > 3, 'GI migration answer');
+
+  const proj = projectLaborDemographicsTurns(baseInp, 4, createInitialLaborDemographicsPersisted());
+  check('SW10', proj.steps.length >= 4, 'turn projection steps');
+  check('SW11', proj.steps[proj.steps.length - 1].turn === 7, 'projection end turn');
+
+  const couplingApply = computeRegionalWageMigrationCoupling({
+    regionId: 'NSW',
+    demographicStructure: 'stable',
+    demographicScore: 50,
+    employmentLinkage: 'strong',
+    employmentLinkageScore: 70,
+    wagePressure: 'surging',
+    wagePressureScore: 80,
+    migrationFlow: 'balanced',
+    migrationFlowScore: 50,
+    dominantIndustry: 'technology',
+    industryOutputIndex: 40,
+    workforceStrainIndex: 75,
+    householdEmploymentFit: 55,
+    householdBudgetPressureScore: 72,
+    householdEssentialsGapScore: 40
+  });
+  check('SW12', Math.abs(couplingApply.wageMigrationFeedback) >= 0.5, 'coupling feedback under stress');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

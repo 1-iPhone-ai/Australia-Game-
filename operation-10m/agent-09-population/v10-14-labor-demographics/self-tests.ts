@@ -1,6 +1,12 @@
 import { computeLaborAutomationFeedback } from './automation-feedback';
 import { computeNationalHouseholdBudgetDetail } from './household-budget-detail';
 import { detectMigrationShocks } from './migration-shocks';
+import { LABOR_STRESS_SCENARIO_CATALOG, lookupLaborStressScenario } from './catalog/labor-stress-scenarios';
+import { REGION_LABOR_BASELINES, lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
+import { answerLaborDemographicsQuestion, detectLaborDemographicsQuery } from './gi-labor-queries';
+import { applyRegionalMigrationSpillovers, spilloverNeighborList } from './regional-migration-spillovers';
+import { computeRegionalWageMigrationCoupling } from './wage-migration-coupling';
+import { projectLaborDemographicsTurns } from './turn-projection';
 import { computeNationalLaborDemographics } from './compute';
 import { buildLaborDemographicsInputs } from './inputs';
 import { createInitialLaborDemographicsPersisted, laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
@@ -224,6 +230,49 @@ export function runV1014LaborDemographicsSelfTests(): {
     }).length > 0,
     'detector emits under strain'
   );
+
+  check('SW01', REGION_LABOR_BASELINES.NSW.laborMobilityIndex > REGION_LABOR_BASELINES.TAS.laborMobilityIndex, 'baseline mobility ordering');
+  check('SW02', Boolean(lookupRegionalLaborBaseline('WA')?.narrative), 'WA baseline narrative');
+  check('SW03', LABOR_STRESS_SCENARIO_CATALOG.length >= 8, 'stress scenario catalog');
+  check('SW04', Boolean(lookupLaborStressScenario('ld_sc_mining_supercycle')?.expectedShockKinds.length), 'mining scenario shocks');
+
+  const spilled = applyRegionalMigrationSpillovers({ NSW: 70, VIC: 40, QLD: 50, ACT: 55, WA: 50, SA: 50, TAS: 50, NT: 50 });
+  check('SW05', spilled.NSW !== 70, 'spillover moves NSW attractiveness');
+  check('SW06', spilloverNeighborList('NSW').includes('VIC'), 'NSW neighbors');
+
+  const coupling = computeRegionalWageMigrationCoupling({
+    ...rHhBad.state.regions.NSW,
+    wagePressure: 'surging',
+    wagePressureScore: 78
+  });
+  check('SW07', coupling.couplingIndex >= 50, 'coupling index under wage+budget stress');
+
+  check('SW08', detectLaborDemographicsQuery('What is wage pressure nationally?') === 'wage_pressure', 'GI wage detect');
+  const giAns = answerLaborDemographicsQuestion(r1.state, 'migration_flow');
+  check('SW09', giAns.headline.length > 3, 'GI migration answer');
+
+  const proj = projectLaborDemographicsTurns(baseInp, 4, createInitialLaborDemographicsPersisted());
+  check('SW10', proj.steps.length >= 4, 'turn projection steps');
+  check('SW11', proj.steps[proj.steps.length - 1].turn === 7, 'projection end turn');
+
+  const couplingApply = computeRegionalWageMigrationCoupling({
+    regionId: 'NSW',
+    demographicStructure: 'stable',
+    demographicScore: 50,
+    employmentLinkage: 'strong',
+    employmentLinkageScore: 70,
+    wagePressure: 'surging',
+    wagePressureScore: 80,
+    migrationFlow: 'balanced',
+    migrationFlowScore: 50,
+    dominantIndustry: 'technology',
+    industryOutputIndex: 40,
+    workforceStrainIndex: 75,
+    householdEmploymentFit: 55,
+    householdBudgetPressureScore: 72,
+    householdEssentialsGapScore: 40
+  });
+  check('SW12', Math.abs(couplingApply.wageMigrationFeedback) >= 0.5, 'coupling feedback under stress');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
