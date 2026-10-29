@@ -111,6 +111,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       agent25PostClosureWaveSealedPasses: 0,
       scaleWaveTrancheSyncLatches: 0,
       agent25TrancheSyncWaveReadyPasses: 0,
+      scaleWaveTrancheReadyCommits: 0,
+      agent25TrancheReadyWaveSealedPasses: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -243,6 +245,14 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.agent25TrancheSyncWaveReadyPasses = Math.max(
       0,
       Number(t.agent25TrancheSyncWaveReadyPasses) || 0
+    );
+    base.telemetry.scaleWaveTrancheReadyCommits = Math.max(
+      0,
+      Number(t.scaleWaveTrancheReadyCommits) || 0
+    );
+    base.telemetry.agent25TrancheReadyWaveSealedPasses = Math.max(
+      0,
+      Number(t.agent25TrancheReadyWaveSealedPasses) || 0
     );
   }
 
