@@ -11,6 +11,9 @@ import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
 import { RESEARCH_EMPHASIS_CHANGE_LOG_CAP } from './emphasis-change-log.ts';
 import { computeInstitutionTierSnapshot, mergeInstitutionTierSnapshots } from './institution-tier-snapshot.ts';
+import { RESEARCH_READINESS_MILESTONE_LOG_CAP } from './readiness-milestone-log.ts';
+import { computeReadinessBranchSnapshot, mergeReadinessBranchSnapshots } from './readiness-branch-snapshot.ts';
+import type { ResearchReadinessMilestoneEvent } from './types.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -48,6 +51,18 @@ function mergeEmphasisChangeLogs(
     byKey.set(key, ev);
   }
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_EMPHASIS_CHANGE_LOG_CAP);
+}
+
+function mergeReadinessMilestoneLogs(
+  local: ResearchReadinessMilestoneEvent[] | undefined,
+  remote: ResearchReadinessMilestoneEvent[] | undefined
+): ResearchReadinessMilestoneEvent[] {
+  const byKey = new Map<string, ResearchReadinessMilestoneEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.branchId}:${ev.milestone}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_READINESS_MILESTONE_LOG_CAP);
 }
 
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
@@ -90,6 +105,7 @@ export function sealResearchProgressForSave(
     persistRevision: (core.persistRevision ?? 0) + 1,
     turn: Math.max(core.turn, turn),
     institutionTierSnapshot: computeInstitutionTierSnapshot(core.institutionUpgrades, Math.max(core.turn, turn)),
+    readinessBranchSnapshot: core.readinessBranchSnapshot,
   });
 }
 
@@ -134,6 +150,12 @@ export function mergeResearchPersistedCores(
       local.institutionTierSnapshot ?? undefined,
       remote.institutionTierSnapshot ?? undefined
     ) ?? computeInstitutionTierSnapshot([...instById.values()], pick.turn),
+    readinessMilestoneLog: mergeReadinessMilestoneLogs(local.readinessMilestoneLog, remote.readinessMilestoneLog),
+    readinessBranchSnapshot:
+      mergeReadinessBranchSnapshots(
+        local.readinessBranchSnapshot ?? undefined,
+        remote.readinessBranchSnapshot ?? undefined
+      ) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -161,6 +183,8 @@ export function reconcileResearchProgressOnLoad(
         unlockEventLog: persist.unlockEventLog,
         emphasisChangeLog: persist.emphasisChangeLog,
         institutionTierSnapshot: persist.institutionTierSnapshot,
+        readinessMilestoneLog: persist.readinessMilestoneLog,
+        readinessBranchSnapshot: persist.readinessBranchSnapshot,
       },
       persist,
     };
@@ -180,6 +204,8 @@ export function reconcileResearchProgressOnLoad(
     unlockEventLog: mergedCore.unlockEventLog,
     emphasisChangeLog: mergedCore.emphasisChangeLog,
     institutionTierSnapshot: mergedCore.institutionTierSnapshot,
+    readinessMilestoneLog: mergedCore.readinessMilestoneLog,
+    readinessBranchSnapshot: mergedCore.readinessBranchSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -200,6 +226,8 @@ export function reconcileResearchProgressOnLoad(
       unlockEventLog: persist.unlockEventLog,
       emphasisChangeLog: persist.emphasisChangeLog,
       institutionTierSnapshot: persist.institutionTierSnapshot,
+      readinessMilestoneLog: persist.readinessMilestoneLog,
+      readinessBranchSnapshot: persist.readinessBranchSnapshot,
     },
     persist,
   };

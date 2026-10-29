@@ -14,6 +14,8 @@ import type {
   ResearchUnlockEvent,
   ResearchEmphasisChangeEvent,
   ResearchInstitutionTierSnapshot,
+  ResearchReadinessMilestoneEvent,
+  ResearchReadinessBranchSnapshot,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { appendUnlockEvents, rebuildUnlockEventLogFromNodes, emptyUnlockEventLog } from './unlock-event-log.ts';
@@ -23,6 +25,12 @@ import {
   rebuildEmphasisChangeLogFromBranchEmphasis,
 } from './emphasis-change-log.ts';
 import { computeInstitutionTierSnapshot } from './institution-tier-snapshot.ts';
+import {
+  appendReadinessMilestoneEvents,
+  emptyReadinessMilestoneLog,
+  rebuildReadinessMilestoneLogFromSnapshot,
+} from './readiness-milestone-log.ts';
+import { computeReadinessBranchSnapshot } from './readiness-branch-snapshot.ts';
 import { INSTITUTION_UPGRADE_TIER_RANK } from './institution-upgrades.ts';
 
 export type { ResearchProgressSchemaVersion, ResearchBranchEmphasisState, ResearchProgramEmphasis } from './types.ts';
@@ -71,6 +79,10 @@ export interface ResearchProgressPersistedCore {
   emphasisChangeLog: ResearchEmphasisChangeEvent[];
   /** Institution tier digest at last persist seal (round 6). */
   institutionTierSnapshot: ResearchInstitutionTierSnapshot | null;
+  /** Bounded readiness milestone audit trail (round 7). */
+  readinessMilestoneLog: ResearchReadinessMilestoneEvent[];
+  /** Branch readiness digest at last persist seal (round 7). */
+  readinessBranchSnapshot: ResearchReadinessBranchSnapshot | null;
 }
 
 export type { ResearchSaveMigrationEntry } from './types.ts';
@@ -80,6 +92,7 @@ const LEGACY_V2 = 'op10m-agent03-v2' as const;
 const LEGACY_V3 = 'op10m-agent03-v3' as const;
 const LEGACY_V4 = 'op10m-agent03-v4' as const;
 const LEGACY_V5 = 'op10m-agent03-v5' as const;
+const LEGACY_V6 = 'op10m-agent03-v6' as const;
 
 /** Keys that must never appear on persisted save blobs (Agent 25 guard). */
 export const RESEARCH_SAVE_DERIVED_KEYS = [
@@ -93,6 +106,7 @@ export const RESEARCH_SAVE_DERIVED_KEYS = [
   'portfolioBalance',
   'diffusionForecast',
   'synergyOutlook',
+  'integrationRiskOutlook',
 ] as const;
 
 function finalizeCoreForPersist(
@@ -117,6 +131,8 @@ function finalizeCoreForPersist(
     lastReconciledAtTurn: partial.lastReconciledAtTurn ?? partial.turn,
     emphasisChangeLog: partial.emphasisChangeLog ?? emptyEmphasisChangeLog(),
     institutionTierSnapshot: partial.institutionTierSnapshot ?? null,
+    readinessMilestoneLog: partial.readinessMilestoneLog ?? emptyReadinessMilestoneLog(),
+    readinessBranchSnapshot: partial.readinessBranchSnapshot ?? null,
   };
   return { ...draft, coreFingerprint: computePersistedCoreFingerprint(draft) };
 }
@@ -147,6 +163,8 @@ export function computePersistedCoreFingerprint(
     lastReconciledAtTurn: core.lastReconciledAtTurn,
     emphasisChangeLog: core.emphasisChangeLog,
     institutionTierSnapshot: core.institutionTierSnapshot,
+    readinessMilestoneLog: core.readinessMilestoneLog,
+    readinessBranchSnapshot: core.readinessBranchSnapshot,
   });
   for (let i = 0; i < payload.length; i++) {
     h ^= payload.charCodeAt(i);
@@ -161,6 +179,8 @@ function upgradeToCurrentCore(
     migrationLog?: ResearchSaveMigrationEntry[];
     emphasisChangeLog?: ResearchEmphasisChangeEvent[];
     institutionTierSnapshot?: ResearchInstitutionTierSnapshot | null;
+    readinessMilestoneLog?: ResearchReadinessMilestoneEvent[];
+    readinessBranchSnapshot?: ResearchReadinessBranchSnapshot | null;
     unlockEventLog?: ResearchUnlockEvent[];
     lastReconciledAtTurn?: number;
   },
@@ -184,6 +204,10 @@ function upgradeToCurrentCore(
       ),
     institutionTierSnapshot:
       base.institutionTierSnapshot ?? snapshotFromUpgrades(base.institutionUpgrades ?? [], base.turn),
+    readinessMilestoneLog:
+      base.readinessMilestoneLog ??
+      rebuildReadinessMilestoneLogFromSnapshot(base.readinessBranchSnapshot ?? null, base.turn),
+    readinessBranchSnapshot: base.readinessBranchSnapshot ?? null,
     unlockEventLog: base.unlockEventLog ?? rebuildUnlockEventLogFromNodes(base.unlockedNodes ?? []),
     lastReconciledAtTurn: base.lastReconciledAtTurn ?? base.turn,
   });
@@ -213,6 +237,8 @@ function emptyCore(turn = 0): ResearchProgressPersistedCore {
     lastReconciledAtTurn: turn,
     emphasisChangeLog: emptyEmphasisChangeLog(),
     institutionTierSnapshot: null,
+    readinessMilestoneLog: emptyReadinessMilestoneLog(),
+    readinessBranchSnapshot: null,
   });
 }
 
@@ -347,6 +373,43 @@ function sanitizeInstitutionTierSnapshot(raw: unknown, turn: number): ResearchIn
   };
 }
 
+function sanitizeReadinessMilestoneLog(raw: unknown): ResearchReadinessMilestoneEvent[] {
+  if (!Array.isArray(raw)) return emptyReadinessMilestoneLog();
+  const milestones = new Set([25, 50, 75, 90]);
+  const out: ResearchReadinessMilestoneEvent[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as ResearchReadinessMilestoneEvent;
+    if (typeof o.branchId !== 'string') continue;
+    if (!milestones.has(Number(o.milestone))) continue;
+    out.push({
+      seq: Number(o.seq) || out.length + 1,
+      turn: Number(o.turn) || 0,
+      branchId: o.branchId as ResearchBranchId,
+      milestone: o.milestone,
+      readiness: Number(o.readiness) || 0,
+    });
+  }
+  return out.sort((a, b) => a.seq - b.seq).slice(-48);
+}
+
+function sanitizeReadinessBranchSnapshot(raw: unknown, turn: number): ResearchReadinessBranchSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as ResearchReadinessBranchSnapshot;
+  if (typeof o.digest !== 'string') return null;
+  const readinessByBranch =
+    o.readinessByBranch && typeof o.readinessByBranch === 'object'
+      ? (o.readinessByBranch as ResearchReadinessBranchSnapshot['readinessByBranch'])
+      : ({} as ResearchReadinessBranchSnapshot['readinessByBranch']);
+  return {
+    capturedAtTurn: Number(o.capturedAtTurn) || turn,
+    readinessByBranch,
+    digest: o.digest,
+    branchAbove75Count: Number(o.branchAbove75Count) || 0,
+    nationalMeanReadiness: Number(o.nationalMeanReadiness) || 0,
+  };
+}
+
 function snapshotFromUpgrades(
   upgrades: InstitutionUpgradeState[],
   turn: number
@@ -391,11 +454,55 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
       institutionTierSnapshot:
         sanitizeInstitutionTierSnapshot(o.institutionTierSnapshot, turn) ??
         snapshotFromUpgrades(upgrades, turn),
+      readinessMilestoneLog: sanitizeReadinessMilestoneLog(o.readinessMilestoneLog).length
+        ? sanitizeReadinessMilestoneLog(o.readinessMilestoneLog)
+        : emptyReadinessMilestoneLog(),
+      readinessBranchSnapshot: sanitizeReadinessBranchSnapshot(o.readinessBranchSnapshot, turn),
     });
     if (typeof o.coreFingerprint === 'string' && o.coreFingerprint !== draft.coreFingerprint) {
       return draft;
     }
     return draft;
+  }
+
+  if (ver === LEGACY_V6) {
+    const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
+    const upgrades = sanitizeInstitutionUpgrades(o.institutionUpgrades);
+    const turn = Number(o.turn) || 0;
+    const branchEmphasis = sanitizeBranchEmphasis(o.branchEmphasis);
+    const emphasisRevision = Number(o.emphasisRevision) || 0;
+    const institutionTierSnapshot =
+      sanitizeInstitutionTierSnapshot(o.institutionTierSnapshot, turn) ??
+      snapshotFromUpgrades(upgrades, turn);
+    return upgradeToCurrentCore(
+      {
+        schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+        revision: Number(o.revision) || 0,
+        turn,
+        unlockedNodes: nodes,
+        institutionUpgrades: upgrades,
+        leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
+        unlockSeq: Number(o.unlockSeq) || computeUnlockSeq(nodes),
+        branchEmphasis,
+        emphasisRevision,
+        migrationLog: Array.isArray(o.migrationLog) ? (o.migrationLog as ResearchSaveMigrationEntry[]) : [],
+        saveKind: (o.saveKind as ResearchSaveKind) || 'manual',
+        updatedAtTurn: Number(o.updatedAtTurn) || turn,
+        sessionId: typeof o.sessionId === 'string' ? o.sessionId : `o10m_r03_${turn}`,
+        persistRevision: Number(o.persistRevision) || 0,
+        unlockEventLog: sanitizeUnlockEventLog(o.unlockEventLog).length
+          ? sanitizeUnlockEventLog(o.unlockEventLog)
+          : rebuildUnlockEventLogFromNodes(nodes),
+        lastReconciledAtTurn: Number(o.lastReconciledAtTurn) || turn,
+        emphasisChangeLog: sanitizeEmphasisChangeLog(o.emphasisChangeLog).length
+          ? sanitizeEmphasisChangeLog(o.emphasisChangeLog)
+          : rebuildEmphasisChangeLogFromBranchEmphasis(branchEmphasis, emphasisRevision, turn),
+        institutionTierSnapshot,
+        readinessMilestoneLog: emptyReadinessMilestoneLog(),
+        readinessBranchSnapshot: null,
+      },
+      LEGACY_V6
+    );
   }
 
   if (ver === LEGACY_V5) {
@@ -544,6 +651,8 @@ export function extractPersistedCore(state: ResearchProgressState): ResearchProg
     institutionTierSnapshot:
       state.institutionTierSnapshot ??
       computeInstitutionTierSnapshot(state.institutionUpgrades, state.turn),
+    readinessMilestoneLog: state.readinessMilestoneLog ?? emptyReadinessMilestoneLog(),
+    readinessBranchSnapshot: state.readinessBranchSnapshot ?? null,
   });
 }
 
@@ -576,6 +685,8 @@ export function hydrateResearchProgressCore(core: ResearchProgressPersistedCore 
     lastReconciledAtTurn: core.lastReconciledAtTurn,
     emphasisChangeLog: core.emphasisChangeLog,
     institutionTierSnapshot: core.institutionTierSnapshot,
+    readinessMilestoneLog: core.readinessMilestoneLog,
+    readinessBranchSnapshot: core.readinessBranchSnapshot,
     diffusion: V94_REGION_CODES.map(regionId => ({
       regionId,
       score: 0,
@@ -630,6 +741,13 @@ export function mergeComputedResearchState(
     lastReconciledAtTurn: core.lastReconciledAtTurn,
     emphasisChangeLog: core.emphasisChangeLog,
     institutionTierSnapshot: computeInstitutionTierSnapshot(mergedUpgrades, computed.turn),
+    readinessMilestoneLog: appendReadinessMilestoneEvents(
+      core.readinessMilestoneLog ?? emptyReadinessMilestoneLog(),
+      core.readinessBranchSnapshot ?? null,
+      computed.readinessByBranch,
+      computed.turn
+    ),
+    readinessBranchSnapshot: computeReadinessBranchSnapshot(computed.readinessByBranch, computed.turn),
   };
 }
 
@@ -691,6 +809,7 @@ export function assertResearchProgressSaveIntegrity(state: ResearchProgressState
   const issues: string[] = [];
   if (
     state.schemaVersion !== RESEARCH_PROGRESS_SCHEMA_VERSION &&
+    state.schemaVersion !== LEGACY_V6 &&
     state.schemaVersion !== LEGACY_V5 &&
     state.schemaVersion !== LEGACY_V3 &&
     state.schemaVersion !== LEGACY_V4 &&

@@ -702,6 +702,59 @@ tests.push(
 );
 
 tests.push(
+  test('save_v6_migrates_to_v7_with_milestone_fields', () => {
+    const v6 = {
+      schemaVersion: 'op10m-agent03-v6',
+      turn: 11,
+      revision: 2,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v5', toVersion: 'op10m-agent03-v6', turn: 10 }],
+      saveKind: 'manual',
+      updatedAtTurn: 11,
+      sessionId: 'v6',
+      persistRevision: 4,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 11,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 11, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      coreFingerprint: 'legacy',
+    };
+    const core = migrateResearchProgressSave(v6);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v6'));
+    assert(Array.isArray(core?.readinessMilestoneLog));
+  })
+);
+
+tests.push(
+  test('readiness_milestone_log_records_threshold_crossing', () => {
+    const inputs = baseInputs({
+      turn: 40,
+      factionStanding: { csiro_ai_directorate: 55, vic_technology_council: 50 },
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const state = computeResearchProgress(inputs, null);
+    assert((state.readinessMilestoneLog?.length ?? 0) >= 1, String(state.readinessByBranch?.digital_frontier));
+    assert(typeof state.readinessBranchSnapshot?.digest === 'string');
+  })
+);
+
+tests.push(
+  test('integration_risk_outlook_derived', () => {
+    const inputs = baseInputs({ turn: 15 });
+    const state = computeResearchProgress(inputs, null);
+    const risk = state.integrationRiskOutlook;
+    assert(risk != null);
+    assert(typeof risk?.nationalRiskScore === 'number');
+    assert(detectForeignSaveFields({ integrationRiskOutlook: risk }).includes('integrationRiskOutlook'));
+  })
+);
+
+tests.push(
   test('agent25_chunk_markers_and_hash', () => {
     const moduleId = 'agent-03-research-tech';
     const chunkPath = resolve(process.cwd(), 'operation-10m/modules/agent-03-research-tech/chunk.tsx');

@@ -17,6 +17,7 @@ import {
 } from './portfolio-advisor.ts';
 import { projectResearchDiffusionHorizon } from './diffusion-forecast.ts';
 import { computeResearchSynergyOutlook } from './synergy-outlook.ts';
+import { computeResearchIntegrationRiskOutlook } from './integration-risk-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -252,6 +253,13 @@ export function computeResearchProgress(
     portfolioBalance,
   });
 
+  const integrationRiskOutlook = computeResearchIntegrationRiskOutlook(inputs, {
+    readinessByBranch,
+    institutionUpgrades,
+    portfolioBalance,
+    institutionTierSnapshot: coreBase.institutionTierSnapshot ?? null,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -269,6 +277,7 @@ export function computeResearchProgress(
     portfolioBalance,
     diffusionForecast,
     synergyOutlook,
+    integrationRiskOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };

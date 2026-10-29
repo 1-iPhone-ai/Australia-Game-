@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v6' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v7' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v6'
   | 'op10m-agent03-v5'
   | 'op10m-agent03-v4'
   | 'op10m-agent03-v3'
@@ -267,6 +268,38 @@ export interface ResearchSynergyOutlook {
   dominantCapabilityCluster: V94EmergingCapabilityId | null;
 }
 
+export type ResearchReadinessMilestone = 25 | 50 | 75 | 90;
+
+export interface ResearchReadinessMilestoneEvent {
+  seq: number;
+  turn: number;
+  branchId: ResearchBranchId;
+  milestone: ResearchReadinessMilestone;
+  readiness: number;
+}
+
+export interface ResearchReadinessBranchSnapshot {
+  capturedAtTurn: number;
+  readinessByBranch: Record<ResearchBranchId, number>;
+  digest: string;
+  branchAbove75Count: number;
+  nationalMeanReadiness: number;
+}
+
+export interface ResearchIntegrationRiskLink {
+  branchId: ResearchBranchId;
+  riskScore: number;
+  driver: 'readiness_gap' | 'institution_dormant' | 'portfolio_imbalance';
+}
+
+export interface ResearchIntegrationRiskOutlook {
+  active: boolean;
+  baseTurn: number;
+  nationalRiskScore: number;
+  criticalBranchCount: number;
+  links: ResearchIntegrationRiskLink[];
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -284,6 +317,7 @@ export interface ResearchProgressState {
   portfolioBalance?: ResearchPortfolioBalanceReport | null;
   diffusionForecast?: ResearchDiffusionForecast | null;
   synergyOutlook?: ResearchSynergyOutlook | null;
+  integrationRiskOutlook?: ResearchIntegrationRiskOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -296,6 +330,8 @@ export interface ResearchProgressState {
   lastReconciledAtTurn?: number;
   emphasisChangeLog?: ResearchEmphasisChangeEvent[];
   institutionTierSnapshot?: ResearchInstitutionTierSnapshot | null;
+  readinessMilestoneLog?: ResearchReadinessMilestoneEvent[];
+  readinessBranchSnapshot?: ResearchReadinessBranchSnapshot | null;
 }
 
 export interface StrategyHookDefinition {
