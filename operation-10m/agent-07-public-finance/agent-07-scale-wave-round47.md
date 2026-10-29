@@ -23,7 +23,7 @@ cursor:
 | Integration merge | **`d521eab`** | `merge(op10m): O10-224 integration baseline 456efb9` |
 | Module base (round 46 docs tip) | **`eed2a7c`** | `docs(op10m): O10-223 · wave 46 · round 46 handoff` |
 | Gate feat (origin, push-first) | **`e83b750`** | `feat(op10m): O10-225 · wave 47 · round 47` |
-| Origin tip | *(docs commit)* | `docs(op10m): O10-225 · wave 47 · round 47 handoff` |
+| Origin tip | **`fe88b92`** | `docs(op10m): O10-225 · wave 47 · round 47 handoff` |
 
 Gate subject scan: **O10-225 · wave 47 · round 47** (feat pushed before docs; **436/436** post-push).
 
