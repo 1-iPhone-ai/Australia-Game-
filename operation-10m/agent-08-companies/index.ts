@@ -812,6 +812,23 @@ export type {
   TransitionRemembranceBand,
 } from './production-transition-remembrance';
 
+export {
+  AGENT08_TRANSITION_COMMEMORATION_SCHEMA_VERSION,
+  buildFirmProductionTransitionCommemoration,
+  classifyNationalCommemorationBand,
+  computeNationalCommemorationPressure,
+  computeNationalProductionTransitionCommemoration,
+  summarizeRegionalTransitionCommemoration,
+  runAgent08TransitionCommemorationSelfTests,
+} from './production-transition-commemoration';
+
+export type {
+  FirmProductionTransitionCommemoration,
+  NationalProductionTransitionCommemoration,
+  RegionalTransitionCommemorationSummary,
+  TransitionCommemorationBand,
+} from './production-transition-commemoration';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -860,6 +877,7 @@ import { runAgent08TransitionSettlementSelfTests } from './production-transition
 import { runAgent08TransitionRetirementSelfTests } from './production-transition-retirement';
 import { runAgent08TransitionLegacySelfTests } from './production-transition-legacy';
 import { runAgent08TransitionRemembranceSelfTests } from './production-transition-remembrance';
+import { runAgent08TransitionCommemorationSelfTests } from './production-transition-commemoration';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -1104,6 +1122,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionCommemoration = runAgent08TransitionCommemorationSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -1153,5 +1176,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionRetirement,
     ...transitionLegacy,
     ...transitionRemembrance,
+    ...transitionCommemoration,
   ];
 }
