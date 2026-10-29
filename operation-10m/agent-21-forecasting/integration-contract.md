@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `2.41.0`
+- `O10M_AGENT21_MODULE_VERSION` = `2.42.0`
 
 ## Assembly chunk
 

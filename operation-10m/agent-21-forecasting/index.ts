@@ -165,5 +165,8 @@ export * from './forecast-round48-console';
 export * from './forecast-wave49-projection-sync';
 export * from './forecast-integration-wave49-origin-handoff';
 export * from './forecast-round49-console';
+export * from './forecast-wave50-projection-sync';
+export * from './forecast-integration-wave50-origin-handoff';
+export * from './forecast-round50-console';
 export * from './strategic-forecast-policy-lab';
 export * from './scale-wave-round50-gate-latch.ts';
