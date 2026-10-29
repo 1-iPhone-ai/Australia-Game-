@@ -27,6 +27,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   reliefOverheadIndex: number;
   corridorEquityDriftIndex: number;
   climateAdaptationLagIndex: number;
+  fiscalCapacityStrainIndex: number;
+  networkResilienceErosionIndex: number;
+  longHorizonCapacityRiskIndex: number;
   validationErrors: number;
 };
 
@@ -80,6 +83,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       reliefOverheadIndex: out.state.nationalReliefOverheadIndex,
       corridorEquityDriftIndex: out.state.nationalCorridorEquityDriftIndex,
       climateAdaptationLagIndex: out.state.nationalClimateAdaptationLagIndex,
+      fiscalCapacityStrainIndex: out.state.nationalFiscalCapacityStrainIndex,
+      networkResilienceErosionIndex: out.state.nationalNetworkResilienceErosionIndex,
+      longHorizonCapacityRiskIndex: out.state.nationalLongHorizonCapacityRiskIndex,
       validationErrors,
     });
   }
@@ -104,6 +110,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const reliefOverheadStable = snapshots.every((s) => s.reliefOverheadIndex >= 8 && s.reliefOverheadIndex <= 100);
   const corridorDriftStable = snapshots.every((s) => s.corridorEquityDriftIndex >= 8 && s.corridorEquityDriftIndex <= 100);
   const adaptationLagStable = snapshots.every((s) => s.climateAdaptationLagIndex >= 8 && s.climateAdaptationLagIndex <= 100);
+  const fiscalCapacityStable = snapshots.every((s) => s.fiscalCapacityStrainIndex >= 8 && s.fiscalCapacityStrainIndex <= 100);
+  const networkErosionStable = snapshots.every((s) => s.networkResilienceErosionIndex >= 8 && s.networkResilienceErosionIndex <= 100);
+  const horizonRiskStable = snapshots.every((s) => s.longHorizonCapacityRiskIndex >= 8 && s.longHorizonCapacityRiskIndex <= 100);
 
   const ok =
     monotonicRevision &&
@@ -125,10 +134,13 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     absorptionGapStable &&
     reliefOverheadStable &&
     corridorDriftStable &&
-    adaptationLagStable;
+    adaptationLagStable &&
+    fiscalCapacityStable &&
+    networkErosionStable &&
+    horizonRiskStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, adaptation lag ${snapshots[snapshots.length - 1].climateAdaptationLagIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, horizon risk ${snapshots[snapshots.length - 1].longHorizonCapacityRiskIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable}`;
 
   return { ok, snapshots, detail };
 }

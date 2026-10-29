@@ -33,6 +33,14 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 4. Persist infra slice under `gameState.op10mAgent11IntercityInfra` (`createEmptyOP10M_A11_InfraPersisted()`).
 5. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
 
+### Scale wave round 12 (schema `10m.a11.composite.11`)
+
+- **Regional fiscal capacity strain** — fiscal coupling × relief overhead × governance (`op10mA11ComputeRegionalFiscalCapacityStrain`)
+- **Interregional network resilience erosion** — linkage hubs × corridor drift × infra backlog (`op10mA11ComputeInterregionalNetworkResilienceErosion`)
+- **Settlement long-horizon capacity risk** — adaptation lag × mobility trap × convergence (`op10mA11ComputeSettlementLongHorizonCapacityRisk`)
+- **10-turn regression harness** — extended bounds for fiscal strain, network erosion, horizon risk
+- Derived events: `fiscal_capacity_strain`, `network_resilience_erosion`, `long_horizon_capacity_risk`
+
 ### Scale wave round 11 (schema `10m.a11.composite.10`)
 
 - **Regional relief coordination overhead** — relief playbook × governance × reception strain (`op10mA11ComputeRegionalReliefCoordinationOverhead`)

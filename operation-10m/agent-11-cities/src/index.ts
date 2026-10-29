@@ -37,5 +37,8 @@ export * from './settlement-infrastructure-absorption-gap.ts';
 export * from './regional-relief-coordination-overhead.ts';
 export * from './interregional-corridor-equity-drift.ts';
 export * from './settlement-climate-adaptation-lag.ts';
+export * from './regional-fiscal-capacity-strain.ts';
+export * from './interregional-network-resilience-erosion.ts';
+export * from './settlement-long-horizon-capacity-risk.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

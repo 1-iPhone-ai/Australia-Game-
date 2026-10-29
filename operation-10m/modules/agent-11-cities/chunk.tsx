@@ -219,7 +219,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.10' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.11' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -255,7 +255,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'infrastructure_absorption_gap'
   | 'relief_coordination_overhead'
   | 'corridor_equity_drift'
-  | 'climate_adaptation_lag';
+  | 'climate_adaptation_lag'
+  | 'fiscal_capacity_strain'
+  | 'network_resilience_erosion'
+  | 'long_horizon_capacity_risk';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -472,6 +475,36 @@ export interface OP10M_A11_AdaptationLagRow {
   narrative: string;
 }
 
+export type OP10M_A11_FiscalCapacityStrainBand = 'sound' | 'stretched' | 'fragile' | 'exhausted';
+
+export interface OP10M_A11_FiscalCapacityStrainRow {
+  regionId: OP10M_A11_RegionId;
+  strainScore: number;
+  band: OP10M_A11_FiscalCapacityStrainBand;
+  pressures: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_NetworkErosionBand = 'robust' | 'thinning' | 'eroding' | 'fracturing';
+
+export interface OP10M_A11_NetworkErosionRow {
+  regionId: OP10M_A11_RegionId;
+  erosionScore: number;
+  band: OP10M_A11_NetworkErosionBand;
+  signals: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_HorizonRiskBand = 'stable' | 'elevated' | 'acute' | 'critical';
+
+export interface OP10M_A11_HorizonRiskRow {
+  regionId: OP10M_A11_RegionId;
+  riskScore: number;
+  band: OP10M_A11_HorizonRiskBand;
+  drivers: string[];
+  narrative: string;
+}
+
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
 export interface OP10M_A11_MigrationPressureRow {
@@ -624,6 +657,12 @@ export interface OP10M_A11_CompositeState {
   nationalCorridorEquityDriftIndex: number;
   climateAdaptationLag: OP10M_A11_AdaptationLagRow[];
   nationalClimateAdaptationLagIndex: number;
+  fiscalCapacityStrain: OP10M_A11_FiscalCapacityStrainRow[];
+  nationalFiscalCapacityStrainIndex: number;
+  networkResilienceErosion: OP10M_A11_NetworkErosionRow[];
+  nationalNetworkResilienceErosionIndex: number;
+  longHorizonCapacityRisk: OP10M_A11_HorizonRiskRow[];
+  nationalLongHorizonCapacityRiskIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -654,6 +693,9 @@ export interface OP10M_A11_CompositePersisted {
   lastReliefOverheadIndex: number;
   lastCorridorEquityDriftIndex: number;
   lastClimateAdaptationLagIndex: number;
+  lastFiscalCapacityStrainIndex: number;
+  lastNetworkResilienceErosionIndex: number;
+  lastLongHorizonCapacityRiskIndex: number;
   inputHash: string;
 }
 
@@ -3377,6 +3419,204 @@ export function op10mA11AdaptationLagEscalating(currentIndex: number, priorIndex
 }
 
 
+// --- source: regional-fiscal-capacity-strain.ts ---
+
+function strainBand(score: number): OP10M_A11_FiscalCapacityStrainBand {
+  if (score < 22) return 'sound';
+  if (score < 40) return 'stretched';
+  if (score < 58) return 'fragile';
+  return 'exhausted';
+}
+
+export function op10mA11ComputeRegionalFiscalCapacityStrain(args: {
+  fiscalUrbanCoupling: OP10M_A11_FiscalUrbanCouplingRow[];
+  reliefOverhead: OP10M_A11_ReliefOverheadRow[];
+  governanceFriction: OP10M_A11_GovernanceFrictionRow[];
+}): { rows: OP10M_A11_FiscalCapacityStrainRow[]; nationalIndex: number } {
+  const fiscalByRegion = new Map(args.fiscalUrbanCoupling.map((f) => [f.regionId, f]));
+  const reliefByRegion = new Map(args.reliefOverhead.map((r) => [r.regionId, r]));
+  const governanceByRegion = new Map(args.governanceFriction.map((g) => [g.regionId, g]));
+
+  const rows: OP10M_A11_FiscalCapacityStrainRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const fiscal = fiscalByRegion.get(rid);
+    const relief = reliefByRegion.get(rid);
+    const governance = governanceByRegion.get(rid);
+
+    const mismatchDrag = fiscal
+      ? op10mA11Clamp((100 - fiscal.couplingScore) * 0.44 + (fiscal.band === 'misaligned' ? 10 : 0))
+      : 14;
+    const reliefDrag = relief ? op10mA11Clamp(relief.overheadScore * 0.38) : 11;
+    const governanceDrag = governance ? op10mA11Clamp(governance.frictionScore * 0.32) : 10;
+
+    const strainScore = op10mA11Clamp(mismatchDrag + reliefDrag + governanceDrag * 0.55);
+    weighted += strainScore;
+
+    const pressures: string[] = [];
+    if (fiscal && (fiscal.band === 'strained' || fiscal.band === 'misaligned')) pressures.push('fiscal mismatch');
+    if (relief && (relief.band === 'overloaded' || relief.band === 'paralytic')) pressures.push('relief spend');
+    if (governance && (governance.band === 'fragmented' || governance.band === 'breakdown')) {
+      pressures.push('coordination cost');
+    }
+    if (!pressures.length) pressures.push('fiscal headroom intact');
+
+    rows.push({
+      regionId: rid,
+      strainScore: op10mA11Round(strainScore),
+      band: strainBand(strainScore),
+      pressures: pressures.slice(0, 3),
+      narrative: `${rid} fiscal capacity ${strainBand(strainScore)} (${op10mA11Round(strainScore)}); ${pressures.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.strainScore - a.strainScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithFiscalCapacityFragility(
+  rows: OP10M_A11_FiscalCapacityStrainRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'fragile' || r.band === 'exhausted').map((r) => r.regionId);
+}
+
+export function op10mA11FiscalCapacityStrainEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 47;
+  return currentIndex >= 41 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: interregional-network-resilience-erosion.ts ---
+
+function erosionBand(score: number): OP10M_A11_NetworkErosionBand {
+  if (score < 21) return 'robust';
+  if (score < 39) return 'thinning';
+  if (score < 57) return 'eroding';
+  return 'fracturing';
+}
+
+export function op10mA11ComputeInterregionalNetworkResilienceErosion(args: {
+  linkageHubs: OP10M_A11_LinkageHubProfile[];
+  corridorEquityDrift: OP10M_A11_CorridorEquityDriftRow[];
+  infrastructureBacklog: OP10M_A11_InfrastructureBacklogRow[];
+  fragilityIndex: number;
+}): { rows: OP10M_A11_NetworkErosionRow[]; nationalIndex: number } {
+  const driftByRegion = new Map(args.corridorEquityDrift.map((d) => [d.regionId, d]));
+  const backlogByRegion = new Map(args.infrastructureBacklog.map((b) => [b.regionId, b]));
+  const hubByRegion = new Map(args.linkageHubs.map((h) => [h.regionId, h]));
+
+  const rows: OP10M_A11_NetworkErosionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const hub = hubByRegion.get(rid);
+    const drift = driftByRegion.get(rid);
+    const backlog = backlogByRegion.get(rid);
+
+    const isolationDrag = hub
+      ? op10mA11Clamp(hub.isolationScore * 0.46 + (hub.role === 'peripheral' ? 12 : 0))
+      : 14;
+    const equityDrag = drift ? op10mA11Clamp(drift.driftScore * 0.4) : 11;
+    const infraDrag = backlog ? op10mA11Clamp(backlog.backlogScore * 0.34) : 10;
+    const nationalDrag = op10mA11Clamp(args.fragilityIndex * 0.12);
+
+    const erosionScore = op10mA11Clamp(isolationDrag + equityDrag + infraDrag + nationalDrag * 0.45);
+    weighted += erosionScore;
+
+    const signals: string[] = [];
+    if (hub && (hub.role === 'peripheral' || hub.isolationScore >= 50)) signals.push('hub isolation');
+    if (drift && (drift.band === 'polarized' || drift.band === 'fractured')) signals.push('corridor inequity');
+    if (backlog && (backlog.band === 'severe' || backlog.band === 'critical')) signals.push('network backlog');
+    if (!signals.length) signals.push('linkage resilience holding');
+
+    rows.push({
+      regionId: rid,
+      erosionScore: op10mA11Round(erosionScore),
+      band: erosionBand(erosionScore),
+      signals: signals.slice(0, 3),
+      narrative: `${rid} network resilience ${erosionBand(erosionScore)} (${op10mA11Round(erosionScore)}); ${signals.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.erosionScore - a.erosionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithNetworkFracture(rows: OP10M_A11_NetworkErosionRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'eroding' || r.band === 'fracturing').map((r) => r.regionId);
+}
+
+export function op10mA11NetworkErosionEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 46;
+  return currentIndex >= 40 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: settlement-long-horizon-capacity-risk.ts ---
+
+function horizonBand(score: number): OP10M_A11_HorizonRiskBand {
+  if (score < 23) return 'stable';
+  if (score < 41) return 'elevated';
+  if (score < 59) return 'acute';
+  return 'critical';
+}
+
+export function op10mA11ComputeSettlementLongHorizonCapacityRisk(args: {
+  climateAdaptationLag: OP10M_A11_AdaptationLagRow[];
+  mobilityTrap: OP10M_A11_MobilityTrapRow[];
+  convergence: OP10M_A11_ConvergenceVelocityRow;
+}): { rows: OP10M_A11_HorizonRiskRow[]; nationalIndex: number } {
+  const lagByRegion = new Map(args.climateAdaptationLag.map((a) => [a.regionId, a]));
+  const trapByRegion = new Map(args.mobilityTrap.map((m) => [m.regionId, m]));
+  const spreadDrag = op10mA11Clamp(args.convergence.standingSpread * 0.28);
+  const convergenceDrag =
+    args.convergence.band === 'diverging' ? 14 : args.convergence.band === 'stalled' ? 8 : 0;
+
+  const rows: OP10M_A11_HorizonRiskRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const lag = lagByRegion.get(rid);
+    const trap = trapByRegion.get(rid);
+
+    const adaptationDrag = lag ? op10mA11Clamp(lag.lagScore * 0.48) : 15;
+    const mobilityDrag = trap ? op10mA11Clamp(trap.trapScore * 0.42) : 12;
+
+    const riskScore = op10mA11Clamp(adaptationDrag + mobilityDrag + spreadDrag + convergenceDrag);
+    weighted += riskScore;
+
+    const drivers: string[] = [];
+    if (lag && (lag.band === 'stalled' || lag.band === 'critical_lag')) drivers.push('adaptation lag');
+    if (trap && (trap.band === 'trapped' || trap.band === 'immobilized')) drivers.push('mobility lock-in');
+    if (args.convergence.band === 'stalled' || args.convergence.band === 'diverging') {
+      drivers.push('convergence stress');
+    }
+    if (!drivers.length) drivers.push('long-horizon capacity adequate');
+
+    rows.push({
+      regionId: rid,
+      riskScore: op10mA11Round(riskScore),
+      band: horizonBand(riskScore),
+      drivers: drivers.slice(0, 3),
+      narrative: `${rid} long-horizon capacity ${horizonBand(riskScore)} (${op10mA11Round(riskScore)}); ${drivers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.riskScore - a.riskScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCriticalHorizonRisk(rows: OP10M_A11_HorizonRiskRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'acute' || r.band === 'critical').map((r) => r.regionId);
+}
+
+export function op10mA11HorizonRiskEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 49;
+  return currentIndex >= 43 && currentIndex > priorIndex + 6;
+}
+
+
 // --- source: composite-recompute.ts ---
 
 export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePersisted {
@@ -3406,6 +3646,9 @@ export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePe
     lastReliefOverheadIndex: 0,
     lastCorridorEquityDriftIndex: 0,
     lastClimateAdaptationLagIndex: 0,
+    lastFiscalCapacityStrainIndex: 0,
+    lastNetworkResilienceErosionIndex: 0,
+    lastLongHorizonCapacityRiskIndex: 0,
     inputHash: '',
   };
 }
@@ -3463,6 +3706,12 @@ export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState
   if (state.nationalReliefOverheadIndex < 0 || state.nationalReliefOverheadIndex > 100) errs.push('relief overhead index out of range');
   if (state.nationalCorridorEquityDriftIndex < 0 || state.nationalCorridorEquityDriftIndex > 100) errs.push('corridor equity drift index out of range');
   if (state.nationalClimateAdaptationLagIndex < 0 || state.nationalClimateAdaptationLagIndex > 100) errs.push('climate adaptation lag index out of range');
+  if (state.fiscalCapacityStrain.length !== 8) errs.push('fiscal capacity strain row count');
+  if (state.networkResilienceErosion.length !== 8) errs.push('network erosion row count');
+  if (state.longHorizonCapacityRisk.length !== 8) errs.push('long horizon risk row count');
+  if (state.nationalFiscalCapacityStrainIndex < 0 || state.nationalFiscalCapacityStrainIndex > 100) errs.push('fiscal capacity strain index out of range');
+  if (state.nationalNetworkResilienceErosionIndex < 0 || state.nationalNetworkResilienceErosionIndex > 100) errs.push('network erosion index out of range');
+  if (state.nationalLongHorizonCapacityRiskIndex < 0 || state.nationalLongHorizonCapacityRiskIndex > 100) errs.push('long horizon risk index out of range');
   return errs;
 }
 
@@ -3666,6 +3915,25 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     climateDisplacement: climateOut.rows,
     absorptionGap: absorptionGapOut.rows,
     infrastructureBacklog: backlogOut.rows,
+  });
+
+  const fiscalCapacityStrainOut = op10mA11ComputeRegionalFiscalCapacityStrain({
+    fiscalUrbanCoupling: fiscalOut.rows,
+    reliefOverhead: reliefOverheadOut.rows,
+    governanceFriction: governanceOut.rows,
+  });
+
+  const networkErosionOut = op10mA11ComputeInterregionalNetworkResilienceErosion({
+    linkageHubs,
+    corridorEquityDrift: corridorEquityDriftOut.rows,
+    infrastructureBacklog: backlogOut.rows,
+    fragilityIndex,
+  });
+
+  const longHorizonRiskOut = op10mA11ComputeSettlementLongHorizonCapacityRisk({
+    climateAdaptationLag: climateAdaptationLagOut.rows,
+    mobilityTrap: mobilityTrapOut.rows,
+    convergence,
   });
 
   const derivedRaw: Omit<OP10M_A11_CompositeDerivedEvent, 'id'>[] = [];
@@ -4125,6 +4393,63 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     );
   }
 
+  const fiscalFragile = op10mA11RegionsWithFiscalCapacityFragility(fiscalCapacityStrainOut.rows);
+  if (
+    fiscalFragile.length >= 2 ||
+    fiscalCapacityStrainOut.nationalIndex >= 46 ||
+    op10mA11FiscalCapacityStrainEscalating(
+      fiscalCapacityStrainOut.nationalIndex,
+      base.revision > 0 ? base.lastFiscalCapacityStrainIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'fiscal_capacity_strain',
+      fiscalFragile.slice(0, 5),
+      `Regional fiscal capacity strain (index ${fiscalCapacityStrainOut.nationalIndex.toFixed(1)}).`,
+      fiscalCapacityStrainOut.nationalIndex >= 55 ? 'major' : 'meaningful',
+    );
+  }
+
+  const networkFracture = op10mA11RegionsWithNetworkFracture(networkErosionOut.rows);
+  if (
+    networkFracture.length >= 2 ||
+    networkErosionOut.nationalIndex >= 45 ||
+    op10mA11NetworkErosionEscalating(
+      networkErosionOut.nationalIndex,
+      base.revision > 0 ? base.lastNetworkResilienceErosionIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'network_resilience_erosion',
+      networkFracture.slice(0, 5),
+      `Interregional network resilience erosion (index ${networkErosionOut.nationalIndex.toFixed(1)}).`,
+      networkErosionOut.nationalIndex >= 54 ? 'major' : 'meaningful',
+    );
+  }
+
+  const horizonCritical = op10mA11RegionsWithCriticalHorizonRisk(longHorizonRiskOut.rows);
+  if (
+    horizonCritical.length >= 2 ||
+    longHorizonRiskOut.nationalIndex >= 48 ||
+    op10mA11HorizonRiskEscalating(
+      longHorizonRiskOut.nationalIndex,
+      base.revision > 0 ? base.lastLongHorizonCapacityRiskIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'long_horizon_capacity_risk',
+      horizonCritical.slice(0, 5),
+      `Settlement long-horizon capacity risk (index ${longHorizonRiskOut.nationalIndex.toFixed(1)}).`,
+      longHorizonRiskOut.nationalIndex >= 58 ? 'major' : 'meaningful',
+    );
+  }
+
   base.revision += 1;
   base.urban = urbanOut.persisted;
   base.infra = infraOut.persisted;
@@ -4148,11 +4473,14 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
   base.lastReliefOverheadIndex = reliefOverheadOut.nationalIndex;
   base.lastCorridorEquityDriftIndex = corridorEquityDriftOut.nationalIndex;
   base.lastClimateAdaptationLagIndex = climateAdaptationLagOut.nationalIndex;
+  base.lastFiscalCapacityStrainIndex = fiscalCapacityStrainOut.nationalIndex;
+  base.lastNetworkResilienceErosionIndex = networkErosionOut.nationalIndex;
+  base.lastLongHorizonCapacityRiskIndex = longHorizonRiskOut.nationalIndex;
   base.inputHash = op10mA11HashInputs({
     turn: inputs.urban.turn,
     cityCount: inputs.urban.cities.length,
     regionKeys: 'composite',
-    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}:${housingSpilloverOut.nationalIndex}:${climateOut.nationalIndex}:${amenityOut.nationalIndex}:${relocationOut.nationalIndex}:${employmentAnchorOut.nationalIndex}:${commuteWedgeOut.nationalIndex}:${receptionStrainOut.nationalIndex}:${landUseGridlockOut.nationalIndex}:${mobilityTrapOut.nationalIndex}:${absorptionGapOut.nationalIndex}:${reliefOverheadOut.nationalIndex}:${corridorEquityDriftOut.nationalIndex}:${climateAdaptationLagOut.nationalIndex}`,
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}:${housingSpilloverOut.nationalIndex}:${climateOut.nationalIndex}:${amenityOut.nationalIndex}:${relocationOut.nationalIndex}:${employmentAnchorOut.nationalIndex}:${commuteWedgeOut.nationalIndex}:${receptionStrainOut.nationalIndex}:${landUseGridlockOut.nationalIndex}:${mobilityTrapOut.nationalIndex}:${absorptionGapOut.nationalIndex}:${reliefOverheadOut.nationalIndex}:${corridorEquityDriftOut.nationalIndex}:${climateAdaptationLagOut.nationalIndex}:${fiscalCapacityStrainOut.nationalIndex}:${networkErosionOut.nationalIndex}:${longHorizonRiskOut.nationalIndex}`,
   });
 
   const state: OP10M_A11_CompositeState = {
@@ -4215,7 +4543,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     nationalCorridorEquityDriftIndex: corridorEquityDriftOut.nationalIndex,
     climateAdaptationLag: climateAdaptationLagOut.rows,
     nationalClimateAdaptationLagIndex: climateAdaptationLagOut.nationalIndex,
-    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}; housing spillover ${housingSpilloverOut.nationalIndex}; talent drain ${talentOut.nationalIndex}; climate displacement ${climateOut.nationalIndex}; amenity cost ${amenityOut.nationalIndex}; decentralization ${decentralOut.nationalIndex}; relocation burden ${relocationOut.nationalIndex}; employment anchor ${employmentAnchorOut.nationalIndex}; commute wedge ${commuteWedgeOut.nationalIndex}; reception strain ${receptionStrainOut.nationalIndex}; land-use gridlock ${landUseGridlockOut.nationalIndex}; mobility trap ${mobilityTrapOut.nationalIndex}; absorption gap ${absorptionGapOut.nationalIndex}; relief overhead ${reliefOverheadOut.nationalIndex}; corridor equity drift ${corridorEquityDriftOut.nationalIndex}; climate adaptation lag ${climateAdaptationLagOut.nationalIndex}.`,
+    fiscalCapacityStrain: fiscalCapacityStrainOut.rows,
+    nationalFiscalCapacityStrainIndex: fiscalCapacityStrainOut.nationalIndex,
+    networkResilienceErosion: networkErosionOut.rows,
+    nationalNetworkResilienceErosionIndex: networkErosionOut.nationalIndex,
+    longHorizonCapacityRisk: longHorizonRiskOut.rows,
+    nationalLongHorizonCapacityRiskIndex: longHorizonRiskOut.nationalIndex,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}; housing spillover ${housingSpilloverOut.nationalIndex}; talent drain ${talentOut.nationalIndex}; climate displacement ${climateOut.nationalIndex}; amenity cost ${amenityOut.nationalIndex}; decentralization ${decentralOut.nationalIndex}; relocation burden ${relocationOut.nationalIndex}; employment anchor ${employmentAnchorOut.nationalIndex}; commute wedge ${commuteWedgeOut.nationalIndex}; reception strain ${receptionStrainOut.nationalIndex}; land-use gridlock ${landUseGridlockOut.nationalIndex}; mobility trap ${mobilityTrapOut.nationalIndex}; absorption gap ${absorptionGapOut.nationalIndex}; relief overhead ${reliefOverheadOut.nationalIndex}; corridor equity drift ${corridorEquityDriftOut.nationalIndex}; climate adaptation lag ${climateAdaptationLagOut.nationalIndex}; fiscal capacity ${fiscalCapacityStrainOut.nationalIndex}; network erosion ${networkErosionOut.nationalIndex}; horizon risk ${longHorizonRiskOut.nationalIndex}.`,
     inputHash: base.inputHash,
   };
 
@@ -4261,6 +4595,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   reliefOverheadIndex: number;
   corridorEquityDriftIndex: number;
   climateAdaptationLagIndex: number;
+  fiscalCapacityStrainIndex: number;
+  networkResilienceErosionIndex: number;
+  longHorizonCapacityRiskIndex: number;
   validationErrors: number;
 };
 
@@ -4314,6 +4651,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       reliefOverheadIndex: out.state.nationalReliefOverheadIndex,
       corridorEquityDriftIndex: out.state.nationalCorridorEquityDriftIndex,
       climateAdaptationLagIndex: out.state.nationalClimateAdaptationLagIndex,
+      fiscalCapacityStrainIndex: out.state.nationalFiscalCapacityStrainIndex,
+      networkResilienceErosionIndex: out.state.nationalNetworkResilienceErosionIndex,
+      longHorizonCapacityRiskIndex: out.state.nationalLongHorizonCapacityRiskIndex,
       validationErrors,
     });
   }
@@ -4338,6 +4678,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const reliefOverheadStable = snapshots.every((s) => s.reliefOverheadIndex >= 8 && s.reliefOverheadIndex <= 100);
   const corridorDriftStable = snapshots.every((s) => s.corridorEquityDriftIndex >= 8 && s.corridorEquityDriftIndex <= 100);
   const adaptationLagStable = snapshots.every((s) => s.climateAdaptationLagIndex >= 8 && s.climateAdaptationLagIndex <= 100);
+  const fiscalCapacityStable = snapshots.every((s) => s.fiscalCapacityStrainIndex >= 8 && s.fiscalCapacityStrainIndex <= 100);
+  const networkErosionStable = snapshots.every((s) => s.networkResilienceErosionIndex >= 8 && s.networkResilienceErosionIndex <= 100);
+  const horizonRiskStable = snapshots.every((s) => s.longHorizonCapacityRiskIndex >= 8 && s.longHorizonCapacityRiskIndex <= 100);
 
   const ok =
     monotonicRevision &&
@@ -4359,10 +4702,13 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     absorptionGapStable &&
     reliefOverheadStable &&
     corridorDriftStable &&
-    adaptationLagStable;
+    adaptationLagStable &&
+    fiscalCapacityStable &&
+    networkErosionStable &&
+    horizonRiskStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, adaptation lag ${snapshots[snapshots.length - 1].climateAdaptationLagIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, horizon risk ${snapshots[snapshots.length - 1].longHorizonCapacityRiskIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable}`;
 
   return { ok, snapshots, detail };
 }
@@ -4695,7 +5041,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.10',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.11',
     composite.state.schemaVersion,
   );
 
@@ -4801,7 +5147,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastAbsorptionGapIndex === composite.state.nationalAbsorptionGapIndex &&
       composite.persisted.lastReliefOverheadIndex === composite.state.nationalReliefOverheadIndex &&
       composite.persisted.lastCorridorEquityDriftIndex === composite.state.nationalCorridorEquityDriftIndex &&
-      composite.persisted.lastClimateAdaptationLagIndex === composite.state.nationalClimateAdaptationLagIndex,
+      composite.persisted.lastClimateAdaptationLagIndex === composite.state.nationalClimateAdaptationLagIndex &&
+      composite.persisted.lastFiscalCapacityStrainIndex === composite.state.nationalFiscalCapacityStrainIndex &&
+      composite.persisted.lastNetworkResilienceErosionIndex === composite.state.nationalNetworkResilienceErosionIndex &&
+      composite.persisted.lastLongHorizonCapacityRiskIndex === composite.state.nationalLongHorizonCapacityRiskIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -5359,6 +5708,91 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_95',
     composite.state.corridorEquityDrift.every((c) => c.narrative.includes('corridor equity')),
     composite.state.corridorEquityDrift[0]?.band ?? 'none',
+  );
+
+  const fiscalCapacity = op10mA11ComputeRegionalFiscalCapacityStrain({
+    fiscalUrbanCoupling: composite.state.fiscalUrbanCoupling,
+    reliefOverhead: composite.state.reliefOverhead,
+    governanceFriction: composite.state.governanceFriction,
+  });
+  push(
+    out,
+    'a11_96',
+    composite.state.fiscalCapacityStrain.length === 8 &&
+      composite.state.nationalFiscalCapacityStrainIndex === fiscalCapacity.nationalIndex,
+    `fiscal capacity ${composite.state.nationalFiscalCapacityStrainIndex}`,
+  );
+
+  const networkErosion = op10mA11ComputeInterregionalNetworkResilienceErosion({
+    linkageHubs: composite.state.linkageHubs,
+    corridorEquityDrift: composite.state.corridorEquityDrift,
+    infrastructureBacklog: composite.state.infrastructureBacklog,
+    fragilityIndex: composite.state.fragilityIndex,
+  });
+  push(
+    out,
+    'a11_97',
+    composite.state.networkResilienceErosion.length === 8 &&
+      composite.state.nationalNetworkResilienceErosionIndex === networkErosion.nationalIndex,
+    `network erosion ${composite.state.nationalNetworkResilienceErosionIndex}`,
+  );
+
+  const horizonRisk = op10mA11ComputeSettlementLongHorizonCapacityRisk({
+    climateAdaptationLag: composite.state.climateAdaptationLag,
+    mobilityTrap: composite.state.mobilityTrap,
+    convergence: composite.state.convergence,
+  });
+  push(
+    out,
+    'a11_98',
+    composite.state.longHorizonCapacityRisk.length === 8 &&
+      composite.state.nationalLongHorizonCapacityRiskIndex === horizonRisk.nationalIndex,
+    `horizon risk ${composite.state.nationalLongHorizonCapacityRiskIndex}`,
+  );
+
+  push(
+    out,
+    'a11_99',
+    composite.state.fiscalCapacityStrain.every((f) => f.narrative.includes('fiscal capacity')),
+    composite.state.fiscalCapacityStrain[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_100',
+    composite.derived.some((d) => d.kind === 'fiscal_capacity_strain') ||
+      composite.state.fiscalCapacityStrain.some((f) => f.band === 'fragile' || f.band === 'exhausted'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_101',
+    composite.derived.some((d) => d.kind === 'network_resilience_erosion') ||
+      composite.state.networkResilienceErosion.some((n) => n.band === 'eroding' || n.band === 'fracturing'),
+    composite.state.networkResilienceErosion[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_102',
+    composite.persisted.lastFiscalCapacityStrainIndex === composite.state.nationalFiscalCapacityStrainIndex,
+    `persisted fiscal ${composite.persisted.lastFiscalCapacityStrainIndex}`,
+  );
+
+  push(
+    out,
+    'a11_103',
+    composite.derived.some((d) => d.kind === 'long_horizon_capacity_risk') ||
+      composite.state.longHorizonCapacityRisk.some((h) => h.band === 'acute' || h.band === 'critical'),
+    composite.state.longHorizonCapacityRisk[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_104',
+    composite.state.networkResilienceErosion.every((n) => n.narrative.includes('network resilience')),
+    composite.state.networkResilienceErosion[0]?.band ?? 'none',
   );
 
   return out;
