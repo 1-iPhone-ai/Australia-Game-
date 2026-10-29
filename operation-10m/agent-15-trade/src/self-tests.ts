@@ -14,7 +14,7 @@ import { advanceTradeDisputes, openTradeDispute } from './trade-disputes.ts';
 import { advanceTradeComplianceRecord } from './trade-compliance.ts';
 import { computeLogisticsStress } from './export-logistics.ts';
 import { computeTradeBalanceSnapshot } from './trade-balance.ts';
-import { computeImportDependencySnapshot, importDependencyConsumerPressure } from './import-dependency.ts';
+import { computeImportDependencySnapshot, createEmptyImportDependencySnapshot, importDependencyConsumerPressure } from './import-dependency.ts';
 import { advanceDiplomaticEngagement, deriveEngagementPartnerModifiers } from './diplomatic-engagement.ts';
 import { computeTradeFinanceSnapshot } from './trade-finance.ts';
 import {
@@ -24,6 +24,7 @@ import {
 import { computeTermsOfTradeSnapshot, termsOfTradeHouseholdModifier } from './terms-of-trade.ts';
 import {
   computeSupplyChainResilienceSnapshot,
+  createEmptySupplyChainResilienceSnapshot,
   supplyChainResilienceExportScale,
 } from './supply-chain-resilience.ts';
 import { computeForeignExchangeSnapshot } from './foreign-exchange-pressure.ts';
@@ -86,6 +87,7 @@ import {
 } from './trade-fx-hedging.ts';
 import {
   computeImportLanePressureSnapshot,
+  createEmptyImportLanePressureSnapshot,
   importLanePressureExportScale,
 } from './import-lane-pressure.ts';
 import {
@@ -98,13 +100,25 @@ import {
   tradeBalanceStabilizationExportScale,
 } from './trade-balance-stabilization.ts';
 import {
+  computeTradeCommitmentPipelineSnapshot,
+  createEmptyTradeCommitmentPipelineSnapshot,
+  exportCommitmentPipelineExportScale,
+} from './export-commitment-pipeline.ts';
+import {
   computeTradeShockAbsorptionSnapshot,
+  createEmptyTradeShockAbsorptionSnapshot,
   tradeShockAbsorptionExportScale,
 } from './trade-shock-absorption.ts';
 import {
-  computeTradeCommitmentPipelineSnapshot,
-  exportCommitmentPipelineExportScale,
-} from './export-commitment-pipeline.ts';
+  computeImportCommitmentPipelineSnapshot,
+  createEmptyImportCommitmentPipelineSnapshot,
+  importCommitmentPipelineExportScale,
+} from './import-commitment-pipeline.ts';
+import {
+  computeTradeFlowCohesionSnapshot,
+  createEmptyTradeFlowCohesionSnapshot,
+  tradeFlowCohesionExportScale,
+} from './trade-flow-cohesion.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1053,6 +1067,46 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     }).snapshot;
     gtelAssert(booked.fillRate > slack.fillRate, 'expected higher pipeline fill');
     gtelAssert(exportCommitmentPipelineExportScale(booked) <= exportCommitmentPipelineExportScale(slack) + 0.05, 'booked_out may drag scale');
+  });
+
+  ok('import commitment pipeline fills under critical dependency and congested lanes', () => {
+    const slack = computeImportCommitmentPipelineSnapshot({
+      importDependency: createEmptyImportDependencySnapshot(),
+      importLanePressure: createEmptyImportLanePressureSnapshot(),
+      tradeFinance: createEmptyTradeFinanceSnapshot(),
+      supplyChainResilience: createEmptySupplyChainResilienceSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const booked = computeImportCommitmentPipelineSnapshot({
+      importDependency: { ...createEmptyImportDependencySnapshot(), band: 'critical', score: 0.82 },
+      importLanePressure: { ...createEmptyImportLanePressureSnapshot(), band: 'congested', load: 0.62 },
+      tradeFinance: { ...createEmptyTradeFinanceSnapshot(), availabilityScore: 0.78, band: 'fluid' },
+      supplyChainResilience: { ...createEmptySupplyChainResilienceSnapshot(), score: 0.7, band: 'robust', redundancyIndex: 0.65 },
+      persisted: { ...createEmptyGTELPersisted(), importCommitmentPipelineSmoothing: 0.7 },
+    }).snapshot;
+    gtelAssert(booked.fillRate > slack.fillRate, 'expected higher import pipeline fill');
+    gtelAssert(importCommitmentPipelineExportScale(booked) <= importCommitmentPipelineExportScale(slack) + 0.06, 'booked_out may drag scale');
+  });
+
+  ok('trade flow cohesion improves when export and import books align', () => {
+    const exportPipe = { ...createEmptyTradeCommitmentPipelineSnapshot(), fillRate: 0.55, band: 'steady' as const };
+    const importPipe = { ...createEmptyImportCommitmentPipelineSnapshot(), fillRate: 0.54, band: 'steady' as const };
+    const aligned = computeTradeFlowCohesionSnapshot({
+      exportCommitmentPipeline: exportPipe,
+      importCommitmentPipeline: importPipe,
+      tradeBalanceStabilization: { index: 0.68, band: 'anchored', surplusSupport: 0.12, volatilityDampening: 0.1, summary: 'test' },
+      tradeShockAbsorption: { ...createEmptyTradeShockAbsorptionSnapshot(), band: 'deep', capacity: 0.76 },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const skewed = computeTradeFlowCohesionSnapshot({
+      exportCommitmentPipeline: { ...exportPipe, fillRate: 0.82, band: 'booked_out' },
+      importCommitmentPipeline: { ...importPipe, fillRate: 0.38, band: 'slack' },
+      tradeBalanceStabilization: { index: 0.42, band: 'unstable', surplusSupport: -0.04, volatilityDampening: 0.02, summary: 'test' },
+      tradeShockAbsorption: { ...createEmptyTradeShockAbsorptionSnapshot(), band: 'exhausted', capacity: 0.28 },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(aligned.score > skewed.score, 'expected stronger cohesion when aligned');
+    gtelAssert(tradeFlowCohesionExportScale(aligned) >= tradeFlowCohesionExportScale(skewed), 'expected cohesion scale lift');
   });
 
   return { passed, failed };

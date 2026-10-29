@@ -162,6 +162,10 @@ export interface GTELPersisted {
   tradeShockAbsorptionSmoothing?: number;
   /** Smoothed export commitment pipeline fill (0–1). */
   exportCommitmentPipelineSmoothing?: number;
+  /** Smoothed import commitment pipeline fill (0–1). */
+  importCommitmentPipelineSmoothing?: number;
+  /** Smoothed bilateral trade flow cohesion score (0–1). */
+  tradeFlowCohesionSmoothing?: number;
 }
 
 export interface GTELState {
@@ -205,6 +209,8 @@ export interface GTELState {
   tradeBalanceStabilization: GTELTradeBalanceStabilizationSnapshot;
   tradeShockAbsorption: GTELTradeShockAbsorptionSnapshot;
   exportCommitmentPipeline: GTELTradeCommitmentPipelineSnapshot;
+  importCommitmentPipeline: GTELImportCommitmentPipelineSnapshot;
+  tradeFlowCohesion: GTELTradeFlowCohesionSnapshot;
   inputHash: string;
 }
 
@@ -629,6 +635,26 @@ export interface GTELTradeCommitmentPipelineSnapshot {
   band: GTELTradeCommitmentPipelineBand;
   forwardBookTurns: number;
   financeCoverage: number;
+  summary: string;
+}
+
+export type GTELImportCommitmentPipelineBand = 'slack' | 'steady' | 'strong' | 'booked_out';
+
+export interface GTELImportCommitmentPipelineSnapshot {
+  fillRate: number;
+  band: GTELImportCommitmentPipelineBand;
+  forwardBookTurns: number;
+  financeCoverage: number;
+  summary: string;
+}
+
+export type GTELTradeFlowCohesionBand = 'synchronized' | 'balanced' | 'skewed' | 'dislocated';
+
+export interface GTELTradeFlowCohesionSnapshot {
+  score: number;
+  band: GTELTradeFlowCohesionBand;
+  exportImportGap: number;
+  stabilizationSupport: number;
   summary: string;
 }
 

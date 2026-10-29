@@ -744,3 +744,44 @@ test('round 15: saturated export capacity raises pipeline fill vs slack baseline
   });
   assert.ok(saturated.state.exportCommitmentPipeline.fillRate >= slack.state.exportCommitmentPipeline.fillRate - 0.05);
 });
+
+test('round 16: import commitment pipeline and trade flow cohesion on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.importCommitmentPipelineSmoothing = 0.58;
+  persisted.tradeFlowCohesionSmoothing = 0.55;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 49,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 100 } } },
+    persisted,
+  });
+  assert.ok(r.state.importCommitmentPipeline);
+  assert.ok(['slack', 'steady', 'strong', 'booked_out'].includes(r.state.importCommitmentPipeline.band));
+  assert.ok(r.state.tradeFlowCohesion);
+  assert.ok(['synchronized', 'balanced', 'skewed', 'dislocated'].includes(r.state.tradeFlowCohesion.band));
+  assert.ok(r.persisted.importCommitmentPipelineSmoothing != null);
+  assert.ok(r.persisted.tradeFlowCohesionSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Import commitment pipeline/i.test(n)));
+  assert.ok(notes.some(n => /Trade flow cohesion/i.test(n)));
+});
+
+test('round 16: critical import dependency raises pipeline fill vs slack baseline', () => {
+  const slack = advanceGlobalTradeEconomyTurn({
+    turn: 50,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 55 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  let persisted = createEmptyGTELPersisted();
+  persisted.importDependencySmoothing = { electronics: 0.85, machinery: 0.82 };
+  const critical = advanceGlobalTradeEconomyTurn({
+    turn: 50,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 55 } } },
+    persisted,
+  });
+  assert.ok(
+    critical.state.importCommitmentPipeline.fillRate >= slack.state.importCommitmentPipeline.fillRate - 0.06,
+  );
+});

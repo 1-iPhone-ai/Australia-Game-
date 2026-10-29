@@ -26,6 +26,8 @@ import { sanitizeDiplomaticTradeCoherenceSmoothing } from './diplomatic-trade-co
 import { sanitizeTradeBalanceStabilizationSmoothing } from './trade-balance-stabilization.ts';
 import { sanitizeTradeShockAbsorptionSmoothing } from './trade-shock-absorption.ts';
 import { sanitizeExportCommitmentPipelineSmoothing } from './export-commitment-pipeline.ts';
+import { sanitizeImportCommitmentPipelineSmoothing } from './import-commitment-pipeline.ts';
+import { sanitizeTradeFlowCohesionSmoothing } from './trade-flow-cohesion.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -70,6 +72,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     tradeBalanceStabilizationSmoothing: 0.52,
     tradeShockAbsorptionSmoothing: 0.54,
     exportCommitmentPipelineSmoothing: 0.52,
+    importCommitmentPipelineSmoothing: 0.5,
+    tradeFlowCohesionSmoothing: 0.52,
   };
 }
 
@@ -252,5 +256,9 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.exportCommitmentPipelineSmoothing = sanitizeExportCommitmentPipelineSmoothing(
     r.exportCommitmentPipelineSmoothing,
   );
+  base.importCommitmentPipelineSmoothing = sanitizeImportCommitmentPipelineSmoothing(
+    r.importCommitmentPipelineSmoothing,
+  );
+  base.tradeFlowCohesionSmoothing = sanitizeTradeFlowCohesionSmoothing(r.tradeFlowCohesionSmoothing);
   return base;
 }
