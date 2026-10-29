@@ -68,11 +68,13 @@ import type { CommandCenterInflationFusionLatchBand } from '../inflation/command
 import type { TransportFreightInflationCongestionCascadeBand } from '../inflation/transport-freight-inflation-congestion-cascade.js';
 import type { EventsStagedInflationShockPersistenceBand } from '../inflation/events-staged-inflation-shock-persistence.js';
 import type { ModesSandboxInflationStressCascadeBand } from '../inflation/modes-sandbox-inflation-stress-cascade.js';
+import type { FiscalAppropriationInflationPressureLatchBand } from '../inflation/fiscal-appropriation-inflation-pressure-latch.js';
+import type { HouseholdBudgetInflationStressCascadeBand } from '../inflation/household-budget-inflation-stress-cascade.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r37';
+  schemaVersion: '10.14.agent10.r38';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -142,6 +144,8 @@ export interface Agent21InflationForecastBundle {
   terminalTransportFreightInflationCongestionCascade: TransportFreightInflationCongestionCascadeBand;
   terminalEventsStagedInflationShockPersistence: EventsStagedInflationShockPersistenceBand;
   terminalModesSandboxInflationStressCascade: ModesSandboxInflationStressCascadeBand;
+  terminalFiscalAppropriationInflationPressureLatch: FiscalAppropriationInflationPressureLatchBand;
+  terminalHouseholdBudgetInflationStressCascade: HouseholdBudgetInflationStressCascadeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -170,7 +174,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r37',
+    schemaVersion: '10.14.agent10.r38',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -241,6 +245,9 @@ export function buildAgent21InflationForecastBundle(input: {
       lastPoint?.transportFreightInflationCongestionCascadeBand ?? 'clear',
     terminalEventsStagedInflationShockPersistence: lastPoint?.eventsStagedInflationShockPersistenceBand ?? 'muted',
     terminalModesSandboxInflationStressCascade: lastPoint?.modesSandboxInflationStressCascadeBand ?? 'routine',
+    terminalFiscalAppropriationInflationPressureLatch:
+      lastPoint?.fiscalAppropriationInflationPressureLatchBand ?? 'stable',
+    terminalHouseholdBudgetInflationStressCascade: lastPoint?.householdBudgetInflationStressCascadeBand ?? 'contained',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

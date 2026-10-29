@@ -15,6 +15,10 @@ export interface Agent07FiscalSnapshot {
   debtIndexationInflationLatch?: boolean;
   /** Round 30: fiscal pass-through cascade band. */
   fiscalPassThroughCascadeBand?: 'muted' | 'building' | 'runaway';
+  /** Round 38: appropriation inflation latch. */
+  wave38AppropriationInflationLatch?: boolean;
+  /** Round 38: fiscal pressure escalation band. */
+  fiscalPressureEscalationBand?: 'stable' | 'elevated' | 'critical';
 }
 
 export function mergeAgent07IntoMacroFinancialInputs(
@@ -65,6 +69,13 @@ export function mergeAgent07IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.fiscalPassThroughCascadeBand === 'building' && snapshot.debtServicePressure === 'critical') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave38AppropriationInflationLatch && snapshot.fiscalPressureEscalationBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.fiscalPressureEscalationBand === 'elevated' && snapshot.consolidatedDeficitBand === 'large_deficit') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 

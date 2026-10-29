@@ -15,6 +15,10 @@ export interface Agent09HouseholdSnapshot {
   wagePriceSpiralLatch?: boolean;
   /** Round 30: household de-anchoring band. */
   householdDeanchoringBand?: 'anchored' | 'drifting' | 'unmoored';
+  /** Round 38: budget inflation latch. */
+  wave38BudgetInflationLatch?: boolean;
+  /** Round 38: household stress cascade band. */
+  householdStressCascadeBand?: 'contained' | 'building' | 'ruptured';
 }
 
 export function mergeAgent09IntoMacroFinancialInputs(
@@ -59,6 +63,14 @@ export function mergeAgent09IntoMacroFinancialInputs(
     householdInflationScenarioActive = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.householdDeanchoringBand === 'drifting' && snapshot.householdExpectationsDeanchoring) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave38BudgetInflationLatch && snapshot.householdStressCascadeBand === 'ruptured') {
+    highInflationScenario = true;
+    householdInflationScenarioActive = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.householdStressCascadeBand === 'building' && snapshot.costOfLivingStress === 'extreme') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 

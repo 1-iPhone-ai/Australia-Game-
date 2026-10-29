@@ -1335,6 +1335,46 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'events', 'modes', 'round37'],
   },
+  {
+    id: 'fiscal_appropriation_pressure_latch_stack',
+    label: 'Fiscal appropriation pressure latch stack',
+    description: 'Critical fiscal escalation with appropriation inflation latch.',
+    patch: {
+      highInflationScenario: true,
+      fiscalPressure: 'critical',
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.42,
+      publicStability: 35,
+    },
+    tags: ['inflation', 'fiscal', 'round38'],
+  },
+  {
+    id: 'household_budget_stress_cascade_stress',
+    label: 'Household budget stress cascade stress',
+    description: 'Ruptured household stress cascade with budget latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.39,
+      publicStability: 33,
+    },
+    tags: ['inflation', 'household', 'round38'],
+  },
+  {
+    id: 'fiscal_household_wave38_fusion_stress',
+    label: 'Fiscal & household wave 38 fusion stress',
+    description: 'Appropriation runaway latch colliding with budget collapse cascade.',
+    patch: {
+      inflationSettingMultiplier: 1.49,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 23,
+    },
+    tags: ['inflation', 'fiscal', 'household', 'round38'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
