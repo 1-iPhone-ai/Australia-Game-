@@ -46,6 +46,7 @@ import { isMatriarchCoalitionPerpetuity } from '../engine/coalition-matriarch-pe
 import { isMatriarchCoalitionEternity } from '../engine/coalition-matriarch-eternity.ts';
 import { isMatriarchCoalitionInfinity } from '../engine/coalition-matriarch-infinity.ts';
 import { isMatriarchCoalitionTranscendence } from '../engine/coalition-matriarch-transcendence.ts';
+import { isMatriarchCoalitionApotheosis } from '../engine/coalition-matriarch-apotheosis.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -138,6 +139,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionMatriarchInfinityStreakDays: number;
   matriarchCoalitionTranscendence: boolean;
   coalitionMatriarchTranscendenceStreakDays: number;
+  matriarchCoalitionApotheosis: boolean;
+  coalitionMatriarchApotheosisStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -235,6 +238,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionMatriarchInfinityStreakDays: state.coalitionMatriarchInfinityStreakDays ?? 0,
     matriarchCoalitionTranscendence: isMatriarchCoalitionTranscendence(state),
     coalitionMatriarchTranscendenceStreakDays: state.coalitionMatriarchTranscendenceStreakDays ?? 0,
+    matriarchCoalitionApotheosis: isMatriarchCoalitionApotheosis(state),
+    coalitionMatriarchApotheosisStreakDays: state.coalitionMatriarchApotheosisStreakDays ?? 0,
   };
 }
 
@@ -332,5 +337,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionMatriarchInfinityStreakDays: raw?.coalitionMatriarchInfinityStreakDays ?? 0,
     matriarchCoalitionTranscendence: raw?.matriarchCoalitionTranscendence ?? false,
     coalitionMatriarchTranscendenceStreakDays: raw?.coalitionMatriarchTranscendenceStreakDays ?? 0,
+    matriarchCoalitionApotheosis: raw?.matriarchCoalitionApotheosis ?? false,
+    coalitionMatriarchApotheosisStreakDays: raw?.coalitionMatriarchApotheosisStreakDays ?? 0,
   };
 }

@@ -490,3 +490,14 @@ export function matriarchTranscendenceRankingBonus(
   if (streak >= action.minCoalitionMatriarchTranscendenceStreakDays) return 44;
   return 2;
 }
+
+
+export function matriarchApotheosisRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionMatriarchApotheosisStreakDays === undefined) return 0;
+  const streak = state.coalitionMatriarchApotheosisStreakDays ?? 0;
+  if (streak >= action.minCoalitionMatriarchApotheosisStreakDays) return 45;
+  return 2;
+}
