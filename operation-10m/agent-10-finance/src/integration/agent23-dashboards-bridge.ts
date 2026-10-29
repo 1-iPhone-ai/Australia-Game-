@@ -11,6 +11,10 @@ export interface Agent23DashboardsSnapshot {
   dashboardInflationHeatmapSevere?: boolean;
   /** Round 19: map layer cost-of-living stress active. */
   mapLayerCostOfLivingStressActive?: boolean;
+  /** Round 35: regional inflation overlay latch. */
+  regionalInflationOverlayLatch?: boolean;
+  /** Round 35: heatmap overlay cascade band. */
+  heatmapOverlayCascadeBand?: 'routine' | 'widening' | 'critical';
 }
 
 export function mergeAgent23IntoMacroFinancialInputs(
@@ -41,6 +45,13 @@ export function mergeAgent23IntoMacroFinancialInputs(
   let householdInflationScenarioActive = base.householdInflationScenarioActive;
   if (snapshot.mapLayerCostOfLivingStressActive) {
     householdInflationScenarioActive = true;
+  }
+
+  if (snapshot.regionalInflationOverlayLatch && snapshot.heatmapOverlayCascadeBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.heatmapOverlayCascadeBand === 'widening' && snapshot.regionalHeatmapInflationAlert) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {

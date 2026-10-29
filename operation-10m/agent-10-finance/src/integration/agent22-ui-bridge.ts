@@ -15,6 +15,10 @@ export interface Agent22UiSnapshot {
   playerInflationSalienceLatch?: boolean;
   /** Round 29: UI expectations nudge band. */
   uiExpectationsNudgeBand?: 'muted' | 'building' | 'sharp';
+  /** Round 35: wave salience escalation latch. */
+  wave35SalienceEscalationLatch?: boolean;
+  /** Round 35: shell expectations escalation band. */
+  shellExpectationsEscalationBand?: 'muted' | 'building' | 'critical';
 }
 
 export function mergeAgent22IntoMacroFinancialInputs(
@@ -52,11 +56,20 @@ export function mergeAgent22IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.wave35SalienceEscalationLatch && snapshot.shellExpectationsEscalationBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.shellExpectationsEscalationBand === 'building' && snapshot.inflationDashboardStressHighlight) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
     householdInflationScenarioActive,
+    highInflationScenario,
   };
 }
 

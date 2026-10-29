@@ -62,11 +62,13 @@ import type { GuardianGuardrailInflationEscalationBand } from '../inflation/guar
 import type { TeamConsensusInflationBriefingDriftBand } from '../inflation/team-consensus-inflation-briefing-drift.js';
 import type { MemoryCommonwealthInflationRecallGateBand } from '../inflation/memory-commonwealth-inflation-recall-gate.js';
 import type { AutomationSynthesisInflationCascadeDriftBand } from '../inflation/automation-synthesis-inflation-cascade-drift.js';
+import type { UiShellInflationSalienceEscalationBand } from '../inflation/ui-shell-inflation-salience-escalation.js';
+import type { DashboardHeatmapInflationOverlayCascadeBand } from '../inflation/dashboard-heatmap-inflation-overlay-cascade.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r34';
+  schemaVersion: '10.14.agent10.r35';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -130,6 +132,8 @@ export interface Agent21InflationForecastBundle {
   terminalTeamConsensusInflationBriefingDrift: TeamConsensusInflationBriefingDriftBand;
   terminalMemoryCommonwealthInflationRecallGate: MemoryCommonwealthInflationRecallGateBand;
   terminalAutomationSynthesisInflationCascadeDrift: AutomationSynthesisInflationCascadeDriftBand;
+  terminalUiShellInflationSalienceEscalation: UiShellInflationSalienceEscalationBand;
+  terminalDashboardHeatmapInflationOverlayCascade: DashboardHeatmapInflationOverlayCascadeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -158,7 +162,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r34',
+    schemaVersion: '10.14.agent10.r35',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -222,6 +226,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalTeamConsensusInflationBriefingDrift: lastPoint?.teamConsensusInflationBriefingDriftBand ?? 'anchored',
     terminalMemoryCommonwealthInflationRecallGate: lastPoint?.memoryCommonwealthInflationRecallGateBand ?? 'anchored',
     terminalAutomationSynthesisInflationCascadeDrift: lastPoint?.automationSynthesisInflationCascadeDriftBand ?? 'neutral',
+    terminalUiShellInflationSalienceEscalation: lastPoint?.uiShellInflationSalienceEscalationBand ?? 'muted',
+    terminalDashboardHeatmapInflationOverlayCascade: lastPoint?.dashboardHeatmapInflationOverlayCascadeBand ?? 'routine',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

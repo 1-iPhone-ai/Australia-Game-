@@ -1213,6 +1213,47 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'memory', 'automation', 'round34'],
   },
+  {
+    id: 'ui_shell_salience_escalation_stack',
+    label: 'UI shell salience escalation stack',
+    description: 'Critical shell expectations under dashboard stress highlight.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.39,
+      publicStability: 38,
+    },
+    tags: ['inflation', 'ui', 'round35'],
+  },
+  {
+    id: 'dashboard_heatmap_overlay_cascade_stress',
+    label: 'Dashboard heatmap overlay cascade stress',
+    description: 'Critical overlay cascade with regional inflation latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.36,
+      publicStability: 35,
+    },
+    tags: ['inflation', 'dashboard', 'round35'],
+  },
+  {
+    id: 'ui_dashboard_wave35_fusion_stress',
+    label: 'UI & dashboard wave 35 fusion stress',
+    description: 'Shell-critical salience colliding with heatmap overlay cascade.',
+    patch: {
+      inflationSettingMultiplier: 1.46,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 26,
+    },
+    tags: ['inflation', 'ui', 'dashboard', 'round35'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

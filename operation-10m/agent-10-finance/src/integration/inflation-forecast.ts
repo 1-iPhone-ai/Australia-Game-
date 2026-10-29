@@ -240,6 +240,14 @@ import {
   assessAutomationSynthesisInflationCascadeDrift,
   type AutomationSynthesisInflationCascadeDriftBand,
 } from '../inflation/automation-synthesis-inflation-cascade-drift.js';
+import {
+  assessUiShellInflationSalienceEscalation,
+  type UiShellInflationSalienceEscalationBand,
+} from '../inflation/ui-shell-inflation-salience-escalation.js';
+import {
+  assessDashboardHeatmapInflationOverlayCascade,
+  type DashboardHeatmapInflationOverlayCascadeBand,
+} from '../inflation/dashboard-heatmap-inflation-overlay-cascade.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -308,6 +316,8 @@ export interface InflationForecastPoint {
   teamConsensusInflationBriefingDriftBand: TeamConsensusInflationBriefingDriftBand;
   memoryCommonwealthInflationRecallGateBand: MemoryCommonwealthInflationRecallGateBand;
   automationSynthesisInflationCascadeDriftBand: AutomationSynthesisInflationCascadeDriftBand;
+  uiShellInflationSalienceEscalationBand: UiShellInflationSalienceEscalationBand;
+  dashboardHeatmapInflationOverlayCascadeBand: DashboardHeatmapInflationOverlayCascadeBand;
 }
 
 export interface InflationForecastPath {
@@ -879,6 +889,26 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const uiSalienceEscalation = assessUiShellInflationSalienceEscalation({
+      inflationDashboardStressHighlight: inputs.highInflationScenario,
+      playerAttentionOnCostOfLiving: inputs.householdInflationScenarioActive ? 'high' : inputs.creditShockActive ? 'medium' : 'low',
+      uiNudgeInflationExpectationsUp: inputs.creditShockActive,
+      wave35SalienceEscalationLatch: inputs.householdInflationScenarioActive,
+      shellExpectationsEscalationBand:
+        inputs.fiscalPressure === 'critical' ? 'critical' : inputs.highInflationScenario ? 'building' : 'muted',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const heatmapOverlay = assessDashboardHeatmapInflationOverlayCascade({
+      regionalHeatmapInflationAlert: inputs.highInflationScenario,
+      mapLayerCostPressureScore: inputs.actorCreditStressIndex ?? 0.45,
+      dashboardRefreshUrgency: inputs.publicStability < 42 ? 'critical' : inputs.creditShockActive ? 'elevated' : 'routine',
+      regionalInflationOverlayLatch: inputs.creditShockActive,
+      heatmapOverlayCascadeBand:
+        inputs.systemicLiquidityBand === 'critical' ? 'critical' : inputs.fiscalPressure === 'critical' ? 'widening' : 'routine',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -947,6 +977,8 @@ export function projectInflationForecastPath(
       teamConsensusInflationBriefingDriftBand: briefingDrift.driftBand,
       memoryCommonwealthInflationRecallGateBand: memoryRecallGate.gateBand,
       automationSynthesisInflationCascadeDriftBand: synthesisCascade.driftBand,
+      uiShellInflationSalienceEscalationBand: uiSalienceEscalation.escalationBand,
+      dashboardHeatmapInflationOverlayCascadeBand: heatmapOverlay.cascadeBand,
     });
   }
 
