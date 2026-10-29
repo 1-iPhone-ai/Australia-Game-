@@ -99,6 +99,9 @@ import { op10mA11ComputeSettlementIrrecoverableCollapseThreshold } from './settl
 import { op10mA11ComputeRegionalSettlementLegitimacyCollapse } from './regional-settlement-legitimacy-collapse.ts';
 import { op10mA11ComputeInterregionalFiscalPanicContagion } from './interregional-fiscal-panic-contagion.ts';
 import { op10mA11ComputeSettlementTerminalStateLockIn } from './settlement-terminal-state-lock-in.ts';
+import { op10mA11ComputeRegionalGovernanceVacuumEscalation } from './regional-governance-vacuum-escalation.ts';
+import { op10mA11ComputeInterregionalSettlementAbandonmentSpiral } from './interregional-settlement-abandonment-spiral.ts';
+import { op10mA11ComputeSettlementPostCollapseRecoveryImpossibility } from './settlement-post-collapse-recovery-impossibility.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -425,7 +428,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.18',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.19',
     composite.state.schemaVersion,
   );
 
@@ -555,7 +558,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastIrrecoverableCollapseThresholdIndex === composite.state.nationalIrrecoverableCollapseThresholdIndex &&
       composite.persisted.lastSettlementLegitimacyCollapseIndex === composite.state.nationalSettlementLegitimacyCollapseIndex &&
       composite.persisted.lastFiscalPanicContagionIndex === composite.state.nationalFiscalPanicContagionIndex &&
-      composite.persisted.lastTerminalStateLockInIndex === composite.state.nationalTerminalStateLockInIndex,
+      composite.persisted.lastTerminalStateLockInIndex === composite.state.nationalTerminalStateLockInIndex &&
+      composite.persisted.lastGovernanceVacuumEscalationIndex === composite.state.nationalGovernanceVacuumEscalationIndex &&
+      composite.persisted.lastSettlementAbandonmentSpiralIndex === composite.state.nationalSettlementAbandonmentSpiralIndex &&
+      composite.persisted.lastPostCollapseRecoveryImpossibilityIndex === composite.state.nationalPostCollapseRecoveryImpossibilityIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -1786,6 +1792,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_167',
     composite.state.terminalStateLockIn.every((t) => t.narrative.includes('terminal state lock-in')),
     composite.state.terminalStateLockIn[0]?.band ?? 'none',
+  );
+
+  const governanceVacuumEscalation = op10mA11ComputeRegionalGovernanceVacuumEscalation({
+    settlementLegitimacyCollapse: composite.state.settlementLegitimacyCollapse,
+    fiscalPanicContagion: composite.state.fiscalPanicContagion,
+    institutionalTrustErosion: composite.state.institutionalTrustErosion,
+  });
+  push(
+    out,
+    'a11_168',
+    composite.state.governanceVacuumEscalation.length === 8 &&
+      composite.state.nationalGovernanceVacuumEscalationIndex === governanceVacuumEscalation.nationalIndex,
+    `governance vacuum ${composite.state.nationalGovernanceVacuumEscalationIndex}`,
+  );
+
+  const settlementAbandonmentSpiral = op10mA11ComputeInterregionalSettlementAbandonmentSpiral({
+    terminalStateLockIn: composite.state.terminalStateLockIn,
+    irrecoverableCollapseThreshold: composite.state.irrecoverableCollapseThreshold,
+    capitalFlightPanic: composite.state.capitalFlightPanic,
+  });
+  push(
+    out,
+    'a11_169',
+    composite.state.settlementAbandonmentSpiral.length === 8 &&
+      composite.state.nationalSettlementAbandonmentSpiralIndex === settlementAbandonmentSpiral.nationalIndex,
+    `abandonment spiral ${composite.state.nationalSettlementAbandonmentSpiralIndex}`,
+  );
+
+  const postCollapseRecoveryImpossibility = op10mA11ComputeSettlementPostCollapseRecoveryImpossibility({
+    terminalStateLockIn: composite.state.terminalStateLockIn,
+    fiscalPanicContagion: composite.state.fiscalPanicContagion,
+    cascadingFailureRisk: composite.state.cascadingFailureRisk,
+  });
+  push(
+    out,
+    'a11_170',
+    composite.state.postCollapseRecoveryImpossibility.length === 8 &&
+      composite.state.nationalPostCollapseRecoveryImpossibilityIndex === postCollapseRecoveryImpossibility.nationalIndex,
+    `recovery impossibility ${composite.state.nationalPostCollapseRecoveryImpossibilityIndex}`,
+  );
+
+  push(
+    out,
+    'a11_171',
+    composite.state.governanceVacuumEscalation.every((g) => g.narrative.includes('governance vacuum escalation')),
+    composite.state.governanceVacuumEscalation[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_172',
+    composite.derived.some((d) => d.kind === 'governance_vacuum_escalation') ||
+      composite.state.governanceVacuumEscalation.some((g) => g.band === 'hollow' || g.band === 'vacuum'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_173',
+    composite.derived.some((d) => d.kind === 'settlement_abandonment_spiral') ||
+      composite.state.settlementAbandonmentSpiral.some((s) => s.band === 'exodus' || s.band === 'abandoned'),
+    composite.state.settlementAbandonmentSpiral[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_174',
+    composite.persisted.lastSettlementAbandonmentSpiralIndex === composite.state.nationalSettlementAbandonmentSpiralIndex,
+    `persisted abandonment ${composite.persisted.lastSettlementAbandonmentSpiralIndex}`,
+  );
+
+  push(
+    out,
+    'a11_175',
+    composite.derived.some((d) => d.kind === 'post_collapse_recovery_impossibility') ||
+      composite.state.postCollapseRecoveryImpossibility.some((p) => p.band === 'blocked' || p.band === 'impossible'),
+    composite.state.postCollapseRecoveryImpossibility[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_176',
+    composite.state.postCollapseRecoveryImpossibility.every((p) => p.narrative.includes('post-collapse recovery impossibility')),
+    composite.state.postCollapseRecoveryImpossibility[0]?.band ?? 'none',
   );
 
   return out;

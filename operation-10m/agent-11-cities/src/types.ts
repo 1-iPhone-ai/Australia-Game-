@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.18' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.19' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -275,7 +275,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'irrecoverable_collapse_threshold'
   | 'settlement_legitimacy_collapse'
   | 'fiscal_panic_contagion'
-  | 'terminal_state_lock_in';
+  | 'terminal_state_lock_in'
+  | 'governance_vacuum_escalation'
+  | 'settlement_abandonment_spiral'
+  | 'post_collapse_recovery_impossibility';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -732,6 +735,36 @@ export interface OP10M_A11_TerminalStateLockInRow {
   narrative: string;
 }
 
+export type OP10M_A11_GovernanceVacuumEscalationBand = 'staffed' | 'thinning' | 'hollow' | 'vacuum';
+
+export interface OP10M_A11_GovernanceVacuumEscalationRow {
+  regionId: OP10M_A11_RegionId;
+  vacuumScore: number;
+  band: OP10M_A11_GovernanceVacuumEscalationBand;
+  drivers: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_SettlementAbandonmentSpiralBand = 'anchored' | 'drifting' | 'exodus' | 'abandoned';
+
+export interface OP10M_A11_SettlementAbandonmentSpiralRow {
+  regionId: OP10M_A11_RegionId;
+  spiralScore: number;
+  band: OP10M_A11_SettlementAbandonmentSpiralBand;
+  signals: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_PostCollapseRecoveryImpossibilityBand = 'recoverable' | 'constrained' | 'blocked' | 'impossible';
+
+export interface OP10M_A11_PostCollapseRecoveryImpossibilityRow {
+  regionId: OP10M_A11_RegionId;
+  impossibilityScore: number;
+  band: OP10M_A11_PostCollapseRecoveryImpossibilityBand;
+  blockers: string[];
+  narrative: string;
+}
+
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
 export interface OP10M_A11_MigrationPressureRow {
@@ -932,6 +965,12 @@ export interface OP10M_A11_CompositeState {
   nationalFiscalPanicContagionIndex: number;
   terminalStateLockIn: OP10M_A11_TerminalStateLockInRow[];
   nationalTerminalStateLockInIndex: number;
+  governanceVacuumEscalation: OP10M_A11_GovernanceVacuumEscalationRow[];
+  nationalGovernanceVacuumEscalationIndex: number;
+  settlementAbandonmentSpiral: OP10M_A11_SettlementAbandonmentSpiralRow[];
+  nationalSettlementAbandonmentSpiralIndex: number;
+  postCollapseRecoveryImpossibility: OP10M_A11_PostCollapseRecoveryImpossibilityRow[];
+  nationalPostCollapseRecoveryImpossibilityIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -986,5 +1025,8 @@ export interface OP10M_A11_CompositePersisted {
   lastSettlementLegitimacyCollapseIndex: number;
   lastFiscalPanicContagionIndex: number;
   lastTerminalStateLockInIndex: number;
+  lastGovernanceVacuumEscalationIndex: number;
+  lastSettlementAbandonmentSpiralIndex: number;
+  lastPostCollapseRecoveryImpossibilityIndex: number;
   inputHash: string;
 }
