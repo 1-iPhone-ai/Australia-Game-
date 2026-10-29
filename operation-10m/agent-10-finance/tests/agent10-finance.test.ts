@@ -44,6 +44,13 @@ import { decomposeMacroCpiBasket, macroCpiBasketWeightSum } from '../src/inflati
 import { stepInflationExpectations } from '../src/inflation/expectations-anchor.js';
 import { mergeAgent06IntoMacroFinancialInputs } from '../src/integration/agent06-macro-bridge.js';
 import { projectInflationForecastPath } from '../src/integration/inflation-forecast.js';
+import { assessPhillipsSlack } from '../src/inflation/phillips-slack.js';
+import { computeCoreHeadlineSpread } from '../src/inflation/core-headline-spread.js';
+import { classifyInflationShockDrivers } from '../src/inflation/supply-demand-shock.js';
+import { assessFiscalDominance } from '../src/fiscal/fiscal-dominance.js';
+import { assessInflationTargetBreach } from '../src/rates/inflation-target-breach.js';
+import { stepInflationRegimeTracker, createInitialInflationRegimeTracker } from '../src/integration/inflation-regime-tracker.js';
+import { buildAgent21InflationForecastBundle } from '../src/integration/agent21-forecast-bridge.js';
 
 describe('Agent 10 glossary & boundaries', () => {
   it('defines coherent finance terms', () => {
@@ -190,7 +197,7 @@ describe('Agent 10 scale-wave extensions', () => {
   it('runAgent10FinanceSelfTests all pass', () => {
     const r = runAgent10FinanceSelfTests();
     assert.equal(r.allPassed, true, r.results.filter((x) => !x.passed).map((x) => `${x.id}:${x.name}`).join('; '));
-    assert.ok(r.total >= 79);
+    assert.ok(r.total >= 92);
   });
 
   it('transmission channels activate under fiscal critical', () => {
@@ -293,5 +300,65 @@ describe('Agent 10 scale-wave extensions', () => {
   it('round-4 scenario preset deanchoring', () => {
     const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'deanchoring_stress');
     assert.ok(inp?.fiscalPressure === 'critical' && inp.highInflationScenario);
+  });
+
+  it('round-5 phillips slack overheating', () => {
+    const p = assessPhillipsSlack('elevated', {
+      turn: 1,
+      gdpGrowthBand: 'strong',
+      unemploymentBand: 'low',
+      outputGap: 0.06,
+      nominalDemandPressure: 0.7,
+    });
+    assert.equal(p.slackBand, 'overheated');
+  });
+
+  it('round-5 core vs headline spread', () => {
+    const s = computeCoreHeadlineSpread('elevated', 2);
+    assert.ok(s.coreIndex > 90 && s.headlineIndex > s.coreIndex - 5);
+  });
+
+  it('round-5 shock classification', () => {
+    const c = classifyInflationShockDrivers(
+      'high',
+      makeDefaultMacroFinancialTestInputs({ householdAffordability: 'severe_pressure' }),
+      null,
+    );
+    assert.ok(c.driver === 'cost_push' || c.driver === 'mixed');
+  });
+
+  it('round-5 fiscal dominance', () => {
+    const d = assessFiscalDominance(makeDefaultMacroFinancialTestInputs({ fiscalPressure: 'critical' }));
+    assert.notEqual(d.band, 'contained');
+  });
+
+  it('round-5 inflation target breach', () => {
+    const b = assessInflationTargetBreach(88);
+    assert.equal(b.side, 'above');
+  });
+
+  it('round-5 regime tracker streak', () => {
+    let t = createInitialInflationRegimeTracker();
+    t = stepInflationRegimeTracker(t, 1, 'high');
+    t = stepInflationRegimeTracker(t, 2, 'high');
+    assert.equal(t.bandStreak, 2);
+  });
+
+  it('round-5 agent21 forecast bundle', () => {
+    const path = projectInflationForecastPath(3);
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('anchored', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(50),
+    });
+    assert.equal(bundle.horizonTurns, 3);
+    assert.ok(path.points[0].regime);
+  });
+
+  it('round-5 scenario preset stagflation', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'stagflation_risk_blend');
+    assert.ok(inp?.creditShockActive && inp.householdAffordability === 'severe_pressure');
   });
 });

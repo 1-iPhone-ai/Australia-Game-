@@ -4,6 +4,12 @@ import { stepInflationExpectations, initialInflationAnchoringScore } from '../in
 import { assessWagePriceSpiral } from '../inflation/wage-price-spiral.js';
 import { decomposeMacroCpiBasket } from '../inflation/cpi-basket.js';
 import { serviceCostPassThroughFromAffordability } from '../inflation/pass-through.js';
+import { computeCoreHeadlineSpread } from '../inflation/core-headline-spread.js';
+import {
+  stepInflationRegimeTracker,
+  createInitialInflationRegimeTracker,
+  type InflationRegimeLabel,
+} from './inflation-regime-tracker.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -12,6 +18,8 @@ export interface InflationForecastPoint {
   anchoringScore: number;
   spiralRisk: ReturnType<typeof assessWagePriceSpiral>['spiralRisk'];
   headlineCpiIndex: number;
+  coreCpiIndex: number;
+  regime: InflationRegimeLabel;
 }
 
 export interface InflationForecastPath {
@@ -28,6 +36,7 @@ export function projectInflationForecastPath(
   const points: InflationForecastPoint[] = [];
   let anchoring = initialInflationAnchoringScore();
   let maxCost = 1;
+  let regimeState = createInitialInflationRegimeTracker();
 
   for (let t = 1; t <= horizonTurns; t++) {
     const inputs = { ...(seedInputs ?? makeDefaultMacroFinancialTestInputs()), turn: t };
@@ -49,6 +58,12 @@ export function projectInflationForecastPath(
     });
     anchoring = exp.anchoringScore;
     const cpi = decomposeMacroCpiBasket(r.state.inflation, t, pass);
+    const coreSpread = computeCoreHeadlineSpread(r.state.inflation, t, pass);
+    regimeState = stepInflationRegimeTracker(regimeState, t, r.state.inflation, {
+      creditStressed: r.state.credit === 'restricted' || r.state.credit === 'frozen',
+      fiscalCritical: inputs.fiscalPressure === 'critical',
+    });
+    const regimeSnap = regimeState.history[regimeState.history.length - 1];
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -57,6 +72,8 @@ export function projectInflationForecastPath(
       anchoringScore: anchoring,
       spiralRisk: spiral.spiralRisk,
       headlineCpiIndex: cpi.headlineIndex,
+      coreCpiIndex: coreSpread.coreIndex,
+      regime: regimeSnap?.regime ?? 'anchored_soft',
     });
   }
 

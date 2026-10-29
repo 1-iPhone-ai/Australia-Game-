@@ -29,7 +29,12 @@ const FILES = [
   'inflation/wage-price-spiral.ts',
   'inflation/cpi-basket.ts',
   'inflation/expectations-anchor.ts',
+  'inflation/phillips-slack.ts',
+  'inflation/core-headline-spread.ts',
+  'inflation/supply-demand-shock.ts',
   'rates/monetary-reaction.ts',
+  'rates/inflation-target-breach.ts',
+  'fiscal/fiscal-dominance.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -41,11 +46,14 @@ const FILES = [
   'integration/save-bridge.ts',
   'integration/agent06-macro-bridge.ts',
   'integration/inflation-forecast.ts',
+  'integration/inflation-regime-tracker.ts',
+  'integration/agent21-forecast-bridge.ts',
   'credit/tier-spreads.ts',
   'self-tests.ts',
   'react/FinanceConditionsLab.tsx',
   'react/FinanceTransmissionPanel.tsx',
   'react/InflationDiagnosticsPanel.tsx',
+  'react/InflationRegimePanel.tsx',
 ];
 
 function stripModulePreamble(source) {

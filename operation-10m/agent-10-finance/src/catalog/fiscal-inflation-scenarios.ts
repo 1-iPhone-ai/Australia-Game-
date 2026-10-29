@@ -90,6 +90,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['integration', 'agent06', 'round4'],
   },
+  {
+    id: 'phillips_overheat_stack',
+    label: 'Phillips overheat stack',
+    description: 'Demand-side overheating with strained fiscal backdrop (Agent 06 merge in sim).',
+    patch: {
+      inflationSettingMultiplier: 1.28,
+      fiscalPressure: 'strained',
+      actorCreditStressIndex: 0.48,
+      highInflationScenario: true,
+    },
+    tags: ['inflation', 'phillips', 'round5'],
+  },
+  {
+    id: 'fiscal_dominance_inflation',
+    label: 'Fiscal dominance inflation',
+    description: 'Critical fiscal pressure with sovereign vulnerability — anchoring stress.',
+    patch: {
+      fiscalPressure: 'critical',
+      sovereignDebtPressure: 'high',
+      fiscalSustainability: 'vulnerable',
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.2,
+    },
+    tags: ['fiscal', 'inflation', 'round5'],
+  },
+  {
+    id: 'stagflation_risk_blend',
+    label: 'Stagflation risk blend',
+    description: 'Elevated inflation with credit restriction and household strain.',
+    patch: {
+      creditShockActive: true,
+      householdAffordability: 'severe_pressure',
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.15,
+    },
+    tags: ['inflation', 'credit', 'round5'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

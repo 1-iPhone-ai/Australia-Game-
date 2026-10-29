@@ -1031,6 +1031,212 @@ export function initialInflationAnchoringScore(): number {
 }
 
 
+// --- source: inflation/phillips-slack.ts ---
+
+export interface PhillipsSlackAssessment {
+  slackBand: 'deep_slack' | 'moderate_slack' | 'balanced' | 'overheated';
+  impliedInflationScoreDelta: number;
+  unemploymentContribution: number;
+  outputGapContribution: number;
+  narrative: string;
+}
+
+function unemploymentSlack(unemploymentBand: Agent06MacroSnapshot['unemploymentBand']): number {
+  switch (unemploymentBand) {
+    case 'low':
+      return -0.06;
+    case 'moderate':
+      return 0;
+    case 'elevated':
+      return 0.05;
+    case 'severe':
+      return 0.11;
+    default:
+      return 0;
+  }
+}
+
+/** Deterministic Phillips-style slack read — macro CPI score channel only. */
+export function assessPhillipsSlack(
+  inflationBand: InflationConditionsBand,
+  snapshot: Agent06MacroSnapshot | null | undefined,
+): PhillipsSlackAssessment {
+  const gap = finClamp(snapshot?.outputGap ?? 0, -0.08, 0.08);
+  const demand = finClamp(snapshot?.nominalDemandPressure ?? 0, -1, 1);
+
+  const outputGapContribution = finRound(gap * 4.2 + demand * 0.04, 3);
+  const unemploymentContribution = finRound(unemploymentSlack(snapshot?.unemploymentBand ?? 'moderate'), 3);
+
+  let combined = outputGapContribution + unemploymentContribution;
+  if (inflationBandSeverityRank(inflationBand) >= inflationBandSeverityRank('elevated')) {
+    combined += 0.04;
+  }
+
+  const slackBand: PhillipsSlackAssessment['slackBand'] =
+    combined <= -0.05
+      ? 'deep_slack'
+      : combined <= 0.02
+        ? 'moderate_slack'
+        : combined <= 0.08
+          ? 'balanced'
+          : 'overheated';
+
+  const impliedInflationScoreDelta = finRound(finClamp(combined * 18, -4, 9), 2);
+
+  const narrative =
+    slackBand === 'overheated'
+      ? 'Labor market tightness and positive output gap are adding demand-side inflation pressure.'
+      : slackBand === 'balanced'
+        ? 'Slack roughly balanced — inflation driven mainly by other channels.'
+        : slackBand === 'moderate_slack'
+          ? 'Some economic slack is dampening price pressures.'
+          : 'Deep slack is disinflationary in the macro CPI channel.';
+
+  return {
+    slackBand,
+    impliedInflationScoreDelta,
+    unemploymentContribution,
+    outputGapContribution,
+    narrative,
+  };
+}
+
+export function phillipsSlackInflationScoreAdjustment(assessment: PhillipsSlackAssessment): number {
+  if (assessment.slackBand === 'deep_slack') return finRound(Math.min(assessment.impliedInflationScoreDelta, 0), 2);
+  if (assessment.slackBand === 'overheated') return finRound(Math.max(assessment.impliedInflationScoreDelta, 0), 2);
+  return finRound(assessment.impliedInflationScoreDelta * 0.5, 2);
+}
+
+
+// --- source: inflation/core-headline-spread.ts ---
+
+export interface CoreHeadlineSpread {
+  headlineIndex: number;
+  coreIndex: number;
+  spreadPoints: number;
+  volatileShare: number;
+  interpretation: 'aligned' | 'headline_above_core' | 'core_sticky_elevated';
+}
+
+const VOLATILE_CATEGORY_IDS = new Set(['food_at_home', 'utilities', 'transport_services']);
+
+/** Separates sticky core services from volatile basket lines (still non-commodity macro CPI). */
+export function computeCoreHeadlineSpread(
+  inflationBand: InflationConditionsBand,
+  turn: number,
+  serviceCostPassThrough = 0,
+): CoreHeadlineSpread {
+  const basket = decomposeMacroCpiBasket(inflationBand, turn, serviceCostPassThrough);
+  let coreSum = 0;
+  let coreWeight = 0;
+  let volatileSum = 0;
+  let volatileWeight = 0;
+
+  for (const cat of basket.categories) {
+    const meta = MACRO_CPI_BASKET.find((m) => m.id === cat.categoryId);
+    const w = meta?.weight ?? 0;
+    if (VOLATILE_CATEGORY_IDS.has(cat.categoryId)) {
+      volatileSum += cat.contribution;
+      volatileWeight += w;
+    } else {
+      coreSum += cat.contribution;
+      coreWeight += w;
+    }
+  }
+
+  const headlineIndex = basket.headlineIndex;
+  const coreIndex = coreWeight > 0 ? finRound(coreSum / coreWeight, 2) : headlineIndex;
+  const spreadPoints = finRound(headlineIndex - coreIndex, 2);
+  const volatileShare = finRound(finClamp(volatileWeight, 0, 1), 3);
+
+  const interpretation: CoreHeadlineSpread['interpretation'] =
+    Math.abs(spreadPoints) < 1.5
+      ? 'aligned'
+      : spreadPoints > 1.5
+        ? 'headline_above_core'
+        : 'core_sticky_elevated';
+
+  return {
+    headlineIndex,
+    coreIndex,
+    spreadPoints,
+    volatileShare,
+    interpretation,
+  };
+}
+
+
+// --- source: inflation/supply-demand-shock.ts ---
+
+export type InflationShockDriver = 'demand_pull' | 'cost_push' | 'mixed' | 'disinflationary';
+
+export interface InflationShockClassification {
+  driver: InflationShockDriver;
+  demandScore: number;
+  supplyScore: number;
+  confidence: 'low' | 'medium' | 'high';
+  summary: string;
+}
+
+export function classifyInflationShockDrivers(
+  inflationBand: InflationConditionsBand,
+  inputs: MacroFinancialSystemInputs,
+  agent06: Agent06MacroSnapshot | null | undefined,
+): InflationShockClassification {
+  const phillips = assessPhillipsSlack(inflationBand, agent06);
+  const spiral = assessWagePriceSpiral({
+    inflationBand,
+    householdAffordability: inputs.householdAffordability,
+    fiscalPressure: inputs.fiscalPressure,
+    wageGrowthPressureScore: 45 + (inputs.inflationSettingMultiplier ?? 1) * 12,
+    turn: inputs.turn,
+  });
+
+  let demandScore = 0;
+  let supplyScore = 0;
+
+  if (phillips.slackBand === 'overheated') demandScore += 0.35;
+  if ((inputs.inflationSettingMultiplier ?? 1) > 1.15) demandScore += 0.22;
+  if (inputs.highInflationScenario) demandScore += 0.12;
+
+  if (spiral.spiralRisk === 'critical' || spiral.spiralRisk === 'elevated') supplyScore += 0.28;
+  if (inputs.householdAffordability === 'severe_pressure') supplyScore += 0.18;
+  if (inputs.fiscalPressure === 'critical') supplyScore += 0.1;
+
+  if (phillips.slackBand === 'deep_slack') {
+    demandScore -= 0.2;
+    supplyScore -= 0.05;
+  }
+
+  demandScore = finRound(Math.max(0, demandScore), 3);
+  supplyScore = finRound(Math.max(0, supplyScore), 3);
+
+  const margin = Math.abs(demandScore - supplyScore);
+  const confidence: InflationShockClassification['confidence'] =
+    margin >= 0.2 ? 'high' : margin >= 0.08 ? 'medium' : 'low';
+
+  let driver: InflationShockDriver = 'mixed';
+  if (demandScore < 0.08 && supplyScore < 0.08 && phillips.slackBand === 'deep_slack') {
+    driver = 'disinflationary';
+  } else if (demandScore > supplyScore + 0.08) {
+    driver = 'demand_pull';
+  } else if (supplyScore > demandScore + 0.08) {
+    driver = 'cost_push';
+  }
+
+  const summary =
+    driver === 'demand_pull'
+      ? 'Inflation looks demand-led (slack/overheat channel).'
+      : driver === 'cost_push'
+        ? 'Inflation looks cost-push (services/wage/fiscal spillover).'
+        : driver === 'disinflationary'
+          ? 'Slack dominates — disinflationary bias in macro CPI scoring.'
+          : 'Mixed demand and supply contributions — monitor both channels.';
+
+  return { driver, demandScore, supplyScore, confidence, summary };
+}
+
+
 // --- source: rates/monetary-reaction.ts ---
 
 export interface MonetaryReactionInputs {
@@ -1120,6 +1326,120 @@ export function stanceDriftTowardRecommendation(
   const step = turnsElapsed >= 2 ? 1 : 0;
   if (step === 0) return current;
   return rec > cur ? indexToStance(cur + 1) : indexToStance(cur - 1);
+}
+
+
+// --- source: rates/inflation-target-breach.ts ---
+
+export interface InflationTargetBand {
+  lower: number;
+  upper: number;
+  midpoint: number;
+}
+
+export const DEFAULT_INFLATION_TARGET_BAND: InflationTargetBand = {
+  lower: 2,
+  upper: 3,
+  midpoint: 2.5,
+};
+
+export type TargetBreachSide = 'below' | 'within' | 'above';
+
+export interface InflationTargetBreach {
+  side: TargetBreachSide;
+  deviationFromMidpoint: number;
+  breachSeverity: 'none' | 'watch' | 'material' | 'severe';
+  policyUrgencyScore: number;
+}
+
+/** Maps macro inflation score (0–100) to implicit annualized target metaphor for dashboards. */
+export function inflationScoreToImpliedTargetPercent(inflationScore: number): number {
+  const s = finClamp(inflationScore, 0, 100);
+  return finRound(0.5 + (s / 100) * 7.5, 2);
+}
+
+export function assessInflationTargetBreach(
+  inflationScore: number,
+  band: InflationTargetBand = DEFAULT_INFLATION_TARGET_BAND,
+): InflationTargetBreach {
+  const implied = inflationScoreToImpliedTargetPercent(inflationScore);
+  const deviationFromMidpoint = finRound(implied - band.midpoint, 2);
+
+  let side: TargetBreachSide = 'within';
+  if (implied < band.lower) side = 'below';
+  else if (implied > band.upper) side = 'above';
+
+  const distance =
+    side === 'within'
+      ? 0
+      : side === 'below'
+        ? band.lower - implied
+        : implied - band.upper;
+
+  const breachSeverity: InflationTargetBreach['breachSeverity'] =
+    distance <= 0
+      ? 'none'
+      : distance < 0.8
+        ? 'watch'
+        : distance < 1.8
+          ? 'material'
+          : 'severe';
+
+  const policyUrgencyScore = finRound(
+    finClamp((side === 'above' ? distance * 22 : side === 'below' ? distance * 8 : 0) + (breachSeverity === 'severe' ? 25 : 0), 0, 100),
+    1,
+  );
+
+  return { side, deviationFromMidpoint, breachSeverity, policyUrgencyScore };
+}
+
+
+// --- source: fiscal/fiscal-dominance.ts ---
+
+export type FiscalDominanceBand = 'contained' | 'elevated' | 'dominant';
+
+export interface FiscalDominanceAssessment {
+  band: FiscalDominanceBand;
+  dominanceScore: number;
+  monetaryPolicyOffset: number;
+  narrative: string;
+  dampensAnchoring: boolean;
+}
+
+/** When fiscal stress overwhelms nominal anchor — metadata for guardian / debrief only. */
+export function assessFiscalDominance(inputs: MacroFinancialSystemInputs): FiscalDominanceAssessment {
+  let score = 0.12;
+
+  if (inputs.fiscalPressure === 'critical') score += 0.38;
+  else if (inputs.fiscalPressure === 'strained') score += 0.22;
+  else if (inputs.fiscalPressure === 'tight') score += 0.08;
+
+  if (inputs.sovereignDebtPressure === 'high') score += 0.18;
+  if (inputs.fiscalSustainability === 'vulnerable') score += 0.12;
+  if ((inputs.activeCrises ?? 0) >= 2) score += 0.08;
+  if (inputs.highInflationScenario) score += 0.06;
+
+  const clamped = finClamp(score, 0, 1);
+  const band: FiscalDominanceBand =
+    clamped >= 0.62 ? 'dominant' : clamped >= 0.35 ? 'elevated' : 'contained';
+
+  const monetaryPolicyOffset = finRound(finClamp(1 - clamped * 0.45, 0.55, 1), 3);
+  const dampensAnchoring = band !== 'contained';
+
+  const narrative =
+    band === 'dominant'
+      ? 'Fiscal imperatives are dominating — monetary anchor effectiveness reduced (macro CPI channel).'
+      : band === 'elevated'
+        ? 'Fiscal pressure is bleeding into inflation expectations.'
+        : 'Fiscal dominance contained; monetary transmission nominal.';
+
+  return {
+    band,
+    dominanceScore: finRound(clamped, 3),
+    monetaryPolicyOffset,
+    narrative,
+    dampensAnchoring,
+  };
 }
 
 
@@ -1450,6 +1770,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       fiscalPressure: 'strained',
     },
     tags: ['integration', 'agent06', 'round4'],
+  },
+  {
+    id: 'phillips_overheat_stack',
+    label: 'Phillips overheat stack',
+    description: 'Demand-side overheating with strained fiscal backdrop (Agent 06 merge in sim).',
+    patch: {
+      inflationSettingMultiplier: 1.28,
+      fiscalPressure: 'strained',
+      actorCreditStressIndex: 0.48,
+      highInflationScenario: true,
+    },
+    tags: ['inflation', 'phillips', 'round5'],
+  },
+  {
+    id: 'fiscal_dominance_inflation',
+    label: 'Fiscal dominance inflation',
+    description: 'Critical fiscal pressure with sovereign vulnerability — anchoring stress.',
+    patch: {
+      fiscalPressure: 'critical',
+      sovereignDebtPressure: 'high',
+      fiscalSustainability: 'vulnerable',
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.2,
+    },
+    tags: ['fiscal', 'inflation', 'round5'],
+  },
+  {
+    id: 'stagflation_risk_blend',
+    label: 'Stagflation risk blend',
+    description: 'Elevated inflation with credit restriction and household strain.',
+    patch: {
+      creditShockActive: true,
+      householdAffordability: 'severe_pressure',
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.15,
+    },
+    tags: ['inflation', 'credit', 'round5'],
   },
 ] as const;
 
@@ -2240,6 +2597,10 @@ export function agent06BridgeIntegrationNote(): string {
 
 
 // --- source: integration/inflation-forecast.ts ---
+  stepInflationRegimeTracker,
+  createInitialInflationRegimeTracker,
+  type InflationRegimeLabel,
+} from './inflation-regime-tracker.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -2248,6 +2609,8 @@ export interface InflationForecastPoint {
   anchoringScore: number;
   spiralRisk: ReturnType<typeof assessWagePriceSpiral>['spiralRisk'];
   headlineCpiIndex: number;
+  coreCpiIndex: number;
+  regime: InflationRegimeLabel;
 }
 
 export interface InflationForecastPath {
@@ -2264,6 +2627,7 @@ export function projectInflationForecastPath(
   const points: InflationForecastPoint[] = [];
   let anchoring = initialInflationAnchoringScore();
   let maxCost = 1;
+  let regimeState = createInitialInflationRegimeTracker();
 
   for (let t = 1; t <= horizonTurns; t++) {
     const inputs = { ...(seedInputs ?? makeDefaultMacroFinancialTestInputs()), turn: t };
@@ -2285,6 +2649,12 @@ export function projectInflationForecastPath(
     });
     anchoring = exp.anchoringScore;
     const cpi = decomposeMacroCpiBasket(r.state.inflation, t, pass);
+    const coreSpread = computeCoreHeadlineSpread(r.state.inflation, t, pass);
+    regimeState = stepInflationRegimeTracker(regimeState, t, r.state.inflation, {
+      creditStressed: r.state.credit === 'restricted' || r.state.credit === 'frozen',
+      fiscalCritical: inputs.fiscalPressure === 'critical',
+    });
+    const regimeSnap = regimeState.history[regimeState.history.length - 1];
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -2293,6 +2663,8 @@ export function projectInflationForecastPath(
       anchoringScore: anchoring,
       spiralRisk: spiral.spiralRisk,
       headlineCpiIndex: cpi.headlineIndex,
+      coreCpiIndex: coreSpread.coreIndex,
+      regime: regimeSnap?.regime ?? 'anchored_soft',
     });
   }
 
@@ -2301,6 +2673,146 @@ export function projectInflationForecastPath(
     terminalBand: points[points.length - 1]?.inflationBand ?? 'anchored',
     maxCostMultiplier: maxCost,
   };
+}
+
+
+// --- source: integration/inflation-regime-tracker.ts ---
+
+export type InflationRegimeLabel =
+  | 'disinflationary'
+  | 'anchored_soft'
+  | 'reflation'
+  | 'overheat'
+  | 'stagflation_risk';
+
+export interface InflationRegimeSnapshot {
+  turn: number;
+  regime: InflationRegimeLabel;
+  persistenceScore: number;
+  bandStreak: number;
+  priorBand: InflationConditionsBand | null;
+}
+
+export interface InflationRegimeTrackerState {
+  lastBand: InflationConditionsBand | null;
+  bandStreak: number;
+  persistenceScore: number;
+  history: InflationRegimeSnapshot[];
+}
+
+export function createInitialInflationRegimeTracker(): InflationRegimeTrackerState {
+  return {
+    lastBand: null,
+    bandStreak: 0,
+    persistenceScore: 50,
+    history: [],
+  };
+}
+
+function labelFromBands(
+  band: InflationConditionsBand,
+  creditStressed: boolean,
+  fiscalCritical: boolean,
+): InflationRegimeLabel {
+  const rank = inflationBandSeverityRank(band);
+  if (rank <= inflationBandSeverityRank('disinflation')) return 'disinflationary';
+  if (creditStressed && fiscalCritical && rank >= inflationBandSeverityRank('elevated')) {
+    return 'stagflation_risk';
+  }
+  if (rank >= inflationBandSeverityRank('high')) return 'overheat';
+  if (rank >= inflationBandSeverityRank('elevated')) return 'reflation';
+  return 'anchored_soft';
+}
+
+/** Deterministic regime memory for multi-turn dashboards (max 24 snapshots). */
+export function stepInflationRegimeTracker(
+  state: InflationRegimeTrackerState,
+  turn: number,
+  band: InflationConditionsBand,
+  opts?: { creditStressed?: boolean; fiscalCritical?: boolean },
+): InflationRegimeTrackerState {
+  const creditStressed = opts?.creditStressed ?? false;
+  const fiscalCritical = opts?.fiscalCritical ?? false;
+
+  const bandStreak = state.lastBand === band ? state.bandStreak + 1 : 1;
+  const rankDelta =
+    state.lastBand != null ? inflationBandSeverityRank(band) - inflationBandSeverityRank(state.lastBand) : 0;
+
+  let persistenceScore = state.persistenceScore;
+  if (bandStreak >= 3) persistenceScore += 4;
+  if (Math.abs(rankDelta) >= 2) persistenceScore -= 6;
+  persistenceScore = finClamp(persistenceScore, 5, 95);
+
+  const regime = labelFromBands(band, creditStressed, fiscalCritical);
+  const snapshot: InflationRegimeSnapshot = {
+    turn,
+    regime,
+    persistenceScore: finRound(persistenceScore, 1),
+    bandStreak,
+    priorBand: state.lastBand,
+  };
+
+  return {
+    lastBand: band,
+    bandStreak,
+    persistenceScore: finRound(persistenceScore, 1),
+    history: [...state.history, snapshot].slice(-24),
+  };
+}
+
+export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number): number {
+  const s = finClamp(persistenceScore, 0, 100);
+  return finRound(2 + (s / 100) * 10, 1);
+}
+
+
+// --- source: integration/agent21-forecast-bridge.ts ---
+
+/** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
+export interface Agent21InflationForecastBundle {
+  schemaVersion: '10.14.agent10.r5';
+  horizonTurns: number;
+  terminalBand: InflationForecastPath['terminalBand'];
+  maxCostMultiplier: number;
+  meanAnchoringScore: number;
+  regime: InflationRegimeSnapshot | null;
+  shockDriver: InflationShockClassification['driver'];
+  fiscalDominanceBand: FiscalDominanceAssessment['band'];
+  targetBreachSeverity: InflationTargetBreach['breachSeverity'];
+  integrationNote: string;
+}
+
+export function buildAgent21InflationForecastBundle(input: {
+  path: InflationForecastPath;
+  regime: InflationRegimeSnapshot | null;
+  shock: InflationShockClassification;
+  fiscalDominance: FiscalDominanceAssessment;
+  targetBreach: InflationTargetBreach;
+}): Agent21InflationForecastBundle {
+  const meanAnchoring =
+    input.path.points.length === 0
+      ? 0
+      : finRound(
+          input.path.points.reduce((s, p) => s + p.anchoringScore, 0) / input.path.points.length,
+          1,
+        );
+
+  return {
+    schemaVersion: '10.14.agent10.r5',
+    horizonTurns: input.path.points.length,
+    terminalBand: input.path.terminalBand,
+    maxCostMultiplier: input.path.maxCostMultiplier,
+    meanAnchoringScore: meanAnchoring,
+    regime: input.regime,
+    shockDriver: input.shock.driver,
+    fiscalDominanceBand: input.fiscalDominance.band,
+    targetBreachSeverity: input.targetBreach.breachSeverity,
+    integrationNote: 'Agent 10 macro CPI bundle — commodity resourcePrices excluded.',
+  };
+}
+
+export function agent21ForecastBridgeIntegrationNote(): string {
+  return 'Agent 21 may consume Agent21InflationForecastBundle for inflation fusion; no RNG.';
 }
 
 
@@ -2362,6 +2874,10 @@ export function effectiveTierLoanRate(
   getMacroFinancialScenarioPreset,
   MACRO_FINANCIAL_SCENARIO_PRESETS,
 } from './catalog/fiscal-inflation-scenarios.js';
+  stepInflationRegimeTracker,
+  createInitialInflationRegimeTracker,
+  inflationRegimePersistenceHalfLifeTurns,
+} from './integration/inflation-regime-tracker.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -2704,6 +3220,75 @@ export function runAgent10FinanceSelfTests(): {
     })(),
   );
 
+  // --- Round 5 scale wave ---
+  {
+    const ph = assessPhillipsSlack('elevated', {
+      turn: 2,
+      gdpGrowthBand: 'strong',
+      unemploymentBand: 'low',
+      outputGap: 0.05,
+      nominalDemandPressure: 0.55,
+    });
+    check('a10_r5_01', 'phillips overheated', ph.slackBand === 'overheated');
+    check('a10_r5_02', 'phillips delta positive', phillipsSlackInflationScoreAdjustment(ph) > 0);
+  }
+  {
+    const spread = computeCoreHeadlineSpread('high', 4, 0.05);
+    check('a10_r5_03', 'core headline spread', spread.headlineIndex > 0 && spread.coreIndex > 0);
+  }
+  {
+    const shock = classifyInflationShockDrivers(
+      'high',
+      makeDefaultMacroFinancialTestInputs({ highInflationScenario: true, inflationSettingMultiplier: 1.3 }),
+      {
+        turn: 1,
+        gdpGrowthBand: 'strong',
+        unemploymentBand: 'low',
+        outputGap: 0.04,
+        nominalDemandPressure: 0.6,
+      },
+    );
+    check('a10_r5_04', 'shock driver demand or mixed', shock.driver === 'demand_pull' || shock.driver === 'mixed');
+  }
+  {
+    const dom = assessFiscalDominance(makeDefaultMacroFinancialTestInputs({ fiscalPressure: 'critical', sovereignDebtPressure: 'high' }));
+    check('a10_r5_05', 'fiscal dominance elevated+', dom.band === 'elevated' || dom.band === 'dominant');
+  }
+  {
+    const breach = assessInflationTargetBreach(82);
+    check('a10_r5_06', 'target breach above', breach.side === 'above' && breach.breachSeverity !== 'none');
+    check('a10_r5_07', 'implied target percent', inflationScoreToImpliedTargetPercent(50) > 2);
+  }
+  {
+    let reg = createInitialInflationRegimeTracker();
+    reg = stepInflationRegimeTracker(reg, 1, 'elevated');
+    reg = stepInflationRegimeTracker(reg, 2, 'elevated');
+    reg = stepInflationRegimeTracker(reg, 3, 'elevated');
+    check('a10_r5_08', 'regime streak', reg.bandStreak === 3);
+    check('a10_r5_09', 'persistence half life', inflationRegimePersistenceHalfLifeTurns(reg.persistenceScore) >= 2);
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('anchored', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(52),
+    });
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r5');
+    check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
+  }
+  check(
+    'a10_r5_12',
+    'round5 preset fiscal dominance',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'fiscal_dominance_inflation');
+      return inp?.fiscalPressure === 'critical' && inp.sovereignDebtPressure === 'high';
+    })(),
+  );
+  check('a10_r5_13', 'agent21 bridge note', agent21ForecastBridgeIntegrationNote().includes('Agent 21'));
+
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;
   return { passed, failed, total: results.length, allPassed: failed === 0, results };
@@ -2839,6 +3424,47 @@ export function InflationDiagnosticsPanel(props: InflationDiagnosticsPanelProps)
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+
+// --- source: react/InflationRegimePanel.tsx ---
+  stepInflationRegimeTracker,
+  createInitialInflationRegimeTracker,
+  inflationRegimePersistenceHalfLifeTurns,
+} from '../integration/inflation-regime-tracker.js';
+
+export interface InflationRegimePanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  inflationScore: number;
+  agent06?: Agent06MacroSnapshot | null;
+}
+
+export function InflationRegimePanel(props: InflationRegimePanelProps) {
+  const tracker = stepInflationRegimeTracker(createInitialInflationRegimeTracker(), props.inputs.turn, props.state.inflation, {
+    creditStressed: props.state.credit === 'restricted' || props.state.credit === 'frozen',
+    fiscalCritical: props.inputs.fiscalPressure === 'critical',
+  });
+  const snap = tracker.history[tracker.history.length - 1];
+  const shock = classifyInflationShockDrivers(props.state.inflation, props.inputs, props.agent06 ?? null);
+  const fiscal = assessFiscalDominance(props.inputs);
+  const target = assessInflationTargetBreach(props.inflationScore);
+  const halfLife = inflationRegimePersistenceHalfLifeTurns(tracker.persistenceScore);
+
+  return (
+    <div className="op10m-inflation-regime" data-testid="inflation-regime-panel">
+      <h4>Inflation regime (round 5)</h4>
+      <p>
+        Regime {snap?.regime ?? 'anchored_soft'} · persistence {tracker.persistenceScore.toFixed(0)} · half-life ~
+        {halfLife.toFixed(1)} turns
+      </p>
+      <p>
+        Driver {shock.driver} ({shock.confidence}) · fiscal dominance {fiscal.band} · target breach{' '}
+        {target.breachSeverity}
+      </p>
+      <p>{shock.summary}</p>
     </div>
   );
 }
