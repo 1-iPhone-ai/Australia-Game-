@@ -1,0 +1,50 @@
+{
+  "trancheId": "tranche-projection-with-chunks",
+  "dryRunAt": "2026-10-29T06:03:51.175Z",
+  "canonicalBaseCommit": "bc1adf3",
+  "baselineAuditedFunctional": 389566,
+  "projectedAuditedFunctional": 393861,
+  "deltaAuditedFunctional": 4295,
+  "baselinePhysicalLines": 419353,
+  "projectedPhysicalLines": 424224,
+  "integrationOrder": [
+    "agent-01-strategic-gameplay",
+    "agent-03-research-tech",
+    "agent-06-macroeconomy",
+    "agent-25-op10m-registry"
+  ],
+  "moduleStats": [
+    {
+      "moduleId": "agent-01-strategic-gameplay",
+      "slot": "pre-final-export",
+      "chunkLines": 1220,
+      "contentSha256": "c0a2bd2d6280181bb002f1211c5119ed1ed8528dd8cdf10d2cd55c8a69e2247d"
+    },
+    {
+      "moduleId": "agent-03-research-tech",
+      "slot": "post-v10z",
+      "chunkLines": 1870,
+      "contentSha256": "527c8a7ff5a398c3c6071dd7bc29e5fb2830684efb012f719ea5e1e51deef9f3"
+    },
+    {
+      "moduleId": "agent-06-macroeconomy",
+      "slot": "append-only-self-tests",
+      "chunkLines": 1723,
+      "contentSha256": "679422a0c9b2af2ab20fdba3612650dbb15c6317f086a20482544617e9a195ef"
+    },
+    {
+      "moduleId": "agent-25-op10m-registry",
+      "slot": "pre-final-export",
+      "chunkLines": 56,
+      "contentSha256": "ab4c5979022091045987084038013d0911b9789f54fdcc58804a4d37ec9e6ff8"
+    }
+  ],
+  "labEntryPlanned": {
+    "afterAnchorId": "v1015_orchestrator",
+    "id": "op10m_assembly_registry",
+    "label": "Operation 10M assembly registry",
+    "runExport": "runOp10mAssemblyRegistrySelfTests"
+  },
+  "artifact": "build/tranche-dry-run-projection.tsx",
+  "note": "Projection only — canonical not modified."
+}
