@@ -1,0 +1,31 @@
+import type { V1029CresAdaptationBufferEdge } from '../../types/core.ts';
+
+/** Adaptation buffer graph shard 006 (storm_surge/king_tide/erosion corridor coupling). */
+export const V1029_CRES_ADAPTATION_BUFFER_SHARD_006: readonly V1029CresAdaptationBufferEdge[] = [
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.392, lagTurns: 8, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.398, lagTurns: 9, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.404, lagTurns: 10, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.41, lagTurns: 11, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.416, lagTurns: 8, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.422, lagTurns: 9, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.428, lagTurns: 10, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.332, lagTurns: 11, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.338, lagTurns: 8, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.344, lagTurns: 9, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.35, lagTurns: 10, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.356, lagTurns: 11, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.362, lagTurns: 8, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.368, lagTurns: 9, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.374, lagTurns: 10, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.38, lagTurns: 11, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.386, lagTurns: 8, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.392, lagTurns: 9, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.398, lagTurns: 10, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.404, lagTurns: 11, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.41, lagTurns: 8, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.416, lagTurns: 9, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.422, lagTurns: 10, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.428, lagTurns: 11, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.332, lagTurns: 8, nodeId: 'littoral_zone_06' },
+  { fromChannel: 'aged_care', toChannel: 'remote', weight: 0.338, lagTurns: 9, nodeId: 'littoral_zone_06' },
+];

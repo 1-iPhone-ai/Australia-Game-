@@ -1,0 +1,31 @@
+import type { V1029CresAdaptationBufferEdge } from '../../types/core.ts';
+
+/** Adaptation buffer graph shard 077 (storm_surge/king_tide/erosion corridor coupling). */
+export const V1029_CRES_ADAPTATION_BUFFER_SHARD_077: readonly V1029CresAdaptationBufferEdge[] = [
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.518, lagTurns: 7, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.524, lagTurns: 8, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.428, lagTurns: 9, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.434, lagTurns: 10, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.44, lagTurns: 7, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.446, lagTurns: 8, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.452, lagTurns: 9, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.458, lagTurns: 10, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.464, lagTurns: 7, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.47, lagTurns: 8, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.476, lagTurns: 9, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.482, lagTurns: 10, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.488, lagTurns: 7, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.494, lagTurns: 8, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.5, lagTurns: 9, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.506, lagTurns: 10, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.512, lagTurns: 7, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.518, lagTurns: 8, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.524, lagTurns: 9, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.428, lagTurns: 10, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.434, lagTurns: 7, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.44, lagTurns: 8, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.446, lagTurns: 9, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.452, lagTurns: 10, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.458, lagTurns: 7, nodeId: 'littoral_zone_05' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.464, lagTurns: 8, nodeId: 'littoral_zone_05' },
+];

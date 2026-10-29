@@ -1,0 +1,31 @@
+import type { V1029CresAdaptationBufferEdge } from '../../types/core.ts';
+
+/** Adaptation buffer graph shard 083 (storm_surge/king_tide/erosion corridor coupling). */
+export const V1029_CRES_ADAPTATION_BUFFER_SHARD_083: readonly V1029CresAdaptationBufferEdge[] = [
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.668, lagTurns: 4, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.674, lagTurns: 5, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.68, lagTurns: 6, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.686, lagTurns: 7, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.692, lagTurns: 4, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.698, lagTurns: 5, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.704, lagTurns: 6, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.71, lagTurns: 7, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.716, lagTurns: 4, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.62, lagTurns: 5, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.626, lagTurns: 6, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.632, lagTurns: 7, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.638, lagTurns: 4, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.644, lagTurns: 5, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.65, lagTurns: 6, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.656, lagTurns: 7, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.662, lagTurns: 4, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.668, lagTurns: 5, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.674, lagTurns: 6, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.68, lagTurns: 7, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.686, lagTurns: 4, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.692, lagTurns: 5, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.698, lagTurns: 6, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.704, lagTurns: 7, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.71, lagTurns: 4, nodeId: 'littoral_zone_11' },
+  { fromChannel: 'telehealth', toChannel: 'aged_care', weight: 0.716, lagTurns: 5, nodeId: 'littoral_zone_11' },
+];

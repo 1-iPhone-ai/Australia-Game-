@@ -1,0 +1,31 @@
+import type { V1029CresAdaptationBufferEdge } from '../../types/core.ts';
+
+/** Adaptation buffer graph shard 018 (storm_surge/king_tide/erosion corridor coupling). */
+export const V1029_CRES_ADAPTATION_BUFFER_SHARD_018: readonly V1029CresAdaptationBufferEdge[] = [
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.25, lagTurns: 2, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.256, lagTurns: 3, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.262, lagTurns: 4, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.268, lagTurns: 5, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.172, lagTurns: 2, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.178, lagTurns: 3, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.184, lagTurns: 4, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.19, lagTurns: 5, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.196, lagTurns: 2, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.202, lagTurns: 3, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.208, lagTurns: 4, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.214, lagTurns: 5, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.22, lagTurns: 2, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.226, lagTurns: 3, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.232, lagTurns: 4, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.238, lagTurns: 5, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.244, lagTurns: 2, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.25, lagTurns: 3, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.256, lagTurns: 4, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.262, lagTurns: 5, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.268, lagTurns: 2, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.172, lagTurns: 3, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.178, lagTurns: 4, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.184, lagTurns: 5, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.19, lagTurns: 2, nodeId: 'littoral_zone_18' },
+  { fromChannel: 'regional', toChannel: 'primary_access', weight: 0.196, lagTurns: 3, nodeId: 'littoral_zone_18' },
+];
