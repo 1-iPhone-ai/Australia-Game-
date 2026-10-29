@@ -56,6 +56,8 @@ import type { MacroTransportThroughputSpillover } from './bridge-v1012-transport
 import type { MacroEnergyTransitionPaceSpillover } from './bridge-v1013-energy-transition-pace.ts';
 import type { MacroHousingAffordabilitySpillover } from './bridge-v1014-housing-affordability.ts';
 import type { MacroTradeExposureSpillover } from './bridge-v1015-trade-exposure.ts';
+import type { MacroGuardianVigilanceSpillover } from './bridge-v1016-guardian-vigilance.ts';
+import type { MacroCommandCoordinationSpillover } from './bridge-v1017-command-coordination.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -120,6 +122,8 @@ export function buildMacroTransmissionReport(params: {
   energyTransitionPace?: MacroEnergyTransitionPaceSpillover;
   housingAffordability?: MacroHousingAffordabilitySpillover;
   tradeExposure?: MacroTradeExposureSpillover;
+  guardianVigilance?: MacroGuardianVigilanceSpillover;
+  commandCoordination?: MacroCommandCoordinationSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -169,6 +173,8 @@ export function buildMacroTransmissionReport(params: {
   const energyTransitionPace = params.energyTransitionPace ?? ZERO_SPILLOVER;
   const housingAffordability = params.housingAffordability ?? ZERO_SPILLOVER;
   const tradeExposure = params.tradeExposure ?? ZERO_SPILLOVER;
+  const guardianVigilance = params.guardianVigilance ?? ZERO_SPILLOVER;
+  const commandCoordination = params.commandCoordination ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -605,6 +611,22 @@ export function buildMacroTransmissionReport(params: {
       tradeExposure.investmentNudge,
       tradeExposure.productivityNudge,
       tradeExposure.summary
+    ),
+    layer(
+      'v10.16_guardian_vigilance',
+      'Guardian vigilance',
+      guardianVigilance.cycleNudge,
+      guardianVigilance.investmentNudge,
+      guardianVigilance.productivityNudge,
+      guardianVigilance.summary
+    ),
+    layer(
+      'v10.17_command_coordination',
+      'Command coordination',
+      commandCoordination.cycleNudge,
+      commandCoordination.investmentNudge,
+      commandCoordination.productivityNudge,
+      commandCoordination.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

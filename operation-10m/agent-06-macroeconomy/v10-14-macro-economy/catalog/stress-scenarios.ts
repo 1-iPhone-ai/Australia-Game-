@@ -198,6 +198,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Housing & trade stress',
     shockIds: ['housing_correction', 'global_slowdown'],
     description: 'Crushed housing affordability with dislocated trade exposure (harness overlay).'
+  },
+  {
+    id: 'guardian_command_stress',
+    label: 'Guardian & command stress',
+    shockIds: ['credit_crunch', 'global_slowdown'],
+    description: 'Red guardian vigilance with broken command coordination (harness overlay).'
   }
 ];
 

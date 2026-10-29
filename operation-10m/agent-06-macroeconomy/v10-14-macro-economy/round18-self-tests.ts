@@ -71,8 +71,8 @@ export function runAgent06Round18SelfTests(): {
   );
   record(
     'R18-05',
-    'Fifty-eight transmission layers',
-    integrated.state.transmissionReport.layers.length === 58,
+    'Sixty transmission layers',
+    integrated.state.transmissionReport.layers.length === 60,
     String(integrated.state.transmissionReport.layers.length)
   );
 

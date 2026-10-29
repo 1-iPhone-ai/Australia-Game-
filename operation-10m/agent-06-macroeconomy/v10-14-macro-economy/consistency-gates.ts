@@ -1016,5 +1016,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Wide transmission dispersion — spillover mass is uneven across layers.'
     });
   }
+  const gvIn: any = inputs.guardianVigilance ?? inputs.guardianCopilot?.vigilance;
+  const vigilanceAlert = String(gvIn?.alertBand ?? gvIn?.vigilanceBand ?? '');
+  if (
+    (vigilanceAlert === 'red' || vigilanceAlert === 'critical') &&
+    (state.guardianSpilloverSummary != null || state.guardianVigilanceSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'guardian_vigilance_elevated',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Elevated guardian vigilance aligns with strained guardian spillover read.'
+    });
+  }
+  const cmdIn: any = inputs.commandCoordination ?? inputs.commandCenter?.coordination;
+  const syncBand = String(cmdIn?.syncBand ?? cmdIn?.coordinationBand ?? '');
+  if (
+    (syncBand === 'broken' || syncBand === 'fragmented') &&
+    (state.commandSpilloverSummary != null || state.commandCoordinationSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'command_coordination_fragmented',
+      triggered: true,
+      severity: 'info',
+      summary: 'Fragmented command coordination coincides with strained command spillover.'
+    });
+  }
+  if (state.transmissionFragmentation?.band === 'fragmented') {
+    gates.push({
+      id: 'transmission_fragmentation_high',
+      triggered: true,
+      severity: 'info',
+      summary: 'High transmission fragmentation — many layers carry negligible spillover mass.'
+    });
+  }
   return gates;
 }
