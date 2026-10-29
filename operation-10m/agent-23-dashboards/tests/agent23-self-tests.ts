@@ -182,6 +182,12 @@ import { nrDashBuildHubPeripheralSaturationShare } from '../core/hub-peripheral-
 import { nrDashBuildSnippetSourceTurnGap } from '../core/snippet-source-turn-gap.ts';
 import { nrDashBuildAdjacencyCorridorSaturationShare } from '../core/adjacency-corridor-saturation-share.ts';
 import { nrDashBuildNsHistorySnippetOverlapGap } from '../core/ns-history-snippet-overlap-gap.ts';
+import { nrDashBuildOwnedOpenNeedsMomentumSkewGap } from '../core/owned-open-needs-momentum-skew-gap.ts';
+import { nrDashBuildNationalSeverityTierSpread } from '../core/national-severity-tier-spread.ts';
+import { nrDashBuildChokepointPulseAsymmetry } from '../core/chokepoint-pulse-asymmetry.ts';
+import { nrDashBuildLrDerivedSnippetTurnGap } from '../core/lr-derived-snippet-turn-gap.ts';
+import { nrDashBuildMergedCorridorSaturationShare } from '../core/merged-corridor-saturation-share.ts';
+import { nrDashBuildMajorHistoryOverlapGap } from '../core/major-history-overlap-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1437,6 +1443,51 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
     const gap = nrDashBuildNsHistorySnippetOverlapGap(createAgent23NsFixture(), snap)!;
     return gap.nsHistoryCount === 1 && gap.matchingSnippetCount === 1 && gap.overlapGap === 1;
+  });
+
+  check('a23_owned_open_needs_momentum_skew_gap', 'Owned open-needs momentum skew gap is zero on uniform NSW fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'you' })!;
+    const gap = nrDashBuildOwnedOpenNeedsMomentumSkewGap(snap)!;
+    return gap.ownedRegionCount === 1 && gap.portfolioSkewGap === 0;
+  });
+
+  check('a23_national_severity_tier_spread', 'National severity tier spread separates low VIC fixture', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.VIC!.needs[0]!.severity = 'low';
+    const spread = nrDashBuildNationalSeverityTierSpread(lr)!;
+    return spread.tierSpread > 0 && spread.maxMeanRank > spread.minMeanRank;
+  });
+
+  check('a23_chokepoint_pulse_asymmetry', 'Chokepoint pulse asymmetry is positive on dependency endpoints', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const asym = nrDashBuildChokepointPulseAsymmetry(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return asym.chokepointCount === 3 && asym.maxEndpointDelta > 0.01;
+  });
+
+  check('a23_lr_derived_snippet_turn_gap', 'LR derived snippet turn gap counts unsurfaced derived turns', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 2, text: 'Early', significance: 'meaningful' });
+    const snap = nrDashBuildAuthSnapshot(5, lr, null, null)!;
+    const gap = nrDashBuildLrDerivedSnippetTurnGap(lr, snap)!;
+    return gap.derivedTurnSpread === 2 && gap.lrSnippetTurnSpread === 0 && gap.turnGap === 2;
+  });
+
+  check('a23_merged_corridor_saturation_share', 'Merged corridor saturation share is below one on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    const links = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(createAgent23NsFixture(), AGENT23_REGION_MAP_LAYOUT)
+    );
+    const sat = nrDashBuildMergedCorridorSaturationShare(links, nodes)!;
+    return sat.linkCount > 3 && sat.saturationShare > 0 && sat.saturationShare < 1;
+  });
+
+  check('a23_major_history_overlap_gap', 'Major-history overlap gap counts shared NS and major turns', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 5, text: 'National beat', significance: 'major' });
+    const gap = nrDashBuildMajorHistoryOverlapGap(lr, createAgent23NsFixture())!;
+    return gap.sharedTurnCount === 1 && gap.overlapGap === 1;
   });
 
   return results;
