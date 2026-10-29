@@ -26,6 +26,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeHousingStrategicStress?: boolean;
   includeInflationEnergyStress?: boolean;
   includeEventsCompaniesStress?: boolean;
+  includeTurnsTransportStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -34,6 +35,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeHousingStrategicStress = Boolean(options?.includeHousingStrategicStress);
   const includeInflationEnergyStress = Boolean(options?.includeInflationEnergyStress);
   const includeEventsCompaniesStress = Boolean(options?.includeEventsCompaniesStress);
+  const includeTurnsTransportStress = Boolean(options?.includeTurnsTransportStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -99,6 +101,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             overloadedFirmCount: t % 6 === 0 ? 3 : 0,
             productionMomentum: { band: t % 9 === 0 ? 'contracting' : 'steady' }
           }
+        : undefined,
+      turnsTime: includeTurnsTransportStress
+        ? {
+            paceBand: t % 6 === 0 ? 'stalled' : 'steady',
+            season: t % 4 === 0 ? 'Winter' : 'Spring',
+            macroPhaseBand: t % 8 === 0 ? 'late_cycle' : 'expansionary_cadence'
+          }
+        : undefined,
+      transportInfrastructure: includeTurnsTransportStress
+        ? {
+            connectivityBand: t % 5 === 0 ? 'fragmented' : 'robust',
+            throughputBand: t % 7 === 0 ? 'constrained' : 'ample',
+            investmentPipeline: { band: t % 9 === 0 ? 'active' : 'steady' }
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -159,8 +175,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionCoherence.coherenceIndex)
     });
     checks.push({
-      id: 'fourteen_transmission_layers',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 14,
+      id: 'sixteen_transmission_layers',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 16,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -171,8 +187,20 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionConcentration.concentrationIndex)
     });
     checks.push({
-      id: 'fourteen_transmission_layers_events',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 14,
+      id: 'sixteen_transmission_layers_events',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 16,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeTurnsTransportStress && prev) {
+    checks.push({
+      id: 'transmission_asymmetry_finite',
+      passed: Number.isFinite(prev.transmissionAsymmetry.asymmetryIndex),
+      detail: String(prev.transmissionAsymmetry.asymmetryIndex)
+    });
+    checks.push({
+      id: 'sixteen_transmission_layers_turns',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 16,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }

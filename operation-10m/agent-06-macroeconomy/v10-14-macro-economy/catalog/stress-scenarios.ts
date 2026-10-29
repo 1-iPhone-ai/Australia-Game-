@@ -66,6 +66,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Events & companies stress',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'Narrative backlog with private-sector utilization stress (harness overlay).'
+  },
+  {
+    id: 'turns_transport_stress',
+    label: 'Turns & transport stress',
+    shockIds: ['global_slowdown', 'commodity_bust'],
+    description: 'Temporal cadence stall with logistics connectivity stress (harness overlay).'
   }
 ];
 

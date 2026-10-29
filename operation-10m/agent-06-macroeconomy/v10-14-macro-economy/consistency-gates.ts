@@ -267,5 +267,42 @@ export function evaluateMacroConsistencyGates(
       summary: 'Macro transmission is concentrated in a narrow layer set — headline scores may be brittle.'
     });
   }
+  const tt: any = inputs.turnsTime ?? inputs.temporalCadence ?? inputs.gameClock;
+  const pace = String(tt?.paceBand ?? tt?.turnPace?.band ?? '');
+  if (
+    (pace === 'stalled' || pace === 'frozen' || pace === 'deferred') &&
+    (state.cyclePhase === 'expansion' || state.cyclePhase === 'recovery')
+  ) {
+    gates.push({
+      id: 'turns_cycle_desync',
+      triggered: true,
+      severity: 'info',
+      summary: 'Stalled turn cadence coexists with expansionary macro phase — temporal desync elevated.'
+    });
+  }
+  const infra: any = inputs.transportInfrastructure ?? inputs.infrastructure ?? inputs.nationalInfrastructure;
+  const connectivity = String(infra?.connectivityBand ?? infra?.connectivity?.band ?? '');
+  if (
+    (connectivity === 'fragmented' || connectivity === 'critical' || connectivity === 'degraded') &&
+    (state.productivityBand === 'strong' || state.productivityBand === 'leading')
+  ) {
+    gates.push({
+      id: 'transport_productivity_tension',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Strong macro productivity read conflicts with degraded transport connectivity — logistics bind likely.'
+    });
+  }
+  if (
+    state.transmissionAsymmetry?.band === 'restrict_skewed' &&
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'trough')
+  ) {
+    gates.push({
+      id: 'transmission_asymmetry_downside',
+      triggered: true,
+      severity: 'info',
+      summary: 'Restrictive transmission skew aligns with macro downturn — downside reinforcement elevated.'
+    });
+  }
   return gates;
 }

@@ -13,6 +13,8 @@ import { applyMacroInflationSpillover, readMacroInflationSpilloverFromV1010 } fr
 import { applyMacroEnergySpillover, readMacroEnergySpilloverFromV1018 } from './bridge-v1018-energy.ts';
 import { applyMacroEventsSpillover, readMacroEventsSpilloverFromV105 } from './bridge-v105-events.ts';
 import { applyMacroCompaniesSpillover, readMacroCompaniesSpilloverFromV108 } from './bridge-v108-companies.ts';
+import { applyMacroTurnsSpillover, readMacroTurnsSpilloverFromV102 } from './bridge-v102-turns.ts';
+import { applyMacroTransportSpillover, readMacroTransportSpilloverFromV1017 } from './bridge-v1017-transport.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -22,6 +24,7 @@ import { buildMacroCapacitySnapshot } from './macro-capacity-snapshot.ts';
 import { buildMacroTransmissionBalanceSnapshot } from './macro-transmission-balance.ts';
 import { buildMacroTransmissionCoherenceSnapshot } from './macro-transmission-coherence.ts';
 import { buildMacroTransmissionConcentrationSnapshot } from './macro-transmission-concentration.ts';
+import { buildMacroTransmissionAsymmetrySnapshot } from './macro-transmission-asymmetry.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -99,6 +102,8 @@ export function computeNationalMacroEconomy(
   const energySpillover = readMacroEnergySpilloverFromV1018(inputs);
   const eventsSpillover = readMacroEventsSpilloverFromV105(inputs);
   const companiesSpillover = readMacroCompaniesSpilloverFromV108(inputs);
+  const turnsSpillover = readMacroTurnsSpilloverFromV102(inputs);
+  const transportSpillover = readMacroTransportSpilloverFromV1017(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -113,7 +118,9 @@ export function computeNationalMacroEconomy(
   const withEnergy = applyMacroEnergySpillover(withInflation, energySpillover);
   const withEvents = applyMacroEventsSpillover(withEnergy, eventsSpillover);
   const withCompanies = applyMacroCompaniesSpillover(withEvents, companiesSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withCompanies, pushEv);
+  const withTurns = applyMacroTurnsSpillover(withCompanies, turnsSpillover);
+  const withTransport = applyMacroTransportSpillover(withTurns, transportSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withTransport, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -155,12 +162,15 @@ export function computeNationalMacroEconomy(
     inflation: inflationSpillover,
     energy: energySpillover,
     events: eventsSpillover,
-    companies: companiesSpillover
+    companies: companiesSpillover,
+    turns: turnsSpillover,
+    transport: transportSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
   const transmissionCoherence = buildMacroTransmissionCoherenceSnapshot(transmissionReport, cyclePhase);
   const transmissionConcentration = buildMacroTransmissionConcentrationSnapshot(transmissionReport);
+  const transmissionAsymmetry = buildMacroTransmissionAsymmetrySnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -225,10 +235,13 @@ export function computeNationalMacroEconomy(
     energySpilloverSummary: energySpillover.summary,
     eventsSpilloverSummary: eventsSpillover.summary,
     companiesSpilloverSummary: companiesSpillover.summary,
+    turnsSpilloverSummary: turnsSpillover.summary,
+    transportSpilloverSummary: transportSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
     transmissionConcentration,
+    transmissionAsymmetry,
     transmissionReport,
     stressIndex: {
       score: 0,

@@ -30,6 +30,15 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     companies: params?.companies ?? params?.privateSector,
     privateSector: params?.privateSector ?? params?.nationalPrivateSector,
     nationalPrivateSector: params?.nationalPrivateSector ?? params?.gameState?.privateSectorState,
+    turnsTime: params?.turnsTime ?? params?.gameState?.turnsTimeState ?? params?.nationalSystems?.turnsTime,
+    temporalCadence: params?.temporalCadence,
+    gameClock: params?.gameClock ?? params?.gameState?.gameClock,
+    transportInfrastructure:
+      params?.transportInfrastructure ??
+      params?.infrastructure ??
+      params?.gameState?.transportInfrastructureState,
+    infrastructure: params?.infrastructure,
+    nationalInfrastructure: params?.nationalInfrastructure ?? params?.nationalSystems?.infrastructure,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };
