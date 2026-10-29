@@ -51,7 +51,7 @@ export function runAgent06Round32SelfTests(): {
   );
   record(
     'R32-05',
-    'Sixty-two two transmission layers',
+    'Sixty-two transmission layers',
     integrated.state.transmissionReport.layers.length === 62,
     String(integrated.state.transmissionReport.layers.length)
   );

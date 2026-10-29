@@ -54,7 +54,7 @@ export function runAgent06Round20SelfTests(): {
   record('R20-04', 'State exposes rental summary', integrated.state.rentalSpilloverSummary != null, 'ok');
   record(
     'R20-05',
-    'Sixty-two two transmission layers',
+    'Sixty-two transmission layers',
     integrated.state.transmissionReport.layers.length === 62,
     String(integrated.state.transmissionReport.layers.length)
   );
