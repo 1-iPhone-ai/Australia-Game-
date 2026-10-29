@@ -68,6 +68,9 @@ import { measureRecoveryActionBreadth } from './recovery-action-breadth.ts';
 import { computeDirectiveQuotaExhaustionIndex } from './directive-quota-exhaustion-index.ts';
 import { computeCapacityImbalanceIndex } from './capacity-imbalance-index.ts';
 import { computeWorkstreamBarrierStalenessIndex } from './workstream-barrier-staleness-index.ts';
+import { computeWorkstreamDeadlockPressureIndex } from './workstream-deadlock-pressure-index.ts';
+import { computeSuppressionQuotaCouplingIndex } from './suppression-quota-coupling-index.ts';
+import { computeHandoffLeaseOverlapIndex } from './handoff-lease-overlap-index.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -373,6 +376,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.workstreamBarrierStalenessIndex === 'number'
           ? metaRaw.workstreamBarrierStalenessIndex
           : undefined,
+      workstreamDeadlockPressureIndex:
+        typeof metaRaw.workstreamDeadlockPressureIndex === 'number'
+          ? metaRaw.workstreamDeadlockPressureIndex
+          : undefined,
+      suppressionQuotaCouplingIndex:
+        typeof metaRaw.suppressionQuotaCouplingIndex === 'number'
+          ? metaRaw.suppressionQuotaCouplingIndex
+          : undefined,
+      handoffLeaseOverlapIndex:
+        typeof metaRaw.handoffLeaseOverlapIndex === 'number'
+          ? metaRaw.handoffLeaseOverlapIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -553,6 +568,12 @@ export function evaluateTeamMultiAgentLayer(
   workstreamDeadlocks.notes.forEach(n => diagnostics.push(n));
   const workstreamParallelism = measureWorkstreamParallelism(coordination.workstreams);
   workstreamParallelism.notes.forEach(n => diagnostics.push(n));
+  const workstreamDeadlockPressure = computeWorkstreamDeadlockPressureIndex(
+    workstreamDeadlocks.deadlockCount,
+    workstreamDeadlocks.deadlockedWorkstreamIds,
+    workstreamParallelism.parallelismIndex,
+  );
+  workstreamDeadlockPressure.notes.forEach(n => diagnostics.push(n));
   const leaseContention = computeLeaseContentionIndex(
     coordination.leases,
     coordination.handoffs,
@@ -586,12 +607,38 @@ export function evaluateTeamMultiAgentLayer(
       .map(([actorId]) => actorId),
   });
   suppressionBacklog.notes.forEach(n => diagnostics.push(n));
+  const suppressionQuotaCoupling = computeSuppressionQuotaCouplingIndex(
+    suppressionBacklog.backlogIndex,
+    directiveQuotaExhaustion.exhaustionIndex,
+    quotaExhaustedActorIds.length,
+  );
+  suppressionQuotaCoupling.notes.forEach(n => diagnostics.push(n));
 
   const roleChurn = computeRoleChurnIndex(previous?.roles ?? null, roles);
   roleChurn.notes.forEach(n => diagnostics.push(n));
 
   const leaseExpiry = evaluateLeaseExpiry(inputs.turn, coordination.leases);
   leaseExpiry.notes.forEach(n => diagnostics.push(n));
+  const leaseAtRiskRegions = new Set<string>();
+  coordination.leases.forEach(lease => {
+    if (
+      leaseExpiry.expiringLeaseIds.includes(lease.id) ||
+      leaseExpiry.expiredLeaseIds.includes(lease.id)
+    ) {
+      if (lease.regionId) leaseAtRiskRegions.add(lease.regionId);
+    }
+  });
+  const pendingHandoffs = coordination.handoffs.filter(h => h.status === 'pending');
+  const overlappingPendingHandoffs = pendingHandoffs.filter(
+    h => h.regionId !== null && leaseAtRiskRegions.has(h.regionId),
+  ).length;
+  const handoffLeaseOverlap = computeHandoffLeaseOverlapIndex(
+    overlappingPendingHandoffs,
+    pendingHandoffs.length,
+    leaseExpiry.expiringLeaseIds.length,
+    leaseExpiry.expiredLeaseIds.length,
+  );
+  handoffLeaseOverlap.notes.forEach(n => diagnostics.push(n));
 
   const coordinationComposite = computeCoordinationComposite({
     handoffSlaCompliance: handoffSla.complianceScore,
@@ -685,6 +732,9 @@ export function evaluateTeamMultiAgentLayer(
       quotaExhaustedActorIds: quotaExhaustedActorIds.slice(0, 8),
       capacityImbalanceIndex: capacityImbalance.imbalanceIndex,
       workstreamBarrierStalenessIndex: workstreamBarrierStaleness.stalenessIndex,
+      workstreamDeadlockPressureIndex: workstreamDeadlockPressure.pressureIndex,
+      suppressionQuotaCouplingIndex: suppressionQuotaCoupling.couplingIndex,
+      handoffLeaseOverlapIndex: handoffLeaseOverlap.overlapIndex,
     },
   };
 

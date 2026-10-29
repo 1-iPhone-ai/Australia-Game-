@@ -54,4 +54,7 @@ export * from './recovery-action-breadth.ts';
 export * from './directive-quota-exhaustion-index.ts';
 export * from './capacity-imbalance-index.ts';
 export * from './workstream-barrier-staleness-index.ts';
+export * from './workstream-deadlock-pressure-index.ts';
+export * from './suppression-quota-coupling-index.ts';
+export * from './handoff-lease-overlap-index.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

@@ -297,6 +297,9 @@ export interface TeamMultiAgentCoordinationMeta {
   quotaExhaustedActorIds?: string[];
   capacityImbalanceIndex?: number;
   workstreamBarrierStalenessIndex?: number;
+  workstreamDeadlockPressureIndex?: number;
+  suppressionQuotaCouplingIndex?: number;
+  handoffLeaseOverlapIndex?: number;
 }
 
 export const AGENT18_LIMITS = {

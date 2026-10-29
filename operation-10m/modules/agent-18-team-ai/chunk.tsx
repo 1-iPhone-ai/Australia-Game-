@@ -301,6 +301,9 @@ export interface TeamMultiAgentCoordinationMeta {
   quotaExhaustedActorIds?: string[];
   capacityImbalanceIndex?: number;
   workstreamBarrierStalenessIndex?: number;
+  workstreamDeadlockPressureIndex?: number;
+  suppressionQuotaCouplingIndex?: number;
+  handoffLeaseOverlapIndex?: number;
 }
 
 export const AGENT18_LIMITS = {
@@ -3674,6 +3677,142 @@ export function combineDualTeamWorkstreamBarrierStaleness(friendly: number, enem
 }
 
 
+// --- source: workstream-deadlock-pressure-index.ts ---
+export interface WorkstreamDeadlockPressureReport {
+  pressureIndex: number;
+  notes: string[];
+}
+
+/**
+ * Deadlock pressure amplified by in-flight workstream parallelism load.
+ */
+export function computeWorkstreamDeadlockPressureIndex(
+  deadlockCount: number,
+  deadlockedWorkstreamIds: string[],
+  parallelismIndex: number,
+): WorkstreamDeadlockPressureReport {
+  const notes: string[] = [];
+  const deadlocked = deadlockedWorkstreamIds.length;
+  if (deadlockCount > 0) {
+    notes.push(`${deadlockCount} workstream deadlock(s) detected`);
+  }
+  if (deadlockCount > 0 && parallelismIndex >= 55) {
+    notes.push(`Deadlocks under high parallelism load (${parallelismIndex})`);
+  }
+
+  const pressureIndex = Math.round(
+    Math.min(
+      100,
+      deadlockCount * 28 +
+        deadlocked * 12 +
+        (deadlockCount > 0 && parallelismIndex >= 50
+          ? Math.floor(parallelismIndex * 0.25)
+          : 0) +
+        (deadlockCount >= 2 ? 15 : 0),
+    ),
+  );
+
+  return { pressureIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamWorkstreamDeadlockPressure(
+  friendly: number,
+  enemy: number | null,
+): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: suppression-quota-coupling-index.ts ---
+export interface SuppressionQuotaCouplingReport {
+  couplingIndex: number;
+  notes: string[];
+}
+
+/**
+ * Combined stress when directive suppression backlog coincides with quota exhaustion.
+ */
+export function computeSuppressionQuotaCouplingIndex(
+  suppressionBacklogIndex: number,
+  directiveQuotaExhaustionIndex: number,
+  quotaExhaustedActorCount: number,
+): SuppressionQuotaCouplingReport {
+  const notes: string[] = [];
+  if (suppressionBacklogIndex >= 35 && directiveQuotaExhaustionIndex >= 35) {
+    notes.push('Suppression backlog and quota exhaustion both elevated');
+  }
+  if (quotaExhaustedActorCount > 0 && suppressionBacklogIndex >= 40) {
+    notes.push(`${quotaExhaustedActorCount} exhausted actor(s) with suppressed backlog`);
+  }
+
+  const couplingIndex = Math.round(
+    Math.min(
+      100,
+      suppressionBacklogIndex * 0.35 +
+        directiveQuotaExhaustionIndex * 0.35 +
+        quotaExhaustedActorCount * 10 +
+        (suppressionBacklogIndex >= 40 && directiveQuotaExhaustionIndex >= 40 ? 18 : 0),
+    ),
+  );
+
+  return { couplingIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamSuppressionQuotaCoupling(
+  friendly: number,
+  enemy: number | null,
+): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: handoff-lease-overlap-index.ts ---
+export interface HandoffLeaseOverlapReport {
+  overlapIndex: number;
+  notes: string[];
+}
+
+/**
+ * Pending handoffs targeting regions with expiring or expired leases.
+ */
+export function computeHandoffLeaseOverlapIndex(
+  overlappingPendingHandoffCount: number,
+  pendingHandoffCount: number,
+  expiringLeaseCount: number,
+  expiredLeaseCount: number,
+): HandoffLeaseOverlapReport {
+  const notes: string[] = [];
+  if (overlappingPendingHandoffCount > 0) {
+    notes.push(
+      `${overlappingPendingHandoffCount} pending handoff(s) overlap lease-at-risk regions`,
+    );
+  } else if (pendingHandoffCount > 0 && (expiringLeaseCount > 0 || expiredLeaseCount > 0)) {
+    notes.push('Lease risk present but no region overlap with pending handoffs');
+  }
+
+  const leaseRisk = expiringLeaseCount + expiredLeaseCount * 2;
+  const overlapIndex = Math.round(
+    Math.min(
+      100,
+      overlappingPendingHandoffCount * 26 +
+        leaseRisk * 8 +
+        (pendingHandoffCount > 0
+          ? Math.floor((overlappingPendingHandoffCount / pendingHandoffCount) * 40)
+          : 0),
+    ),
+  );
+
+  return { overlapIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamHandoffLeaseOverlap(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
 // --- source: coordination-audit.ts ---
   AGENT18_LIMITS,
   CoordinationAuditFinding,
@@ -4220,6 +4359,42 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (
+    typeof state.meta.workstreamDeadlockPressureIndex === 'number' &&
+    state.meta.workstreamDeadlockPressureIndex >= 45
+  ) {
+    push({
+      severity: 'warning',
+      message: `Workstream deadlock pressure (${state.meta.workstreamDeadlockPressureIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.suppressionQuotaCouplingIndex === 'number' &&
+    state.meta.suppressionQuotaCouplingIndex >= 44
+  ) {
+    push({
+      severity: 'warning',
+      message: `Suppression–quota coupling (${state.meta.suppressionQuotaCouplingIndex})`,
+      actorIds: state.meta.quotaExhaustedActorIds || [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.handoffLeaseOverlapIndex === 'number' &&
+    state.meta.handoffLeaseOverlapIndex >= 46
+  ) {
+    push({
+      severity: 'warning',
+      message: `Handoff–lease overlap (${state.meta.handoffLeaseOverlapIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
@@ -4715,6 +4890,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.workstreamBarrierStalenessIndex === 'number'
           ? metaRaw.workstreamBarrierStalenessIndex
           : undefined,
+      workstreamDeadlockPressureIndex:
+        typeof metaRaw.workstreamDeadlockPressureIndex === 'number'
+          ? metaRaw.workstreamDeadlockPressureIndex
+          : undefined,
+      suppressionQuotaCouplingIndex:
+        typeof metaRaw.suppressionQuotaCouplingIndex === 'number'
+          ? metaRaw.suppressionQuotaCouplingIndex
+          : undefined,
+      handoffLeaseOverlapIndex:
+        typeof metaRaw.handoffLeaseOverlapIndex === 'number'
+          ? metaRaw.handoffLeaseOverlapIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -4895,6 +5082,12 @@ export function evaluateTeamMultiAgentLayer(
   workstreamDeadlocks.notes.forEach(n => diagnostics.push(n));
   const workstreamParallelism = measureWorkstreamParallelism(coordination.workstreams);
   workstreamParallelism.notes.forEach(n => diagnostics.push(n));
+  const workstreamDeadlockPressure = computeWorkstreamDeadlockPressureIndex(
+    workstreamDeadlocks.deadlockCount,
+    workstreamDeadlocks.deadlockedWorkstreamIds,
+    workstreamParallelism.parallelismIndex,
+  );
+  workstreamDeadlockPressure.notes.forEach(n => diagnostics.push(n));
   const leaseContention = computeLeaseContentionIndex(
     coordination.leases,
     coordination.handoffs,
@@ -4928,12 +5121,38 @@ export function evaluateTeamMultiAgentLayer(
       .map(([actorId]) => actorId),
   });
   suppressionBacklog.notes.forEach(n => diagnostics.push(n));
+  const suppressionQuotaCoupling = computeSuppressionQuotaCouplingIndex(
+    suppressionBacklog.backlogIndex,
+    directiveQuotaExhaustion.exhaustionIndex,
+    quotaExhaustedActorIds.length,
+  );
+  suppressionQuotaCoupling.notes.forEach(n => diagnostics.push(n));
 
   const roleChurn = computeRoleChurnIndex(previous?.roles ?? null, roles);
   roleChurn.notes.forEach(n => diagnostics.push(n));
 
   const leaseExpiry = evaluateLeaseExpiry(inputs.turn, coordination.leases);
   leaseExpiry.notes.forEach(n => diagnostics.push(n));
+  const leaseAtRiskRegions = new Set<string>();
+  coordination.leases.forEach(lease => {
+    if (
+      leaseExpiry.expiringLeaseIds.includes(lease.id) ||
+      leaseExpiry.expiredLeaseIds.includes(lease.id)
+    ) {
+      if (lease.regionId) leaseAtRiskRegions.add(lease.regionId);
+    }
+  });
+  const pendingHandoffs = coordination.handoffs.filter(h => h.status === 'pending');
+  const overlappingPendingHandoffs = pendingHandoffs.filter(
+    h => h.regionId !== null && leaseAtRiskRegions.has(h.regionId),
+  ).length;
+  const handoffLeaseOverlap = computeHandoffLeaseOverlapIndex(
+    overlappingPendingHandoffs,
+    pendingHandoffs.length,
+    leaseExpiry.expiringLeaseIds.length,
+    leaseExpiry.expiredLeaseIds.length,
+  );
+  handoffLeaseOverlap.notes.forEach(n => diagnostics.push(n));
 
   const coordinationComposite = computeCoordinationComposite({
     handoffSlaCompliance: handoffSla.complianceScore,
@@ -5027,6 +5246,9 @@ export function evaluateTeamMultiAgentLayer(
       quotaExhaustedActorIds: quotaExhaustedActorIds.slice(0, 8),
       capacityImbalanceIndex: capacityImbalance.imbalanceIndex,
       workstreamBarrierStalenessIndex: workstreamBarrierStaleness.stalenessIndex,
+      workstreamDeadlockPressureIndex: workstreamDeadlockPressure.pressureIndex,
+      suppressionQuotaCouplingIndex: suppressionQuotaCoupling.couplingIndex,
+      handoffLeaseOverlapIndex: handoffLeaseOverlap.overlapIndex,
     },
   };
 
@@ -5159,6 +5381,9 @@ export interface DualTeamMultiAgentResult {
   directiveQuotaExhaustionCombined: number;
   capacityImbalanceCombined: number;
   workstreamBarrierStalenessCombined: number;
+  workstreamDeadlockPressureCombined: number;
+  suppressionQuotaCouplingCombined: number;
+  handoffLeaseOverlapCombined: number;
 }
 
 /**
@@ -5227,6 +5452,9 @@ export function evaluateDualTeamMultiAgentLayers(
       directiveQuotaExhaustionCombined: friendly.state.meta.directiveQuotaExhaustionIndex ?? 0,
       capacityImbalanceCombined: friendly.state.meta.capacityImbalanceIndex ?? 0,
       workstreamBarrierStalenessCombined: friendly.state.meta.workstreamBarrierStalenessIndex ?? 0,
+      workstreamDeadlockPressureCombined: friendly.state.meta.workstreamDeadlockPressureIndex ?? 0,
+      suppressionQuotaCouplingCombined: friendly.state.meta.suppressionQuotaCouplingIndex ?? 0,
+      handoffLeaseOverlapCombined: friendly.state.meta.handoffLeaseOverlapIndex ?? 0,
     };
   }
 
@@ -5450,6 +5678,18 @@ export function evaluateDualTeamMultiAgentLayers(
     workstreamBarrierStalenessCombined: combineDualTeamWorkstreamBarrierStaleness(
       friendly.state.meta.workstreamBarrierStalenessIndex ?? 0,
       enemy.state.meta.workstreamBarrierStalenessIndex ?? 0,
+    ),
+    workstreamDeadlockPressureCombined: combineDualTeamWorkstreamDeadlockPressure(
+      friendly.state.meta.workstreamDeadlockPressureIndex ?? 0,
+      enemy.state.meta.workstreamDeadlockPressureIndex ?? 0,
+    ),
+    suppressionQuotaCouplingCombined: combineDualTeamSuppressionQuotaCoupling(
+      friendly.state.meta.suppressionQuotaCouplingIndex ?? 0,
+      enemy.state.meta.suppressionQuotaCouplingIndex ?? 0,
+    ),
+    handoffLeaseOverlapCombined: combineDualTeamHandoffLeaseOverlap(
+      friendly.state.meta.handoffLeaseOverlapIndex ?? 0,
+      enemy.state.meta.handoffLeaseOverlapIndex ?? 0,
     ),
   };
 }
@@ -7615,6 +7855,61 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.directiveQuotaExhaustionCombined === 'number' &&
       typeof dual.capacityImbalanceCombined === 'number' &&
       typeof dual.workstreamBarrierStalenessCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_workstream_deadlock_pressure', 'Deadlock pressure: deadlocks under parallelism score high', () => {
+    const report = computeWorkstreamDeadlockPressureIndex(2, ['ws1', 'ws2'], 70);
+    return report.pressureIndex >= 45;
+  });
+
+  check(results, 'a18_workstream_deadlock_pressure_clear', 'Deadlock pressure: no deadlocks stays low', () => {
+    const report = computeWorkstreamDeadlockPressureIndex(0, [], 80);
+    return report.pressureIndex === 0;
+  });
+
+  check(results, 'a18_suppression_quota_coupling', 'Suppression–quota coupling: dual elevation scores high', () => {
+    const report = computeSuppressionQuotaCouplingIndex(55, 50, 2);
+    return report.couplingIndex >= 44;
+  });
+
+  check(results, 'a18_handoff_lease_overlap', 'Handoff–lease overlap: overlapping pending handoffs score high', () => {
+    const report = computeHandoffLeaseOverlapIndex(2, 3, 1, 1);
+    return report.overlapIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round17_meta', 'Layer: round-17 meta exposes deadlock pressure, coupling, overlap', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.workstreamDeadlockPressureIndex === 'number' &&
+      typeof m.suppressionQuotaCouplingIndex === 'number' &&
+      typeof m.handoffLeaseOverlapIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_suppression_quota_coupling', 'Audit: suppression–quota coupling surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, suppressionQuotaCouplingIndex: 70 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Suppression–quota coupling/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round17_combined', 'Dual team: round-17 combined deadlock, coupling, overlap exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.workstreamDeadlockPressureCombined === 'number' &&
+      typeof dual.suppressionQuotaCouplingCombined === 'number' &&
+      typeof dual.handoffLeaseOverlapCombined === 'number'
     );
   });
 

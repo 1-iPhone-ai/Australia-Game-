@@ -76,6 +76,9 @@ import { measureRecoveryActionBreadth } from './recovery-action-breadth.ts';
 import { computeDirectiveQuotaExhaustionIndex } from './directive-quota-exhaustion-index.ts';
 import { computeCapacityImbalanceIndex } from './capacity-imbalance-index.ts';
 import { computeWorkstreamBarrierStalenessIndex } from './workstream-barrier-staleness-index.ts';
+import { computeWorkstreamDeadlockPressureIndex } from './workstream-deadlock-pressure-index.ts';
+import { computeSuppressionQuotaCouplingIndex } from './suppression-quota-coupling-index.ts';
+import { computeHandoffLeaseOverlapIndex } from './handoff-lease-overlap-index.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -2208,6 +2211,61 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.directiveQuotaExhaustionCombined === 'number' &&
       typeof dual.capacityImbalanceCombined === 'number' &&
       typeof dual.workstreamBarrierStalenessCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_workstream_deadlock_pressure', 'Deadlock pressure: deadlocks under parallelism score high', () => {
+    const report = computeWorkstreamDeadlockPressureIndex(2, ['ws1', 'ws2'], 70);
+    return report.pressureIndex >= 45;
+  });
+
+  check(results, 'a18_workstream_deadlock_pressure_clear', 'Deadlock pressure: no deadlocks stays low', () => {
+    const report = computeWorkstreamDeadlockPressureIndex(0, [], 80);
+    return report.pressureIndex === 0;
+  });
+
+  check(results, 'a18_suppression_quota_coupling', 'Suppression–quota coupling: dual elevation scores high', () => {
+    const report = computeSuppressionQuotaCouplingIndex(55, 50, 2);
+    return report.couplingIndex >= 44;
+  });
+
+  check(results, 'a18_handoff_lease_overlap', 'Handoff–lease overlap: overlapping pending handoffs score high', () => {
+    const report = computeHandoffLeaseOverlapIndex(2, 3, 1, 1);
+    return report.overlapIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round17_meta', 'Layer: round-17 meta exposes deadlock pressure, coupling, overlap', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.workstreamDeadlockPressureIndex === 'number' &&
+      typeof m.suppressionQuotaCouplingIndex === 'number' &&
+      typeof m.handoffLeaseOverlapIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_suppression_quota_coupling', 'Audit: suppression–quota coupling surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, suppressionQuotaCouplingIndex: 70 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Suppression–quota coupling/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round17_combined', 'Dual team: round-17 combined deadlock, coupling, overlap exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.workstreamDeadlockPressureCombined === 'number' &&
+      typeof dual.suppressionQuotaCouplingCombined === 'number' &&
+      typeof dual.handoffLeaseOverlapCombined === 'number'
     );
   });
 

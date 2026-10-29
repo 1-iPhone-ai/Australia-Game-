@@ -35,6 +35,9 @@ import { combineDualTeamRecoveryActionBreadth } from './recovery-action-breadth.
 import { combineDualTeamDirectiveQuotaExhaustion } from './directive-quota-exhaustion-index.ts';
 import { combineDualTeamCapacityImbalance } from './capacity-imbalance-index.ts';
 import { combineDualTeamWorkstreamBarrierStaleness } from './workstream-barrier-staleness-index.ts';
+import { combineDualTeamWorkstreamDeadlockPressure } from './workstream-deadlock-pressure-index.ts';
+import { combineDualTeamSuppressionQuotaCoupling } from './suppression-quota-coupling-index.ts';
+import { combineDualTeamHandoffLeaseOverlap } from './handoff-lease-overlap-index.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -87,6 +90,9 @@ export interface DualTeamMultiAgentResult {
   directiveQuotaExhaustionCombined: number;
   capacityImbalanceCombined: number;
   workstreamBarrierStalenessCombined: number;
+  workstreamDeadlockPressureCombined: number;
+  suppressionQuotaCouplingCombined: number;
+  handoffLeaseOverlapCombined: number;
 }
 
 /**
@@ -155,6 +161,9 @@ export function evaluateDualTeamMultiAgentLayers(
       directiveQuotaExhaustionCombined: friendly.state.meta.directiveQuotaExhaustionIndex ?? 0,
       capacityImbalanceCombined: friendly.state.meta.capacityImbalanceIndex ?? 0,
       workstreamBarrierStalenessCombined: friendly.state.meta.workstreamBarrierStalenessIndex ?? 0,
+      workstreamDeadlockPressureCombined: friendly.state.meta.workstreamDeadlockPressureIndex ?? 0,
+      suppressionQuotaCouplingCombined: friendly.state.meta.suppressionQuotaCouplingIndex ?? 0,
+      handoffLeaseOverlapCombined: friendly.state.meta.handoffLeaseOverlapIndex ?? 0,
     };
   }
 
@@ -378,6 +387,18 @@ export function evaluateDualTeamMultiAgentLayers(
     workstreamBarrierStalenessCombined: combineDualTeamWorkstreamBarrierStaleness(
       friendly.state.meta.workstreamBarrierStalenessIndex ?? 0,
       enemy.state.meta.workstreamBarrierStalenessIndex ?? 0,
+    ),
+    workstreamDeadlockPressureCombined: combineDualTeamWorkstreamDeadlockPressure(
+      friendly.state.meta.workstreamDeadlockPressureIndex ?? 0,
+      enemy.state.meta.workstreamDeadlockPressureIndex ?? 0,
+    ),
+    suppressionQuotaCouplingCombined: combineDualTeamSuppressionQuotaCoupling(
+      friendly.state.meta.suppressionQuotaCouplingIndex ?? 0,
+      enemy.state.meta.suppressionQuotaCouplingIndex ?? 0,
+    ),
+    handoffLeaseOverlapCombined: combineDualTeamHandoffLeaseOverlap(
+      friendly.state.meta.handoffLeaseOverlapIndex ?? 0,
+      enemy.state.meta.handoffLeaseOverlapIndex ?? 0,
     ),
   };
 }
