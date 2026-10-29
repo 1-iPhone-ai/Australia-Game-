@@ -1084,5 +1084,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Stacked transmission redundancy — aligned layers dominate spillover mass.'
     });
   }
+  const autoTp: any = inputs.automationThroughput ?? inputs.idleAutomation?.throughput;
+  const autoPace = String(autoTp?.paceBand ?? autoTp?.throughputBand ?? '');
+  if (
+    (autoPace === 'collapsed' || autoPace === 'stalled') &&
+    (state.automationSpilloverSummary != null || state.automationThroughputSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_throughput_collapsed',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Collapsed automation throughput aligns with strained automation spillover read.'
+    });
+  }
+  const fcIn: any = inputs.forecastCalibration ?? inputs.forecastingLab?.calibration;
+  const calBias = String(fcIn?.biasBand ?? fcIn?.calibrationBand ?? '');
+  if (
+    (calBias === 'runaway' || calBias === 'severe') &&
+    (state.forecastingSpilloverSummary != null || state.forecastCalibrationSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_calibration_runaway',
+      triggered: true,
+      severity: 'info',
+      summary: 'Runaway forecast calibration bias coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionSaturation?.band === 'saturated') {
+    gates.push({
+      id: 'transmission_saturation_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission saturation — a single layer dominates active mass.'
+    });
+  }
   return gates;
 }

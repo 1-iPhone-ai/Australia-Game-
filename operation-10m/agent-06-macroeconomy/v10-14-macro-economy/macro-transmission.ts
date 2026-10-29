@@ -60,6 +60,8 @@ import type { MacroGuardianVigilanceSpillover } from './bridge-v1016-guardian-vi
 import type { MacroCommandCoordinationSpillover } from './bridge-v1017-command-coordination.ts';
 import type { MacroTeamAiCohesionSpillover } from './bridge-v1018-team-ai-cohesion.ts';
 import type { MacroMemoryRetentionSpillover } from './bridge-v1019-memory-retention.ts';
+import type { MacroAutomationThroughputSpillover } from './bridge-v1020-automation-throughput.ts';
+import type { MacroForecastCalibrationSpillover } from './bridge-v1021-forecast-calibration.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -128,6 +130,8 @@ export function buildMacroTransmissionReport(params: {
   commandCoordination?: MacroCommandCoordinationSpillover;
   teamAiCohesion?: MacroTeamAiCohesionSpillover;
   memoryRetention?: MacroMemoryRetentionSpillover;
+  automationThroughput?: MacroAutomationThroughputSpillover;
+  forecastCalibration?: MacroForecastCalibrationSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -181,6 +185,8 @@ export function buildMacroTransmissionReport(params: {
   const commandCoordination = params.commandCoordination ?? ZERO_SPILLOVER;
   const teamAiCohesion = params.teamAiCohesion ?? ZERO_SPILLOVER;
   const memoryRetention = params.memoryRetention ?? ZERO_SPILLOVER;
+  const automationThroughput = params.automationThroughput ?? ZERO_SPILLOVER;
+  const forecastCalibration = params.forecastCalibration ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -649,6 +655,22 @@ export function buildMacroTransmissionReport(params: {
       memoryRetention.investmentNudge,
       memoryRetention.productivityNudge,
       memoryRetention.summary
+    ),
+    layer(
+      'v10.20_automation_throughput',
+      'Automation throughput',
+      automationThroughput.cycleNudge,
+      automationThroughput.investmentNudge,
+      automationThroughput.productivityNudge,
+      automationThroughput.summary
+    ),
+    layer(
+      'v10.21_forecast_calibration',
+      'Forecast calibration',
+      forecastCalibration.cycleNudge,
+      forecastCalibration.investmentNudge,
+      forecastCalibration.productivityNudge,
+      forecastCalibration.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

@@ -118,6 +118,14 @@ import {
   applyMacroMemoryRetentionSpillover,
   readMacroMemoryRetentionSpilloverFromV1019
 } from './bridge-v1019-memory-retention.ts';
+import {
+  applyMacroAutomationThroughputSpillover,
+  readMacroAutomationThroughputSpilloverFromV1020
+} from './bridge-v1020-automation-throughput.ts';
+import {
+  applyMacroForecastCalibrationSpillover,
+  readMacroForecastCalibrationSpilloverFromV1021
+} from './bridge-v1021-forecast-calibration.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -151,6 +159,7 @@ import { buildMacroTransmissionSynthesisSnapshot } from './macro-transmission-sy
 import { buildMacroTransmissionDispersionSnapshot } from './macro-transmission-dispersion.ts';
 import { buildMacroTransmissionFragmentationSnapshot } from './macro-transmission-fragmentation.ts';
 import { buildMacroTransmissionRedundancySnapshot } from './macro-transmission-redundancy.ts';
+import { buildMacroTransmissionSaturationSnapshot } from './macro-transmission-saturation.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -276,6 +285,8 @@ export function computeNationalMacroEconomy(
   const commandCoordinationSpillover = readMacroCommandCoordinationSpilloverFromV1017(inputs);
   const teamAiCohesionSpillover = readMacroTeamAiCohesionSpilloverFromV1018(inputs);
   const memoryRetentionSpillover = readMacroMemoryRetentionSpilloverFromV1019(inputs);
+  const automationThroughputSpillover = readMacroAutomationThroughputSpilloverFromV1020(inputs);
+  const forecastCalibrationSpillover = readMacroForecastCalibrationSpilloverFromV1021(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -338,7 +349,9 @@ export function computeNationalMacroEconomy(
   const withCommandCoordination = applyMacroCommandCoordinationSpillover(withGuardianVigilance, commandCoordinationSpillover);
   const withTeamAiCohesion = applyMacroTeamAiCohesionSpillover(withCommandCoordination, teamAiCohesionSpillover);
   const withMemoryRetention = applyMacroMemoryRetentionSpillover(withTeamAiCohesion, memoryRetentionSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withMemoryRetention, pushEv);
+  const withAutomationThroughput = applyMacroAutomationThroughputSpillover(withMemoryRetention, automationThroughputSpillover);
+  const withForecastCalibration = applyMacroForecastCalibrationSpillover(withAutomationThroughput, forecastCalibrationSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withForecastCalibration, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -428,7 +441,9 @@ export function computeNationalMacroEconomy(
     guardianVigilance: guardianVigilanceSpillover,
     commandCoordination: commandCoordinationSpillover,
     teamAiCohesion: teamAiCohesionSpillover,
-    memoryRetention: memoryRetentionSpillover
+    memoryRetention: memoryRetentionSpillover,
+    automationThroughput: automationThroughputSpillover,
+    forecastCalibration: forecastCalibrationSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -458,6 +473,7 @@ export function computeNationalMacroEconomy(
   const transmissionDispersion = buildMacroTransmissionDispersionSnapshot(transmissionReport);
   const transmissionFragmentation = buildMacroTransmissionFragmentationSnapshot(transmissionReport);
   const transmissionRedundancy = buildMacroTransmissionRedundancySnapshot(transmissionReport);
+  const transmissionSaturation = buildMacroTransmissionSaturationSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -570,6 +586,8 @@ export function computeNationalMacroEconomy(
     commandCoordinationSpilloverSummary: commandCoordinationSpillover.summary,
     teamAiCohesionSpilloverSummary: teamAiCohesionSpillover.summary,
     memoryRetentionSpilloverSummary: memoryRetentionSpillover.summary,
+    automationThroughputSpilloverSummary: automationThroughputSpillover.summary,
+    forecastCalibrationSpilloverSummary: forecastCalibrationSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
@@ -598,6 +616,7 @@ export function computeNationalMacroEconomy(
     transmissionDispersion,
     transmissionFragmentation,
     transmissionRedundancy,
+    transmissionSaturation,
     transmissionReport,
     stressIndex: {
       score: 0,

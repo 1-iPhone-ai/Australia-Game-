@@ -209,6 +209,16 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.aiMemory?.retention ??
       params?.explainability?.retention ??
       params?.nationalAiMemory?.retention,
+    automationThroughput:
+      params?.automationThroughput ??
+      params?.idleAutomation?.throughput ??
+      params?.automation?.throughput ??
+      params?.nationalAutomation?.throughput,
+    forecastCalibration:
+      params?.forecastCalibration ??
+      params?.forecastingLab?.calibration ??
+      params?.macroForecasts?.calibration ??
+      params?.nationalForecasts?.calibration,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

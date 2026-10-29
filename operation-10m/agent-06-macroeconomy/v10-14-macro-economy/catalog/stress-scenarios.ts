@@ -210,6 +210,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Team AI & memory stress',
     shockIds: ['high_inflation', 'terms_of_trade_squeeze'],
     description: 'Fractured team AI cohesion with volatile memory retention (harness overlay).'
+  },
+  {
+    id: 'automation_forecast_stress',
+    label: 'Automation & forecast stress',
+    shockIds: ['stimulus_bounce', 'mining_supercycle'],
+    description: 'Collapsed automation throughput with runaway forecast calibration bias (harness overlay).'
   }
 ];
 
