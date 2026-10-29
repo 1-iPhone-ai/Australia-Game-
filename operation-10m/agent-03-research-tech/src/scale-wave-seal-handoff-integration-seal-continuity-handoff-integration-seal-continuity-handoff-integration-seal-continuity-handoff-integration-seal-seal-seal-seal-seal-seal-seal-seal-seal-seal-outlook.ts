@@ -4,7 +4,7 @@ import type {
   ResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealSealSealSealSealOutlook,
 } from './types.ts';
 
-/** Seal handoff integration seal continuity handoff integration seal continuity handoff integration seal continuity handoff integration seal for Agent 25 O10-247 (read-only, scale wave round 52). */
+/** Seal handoff integration seal continuity handoff integration seal continuity handoff integration seal continuity handoff integration seal for Agent 25 O10-254 (read-only, scale wave round 52). */
 export function computeResearchScaleWaveSealHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealContinuityHandoffIntegrationSealSealSealSealSealSealSealSealSealSealOutlook(
   inputs: ResearchProgressInputs,
   ctx: Pick<
@@ -61,6 +61,6 @@ export function computeResearchScaleWaveSealHandoffIntegrationSealContinuityHand
     priorBaselineHints: [...new Set(priorHints)].slice(0, 4),
     projectedFunctionalHint: inputs.turn >= 53 ? 3_054_213 : 3_022_056,
     dryRunEligible,
-    ticketHint: dryRunEligible ? 'O10-247' : null,
+    ticketHint: dryRunEligible ? 'O10-254' : null,
   };
 }
