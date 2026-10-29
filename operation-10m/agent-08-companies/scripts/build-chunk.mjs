@@ -60,6 +60,7 @@ const FILES = [
   'production-transition-resolution.ts',
   'production-transition-settlement.ts',
   'production-transition-retirement.ts',
+  'production-transition-legacy.ts',
   'chunk-exports.ts',
 ];
 
