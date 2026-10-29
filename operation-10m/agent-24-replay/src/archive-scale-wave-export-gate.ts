@@ -97,7 +97,7 @@ export function runAgent24ArchiveScaleWaveExportGateSelfTests(): Array<{ name: s
   const integrationCloseout = {
     reportId: 'ic',
     matchId: 'self',
-    waveRound: 25,
+    waveRound: 26,
     integrationBaselineSha: '680b9954',
     closeoutComplete: true,
     checkpointCount: 3,
@@ -109,7 +109,7 @@ export function runAgent24ArchiveScaleWaveExportGateSelfTests(): Array<{ name: s
   const integrationVerification = {
     reportId: 'iv',
     matchId: 'self',
-    waveRound: 25,
+    waveRound: 26,
     integrationBaselineSha: '680b9954',
     verified: true,
     issueCount: 0,
@@ -137,7 +137,7 @@ export function runAgent24ArchiveScaleWaveExportGateSelfTests(): Array<{ name: s
 
   return [
     { name: 'export_allowed_when_wave_export_stack_ready', passed: report.exportAllowed && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 25 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 26 },
     {
       name: 'deterministic_fingerprint',
       passed:
