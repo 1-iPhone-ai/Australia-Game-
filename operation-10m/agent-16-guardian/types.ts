@@ -111,6 +111,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   auditStrainIndex: number;
   controlIntegrityScore: number;
   governanceStabilityScore: number;
+  assuranceStrainIndex: number;
+  evidenceIntegrityScore: number;
+  governanceConfidenceScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
