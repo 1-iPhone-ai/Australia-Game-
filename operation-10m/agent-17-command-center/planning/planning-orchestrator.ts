@@ -47,6 +47,8 @@ import { buildAgent17CommitLattice } from './commit-lattice.ts';
 import { buildAgent17CovenantGate } from './covenant-gate.ts';
 import { buildAgent17MandateWeave } from './mandate-weave.ts';
 import { buildAgent17SovereigntyLock } from './sovereignty-lock.ts';
+import { buildAgent17AuthorityCharter } from './authority-charter.ts';
+import { buildAgent17DispatchAccord } from './dispatch-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -271,6 +273,16 @@ export function buildAgent17PlanningDepthSnapshot(
     governanceAudit,
     stabilizationIndex,
   });
+  const authorityCharter = buildAgent17AuthorityCharter({
+    sovereigntyLock,
+    mandateWeave,
+    commandPosture,
+  });
+  const dispatchAccord = buildAgent17DispatchAccord({
+    authorityCharter,
+    sovereigntyLock,
+    delegationLadder,
+  });
   return {
     ...core,
     intentQueue,
@@ -300,6 +312,8 @@ export function buildAgent17PlanningDepthSnapshot(
     covenantGate,
     mandateWeave,
     sovereigntyLock,
+    authorityCharter,
+    dispatchAccord,
   };
 }
 

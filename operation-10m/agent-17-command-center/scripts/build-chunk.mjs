@@ -53,6 +53,8 @@ const FILES = [
   'planning/covenant-gate.ts',
   'planning/mandate-weave.ts',
   'planning/sovereignty-lock.ts',
+  'planning/authority-charter.ts',
+  'planning/dispatch-accord.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',
@@ -75,6 +77,7 @@ const FILES = [
   'harness/run-flux-depth-tests.ts',
   'harness/run-covenant-depth-tests.ts',
   'harness/run-mandate-depth-tests.ts',
+  'harness/run-authority-depth-tests.ts',
 ];
 
 function stripModulePreamble(source) {

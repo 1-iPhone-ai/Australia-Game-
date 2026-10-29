@@ -207,6 +207,8 @@ export interface Agent17PlanningDepthSnapshot {
   covenantGate: Agent17CovenantGateSnapshot;
   mandateWeave: Agent17MandateWeaveSnapshot;
   sovereigntyLock: Agent17SovereigntyLockSnapshot;
+  authorityCharter: Agent17AuthorityCharterSnapshot;
+  dispatchAccord: Agent17DispatchAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -609,6 +611,39 @@ export interface Agent17SovereigntyLockSnapshot {
   pins: Agent17SovereigntyLockPin[];
   weaveBand: Agent17MandateWeaveSnapshot['band'];
   commandSovereignty: boolean;
+  headline: string;
+}
+
+export interface Agent17AuthorityCharterArticle {
+  id: string;
+  label: string;
+  ratified: boolean;
+  weight: number;
+}
+
+export interface Agent17AuthorityCharterSnapshot {
+  charterScore: number;
+  band: 'chartered' | 'provisional' | 'revoked';
+  articles: Agent17AuthorityCharterArticle[];
+  lockBand: Agent17SovereigntyLockSnapshot['band'];
+  weaveBand: Agent17MandateWeaveSnapshot['band'];
+  commandAuthority: boolean;
+  headline: string;
+}
+
+export interface Agent17DispatchAccordProvision {
+  id: string;
+  label: string;
+  active: boolean;
+  weight: number;
+}
+
+export interface Agent17DispatchAccordSnapshot {
+  accordScore: number;
+  band: 'ratified' | 'provisional' | 'void';
+  provisions: Agent17DispatchAccordProvision[];
+  charterBand: Agent17AuthorityCharterSnapshot['band'];
+  dispatchAllowed: boolean;
   headline: string;
 }
 

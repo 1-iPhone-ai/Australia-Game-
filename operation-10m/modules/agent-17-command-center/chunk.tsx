@@ -211,6 +211,8 @@ export interface Agent17PlanningDepthSnapshot {
   covenantGate: Agent17CovenantGateSnapshot;
   mandateWeave: Agent17MandateWeaveSnapshot;
   sovereigntyLock: Agent17SovereigntyLockSnapshot;
+  authorityCharter: Agent17AuthorityCharterSnapshot;
+  dispatchAccord: Agent17DispatchAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -613,6 +615,39 @@ export interface Agent17SovereigntyLockSnapshot {
   pins: Agent17SovereigntyLockPin[];
   weaveBand: Agent17MandateWeaveSnapshot['band'];
   commandSovereignty: boolean;
+  headline: string;
+}
+
+export interface Agent17AuthorityCharterArticle {
+  id: string;
+  label: string;
+  ratified: boolean;
+  weight: number;
+}
+
+export interface Agent17AuthorityCharterSnapshot {
+  charterScore: number;
+  band: 'chartered' | 'provisional' | 'revoked';
+  articles: Agent17AuthorityCharterArticle[];
+  lockBand: Agent17SovereigntyLockSnapshot['band'];
+  weaveBand: Agent17MandateWeaveSnapshot['band'];
+  commandAuthority: boolean;
+  headline: string;
+}
+
+export interface Agent17DispatchAccordProvision {
+  id: string;
+  label: string;
+  active: boolean;
+  weight: number;
+}
+
+export interface Agent17DispatchAccordSnapshot {
+  accordScore: number;
+  band: 'ratified' | 'provisional' | 'void';
+  provisions: Agent17DispatchAccordProvision[];
+  charterBand: Agent17AuthorityCharterSnapshot['band'];
+  dispatchAllowed: boolean;
   headline: string;
 }
 
@@ -4811,6 +4846,205 @@ export function sovereigntyLockBlocksCommand(snapshot: Agent17SovereigntyLockSna
 }
 
 
+// --- source: planning/authority-charter.ts ---
+  Agent17AuthorityCharterSnapshot,
+  Agent17CommandPostureSnapshot,
+  Agent17MandateWeaveSnapshot,
+  Agent17SovereigntyLockSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17AuthorityCharterInputs {
+  sovereigntyLock: Agent17SovereigntyLockSnapshot;
+  mandateWeave: Agent17MandateWeaveSnapshot;
+  commandPosture: Agent17CommandPostureSnapshot;
+}
+
+export function buildAgent17AuthorityCharter(
+  inputs: Agent17AuthorityCharterInputs
+): Agent17AuthorityCharterSnapshot {
+  const articles: Agent17AuthorityCharterSnapshot['articles'] = [];
+
+  articles.push({
+    id: 'sovereignty_secured',
+    label: 'Sovereignty lock engaged',
+    ratified:
+      inputs.sovereigntyLock.band === 'secured' ||
+      inputs.sovereigntyLock.band === 'conditional',
+    weight: 30,
+  });
+
+  articles.push({
+    id: 'command_sovereignty',
+    label: 'Command sovereignty asserted',
+    ratified: inputs.sovereigntyLock.commandSovereignty,
+    weight: 25,
+  });
+
+  articles.push({
+    id: 'mandate_aligned',
+    label: 'Mandate weave not frayed',
+    ratified:
+      inputs.mandateWeave.band === 'aligned' || inputs.mandateWeave.band === 'tensioned',
+    weight: 20,
+  });
+
+  articles.push({
+    id: 'posture_commanding',
+    label: 'Command posture headroom',
+    ratified:
+      inputs.commandPosture.band === 'commanding' ||
+      inputs.commandPosture.band === 'contested',
+    weight: 15,
+  });
+
+  articles.push({
+    id: 'posture_index',
+    label: 'Posture index threshold',
+    ratified: inputs.commandPosture.postureIndex >= 45,
+    weight: 10,
+  });
+
+  const weighted = articles.reduce(
+    (n, a) => n + (a.ratified ? 100 : 18) * (a.weight / 100),
+    0
+  );
+  const totalWeight = articles.reduce((n, a) => n + a.weight, 0);
+  const charterScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const revokedSignals =
+    sovereigntyLockBlocksCommand(inputs.sovereigntyLock) ||
+    inputs.mandateWeave.band === 'frayed' ||
+    inputs.commandPosture.band === 'degraded';
+
+  const band: Agent17AuthorityCharterSnapshot['band'] = revokedSignals
+    ? 'revoked'
+    : charterScore >= 68 &&
+        inputs.sovereigntyLock.band === 'secured' &&
+        inputs.sovereigntyLock.commandSovereignty
+      ? 'chartered'
+      : 'provisional';
+
+  const commandAuthority =
+    band === 'chartered' &&
+    inputs.sovereigntyLock.commandSovereignty &&
+    !sovereigntyLockBlocksCommand(inputs.sovereigntyLock);
+
+  return {
+    charterScore,
+    band,
+    articles,
+    lockBand: inputs.sovereigntyLock.band,
+    weaveBand: inputs.mandateWeave.band,
+    commandAuthority,
+    headline: `Authority ${band} (${charterScore}/100) · ${articles.filter(a => a.ratified).length}/${articles.length} articles`,
+  };
+}
+
+export function authorityCharterBlocksAccord(snapshot: Agent17AuthorityCharterSnapshot): boolean {
+  return snapshot.band === 'revoked' || !snapshot.commandAuthority;
+}
+
+
+// --- source: planning/dispatch-accord.ts ---
+  Agent17AuthorityCharterSnapshot,
+  Agent17DelegationLadderSnapshot,
+  Agent17DispatchAccordSnapshot,
+  Agent17SovereigntyLockSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17DispatchAccordInputs {
+  authorityCharter: Agent17AuthorityCharterSnapshot;
+  sovereigntyLock: Agent17SovereigntyLockSnapshot;
+  delegationLadder: Agent17DelegationLadderSnapshot;
+}
+
+export function buildAgent17DispatchAccord(
+  inputs: Agent17DispatchAccordInputs
+): Agent17DispatchAccordSnapshot {
+  const provisions: Agent17DispatchAccordSnapshot['provisions'] = [];
+
+  provisions.push({
+    id: 'charter_chartered',
+    label: 'Authority charter chartered',
+    active:
+      inputs.authorityCharter.band === 'chartered' ||
+      inputs.authorityCharter.band === 'provisional',
+    weight: 30,
+  });
+
+  provisions.push({
+    id: 'command_authority',
+    label: 'Command authority granted',
+    active: inputs.authorityCharter.commandAuthority,
+    weight: 25,
+  });
+
+  provisions.push({
+    id: 'ladder_balance',
+    label: 'Delegation ladder balanced',
+    active: !inputs.delegationLadder.imbalanceFlag,
+    weight: 20,
+  });
+
+  provisions.push({
+    id: 'ladder_slots',
+    label: 'Delegation slots remaining',
+    active: inputs.delegationLadder.rungs.some(r => r.slotsRemaining > 0),
+    weight: 15,
+  });
+
+  provisions.push({
+    id: 'sovereignty_lock',
+    label: 'Sovereignty lock not released',
+    active: !sovereigntyLockBlocksCommand(inputs.sovereigntyLock),
+    weight: 10,
+  });
+
+  const weighted = provisions.reduce(
+    (n, p) => n + (p.active ? 100 : 16) * (p.weight / 100),
+    0
+  );
+  const totalWeight = provisions.reduce((n, p) => n + p.weight, 0);
+  const accordScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const voidSignals =
+    authorityCharterBlocksAccord(inputs.authorityCharter) ||
+    sovereigntyLockBlocksCommand(inputs.sovereigntyLock);
+
+  const band: Agent17DispatchAccordSnapshot['band'] = voidSignals
+    ? 'void'
+    : accordScore >= 70 &&
+        inputs.authorityCharter.band === 'chartered' &&
+        !authorityCharterBlocksAccord(inputs.authorityCharter)
+      ? 'ratified'
+      : 'provisional';
+
+  const dispatchAllowed =
+    band === 'ratified' &&
+    inputs.authorityCharter.commandAuthority &&
+    !authorityCharterBlocksAccord(inputs.authorityCharter);
+
+  return {
+    accordScore,
+    band,
+    provisions,
+    charterBand: inputs.authorityCharter.band,
+    dispatchAllowed,
+    headline: `Dispatch ${band} (${accordScore}/100) · ${provisions.filter(p => p.active).length}/${provisions.length} provisions`,
+  };
+}
+
+export function dispatchAccordBlocksDispatch(snapshot: Agent17DispatchAccordSnapshot): boolean {
+  return snapshot.band === 'void' || !snapshot.dispatchAllowed;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -5050,6 +5284,16 @@ export function buildAgent17PlanningDepthSnapshot(
     governanceAudit,
     stabilizationIndex,
   });
+  const authorityCharter = buildAgent17AuthorityCharter({
+    sovereigntyLock,
+    mandateWeave,
+    commandPosture,
+  });
+  const dispatchAccord = buildAgent17DispatchAccord({
+    authorityCharter,
+    sovereigntyLock,
+    delegationLadder,
+  });
   return {
     ...core,
     intentQueue,
@@ -5079,6 +5323,8 @@ export function buildAgent17PlanningDepthSnapshot(
     covenantGate,
     mandateWeave,
     sovereigntyLock,
+    authorityCharter,
+    dispatchAccord,
   };
 }
 
@@ -5791,6 +6037,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Frayed weave or released lock yields sovereigntyLockBlocksCommand.',
     severity: 'major',
   },
+  {
+    id: 'G17-061',
+    title: 'Authority charter on planning depth',
+    category: 'telemetry',
+    acceptance: 'authorityCharter reports charterScore 0–100 with chartered/provisional/revoked band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-062',
+    title: 'Dispatch accord provisions complete',
+    category: 'telemetry',
+    acceptance: 'dispatchAccord exposes ≥5 provisions and accordScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-063',
+    title: 'Released sovereignty voids dispatch accord',
+    category: 'integration',
+    acceptance: 'Released lock or revoked charter yields dispatchAccordBlocksDispatch.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -5868,6 +6135,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17SovereigntyLock,
   sovereigntyLockBlocksCommand,
 } from '../planning/sovereignty-lock.ts';
+  buildAgent17AuthorityCharter,
+  authorityCharterBlocksAccord,
+} from '../planning/authority-charter.ts';
+  buildAgent17DispatchAccord,
+  dispatchAccordBlocksDispatch,
+} from '../planning/dispatch-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -6755,6 +7028,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const authorityCharter = depthEval.snapshot.planningDepth?.authorityCharter;
+  goalResults.push(
+    result(
+      'G17-061',
+      !!authorityCharter &&
+        authorityCharter.articles.length >= 5 &&
+        authorityCharter.charterScore >= 0 &&
+        authorityCharter.charterScore <= 100 &&
+        (authorityCharter.band === 'chartered' ||
+          authorityCharter.band === 'provisional' ||
+          authorityCharter.band === 'revoked'),
+      `articles=${authorityCharter?.articles.length} score=${authorityCharter?.charterScore}`
+    )
+  );
+
+  const dispatchAccord = depthEval.snapshot.planningDepth?.dispatchAccord;
+  goalResults.push(
+    result(
+      'G17-062',
+      !!dispatchAccord &&
+        dispatchAccord.provisions.length >= 5 &&
+        dispatchAccord.accordScore >= 0 &&
+        dispatchAccord.accordScore <= 100,
+      `provisions=${dispatchAccord?.provisions.length} score=${dispatchAccord?.accordScore}`
+    )
+  );
+
+  const revokedCharter = buildAgent17AuthorityCharter({
+    sovereigntyLock: releasedLock,
+    mandateWeave: frayedWeave,
+    commandPosture: depthEval.snapshot.planningDepth!.commandPosture,
+  });
+  const voidAccord = buildAgent17DispatchAccord({
+    authorityCharter: revokedCharter,
+    sovereigntyLock: releasedLock,
+    delegationLadder: depthEval.snapshot.planningDepth!.delegationLadder,
+  });
+  goalResults.push(
+    result(
+      'G17-063',
+      sovereigntyLockBlocksCommand(releasedLock) ||
+        authorityCharterBlocksAccord(revokedCharter) ||
+        dispatchAccordBlocksDispatch(voidAccord),
+      `${revokedCharter.band}/${voidAccord.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -6845,6 +7165,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-058',
     'G17-059',
     'G17-060',
+    'G17-061',
+    'G17-062',
+    'G17-063',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -11556,6 +11879,552 @@ export function runAgent17MandateDepthTests(): Agent17DevTestReport {
     success: overallStatus === 'passed',
     testResults,
     summary: `Agent 17 Mandate Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
+// --- source: harness/run-authority-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17GovernanceAudit,
+  governanceAuditBlocksAutomation,
+} from '../planning/governance-audit.ts';
+  buildAgent17EscalationMatrix,
+  escalationMatrixBlocksAutomation,
+} from '../planning/escalation-matrix.ts';
+  buildAgent17RollbackAssurance,
+  rollbackAssuranceNeedsRestore,
+} from '../planning/rollback-assurance.ts';
+  buildAgent17StabilizationIndex,
+  stabilizationIndexBlocksAutomation,
+} from '../planning/stabilization-index.ts';
+  buildAgent17CommandEnvelope,
+  commandEnvelopeNeedsThrottle,
+} from '../planning/command-envelope.ts';
+  buildAgent17ConvergenceIndex,
+  convergenceIndexBlocksDirective,
+} from '../planning/convergence-index.ts';
+  buildAgent17DirectiveSynthesis,
+  directiveSynthesisBlocksAdvance,
+} from '../planning/directive-synthesis.ts';
+  buildAgent17MandateWeave,
+  mandateWeaveBlocksSovereignty,
+} from '../planning/mandate-weave.ts';
+  buildAgent17SovereigntyLock,
+  sovereigntyLockBlocksCommand,
+} from '../planning/sovereignty-lock.ts';
+  buildAgent17AuthorityCharter,
+  authorityCharterBlocksAccord,
+} from '../planning/authority-charter.ts';
+  buildAgent17DispatchAccord,
+  dispatchAccordBlocksDispatch,
+} from '../planning/dispatch-accord.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17AuthorityDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 120,
+      netWorth: 2400,
+      currentRegion: 'QLD',
+      currentSupplies: 6,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 33,
+      day: 33,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: {
+        title: 'Expand trade network supply chain',
+        sourceType: 'contract',
+      },
+      gi3Strategy: { headline: 'Expand trade network resilience' },
+      strategyPlannerState: { activePlan: { title: 'Trade network supply expansion' } },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = {
+      ...ops,
+      activePlan: plan ? { ...plan, title: plan.title || 'Trade supply chain plan' } : plan,
+    };
+    const health = assessAgent17PlanHealth(opsWithPlan.activePlan, state, 'player');
+    const intentQueue = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    const alignment = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      state,
+      settings,
+      'player',
+      intentQueue
+    );
+    const policy = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'adt_fp' },
+      state,
+      'player'
+    );
+    const pacing = buildAgent17ExecutionPacing(opsWithPlan, state, health, policy);
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policy
+    );
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    const delegationAnalytics = buildAgent17DelegationAnalytics(opsWithPlan, settings);
+    const core = {
+      turn: state.turnCounter || 1,
+      actorId: 'player',
+      planHealth: health,
+      suggestion: buildAgent17PlanningSuggestion(
+        opsWithPlan,
+        state,
+        settings,
+        'player',
+        'copilot'
+      ),
+      templateRouting: routing,
+      delegationAnalytics,
+      delegationLadder: buildAgent17DelegationLadder(delegationAnalytics, settings, 'copilot'),
+      planLedger: summarizeAgent17PlanLedger(opsWithPlan, state),
+      catalogDepth: summarizeAgent17CatalogDepth(),
+    };
+    const brief = buildAgent17CoordinationBrief(
+      core,
+      intentQueue,
+      policy,
+      opsWithPlan,
+      state,
+      settings
+    );
+    const handoff = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policy,
+      executionPacing: pacing,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const posture = buildAgent17CommandPosture({
+      planHealth: health,
+      handoffReadiness: handoff,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const audit = buildAgent17GovernanceAudit(opsWithPlan, settings, policy);
+    const matrix = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: audit,
+      handoffReadiness: handoff,
+    });
+    const assurance = buildAgent17RollbackAssurance(opsWithPlan, health, audit);
+    const stabilization = buildAgent17StabilizationIndex({
+      escalationMatrix: matrix,
+      rollbackAssurance: assurance,
+    });
+    const envelope = buildAgent17CommandEnvelope({
+      ops: opsWithPlan,
+      executionPacing: pacing,
+      stabilizationIndex: stabilization,
+    });
+    const convergence = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelope,
+      stabilizationIndex: stabilization,
+      strategicAlignment: alignment,
+    });
+    const directive = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelope,
+      convergenceIndex: convergence,
+    });
+    const synthesis = buildAgent17DirectiveSynthesis({
+      missionDirective: directive,
+      convergenceIndex: convergence,
+      intentQueue,
+    });
+    const closure = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+      missionDirective: directive,
+    });
+    const cadence = buildAgent17CadenceLattice({
+      executionClosure: closure,
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+    });
+    const readiness = buildAgent17ReadinessGate({
+      cadenceLattice: cadence,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    const pulse = buildAgent17PulseIndex({
+      readinessGate: readiness,
+      cadenceLattice: cadence,
+      commandPosture: posture,
+    });
+    const bridge = buildAgent17ContinuityBridge({
+      pulseIndex: pulse,
+      resilienceScorecard: scorecard,
+      verificationPolicy: policy,
+    });
+    const flux = buildAgent17FluxIndex({
+      continuityBridge: bridge,
+      pulseIndex: pulse,
+      governanceAudit: audit,
+    });
+    const seal = buildAgent17IntegritySeal({
+      fluxIndex: flux,
+      rollbackAssurance: assurance,
+      verificationPolicy: policy,
+    });
+    const lattice = buildAgent17CommitLattice({
+      integritySeal: seal,
+      fluxIndex: flux,
+      escalationMatrix: matrix,
+    });
+    const covenant = buildAgent17CovenantGate({
+      commitLattice: lattice,
+      planHealth: health,
+      rollbackAssurance: assurance,
+    });
+
+    const weaveClean = buildAgent17MandateWeave({
+      covenantGate: covenant,
+      commitLattice: lattice,
+      strategicAlignment: alignment,
+    });
+    push(
+      'adt_weave_bounded',
+      'Mandate weave bounded with band',
+      weaveClean.weaveScore >= 0 &&
+        weaveClean.weaveScore <= 100 &&
+        (weaveClean.band === 'aligned' ||
+          weaveClean.band === 'tensioned' ||
+          weaveClean.band === 'frayed'),
+      `${weaveClean.weaveScore}/${weaveClean.band}`
+    );
+
+    push(
+      'adt_weave_threads',
+      'Mandate weave exposes weighted threads',
+      weaveClean.threads.length >= 4 && weaveClean.threads.every(t => t.weight > 0),
+      `threads=${weaveClean.threads.length}`
+    );
+
+    const lockClean = buildAgent17SovereigntyLock({
+      mandateWeave: weaveClean,
+      governanceAudit: audit,
+      stabilizationIndex: stabilization,
+    });
+    push(
+      'adt_lock_pins',
+      'Sovereignty lock exposes pins',
+      lockClean.pins.length >= 5 &&
+        lockClean.lockScore >= 0 &&
+        lockClean.lockScore <= 100,
+      `pins=${lockClean.pins.length} score=${lockClean.lockScore}`
+    );
+
+    push(
+      'adt_weave_aligned',
+      'Healthy ops yields aligned or tensioned weave',
+      weaveClean.band === 'aligned' || weaveClean.band === 'tensioned',
+      weaveClean.band
+    );
+
+    push(
+      'adt_lock_conditional',
+      'Healthy ops yields secured or conditional lock',
+      lockClean.band === 'secured' || lockClean.band === 'conditional',
+      lockClean.band
+    );
+
+    const charterClean = buildAgent17AuthorityCharter({
+      sovereigntyLock: lockClean,
+      mandateWeave: weaveClean,
+      commandPosture: posture,
+    });
+    push(
+      'adt_charter_bounded',
+      'Authority charter bounded with band',
+      charterClean.charterScore >= 0 &&
+        charterClean.charterScore <= 100 &&
+        (charterClean.band === 'chartered' ||
+          charterClean.band === 'provisional' ||
+          charterClean.band === 'revoked'),
+      `${charterClean.charterScore}/${charterClean.band}`
+    );
+
+    push(
+      'adt_charter_articles',
+      'Authority charter exposes articles',
+      charterClean.articles.length >= 5 &&
+        charterClean.articles.every(a => a.weight > 0),
+      `articles=${charterClean.articles.length}`
+    );
+
+    const accordClean = buildAgent17DispatchAccord({
+      authorityCharter: charterClean,
+      sovereigntyLock: lockClean,
+      delegationLadder: core.delegationLadder,
+    });
+    push(
+      'adt_accord_provisions',
+      'Dispatch accord exposes provisions',
+      accordClean.provisions.length >= 5 &&
+        accordClean.accordScore >= 0 &&
+        accordClean.accordScore <= 100,
+      `provisions=${accordClean.provisions.length} score=${accordClean.accordScore}`
+    );
+
+    push(
+      'adt_accord_ratified',
+      'Healthy ops yields ratified or provisional accord',
+      accordClean.band === 'ratified' || accordClean.band === 'provisional',
+      accordClean.band
+    );
+
+    const breachOps = {
+      ...opsWithPlan,
+      delegatedProjects: [
+        {
+          id: 'dp1',
+          planId: 'p1',
+          title: 'Breach project',
+          delegateKind: 'team_os' as const,
+          delegateTargetId: 'team',
+          status: 'active' as const,
+          authorityCeiling: 'delegated' as const,
+          assignedTurn: 1,
+          assignedDay: 1,
+          lastVerifiedFingerprint: '',
+          notes: '',
+        },
+      ],
+    };
+    const advisorySettings = {
+      ...settings,
+      aiCommunicationAutonomyLevel: 'advisory' as const,
+    };
+    const auditBreach = buildAgent17GovernanceAudit(breachOps, advisorySettings, policy);
+    const matrixUrgent = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: auditBreach,
+      handoffReadiness: handoff,
+    });
+    const assuranceBreach = buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      auditBreach
+    );
+    const stabilizationVolatile = buildAgent17StabilizationIndex({
+      escalationMatrix: matrixUrgent,
+      rollbackAssurance: assuranceBreach,
+    });
+    const envelopeSaturated = buildAgent17CommandEnvelope({
+      ops: breachOps,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      stabilizationIndex: stabilizationVolatile,
+    });
+    const convergenceDiverging = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelopeSaturated,
+      stabilizationIndex: stabilizationVolatile,
+      strategicAlignment: alignment,
+    });
+    const directiveHeld = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelopeSaturated,
+      convergenceIndex: convergenceDiverging,
+    });
+    const synthesisLocked = buildAgent17DirectiveSynthesis({
+      missionDirective: directiveHeld,
+      convergenceIndex: convergenceDiverging,
+      intentQueue,
+    });
+    const closureSealed = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      missionDirective: directiveHeld,
+    });
+    const cadenceStalled = buildAgent17CadenceLattice({
+      executionClosure: closureSealed,
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+    });
+    const readinessStop = buildAgent17ReadinessGate({
+      cadenceLattice: cadenceStalled,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    const pulseFlat = buildAgent17PulseIndex({
+      readinessGate: readinessStop,
+      cadenceLattice: cadenceStalled,
+      commandPosture: posture,
+    });
+    const bridgeBroken = buildAgent17ContinuityBridge({
+      pulseIndex: pulseFlat,
+      resilienceScorecard: buildAgent17ResilienceScorecard(
+        breachOps,
+        state,
+        'player',
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      verificationPolicy: policy,
+    });
+    const fluxDisrupted = buildAgent17FluxIndex({
+      continuityBridge: bridgeBroken,
+      pulseIndex: pulseFlat,
+      governanceAudit: auditBreach,
+    });
+    const sealBreached = buildAgent17IntegritySeal({
+      fluxIndex: fluxDisrupted,
+      rollbackAssurance: assuranceBreach,
+      verificationPolicy: policy,
+    });
+    const latticeFragmented = buildAgent17CommitLattice({
+      integritySeal: sealBreached,
+      fluxIndex: fluxDisrupted,
+      escalationMatrix: matrixUrgent,
+    });
+    const covenantVoid = buildAgent17CovenantGate({
+      commitLattice: latticeFragmented,
+      planHealth: assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      rollbackAssurance: assuranceBreach,
+    });
+    const weaveFrayed = buildAgent17MandateWeave({
+      covenantGate: covenantVoid,
+      commitLattice: latticeFragmented,
+      strategicAlignment: alignment,
+    });
+    push(
+      'adt_frayed_blocks',
+      'Governance breach yields frayed weave or blocks sovereignty',
+      weaveFrayed.band === 'frayed' || mandateWeaveBlocksSovereignty(weaveFrayed),
+      `${weaveFrayed.band} idx=${weaveFrayed.weaveScore}`
+    );
+
+    const lockReleased = buildAgent17SovereigntyLock({
+      mandateWeave: weaveFrayed,
+      governanceAudit: auditBreach,
+      stabilizationIndex: stabilizationVolatile,
+    });
+    push(
+      'adt_released_command',
+      'Released lock blocks command sovereignty',
+      lockReleased.band === 'released' ||
+        sovereigntyLockBlocksCommand(lockReleased) ||
+        !lockReleased.commandSovereignty,
+      `${lockReleased.band} sov=${lockReleased.commandSovereignty}`
+    );
+
+    push(
+      'adt_escalation_link',
+      'Urgent escalation propagates to weave threads',
+      escalationMatrixBlocksAutomation(matrixUrgent) ||
+        governanceAuditBlocksAutomation(auditBreach) ||
+        rollbackAssuranceNeedsRestore(assuranceBreach) ||
+        stabilizationIndexBlocksAutomation(stabilizationVolatile) ||
+        commandEnvelopeNeedsThrottle(envelopeSaturated) ||
+        convergenceIndexBlocksDirective(convergenceDiverging),
+      matrixUrgent.band
+    );
+
+    const charterRevoked = buildAgent17AuthorityCharter({
+      sovereigntyLock: lockReleased,
+      mandateWeave: weaveFrayed,
+      commandPosture: posture,
+    });
+    push(
+      'adt_revoked_blocks',
+      'Released sovereignty yields revoked charter or blocks accord',
+      charterRevoked.band === 'revoked' || authorityCharterBlocksAccord(charterRevoked),
+      `${charterRevoked.band} auth=${charterRevoked.commandAuthority}`
+    );
+
+    const accordVoid = buildAgent17DispatchAccord({
+      authorityCharter: charterRevoked,
+      sovereigntyLock: lockReleased,
+      delegationLadder: core.delegationLadder,
+    });
+    push(
+      'adt_void_dispatch',
+      'Void accord blocks dispatch',
+      accordVoid.band === 'void' ||
+        dispatchAccordBlocksDispatch(accordVoid) ||
+        !accordVoid.dispatchAllowed,
+      `${accordVoid.band} dispatch=${accordVoid.dispatchAllowed}`
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'adt_evaluator_depth',
+      'Evaluator attaches authority charter and dispatch accord',
+      !!depth?.authorityCharter?.headline &&
+        !!depth?.dispatchAccord?.headline &&
+        (depth.authorityCharter.articles?.length ?? 0) >= 5 &&
+        (depth.dispatchAccord.provisions?.length ?? 0) >= 5,
+      `${depth?.authorityCharter?.band}/${depth?.dispatchAccord?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('adt_throw', 'Mandate harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Authority Depth Tests: ${passedCount}/${testResults.length} Passed`,
   };
 }
 

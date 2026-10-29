@@ -422,6 +422,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Frayed weave or released lock yields sovereigntyLockBlocksCommand.',
     severity: 'major',
   },
+  {
+    id: 'G17-061',
+    title: 'Authority charter on planning depth',
+    category: 'telemetry',
+    acceptance: 'authorityCharter reports charterScore 0–100 with chartered/provisional/revoked band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-062',
+    title: 'Dispatch accord provisions complete',
+    category: 'telemetry',
+    acceptance: 'dispatchAccord exposes ≥5 provisions and accordScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-063',
+    title: 'Released sovereignty voids dispatch accord',
+    category: 'integration',
+    acceptance: 'Released lock or revoked charter yields dispatchAccordBlocksDispatch.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

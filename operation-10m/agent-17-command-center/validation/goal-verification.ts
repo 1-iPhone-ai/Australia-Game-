@@ -102,6 +102,14 @@ import {
   sovereigntyLockBlocksCommand,
 } from '../planning/sovereignty-lock.ts';
 import {
+  buildAgent17AuthorityCharter,
+  authorityCharterBlocksAccord,
+} from '../planning/authority-charter.ts';
+import {
+  buildAgent17DispatchAccord,
+  dispatchAccordBlocksDispatch,
+} from '../planning/dispatch-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -989,6 +997,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const authorityCharter = depthEval.snapshot.planningDepth?.authorityCharter;
+  goalResults.push(
+    result(
+      'G17-061',
+      !!authorityCharter &&
+        authorityCharter.articles.length >= 5 &&
+        authorityCharter.charterScore >= 0 &&
+        authorityCharter.charterScore <= 100 &&
+        (authorityCharter.band === 'chartered' ||
+          authorityCharter.band === 'provisional' ||
+          authorityCharter.band === 'revoked'),
+      `articles=${authorityCharter?.articles.length} score=${authorityCharter?.charterScore}`
+    )
+  );
+
+  const dispatchAccord = depthEval.snapshot.planningDepth?.dispatchAccord;
+  goalResults.push(
+    result(
+      'G17-062',
+      !!dispatchAccord &&
+        dispatchAccord.provisions.length >= 5 &&
+        dispatchAccord.accordScore >= 0 &&
+        dispatchAccord.accordScore <= 100,
+      `provisions=${dispatchAccord?.provisions.length} score=${dispatchAccord?.accordScore}`
+    )
+  );
+
+  const revokedCharter = buildAgent17AuthorityCharter({
+    sovereigntyLock: releasedLock,
+    mandateWeave: frayedWeave,
+    commandPosture: depthEval.snapshot.planningDepth!.commandPosture,
+  });
+  const voidAccord = buildAgent17DispatchAccord({
+    authorityCharter: revokedCharter,
+    sovereigntyLock: releasedLock,
+    delegationLadder: depthEval.snapshot.planningDepth!.delegationLadder,
+  });
+  goalResults.push(
+    result(
+      'G17-063',
+      sovereigntyLockBlocksCommand(releasedLock) ||
+        authorityCharterBlocksAccord(revokedCharter) ||
+        dispatchAccordBlocksDispatch(voidAccord),
+      `${revokedCharter.band}/${voidAccord.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1079,6 +1134,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-058',
     'G17-059',
     'G17-060',
+    'G17-061',
+    'G17-062',
+    'G17-063',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
