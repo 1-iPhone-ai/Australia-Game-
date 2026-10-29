@@ -427,8 +427,14 @@ export type CoastalRescueHelicopterStagingPolicy = 'baseline' | 'surge';
 
 export type PortBatterySwappingLogisticsPolicy = 'baseline' | 'expand';
 
+export type RecycledSteelExportPolicy = 'baseline' | 'accelerate';
+
+export type RemotePathologySupplyStagingPolicy = 'baseline' | 'surge';
+
+export type AirportDroneCargoLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/46';
+  schemaVersion: 'agent12/47';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -762,6 +768,14 @@ export interface TransportInfrastructureState {
   portBatterySwappingLogisticsShare: number;
   nationalPortBatterySwappingLogisticsThroughputIndex: number;
   portBatterySwappingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalRecycledSteelExportIndex: number;
+  recycledSteelExportByRegion: Record<AuRegionCode, number>;
+  remotePathologySupplyStagingShare: number;
+  nationalRemotePathologySupplyStagingIndex: number;
+  remotePathologySupplyStagingByRegion: Record<AuRegionCode, number>;
+  airportDroneCargoLogisticsShare: number;
+  nationalAirportDroneCargoLogisticsThroughputIndex: number;
+  airportDroneCargoLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -890,6 +904,9 @@ export interface TransportInfrastructureOptions {
   floatingSolarArrayExportPolicy?: FloatingSolarArrayExportPolicy;
   coastalRescueHelicopterStagingPolicy?: CoastalRescueHelicopterStagingPolicy;
   portBatterySwappingLogisticsPolicy?: PortBatterySwappingLogisticsPolicy;
+  recycledSteelExportPolicy?: RecycledSteelExportPolicy;
+  remotePathologySupplyStagingPolicy?: RemotePathologySupplyStagingPolicy;
+  airportDroneCargoLogisticsPolicy?: AirportDroneCargoLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2839,6 +2856,48 @@ export const TRANSPORT_CORRIDORS_ROUND45: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round46.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND46: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_vic_sa_recycled_steel',
+    name: 'VIC–SA Recycled Steel',
+    networkKind: 'trade',
+    regionSequence: ['VIC', 'SA'],
+    requiredTagsByRegion: {
+      VIC: ['recycled_steel_export', 'eaf_scrap_rail_feed', 'circular_metal_logistics'],
+      SA: ['recycled_steel_export', 'eaf_scrap_rail_feed', 'circular_metal_logistics'],
+    },
+    productivitySynergyPoints: 7.0,
+    logisticsRelief: 0.041,
+  },
+  {
+    id: 'corr_sa_nt_remote_pathology',
+    name: 'SA–NT Remote Pathology',
+    networkKind: 'mobility',
+    regionSequence: ['SA', 'NT'],
+    requiredTagsByRegion: {
+      SA: ['remote_pathology_supply', 'lab_sample_staging', 'diagnostic_health_logistics'],
+      NT: ['remote_pathology_supply', 'lab_sample_staging', 'diagnostic_health_logistics'],
+    },
+    productivitySynergyPoints: 6.8,
+    logisticsRelief: 0.035,
+  },
+  {
+    id: 'corr_nsw_act_drone_cargo',
+    name: 'NSW–ACT Drone Cargo',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'ACT'],
+    requiredTagsByRegion: {
+      NSW: ['airport_drone_cargo', 'uav_freight_hub', 'aerodrome_micro_delivery'],
+      ACT: ['airport_drone_cargo', 'uav_freight_hub', 'aerodrome_micro_delivery'],
+    },
+    productivitySynergyPoints: 6.7,
+    logisticsRelief: 0.038,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -3031,6 +3090,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND43,
   ...TRANSPORT_CORRIDORS_ROUND44,
   ...TRANSPORT_CORRIDORS_ROUND45,
+  ...TRANSPORT_CORRIDORS_ROUND46,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -5583,6 +5643,62 @@ export const TRANSPORT_SCENARIOS_ROUND45: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round46.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND46: TransportStressScenario[] = [
+  {
+    id: 'scn_vic_recycled_steel_export_surge',
+    label: 'Victoria Recycled Steel Export Surge',
+    description: 'EAF restart overloads Geelong scrap berths.',
+    targetRegions: ['VIC', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_sa_scrap_rail_feed_delay',
+    label: 'South Australia Scrap Rail Feed Delay',
+    description: 'Heat slows Whyalla circular metal feed.',
+    targetRegions: ['SA', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail', 'road'],
+  },
+  {
+    id: 'scn_sa_pathology_resupply',
+    label: 'SA Pathology Resupply',
+    description: 'Outbreak strains Port Augusta lab hub.',
+    targetRegions: ['SA', 'NT'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_nsw_drone_cargo_peak',
+    label: 'NSW Drone Cargo Peak',
+    description: 'Express peak loads Sydney UAV terminal.',
+    targetRegions: ['NSW', 'ACT'],
+    networkKind: 'freight',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_act_aerodrome_backlog',
+    label: 'ACT Aerodrome Backlog',
+    description: 'Airspace hold delays Canberra drone depot.',
+    targetRegions: ['ACT', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics', 'rail'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -5789,6 +5905,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND43,
   ...TRANSPORT_SCENARIOS_ROUND44,
   ...TRANSPORT_SCENARIOS_ROUND45,
+  ...TRANSPORT_SCENARIOS_ROUND46,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -16782,6 +16899,233 @@ export const SCALE_WAVE_ROUND45_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round46-assets.ts ---
+
+export const ROUND46_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_vic_geelong_recycled_steel_haul',
+    category: 'road',
+    name: 'Geelong Recycled Steel Haul',
+    description: 'VIC EAF scrap export staging road.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'SA'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['recycled_steel_export', 'eaf_scrap_rail_feed', 'circular_metal_logistics'],
+    laneKilometres: 26,
+    designSpeedKmh: 86,
+    freightShare: 0.32,
+    urbanShare: 0.11,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_whyalla_recycled_steel_feed',
+    category: 'road',
+    name: 'Whyalla Recycled Steel Feed',
+    description: 'SA circular metal logistics connector.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade'],
+    tags: ['recycled_steel_export', 'eaf_scrap_rail_feed', 'circular_metal_logistics'],
+    laneKilometres: 24,
+    designSpeedKmh: 84,
+    freightShare: 0.3,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_coober_pathology_access',
+    category: 'road',
+    name: 'Coober Pathology Access',
+    description: 'SA remote lab sample staging road.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_pathology_supply', 'lab_sample_staging', 'diagnostic_health_logistics'],
+    laneKilometres: 20,
+    designSpeedKmh: 75,
+    freightShare: 0.08,
+    urbanShare: 0.19,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_alice_pathology_staging',
+    category: 'road',
+    name: 'Alice Pathology Staging',
+    description: 'NT diagnostic health logistics connector.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['remote_pathology_supply', 'lab_sample_staging', 'diagnostic_health_logistics'],
+    laneKilometres: 18,
+    designSpeedKmh: 73,
+    freightShare: 0.07,
+    urbanShare: 0.18,
+    tollRoad: false,
+  },
+];
+
+export const ROUND46_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_vic_western_recycled_steel_rail',
+    category: 'rail',
+    name: 'Western Victoria Recycled Steel Rail',
+    description: 'VIC EAF scrap export feed.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'SA'],
+    baseProductivityPoints: 6.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['recycled_steel_export', 'eaf_scrap_rail_feed', 'circular_metal_logistics'],
+    trackKilometres: 40,
+    dualTrackShare: 0.46,
+    electrifiedShare: 0.44,
+    designFreightTonnesPerYear: 3_900_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_canberra_drone_cargo_rail',
+    category: 'rail',
+    name: 'Canberra Drone Cargo Rail',
+    description: 'NSW aerodrome micro-delivery rail feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['freight'],
+    tags: ['airport_drone_cargo', 'uav_freight_hub', 'aerodrome_micro_delivery'],
+    trackKilometres: 26,
+    dualTrackShare: 0.54,
+    electrifiedShare: 0.51,
+    designFreightTonnesPerYear: 2_200_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_act_barton_drone_link',
+    category: 'rail',
+    name: 'Barton Drone Link',
+    description: 'ACT UAV freight hub handoff.',
+    hostRegion: 'ACT',
+    servedRegions: ['ACT', 'NSW'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['freight'],
+    tags: ['airport_drone_cargo', 'uav_freight_hub', 'aerodrome_micro_delivery'],
+    trackKilometres: 18,
+    dualTrackShare: 0.5,
+    electrifiedShare: 0.57,
+    designFreightTonnesPerYear: 1_800_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND46_PORTS: PortAsset[] = [
+  {
+    id: 'port_vic_geelong_recycled_steel_export',
+    category: 'port',
+    name: 'Geelong Recycled Steel Export',
+    description: 'Victorian circular metal export port.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'SA'],
+    baseProductivityPoints: 6.2,
+    strategicNetworks: ['trade'],
+    tags: ['recycled_steel_export', 'eaf_scrap_rail_feed', 'circular_metal_logistics'],
+    berthCount: 3,
+    maxDraftMetres: 12.7,
+    teuCapacityPerYear: 94_000,
+    automationLevel: 2,
+    bulkShare: 0.4,
+  },
+  {
+    id: 'port_sa_port_augusta_pathology_hub',
+    category: 'port',
+    name: 'Port Augusta Pathology Hub',
+    description: 'SA remote pathology logistics port.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['remote_pathology_supply', 'lab_sample_staging', 'diagnostic_health_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.6,
+    teuCapacityPerYear: 121_000,
+    automationLevel: 1,
+    bulkShare: 0.1,
+  },
+  {
+    id: 'port_nsw_sydney_drone_cargo_terminal',
+    category: 'port',
+    name: 'Sydney Drone Cargo Terminal',
+    description: 'NSW airport UAV freight staging.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 6.0,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['airport_drone_cargo', 'uav_freight_hub', 'aerodrome_micro_delivery'],
+    berthCount: 2,
+    maxDraftMetres: 11.4,
+    teuCapacityPerYear: 186_000,
+    automationLevel: 3,
+    bulkShare: 0.04,
+  },
+];
+
+export const ROUND46_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_sa_whyalla_recycled_steel_stores',
+    category: 'logistics',
+    name: 'Whyalla Recycled Steel Stores',
+    description: 'SA EAF scrap consolidation yard.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade'],
+    tags: ['recycled_steel_export', 'eaf_scrap_rail_feed', 'circular_metal_logistics'],
+    warehouseSqm: 47_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port', 'rail'],
+    lastMileCoveragePct: 41,
+  },
+  {
+    id: 'log_nt_darwin_pathology_stores',
+    category: 'logistics',
+    name: 'Darwin Pathology Stores',
+    description: 'NT lab sample consolidation yard.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_pathology_supply', 'lab_sample_staging', 'diagnostic_health_logistics'],
+    warehouseSqm: 28_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 48,
+  },
+  {
+    id: 'log_act_canberra_drone_depot',
+    category: 'logistics',
+    name: 'Canberra Drone Depot',
+    description: 'ACT aerodrome micro-delivery depot.',
+    hostRegion: 'ACT',
+    servedRegions: ['ACT', 'NSW'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['freight'],
+    tags: ['airport_drone_cargo', 'uav_freight_hub', 'aerodrome_micro_delivery'],
+    warehouseSqm: 34_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 58,
+  },
+];
+
+export const SCALE_WAVE_ROUND46_ASSETS = [
+  ...ROUND46_ROADS,
+  ...ROUND46_RAIL,
+  ...ROUND46_PORTS,
+  ...ROUND46_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -16835,6 +17179,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND43_ASSETS,
     ...SCALE_WAVE_ROUND44_ASSETS,
     ...SCALE_WAVE_ROUND45_ASSETS,
+    ...SCALE_WAVE_ROUND46_ASSETS,
   ];
 }
 
@@ -19411,6 +19756,65 @@ export function floatingSolarArrayExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.031 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.034 + policyBoost, 0.93, 1.09);
+}
+
+
+// --- source: network/recycled-steel-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RecycledSteelExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 recycled steel export throughput by region. */
+export function computeRecycledSteelExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'recycled_steel_export' ||
+        t === 'eaf_scrap_rail_feed' ||
+        t === 'circular_metal_logistics',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.92 + asset.maxDraftMetres * 0.34;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 66_000 + asset.intermodalLinks.length * 0.61;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 435;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_300_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRecycledSteelExportIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.48 + max * 0.52, 5, 72) * 10) / 10;
+}
+
+export function recycledSteelExportProductivityMultiplier(
+  index: number,
+  policy: RecycledSteelExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.03 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.033 + policyBoost, 0.93, 1.09);
 }
 
 
@@ -22824,6 +23228,96 @@ export function coastalRescueHelicopterStagingProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.012 : 1;
   return (1 + (share - 0.04) * 0.017) * bias;
+}
+
+
+// --- source: operations/remote-pathology-supply-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RemotePathologySupplyStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 remote pathology supply staging readiness by region. */
+export function computeRemotePathologySupplyStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'remote_pathology_supply' ||
+          t === 'lab_sample_staging' ||
+          t === 'diagnostic_health_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 57_000 + (asset.coldChainCapable ? 1.3 : 0.74);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 402;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.86;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 238;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.024 - stress * 0.016), 5, 74) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRemotePathologySupplyStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 72) * 10) / 10;
+}
+
+export function computeRemotePathologySupplyStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: RemotePathologySupplyStagingPolicy = 'baseline',
+): number {
+  let labUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('remote_pathology_supply') || asset.tags.includes('diagnostic_health_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 52_000;
+        labUnits += (asset.warehouseSqm / 52_000) * 0.5;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 368;
+        labUnits += (asset.laneKilometres / 368) * 0.44;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.03;
+  const policyBoost = policy === 'surge' ? 0.019 : 0;
+  return Math.round(clamp(labUnits / totalUnits + policyBoost, 0.029, 0.18) * 1000) / 1000;
+}
+
+export function remotePathologySupplyStagingProductivityMultiplier(
+  share: number,
+  policy: RemotePathologySupplyStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.011 : 1;
+  return (1 + (share - 0.04) * 0.016) * bias;
 }
 
 
@@ -26499,6 +26993,102 @@ export function nationalPortBatterySwappingLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/airport-drone-cargo-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AirportDroneCargoLogisticsPolicy,
+  type AuRegionCode,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of airport logistics supporting drone cargo. */
+export function computeAirportDroneCargoLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: AirportDroneCargoLogisticsPolicy = 'baseline',
+): number {
+  let droneUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'airport_drone_cargo' ||
+          t === 'uav_freight_hub' ||
+          t === 'aerodrome_micro_delivery',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 0.95 + asset.teuCapacityPerYear / 420_000;
+        droneUnits += (asset.berthCount * 0.95) * 0.52;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 49_000;
+        droneUnits += (asset.warehouseSqm / 49_000) * 0.49;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 340;
+        droneUnits += (asset.laneKilometres / 340) * 0.41;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.033;
+  const policyBoost = policy === 'expand' ? 0.021 : 0;
+  return Math.round(clamp(droneUnits / totalUnits + policyBoost, 0.032, 0.19) * 1000) / 1000;
+}
+
+export function airportDroneCargoLogisticsProductivityMultiplier(
+  share: number,
+  policy: AirportDroneCargoLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.013 : 1;
+  return (1 + (share - 0.05) * 0.017) * bias;
+}
+
+export function computeAirportDroneCargoLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'airport_drone_cargo' ||
+          t === 'uav_freight_hub' ||
+          t === 'aerodrome_micro_delivery',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 45_000 + asset.lastMileCoveragePct / 96;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 348;
+    }
+    if (asset.category === 'rail' && 'trackKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 210;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAirportDroneCargoLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 2, 47) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -27254,6 +27844,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalPortBatterySwappingLogisticsThroughputIndex,
   portBatterySwappingLogisticsProductivityMultiplier,
 } from './port-battery-swapping-logistics-index.ts';
+  computeRecycledSteelExportByRegion,
+  nationalRecycledSteelExportIndex,
+  recycledSteelExportProductivityMultiplier,
+} from '../network/recycled-steel-export-index.ts';
+  computeRemotePathologySupplyStagingByRegion,
+  computeRemotePathologySupplyStagingShare,
+  nationalRemotePathologySupplyStagingIndex,
+  remotePathologySupplyStagingProductivityMultiplier,
+} from '../operations/remote-pathology-supply-staging-index.ts';
+  airportDroneCargoLogisticsProductivityMultiplier,
+  computeAirportDroneCargoLogisticsShare,
+  computeAirportDroneCargoLogisticsThroughputByRegion,
+  nationalAirportDroneCargoLogisticsThroughputIndex,
+} from './airport-drone-cargo-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -28728,6 +29332,35 @@ export function computeTransportInfrastructureState(
     portBatterySwappingLogisticsShare,
     options?.portBatterySwappingLogisticsPolicy ?? 'baseline',
   );
+  const recycledSteelExportByRegion = computeRecycledSteelExportByRegion(ops);
+  const nationalRecycledSteel = nationalRecycledSteelExportIndex(recycledSteelExportByRegion);
+  const recycledSteelMult = recycledSteelExportProductivityMultiplier(
+    nationalRecycledSteel,
+    options?.recycledSteelExportPolicy ?? 'baseline',
+  );
+  const remotePathologySupplyStagingByRegion = computeRemotePathologySupplyStagingByRegion(ops, networkStress);
+  const nationalPathology = nationalRemotePathologySupplyStagingIndex(remotePathologySupplyStagingByRegion);
+  const remotePathologySupplyStagingShare = computeRemotePathologySupplyStagingShare(
+    ops,
+    options?.remotePathologySupplyStagingPolicy ?? 'baseline',
+  );
+  const pathologyMult = remotePathologySupplyStagingProductivityMultiplier(
+    remotePathologySupplyStagingShare,
+    options?.remotePathologySupplyStagingPolicy ?? 'baseline',
+  );
+  const airportDroneCargoLogisticsThroughputByRegion =
+    computeAirportDroneCargoLogisticsThroughputByRegion(ops);
+  const nationalDroneCargo = nationalAirportDroneCargoLogisticsThroughputIndex(
+    airportDroneCargoLogisticsThroughputByRegion,
+  );
+  const airportDroneCargoLogisticsShare = computeAirportDroneCargoLogisticsShare(
+    ops,
+    options?.airportDroneCargoLogisticsPolicy ?? 'baseline',
+  );
+  const droneCargoMult = airportDroneCargoLogisticsProductivityMultiplier(
+    airportDroneCargoLogisticsShare,
+    options?.airportDroneCargoLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -28820,6 +29453,9 @@ export function computeTransportInfrastructureState(
     const floatingSolarBoost = (floatingSolarArrayExportByRegion[code] - 5) * 0.0023;
     const coastalRescueBoost = (coastalRescueHelicopterStagingByRegion[code] - 6) * 0.0019;
     const batterySwapBoost = (portBatterySwappingLogisticsThroughputByRegion[code] - 2) * 0.0015;
+    const recycledSteelBoost = (recycledSteelExportByRegion[code] - 5) * 0.0022;
+    const pathologyBoost = (remotePathologySupplyStagingByRegion[code] - 6) * 0.0018;
+    const droneCargoBoost = (airportDroneCargoLogisticsThroughputByRegion[code] - 2) * 0.0014;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -28911,7 +29547,10 @@ export function computeTransportInfrastructureState(
         railInspectionBoost +
         floatingSolarBoost +
         coastalRescueBoost +
-        batterySwapBoost) *
+        batterySwapBoost +
+        recycledSteelBoost +
+        pathologyBoost +
+        droneCargoBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -29001,7 +29640,10 @@ export function computeTransportInfrastructureState(
       railInspectionMult *
       floatingSolarMult *
       coastalRescueMult *
-      batterySwapMult;
+      batterySwapMult *
+      recycledSteelMult *
+      pathologyMult *
+      droneCargoMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -29114,7 +29756,10 @@ export function computeTransportInfrastructureState(
     nationalRailInspection * 0.003 +
     nationalFloatingSolar * 0.003 +
     nationalCoastalRescue * 0.003 +
-    nationalBatterySwap * 0.003;
+    nationalBatterySwap * 0.003 +
+    nationalRecycledSteel * 0.003 +
+    nationalPathology * 0.003 +
+    nationalDroneCargo * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -29129,7 +29774,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/46',
+    schemaVersion: 'agent12/47',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -29463,6 +30108,14 @@ export function computeTransportInfrastructureState(
     portBatterySwappingLogisticsShare,
     nationalPortBatterySwappingLogisticsThroughputIndex: nationalBatterySwap,
     portBatterySwappingLogisticsThroughputByRegion,
+    nationalRecycledSteelExportIndex: nationalRecycledSteel,
+    recycledSteelExportByRegion,
+    remotePathologySupplyStagingShare,
+    nationalRemotePathologySupplyStagingIndex: nationalPathology,
+    remotePathologySupplyStagingByRegion,
+    airportDroneCargoLogisticsShare,
+    nationalAirportDroneCargoLogisticsThroughputIndex: nationalDroneCargo,
+    airportDroneCargoLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -29545,7 +30198,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/46' &&
+      infra.schemaVersion === 'agent12/47' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -29702,11 +30355,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalPortContainerReeferLogisticsThroughputIndex >= 2 &&
       infra.nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex >= 2 &&
       infra.nationalRailAutomatedInspectionLogisticsThroughputIndex >= 2 &&
-      infra.nationalFloatingSolarArrayExportIndex >= 5 &&
-      infra.nationalCoastalRescueHelicopterStagingIndex >= 6 &&
-      infra.portBatterySwappingLogisticsShare >= 0.03 &&
-      infra.nationalPortBatterySwappingLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} solar=${infra.nationalFloatingSolarArrayExportIndex.toFixed(1)} rescue=${infra.nationalCoastalRescueHelicopterStagingIndex.toFixed(1)} swap=${infra.nationalPortBatterySwappingLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalPortBatterySwappingLogisticsThroughputIndex >= 2 &&
+      infra.nationalRecycledSteelExportIndex >= 5 &&
+      infra.nationalRemotePathologySupplyStagingIndex >= 6 &&
+      infra.airportDroneCargoLogisticsShare >= 0.03 &&
+      infra.nationalAirportDroneCargoLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} steel=${infra.nationalRecycledSteelExportIndex.toFixed(1)} pathology=${infra.nationalRemotePathologySupplyStagingIndex.toFixed(1)} drone=${infra.nationalAirportDroneCargoLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
