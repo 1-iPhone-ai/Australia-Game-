@@ -788,6 +788,23 @@ import {
   nationalPortWindAssistedShipBerthingLogisticsThroughputIndex,
   portWindAssistedShipBerthingLogisticsProductivityMultiplier,
 } from './port-wind-assisted-ship-berthing-logistics-index.ts';
+import {
+  computeQuantumCryogenicExportByRegion,
+  nationalQuantumCryogenicExportIndex,
+  quantumCryogenicExportProductivityMultiplier,
+} from '../network/quantum-cryogenic-export-index.ts';
+import {
+  computeRemoteEcmoSupplyStagingByRegion,
+  computeRemoteEcmoSupplyStagingShare,
+  nationalRemoteEcmoSupplyStagingIndex,
+  remoteEcmoSupplyStagingProductivityMultiplier,
+} from '../operations/remote-ecmo-supply-staging-index.ts';
+import {
+  computePortAmmoniaBunkeringLogisticsShare,
+  computePortAmmoniaBunkeringLogisticsThroughputByRegion,
+  nationalPortAmmoniaBunkeringLogisticsThroughputIndex,
+  portAmmoniaBunkeringLogisticsProductivityMultiplier,
+} from './port-ammonia-bunkering-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -2397,6 +2414,35 @@ export function computeTransportInfrastructureState(
     portWindAssistedShipBerthingLogisticsShare,
     options?.portWindAssistedShipBerthingLogisticsPolicy ?? 'baseline',
   );
+  const quantumCryogenicExportByRegion = computeQuantumCryogenicExportByRegion(ops);
+  const nationalQuantumCryogenic = nationalQuantumCryogenicExportIndex(quantumCryogenicExportByRegion);
+  const quantumCryogenicMult = quantumCryogenicExportProductivityMultiplier(
+    nationalQuantumCryogenic,
+    options?.quantumCryogenicExportPolicy ?? 'baseline',
+  );
+  const remoteEcmoSupplyStagingByRegion = computeRemoteEcmoSupplyStagingByRegion(ops, networkStress);
+  const nationalEcmo = nationalRemoteEcmoSupplyStagingIndex(remoteEcmoSupplyStagingByRegion);
+  const remoteEcmoSupplyStagingShare = computeRemoteEcmoSupplyStagingShare(
+    ops,
+    options?.remoteEcmoSupplyStagingPolicy ?? 'baseline',
+  );
+  const ecmoMult = remoteEcmoSupplyStagingProductivityMultiplier(
+    remoteEcmoSupplyStagingShare,
+    options?.remoteEcmoSupplyStagingPolicy ?? 'baseline',
+  );
+  const portAmmoniaBunkeringLogisticsThroughputByRegion =
+    computePortAmmoniaBunkeringLogisticsThroughputByRegion(ops);
+  const nationalAmmoniaBunkering = nationalPortAmmoniaBunkeringLogisticsThroughputIndex(
+    portAmmoniaBunkeringLogisticsThroughputByRegion,
+  );
+  const portAmmoniaBunkeringLogisticsShare = computePortAmmoniaBunkeringLogisticsShare(
+    ops,
+    options?.portAmmoniaBunkeringLogisticsPolicy ?? 'baseline',
+  );
+  const ammoniaBunkeringMult = portAmmoniaBunkeringLogisticsProductivityMultiplier(
+    portAmmoniaBunkeringLogisticsShare,
+    options?.portAmmoniaBunkeringLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2501,6 +2547,9 @@ export function computeTransportInfrastructureState(
     const semiconductorBoost = (advancedSemiconductorPackagingExportByRegion[code] - 5) * 0.0019;
     const burnUnitBoost = (remoteBurnUnitSupplyStagingByRegion[code] - 6) * 0.0015;
     const windBerthingBoost = (portWindAssistedShipBerthingLogisticsThroughputByRegion[code] - 2) * 0.0011;
+    const quantumCryogenicBoost = (quantumCryogenicExportByRegion[code] - 5) * 0.0018;
+    const ecmoBoost = (remoteEcmoSupplyStagingByRegion[code] - 6) * 0.0014;
+    const ammoniaBunkeringBoost = (portAmmoniaBunkeringLogisticsThroughputByRegion[code] - 2) * 0.001;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2604,7 +2653,10 @@ export function computeTransportInfrastructureState(
         shorePowerBoost +
         semiconductorBoost +
         burnUnitBoost +
-        windBerthingBoost) *
+        windBerthingBoost +
+        quantumCryogenicBoost +
+        ecmoBoost +
+        ammoniaBunkeringBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2706,7 +2758,10 @@ export function computeTransportInfrastructureState(
       shorePowerMult *
       semiconductorMult *
       burnUnitMult *
-      windBerthingMult;
+      windBerthingMult *
+      quantumCryogenicMult *
+      ecmoMult *
+      ammoniaBunkeringMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2846,7 +2901,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/50',
+    schemaVersion: 'agent12/51',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -3212,6 +3267,14 @@ export function computeTransportInfrastructureState(
     portWindAssistedShipBerthingLogisticsShare,
     nationalPortWindAssistedShipBerthingLogisticsThroughputIndex: nationalWindBerthing,
     portWindAssistedShipBerthingLogisticsThroughputByRegion,
+    nationalQuantumCryogenicExportIndex: nationalQuantumCryogenic,
+    quantumCryogenicExportByRegion,
+    remoteEcmoSupplyStagingShare,
+    nationalRemoteEcmoSupplyStagingIndex: nationalEcmo,
+    remoteEcmoSupplyStagingByRegion,
+    portAmmoniaBunkeringLogisticsShare,
+    nationalPortAmmoniaBunkeringLogisticsThroughputIndex: nationalAmmoniaBunkering,
+    portAmmoniaBunkeringLogisticsThroughputByRegion,
     computeMs,
   };
 }

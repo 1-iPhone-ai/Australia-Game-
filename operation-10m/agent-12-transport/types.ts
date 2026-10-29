@@ -447,6 +447,12 @@ export type RemoteBurnUnitSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortWindAssistedShipBerthingLogisticsPolicy = 'baseline' | 'expand';
 
+export type QuantumCryogenicExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteEcmoSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortAmmoniaBunkeringLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
   schemaVersion: 'agent12/50';
   turn: number;
@@ -814,6 +820,14 @@ export interface TransportInfrastructureState {
   portWindAssistedShipBerthingLogisticsShare: number;
   nationalPortWindAssistedShipBerthingLogisticsThroughputIndex: number;
   portWindAssistedShipBerthingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalQuantumCryogenicExportIndex: number;
+  quantumCryogenicExportByRegion: Record<AuRegionCode, number>;
+  remoteEcmoSupplyStagingShare: number;
+  nationalRemoteEcmoSupplyStagingIndex: number;
+  remoteEcmoSupplyStagingByRegion: Record<AuRegionCode, number>;
+  portAmmoniaBunkeringLogisticsShare: number;
+  nationalPortAmmoniaBunkeringLogisticsThroughputIndex: number;
+  portAmmoniaBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -954,6 +968,9 @@ export interface TransportInfrastructureOptions {
   advancedSemiconductorPackagingExportPolicy?: AdvancedSemiconductorPackagingExportPolicy;
   remoteBurnUnitSupplyStagingPolicy?: RemoteBurnUnitSupplyStagingPolicy;
   portWindAssistedShipBerthingLogisticsPolicy?: PortWindAssistedShipBerthingLogisticsPolicy;
+  quantumCryogenicExportPolicy?: QuantumCryogenicExportPolicy;
+  remoteEcmoSupplyStagingPolicy?: RemoteEcmoSupplyStagingPolicy;
+  portAmmoniaBunkeringLogisticsPolicy?: PortAmmoniaBunkeringLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
