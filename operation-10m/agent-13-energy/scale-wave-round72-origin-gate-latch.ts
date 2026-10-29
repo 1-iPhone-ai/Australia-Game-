@@ -1,6 +1,6 @@
-export const AGENT13_OP10M_WAVE72_GATE = {
-  ticket: 'O10-326',
+export const AGENT13_OP10M_WAVE73_GATE = {
+  ticket: 'O10-335',
   wave: 72,
   round: 72,
-  integrationBaseline: '926f46b0fd9ef0fbd9b1a4d0b41a91c2d21132f9',
+  integrationBaseline: '470ba8f063538d71ec2486d2d50f149b0390db74',
 } as const;
