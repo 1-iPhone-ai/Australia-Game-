@@ -451,6 +451,12 @@ export type RemoteBurnUnitSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortWindAssistedShipBerthingLogisticsPolicy = 'baseline' | 'expand';
 
+export type QuantumCryogenicExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteEcmoSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortAmmoniaBunkeringLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
   schemaVersion: 'agent12/50';
   turn: number;
@@ -818,6 +824,14 @@ export interface TransportInfrastructureState {
   portWindAssistedShipBerthingLogisticsShare: number;
   nationalPortWindAssistedShipBerthingLogisticsThroughputIndex: number;
   portWindAssistedShipBerthingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalQuantumCryogenicExportIndex: number;
+  quantumCryogenicExportByRegion: Record<AuRegionCode, number>;
+  remoteEcmoSupplyStagingShare: number;
+  nationalRemoteEcmoSupplyStagingIndex: number;
+  remoteEcmoSupplyStagingByRegion: Record<AuRegionCode, number>;
+  portAmmoniaBunkeringLogisticsShare: number;
+  nationalPortAmmoniaBunkeringLogisticsThroughputIndex: number;
+  portAmmoniaBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -958,6 +972,9 @@ export interface TransportInfrastructureOptions {
   advancedSemiconductorPackagingExportPolicy?: AdvancedSemiconductorPackagingExportPolicy;
   remoteBurnUnitSupplyStagingPolicy?: RemoteBurnUnitSupplyStagingPolicy;
   portWindAssistedShipBerthingLogisticsPolicy?: PortWindAssistedShipBerthingLogisticsPolicy;
+  quantumCryogenicExportPolicy?: QuantumCryogenicExportPolicy;
+  remoteEcmoSupplyStagingPolicy?: RemoteEcmoSupplyStagingPolicy;
+  portAmmoniaBunkeringLogisticsPolicy?: PortAmmoniaBunkeringLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -3075,6 +3092,48 @@ export const TRANSPORT_CORRIDORS_ROUND49: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round50.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND50: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_nsw_vic_quantum_cryogenic',
+    name: 'NSW–VIC Quantum Cryogenic',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['quantum_cryogenic_export', 'dilution_refrigerator_logistics', 'cryo_freight_corridor'],
+      VIC: ['quantum_cryogenic_export', 'dilution_refrigerator_logistics', 'cryo_freight_corridor'],
+    },
+    productivitySynergyPoints: 7.3,
+    logisticsRelief: 0.044,
+  },
+  {
+    id: 'corr_nt_sa_ecmo_remote',
+    name: 'NT–SA Remote ECMO',
+    networkKind: 'mobility',
+    regionSequence: ['NT', 'SA'],
+    requiredTagsByRegion: {
+      NT: ['remote_ecmo_supply', 'ecmo_care_staging', 'critical_care_logistics'],
+      SA: ['remote_ecmo_supply', 'ecmo_care_staging', 'critical_care_logistics'],
+    },
+    productivitySynergyPoints: 7.1,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_wa_qld_ammonia_bunkering',
+    name: 'WA–QLD Ammonia Bunkering',
+    networkKind: 'freight',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['port_ammonia_bunkering', 'green_ammonia_mooring', 'emission_free_bunkering'],
+      QLD: ['port_ammonia_bunkering', 'green_ammonia_mooring', 'emission_free_bunkering'],
+    },
+    productivitySynergyPoints: 7.0,
+    logisticsRelief: 0.041,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -3271,6 +3330,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND47,
   ...TRANSPORT_CORRIDORS_ROUND48,
   ...TRANSPORT_CORRIDORS_ROUND49,
+  ...TRANSPORT_CORRIDORS_ROUND50,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -6047,6 +6107,62 @@ export const TRANSPORT_SCENARIOS_ROUND49: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round50.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND50: TransportStressScenario[] = [
+  {
+    id: 'scn_nsw_quantum_cryogenic_export_surge',
+    label: 'NSW Quantum Cryogenic Export Surge',
+    description: 'Packaging restart overloads Botany cryo berths.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_vic_dilution_feed_delay',
+    label: 'VIC Chiplet Feed Delay',
+    description: 'Heat slows Dandenong cryo feed.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail', 'road'],
+  },
+  {
+    id: 'scn_nt_burn_unit_resupply',
+    label: 'NT ECMO Resupply',
+    description: 'Trauma surge strains Darwin burn hub.',
+    targetRegions: ['NT', 'SA'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.32,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_wa_wind_berthing_peak',
+    label: 'WA Ammonia Bunkering Peak',
+    description: 'Cyclone season loads Fremantle green-ammonia terminal.',
+    targetRegions: ['WA', 'QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_qld_wind_bunkering_backlog',
+    label: 'QLD Wind Bunkering Backlog',
+    description: 'Calm weather hold delays Gladstone bunkering depot.',
+    targetRegions: ['QLD', 'WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -6257,6 +6373,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND47,
   ...TRANSPORT_SCENARIOS_ROUND48,
   ...TRANSPORT_SCENARIOS_ROUND49,
+  ...TRANSPORT_SCENARIOS_ROUND50,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -18254,6 +18371,265 @@ export const SCALE_WAVE_ROUND49_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round50-assets.ts ---
+
+export const ROUND50_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_nsw_sydney_quantum_cryogenic_haul',
+    category: 'road',
+    name: 'Sydney Quantum Cryogenic Haul',
+    description: 'NSW dilution export staging road.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['quantum_cryogenic_export', 'dilution_refrigerator_logistics', 'cryo_freight_corridor'],
+    laneKilometres: 29,
+    designSpeedKmh: 88,
+    freightShare: 0.33,
+    urbanShare: 0.13,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_dandenong_quantum_cryogenic_feed',
+    category: 'road',
+    name: 'Dandenong Quantum Cryogenic Feed',
+    description: 'VIC cryo freight connector.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade'],
+    tags: ['quantum_cryogenic_export', 'dilution_refrigerator_logistics', 'cryo_freight_corridor'],
+    laneKilometres: 27,
+    designSpeedKmh: 86,
+    freightShare: 0.31,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_alice_ecmo_access',
+    category: 'road',
+    name: 'Alice ECMO Access',
+    description: 'NT critical care logistics staging road.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_ecmo_supply', 'ecmo_care_staging', 'critical_care_logistics'],
+    laneKilometres: 22,
+    designSpeedKmh: 78,
+    freightShare: 0.09,
+    urbanShare: 0.16,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_port_augusta_ecmo_staging',
+    category: 'road',
+    name: 'Port Augusta Burn Staging',
+    description: 'SA ECMO-care logistics connector.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['remote_ecmo_supply', 'ecmo_care_staging', 'critical_care_logistics'],
+    laneKilometres: 20,
+    designSpeedKmh: 76,
+    freightShare: 0.08,
+    urbanShare: 0.15,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_fremantle_ammonia_bunkering_feed',
+    category: 'road',
+    name: 'Fremantle Ammonia Bunkering Feed',
+    description: 'WA green-ammonia logistics road.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_ammonia_bunkering', 'green_ammonia_mooring', 'emission_free_bunkering'],
+    laneKilometres: 24,
+    designSpeedKmh: 84,
+    freightShare: 0.28,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_gladstone_ammonia_bunkering_staging',
+    category: 'road',
+    name: 'Gladstone Wind Bunkering Staging',
+    description: 'QLD emission-free bunkering connector.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade'],
+    tags: ['port_ammonia_bunkering', 'green_ammonia_mooring', 'emission_free_bunkering'],
+    laneKilometres: 21,
+    designSpeedKmh: 80,
+    freightShare: 0.26,
+    urbanShare: 0.11,
+    tollRoad: false,
+  },
+];
+
+export const ROUND50_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_nsw_sydney_quantum_cryogenic_rail',
+    category: 'rail',
+    name: 'Sydney Quantum Cryogenic Rail',
+    description: 'NSW dilution export feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 6.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['quantum_cryogenic_export', 'dilution_refrigerator_logistics', 'cryo_freight_corridor'],
+    trackKilometres: 41,
+    dualTrackShare: 0.51,
+    electrifiedShare: 0.49,
+    designFreightTonnesPerYear: 2_100_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nt_ghan_ecmo_rail',
+    category: 'rail',
+    name: 'Ghan ECMO Rail',
+    description: 'NT critical care staging express feed.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['remote_ecmo_supply', 'ecmo_care_staging', 'critical_care_logistics'],
+    trackKilometres: 35,
+    dualTrackShare: 0.38,
+    electrifiedShare: 0.22,
+    designFreightTonnesPerYear: 980_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_wa_pilbara_ammonia_bunkering_rail',
+    category: 'rail',
+    name: 'Pilbara Ammonia Bunkering Rail',
+    description: 'WA green-ammonia port feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 6.0,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_ammonia_bunkering', 'green_ammonia_mooring', 'emission_free_bunkering'],
+    trackKilometres: 37,
+    dualTrackShare: 0.46,
+    electrifiedShare: 0.44,
+    designFreightTonnesPerYear: 2_700_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND50_PORTS: PortAsset[] = [
+  {
+    id: 'port_nsw_botany_quantum_cryogenic_export',
+    category: 'port',
+    name: 'Botany Quantum Cryogenic Export',
+    description: 'NSW advanced packaging export port.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 6.5,
+    strategicNetworks: ['trade'],
+    tags: ['quantum_cryogenic_export', 'dilution_refrigerator_logistics', 'cryo_freight_corridor'],
+    berthCount: 3,
+    maxDraftMetres: 12.9,
+    teuCapacityPerYear: 92_000,
+    automationLevel: 3,
+    bulkShare: 0.06,
+  },
+  {
+    id: 'port_nt_darwin_ecmo_hub',
+    category: 'port',
+    name: 'Darwin ECMO Hub',
+    description: 'NT remote ECMO-care logistics port.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['remote_ecmo_supply', 'ecmo_care_staging', 'critical_care_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.4,
+    teuCapacityPerYear: 86_000,
+    automationLevel: 1,
+    bulkShare: 0.1,
+  },
+  {
+    id: 'port_wa_fremantle_ammonia_bunkering_terminal',
+    category: 'port',
+    name: 'Fremantle Ammonia Bunkering Terminal',
+    description: 'WA wind-assisted ship bunkering staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 6.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_ammonia_bunkering', 'green_ammonia_mooring', 'emission_free_bunkering'],
+    berthCount: 4,
+    maxDraftMetres: 13.2,
+    teuCapacityPerYear: 198_000,
+    automationLevel: 2,
+    bulkShare: 0.05,
+  },
+];
+
+export const ROUND50_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_vic_dandenong_quantum_cryogenic_stores',
+    category: 'logistics',
+    name: 'Dandenong Quantum Cryogenic Stores',
+    description: 'VIC dilution consolidation yard.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['trade'],
+    tags: ['quantum_cryogenic_export', 'dilution_refrigerator_logistics', 'cryo_freight_corridor'],
+    warehouseSqm: 52_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port', 'rail'],
+    lastMileCoveragePct: 45,
+  },
+  {
+    id: 'log_sa_port_augusta_ecmo_stores',
+    category: 'logistics',
+    name: 'Port Augusta Burn Stores',
+    description: 'SA critical care supply consolidation yard.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_ecmo_supply', 'ecmo_care_staging', 'critical_care_logistics'],
+    warehouseSqm: 29_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 47,
+  },
+  {
+    id: 'log_qld_gladstone_ammonia_bunkering_depot',
+    category: 'logistics',
+    name: 'Gladstone Wind Bunkering Depot',
+    description: 'QLD green-ammonia logistics depot.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_ammonia_bunkering', 'green_ammonia_mooring', 'emission_free_bunkering'],
+    warehouseSqm: 39_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 53,
+  },
+];
+
+export const SCALE_WAVE_ROUND50_ASSETS = [
+  ...ROUND50_ROADS,
+  ...ROUND50_RAIL,
+  ...ROUND50_PORTS,
+  ...ROUND50_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -18311,6 +18687,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND47_ASSETS,
     ...SCALE_WAVE_ROUND48_ASSETS,
     ...SCALE_WAVE_ROUND49_ASSETS,
+    ...SCALE_WAVE_ROUND50_ASSETS,
   ];
 }
 
@@ -21125,6 +21502,65 @@ export function nationalAdvancedSemiconductorPackagingExportIndex(
 export function advancedSemiconductorPackagingExportProductivityMultiplier(
   index: number,
   policy: AdvancedSemiconductorPackagingExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.03 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.033 + policyBoost, 0.93, 1.09);
+}
+
+
+// --- source: network/quantum-cryogenic-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type QuantumCryogenicExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 quantum cryogenic export throughput by region. */
+export function computeQuantumCryogenicExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'quantum_cryogenic_export' ||
+        t === 'dilution_refrigerator_logistics' ||
+        t === 'cryo_freight_corridor',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.86 + asset.maxDraftMetres * 0.32;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 60_500 + asset.intermodalLinks.length * 0.57;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 415;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 7_850_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalQuantumCryogenicExportIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.45 + max * 0.55, 5, 72) * 10) / 10;
+}
+
+export function quantumCryogenicExportProductivityMultiplier(
+  index: number,
+  policy: QuantumCryogenicExportPolicy = 'baseline',
 ): number {
   const policyBoost = policy === 'accelerate' ? 0.03 : 0;
   const normalized = (index - 5) / 100;
@@ -24899,6 +25335,92 @@ export function computeRemoteBurnUnitSupplyStagingShare(
 export function remoteBurnUnitSupplyStagingProductivityMultiplier(
   share: number,
   policy: RemoteBurnUnitSupplyStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.01 : 1;
+  return (1 + (share - 0.04) * 0.016) * bias;
+}
+
+
+// --- source: operations/remote-ecmo-supply-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RemoteEcmoSupplyStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 remote ECMO supply staging readiness by region. */
+export function computeRemoteEcmoSupplyStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'remote_ecmo_supply' || t === 'ecmo_care_staging' || t === 'critical_care_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 52_500 + (asset.coldChainCapable ? 1.35 : 0.73);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 385;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.82;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 224;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.022 - stress * 0.016), 5, 74) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRemoteEcmoSupplyStagingIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 72) * 10) / 10;
+}
+
+export function computeRemoteEcmoSupplyStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: RemoteEcmoSupplyStagingPolicy = 'baseline',
+): number {
+  let ecmoUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('remote_ecmo_supply') || asset.tags.includes('critical_care_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 48_500;
+        ecmoUnits += (asset.warehouseSqm / 48_500) * 0.54;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 348;
+        ecmoUnits += (asset.laneKilometres / 348) * 0.46;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.03;
+  const policyBoost = policy === 'surge' ? 0.018 : 0;
+  return Math.round(clamp(ecmoUnits / totalUnits + policyBoost, 0.028, 0.18) * 1000) / 1000;
+}
+
+export function remoteEcmoSupplyStagingProductivityMultiplier(
+  share: number,
+  policy: RemoteEcmoSupplyStagingPolicy,
 ): number {
   const bias = policy === 'surge' ? 1.01 : 1;
   return (1 + (share - 0.04) * 0.016) * bias;
@@ -28961,6 +29483,102 @@ export function nationalPortWindAssistedShipBerthingLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/port-ammonia-bunkering-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PortAmmoniaBunkeringLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of port logistics supporting ammonia bunkering. */
+export function computePortAmmoniaBunkeringLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: PortAmmoniaBunkeringLogisticsPolicy = 'baseline',
+): number {
+  let ammoniaUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'port_ammonia_bunkering' ||
+          t === 'green_ammonia_mooring' ||
+          t === 'emission_free_bunkering',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 0.91 + asset.teuCapacityPerYear / 420_000;
+        ammoniaUnits += asset.berthCount * 0.91 * 0.5;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 45_500;
+        ammoniaUnits += (asset.warehouseSqm / 45_500) * 0.47;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 322;
+        ammoniaUnits += (asset.laneKilometres / 322) * 0.39;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.032;
+  const policyBoost = policy === 'expand' ? 0.02 : 0;
+  return Math.round(clamp(ammoniaUnits / totalUnits + policyBoost, 0.031, 0.19) * 1000) / 1000;
+}
+
+export function portAmmoniaBunkeringLogisticsProductivityMultiplier(
+  share: number,
+  policy: PortAmmoniaBunkeringLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.012 : 1;
+  return (1 + (share - 0.05) * 0.016) * bias;
+}
+
+export function computePortAmmoniaBunkeringLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'port_ammonia_bunkering' ||
+          t === 'green_ammonia_mooring' ||
+          t === 'emission_free_bunkering',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 41_500 + asset.lastMileCoveragePct / 90;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 328;
+    }
+    if (asset.category === 'rail' && 'trackKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 198;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPortAmmoniaBunkeringLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.43 + max * 0.57, 2, 68) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -29772,6 +30390,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalPortWindAssistedShipBerthingLogisticsThroughputIndex,
   portWindAssistedShipBerthingLogisticsProductivityMultiplier,
 } from './port-wind-assisted-ship-berthing-logistics-index.ts';
+  computeQuantumCryogenicExportByRegion,
+  nationalQuantumCryogenicExportIndex,
+  quantumCryogenicExportProductivityMultiplier,
+} from '../network/quantum-cryogenic-export-index.ts';
+  computeRemoteEcmoSupplyStagingByRegion,
+  computeRemoteEcmoSupplyStagingShare,
+  nationalRemoteEcmoSupplyStagingIndex,
+  remoteEcmoSupplyStagingProductivityMultiplier,
+} from '../operations/remote-ecmo-supply-staging-index.ts';
+  computePortAmmoniaBunkeringLogisticsShare,
+  computePortAmmoniaBunkeringLogisticsThroughputByRegion,
+  nationalPortAmmoniaBunkeringLogisticsThroughputIndex,
+  portAmmoniaBunkeringLogisticsProductivityMultiplier,
+} from './port-ammonia-bunkering-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -31380,6 +32012,35 @@ export function computeTransportInfrastructureState(
     portWindAssistedShipBerthingLogisticsShare,
     options?.portWindAssistedShipBerthingLogisticsPolicy ?? 'baseline',
   );
+  const quantumCryogenicExportByRegion = computeQuantumCryogenicExportByRegion(ops);
+  const nationalQuantumCryogenic = nationalQuantumCryogenicExportIndex(quantumCryogenicExportByRegion);
+  const quantumCryogenicMult = quantumCryogenicExportProductivityMultiplier(
+    nationalQuantumCryogenic,
+    options?.quantumCryogenicExportPolicy ?? 'baseline',
+  );
+  const remoteEcmoSupplyStagingByRegion = computeRemoteEcmoSupplyStagingByRegion(ops, networkStress);
+  const nationalEcmo = nationalRemoteEcmoSupplyStagingIndex(remoteEcmoSupplyStagingByRegion);
+  const remoteEcmoSupplyStagingShare = computeRemoteEcmoSupplyStagingShare(
+    ops,
+    options?.remoteEcmoSupplyStagingPolicy ?? 'baseline',
+  );
+  const ecmoMult = remoteEcmoSupplyStagingProductivityMultiplier(
+    remoteEcmoSupplyStagingShare,
+    options?.remoteEcmoSupplyStagingPolicy ?? 'baseline',
+  );
+  const portAmmoniaBunkeringLogisticsThroughputByRegion =
+    computePortAmmoniaBunkeringLogisticsThroughputByRegion(ops);
+  const nationalAmmoniaBunkering = nationalPortAmmoniaBunkeringLogisticsThroughputIndex(
+    portAmmoniaBunkeringLogisticsThroughputByRegion,
+  );
+  const portAmmoniaBunkeringLogisticsShare = computePortAmmoniaBunkeringLogisticsShare(
+    ops,
+    options?.portAmmoniaBunkeringLogisticsPolicy ?? 'baseline',
+  );
+  const ammoniaBunkeringMult = portAmmoniaBunkeringLogisticsProductivityMultiplier(
+    portAmmoniaBunkeringLogisticsShare,
+    options?.portAmmoniaBunkeringLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -31484,6 +32145,9 @@ export function computeTransportInfrastructureState(
     const semiconductorBoost = (advancedSemiconductorPackagingExportByRegion[code] - 5) * 0.0019;
     const burnUnitBoost = (remoteBurnUnitSupplyStagingByRegion[code] - 6) * 0.0015;
     const windBerthingBoost = (portWindAssistedShipBerthingLogisticsThroughputByRegion[code] - 2) * 0.0011;
+    const quantumCryogenicBoost = (quantumCryogenicExportByRegion[code] - 5) * 0.0018;
+    const ecmoBoost = (remoteEcmoSupplyStagingByRegion[code] - 6) * 0.0014;
+    const ammoniaBunkeringBoost = (portAmmoniaBunkeringLogisticsThroughputByRegion[code] - 2) * 0.001;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -31587,7 +32251,10 @@ export function computeTransportInfrastructureState(
         shorePowerBoost +
         semiconductorBoost +
         burnUnitBoost +
-        windBerthingBoost) *
+        windBerthingBoost +
+        quantumCryogenicBoost +
+        ecmoBoost +
+        ammoniaBunkeringBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -31689,7 +32356,10 @@ export function computeTransportInfrastructureState(
       shorePowerMult *
       semiconductorMult *
       burnUnitMult *
-      windBerthingMult;
+      windBerthingMult *
+      quantumCryogenicMult *
+      ecmoMult *
+      ammoniaBunkeringMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -31829,7 +32499,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/50',
+    schemaVersion: 'agent12/51',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -32195,6 +32865,14 @@ export function computeTransportInfrastructureState(
     portWindAssistedShipBerthingLogisticsShare,
     nationalPortWindAssistedShipBerthingLogisticsThroughputIndex: nationalWindBerthing,
     portWindAssistedShipBerthingLogisticsThroughputByRegion,
+    nationalQuantumCryogenicExportIndex: nationalQuantumCryogenic,
+    quantumCryogenicExportByRegion,
+    remoteEcmoSupplyStagingShare,
+    nationalRemoteEcmoSupplyStagingIndex: nationalEcmo,
+    remoteEcmoSupplyStagingByRegion,
+    portAmmoniaBunkeringLogisticsShare,
+    nationalPortAmmoniaBunkeringLogisticsThroughputIndex: nationalAmmoniaBunkering,
+    portAmmoniaBunkeringLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -32277,7 +32955,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/50' &&
+      infra.schemaVersion === 'agent12/51' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -32450,8 +33128,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalAdvancedSemiconductorPackagingExportIndex >= 5 &&
       infra.nationalRemoteBurnUnitSupplyStagingIndex >= 6 &&
       infra.portWindAssistedShipBerthingLogisticsShare >= 0.03 &&
-      infra.nationalPortWindAssistedShipBerthingLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)} semi=${infra.nationalAdvancedSemiconductorPackagingExportIndex.toFixed(1)}`,
+      infra.nationalPortWindAssistedShipBerthingLogisticsThroughputIndex >= 2 &&
+      infra.nationalQuantumCryogenicExportIndex >= 5 &&
+      infra.nationalRemoteEcmoSupplyStagingIndex >= 6 &&
+      infra.portAmmoniaBunkeringLogisticsShare >= 0.03 &&
+      infra.nationalPortAmmoniaBunkeringLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)} semi=${infra.nationalAdvancedSemiconductorPackagingExportIndex.toFixed(1)} cryo=${infra.nationalQuantumCryogenicExportIndex.toFixed(1)}`,
   });
 
   return results;

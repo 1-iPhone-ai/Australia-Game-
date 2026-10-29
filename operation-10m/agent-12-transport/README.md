@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 50
+
+- Schema **`agent12/51`**: quantum cryogenic export throughput, remote ECMO supply staging readiness, port ammonia bunkering logistics share (`quantumCryogenicExportPolicy`, `remoteEcmoSupplyStagingPolicy`, `portAmmoniaBunkeringLogisticsPolicy`)
+- Catalog: **688** assets, **164** corridors, **268** scenarios
+- Systems: `network/quantum-cryogenic-export-index.ts`, `operations/remote-ecmo-supply-staging-index.ts`, `productivity/port-ammonia-bunkering-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 49
 
 - Schema **`agent12/50`**: advanced semiconductor packaging export throughput, remote burn-unit supply staging readiness, port wind-assisted ship berthing logistics share (`advancedSemiconductorPackagingExportPolicy`, `remoteBurnUnitSupplyStagingPolicy`, `portWindAssistedShipBerthingLogisticsPolicy`)
