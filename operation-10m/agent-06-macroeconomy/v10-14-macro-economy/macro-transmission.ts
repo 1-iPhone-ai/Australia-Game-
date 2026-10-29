@@ -26,6 +26,8 @@ import type { MacroTeamAiSpillover } from './bridge-v1018-team-ai.ts';
 import type { MacroReplaySpillover } from './bridge-v1024-replay.ts';
 import type { MacroMemorySpillover } from './bridge-v1019-memory.ts';
 import type { MacroDashboardsSpillover } from './bridge-v1023-dashboards.ts';
+import type { MacroUiSpillover } from './bridge-v1022-ui.ts';
+import type { MacroUtilitiesSpillover } from './bridge-v1012-utilities.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -60,6 +62,8 @@ export function buildMacroTransmissionReport(params: {
   replay?: MacroReplaySpillover;
   memory?: MacroMemorySpillover;
   dashboards?: MacroDashboardsSpillover;
+  ui?: MacroUiSpillover;
+  utilities?: MacroUtilitiesSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -79,6 +83,8 @@ export function buildMacroTransmissionReport(params: {
   const replay = params.replay ?? ZERO_SPILLOVER;
   const memory = params.memory ?? ZERO_SPILLOVER;
   const dashboards = params.dashboards ?? ZERO_SPILLOVER;
+  const ui = params.ui ?? ZERO_SPILLOVER;
+  const utilities = params.utilities ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -275,6 +281,22 @@ export function buildMacroTransmissionReport(params: {
       dashboards.investmentNudge,
       dashboards.productivityNudge,
       dashboards.summary
+    ),
+    layer(
+      'v10.22_ui',
+      'UI shell & navigation',
+      ui.cycleNudge,
+      ui.investmentNudge,
+      ui.productivityNudge,
+      ui.summary
+    ),
+    layer(
+      'v10.12_utilities',
+      'Utilities grid',
+      utilities.cycleNudge,
+      utilities.investmentNudge,
+      utilities.productivityNudge,
+      utilities.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

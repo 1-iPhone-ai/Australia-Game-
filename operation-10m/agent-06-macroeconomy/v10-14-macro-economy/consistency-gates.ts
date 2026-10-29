@@ -500,5 +500,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Elevated cycle vs investment transmission divergence — layer reads may conflict.'
     });
   }
+  const ui: any = inputs.gameUi ?? inputs.uiShell ?? inputs.nationalUi;
+  const panelLatency = String(ui?.panelLatency?.band ?? ui?.renderLatencyBand ?? '');
+  if (
+    (panelLatency === 'severe' || panelLatency === 'critical') &&
+    (state.transmissionStability?.band === 'fragile' || state.transmissionStability?.band === 'unstable')
+  ) {
+    gates.push({
+      id: 'ui_shell_latency_stress',
+      triggered: true,
+      severity: 'info',
+      summary: 'Severe UI panel latency aligns with fragile cycle/productivity transmission stability.'
+    });
+  }
+  const util: any = inputs.utilitiesGrid ?? inputs.publicUtilities ?? inputs.nationalUtilities;
+  const outageBand = String(util?.outageBand ?? util?.outageRisk?.band ?? '');
+  if (
+    (outageBand === 'rolling' || outageBand === 'severe') &&
+    (state.productivityBand === 'critical' || state.productivityBand === 'weak')
+  ) {
+    gates.push({
+      id: 'utilities_outage_productivity',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Rolling utility outages reinforce stagnant macro productivity band.'
+    });
+  }
+  if (state.transmissionStability?.band === 'unstable' || state.transmissionStability?.band === 'fragile') {
+    gates.push({
+      id: 'transmission_stability_fragile',
+      triggered: true,
+      severity: 'info',
+      summary: 'Fragile cycle vs productivity transmission stability — interpret headline scores cautiously.'
+    });
+  }
   return gates;
 }

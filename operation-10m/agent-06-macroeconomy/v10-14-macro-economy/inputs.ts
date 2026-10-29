@@ -69,6 +69,18 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     historyReplay: params?.historyReplay ?? params?.gameState?.historyReplayState,
     replayArchive: params?.replayArchive,
     nationalHistory: params?.nationalHistory ?? params?.nationalSystems?.historyReplay,
+    aiMemory: params?.aiMemory ?? params?.explainability ?? params?.nationalAiMemory,
+    dashboardsMaps: params?.dashboardsMaps ?? params?.nationalDashboards ?? params?.mapsTelemetry,
+    gameUi: params?.gameUi ?? params?.uiShell ?? params?.gameState?.uiState ?? params?.nationalSystems?.ui,
+    uiShell: params?.uiShell,
+    nationalUi: params?.nationalUi,
+    utilitiesGrid:
+      params?.utilitiesGrid ??
+      params?.publicUtilities ??
+      params?.gameState?.utilitiesState ??
+      params?.nationalSystems?.utilities,
+    publicUtilities: params?.publicUtilities,
+    nationalUtilities: params?.nationalUtilities,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

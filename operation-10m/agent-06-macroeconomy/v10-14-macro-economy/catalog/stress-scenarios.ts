@@ -108,6 +108,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Memory & dashboards stress',
     shockIds: ['global_slowdown', 'housing_correction'],
     description: 'Runaway memory drift with stale dashboard refresh (harness overlay).'
+  },
+  {
+    id: 'ui_utilities_stress',
+    label: 'UI & utilities stress',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'Degraded UI shell with rolling utility outages (harness overlay).'
   }
 ];
 
