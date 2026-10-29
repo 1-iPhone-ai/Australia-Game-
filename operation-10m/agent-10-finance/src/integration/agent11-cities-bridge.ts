@@ -16,6 +16,10 @@ export interface Agent11CitiesSnapshot {
   urbanRentInflationLatch?: boolean;
   /** Round 32: metro dispersion stress band. */
   metroDispersionStressBand?: 'aligned' | 'widening' | 'critical';
+  /** Round 40: urban rent inflation latch. */
+  wave40UrbanRentLatch?: boolean;
+  /** Round 40: metro capacity stress band. */
+  metroCapacityStressBand?: 'aligned' | 'strained' | 'critical';
 }
 
 export function mergeAgent11IntoMacroFinancialInputs(
@@ -52,6 +56,13 @@ export function mergeAgent11IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.metroDispersionStressBand === 'widening' && snapshot.rentGrowthBand === 'surging') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave40UrbanRentLatch && snapshot.metroCapacityStressBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.metroCapacityStressBand === 'strained' && snapshot.vacancyBand === 'critical') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
