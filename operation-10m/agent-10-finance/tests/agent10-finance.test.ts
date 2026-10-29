@@ -69,6 +69,10 @@ import { assessFoodGroceryPassThrough } from '../src/inflation/food-grocery-pass
 import { assessTransportLogisticsInflation } from '../src/inflation/transport-logistics-inflation.js';
 import { mergeAgent14IntoMacroFinancialInputs } from '../src/integration/agent14-housing-bridge.js';
 import { mergeAgent12IntoMacroFinancialInputs } from '../src/integration/agent12-transport-bridge.js';
+import { assessHealthcareServicesInflation } from '../src/inflation/healthcare-services-inflation.js';
+import { assessInsurancePremiumPassThrough } from '../src/inflation/insurance-premium-pass-through.js';
+import { mergeAgent03IntoMacroFinancialInputs } from '../src/integration/agent03-research-bridge.js';
+import { mergeAgent05IntoMacroFinancialInputs } from '../src/integration/agent05-events-bridge.js';
 
 describe('Agent 10 glossary & boundaries', () => {
   it('defines coherent finance terms', () => {
@@ -434,7 +438,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r9');
+    assert.equal(b.schemaVersion, '10.14.agent10.r10');
   });
 
   it('round-6 scenario preset credit vicious loop', () => {
@@ -497,7 +501,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r9');
+    assert.equal(b.schemaVersion, '10.14.agent10.r10');
     assert.ok(b.terminalImportPassThrough);
   });
 
@@ -569,7 +573,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r9');
+    assert.equal(b.schemaVersion, '10.14.agent10.r10');
     assert.ok(b.terminalEnergyPassThrough);
     assert.ok(b.terminalShelterRentPressure);
   });
@@ -641,7 +645,7 @@ describe('Agent 10 scale-wave extensions', () => {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(80),
     });
-    assert.equal(b.schemaVersion, '10.14.agent10.r9');
+    assert.equal(b.schemaVersion, '10.14.agent10.r10');
     assert.ok(b.terminalFoodGroceryPassThrough);
     assert.ok(b.terminalTransportLogisticsPressure);
   });
@@ -654,5 +658,76 @@ describe('Agent 10 scale-wave extensions', () => {
   it('round-9 scenario preset transport freight', () => {
     const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'transport_freight_bottleneck');
     assert.ok(inp?.systemicLiquidityBand === 'critical');
+  });
+
+  it('round-10 healthcare services inflation', () => {
+    const h = assessHealthcareServicesInflation({
+      wagePressureBand: 'acute',
+      demandSurgeActive: true,
+      workforceShortageBand: 'severe',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    assert.ok(h.pressureBand === 'stressed' || h.pressureBand === 'crisis');
+  });
+
+  it('round-10 insurance premium pass-through', () => {
+    const i = assessInsurancePremiumPassThrough({
+      claimsInflationBand: 'extreme',
+      reinsuranceStress: true,
+      catastropheLoadActive: true,
+      inflationBand: 'elevated',
+      turn: 2,
+    });
+    assert.ok(i.passThroughBand === 'sharp' || i.passThroughBand === 'hard_market');
+  });
+
+  it('round-10 agent03 research bridge', () => {
+    const m = mergeAgent03IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      productivityGainBand: 'strong',
+      supplySideReliefActive: true,
+      innovationInflationOffsetScore: 0.7,
+    });
+    assert.ok((m.inflationSettingMultiplier ?? 1) < 1);
+  });
+
+  it('round-10 agent05 events bridge', () => {
+    const m = mergeAgent05IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      inflationShockEventActive: true,
+      supplyDisruptionSeverity: 'national',
+      confidenceShockBand: 'severe',
+    });
+    assert.equal(m.highInflationScenario, true);
+  });
+
+  it('round-10 forecast healthcare and insurance on path', () => {
+    const p = projectInflationForecastPath(3);
+    assert.ok(p.points.every((pt) => pt.healthcareServicesPressureBand && pt.insurancePremiumPassThroughBand));
+  });
+
+  it('round-10 agent21 bundle r10', () => {
+    const path = projectInflationForecastPath(2);
+    const b = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('high', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(80),
+    });
+    assert.equal(b.schemaVersion, '10.14.agent10.r10');
+    assert.ok(b.terminalHealthcareServicesPressure);
+    assert.ok(b.terminalInsurancePremiumPassThrough);
+  });
+
+  it('round-10 scenario preset healthcare workforce', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'healthcare_workforce_crisis');
+    assert.ok((inp?.activeCrises ?? 0) >= 2);
+  });
+
+  it('round-10 scenario preset insurance hard market', () => {
+    const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'insurance_hard_market_stack');
+    assert.ok(inp?.creditShockActive && inp.highInflationScenario);
   });
 });

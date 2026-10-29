@@ -272,6 +272,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'housing', 'round9'],
   },
+  {
+    id: 'healthcare_workforce_crisis',
+    label: 'Healthcare workforce crisis',
+    description: 'Acute wage and capacity pressure in healthcare services CPI.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.23,
+      fiscalPressure: 'critical',
+      activeCrises: 2,
+    },
+    tags: ['inflation', 'healthcare', 'round10'],
+  },
+  {
+    id: 'insurance_hard_market_stack',
+    label: 'Insurance hard market stack',
+    description: 'Claims inflation with reinsurance stress — premium pass-through.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.25,
+      creditShockActive: true,
+      publicStability: 40,
+    },
+    tags: ['inflation', 'insurance', 'round10'],
+  },
+  {
+    id: 'research_offset_vs_event_shock',
+    label: 'Research offset vs event shock',
+    description: 'Productivity relief overwhelmed by national supply disruption.',
+    patch: {
+      inflationSettingMultiplier: 1.28,
+      highInflationScenario: true,
+      fiscalPressure: 'strained',
+      activeCrises: 1,
+    },
+    tags: ['inflation', 'events', 'round10'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

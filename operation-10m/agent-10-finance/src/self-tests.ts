@@ -117,6 +117,22 @@ import {
   mergeAgent12IntoMacroFinancialInputs,
   agent12TransportBridgeIntegrationNote,
 } from './integration/agent12-transport-bridge.js';
+import {
+  assessHealthcareServicesInflation,
+  healthcareServicesInflationScoreAdjustment,
+} from './inflation/healthcare-services-inflation.js';
+import {
+  assessInsurancePremiumPassThrough,
+  insurancePremiumPassThroughInflationScoreAdjustment,
+} from './inflation/insurance-premium-pass-through.js';
+import {
+  mergeAgent03IntoMacroFinancialInputs,
+  agent03ResearchBridgeIntegrationNote,
+} from './integration/agent03-research-bridge.js';
+import {
+  mergeAgent05IntoMacroFinancialInputs,
+  agent05EventsBridgeIntegrationNote,
+} from './integration/agent05-events-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -515,7 +531,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r9');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r10');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -662,7 +678,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r9' &&
+      bundle.schemaVersion === '10.14.agent10.r10' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -754,7 +770,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r9' &&
+      bundle.schemaVersion === '10.14.agent10.r10' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -853,7 +869,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r9' &&
+      bundle.schemaVersion === '10.14.agent10.r10' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -880,6 +896,104 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'housing_wellbeing_cost_stack');
       return inp?.householdAffordability === 'severe_pressure' && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+
+  // --- Round 10 scale wave ---
+  {
+    const healthcare = assessHealthcareServicesInflation({
+      wagePressureBand: 'acute',
+      demandSurgeActive: true,
+      workforceShortageBand: 'severe',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r10_01',
+      'healthcare stressed or crisis',
+      healthcare.pressureBand === 'stressed' || healthcare.pressureBand === 'crisis',
+    );
+    check('a10_r10_02', 'healthcare score adj', healthcareServicesInflationScoreAdjustment(healthcare.pressureBand) >= 3);
+  }
+  {
+    const insurance = assessInsurancePremiumPassThrough({
+      claimsInflationBand: 'extreme',
+      reinsuranceStress: true,
+      catastropheLoadActive: true,
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check(
+      'a10_r10_03',
+      'insurance sharp or hard market',
+      insurance.passThroughBand === 'sharp' || insurance.passThroughBand === 'hard_market',
+    );
+    check('a10_r10_04', 'insurance score adj', insurancePremiumPassThroughInflationScoreAdjustment(insurance.passThroughBand) >= 3);
+  }
+  {
+    const merged03 = mergeAgent03IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      productivityGainBand: 'strong',
+      supplySideReliefActive: true,
+      innovationInflationOffsetScore: 0.62,
+    });
+    check('a10_r10_05', 'agent03 research merge offset', (merged03.inflationSettingMultiplier ?? 1) < 1);
+    check('a10_r10_06', 'agent03 bridge note', agent03ResearchBridgeIntegrationNote().includes('Agent 03'));
+  }
+  {
+    const merged05 = mergeAgent05IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      inflationShockEventActive: true,
+      supplyDisruptionSeverity: 'national',
+      confidenceShockBand: 'severe',
+    });
+    check('a10_r10_07', 'agent05 events merge', merged05.highInflationScenario === true);
+    check('a10_r10_08', 'agent05 bridge note', agent05EventsBridgeIntegrationNote().includes('Agent 05'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r10_09',
+      'forecast healthcare and insurance fields',
+      path.points.every((p) => !!p.healthcareServicesPressureBand && !!p.insurancePremiumPassThroughBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r10_10',
+      'agent21 r10 fields',
+      bundle.schemaVersion === '10.14.agent10.r10' &&
+        bundle.terminalHealthcareServicesPressure !== undefined &&
+        bundle.terminalInsurancePremiumPassThrough !== undefined,
+    );
+  }
+  check(
+    'a10_r10_11',
+    'round10 preset healthcare workforce',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'healthcare_workforce_crisis');
+      return inp?.fiscalPressure === 'critical' && (inp.activeCrises ?? 0) >= 2;
+    })(),
+  );
+  check(
+    'a10_r10_12',
+    'round10 preset insurance hard market',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'insurance_hard_market_stack');
+      return inp?.creditShockActive === true && (inp.inflationSettingMultiplier ?? 1) > 1.2;
+    })(),
+  );
+  check(
+    'a10_r10_13',
+    'round10 preset research vs event shock',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'research_offset_vs_event_shock');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
     })(),
   );
 

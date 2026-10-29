@@ -2087,6 +2087,141 @@ export function transportLogisticsInflationScoreAdjustment(band: TransportLogist
 }
 
 
+// --- source: inflation/healthcare-services-inflation.ts ---
+
+export type HealthcareServicesPressureBand = 'contained' | 'elevated' | 'stressed' | 'crisis';
+
+export interface HealthcareServicesInflationAssessment {
+  pressureBand: HealthcareServicesPressureBand;
+  servicesIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Non-insurance healthcare and aged-care services in macro CPI metadata. */
+export function assessHealthcareServicesInflation(input: {
+  wagePressureBand: 'low' | 'moderate' | 'high' | 'acute';
+  demandSurgeActive: boolean;
+  workforceShortageBand: 'none' | 'moderate' | 'severe';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): HealthcareServicesInflationAssessment {
+  let pressure = 0;
+  if (input.wagePressureBand === 'acute') pressure += 0.42;
+  else if (input.wagePressureBand === 'high') pressure += 0.28;
+  else if (input.wagePressureBand === 'moderate') pressure += 0.12;
+
+  if (input.demandSurgeActive) pressure += 0.2;
+  if (input.workforceShortageBand === 'severe') pressure += 0.26;
+  else if (input.workforceShortageBand === 'moderate') pressure += 0.14;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.08;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.004, 0, 1.05);
+  const servicesIndex = finRound(100 + pressure * 17, 1);
+
+  let pressureBand: HealthcareServicesPressureBand = 'contained';
+  if (pressure >= 0.65) pressureBand = 'crisis';
+  else if (pressure >= 0.42) pressureBand = 'stressed';
+  else if (pressure >= 0.22) pressureBand = 'elevated';
+
+  const inflationScoreNudge =
+    pressureBand === 'crisis'
+      ? 0.1
+      : pressureBand === 'stressed'
+        ? 0.07
+        : pressureBand === 'elevated'
+          ? 0.04
+          : 0;
+
+  const narrative =
+    pressureBand === 'crisis' || pressureBand === 'stressed'
+      ? 'Healthcare services are lifting core CPI through wage and capacity constraints.'
+      : pressureBand === 'elevated'
+        ? 'Healthcare services inflation elevated — workforce and demand pressure building.'
+        : 'Healthcare services inflation contained relative to goods basket.';
+
+  return { pressureBand, servicesIndex, inflationScoreNudge, narrative };
+}
+
+export function healthcareServicesInflationScoreAdjustment(band: HealthcareServicesPressureBand): number {
+  if (band === 'crisis') return 5;
+  if (band === 'stressed') return 3;
+  if (band === 'elevated') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/insurance-premium-pass-through.ts ---
+
+export type InsurancePremiumPassThroughBand = 'stable' | 'firming' | 'sharp' | 'hard_market';
+
+export interface InsurancePremiumPassThroughAssessment {
+  passThroughBand: InsurancePremiumPassThroughBand;
+  premiumIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** General insurance premiums channel into macro CPI (metadata only). */
+export function assessInsurancePremiumPassThrough(input: {
+  claimsInflationBand: 'low' | 'moderate' | 'high' | 'extreme';
+  reinsuranceStress: boolean;
+  catastropheLoadActive: boolean;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): InsurancePremiumPassThroughAssessment {
+  let pressure = 0;
+  if (input.claimsInflationBand === 'extreme') pressure += 0.48;
+  else if (input.claimsInflationBand === 'high') pressure += 0.3;
+  else if (input.claimsInflationBand === 'moderate') pressure += 0.14;
+
+  if (input.reinsuranceStress) pressure += 0.22;
+  if (input.catastropheLoadActive) pressure += 0.2;
+
+  if (input.inflationBand === 'elevated' || input.inflationBand === 'high') {
+    pressure += 0.06;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.005, 0, 1.05);
+  const premiumIndex = finRound(100 + pressure * 19, 1);
+
+  let passThroughBand: InsurancePremiumPassThroughBand = 'stable';
+  if (pressure >= 0.68) passThroughBand = 'hard_market';
+  else if (pressure >= 0.42) passThroughBand = 'sharp';
+  else if (pressure >= 0.2) passThroughBand = 'firming';
+
+  const inflationScoreNudge =
+    passThroughBand === 'hard_market'
+      ? 0.09
+      : passThroughBand === 'sharp'
+        ? 0.06
+        : passThroughBand === 'firming'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    passThroughBand === 'hard_market' || passThroughBand === 'sharp'
+      ? 'Insurance premiums are feeding household cost-of-living and CPI insurance sub-basket.'
+      : passThroughBand === 'firming'
+        ? 'Insurance pass-through firming — claims and reinsurance costs elevated.'
+        : 'Insurance premium pass-through stable relative to macro services.';
+
+  return { passThroughBand, premiumIndex, inflationScoreNudge, narrative };
+}
+
+export function insurancePremiumPassThroughInflationScoreAdjustment(
+  band: InsurancePremiumPassThroughBand,
+): number {
+  if (band === 'hard_market') return 5;
+  if (band === 'sharp') return 3;
+  if (band === 'firming') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -2596,6 +2731,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       publicStability: 44,
     },
     tags: ['inflation', 'housing', 'round9'],
+  },
+  {
+    id: 'healthcare_workforce_crisis',
+    label: 'Healthcare workforce crisis',
+    description: 'Acute wage and capacity pressure in healthcare services CPI.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.23,
+      fiscalPressure: 'critical',
+      activeCrises: 2,
+    },
+    tags: ['inflation', 'healthcare', 'round10'],
+  },
+  {
+    id: 'insurance_hard_market_stack',
+    label: 'Insurance hard market stack',
+    description: 'Claims inflation with reinsurance stress — premium pass-through.',
+    patch: {
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.25,
+      creditShockActive: true,
+      publicStability: 40,
+    },
+    tags: ['inflation', 'insurance', 'round10'],
+  },
+  {
+    id: 'research_offset_vs_event_shock',
+    label: 'Research offset vs event shock',
+    description: 'Productivity relief overwhelmed by national supply disruption.',
+    patch: {
+      inflationSettingMultiplier: 1.28,
+      highInflationScenario: true,
+      fiscalPressure: 'strained',
+      activeCrises: 1,
+    },
+    tags: ['inflation', 'events', 'round10'],
   },
 ] as const;
 
@@ -3816,6 +3987,98 @@ export function agent12TransportBridgeIntegrationNote(): string {
 }
 
 
+// --- source: integration/agent03-research-bridge.ts ---
+
+/** Read-only research / tech snapshot from Agent 03 (contract only). */
+export interface Agent03ResearchSnapshot {
+  turn: number;
+  productivityGainBand: 'flat' | 'moderate' | 'strong';
+  supplySideReliefActive: boolean;
+  innovationInflationOffsetScore: number;
+}
+
+export function mergeAgent03IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent03ResearchSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.productivityGainBand === 'strong' && snapshot.supplySideReliefActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier - 0.06, 0.85, 1.45);
+  } else if (snapshot.productivityGainBand === 'moderate' && snapshot.innovationInflationOffsetScore > 0.45) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier - 0.03, 0.85, 1.45);
+  } else if (snapshot.productivityGainBand === 'flat' && !snapshot.supplySideReliefActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+  };
+}
+
+export function agent03ResearchBridgeIntegrationNote(): string {
+  return 'Agent 03 research snapshot adjusts supply-side inflation offset; no tech tree writes.';
+}
+
+
+// --- source: integration/agent05-events-bridge.ts ---
+
+/** Read-only dynamic events snapshot from Agent 05 (contract only). */
+export interface Agent05EventsSnapshot {
+  turn: number;
+  inflationShockEventActive: boolean;
+  supplyDisruptionSeverity: 'none' | 'localized' | 'national';
+  confidenceShockBand: 'calm' | 'uneasy' | 'severe';
+}
+
+export function mergeAgent05IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent05EventsSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.inflationShockEventActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.12, 0.85, 1.45);
+  }
+  if (snapshot.supplyDisruptionSeverity === 'national') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.08, 0.85, 1.45);
+  } else if (snapshot.supplyDisruptionSeverity === 'localized') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (
+    snapshot.inflationShockEventActive &&
+    (snapshot.supplyDisruptionSeverity === 'national' || snapshot.confidenceShockBand === 'severe')
+  ) {
+    highInflationScenario = true;
+  }
+
+  let publicStability = base.publicStability;
+  if (snapshot.confidenceShockBand === 'severe') {
+    publicStability = Math.max(0, publicStability - 6);
+  } else if (snapshot.confidenceShockBand === 'uneasy') {
+    publicStability = Math.max(0, publicStability - 3);
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+    publicStability,
+  };
+}
+
+export function agent05EventsBridgeIntegrationNote(): string {
+  return 'Agent 05 events snapshot adjusts inflation shock flags from narrative events; no event queue writes.';
+}
+
+
 // --- source: integration/inflation-forecast.ts ---
   stepInflationRegimeTracker,
   createInitialInflationRegimeTracker,
@@ -3843,6 +4106,12 @@ export function agent12TransportBridgeIntegrationNote(): string {
   assessTransportLogisticsInflation,
   type TransportLogisticsPressureBand,
 } from '../inflation/transport-logistics-inflation.js';
+  assessHealthcareServicesInflation,
+  type HealthcareServicesPressureBand,
+} from '../inflation/healthcare-services-inflation.js';
+  assessInsurancePremiumPassThrough,
+  type InsurancePremiumPassThroughBand,
+} from '../inflation/insurance-premium-pass-through.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -3861,6 +4130,8 @@ export interface InflationForecastPoint {
   shelterRentPressureBand: ShelterRentPressureBand;
   foodGroceryPassThroughBand: FoodGroceryPassThroughBand;
   transportLogisticsPressureBand: TransportLogisticsPressureBand;
+  healthcareServicesPressureBand: HealthcareServicesPressureBand;
+  insurancePremiumPassThroughBand: InsurancePremiumPassThroughBand;
 }
 
 export interface InflationForecastPath {
@@ -3959,6 +4230,21 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const healthcare = assessHealthcareServicesInflation({
+      wagePressureBand:
+        inputs.fiscalPressure === 'critical' || inputs.highInflationScenario ? 'high' : 'moderate',
+      demandSurgeActive: inputs.creditShockActive || inputs.activeCrises > 0,
+      workforceShortageBand: inputs.householdAffordability === 'severe_pressure' ? 'severe' : 'moderate',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const insurancePrem = assessInsurancePremiumPassThrough({
+      claimsInflationBand: inputs.highInflationScenario ? 'high' : 'moderate',
+      reinsuranceStress: inputs.fiscalPressure === 'critical',
+      catastropheLoadActive: inputs.activeCrises > 1,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -3977,6 +4263,8 @@ export function projectInflationForecastPath(
       shelterRentPressureBand: shelterRent.pressureBand,
       foodGroceryPassThroughBand: foodGrocery.passThroughBand,
       transportLogisticsPressureBand: transportLog.pressureBand,
+      healthcareServicesPressureBand: healthcare.pressureBand,
+      insurancePremiumPassThroughBand: insurancePrem.passThroughBand,
     });
   }
 
@@ -4082,7 +4370,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r9';
+  schemaVersion: '10.14.agent10.r10';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -4096,6 +4384,8 @@ export interface Agent21InflationForecastBundle {
   terminalShelterRentPressure: ShelterRentPressureBand;
   terminalFoodGroceryPassThrough: FoodGroceryPassThroughBand;
   terminalTransportLogisticsPressure: TransportLogisticsPressureBand;
+  terminalHealthcareServicesPressure: HealthcareServicesPressureBand;
+  terminalInsurancePremiumPassThrough: InsurancePremiumPassThroughBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -4124,7 +4414,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r9',
+    schemaVersion: '10.14.agent10.r10',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -4138,6 +4428,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalShelterRentPressure: lastPoint?.shelterRentPressureBand ?? 'soft',
     terminalFoodGroceryPassThrough: lastPoint?.foodGroceryPassThroughBand ?? 'stable',
     terminalTransportLogisticsPressure: lastPoint?.transportLogisticsPressureBand ?? 'smooth',
+    terminalHealthcareServicesPressure: lastPoint?.healthcareServicesPressureBand ?? 'contained',
+    terminalInsurancePremiumPassThrough: lastPoint?.insurancePremiumPassThroughBand ?? 'stable',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -4259,6 +4551,18 @@ export function effectiveTierLoanRate(
   mergeAgent12IntoMacroFinancialInputs,
   agent12TransportBridgeIntegrationNote,
 } from './integration/agent12-transport-bridge.js';
+  assessHealthcareServicesInflation,
+  healthcareServicesInflationScoreAdjustment,
+} from './inflation/healthcare-services-inflation.js';
+  assessInsurancePremiumPassThrough,
+  insurancePremiumPassThroughInflationScoreAdjustment,
+} from './inflation/insurance-premium-pass-through.js';
+  mergeAgent03IntoMacroFinancialInputs,
+  agent03ResearchBridgeIntegrationNote,
+} from './integration/agent03-research-bridge.js';
+  mergeAgent05IntoMacroFinancialInputs,
+  agent05EventsBridgeIntegrationNote,
+} from './integration/agent05-events-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -4657,7 +4961,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r9');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r10');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -4804,7 +5108,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r9' &&
+      bundle.schemaVersion === '10.14.agent10.r10' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -4896,7 +5200,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r9' &&
+      bundle.schemaVersion === '10.14.agent10.r10' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -4995,7 +5299,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r9' &&
+      bundle.schemaVersion === '10.14.agent10.r10' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -5022,6 +5326,104 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'housing_wellbeing_cost_stack');
       return inp?.householdAffordability === 'severe_pressure' && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+
+  // --- Round 10 scale wave ---
+  {
+    const healthcare = assessHealthcareServicesInflation({
+      wagePressureBand: 'acute',
+      demandSurgeActive: true,
+      workforceShortageBand: 'severe',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r10_01',
+      'healthcare stressed or crisis',
+      healthcare.pressureBand === 'stressed' || healthcare.pressureBand === 'crisis',
+    );
+    check('a10_r10_02', 'healthcare score adj', healthcareServicesInflationScoreAdjustment(healthcare.pressureBand) >= 3);
+  }
+  {
+    const insurance = assessInsurancePremiumPassThrough({
+      claimsInflationBand: 'extreme',
+      reinsuranceStress: true,
+      catastropheLoadActive: true,
+      inflationBand: 'elevated',
+      turn: 3,
+    });
+    check(
+      'a10_r10_03',
+      'insurance sharp or hard market',
+      insurance.passThroughBand === 'sharp' || insurance.passThroughBand === 'hard_market',
+    );
+    check('a10_r10_04', 'insurance score adj', insurancePremiumPassThroughInflationScoreAdjustment(insurance.passThroughBand) >= 3);
+  }
+  {
+    const merged03 = mergeAgent03IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      productivityGainBand: 'strong',
+      supplySideReliefActive: true,
+      innovationInflationOffsetScore: 0.62,
+    });
+    check('a10_r10_05', 'agent03 research merge offset', (merged03.inflationSettingMultiplier ?? 1) < 1);
+    check('a10_r10_06', 'agent03 bridge note', agent03ResearchBridgeIntegrationNote().includes('Agent 03'));
+  }
+  {
+    const merged05 = mergeAgent05IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      inflationShockEventActive: true,
+      supplyDisruptionSeverity: 'national',
+      confidenceShockBand: 'severe',
+    });
+    check('a10_r10_07', 'agent05 events merge', merged05.highInflationScenario === true);
+    check('a10_r10_08', 'agent05 bridge note', agent05EventsBridgeIntegrationNote().includes('Agent 05'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r10_09',
+      'forecast healthcare and insurance fields',
+      path.points.every((p) => !!p.healthcareServicesPressureBand && !!p.insurancePremiumPassThroughBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r10_10',
+      'agent21 r10 fields',
+      bundle.schemaVersion === '10.14.agent10.r10' &&
+        bundle.terminalHealthcareServicesPressure !== undefined &&
+        bundle.terminalInsurancePremiumPassThrough !== undefined,
+    );
+  }
+  check(
+    'a10_r10_11',
+    'round10 preset healthcare workforce',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'healthcare_workforce_crisis');
+      return inp?.fiscalPressure === 'critical' && (inp.activeCrises ?? 0) >= 2;
+    })(),
+  );
+  check(
+    'a10_r10_12',
+    'round10 preset insurance hard market',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'insurance_hard_market_stack');
+      return inp?.creditShockActive === true && (inp.inflationSettingMultiplier ?? 1) > 1.2;
+    })(),
+  );
+  check(
+    'a10_r10_13',
+    'round10 preset research vs event shock',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'research_offset_vs_event_shock');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.25;
     })(),
   );
 
@@ -5439,6 +5841,75 @@ export function TransportFoodInflationPanel(props: TransportFoodInflationPanelPr
       </p>
       <p data-testid="transport-food-food-note">{food.narrative}</p>
       <p>{logistics.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/HealthcareInsuranceInflationPanel.tsx ---
+  assessHealthcareServicesInflation,
+  healthcareServicesInflationScoreAdjustment,
+} from '../inflation/healthcare-services-inflation.js';
+  assessInsurancePremiumPassThrough,
+  insurancePremiumPassThroughInflationScoreAdjustment,
+} from '../inflation/insurance-premium-pass-through.js';
+
+export interface HealthcareInsuranceInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent03?: Agent03ResearchSnapshot | null;
+  agent05?: Agent05EventsSnapshot | null;
+}
+
+export function HealthcareInsuranceInflationPanel(props: HealthcareInsuranceInflationPanelProps) {
+  const research = props.agent03 ?? {
+    turn: props.inputs.turn,
+    productivityGainBand: 'moderate' as const,
+    supplySideReliefActive: !props.inputs.highInflationScenario,
+    innovationInflationOffsetScore: 0.35,
+  };
+
+  const events = props.agent05 ?? {
+    turn: props.inputs.turn,
+    inflationShockEventActive: props.inputs.highInflationScenario,
+    supplyDisruptionSeverity: props.inputs.creditShockActive ? ('national' as const) : ('localized' as const),
+    confidenceShockBand: props.inputs.publicStability < 45 ? ('severe' as const) : ('uneasy' as const),
+  };
+
+  const healthcare = assessHealthcareServicesInflation({
+    wagePressureBand:
+      events.inflationShockEventActive && events.supplyDisruptionSeverity === 'national'
+        ? 'acute'
+        : props.inputs.fiscalPressure === 'critical'
+          ? 'high'
+          : 'moderate',
+    demandSurgeActive: events.inflationShockEventActive,
+    workforceShortageBand: research.productivityGainBand === 'flat' ? 'severe' : 'moderate',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const insurance = assessInsurancePremiumPassThrough({
+    claimsInflationBand: events.supplyDisruptionSeverity === 'national' ? 'extreme' : 'high',
+    reinsuranceStress: props.inputs.fiscalPressure === 'critical',
+    catastropheLoadActive: events.confidenceShockBand === 'severe',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-healthcare-insurance-inflation" data-testid="healthcare-insurance-inflation-panel">
+      <h4>Healthcare, insurance & events (round 10)</h4>
+      <p>
+        Healthcare {healthcare.pressureBand} · index {healthcare.servicesIndex.toFixed(0)} · score adj{' '}
+        {healthcareServicesInflationScoreAdjustment(healthcare.pressureBand)}
+      </p>
+      <p>
+        Insurance {insurance.passThroughBand} · index {insurance.premiumIndex.toFixed(0)} · score adj{' '}
+        {insurancePremiumPassThroughInflationScoreAdjustment(insurance.passThroughBand)}
+      </p>
+      <p data-testid="healthcare-insurance-care-note">{healthcare.narrative}</p>
+      <p>{insurance.narrative}</p>
     </div>
   );
 }

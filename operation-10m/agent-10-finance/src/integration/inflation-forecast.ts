@@ -39,6 +39,14 @@ import {
   assessTransportLogisticsInflation,
   type TransportLogisticsPressureBand,
 } from '../inflation/transport-logistics-inflation.js';
+import {
+  assessHealthcareServicesInflation,
+  type HealthcareServicesPressureBand,
+} from '../inflation/healthcare-services-inflation.js';
+import {
+  assessInsurancePremiumPassThrough,
+  type InsurancePremiumPassThroughBand,
+} from '../inflation/insurance-premium-pass-through.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -57,6 +65,8 @@ export interface InflationForecastPoint {
   shelterRentPressureBand: ShelterRentPressureBand;
   foodGroceryPassThroughBand: FoodGroceryPassThroughBand;
   transportLogisticsPressureBand: TransportLogisticsPressureBand;
+  healthcareServicesPressureBand: HealthcareServicesPressureBand;
+  insurancePremiumPassThroughBand: InsurancePremiumPassThroughBand;
 }
 
 export interface InflationForecastPath {
@@ -155,6 +165,21 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const healthcare = assessHealthcareServicesInflation({
+      wagePressureBand:
+        inputs.fiscalPressure === 'critical' || inputs.highInflationScenario ? 'high' : 'moderate',
+      demandSurgeActive: inputs.creditShockActive || inputs.activeCrises > 0,
+      workforceShortageBand: inputs.householdAffordability === 'severe_pressure' ? 'severe' : 'moderate',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const insurancePrem = assessInsurancePremiumPassThrough({
+      claimsInflationBand: inputs.highInflationScenario ? 'high' : 'moderate',
+      reinsuranceStress: inputs.fiscalPressure === 'critical',
+      catastropheLoadActive: inputs.activeCrises > 1,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -173,6 +198,8 @@ export function projectInflationForecastPath(
       shelterRentPressureBand: shelterRent.pressureBand,
       foodGroceryPassThroughBand: foodGrocery.passThroughBand,
       transportLogisticsPressureBand: transportLog.pressureBand,
+      healthcareServicesPressureBand: healthcare.pressureBand,
+      insurancePremiumPassThroughBand: insurancePrem.passThroughBand,
     });
   }
 
