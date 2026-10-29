@@ -1,0 +1,7 @@
+{
+  "maxErrors": 101,
+  "gameFile": "(V9.4) australia-game-with-ai.tsx",
+  "tsconfig": "tsconfig.game.json",
+  "recordedAt": "2026-10-29",
+  "notes": "Baseline for the self-contained V9.4 TSX. CI fails only when errors increase."
+}

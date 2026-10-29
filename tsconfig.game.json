@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "strict": false
+  },
+  "include": ["(V9.4) australia-game-with-ai.tsx"]
+}

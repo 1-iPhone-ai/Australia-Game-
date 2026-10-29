@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@standalone/game": ["src/stubs/game-root.tsx"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}
