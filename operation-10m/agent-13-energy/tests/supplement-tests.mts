@@ -40,6 +40,11 @@ import {
   V1014_AGRI_SOIL_TURN_SCENARIOS,
 } from '../modules/agrivoltaics-soil-carbon-land-ledger.ts';
 import {
+  runAgent13GeoHeatScaleSelfTests,
+  runAgent13GeoHeatTurnScenario,
+  V1014_GEO_HEAT_TURN_SCENARIOS,
+} from '../modules/geothermal-industrial-heat-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -195,6 +200,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const agriTurn = runAgent13AgriSoilTurnScenario(V1014_AGRI_SOIL_TURN_SCENARIOS[0]);
   ok(agriTurn.passed);
+
+  const geoHeat = runAgent13GeoHeatScaleSelfTests();
+  ok(geoHeat.failed === 0 && geoHeat.passed >= 7);
+
+  const geoTurn = runAgent13GeoHeatTurnScenario(V1014_GEO_HEAT_TURN_SCENARIOS[0]);
+  ok(geoTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

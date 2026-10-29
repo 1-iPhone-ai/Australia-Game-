@@ -86,6 +86,13 @@ import {
   type V1014RegionalSoilCarbonLandLedger,
 } from './agrivoltaics-soil-carbon-land-ledger';
 import {
+  advanceRegionalIndustrialHeatDecarbon,
+  computeRegionalGeothermalLedger,
+  scoreAgent13GeoHeatGIAlignment,
+  type V1014RegionalGeothermalLedger,
+  type V1014RegionalIndustrialHeatDecarbLedger,
+} from './geothermal-industrial-heat-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25582,6 +25589,10 @@ export interface V1014RegionalEnergyProfile {
   agrivoltaicsLandRelief: number;
   soilCarbonLandBand: string;
   soilCarbonLandRelief: number;
+  geothermalBand: string;
+  geothermalHeatRelief: number;
+  industrialHeatDecarbBand: string;
+  industrialHeatRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25638,6 +25649,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalEvV2gLedgers: Record<string, V1014RegionalEvV2gFleetLedger>;
   regionalAgrivoltaicsLedgers: Record<string, V1014RegionalAgrivoltaicsLedger>;
   regionalSoilCarbonLandLedgers: Record<string, V1014RegionalSoilCarbonLandLedger>;
+  regionalGeothermalLedgers: Record<string, V1014RegionalGeothermalLedger>;
+  regionalIndustrialHeatDecarbLedgers: Record<string, V1014RegionalIndustrialHeatDecarbLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25665,6 +25678,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalEvV2gMemory: Record<string, { fleetIndex: number }>;
   regionalAgrivoltaicsMemory: Record<string, { paddockBalance: number; dualUseIndex: number }>;
   regionalSoilCarbonLandMemory: Record<string, { stewardshipIndex: number }>;
+  regionalGeothermalMemory: Record<string, { reservoirBalance: number; thermalIndex: number }>;
+  regionalIndustrialHeatMemory: Record<string, { decarbIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25704,6 +25719,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalEvV2gMemory: {},
     regionalAgrivoltaicsMemory: {},
     regionalSoilCarbonLandMemory: {},
+    regionalGeothermalMemory: {},
+    regionalIndustrialHeatMemory: {},
     history: [],
   };
 }
@@ -25745,6 +25762,12 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     regionalSoilCarbonLandMemory:
       typeof raw.regionalSoilCarbonLandMemory === 'object' && raw.regionalSoilCarbonLandMemory
         ? raw.regionalSoilCarbonLandMemory
+        : {},
+    regionalGeothermalMemory:
+      typeof raw.regionalGeothermalMemory === 'object' && raw.regionalGeothermalMemory ? raw.regionalGeothermalMemory : {},
+    regionalIndustrialHeatMemory:
+      typeof raw.regionalIndustrialHeatMemory === 'object' && raw.regionalIndustrialHeatMemory
+        ? raw.regionalIndustrialHeatMemory
         : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
@@ -25872,6 +25895,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalEvV2gLedgers: {},
       regionalAgrivoltaicsLedgers: {},
       regionalSoilCarbonLandLedgers: {},
+      regionalGeothermalLedgers: {},
+      regionalIndustrialHeatDecarbLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -25902,6 +25927,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const evV2gLedgers: Record<string, V1014RegionalEvV2gFleetLedger> = {};
   const agrivoltaicsLedgers: Record<string, V1014RegionalAgrivoltaicsLedger> = {};
   const soilCarbonLandLedgers: Record<string, V1014RegionalSoilCarbonLandLedger> = {};
+  const geothermalLedgers: Record<string, V1014RegionalGeothermalLedger> = {};
+  const industrialHeatDecarbLedgers: Record<string, V1014RegionalIndustrialHeatDecarbLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -25935,6 +25962,10 @@ export function computeIndustrialEnergyEnvironmentalState(
   const nextSoilCarbonLandMemory: Record<string, { stewardshipIndex: number }> = {
     ...persisted.regionalSoilCarbonLandMemory,
   };
+  const nextGeothermalMemory: Record<string, { reservoirBalance: number; thermalIndex: number }> = {
+    ...persisted.regionalGeothermalMemory,
+  };
+  const nextIndustrialHeatMemory: Record<string, { decarbIndex: number }> = { ...persisted.regionalIndustrialHeatMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -26187,6 +26218,28 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextSoilCarbonLandMemory[regionId] = soilStep.next;
     soilCarbonLandLedgers[regionId] = soilStep.ledger;
 
+    const geoStep = computeRegionalGeothermalLedger({
+      regionId,
+      extractionScore,
+      agrivoltaicsLandRelief: agriStep.ledger.agrivoltaicsLandRelief,
+      hydrogenGridRelief: hydrogenStep.ledger.hydrogenGridRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextGeothermalMemory[regionId] || null,
+    });
+    nextGeothermalMemory[regionId] = geoStep.next;
+    geothermalLedgers[regionId] = geoStep.ledger;
+
+    const heatDecarbStep = advanceRegionalIndustrialHeatDecarbon({
+      regionId,
+      netEmissionsIndex: emissionsStep.ledger.netEmissionsIndex,
+      geothermalBand: geoStep.ledger.band,
+      mineralsSupplyRelief: mineralsStep.ledger.mineralsSupplyRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextIndustrialHeatMemory[regionId] || null,
+    });
+    nextIndustrialHeatMemory[regionId] = heatDecarbStep.next;
+    industrialHeatDecarbLedgers[regionId] = heatDecarbStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26212,6 +26265,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= v2gStep.ledger.evV2gGridRelief;
     pressure -= agriStep.ledger.agrivoltaicsLandRelief;
     pressure -= soilStep.ledger.soilCarbonLandRelief;
+    pressure -= geoStep.ledger.geothermalHeatRelief;
+    pressure -= heatDecarbStep.ledger.industrialHeatRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26262,6 +26317,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       v2gStep.ledger.summary,
       agriStep.ledger.summary,
       soilStep.ledger.summary,
+      geoStep.ledger.summary,
+      heatDecarbStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26378,6 +26435,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       agrivoltaicsLandRelief: agriStep.ledger.agrivoltaicsLandRelief,
       soilCarbonLandBand: soilStep.ledger.band,
       soilCarbonLandRelief: soilStep.ledger.soilCarbonLandRelief,
+      geothermalBand: geoStep.ledger.band,
+      geothermalHeatRelief: geoStep.ledger.geothermalHeatRelief,
+      industrialHeatDecarbBand: heatDecarbStep.ledger.band,
+      industrialHeatRelief: heatDecarbStep.ledger.industrialHeatRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26463,6 +26524,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalEvV2gLedgers: evV2gLedgers,
     regionalAgrivoltaicsLedgers: agrivoltaicsLedgers,
     regionalSoilCarbonLandLedgers: soilCarbonLandLedgers,
+    regionalGeothermalLedgers: geothermalLedgers,
+    regionalIndustrialHeatDecarbLedgers: industrialHeatDecarbLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -26490,6 +26553,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalEvV2gMemory: nextEvV2gMemory,
     regionalAgrivoltaicsMemory: nextAgrivoltaicsMemory,
     regionalSoilCarbonLandMemory: nextSoilCarbonLandMemory,
+    regionalGeothermalMemory: nextGeothermalMemory,
+    regionalIndustrialHeatMemory: nextIndustrialHeatMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -26854,6 +26919,37 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     soilBand: rr11.state.regions.SA?.soilCarbonLandBand,
   });
   check('AGRI SOIL GI alignment', giAgri.relevanceDelta > 0.5, giAgri.reason || '');
+
+  const geoInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'hot_sedimentary_geothermal',
+      'binary_orc_geothermal',
+      'geothermal_direct_use_heat',
+      'industrial_heat_pump_hub',
+      'smelter_electrification_corridor',
+      'industrial_waste_heat_recovery',
+      'electric_process_boiler',
+    ],
+  };
+  const rr12 = computeIndustrialEnergyEnvironmentalState(geoInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check('GEOTHERMAL ledger tracked', !!rr12.state.regionalGeothermalLedgers.SA?.band, rr12.state.regionalGeothermalLedgers.SA?.band || '');
+  check(
+    'INDUSTRIAL heat relief',
+    (rr12.state.regions.SA?.industrialHeatRelief || 0) > 0,
+    String(rr12.state.regions.SA?.industrialHeatRelief),
+  );
+  check(
+    'GEOTHERMAL memory persisted',
+    !!rr12.persisted.regionalGeothermalMemory.SA,
+    String(rr12.persisted.regionalGeothermalMemory.SA?.thermalIndex),
+  );
+  const giGeo = scoreAgent13GeoHeatGIAlignment({
+    actionText: 'Hot sedimentary geothermal with smelter electrification heat pumps',
+    geoBand: rr12.state.regions.SA?.geothermalBand,
+    heatBand: rr12.state.regions.SA?.industrialHeatDecarbBand,
+  });
+  check('GEO HEAT GI alignment', giGeo.relevanceDelta > 0.5, giGeo.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
