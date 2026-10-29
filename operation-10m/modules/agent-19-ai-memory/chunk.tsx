@@ -13340,6 +13340,289 @@ export function matchExplainabilityVertexAllowed(report: MatchExplainabilityVert
 }
 
 
+// --- source: match-explainability-vertex-bundle.ts ---
+  auditMatchExplainabilityVertexGate,
+  matchExplainabilityVertexAllowed,
+} from './match-explainability-vertex-gate.ts';
+  buildMatchExplainabilityCrestBundle,
+  matchExplainabilityCrestReady,
+} from './match-explainability-crest-bundle.ts';
+  buildSessionCrestExportBundle,
+  sessionCrestExportShipped,
+} from './session-crest-export-bundle.ts';
+
+export const AGENT19_VERTEX_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityVertexBundle {
+  vertexReady: boolean;
+  vertexAllowed: boolean;
+  crestReady: boolean;
+  crestExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type VertexParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Vertex bundle: vertex gate and crest export must both be green. */
+export function buildMatchExplainabilityVertexBundle(
+  packs: TurnExplainabilityPack[],
+  params: VertexParams,
+): MatchExplainabilityVertexBundle {
+  const vertex = auditMatchExplainabilityVertexGate(packs, params);
+  const crest = buildMatchExplainabilityCrestBundle(packs, params);
+  const crestExport = buildSessionCrestExportBundle(packs, params);
+  const vertexAllowed = matchExplainabilityVertexAllowed(vertex);
+  const crestReady = matchExplainabilityCrestReady(crest);
+  const crestExportShipped = sessionCrestExportShipped(crestExport);
+  const vertexReady = vertexAllowed && crestReady && crestExportShipped;
+  const narrativeLines = [
+    `Match explainability vertex bundle: ${vertexReady ? 'READY' : 'PENDING'} (gate ${vertexAllowed ? 'ok' : 'fail'}, crest ${crestReady ? 'ok' : 'fail'}).`,
+    ...vertex.narrativeLines.slice(0, 2),
+    ...crest.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_VERTEX_NARRATIVE_CAP);
+  return {
+    vertexReady,
+    vertexAllowed,
+    crestReady,
+    crestExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityVertexReady(bundle: MatchExplainabilityVertexBundle): boolean {
+  return bundle.vertexReady;
+}
+
+
+// --- source: session-vertex-export-bundle.ts ---
+  buildSessionCrestExportBundle,
+  type SessionCrestExportBundle,
+} from './session-crest-export-bundle.ts';
+  buildMatchExplainabilityVertexBundle,
+  matchExplainabilityVertexReady,
+} from './match-explainability-vertex-bundle.ts';
+
+export interface SessionVertexExportBundle extends SessionCrestExportBundle {
+  vertexReady: boolean;
+  vertexSchema: string;
+}
+
+/** Vertex export wraps crest export when vertex bundle is ready. */
+export function buildSessionVertexExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionVertexExportBundle {
+  const base = buildSessionCrestExportBundle(packs, params);
+  const vertex = buildMatchExplainabilityVertexBundle(packs, params);
+  const vertexReady = matchExplainabilityVertexReady(vertex);
+  const exports = vertexReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    vertexReady,
+    vertexSchema: 'agent19.vertex.v1',
+    releaseReady: vertexReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Vertex export: ${vertexReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionVertexExportShipped(bundle: SessionVertexExportBundle): boolean {
+  return bundle.vertexReady && bundle.exports.length > 0 && bundle.vertexSchema === 'agent19.vertex.v1';
+}
+
+
+// --- source: crest-vertex-bridge.ts ---
+  buildMatchExplainabilityVertexBundle,
+  matchExplainabilityVertexReady,
+} from './match-explainability-vertex-bundle.ts';
+  buildMatchExplainabilityCrestBundle,
+  matchExplainabilityCrestReady,
+} from './match-explainability-crest-bundle.ts';
+
+export interface CrestVertexBridgeReport {
+  aligned: boolean;
+  vertexReady: boolean;
+  crestReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Vertex-ready should match crest-ready when crest export stack passes. */
+export function auditCrestVertexBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): CrestVertexBridgeReport {
+  const vertex = buildMatchExplainabilityVertexBundle(packs, params);
+  const crest = buildMatchExplainabilityCrestBundle(packs, params);
+  const vertexReady = matchExplainabilityVertexReady(vertex);
+  const crestReady = matchExplainabilityCrestReady(crest);
+  const aligned = vertexReady === crestReady;
+  const narrativeLines = [
+    `Crest/vertex bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (vertex ${vertexReady ? 'ok' : 'fail'}, crest ${crestReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, vertexReady, crestReady, narrativeLines };
+}
+
+export function crestVertexBridgeHealthy(report: CrestVertexBridgeReport): boolean {
+  return report.vertexReady && report.crestReady && report.aligned;
+}
+
+
+// --- source: match-explainability-nexus-gate.ts ---
+  buildMatchExplainabilityVertexBundle,
+  matchExplainabilityVertexReady,
+} from './match-explainability-vertex-bundle.ts';
+  buildSessionVertexExportBundle,
+  sessionVertexExportShipped,
+} from './session-vertex-export-bundle.ts';
+
+export interface MatchExplainabilityNexusGateReport {
+  nexusAllowed: boolean;
+  vertexReady: boolean;
+  vertexExportShipped: boolean;
+  crestVertexHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Nexus gate: vertex bundle + vertex export + crest/vertex bridge. */
+export function auditMatchExplainabilityNexusGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityNexusGateReport {
+  const vertex = buildMatchExplainabilityVertexBundle(packs, params);
+  const vertexExport = buildSessionVertexExportBundle(packs, params);
+  const bridge = auditCrestVertexBridge(packs, params);
+  const vertexReady = matchExplainabilityVertexReady(vertex);
+  const vertexExportShipped = sessionVertexExportShipped(vertexExport);
+  const crestVertexHealthy = crestVertexBridgeHealthy(bridge);
+  const nexusAllowed = vertexReady && vertexExportShipped && crestVertexHealthy;
+  const narrativeLines = [
+    `Match explainability nexus: ${nexusAllowed ? 'ALLOWED' : 'DENIED'} (vertex ${vertexReady ? 'ok' : 'fail'}, export ${vertexExportShipped ? 'ok' : 'fail'}).`,
+    ...vertex.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    nexusAllowed,
+    vertexReady,
+    vertexExportShipped,
+    crestVertexHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityNexusAllowed(report: MatchExplainabilityNexusGateReport): boolean {
+  return report.nexusAllowed;
+}
+
+
+// --- source: vertex-recovery-orchestrator.ts ---
+  auditMatchExplainabilityVertexGate,
+  matchExplainabilityVertexAllowed,
+} from './match-explainability-vertex-gate.ts';
+
+export const AGENT19_VERTEX_RECOVERY_CAP = 10;
+
+export interface VertexRecoveryOrchestratorReport {
+  vertexBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when vertex gate blocks nexus rollout. */
+export function buildVertexRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): VertexRecoveryOrchestratorReport {
+  const vertex = auditMatchExplainabilityVertexGate(packs, params);
+  const vertexBlocked = !matchExplainabilityVertexAllowed(vertex);
+  const steps: string[] = [];
+  if (vertexBlocked) {
+    if (!vertex.crestReady) {
+      steps.push('Restore crest bundle: acme and crest export must pass.');
+    }
+    if (!vertex.crestExportShipped) {
+      steps.push('Emit session crest export before vertex clearance.');
+    }
+    if (!vertex.acmeCrestHealthy) {
+      steps.push('Reconcile acme/crest bridge before vertex.');
+    }
+    steps.push(...buildCrestRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const crest = buildMatchExplainabilityCrestBundle(packs, params);
+    if (!crest.crestReady) {
+      steps.push('Re-run crest readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Vertex gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_VERTEX_RECOVERY_CAP);
+  return {
+    vertexBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Vertex recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function vertexRecoveryOrchestratorWithinCap(report: VertexRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_VERTEX_RECOVERY_CAP;
+}
+
+
 // --- source: crest-recovery-orchestrator.ts ---
   auditMatchExplainabilityCrestGate,
   matchExplainabilityCrestAllowed,
@@ -14070,6 +14353,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityVertexGate,
   matchExplainabilityVertexAllowed,
 } from '../match-explainability-vertex-gate.ts';
+  buildMatchExplainabilityVertexBundle,
+  matchExplainabilityVertexReady,
+} from '../match-explainability-vertex-bundle.ts';
+  buildSessionVertexExportBundle,
+  sessionVertexExportShipped,
+} from '../session-vertex-export-bundle.ts';
+  auditMatchExplainabilityNexusGate,
+  matchExplainabilityNexusAllowed,
+} from '../match-explainability-nexus-gate.ts';
+  buildVertexRecoveryOrchestrator,
+  vertexRecoveryOrchestratorWithinCap,
+} from '../vertex-recovery-orchestrator.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -20915,6 +21210,132 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityVertexAllowed(report) && !report.crestReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r50_vertex_bundle',
+        'Vertex bundle ready on full crest stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityVertexBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityVertexReady(bundle) && bundle.vertexAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r50_crest_vertex_bridge',
+        'Crest vertex bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditCrestVertexBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return crestVertexBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r50_vertex_export',
+        'Vertex export shipped when vertex ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionVertexExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionVertexExportShipped(bundle) && bundle.vertexSchema === 'agent19.vertex.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r50_nexus_gate_ok',
+        'Nexus gate allowed on healthy vertex stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityNexusGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityNexusAllowed(report) && report.vertexExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r50_nexus_gate_block',
+        'Nexus gate denied when vertex pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 74, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityNexusGate([pack], {
+            memory: null,
+            currentTurn: 74,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityNexusAllowed(report) && !report.vertexReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r50_vertex_recovery',
+        'Vertex recovery orchestrator within cap when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 74, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = buildVertexRecoveryOrchestrator([pack], {
+            memory: null,
+            currentTurn: 74,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return report.vertexBlocked && vertexRecoveryOrchestratorWithinCap(report) && report.stepCount > 0 || JSON.stringify(report);
         },
       ],
     ]),
