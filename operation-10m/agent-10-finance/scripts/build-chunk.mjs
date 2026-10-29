@@ -133,6 +133,8 @@ const FILES = [
   'inflation/public-finance-charges-indexation-inflation-surge-latch.ts',
   'inflation/fiscal-sovereign-reconciliation-outlook-inflation-latch.ts',
   'inflation/buffer-grant-reconciliation-outlook-coherence-inflation-latch.ts',
+  'inflation/buffer-fiscal-reconciliation-outlook-coherence-inflation-latch.ts',
+  'inflation/grant-sovereign-reconciliation-outlook-inflation-latch.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
