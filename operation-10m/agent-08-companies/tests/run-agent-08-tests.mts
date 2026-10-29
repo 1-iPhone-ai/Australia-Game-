@@ -1,4 +1,4 @@
-import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08StabilizationSelfTests, runAgent08MandateSelfTests, runAgent08ComplianceSelfTests, runAgent08RemediationSelfTests, runAgent08ExecutionSelfTests, runAgent08UtilizationDepthSelfTests, runAgent08ReconciliationSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
+import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08StabilizationSelfTests, runAgent08MandateSelfTests, runAgent08ComplianceSelfTests, runAgent08RemediationSelfTests, runAgent08ExecutionSelfTests, runAgent08UtilizationDepthSelfTests, runAgent08ReconciliationSelfTests, runAgent08OperatingPrioritySelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
 
 function main() {
   const tax = runAgent08TaxLaborSelfTests();
@@ -104,6 +104,14 @@ function main() {
     process.exit(1);
   }
   console.log(`Agent 08 capacity reconciliation: ${reconciliation.length} passed`);
+
+  const operatingPriority = runAgent08OperatingPrioritySelfTests();
+  const failedOperating = operatingPriority.filter(t => !t.passed);
+  if (failedOperating.length) {
+    console.error('Agent 08 operating priority tests failed:', failedOperating);
+    process.exit(1);
+  }
+  console.log(`Agent 08 operating priorities: ${operatingPriority.length} passed`);
 
   const moduleTests = runAgent08ModuleSelfTests();
   const failed = moduleTests.filter(t => !t.passed);

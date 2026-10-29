@@ -28,6 +28,7 @@ const FILES = [
   'production-remediation-execution.ts',
   'production-utilization-depth.ts',
   'production-capacity-reconciliation.ts',
+  'production-operating-priorities.ts',
   'chunk-exports.ts',
 ];
 
