@@ -115,7 +115,11 @@ export type LaborGiQueryTopic =
   | 'orbit_care_coupling'
   | 'care_equilibrium'
   | 'subject_nexus_readiness'
-  | 'workforce_nexus';
+  | 'workforce_nexus'
+  | 'nexus_scheduling_coupling'
+  | 'scheduling_resonance'
+  | 'subject_convergence_readiness'
+  | 'workforce_convergence';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -228,6 +232,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(care equilibrium|care pipeline equilibrium)/.test(q)) return 'care_equilibrium';
   if (/\b(subject nexus readiness|nexus readiness subject)/.test(q)) return 'subject_nexus_readiness';
   if (/\b(workforce nexus|nexus index labor)/.test(q)) return 'workforce_nexus';
+  if (/\b(nexus scheduling|nexus-scheduling coupling)/.test(q)) return 'nexus_scheduling_coupling';
+  if (/\b(scheduling resonance|scheduling pipeline resonance)/.test(q)) return 'scheduling_resonance';
+  if (/\b(subject convergence readiness|convergence readiness subject)/.test(q)) {
+    return 'subject_convergence_readiness';
+  }
+  if (/\b(workforce convergence|convergence index labor)/.test(q)) return 'workforce_convergence';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1142,6 +1152,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Nexus band ${state.nationalWorkforceNexusIndex?.band ?? 'unknown'}; nexus drag ${Math.round(state.nationalWorkforceNexusIndex?.nexusDrag ?? 0)}.`,
         inference: state.nationalWorkforceNexusIndex?.stewardNote || state.summary,
         projection: 'Workforce nexus synthesizes care coupling, care equilibrium, and subject nexus.'
+      };
+    case 'nexus_scheduling_coupling':
+      return {
+        topic,
+        headline: state.nexusSchedulingCouplingBrief?.summary || 'Nexus-scheduling coupling unavailable.',
+        fact: `Coupling band ${state.nexusSchedulingCouplingBrief?.band ?? 'unknown'}; nexus drag ${Math.round(state.nexusSchedulingCouplingBrief?.nexusDrag ?? 0)}.`,
+        inference: state.nexusSchedulingCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce nexus with scheduling levers — wave 33 / O10-197 depth.'
+      };
+    case 'scheduling_resonance':
+      return {
+        topic,
+        headline: state.schedulingResonanceOutlook?.summary || 'Scheduling resonance unavailable.',
+        fact: `Resonance band ${state.schedulingResonanceOutlook?.band ?? 'unknown'}; equilibrium drag ${Math.round(state.schedulingResonanceOutlook?.equilibriumDrag ?? 0)}.`,
+        inference: state.schedulingResonanceOutlook?.stewardNote || state.outlook,
+        projection: 'Resonance blends scheduling levers with care equilibrium — bounded indices only.'
+      };
+    case 'subject_convergence_readiness':
+      return {
+        topic,
+        headline: state.subjectConvergenceReadinessBrief?.summary || 'Subject convergence readiness unavailable.',
+        fact: `Convergence band ${state.subjectConvergenceReadinessBrief?.band ?? 'unknown'}; convergence drag ${Math.round(state.subjectConvergenceReadinessBrief?.convergenceDrag ?? 0)}.`,
+        inference: state.subjectConvergenceReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject convergence readiness gates subject nexus against workforce nexus for O10-197 wave 33.'
+      };
+    case 'workforce_convergence':
+      return {
+        topic,
+        headline: state.nationalWorkforceConvergenceIndex?.summary || 'Workforce convergence unavailable.',
+        fact: `Convergence band ${state.nationalWorkforceConvergenceIndex?.band ?? 'unknown'}; convergence drag ${Math.round(state.nationalWorkforceConvergenceIndex?.convergenceDrag ?? 0)}.`,
+        inference: state.nationalWorkforceConvergenceIndex?.stewardNote || state.summary,
+        projection: 'Workforce convergence synthesizes scheduling coupling, scheduling resonance, and subject convergence.'
       };
     default:
       return {

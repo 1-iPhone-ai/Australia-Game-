@@ -297,6 +297,10 @@ export interface NationalLaborDemographicsState {
   careEquilibriumOutlook?: NationalCareEquilibriumOutlook;
   subjectNexusReadinessBrief?: NationalSubjectNexusReadinessBrief;
   nationalWorkforceNexusIndex?: NationalWorkforceNexusIndex;
+  nexusSchedulingCouplingBrief?: NationalNexusSchedulingCouplingBrief;
+  schedulingResonanceOutlook?: NationalSchedulingResonanceOutlook;
+  subjectConvergenceReadinessBrief?: NationalSubjectConvergenceReadinessBrief;
+  nationalWorkforceConvergenceIndex?: NationalWorkforceConvergenceIndex;
 }
 
 export type MigrationShockKind =
@@ -1541,6 +1545,54 @@ export interface NationalWorkforceNexusIndex {
   nexusIndex: number;
   band: WorkforceNexusBand;
   nexusDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type NexusSchedulingCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalNexusSchedulingCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: NexusSchedulingCouplingBand;
+  nexusDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SchedulingResonanceBand = 'ebbing' | 'patchy' | 'rising' | 'resonance';
+
+export interface NationalSchedulingResonanceOutlook {
+  turn: number;
+  resonanceIndex: number;
+  band: SchedulingResonanceBand;
+  equilibriumDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectConvergenceReadinessBand =
+  | 'below_convergence'
+  | 'approaching'
+  | 'convergence_ready'
+  | 'nexus_locked';
+
+export interface NationalSubjectConvergenceReadinessBrief {
+  turn: number;
+  convergenceIndex: number;
+  band: SubjectConvergenceReadinessBand;
+  convergenceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceConvergenceBand = 'fragile' | 'thin' | 'elevated' | 'convergence';
+
+export interface NationalWorkforceConvergenceIndex {
+  turn: number;
+  convergenceIndex: number;
+  band: WorkforceConvergenceBand;
+  convergenceDrag: number;
   summary: string;
   stewardNote: string;
 }

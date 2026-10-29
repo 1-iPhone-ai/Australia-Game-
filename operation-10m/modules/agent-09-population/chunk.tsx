@@ -301,6 +301,10 @@ export interface NationalLaborDemographicsState {
   careEquilibriumOutlook?: NationalCareEquilibriumOutlook;
   subjectNexusReadinessBrief?: NationalSubjectNexusReadinessBrief;
   nationalWorkforceNexusIndex?: NationalWorkforceNexusIndex;
+  nexusSchedulingCouplingBrief?: NationalNexusSchedulingCouplingBrief;
+  schedulingResonanceOutlook?: NationalSchedulingResonanceOutlook;
+  subjectConvergenceReadinessBrief?: NationalSubjectConvergenceReadinessBrief;
+  nationalWorkforceConvergenceIndex?: NationalWorkforceConvergenceIndex;
 }
 
 export type MigrationShockKind =
@@ -1549,6 +1553,54 @@ export interface NationalWorkforceNexusIndex {
   stewardNote: string;
 }
 
+export type NexusSchedulingCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalNexusSchedulingCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: NexusSchedulingCouplingBand;
+  nexusDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SchedulingResonanceBand = 'ebbing' | 'patchy' | 'rising' | 'resonance';
+
+export interface NationalSchedulingResonanceOutlook {
+  turn: number;
+  resonanceIndex: number;
+  band: SchedulingResonanceBand;
+  equilibriumDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectConvergenceReadinessBand =
+  | 'below_convergence'
+  | 'approaching'
+  | 'convergence_ready'
+  | 'nexus_locked';
+
+export interface NationalSubjectConvergenceReadinessBrief {
+  turn: number;
+  convergenceIndex: number;
+  band: SubjectConvergenceReadinessBand;
+  convergenceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceConvergenceBand = 'fragile' | 'thin' | 'elevated' | 'convergence';
+
+export interface NationalWorkforceConvergenceIndex {
+  turn: number;
+  convergenceIndex: number;
+  band: WorkforceConvergenceBand;
+  convergenceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -2727,7 +2779,11 @@ export type LaborGiQueryTopic =
   | 'orbit_care_coupling'
   | 'care_equilibrium'
   | 'subject_nexus_readiness'
-  | 'workforce_nexus';
+  | 'workforce_nexus'
+  | 'nexus_scheduling_coupling'
+  | 'scheduling_resonance'
+  | 'subject_convergence_readiness'
+  | 'workforce_convergence';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2840,6 +2896,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(care equilibrium|care pipeline equilibrium)/.test(q)) return 'care_equilibrium';
   if (/\b(subject nexus readiness|nexus readiness subject)/.test(q)) return 'subject_nexus_readiness';
   if (/\b(workforce nexus|nexus index labor)/.test(q)) return 'workforce_nexus';
+  if (/\b(nexus scheduling|nexus-scheduling coupling)/.test(q)) return 'nexus_scheduling_coupling';
+  if (/\b(scheduling resonance|scheduling pipeline resonance)/.test(q)) return 'scheduling_resonance';
+  if (/\b(subject convergence readiness|convergence readiness subject)/.test(q)) {
+    return 'subject_convergence_readiness';
+  }
+  if (/\b(workforce convergence|convergence index labor)/.test(q)) return 'workforce_convergence';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -3754,6 +3816,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Nexus band ${state.nationalWorkforceNexusIndex?.band ?? 'unknown'}; nexus drag ${Math.round(state.nationalWorkforceNexusIndex?.nexusDrag ?? 0)}.`,
         inference: state.nationalWorkforceNexusIndex?.stewardNote || state.summary,
         projection: 'Workforce nexus synthesizes care coupling, care equilibrium, and subject nexus.'
+      };
+    case 'nexus_scheduling_coupling':
+      return {
+        topic,
+        headline: state.nexusSchedulingCouplingBrief?.summary || 'Nexus-scheduling coupling unavailable.',
+        fact: `Coupling band ${state.nexusSchedulingCouplingBrief?.band ?? 'unknown'}; nexus drag ${Math.round(state.nexusSchedulingCouplingBrief?.nexusDrag ?? 0)}.`,
+        inference: state.nexusSchedulingCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce nexus with scheduling levers — wave 33 / O10-197 depth.'
+      };
+    case 'scheduling_resonance':
+      return {
+        topic,
+        headline: state.schedulingResonanceOutlook?.summary || 'Scheduling resonance unavailable.',
+        fact: `Resonance band ${state.schedulingResonanceOutlook?.band ?? 'unknown'}; equilibrium drag ${Math.round(state.schedulingResonanceOutlook?.equilibriumDrag ?? 0)}.`,
+        inference: state.schedulingResonanceOutlook?.stewardNote || state.outlook,
+        projection: 'Resonance blends scheduling levers with care equilibrium — bounded indices only.'
+      };
+    case 'subject_convergence_readiness':
+      return {
+        topic,
+        headline: state.subjectConvergenceReadinessBrief?.summary || 'Subject convergence readiness unavailable.',
+        fact: `Convergence band ${state.subjectConvergenceReadinessBrief?.band ?? 'unknown'}; convergence drag ${Math.round(state.subjectConvergenceReadinessBrief?.convergenceDrag ?? 0)}.`,
+        inference: state.subjectConvergenceReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject convergence readiness gates subject nexus against workforce nexus for O10-197 wave 33.'
+      };
+    case 'workforce_convergence':
+      return {
+        topic,
+        headline: state.nationalWorkforceConvergenceIndex?.summary || 'Workforce convergence unavailable.',
+        fact: `Convergence band ${state.nationalWorkforceConvergenceIndex?.band ?? 'unknown'}; convergence drag ${Math.round(state.nationalWorkforceConvergenceIndex?.convergenceDrag ?? 0)}.`,
+        inference: state.nationalWorkforceConvergenceIndex?.stewardNote || state.summary,
+        projection: 'Workforce convergence synthesizes scheduling coupling, scheduling resonance, and subject convergence.'
       };
     default:
       return {
@@ -4671,6 +4765,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceNexusIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceNexusIndex.stewardNote);
+  }
+  if (
+    state.nexusSchedulingCouplingBrief?.band === 'decoupled' ||
+    state.nexusSchedulingCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.nexusSchedulingCouplingBrief.stewardNote);
+  }
+  if (
+    state.schedulingResonanceOutlook?.band === 'ebbing' ||
+    state.schedulingResonanceOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.schedulingResonanceOutlook.stewardNote);
+  }
+  if (
+    state.subjectConvergenceReadinessBrief?.band === 'below_convergence' ||
+    state.subjectConvergenceReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectConvergenceReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceConvergenceIndex?.band === 'fragile' ||
+    state.nationalWorkforceConvergenceIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceConvergenceIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -13364,6 +13482,278 @@ export function computeNationalWorkforceNexusIndex(
 }
 
 
+// --- source: nexus-scheduling-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalNexusSchedulingCouplingBrief,
+  type NationalWorkforceNexusIndex,
+  type NexusSchedulingCouplingBand
+} from './types';
+
+function couplingBand(index: number): NexusSchedulingCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-33 / wave-33 nexus-scheduling coupling — nexus × scheduling levers (O10-197). */
+export function computeNationalNexusSchedulingCouplingBrief(
+  state: NationalLaborDemographicsState,
+  nexus: NationalWorkforceNexusIndex | null | undefined
+): NationalNexusSchedulingCouplingBrief {
+  if (!state.enabled || !nexus) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      nexusDrag: 0,
+      summary: 'Nexus-scheduling coupling idle — workforce nexus unavailable.',
+      stewardNote: 'Compute workforce nexus before scheduling coupling guidance.'
+    };
+  }
+
+  let schedulingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    schedulingLift += schedulingEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  schedulingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const nexusDrag = v1014laborClamp(
+    nexus.nexusDrag * 0.48 + (nexus.band === 'fragile' || nexus.band === 'thin' ? 11 : 3)
+  );
+  const nexusLift =
+    nexus.band === 'elevated' || nexus.band === 'nexus'
+      ? nexus.nexusIndex * 0.24
+      : nexus.nexusIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + schedulingLift * 21 + nexusLift - nexusDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained nexus-scheduling link — deploy scheduling levers before wave-33 convergence commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard scheduling resonance spikes that drain nexus buffers.'
+        : 'Amplified coupling — pair scheduling packs with subject convergence readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    nexusDrag,
+    summary: `Nexus-scheduling coupling ${band} (index ${Math.round(couplingIndex)}); nexus drag ${Math.round(nexusDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: scheduling-resonance-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalCareEquilibriumOutlook,
+  type NationalLaborDemographicsState,
+  type NationalSchedulingResonanceOutlook,
+  type SchedulingResonanceBand
+} from './types';
+
+function resonanceBand(index: number): SchedulingResonanceBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'resonance';
+}
+
+export function computeNationalSchedulingResonanceOutlook(
+  state: NationalLaborDemographicsState,
+  careEquilibrium: NationalCareEquilibriumOutlook | null | undefined
+): NationalSchedulingResonanceOutlook {
+  if (!state.enabled || !careEquilibrium) {
+    return {
+      turn: state.turn,
+      resonanceIndex: 50,
+      band: 'patchy',
+      equilibriumDrag: 0,
+      summary: 'Scheduling resonance idle — care equilibrium unavailable.',
+      stewardNote: 'Compute care equilibrium before scheduling resonance guidance.'
+    };
+  }
+
+  let schedulingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    schedulingLift += schedulingEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  schedulingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const equilibriumDrag = v1014laborClamp(
+    careEquilibrium.orbitDrag * 0.46 +
+      (careEquilibrium.band === 'ebbing' || careEquilibrium.band === 'patchy' ? 10 : 3)
+  );
+  const equilibriumLift =
+    careEquilibrium.band === 'rising' || careEquilibrium.band === 'equilibrium'
+      ? careEquilibrium.equilibriumIndex * 0.2
+      : careEquilibrium.equilibriumIndex * 0.1;
+
+  const resonanceIndex = v1014laborClamp(24 + schedulingLift * 22 + equilibriumLift - equilibriumDrag);
+  const band = resonanceBand(resonanceIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy scheduling resonance — deploy scheduling levers before subject convergence assembly.'
+      : band === 'resonance'
+        ? 'Resonance band — verify nexus-scheduling coupling before auto workforce pushes.'
+        : 'Rising resonance — align with steadfast-scheduling coupling checks.';
+
+  return {
+    turn: state.turn,
+    resonanceIndex,
+    band,
+    equilibriumDrag,
+    summary: `National scheduling resonance ${band} (index ${Math.round(resonanceIndex)}); equilibrium drag ${Math.round(equilibriumDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-convergence-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectConvergenceReadinessBrief,
+  type NationalSubjectNexusReadinessBrief,
+  type NationalWorkforceNexusIndex,
+  type SubjectConvergenceReadinessBand
+} from './types';
+
+function convergenceBand(index: number): SubjectConvergenceReadinessBand {
+  if (index <= 34) return 'below_convergence';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'convergence_ready';
+  return 'nexus_locked';
+}
+
+/** Round-33 / wave-33 subject convergence readiness — nexus × workforce nexus (O10-197). */
+export function computeNationalSubjectConvergenceReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectNexus: NationalSubjectNexusReadinessBrief | null | undefined,
+  workforceNexus: NationalWorkforceNexusIndex | null | undefined
+): NationalSubjectConvergenceReadinessBrief {
+  if (!state.enabled || !subjectNexus || !workforceNexus) {
+    return {
+      turn: state.turn,
+      convergenceIndex: 50,
+      band: 'approaching',
+      convergenceDrag: 0,
+      summary: 'Subject convergence readiness idle — subject nexus or workforce nexus unavailable.',
+      stewardNote: 'Compute subject nexus and workforce nexus before convergence guidance.'
+    };
+  }
+
+  const convergenceDrag = v1014laborClamp(
+    subjectNexus.nexusDrag * 0.38 +
+      workforceNexus.nexusDrag * 0.38 +
+      (subjectNexus.band === 'below_nexus' || workforceNexus.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectNexus.band === 'nexus_ready' || subjectNexus.band === 'sealed_locked'
+      ? subjectNexus.nexusIndex * 0.27
+      : subjectNexus.nexusIndex * 0.14;
+  const workforceLift =
+    workforceNexus.band === 'elevated' || workforceNexus.band === 'nexus'
+      ? workforceNexus.nexusIndex * 0.25
+      : workforceNexus.nexusIndex * 0.12;
+
+  const convergenceIndex = v1014laborClamp(20 + subjectLift + workforceLift - convergenceDrag);
+  const band = convergenceBand(convergenceIndex);
+
+  const stewardNote =
+    band === 'below_convergence' || band === 'approaching'
+      ? 'Approaching convergence — hold O10-197 wave-33 scale until nexus-scheduling syncs.'
+      : band === 'nexus_locked'
+        ? 'Nexus-locked convergence — still monitor scheduling resonance during corridor peaks.'
+        : 'Convergence-ready — pair with workforce convergence index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    convergenceIndex,
+    band,
+    convergenceDrag,
+    summary: `Subject convergence readiness ${band} (index ${Math.round(convergenceIndex)}); convergence drag ${Math.round(convergenceDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-convergence-index.ts ---
+  type NationalLaborDemographicsState,
+  type NationalNexusSchedulingCouplingBrief,
+  type NationalSchedulingResonanceOutlook,
+  type NationalSubjectConvergenceReadinessBrief,
+  type NationalWorkforceConvergenceIndex,
+  type WorkforceConvergenceBand
+} from './types';
+
+function convergenceBand(index: number): WorkforceConvergenceBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'convergence';
+}
+
+export function computeNationalWorkforceConvergenceIndex(
+  state: NationalLaborDemographicsState,
+  schedulingCoupling: NationalNexusSchedulingCouplingBrief | null | undefined,
+  schedulingResonance: NationalSchedulingResonanceOutlook | null | undefined,
+  subjectConvergence: NationalSubjectConvergenceReadinessBrief | null | undefined
+): NationalWorkforceConvergenceIndex {
+  if (!state.enabled || !schedulingCoupling || !schedulingResonance || !subjectConvergence) {
+    return {
+      turn: state.turn,
+      convergenceIndex: 50,
+      band: 'thin',
+      convergenceDrag: 0,
+      summary: 'Workforce convergence idle — scheduling coupling, scheduling resonance, or subject convergence unavailable.',
+      stewardNote: 'Compute O10-197 wave-33 depth stack before convergence guidance.'
+    };
+  }
+
+  const convergenceDrag = v1014laborClamp(
+    subjectConvergence.convergenceDrag * 0.35 +
+      schedulingCoupling.nexusDrag * 0.3 +
+      schedulingResonance.equilibriumDrag * 0.25 +
+      (subjectConvergence.band === 'below_convergence' || schedulingCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const schedulingLift =
+    schedulingCoupling.band === 'amplified' || schedulingCoupling.band === 'elevated'
+      ? schedulingCoupling.couplingIndex * 0.2
+      : schedulingCoupling.couplingIndex * 0.1;
+  const resonanceLift =
+    schedulingResonance.band === 'rising' || schedulingResonance.band === 'resonance'
+      ? schedulingResonance.resonanceIndex * 0.18
+      : schedulingResonance.resonanceIndex * 0.09;
+  const subjectLift =
+    subjectConvergence.band === 'convergence_ready' || subjectConvergence.band === 'nexus_locked'
+      ? subjectConvergence.convergenceIndex * 0.22
+      : subjectConvergence.convergenceIndex * 0.11;
+
+  const convergenceIndex = v1014laborClamp(18 + schedulingLift + resonanceLift + subjectLift - convergenceDrag);
+  const band = convergenceBand(convergenceIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce convergence — sequence nexus-scheduling, scheduling resonance, and subject convergence before post-c5f6d0b tranche.'
+      : band === 'convergence'
+        ? 'Convergence band — avoid corridor overload that breaks subject convergence bands.'
+        : 'Elevated convergence — refresh subject convergence checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    convergenceIndex,
+    band,
+    convergenceDrag,
+    summary: `National workforce convergence ${band} (index ${Math.round(convergenceIndex)}); convergence drag ${Math.round(convergenceDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -14339,6 +14729,25 @@ export function computeNationalLaborDemographics(
     state.careEquilibriumOutlook,
     state.subjectNexusReadinessBrief
   );
+  state.nexusSchedulingCouplingBrief = computeNationalNexusSchedulingCouplingBrief(
+    state,
+    state.nationalWorkforceNexusIndex
+  );
+  state.schedulingResonanceOutlook = computeNationalSchedulingResonanceOutlook(
+    state,
+    state.careEquilibriumOutlook
+  );
+  state.subjectConvergenceReadinessBrief = computeNationalSubjectConvergenceReadinessBrief(
+    state,
+    state.subjectNexusReadinessBrief,
+    state.nationalWorkforceNexusIndex
+  );
+  state.nationalWorkforceConvergenceIndex = computeNationalWorkforceConvergenceIndex(
+    state,
+    state.nexusSchedulingCouplingBrief,
+    state.schedulingResonanceOutlook,
+    state.subjectConvergenceReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -15021,6 +15430,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceNexusIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.nexusSchedulingCouplingBrief?.band === 'decoupled' ||
+      state.nexusSchedulingCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nexusSchedulingCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.schedulingResonanceOutlook?.band === 'ebbing' ||
+      state.schedulingResonanceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.schedulingResonanceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectConvergenceReadinessBrief?.band === 'below_convergence' ||
+      state.subjectConvergenceReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectConvergenceReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceConvergenceIndex?.band === 'fragile' ||
+      state.nationalWorkforceConvergenceIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceConvergenceIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -16893,6 +17330,65 @@ export function runV1014LaborDemographicsSelfTests(): {
     'nexus steward note'
   );
   check('R3216', careReliefForRegion('NSW', 'technology') > 0, 'care relief for region');
+
+  check('R3301', Boolean(r1.state.nexusSchedulingCouplingBrief?.band), 'nexus scheduling on state');
+  check('R3302', (r1.state.nexusSchedulingCouplingBrief?.nexusDrag ?? 0) >= 0, 'nexus scheduling drag');
+  check('R3303', Boolean(r1.state.schedulingResonanceOutlook?.band), 'scheduling resonance on state');
+  check('R3304', (r1.state.schedulingResonanceOutlook?.equilibriumDrag ?? 0) >= 0, 'scheduling resonance drag');
+  check('R3305', Boolean(r1.state.subjectConvergenceReadinessBrief?.band), 'subject convergence on state');
+  check('R3306', Boolean(r1.state.nationalWorkforceConvergenceIndex?.band), 'workforce convergence on state');
+  check(
+    'R3307',
+    detectLaborDemographicsQuery('nexus scheduling coupling') === 'nexus_scheduling_coupling',
+    'GI nexus scheduling detect'
+  );
+  check(
+    'R3308',
+    detectLaborDemographicsQuery('scheduling resonance') === 'scheduling_resonance',
+    'GI scheduling resonance detect'
+  );
+  check(
+    'R3309',
+    detectLaborDemographicsQuery('subject convergence readiness') === 'subject_convergence_readiness',
+    'GI subject convergence detect'
+  );
+  check(
+    'R3310',
+    detectLaborDemographicsQuery('workforce convergence') === 'workforce_convergence',
+    'GI workforce convergence detect'
+  );
+  check(
+    'R3311',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_convergence').headline.length > 5,
+    'GI workforce convergence answer'
+  );
+  const nexusSchedulingOnly = computeNationalNexusSchedulingCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceNexusIndex
+  );
+  check('R3312', nexusSchedulingOnly.summary.length > 10, 'nexus scheduling standalone summary');
+  const schedulingResonanceOnly = computeNationalSchedulingResonanceOutlook(
+    r1.state,
+    r1.state.careEquilibriumOutlook
+  );
+  check('R3313', schedulingResonanceOnly.band.length > 3, 'scheduling resonance band string');
+  const subjectConvergenceOnly = computeNationalSubjectConvergenceReadinessBrief(
+    r1.state,
+    r1.state.subjectNexusReadinessBrief,
+    r1.state.nationalWorkforceNexusIndex
+  );
+  check('R3314', subjectConvergenceOnly.convergenceDrag >= 0, 'subject convergence drag');
+  check(
+    'R3315',
+    computeNationalWorkforceConvergenceIndex(
+      rHhBad.state,
+      rHhBad.state.nexusSchedulingCouplingBrief,
+      rHhBad.state.schedulingResonanceOutlook,
+      rHhBad.state.subjectConvergenceReadinessBrief
+    ).stewardNote.length > 8,
+    'convergence steward note'
+  );
+  check('R3316', schedulingEaseForRegion('NSW', 'technology') > 0, 'scheduling ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

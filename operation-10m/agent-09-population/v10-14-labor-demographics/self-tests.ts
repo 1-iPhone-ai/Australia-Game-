@@ -182,6 +182,10 @@ import { computeNationalOrbitCareCouplingBrief } from './orbit-care-coupling-bri
 import { computeNationalCareEquilibriumOutlook } from './care-equilibrium-outlook';
 import { computeNationalSubjectNexusReadinessBrief } from './subject-nexus-readiness-brief';
 import { computeNationalWorkforceNexusIndex } from './national-workforce-nexus-index';
+import { computeNationalNexusSchedulingCouplingBrief } from './nexus-scheduling-coupling-brief';
+import { computeNationalSchedulingResonanceOutlook } from './scheduling-resonance-outlook';
+import { computeNationalSubjectConvergenceReadinessBrief } from './subject-convergence-readiness-brief';
+import { computeNationalWorkforceConvergenceIndex } from './national-workforce-convergence-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1985,6 +1989,65 @@ export function runV1014LaborDemographicsSelfTests(): {
     'nexus steward note'
   );
   check('R3216', careReliefForRegion('NSW', 'technology') > 0, 'care relief for region');
+
+  check('R3301', Boolean(r1.state.nexusSchedulingCouplingBrief?.band), 'nexus scheduling on state');
+  check('R3302', (r1.state.nexusSchedulingCouplingBrief?.nexusDrag ?? 0) >= 0, 'nexus scheduling drag');
+  check('R3303', Boolean(r1.state.schedulingResonanceOutlook?.band), 'scheduling resonance on state');
+  check('R3304', (r1.state.schedulingResonanceOutlook?.equilibriumDrag ?? 0) >= 0, 'scheduling resonance drag');
+  check('R3305', Boolean(r1.state.subjectConvergenceReadinessBrief?.band), 'subject convergence on state');
+  check('R3306', Boolean(r1.state.nationalWorkforceConvergenceIndex?.band), 'workforce convergence on state');
+  check(
+    'R3307',
+    detectLaborDemographicsQuery('nexus scheduling coupling') === 'nexus_scheduling_coupling',
+    'GI nexus scheduling detect'
+  );
+  check(
+    'R3308',
+    detectLaborDemographicsQuery('scheduling resonance') === 'scheduling_resonance',
+    'GI scheduling resonance detect'
+  );
+  check(
+    'R3309',
+    detectLaborDemographicsQuery('subject convergence readiness') === 'subject_convergence_readiness',
+    'GI subject convergence detect'
+  );
+  check(
+    'R3310',
+    detectLaborDemographicsQuery('workforce convergence') === 'workforce_convergence',
+    'GI workforce convergence detect'
+  );
+  check(
+    'R3311',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_convergence').headline.length > 5,
+    'GI workforce convergence answer'
+  );
+  const nexusSchedulingOnly = computeNationalNexusSchedulingCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceNexusIndex
+  );
+  check('R3312', nexusSchedulingOnly.summary.length > 10, 'nexus scheduling standalone summary');
+  const schedulingResonanceOnly = computeNationalSchedulingResonanceOutlook(
+    r1.state,
+    r1.state.careEquilibriumOutlook
+  );
+  check('R3313', schedulingResonanceOnly.band.length > 3, 'scheduling resonance band string');
+  const subjectConvergenceOnly = computeNationalSubjectConvergenceReadinessBrief(
+    r1.state,
+    r1.state.subjectNexusReadinessBrief,
+    r1.state.nationalWorkforceNexusIndex
+  );
+  check('R3314', subjectConvergenceOnly.convergenceDrag >= 0, 'subject convergence drag');
+  check(
+    'R3315',
+    computeNationalWorkforceConvergenceIndex(
+      rHhBad.state,
+      rHhBad.state.nexusSchedulingCouplingBrief,
+      rHhBad.state.schedulingResonanceOutlook,
+      rHhBad.state.subjectConvergenceReadinessBrief
+    ).stewardNote.length > 8,
+    'convergence steward note'
+  );
+  check('R3316', schedulingEaseForRegion('NSW', 'technology') > 0, 'scheduling ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

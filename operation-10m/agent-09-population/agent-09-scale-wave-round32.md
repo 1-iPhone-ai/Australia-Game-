@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `op10m/agent-09-population` |
 | Base commit | `42f35ed` — wave **31** / round 31 orbit stack |
-| Origin (round 32 feat) | *(see `git log -1` on branch after push)* |
+| Origin (round 32 feat) | **`65679e4`** — pushed first |
 | Wave baseline | **`aa70dac`** / **~1,798,330** projected (O10-195) |
 | Round **32** / wave **32** | Orbit-care coupling, care equilibrium, subject nexus, workforce nexus |
 | Self-tests | **554** cases (`npm run test:agent09`) |
