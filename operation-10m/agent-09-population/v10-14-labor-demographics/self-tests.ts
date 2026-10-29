@@ -6,6 +6,10 @@ import { REGION_LABOR_BASELINES, lookupRegionalLaborBaseline } from './catalog/r
 import { answerLaborDemographicsQuestion, detectLaborDemographicsQuery } from './gi-labor-queries';
 import { applyRegionalMigrationSpillovers, spilloverNeighborList } from './regional-migration-spillovers';
 import { computeRegionalWageMigrationCoupling } from './wage-migration-coupling';
+import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
+import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
+import { runLaborStressScenario } from './scenario-runner';
+import { buildStewardLaborBrief } from './steward-labor-brief';
 import { projectLaborDemographicsTurns } from './turn-projection';
 import { computeNationalLaborDemographics } from './compute';
 import { buildLaborDemographicsInputs } from './inputs';
@@ -20,6 +24,10 @@ import {
   type NationalLaborDemographicsState
 } from './types';
 import { validateLaborDemographicsState } from './validate';
+
+function stateIntegrated(st: NationalLaborDemographicsState): boolean {
+  return st.integratedLaborBrief?.compositePressureIndex != null;
+}
 
 export function v1014laborMakeTestIndustries(overrides?: Partial<Record<string, number>>): any {
   const regions: any = {};
@@ -273,6 +281,23 @@ export function runV1014LaborDemographicsSelfTests(): {
     householdEssentialsGapScore: 40
   });
   check('SW12', Math.abs(couplingApply.wageMigrationFeedback) >= 0.5, 'coupling feedback under stress');
+
+  check('R301', REGIONAL_MIGRATION_CORRIDORS.length >= 8, 'migration corridors catalog');
+  check('R302', Boolean(stateIntegrated(r1.state)), 'integrated brief on compute');
+  check('R303', Boolean(r1.state.laborAuditTip?.bandLine), 'audit tip on state');
+  check('R304', runLaborStressScenario('ld_sc_mining_supercycle', baseInp) != null, 'mining scenario run');
+  check('R305', (runLaborStressScenario('ld_sc_mining_supercycle', baseInp)?.delta.migrationFlowScore ?? 0) >= -5, 'mining scenario delta');
+  check(
+    'R306',
+    /corridor|balanced/i.test(summarizeCorridorExposure(r1.state)),
+    'corridor summary'
+  );
+  check('R307', buildStewardLaborBrief(r1.state, r1.state.integratedLaborBrief!, []).priority.length > 0, 'steward brief priority');
+  check('R308', appendLaborAuditHistory([], r1.state.laborAuditTip!).length === 1, 'audit history append');
+  check('R309', detectLaborDemographicsQuery('migration shocks active') === 'migration_shocks', 'GI shock query');
+  check('R310', (r1.state.integratedLaborBrief?.topStrainRegions.length ?? 0) >= 1, 'strain regions listed');
+  check('R311', runLaborStressScenario('ld_sc_housing_affordability_crunch', baseInp)?.delta.wagePressureScore !== undefined, 'housing scenario');
+  check('R312', validateLaborDemographicsState({ ...r1.state, population: 1 } as any).valid === false, 'forbidden key still blocked');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

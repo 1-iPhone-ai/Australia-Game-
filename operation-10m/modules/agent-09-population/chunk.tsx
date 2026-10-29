@@ -196,6 +196,8 @@ export interface NationalLaborDemographicsState {
   automationFeedbackSummary?: string;
   householdBudgetSummary?: string;
   activeMigrationShocks?: LaborMigrationShockView[];
+  integratedLaborBrief?: IntegratedLaborMarketBrief;
+  laborAuditTip?: LaborTurnAuditEntry;
 }
 
 export type MigrationShockKind =
@@ -240,6 +242,29 @@ export interface NationalHouseholdBudgetDetail {
   shockSensitivity: 'low' | 'moderate' | 'high' | 'critical';
   regions: Record<string, RegionalHouseholdBudgetDetail>;
   summary: string;
+}
+
+export type IntegratedLaborPressureBand = 'low' | 'moderate' | 'elevated' | 'critical';
+
+export interface IntegratedLaborMarketBrief {
+  turn: number;
+  compositePressureIndex: number;
+  pressureBand: IntegratedLaborPressureBand;
+  topStrainRegions: string[];
+  topOpportunityRegions: string[];
+  dominantRisk: string;
+  dominantOpportunity: string;
+  narrative: string;
+  evidence: string[];
+}
+
+export interface LaborTurnAuditEntry {
+  turn: number;
+  inputHash: string;
+  revision: number;
+  shockCount: number;
+  compositePressureIndex: number;
+  bandLine: string;
 }
 
 export interface LaborDemographicsPersisted {
@@ -1482,6 +1507,342 @@ export function projectLaborDemographicsTurns(
 }
 
 
+// --- source: integrated-labor-synthesis.ts ---
+  EMPLOYMENT_LINKAGE_LABEL,
+  MIGRATION_FLOW_LABEL,
+  V1014_LABOR_CORE_REGIONS,
+  WAGE_PRESSURE_LABEL,
+  type IntegratedLaborMarketBrief,
+  type IntegratedLaborPressureBand,
+  type NationalLaborDemographicsState
+} from './types';
+
+function pressureBand(index: number): IntegratedLaborPressureBand {
+  if (index < 35) return 'low';
+  if (index < 55) return 'moderate';
+  if (index < 72) return 'elevated';
+  return 'critical';
+}
+
+export function computeIntegratedLaborMarketBrief(
+  state: NationalLaborDemographicsState,
+  householdBudget?: NationalHouseholdBudgetDetail | null
+): IntegratedLaborMarketBrief {
+  const regionalScores = V1014_LABOR_CORE_REGIONS.map(c => {
+    const r = state.regions[c];
+    if (!r) return { regionId: c, strain: 50, opportunity: 50 };
+    const strain = v1014laborClamp(
+      r.wagePressureScore * 0.35 +
+        (r.householdBudgetPressureScore ?? 50) * 0.35 +
+        r.workforceStrainIndex * 0.3
+    );
+    const opportunity = v1014laborClamp(
+      r.employmentLinkageScore * 0.45 +
+        r.migrationFlowScore * 0.35 +
+        (100 - (r.automationPressureIndex ?? 50)) * 0.2
+    );
+    return { regionId: c, strain, opportunity };
+  });
+
+  const topStrainRegions = [...regionalScores]
+    .sort((a, b) => b.strain - a.strain)
+    .slice(0, 3)
+    .map(x => x.regionId);
+  const topOpportunityRegions = [...regionalScores]
+    .sort((a, b) => b.opportunity - a.opportunity)
+    .slice(0, 3)
+    .map(x => x.regionId);
+
+  const shockLoad = (state.activeMigrationShocks?.length ?? 0) * 4;
+  const budgetLoad = householdBudget?.nationalBudgetPressureScore ?? 50;
+  const compositePressureIndex = v1014laborClamp(
+    state.wagePressureScore * 0.28 +
+      state.employmentLinkageScore * 0.12 +
+      (100 - state.migrationFlowScore) * 0.1 +
+      budgetLoad * 0.25 +
+      shockLoad +
+      (state.automationFeedbackSummary ? 6 : 0)
+  );
+
+  const band = pressureBand(compositePressureIndex);
+  const dominantRisk =
+    state.wagePressureScore >= 62
+      ? WAGE_PRESSURE_LABEL[state.nationalWagePressure]
+      : budgetLoad >= 60
+        ? 'Household budget pressure'
+        : EMPLOYMENT_LINKAGE_LABEL[state.nationalEmploymentLinkage];
+  const dominantOpportunity =
+    state.migrationFlowScore >= 58
+      ? MIGRATION_FLOW_LABEL[state.nationalMigrationFlow]
+      : 'Output-linked employment strength';
+
+  const narrative = `Composite labor pressure ${Math.round(compositePressureIndex)} (${band}): ${dominantRisk}; opportunity via ${dominantOpportunity.toLowerCase()}.`;
+
+  return {
+    turn: state.turn,
+    compositePressureIndex,
+    pressureBand: band,
+    topStrainRegions,
+    topOpportunityRegions,
+    dominantRisk,
+    dominantOpportunity,
+    narrative,
+    evidence: [
+      `Strain hubs: ${topStrainRegions.join(', ')}`,
+      `Opportunity hubs: ${topOpportunityRegions.join(', ')}`,
+      `${state.activeMigrationShocks?.length ?? 0} migration shock(s) active`
+    ]
+  };
+}
+
+
+// --- source: labor-turn-audit.ts ---
+
+export function buildLaborTurnAuditEntry(
+  state: NationalLaborDemographicsState,
+  brief: IntegratedLaborMarketBrief
+): LaborTurnAuditEntry {
+  return {
+    turn: state.turn,
+    inputHash: state.inputHash,
+    revision: state.revision,
+    shockCount: state.activeMigrationShocks?.length ?? 0,
+    compositePressureIndex: brief.compositePressureIndex,
+    bandLine: `emp=${state.nationalEmploymentLinkage}, wage=${state.nationalWagePressure}, mig=${state.nationalMigrationFlow}, p=${brief.pressureBand}`
+  };
+}
+
+export function appendLaborAuditHistory(
+  history: LaborTurnAuditEntry[] | undefined,
+  entry: LaborTurnAuditEntry,
+  max = 16
+): LaborTurnAuditEntry[] {
+  const next = [...(history || []), entry];
+  return next.slice(-max);
+}
+
+
+// --- source: scenario-runner.ts ---
+
+export interface LaborScenarioRunDelta {
+  employmentLinkageScore: number;
+  wagePressureScore: number;
+  migrationFlowScore: number;
+}
+
+export interface LaborStressScenarioRunResult {
+  scenarioId: LaborStressScenarioId;
+  title: string;
+  baseline: NationalLaborDemographicsState;
+  stressed: NationalLaborDemographicsState;
+  delta: LaborScenarioRunDelta;
+  narrative: string;
+}
+
+function v1014MinimalIndustries(): any {
+  const baseOut = { mining: 120, technology: 40, manufacturing: 40, agriculture: 40, energy: 40, research: 40, tourism: 40, trade: 40 };
+  const mk = (mining: number, tech: number) => ({
+    industries: {
+      mining: { effectiveOutput: mining },
+      technology: { effectiveOutput: tech },
+      manufacturing: { effectiveOutput: 12 },
+      agriculture: { effectiveOutput: 12 },
+      energy: { effectiveOutput: 12 },
+      research: { effectiveOutput: 12 },
+      tourism: { effectiveOutput: 12 },
+      trade: { effectiveOutput: 12 }
+    }
+  });
+  return {
+    national: { output: { ...baseOut } },
+    regions: {
+      NSW: mk(12, 40),
+      VIC: mk(12, 35),
+      QLD: mk(40, 12),
+      WA: mk(55, 12),
+      SA: mk(12, 12),
+      TAS: mk(12, 12),
+      NT: mk(12, 12),
+      ACT: mk(12, 12)
+    }
+  };
+}
+
+function applyScenarioBiasesToInputs(
+  inputs: LaborDemographicsInputs,
+  scenarioId: LaborStressScenarioId
+): LaborDemographicsInputs {
+  const sc = lookupLaborStressScenario(scenarioId);
+  if (!sc) return inputs;
+  const industries = inputs.industries ? JSON.parse(JSON.stringify(inputs.industries)) : v1014MinimalIndustries();
+  if (scenarioId === 'ld_sc_mining_supercycle') {
+    industries.national.output.mining = (industries.national.output.mining || 40) * 2.2;
+    industries.regions.WA.industries.mining.effectiveOutput = 65;
+    industries.regions.QLD.industries.mining.effectiveOutput = 58;
+  }
+  if (scenarioId === 'ld_sc_metro_talent_war') {
+    industries.regions.NSW.industries.technology.effectiveOutput = 48;
+    industries.regions.VIC.industries.technology.effectiveOutput = 44;
+  }
+  if (scenarioId === 'ld_sc_automation_displacement') {
+    return {
+      ...inputs,
+      industries,
+      capabilities: [{ id: 'auto_wave', active: true, automationShift: 92 }]
+    };
+  }
+  if (
+    scenarioId === 'ld_sc_housing_affordability_crunch' ||
+    scenarioId === 'ld_sc_essential_access_crisis'
+  ) {
+    const households: any = {
+      national: { affordability: 'strained', financialResilience: 'fragile', housingPressure: 'high' },
+      regions: {}
+    };
+    sc.primaryRegions.forEach(r => {
+      households.regions[r] = {
+        affordability: 'severe_pressure',
+        essentialAccess: scenarioId.includes('essential') ? 'critical' : 'strained',
+        resilience: 'fragile',
+        employmentOpportunity: 'weak'
+      };
+    });
+    return { ...inputs, industries, households };
+  }
+  return { ...inputs, industries };
+}
+
+export function runLaborStressScenario(
+  scenarioId: LaborStressScenarioId,
+  baseInputs: LaborDemographicsInputs
+): LaborStressScenarioRunResult | null {
+  const sc = lookupLaborStressScenario(scenarioId);
+  if (!sc) return null;
+  const baseline = computeNationalLaborDemographics(baseInputs, createInitialLaborDemographicsPersisted(), null).state;
+  const stressedInputs = applyScenarioBiasesToInputs(baseInputs, scenarioId);
+  const stressed = computeNationalLaborDemographics(
+    stressedInputs,
+    createInitialLaborDemographicsPersisted(),
+    null
+  ).state;
+  const delta: LaborScenarioRunDelta = {
+    employmentLinkageScore: stressed.employmentLinkageScore - baseline.employmentLinkageScore,
+    wagePressureScore: stressed.wagePressureScore - baseline.wagePressureScore,
+    migrationFlowScore: stressed.migrationFlowScore - baseline.migrationFlowScore
+  };
+  return {
+    scenarioId,
+    title: sc.title,
+    baseline,
+    stressed,
+    delta,
+    narrative: sc.narrative
+  };
+}
+
+
+// --- source: steward-labor-brief.ts ---
+
+export interface StewardLaborBrief {
+  priority: 'watch' | 'nudge' | 'intervene';
+  headline: string;
+  hints: string[];
+}
+
+export function buildStewardLaborBrief(
+  state: NationalLaborDemographicsState,
+  brief: IntegratedLaborMarketBrief | null | undefined,
+  eventLines: string[]
+): StewardLaborBrief {
+  if (!state.enabled || !brief) {
+    return {
+      priority: 'watch',
+      headline: 'Labor steward idle — layer off',
+      hints: ['Enable labor demographics before steward labor guidance.']
+    };
+  }
+
+  const hints: string[] = [];
+  if (brief.pressureBand === 'critical' || brief.pressureBand === 'elevated') {
+    hints.push('Prioritize household affordability and workforce transition actions in strain hubs.');
+  }
+  if ((state.activeMigrationShocks?.length ?? 0) >= 2) {
+    hints.push('Multiple migration shocks — avoid stacking auto commits in shocked regions.');
+  }
+  if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
+    hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
+  }
+  hints.push(...eventLines.filter(e => e.length < 120).slice(0, 2));
+
+  const priority: StewardLaborBrief['priority'] =
+    brief.pressureBand === 'critical'
+      ? 'intervene'
+      : brief.pressureBand === 'elevated'
+        ? 'nudge'
+        : 'watch';
+
+  return {
+    priority,
+    headline: brief.narrative.slice(0, 160),
+    hints: hints.slice(0, 4)
+  };
+}
+
+
+// --- source: catalog/regional-migration-corridors.ts ---
+
+export interface RegionalMigrationCorridor {
+  id: string;
+  fromRegionId: string;
+  toRegionId: string;
+  strength: number;
+  label: string;
+  industryTheme: string;
+}
+
+export const REGIONAL_MIGRATION_CORRIDORS: RegionalMigrationCorridor[] = [
+  { id: 'cor_nsw_vic', fromRegionId: 'NSW', toRegionId: 'VIC', strength: 0.72, label: 'Sydney–Melbourne corridor', industryTheme: 'services' },
+  { id: 'cor_vic_nsw', fromRegionId: 'VIC', toRegionId: 'NSW', strength: 0.68, label: 'Melbourne–Sydney return flow', industryTheme: 'technology' },
+  { id: 'cor_qld_wa', fromRegionId: 'QLD', toRegionId: 'WA', strength: 0.55, label: 'East–west resource rotation', industryTheme: 'mining' },
+  { id: 'cor_wa_qld', fromRegionId: 'WA', toRegionId: 'QLD', strength: 0.48, label: 'Resource coast reciprocal', industryTheme: 'mining' },
+  { id: 'cor_nsw_qld', fromRegionId: 'NSW', toRegionId: 'QLD', strength: 0.61, label: 'Northern migration arc', industryTheme: 'tourism' },
+  { id: 'cor_sa_vic', fromRegionId: 'SA', toRegionId: 'VIC', strength: 0.42, label: 'Adelaide–Melbourne drift', industryTheme: 'manufacturing' },
+  { id: 'cor_tas_vic', fromRegionId: 'TAS', toRegionId: 'VIC', strength: 0.38, label: 'Bass Strait opportunity seek', industryTheme: 'tourism' },
+  { id: 'cor_nt_qld', fromRegionId: 'NT', toRegionId: 'QLD', strength: 0.52, label: 'Top End–Queensland link', industryTheme: 'energy' },
+  { id: 'cor_act_nsw', fromRegionId: 'ACT', toRegionId: 'NSW', strength: 0.45, label: 'Capital region spill', industryTheme: 'research' }
+];
+
+export function corridorsFromRegion(regionId: string): RegionalMigrationCorridor[] {
+  return REGIONAL_MIGRATION_CORRIDORS.filter(c => c.fromRegionId === regionId);
+}
+
+/** Adjust destination region migration score from corridor pull (bounded). */
+export function applyCorridorPullToRegions(
+  regions: Record<string, { migrationFlowScore: number; employmentLinkageScore: number }>
+): string[] {
+  const notes: string[] = [];
+  REGIONAL_MIGRATION_CORRIDORS.forEach(c => {
+    const from = regions[c.fromRegionId];
+    const to = regions[c.toRegionId];
+    if (!from || !to) return;
+    const pull = (from.employmentLinkageScore - to.employmentLinkageScore) * 0.08 * c.strength;
+    if (Math.abs(pull) < 0.4) return;
+    to.migrationFlowScore = v1014laborClamp(to.migrationFlowScore + pull);
+    from.migrationFlowScore = v1014laborClamp(from.migrationFlowScore - pull * 0.35);
+    notes.push(`${c.label}: pull ${pull.toFixed(1)}`);
+  });
+  return notes.slice(0, 4);
+}
+
+export function summarizeCorridorExposure(state: NationalLaborDemographicsState | null): string {
+  if (!state?.enabled) return 'Corridor exposure unavailable.';
+  const hot = REGIONAL_MIGRATION_CORRIDORS.filter(c => (state.regions[c.toRegionId]?.migrationFlowScore ?? 0) >= 58)
+    .slice(0, 3)
+    .map(c => c.label);
+  return hot.length ? `Active corridor pull: ${hot.join('; ')}` : 'Corridor pull balanced nationally.';
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -1814,6 +2175,11 @@ export function computeNationalLaborDemographics(
     events.push(`Wage–migration coupling adjusted ${coupling.explanations.length} region(s).`);
   }
 
+  const corridorNotes = applyCorridorPullToRegions(regions);
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    regions[regionId].migrationFlow = v1014laborBandMigration(regions[regionId].migrationFlowScore);
+  });
+
   V1014_LABOR_CORE_REGIONS.forEach(regionId => {
     persisted.regionalHysteresis[regionId].migrationFlow = regions[regionId].migrationFlow;
   });
@@ -1959,6 +2325,18 @@ export function computeNationalLaborDemographics(
     activeMigrationShocks: toMigrationShockViews(activeShocks)
   };
 
+  const integratedBrief = computeIntegratedLaborMarketBrief(state, householdBudget);
+  state.integratedLaborBrief = integratedBrief;
+  state.laborAuditTip = buildLaborTurnAuditEntry(state, integratedBrief);
+  if (corridorNotes.length) {
+    state.evidence.push(corridorNotes[0]);
+  }
+
+  const stewardBrief = buildStewardLaborBrief(state, integratedBrief, events);
+  stewardBrief.hints.forEach(h => {
+    if (!events.includes(h) && events.length < V1014_LABOR_LIMITS.maxEventsPerTurn) events.push(h);
+  });
+
   if (automationFeedback.stewardHints.length) {
     events.push(...automationFeedback.stewardHints.slice(0, V1014_LABOR_LIMITS.maxEventsPerTurn));
   }
@@ -1976,6 +2354,10 @@ export function computeNationalLaborDemographics(
   type LaborDemographicsInputs,
   type NationalLaborDemographicsState
 } from './types';
+
+function stateIntegrated(st: NationalLaborDemographicsState): boolean {
+  return st.integratedLaborBrief?.compositePressureIndex != null;
+}
 
 export function v1014laborMakeTestIndustries(overrides?: Partial<Record<string, number>>): any {
   const regions: any = {};
@@ -2229,6 +2611,23 @@ export function runV1014LaborDemographicsSelfTests(): {
     householdEssentialsGapScore: 40
   });
   check('SW12', Math.abs(couplingApply.wageMigrationFeedback) >= 0.5, 'coupling feedback under stress');
+
+  check('R301', REGIONAL_MIGRATION_CORRIDORS.length >= 8, 'migration corridors catalog');
+  check('R302', Boolean(stateIntegrated(r1.state)), 'integrated brief on compute');
+  check('R303', Boolean(r1.state.laborAuditTip?.bandLine), 'audit tip on state');
+  check('R304', runLaborStressScenario('ld_sc_mining_supercycle', baseInp) != null, 'mining scenario run');
+  check('R305', (runLaborStressScenario('ld_sc_mining_supercycle', baseInp)?.delta.migrationFlowScore ?? 0) >= -5, 'mining scenario delta');
+  check(
+    'R306',
+    /corridor|balanced/i.test(summarizeCorridorExposure(r1.state)),
+    'corridor summary'
+  );
+  check('R307', buildStewardLaborBrief(r1.state, r1.state.integratedLaborBrief!, []).priority.length > 0, 'steward brief priority');
+  check('R308', appendLaborAuditHistory([], r1.state.laborAuditTip!).length === 1, 'audit history append');
+  check('R309', detectLaborDemographicsQuery('migration shocks active') === 'migration_shocks', 'GI shock query');
+  check('R310', (r1.state.integratedLaborBrief?.topStrainRegions.length ?? 0) >= 1, 'strain regions listed');
+  check('R311', runLaborStressScenario('ld_sc_housing_affordability_crunch', baseInp)?.delta.wagePressureScore !== undefined, 'housing scenario');
+  check('R312', validateLaborDemographicsState({ ...r1.state, population: 1 } as any).valid === false, 'forbidden key still blocked');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

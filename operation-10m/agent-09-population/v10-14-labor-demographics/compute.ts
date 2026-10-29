@@ -31,6 +31,10 @@ import {
   nationalMigrationAverage
 } from './migration';
 import { applyRegionalMigrationSpillovers } from './regional-migration-spillovers';
+import { applyCorridorPullToRegions } from './catalog/regional-migration-corridors';
+import { computeIntegratedLaborMarketBrief } from './integrated-labor-synthesis';
+import { buildLaborTurnAuditEntry } from './labor-turn-audit';
+import { buildStewardLaborBrief } from './steward-labor-brief';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -192,6 +196,11 @@ export function computeNationalLaborDemographics(
     events.push(`Wage–migration coupling adjusted ${coupling.explanations.length} region(s).`);
   }
 
+  const corridorNotes = applyCorridorPullToRegions(regions);
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    regions[regionId].migrationFlow = v1014laborBandMigration(regions[regionId].migrationFlowScore);
+  });
+
   V1014_LABOR_CORE_REGIONS.forEach(regionId => {
     persisted.regionalHysteresis[regionId].migrationFlow = regions[regionId].migrationFlow;
   });
@@ -336,6 +345,18 @@ export function computeNationalLaborDemographics(
     householdBudgetSummary: householdBudget.summary,
     activeMigrationShocks: toMigrationShockViews(activeShocks)
   };
+
+  const integratedBrief = computeIntegratedLaborMarketBrief(state, householdBudget);
+  state.integratedLaborBrief = integratedBrief;
+  state.laborAuditTip = buildLaborTurnAuditEntry(state, integratedBrief);
+  if (corridorNotes.length) {
+    state.evidence.push(corridorNotes[0]);
+  }
+
+  const stewardBrief = buildStewardLaborBrief(state, integratedBrief, events);
+  stewardBrief.hints.forEach(h => {
+    if (!events.includes(h) && events.length < V1014_LABOR_LIMITS.maxEventsPerTurn) events.push(h);
+  });
 
   if (automationFeedback.stewardHints.length) {
     events.push(...automationFeedback.stewardHints.slice(0, V1014_LABOR_LIMITS.maxEventsPerTurn));

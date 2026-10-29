@@ -192,6 +192,8 @@ export interface NationalLaborDemographicsState {
   automationFeedbackSummary?: string;
   householdBudgetSummary?: string;
   activeMigrationShocks?: LaborMigrationShockView[];
+  integratedLaborBrief?: IntegratedLaborMarketBrief;
+  laborAuditTip?: LaborTurnAuditEntry;
 }
 
 export type MigrationShockKind =
@@ -236,6 +238,29 @@ export interface NationalHouseholdBudgetDetail {
   shockSensitivity: 'low' | 'moderate' | 'high' | 'critical';
   regions: Record<string, RegionalHouseholdBudgetDetail>;
   summary: string;
+}
+
+export type IntegratedLaborPressureBand = 'low' | 'moderate' | 'elevated' | 'critical';
+
+export interface IntegratedLaborMarketBrief {
+  turn: number;
+  compositePressureIndex: number;
+  pressureBand: IntegratedLaborPressureBand;
+  topStrainRegions: string[];
+  topOpportunityRegions: string[];
+  dominantRisk: string;
+  dominantOpportunity: string;
+  narrative: string;
+  evidence: string[];
+}
+
+export interface LaborTurnAuditEntry {
+  turn: number;
+  inputHash: string;
+  revision: number;
+  shockCount: number;
+  compositePressureIndex: number;
+  bandLine: string;
 }
 
 export interface LaborDemographicsPersisted {
