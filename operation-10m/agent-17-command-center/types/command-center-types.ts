@@ -229,6 +229,8 @@ export interface Agent17PlanningDepthSnapshot {
   imperialAccord: Agent17ImperialAccordSnapshot;
   throneIndex: Agent17ThroneIndexSnapshot;
   dynastyAccord: Agent17DynastyAccordSnapshot;
+  realmIndex: Agent17RealmIndexSnapshot;
+  successionAccord: Agent17SuccessionAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1003,6 +1005,40 @@ export interface Agent17DynastyAccordSnapshot {
   throneBand: Agent17ThroneIndexSnapshot['band'];
   imperialBand: Agent17ImperialAccordSnapshot['band'];
   dynastyProclaimed: boolean;
+  headline: string;
+}
+
+export interface Agent17RealmBanner {
+  id: string;
+  label: string;
+  raised: boolean;
+  weight: number;
+}
+
+export interface Agent17RealmIndexSnapshot {
+  realmScore: number;
+  band: 'unified' | 'fractured' | 'fallen';
+  banners: Agent17RealmBanner[];
+  dynastyBand: Agent17DynastyAccordSnapshot['band'];
+  throneBand: Agent17ThroneIndexSnapshot['band'];
+  realmUnified: boolean;
+  headline: string;
+}
+
+export interface Agent17SuccessionClause {
+  id: string;
+  label: string;
+  anchored: boolean;
+  weight: number;
+}
+
+export interface Agent17SuccessionAccordSnapshot {
+  successionScore: number;
+  band: 'anchored' | 'contested' | 'void';
+  clauses: Agent17SuccessionClause[];
+  realmBand: Agent17RealmIndexSnapshot['band'];
+  dynastyBand: Agent17DynastyAccordSnapshot['band'];
+  successionAnchored: boolean;
   headline: string;
 }
 

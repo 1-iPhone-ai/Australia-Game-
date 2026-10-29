@@ -69,6 +69,8 @@ import { buildAgent17CrownIndex } from './crown-index.ts';
 import { buildAgent17ImperialAccord } from './imperial-accord.ts';
 import { buildAgent17ThroneIndex } from './throne-index.ts';
 import { buildAgent17DynastyAccord } from './dynasty-accord.ts';
+import { buildAgent17RealmIndex } from './realm-index.ts';
+import { buildAgent17SuccessionAccord } from './succession-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -403,6 +405,16 @@ export function buildAgent17PlanningDepthSnapshot(
     imperialAccord,
     crownIndex,
   });
+  const realmIndex = buildAgent17RealmIndex({
+    dynastyAccord,
+    throneIndex,
+    imperialAccord,
+  });
+  const successionAccord = buildAgent17SuccessionAccord({
+    realmIndex,
+    dynastyAccord,
+    throneIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -454,6 +466,8 @@ export function buildAgent17PlanningDepthSnapshot(
     imperialAccord,
     throneIndex,
     dynastyAccord,
+    realmIndex,
+    successionAccord,
   };
 }
 

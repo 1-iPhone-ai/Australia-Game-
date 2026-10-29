@@ -75,6 +75,8 @@ const FILES = [
   'planning/imperial-accord.ts',
   'planning/throne-index.ts',
   'planning/dynasty-accord.ts',
+  'planning/realm-index.ts',
+  'planning/succession-accord.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',
@@ -108,6 +110,7 @@ const FILES = [
   'harness/run-compact-depth-tests.ts',
   'harness/run-crown-depth-tests.ts',
   'harness/run-throne-depth-tests.ts',
+  'harness/run-realm-depth-tests.ts',
 ];
 
 function stripModulePreamble(source) {

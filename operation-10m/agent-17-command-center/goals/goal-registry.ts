@@ -653,6 +653,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Usurped throne or dissolved imperial yields dynastyAccordBlocksThrone.',
     severity: 'major',
   },
+  {
+    id: 'G17-094',
+    title: 'Realm index on planning depth',
+    category: 'telemetry',
+    acceptance: 'realmIndex reports realmScore 0–100 with unified/fractured/fallen band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-095',
+    title: 'Succession accord clauses complete',
+    category: 'telemetry',
+    acceptance: 'successionAccord exposes ≥5 clauses and successionScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-096',
+    title: 'Fallen realm voids succession accord',
+    category: 'integration',
+    acceptance: 'Fallen realm or extinct dynasty yields successionAccordBlocksRealm.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

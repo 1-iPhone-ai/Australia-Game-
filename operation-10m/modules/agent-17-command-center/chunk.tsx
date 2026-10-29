@@ -233,6 +233,8 @@ export interface Agent17PlanningDepthSnapshot {
   imperialAccord: Agent17ImperialAccordSnapshot;
   throneIndex: Agent17ThroneIndexSnapshot;
   dynastyAccord: Agent17DynastyAccordSnapshot;
+  realmIndex: Agent17RealmIndexSnapshot;
+  successionAccord: Agent17SuccessionAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1007,6 +1009,40 @@ export interface Agent17DynastyAccordSnapshot {
   throneBand: Agent17ThroneIndexSnapshot['band'];
   imperialBand: Agent17ImperialAccordSnapshot['band'];
   dynastyProclaimed: boolean;
+  headline: string;
+}
+
+export interface Agent17RealmBanner {
+  id: string;
+  label: string;
+  raised: boolean;
+  weight: number;
+}
+
+export interface Agent17RealmIndexSnapshot {
+  realmScore: number;
+  band: 'unified' | 'fractured' | 'fallen';
+  banners: Agent17RealmBanner[];
+  dynastyBand: Agent17DynastyAccordSnapshot['band'];
+  throneBand: Agent17ThroneIndexSnapshot['band'];
+  realmUnified: boolean;
+  headline: string;
+}
+
+export interface Agent17SuccessionClause {
+  id: string;
+  label: string;
+  anchored: boolean;
+  weight: number;
+}
+
+export interface Agent17SuccessionAccordSnapshot {
+  successionScore: number;
+  band: 'anchored' | 'contested' | 'void';
+  clauses: Agent17SuccessionClause[];
+  realmBand: Agent17RealmIndexSnapshot['band'];
+  dynastyBand: Agent17DynastyAccordSnapshot['band'];
+  successionAnchored: boolean;
   headline: string;
 }
 
@@ -7411,6 +7447,211 @@ export function dynastyAccordBlocksThrone(snapshot: Agent17DynastyAccordSnapshot
   return snapshot.band === 'extinct' || !snapshot.dynastyProclaimed;
 }
 
+export function dynastyAccordBlocksRealm(snapshot: Agent17DynastyAccordSnapshot): boolean {
+  return snapshot.band === 'extinct' || !snapshot.dynastyProclaimed;
+}
+
+
+// --- source: planning/realm-index.ts ---
+  Agent17DynastyAccordSnapshot,
+  Agent17ImperialAccordSnapshot,
+  Agent17RealmIndexSnapshot,
+  Agent17ThroneIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17RealmIndexInputs {
+  dynastyAccord: Agent17DynastyAccordSnapshot;
+  throneIndex: Agent17ThroneIndexSnapshot;
+  imperialAccord: Agent17ImperialAccordSnapshot;
+}
+
+export function buildAgent17RealmIndex(
+  inputs: Agent17RealmIndexInputs
+): Agent17RealmIndexSnapshot {
+  const banners: Agent17RealmIndexSnapshot['banners'] = [];
+
+  banners.push({
+    id: 'dynasty_proclaimed',
+    label: 'Dynasty accord proclaimed',
+    raised:
+      inputs.dynastyAccord.dynastyProclaimed &&
+      !dynastyAccordBlocksRealm(inputs.dynastyAccord),
+    weight: 30,
+  });
+
+  banners.push({
+    id: 'dynasty_band',
+    label: 'Dynasty lineage or branch',
+    raised:
+      inputs.dynastyAccord.band === 'lineage' || inputs.dynastyAccord.band === 'branch',
+    weight: 25,
+  });
+
+  banners.push({
+    id: 'throne_seated',
+    label: 'Throne index throne-seated',
+    raised:
+      inputs.throneIndex.throneSeated && !throneIndexBlocksDynasty(inputs.throneIndex),
+    weight: 20,
+  });
+
+  banners.push({
+    id: 'imperial_clear',
+    label: 'Imperial accord not blocking throne',
+    raised: !imperialAccordBlocksThrone(inputs.imperialAccord),
+    weight: 15,
+  });
+
+  banners.push({
+    id: 'dynasty_score',
+    label: 'Dynasty score headroom',
+    raised: inputs.dynastyAccord.dynastyScore >= 40,
+    weight: 10,
+  });
+
+  const weighted = banners.reduce(
+    (n, b) => n + (b.raised ? 100 : 6) * (b.weight / 100),
+    0
+  );
+  const totalWeight = banners.reduce((n, b) => n + b.weight, 0);
+  const realmScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const fallenSignals =
+    dynastyAccordBlocksRealm(inputs.dynastyAccord) ||
+    throneIndexBlocksDynasty(inputs.throneIndex) ||
+    imperialAccordBlocksThrone(inputs.imperialAccord);
+
+  const band: Agent17RealmIndexSnapshot['band'] = fallenSignals
+    ? 'fallen'
+    : realmScore >= 62 &&
+        inputs.dynastyAccord.band === 'lineage' &&
+        inputs.throneIndex.band === 'seated'
+      ? 'unified'
+      : 'fractured';
+
+  const realmUnified =
+    band === 'unified' &&
+    inputs.dynastyAccord.dynastyProclaimed &&
+    !dynastyAccordBlocksRealm(inputs.dynastyAccord);
+
+  return {
+    realmScore,
+    band,
+    banners,
+    dynastyBand: inputs.dynastyAccord.band,
+    throneBand: inputs.throneIndex.band,
+    realmUnified,
+    headline: `Realm ${band} (${realmScore}/100) · ${banners.filter(b => b.raised).length}/${banners.length} banners`,
+  };
+}
+
+export function realmIndexBlocksSuccession(snapshot: Agent17RealmIndexSnapshot): boolean {
+  return snapshot.band === 'fallen' || !snapshot.realmUnified;
+}
+
+
+// --- source: planning/succession-accord.ts ---
+  Agent17DynastyAccordSnapshot,
+  Agent17RealmIndexSnapshot,
+  Agent17SuccessionAccordSnapshot,
+  Agent17ThroneIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17SuccessionAccordInputs {
+  realmIndex: Agent17RealmIndexSnapshot;
+  dynastyAccord: Agent17DynastyAccordSnapshot;
+  throneIndex: Agent17ThroneIndexSnapshot;
+}
+
+export function buildAgent17SuccessionAccord(
+  inputs: Agent17SuccessionAccordInputs
+): Agent17SuccessionAccordSnapshot {
+  const clauses: Agent17SuccessionAccordSnapshot['clauses'] = [];
+
+  clauses.push({
+    id: 'realm_unified',
+    label: 'Realm index realm-unified',
+    anchored:
+      inputs.realmIndex.realmUnified && !realmIndexBlocksSuccession(inputs.realmIndex),
+    weight: 30,
+  });
+
+  clauses.push({
+    id: 'realm_band',
+    label: 'Realm unified or fractured',
+    anchored:
+      inputs.realmIndex.band === 'unified' || inputs.realmIndex.band === 'fractured',
+    weight: 25,
+  });
+
+  clauses.push({
+    id: 'dynasty_lineage',
+    label: 'Dynasty accord lineage-ready',
+    anchored:
+      inputs.dynastyAccord.dynastyProclaimed && !dynastyAccordBlocksRealm(inputs.dynastyAccord),
+    weight: 20,
+  });
+
+  clauses.push({
+    id: 'throne_clear',
+    label: 'Throne index not blocking dynasty',
+    anchored: !throneIndexBlocksDynasty(inputs.throneIndex),
+    weight: 15,
+  });
+
+  clauses.push({
+    id: 'realm_score',
+    label: 'Realm score headroom',
+    anchored: inputs.realmIndex.realmScore >= 39,
+    weight: 10,
+  });
+
+  const weighted = clauses.reduce(
+    (n, c) => n + (c.anchored ? 100 : 5) * (c.weight / 100),
+    0
+  );
+  const totalWeight = clauses.reduce((n, c) => n + c.weight, 0);
+  const successionScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const voidSignals =
+    realmIndexBlocksSuccession(inputs.realmIndex) ||
+    dynastyAccordBlocksRealm(inputs.dynastyAccord) ||
+    throneIndexBlocksDynasty(inputs.throneIndex);
+
+  const band: Agent17SuccessionAccordSnapshot['band'] = voidSignals
+    ? 'void'
+    : successionScore >= 59 &&
+        inputs.realmIndex.band === 'unified' &&
+        inputs.dynastyAccord.band === 'lineage'
+      ? 'anchored'
+      : 'contested';
+
+  const successionAnchored =
+    band === 'anchored' &&
+    inputs.realmIndex.realmUnified &&
+    !throneIndexBlocksDynasty(inputs.throneIndex);
+
+  return {
+    successionScore,
+    band,
+    clauses,
+    realmBand: inputs.realmIndex.band,
+    dynastyBand: inputs.dynastyAccord.band,
+    successionAnchored,
+    headline: `Succession ${band} (${successionScore}/100) · ${clauses.filter(c => c.anchored).length}/${clauses.length} clauses`,
+  };
+}
+
+export function successionAccordBlocksRealm(snapshot: Agent17SuccessionAccordSnapshot): boolean {
+  return snapshot.band === 'void' || !snapshot.successionAnchored;
+}
+
 
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
@@ -7761,6 +8002,16 @@ export function buildAgent17PlanningDepthSnapshot(
     imperialAccord,
     crownIndex,
   });
+  const realmIndex = buildAgent17RealmIndex({
+    dynastyAccord,
+    throneIndex,
+    imperialAccord,
+  });
+  const successionAccord = buildAgent17SuccessionAccord({
+    realmIndex,
+    dynastyAccord,
+    throneIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -7812,6 +8063,8 @@ export function buildAgent17PlanningDepthSnapshot(
     imperialAccord,
     throneIndex,
     dynastyAccord,
+    realmIndex,
+    successionAccord,
   };
 }
 
@@ -8755,6 +9008,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Usurped throne or dissolved imperial yields dynastyAccordBlocksThrone.',
     severity: 'major',
   },
+  {
+    id: 'G17-094',
+    title: 'Realm index on planning depth',
+    category: 'telemetry',
+    acceptance: 'realmIndex reports realmScore 0–100 with unified/fractured/fallen band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-095',
+    title: 'Succession accord clauses complete',
+    category: 'telemetry',
+    acceptance: 'successionAccord exposes ≥5 clauses and successionScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-096',
+    title: 'Fallen realm voids succession accord',
+    category: 'integration',
+    acceptance: 'Fallen realm or extinct dynasty yields successionAccordBlocksRealm.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -8898,7 +9172,14 @@ export function listAgent17GoalIds(): string[] {
 } from '../planning/throne-index.ts';
   buildAgent17DynastyAccord,
   dynastyAccordBlocksThrone,
+  dynastyAccordBlocksRealm,
 } from '../planning/dynasty-accord.ts';
+  buildAgent17RealmIndex,
+  realmIndexBlocksSuccession,
+} from '../planning/realm-index.ts';
+  buildAgent17SuccessionAccord,
+  successionAccordBlocksRealm,
+} from '../planning/succession-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -10303,6 +10584,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const realmIndex = depthEval.snapshot.planningDepth?.realmIndex;
+  goalResults.push(
+    result(
+      'G17-094',
+      !!realmIndex &&
+        realmIndex.banners.length >= 5 &&
+        realmIndex.realmScore >= 0 &&
+        realmIndex.realmScore <= 100 &&
+        (realmIndex.band === 'unified' ||
+          realmIndex.band === 'fractured' ||
+          realmIndex.band === 'fallen'),
+      `banners=${realmIndex?.banners.length} score=${realmIndex?.realmScore}`
+    )
+  );
+
+  const successionAccord = depthEval.snapshot.planningDepth?.successionAccord;
+  goalResults.push(
+    result(
+      'G17-095',
+      !!successionAccord &&
+        successionAccord.clauses.length >= 5 &&
+        successionAccord.successionScore >= 0 &&
+        successionAccord.successionScore <= 100,
+      `clauses=${successionAccord?.clauses.length} score=${successionAccord?.successionScore}`
+    )
+  );
+
+  const fallenRealm = buildAgent17RealmIndex({
+    dynastyAccord: extinctDynasty,
+    throneIndex: usurpedThrone,
+    imperialAccord: dissolvedImperial,
+  });
+  const voidSuccession = buildAgent17SuccessionAccord({
+    realmIndex: fallenRealm,
+    dynastyAccord: extinctDynasty,
+    throneIndex: usurpedThrone,
+  });
+  goalResults.push(
+    result(
+      'G17-096',
+      dynastyAccordBlocksRealm(extinctDynasty) ||
+        realmIndexBlocksSuccession(fallenRealm) ||
+        successionAccordBlocksRealm(voidSuccession),
+      `${fallenRealm.band}/${voidSuccession.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -10426,6 +10754,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-091',
     'G17-092',
     'G17-093',
+    'G17-094',
+    'G17-095',
+    'G17-096',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -25450,6 +25781,1330 @@ export function runAgent17ThroneDepthTests(): Agent17DevTestReport {
     success: overallStatus === 'passed',
     testResults,
     summary: `Agent 17 Throne Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
+// --- source: harness/run-realm-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17GovernanceAudit,
+  governanceAuditBlocksAutomation,
+} from '../planning/governance-audit.ts';
+  buildAgent17EscalationMatrix,
+  escalationMatrixBlocksAutomation,
+} from '../planning/escalation-matrix.ts';
+  buildAgent17RollbackAssurance,
+  rollbackAssuranceNeedsRestore,
+} from '../planning/rollback-assurance.ts';
+  buildAgent17StabilizationIndex,
+  stabilizationIndexBlocksAutomation,
+} from '../planning/stabilization-index.ts';
+  buildAgent17CommandEnvelope,
+  commandEnvelopeNeedsThrottle,
+} from '../planning/command-envelope.ts';
+  buildAgent17ConvergenceIndex,
+  convergenceIndexBlocksDirective,
+} from '../planning/convergence-index.ts';
+  buildAgent17DirectiveSynthesis,
+  directiveSynthesisBlocksAdvance,
+} from '../planning/directive-synthesis.ts';
+  buildAgent17MandateWeave,
+  mandateWeaveBlocksSovereignty,
+} from '../planning/mandate-weave.ts';
+  buildAgent17SovereigntyLock,
+  sovereigntyLockBlocksCommand,
+} from '../planning/sovereignty-lock.ts';
+  buildAgent17AuthorityCharter,
+  authorityCharterBlocksAccord,
+} from '../planning/authority-charter.ts';
+  buildAgent17DispatchAccord,
+  dispatchAccordBlocksDispatch,
+} from '../planning/dispatch-accord.ts';
+  buildAgent17MobilizationIndex,
+  mobilizationIndexBlocksSummons,
+} from '../planning/mobilization-index.ts';
+  buildAgent17ExecutionSummons,
+  executionSummonsBlocksField,
+} from '../planning/execution-summons.ts';
+  buildAgent17FieldIndex,
+  fieldIndexBlocksCommitment,
+} from '../planning/field-index.ts';
+  buildAgent17TheaterCommitment,
+  theaterCommitmentBlocksTheater,
+} from '../planning/theater-commitment.ts';
+  buildAgent17CampaignIndex,
+  campaignIndexBlocksLattice,
+} from '../planning/campaign-index.ts';
+  buildAgent17MissionLattice,
+  missionLatticeBlocksCampaign,
+} from '../planning/mission-lattice.ts';
+  buildAgent17StrategicIndex,
+  strategicIndexBlocksDoctrine,
+} from '../planning/strategic-index.ts';
+  buildAgent17DoctrineAccord,
+  doctrineAccordBlocksCommand,
+} from '../planning/doctrine-accord.ts';
+  buildAgent17CommandIndex,
+  commandIndexBlocksFederation,
+} from '../planning/command-index.ts';
+  buildAgent17FederationAccord,
+  federationAccordBlocksOps,
+} from '../planning/federation-accord.ts';
+  buildAgent17AllianceIndex,
+  allianceIndexBlocksCoalition,
+} from '../planning/alliance-index.ts';
+  buildAgent17CoalitionAccord,
+  coalitionAccordBlocksAlliance,
+} from '../planning/coalition-accord.ts';
+  buildAgent17PactIndex,
+  pactIndexBlocksUnity,
+} from '../planning/pact-index.ts';
+  buildAgent17UnityAccord,
+  unityAccordBlocksPact,
+} from '../planning/unity-accord.ts';
+  buildAgent17CompactIndex,
+  compactIndexBlocksSovereign,
+} from '../planning/compact-index.ts';
+  buildAgent17SovereignAccord,
+  sovereignAccordBlocksCompact,
+} from '../planning/sovereign-accord.ts';
+  buildAgent17CrownIndex,
+  crownIndexBlocksImperial,
+} from '../planning/crown-index.ts';
+  buildAgent17ImperialAccord,
+  imperialAccordBlocksCrown,
+  imperialAccordBlocksThrone,
+} from '../planning/imperial-accord.ts';
+  buildAgent17ThroneIndex,
+  throneIndexBlocksDynasty,
+} from '../planning/throne-index.ts';
+  buildAgent17DynastyAccord,
+  dynastyAccordBlocksThrone,
+  dynastyAccordBlocksRealm,
+} from '../planning/dynasty-accord.ts';
+  buildAgent17RealmIndex,
+  realmIndexBlocksSuccession,
+} from '../planning/realm-index.ts';
+  buildAgent17SuccessionAccord,
+  successionAccordBlocksRealm,
+} from '../planning/succession-accord.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17RealmDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 120,
+      netWorth: 2400,
+      currentRegion: 'QLD',
+      currentSupplies: 6,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 33,
+      day: 33,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: {
+        title: 'Expand trade network supply chain',
+        sourceType: 'contract',
+      },
+      gi3Strategy: { headline: 'Expand trade network resilience' },
+      strategyPlannerState: { activePlan: { title: 'Trade network supply expansion' } },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = {
+      ...ops,
+      activePlan: plan ? { ...plan, title: plan.title || 'Trade supply chain plan' } : plan,
+    };
+    const health = assessAgent17PlanHealth(opsWithPlan.activePlan, state, 'player');
+    const intentQueue = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    const alignment = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      state,
+      settings,
+      'player',
+      intentQueue
+    );
+    const policy = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'adt_fp' },
+      state,
+      'player'
+    );
+    const pacing = buildAgent17ExecutionPacing(opsWithPlan, state, health, policy);
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policy
+    );
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    const delegationAnalytics = buildAgent17DelegationAnalytics(opsWithPlan, settings);
+    const core = {
+      turn: state.turnCounter || 1,
+      actorId: 'player',
+      planHealth: health,
+      suggestion: buildAgent17PlanningSuggestion(
+        opsWithPlan,
+        state,
+        settings,
+        'player',
+        'copilot'
+      ),
+      templateRouting: routing,
+      delegationAnalytics,
+      delegationLadder: buildAgent17DelegationLadder(delegationAnalytics, settings, 'copilot'),
+      planLedger: summarizeAgent17PlanLedger(opsWithPlan, state),
+      catalogDepth: summarizeAgent17CatalogDepth(),
+    };
+    const brief = buildAgent17CoordinationBrief(
+      core,
+      intentQueue,
+      policy,
+      opsWithPlan,
+      state,
+      settings
+    );
+    const handoff = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policy,
+      executionPacing: pacing,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const posture = buildAgent17CommandPosture({
+      planHealth: health,
+      handoffReadiness: handoff,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const audit = buildAgent17GovernanceAudit(opsWithPlan, settings, policy);
+    const matrix = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: audit,
+      handoffReadiness: handoff,
+    });
+    const assurance = buildAgent17RollbackAssurance(opsWithPlan, health, audit);
+    const stabilization = buildAgent17StabilizationIndex({
+      escalationMatrix: matrix,
+      rollbackAssurance: assurance,
+    });
+    const envelope = buildAgent17CommandEnvelope({
+      ops: opsWithPlan,
+      executionPacing: pacing,
+      stabilizationIndex: stabilization,
+    });
+    const convergence = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelope,
+      stabilizationIndex: stabilization,
+      strategicAlignment: alignment,
+    });
+    const directive = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelope,
+      convergenceIndex: convergence,
+    });
+    const synthesis = buildAgent17DirectiveSynthesis({
+      missionDirective: directive,
+      convergenceIndex: convergence,
+      intentQueue,
+    });
+    const closure = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+      missionDirective: directive,
+    });
+    const cadence = buildAgent17CadenceLattice({
+      executionClosure: closure,
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+    });
+    const readiness = buildAgent17ReadinessGate({
+      cadenceLattice: cadence,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    const pulse = buildAgent17PulseIndex({
+      readinessGate: readiness,
+      cadenceLattice: cadence,
+      commandPosture: posture,
+    });
+    const bridge = buildAgent17ContinuityBridge({
+      pulseIndex: pulse,
+      resilienceScorecard: scorecard,
+      verificationPolicy: policy,
+    });
+    const flux = buildAgent17FluxIndex({
+      continuityBridge: bridge,
+      pulseIndex: pulse,
+      governanceAudit: audit,
+    });
+    const seal = buildAgent17IntegritySeal({
+      fluxIndex: flux,
+      rollbackAssurance: assurance,
+      verificationPolicy: policy,
+    });
+    const lattice = buildAgent17CommitLattice({
+      integritySeal: seal,
+      fluxIndex: flux,
+      escalationMatrix: matrix,
+    });
+    const covenant = buildAgent17CovenantGate({
+      commitLattice: lattice,
+      planHealth: health,
+      rollbackAssurance: assurance,
+    });
+
+    const weaveClean = buildAgent17MandateWeave({
+      covenantGate: covenant,
+      commitLattice: lattice,
+      strategicAlignment: alignment,
+    });
+    push(
+      'adt_weave_bounded',
+      'Mandate weave bounded with band',
+      weaveClean.weaveScore >= 0 &&
+        weaveClean.weaveScore <= 100 &&
+        (weaveClean.band === 'aligned' ||
+          weaveClean.band === 'tensioned' ||
+          weaveClean.band === 'frayed'),
+      `${weaveClean.weaveScore}/${weaveClean.band}`
+    );
+
+    push(
+      'adt_weave_threads',
+      'Mandate weave exposes weighted threads',
+      weaveClean.threads.length >= 4 && weaveClean.threads.every(t => t.weight > 0),
+      `threads=${weaveClean.threads.length}`
+    );
+
+    const lockClean = buildAgent17SovereigntyLock({
+      mandateWeave: weaveClean,
+      governanceAudit: audit,
+      stabilizationIndex: stabilization,
+    });
+    push(
+      'adt_lock_pins',
+      'Sovereignty lock exposes pins',
+      lockClean.pins.length >= 5 &&
+        lockClean.lockScore >= 0 &&
+        lockClean.lockScore <= 100,
+      `pins=${lockClean.pins.length} score=${lockClean.lockScore}`
+    );
+
+    push(
+      'adt_weave_aligned',
+      'Healthy ops yields aligned or tensioned weave',
+      weaveClean.band === 'aligned' || weaveClean.band === 'tensioned',
+      weaveClean.band
+    );
+
+    push(
+      'adt_lock_conditional',
+      'Healthy ops yields secured or conditional lock',
+      lockClean.band === 'secured' || lockClean.band === 'conditional',
+      lockClean.band
+    );
+
+    const charterClean = buildAgent17AuthorityCharter({
+      sovereigntyLock: lockClean,
+      mandateWeave: weaveClean,
+      commandPosture: posture,
+    });
+    push(
+      'adt_charter_bounded',
+      'Authority charter bounded with band',
+      charterClean.charterScore >= 0 &&
+        charterClean.charterScore <= 100 &&
+        (charterClean.band === 'chartered' ||
+          charterClean.band === 'provisional' ||
+          charterClean.band === 'revoked'),
+      `${charterClean.charterScore}/${charterClean.band}`
+    );
+
+    push(
+      'adt_charter_articles',
+      'Authority charter exposes articles',
+      charterClean.articles.length >= 5 &&
+        charterClean.articles.every(a => a.weight > 0),
+      `articles=${charterClean.articles.length}`
+    );
+
+    const accordClean = buildAgent17DispatchAccord({
+      authorityCharter: charterClean,
+      sovereigntyLock: lockClean,
+      delegationLadder: core.delegationLadder,
+    });
+    push(
+      'adt_accord_provisions',
+      'Dispatch accord exposes provisions',
+      accordClean.provisions.length >= 5 &&
+        accordClean.accordScore >= 0 &&
+        accordClean.accordScore <= 100,
+      `provisions=${accordClean.provisions.length} score=${accordClean.accordScore}`
+    );
+
+    push(
+      'adt_accord_ratified',
+      'Healthy ops yields ratified or provisional accord',
+      accordClean.band === 'ratified' || accordClean.band === 'provisional',
+      accordClean.band
+    );
+
+    const mobilizationClean = buildAgent17MobilizationIndex({
+      dispatchAccord: accordClean,
+      coordinationBrief: brief,
+      executionPacing: pacing,
+    });
+    push(
+      'odt_mobilization_bounded',
+      'Mobilization index bounded with band',
+      mobilizationClean.mobilizationScore >= 0 &&
+        mobilizationClean.mobilizationScore <= 100 &&
+        (mobilizationClean.band === 'mobilized' ||
+          mobilizationClean.band === 'forming' ||
+          mobilizationClean.band === 'stalled'),
+      `${mobilizationClean.mobilizationScore}/${mobilizationClean.band}`
+    );
+
+    push(
+      'odt_mobilization_vectors',
+      'Mobilization index exposes vectors',
+      mobilizationClean.vectors.length >= 5 &&
+        mobilizationClean.vectors.every(v => v.weight > 0),
+      `vectors=${mobilizationClean.vectors.length}`
+    );
+
+    const summonsClean = buildAgent17ExecutionSummons({
+      mobilizationIndex: mobilizationClean,
+      dispatchAccord: accordClean,
+      missionDirective: directive,
+    });
+    push(
+      'odt_summons_clauses',
+      'Execution summons exposes clauses',
+      summonsClean.clauses.length >= 5 &&
+        summonsClean.summonsScore >= 0 &&
+        summonsClean.summonsScore <= 100,
+      `clauses=${summonsClean.clauses.length} score=${summonsClean.summonsScore}`
+    );
+
+    push(
+      'fdt_summons_issued',
+      'Healthy ops yields issued or pending summons',
+      summonsClean.band === 'issued' || summonsClean.band === 'pending',
+      summonsClean.band
+    );
+
+    const fieldClean = buildAgent17FieldIndex({
+      executionSummons: summonsClean,
+      coordinationBrief: brief,
+      executionClosure: closure,
+    });
+    push(
+      'fdt_field_bounded',
+      'Field index bounded with band',
+      fieldClean.fieldScore >= 0 &&
+        fieldClean.fieldScore <= 100 &&
+        (fieldClean.band === 'engaged' ||
+          fieldClean.band === 'staging' ||
+          fieldClean.band === 'contested'),
+      `${fieldClean.fieldScore}/${fieldClean.band}`
+    );
+
+    push(
+      'fdt_field_vectors',
+      'Field index exposes vectors',
+      fieldClean.vectors.length >= 5 && fieldClean.vectors.every(v => v.weight > 0),
+      `vectors=${fieldClean.vectors.length}`
+    );
+
+    const theaterClean = buildAgent17TheaterCommitment({
+      fieldIndex: fieldClean,
+      executionSummons: summonsClean,
+      readinessGate: readiness,
+    });
+    push(
+      'fdt_theater_pledges',
+      'Theater commitment exposes pledges',
+      theaterClean.pledges.length >= 5 &&
+        theaterClean.commitmentScore >= 0 &&
+        theaterClean.commitmentScore <= 100,
+      `pledges=${theaterClean.pledges.length} score=${theaterClean.commitmentScore}`
+    );
+
+    push(
+      'cdt_theater_bound',
+      'Healthy ops yields bound or provisional theater',
+      theaterClean.band === 'bound' || theaterClean.band === 'provisional',
+      theaterClean.band
+    );
+
+    const campaignClean = buildAgent17CampaignIndex({
+      theaterCommitment: theaterClean,
+      pulseIndex: pulse,
+      continuityBridge: bridge,
+    });
+    push(
+      'cdt_campaign_bounded',
+      'Campaign index bounded with band',
+      campaignClean.campaignScore >= 0 &&
+        campaignClean.campaignScore <= 100 &&
+        (campaignClean.band === 'active' ||
+          campaignClean.band === 'forming' ||
+          campaignClean.band === 'stalled'),
+      `${campaignClean.campaignScore}/${campaignClean.band}`
+    );
+
+    push(
+      'cdt_campaign_vectors',
+      'Campaign index exposes vectors',
+      campaignClean.vectors.length >= 5 && campaignClean.vectors.every(v => v.weight > 0),
+      `vectors=${campaignClean.vectors.length}`
+    );
+
+    const latticeClean = buildAgent17MissionLattice({
+      campaignIndex: campaignClean,
+      theaterCommitment: theaterClean,
+      cadenceLattice: cadence,
+    });
+    push(
+      'cdt_lattice_rungs',
+      'Mission lattice exposes rungs',
+      latticeClean.rungs.length >= 5 &&
+        latticeClean.latticeScore >= 0 &&
+        latticeClean.latticeScore <= 100,
+      `rungs=${latticeClean.rungs.length} score=${latticeClean.latticeScore}`
+    );
+
+    push(
+      'sdt_lattice_locked',
+      'Healthy ops yields locked or flexible lattice',
+      latticeClean.band === 'locked' || latticeClean.band === 'flexible',
+      latticeClean.band
+    );
+
+    const strategicClean = buildAgent17StrategicIndex({
+      missionLattice: latticeClean,
+      convergenceIndex: convergence,
+      commandEnvelope: envelope,
+    });
+    push(
+      'sdt_strategic_bounded',
+      'Strategic index bounded with band',
+      strategicClean.strategicScore >= 0 &&
+        strategicClean.strategicScore <= 100 &&
+        (strategicClean.band === 'coherent' ||
+          strategicClean.band === 'forming' ||
+          strategicClean.band === 'fractured'),
+      `${strategicClean.strategicScore}/${strategicClean.band}`
+    );
+
+    push(
+      'sdt_strategic_signals',
+      'Strategic index exposes signals',
+      strategicClean.signals.length >= 5 && strategicClean.signals.every(s => s.weight > 0),
+      `signals=${strategicClean.signals.length}`
+    );
+
+    const doctrineClean = buildAgent17DoctrineAccord({
+      strategicIndex: strategicClean,
+      missionLattice: latticeClean,
+      covenantGate: covenant,
+    });
+    push(
+      'sdt_doctrine_articles',
+      'Doctrine accord exposes articles',
+      doctrineClean.articles.length >= 5 &&
+        doctrineClean.doctrineScore >= 0 &&
+        doctrineClean.doctrineScore <= 100,
+      `articles=${doctrineClean.articles.length} score=${doctrineClean.doctrineScore}`
+    );
+
+    push(
+      'cmd_doctrine_ratified',
+      'Healthy ops yields ratified or provisional doctrine',
+      doctrineClean.band === 'ratified' || doctrineClean.band === 'provisional',
+      doctrineClean.band
+    );
+
+    const commandClean = buildAgent17CommandIndex({
+      doctrineAccord: doctrineClean,
+      mandateWeave: weaveClean,
+      sovereigntyLock: lockClean,
+    });
+    push(
+      'cmd_index_bounded',
+      'Command index bounded with band',
+      commandClean.commandScore >= 0 &&
+        commandClean.commandScore <= 100 &&
+        (commandClean.band === 'supreme' ||
+          commandClean.band === 'delegated' ||
+          commandClean.band === 'degraded'),
+      `${commandClean.commandScore}/${commandClean.band}`
+    );
+
+    push(
+      'cmd_index_pillars',
+      'Command index exposes pillars',
+      commandClean.pillars.length >= 5 && commandClean.pillars.every(p => p.weight > 0),
+      `pillars=${commandClean.pillars.length}`
+    );
+
+    const federationClean = buildAgent17FederationAccord({
+      commandIndex: commandClean,
+      doctrineAccord: doctrineClean,
+      commitLattice: lattice,
+    });
+    push(
+      'cmd_federation_covenants',
+      'Federation accord exposes covenants',
+      federationClean.covenants.length >= 5 &&
+        federationClean.federationScore >= 0 &&
+        federationClean.federationScore <= 100,
+      `covenants=${federationClean.covenants.length} score=${federationClean.federationScore}`
+    );
+
+    push(
+      'adt_federation_unified',
+      'Healthy ops yields unified or partial federation',
+      federationClean.band === 'unified' || federationClean.band === 'partial',
+      federationClean.band
+    );
+
+    const allianceClean = buildAgent17AllianceIndex({
+      federationAccord: federationClean,
+      dispatchAccord: accordClean,
+      authorityCharter: charterClean,
+    });
+    push(
+      'adt_alliance_bounded',
+      'Alliance index bounded with band',
+      allianceClean.allianceScore >= 0 &&
+        allianceClean.allianceScore <= 100 &&
+        (allianceClean.band === 'allied' ||
+          allianceClean.band === 'forming' ||
+          allianceClean.band === 'ruptured'),
+      `${allianceClean.allianceScore}/${allianceClean.band}`
+    );
+
+    push(
+      'adt_alliance_ties',
+      'Alliance index exposes ties',
+      allianceClean.ties.length >= 5 && allianceClean.ties.every(t => t.weight > 0),
+      `ties=${allianceClean.ties.length}`
+    );
+
+    const coalitionClean = buildAgent17CoalitionAccord({
+      allianceIndex: allianceClean,
+      federationAccord: federationClean,
+      mobilizationIndex: mobilizationClean,
+    });
+    push(
+      'adt_coalition_compacts',
+      'Coalition accord exposes compacts',
+      coalitionClean.compacts.length >= 5 &&
+        coalitionClean.coalitionScore >= 0 &&
+        coalitionClean.coalitionScore <= 100,
+      `compacts=${coalitionClean.compacts.length} score=${coalitionClean.coalitionScore}`
+    );
+
+    push(
+      'pdt_coalition_sealed',
+      'Healthy ops yields sealed or draft coalition',
+      coalitionClean.band === 'sealed' || coalitionClean.band === 'draft',
+      coalitionClean.band
+    );
+
+    const pactClean = buildAgent17PactIndex({
+      coalitionAccord: coalitionClean,
+      theaterCommitment: theaterClean,
+      executionSummons: summonsClean,
+    });
+    push(
+      'pdt_pact_bounded',
+      'Pact index bounded with band',
+      pactClean.pactScore >= 0 &&
+        pactClean.pactScore <= 100 &&
+        (pactClean.band === 'binding' ||
+          pactClean.band === 'provisional' ||
+          pactClean.band === 'void'),
+      `${pactClean.pactScore}/${pactClean.band}`
+    );
+
+    push(
+      'pdt_pact_clauses',
+      'Pact index exposes clauses',
+      pactClean.clauses.length >= 5 && pactClean.clauses.every(c => c.weight > 0),
+      `clauses=${pactClean.clauses.length}`
+    );
+
+    const unityClean = buildAgent17UnityAccord({
+      pactIndex: pactClean,
+      coalitionAccord: coalitionClean,
+      strategicIndex: strategicClean,
+    });
+    push(
+      'pdt_unity_tenets',
+      'Unity accord exposes tenets',
+      unityClean.tenets.length >= 5 &&
+        unityClean.unityScore >= 0 &&
+        unityClean.unityScore <= 100,
+      `tenets=${unityClean.tenets.length} score=${unityClean.unityScore}`
+    );
+
+    push(
+      'cdt_unity_unified',
+      'Healthy ops yields unified or partial unity',
+      unityClean.band === 'unified' || unityClean.band === 'partial',
+      unityClean.band
+    );
+
+    const compactClean = buildAgent17CompactIndex({
+      unityAccord: unityClean,
+      federationAccord: federationClean,
+      doctrineAccord: doctrineClean,
+    });
+    push(
+      'cdt_compact_bounded',
+      'Compact index bounded with band',
+      compactClean.compactScore >= 0 &&
+        compactClean.compactScore <= 100 &&
+        (compactClean.band === 'tight' ||
+          compactClean.band === 'forming' ||
+          compactClean.band === 'loose'),
+      `${compactClean.compactScore}/${compactClean.band}`
+    );
+
+    push(
+      'cdt_compact_facets',
+      'Compact index exposes facets',
+      compactClean.facets.length >= 5 && compactClean.facets.every(f => f.weight > 0),
+      `facets=${compactClean.facets.length}`
+    );
+
+    const sovereignClean = buildAgent17SovereignAccord({
+      compactIndex: compactClean,
+      unityAccord: unityClean,
+      commandIndex: commandClean,
+    });
+    push(
+      'cdt_sovereign_seals',
+      'Sovereign accord exposes seals',
+      sovereignClean.seals.length >= 5 &&
+        sovereignClean.sovereignScore >= 0 &&
+        sovereignClean.sovereignScore <= 100,
+      `seals=${sovereignClean.seals.length} score=${sovereignClean.sovereignScore}`
+    );
+
+    push(
+      'rlm_sovereign_crowned',
+      'Healthy ops yields crowned or regent sovereign',
+      sovereignClean.band === 'crowned' || sovereignClean.band === 'regent',
+      sovereignClean.band
+    );
+
+    const crownClean = buildAgent17CrownIndex({
+      sovereignAccord: sovereignClean,
+      allianceIndex: allianceClean,
+      coalitionAccord: coalitionClean,
+    });
+    push(
+      'rlm_crown_bounded',
+      'Crown index bounded with band',
+      crownClean.crownScore >= 0 &&
+        crownClean.crownScore <= 100 &&
+        (crownClean.band === 'invested' ||
+          crownClean.band === 'pending' ||
+          crownClean.band === 'uncrowned'),
+      `${crownClean.crownScore}/${crownClean.band}`
+    );
+
+    push(
+      'rlm_crown_jewels',
+      'Crown index exposes jewels',
+      crownClean.jewels.length >= 5 && crownClean.jewels.every(j => j.weight > 0),
+      `jewels=${crownClean.jewels.length}`
+    );
+
+    const imperialClean = buildAgent17ImperialAccord({
+      crownIndex: crownClean,
+      sovereignAccord: sovereignClean,
+      compactIndex: compactClean,
+    });
+    push(
+      'rlm_imperial_edicts',
+      'Imperial accord exposes edicts',
+      imperialClean.edicts.length >= 5 &&
+        imperialClean.imperialScore >= 0 &&
+        imperialClean.imperialScore <= 100,
+      `edicts=${imperialClean.edicts.length} score=${imperialClean.imperialScore}`
+    );
+
+    push(
+      'rlm_imperial_empire',
+      'Healthy ops yields empire or domain imperial',
+      imperialClean.band === 'empire' || imperialClean.band === 'domain',
+      imperialClean.band
+    );
+
+    const breachOps = {
+      ...opsWithPlan,
+      delegatedProjects: [
+        {
+          id: 'dp1',
+          planId: 'p1',
+          title: 'Breach project',
+          delegateKind: 'team_os' as const,
+          delegateTargetId: 'team',
+          status: 'active' as const,
+          authorityCeiling: 'delegated' as const,
+          assignedTurn: 1,
+          assignedDay: 1,
+          lastVerifiedFingerprint: '',
+          notes: '',
+        },
+      ],
+    };
+    const advisorySettings = {
+      ...settings,
+      aiCommunicationAutonomyLevel: 'advisory' as const,
+    };
+    const auditBreach = buildAgent17GovernanceAudit(breachOps, advisorySettings, policy);
+    const matrixUrgent = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: auditBreach,
+      handoffReadiness: handoff,
+    });
+    const assuranceBreach = buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      auditBreach
+    );
+    const stabilizationVolatile = buildAgent17StabilizationIndex({
+      escalationMatrix: matrixUrgent,
+      rollbackAssurance: assuranceBreach,
+    });
+    const envelopeSaturated = buildAgent17CommandEnvelope({
+      ops: breachOps,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      stabilizationIndex: stabilizationVolatile,
+    });
+    const convergenceDiverging = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelopeSaturated,
+      stabilizationIndex: stabilizationVolatile,
+      strategicAlignment: alignment,
+    });
+    const directiveHeld = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelopeSaturated,
+      convergenceIndex: convergenceDiverging,
+    });
+    const synthesisLocked = buildAgent17DirectiveSynthesis({
+      missionDirective: directiveHeld,
+      convergenceIndex: convergenceDiverging,
+      intentQueue,
+    });
+    const closureSealed = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      missionDirective: directiveHeld,
+    });
+    const cadenceStalled = buildAgent17CadenceLattice({
+      executionClosure: closureSealed,
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+    });
+    const readinessStop = buildAgent17ReadinessGate({
+      cadenceLattice: cadenceStalled,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    const pulseFlat = buildAgent17PulseIndex({
+      readinessGate: readinessStop,
+      cadenceLattice: cadenceStalled,
+      commandPosture: posture,
+    });
+    const bridgeBroken = buildAgent17ContinuityBridge({
+      pulseIndex: pulseFlat,
+      resilienceScorecard: buildAgent17ResilienceScorecard(
+        breachOps,
+        state,
+        'player',
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      verificationPolicy: policy,
+    });
+    const fluxDisrupted = buildAgent17FluxIndex({
+      continuityBridge: bridgeBroken,
+      pulseIndex: pulseFlat,
+      governanceAudit: auditBreach,
+    });
+    const sealBreached = buildAgent17IntegritySeal({
+      fluxIndex: fluxDisrupted,
+      rollbackAssurance: assuranceBreach,
+      verificationPolicy: policy,
+    });
+    const latticeFragmented = buildAgent17CommitLattice({
+      integritySeal: sealBreached,
+      fluxIndex: fluxDisrupted,
+      escalationMatrix: matrixUrgent,
+    });
+    const covenantVoid = buildAgent17CovenantGate({
+      commitLattice: latticeFragmented,
+      planHealth: assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      rollbackAssurance: assuranceBreach,
+    });
+    const weaveFrayed = buildAgent17MandateWeave({
+      covenantGate: covenantVoid,
+      commitLattice: latticeFragmented,
+      strategicAlignment: alignment,
+    });
+    push(
+      'adt_frayed_blocks',
+      'Governance breach yields frayed weave or blocks sovereignty',
+      weaveFrayed.band === 'frayed' || mandateWeaveBlocksSovereignty(weaveFrayed),
+      `${weaveFrayed.band} idx=${weaveFrayed.weaveScore}`
+    );
+
+    const lockReleased = buildAgent17SovereigntyLock({
+      mandateWeave: weaveFrayed,
+      governanceAudit: auditBreach,
+      stabilizationIndex: stabilizationVolatile,
+    });
+    push(
+      'adt_released_command',
+      'Released lock blocks command sovereignty',
+      lockReleased.band === 'released' ||
+        sovereigntyLockBlocksCommand(lockReleased) ||
+        !lockReleased.commandSovereignty,
+      `${lockReleased.band} sov=${lockReleased.commandSovereignty}`
+    );
+
+    push(
+      'adt_escalation_link',
+      'Urgent escalation propagates to weave threads',
+      escalationMatrixBlocksAutomation(matrixUrgent) ||
+        governanceAuditBlocksAutomation(auditBreach) ||
+        rollbackAssuranceNeedsRestore(assuranceBreach) ||
+        stabilizationIndexBlocksAutomation(stabilizationVolatile) ||
+        commandEnvelopeNeedsThrottle(envelopeSaturated) ||
+        convergenceIndexBlocksDirective(convergenceDiverging),
+      matrixUrgent.band
+    );
+
+    const charterRevoked = buildAgent17AuthorityCharter({
+      sovereigntyLock: lockReleased,
+      mandateWeave: weaveFrayed,
+      commandPosture: posture,
+    });
+    push(
+      'adt_revoked_blocks',
+      'Released sovereignty yields revoked charter or blocks accord',
+      charterRevoked.band === 'revoked' || authorityCharterBlocksAccord(charterRevoked),
+      `${charterRevoked.band} auth=${charterRevoked.commandAuthority}`
+    );
+
+    const accordVoid = buildAgent17DispatchAccord({
+      authorityCharter: charterRevoked,
+      sovereigntyLock: lockReleased,
+      delegationLadder: core.delegationLadder,
+    });
+    push(
+      'adt_void_dispatch',
+      'Void accord blocks dispatch',
+      accordVoid.band === 'void' ||
+        dispatchAccordBlocksDispatch(accordVoid) ||
+        !accordVoid.dispatchAllowed,
+      `${accordVoid.band} dispatch=${accordVoid.dispatchAllowed}`
+    );
+
+    const mobilizationStalled = buildAgent17MobilizationIndex({
+      dispatchAccord: accordVoid,
+      coordinationBrief: brief,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+    });
+    push(
+      'odt_stalled_blocks',
+      'Void accord yields stalled mobilization or blocks summons',
+      mobilizationStalled.band === 'stalled' ||
+        mobilizationIndexBlocksSummons(mobilizationStalled) ||
+        !mobilizationStalled.fieldReady,
+      `${mobilizationStalled.band} ready=${mobilizationStalled.fieldReady}`
+    );
+
+    const summonsRevoked = buildAgent17ExecutionSummons({
+      mobilizationIndex: mobilizationStalled,
+      dispatchAccord: accordVoid,
+      missionDirective: directiveHeld,
+    });
+    push(
+      'fdt_revoked_field',
+      'Stalled mobilization yields revoked summons or blocks field',
+      summonsRevoked.band === 'revoked' ||
+        executionSummonsBlocksField(summonsRevoked) ||
+        !summonsRevoked.executionAuthorized,
+      `${summonsRevoked.band} auth=${summonsRevoked.executionAuthorized}`
+    );
+
+    const fieldContested = buildAgent17FieldIndex({
+      executionSummons: summonsRevoked,
+      coordinationBrief: brief,
+      executionClosure: closureSealed,
+    });
+    push(
+      'fdt_contested_blocks',
+      'Revoked summons yields contested field or blocks commitment',
+      fieldContested.band === 'contested' ||
+        fieldIndexBlocksCommitment(fieldContested) ||
+        !fieldContested.theaterReady,
+      `${fieldContested.band} ready=${fieldContested.theaterReady}`
+    );
+
+    const theaterWithdrawn = buildAgent17TheaterCommitment({
+      fieldIndex: fieldContested,
+      executionSummons: summonsRevoked,
+      readinessGate: readinessStop,
+    });
+    push(
+      'cdt_withdrawn_theater',
+      'Contested field yields withdrawn theater or blocks theater',
+      theaterWithdrawn.band === 'withdrawn' ||
+        theaterCommitmentBlocksTheater(theaterWithdrawn) ||
+        !theaterWithdrawn.theaterBound,
+      `${theaterWithdrawn.band} bound=${theaterWithdrawn.theaterBound}`
+    );
+
+    const campaignStalled = buildAgent17CampaignIndex({
+      theaterCommitment: theaterWithdrawn,
+      pulseIndex: pulseFlat,
+      continuityBridge: bridgeBroken,
+    });
+    push(
+      'cdt_stalled_campaign',
+      'Withdrawn theater yields stalled campaign or blocks lattice',
+      campaignStalled.band === 'stalled' ||
+        campaignIndexBlocksLattice(campaignStalled) ||
+        !campaignStalled.campaignReady,
+      `${campaignStalled.band} ready=${campaignStalled.campaignReady}`
+    );
+
+    const latticeCollapsed = buildAgent17MissionLattice({
+      campaignIndex: campaignStalled,
+      theaterCommitment: theaterWithdrawn,
+      cadenceLattice: cadenceStalled,
+    });
+    push(
+      'sdt_collapsed_lattice',
+      'Stalled campaign yields collapsed lattice or blocks campaign',
+      latticeCollapsed.band === 'collapsed' ||
+        missionLatticeBlocksCampaign(latticeCollapsed) ||
+        !latticeCollapsed.missionLocked,
+      `${latticeCollapsed.band} locked=${latticeCollapsed.missionLocked}`
+    );
+
+    const strategicFractured = buildAgent17StrategicIndex({
+      missionLattice: latticeCollapsed,
+      convergenceIndex: convergenceDiverging,
+      commandEnvelope: envelopeSaturated,
+    });
+    push(
+      'sdt_fractured_doctrine',
+      'Collapsed lattice yields fractured strategic or blocks doctrine',
+      strategicFractured.band === 'fractured' ||
+        strategicIndexBlocksDoctrine(strategicFractured) ||
+        !strategicFractured.strategicReady,
+      `${strategicFractured.band} ready=${strategicFractured.strategicReady}`
+    );
+
+    const doctrineVoid = buildAgent17DoctrineAccord({
+      strategicIndex: strategicFractured,
+      missionLattice: latticeCollapsed,
+      covenantGate: covenantVoid,
+    });
+    push(
+      'cmd_void_command',
+      'Fractured strategic yields void doctrine or blocks command',
+      doctrineVoid.band === 'void' ||
+        doctrineAccordBlocksCommand(doctrineVoid) ||
+        !doctrineVoid.doctrineRatified,
+      `${doctrineVoid.band} ratified=${doctrineVoid.doctrineRatified}`
+    );
+
+    const commandDegraded = buildAgent17CommandIndex({
+      doctrineAccord: doctrineVoid,
+      mandateWeave: weaveFrayed,
+      sovereigntyLock: lockReleased,
+    });
+    push(
+      'cmd_degraded_federation',
+      'Void doctrine yields degraded command or blocks federation',
+      commandDegraded.band === 'degraded' ||
+        commandIndexBlocksFederation(commandDegraded) ||
+        !commandDegraded.commandReady,
+      `${commandDegraded.band} ready=${commandDegraded.commandReady}`
+    );
+
+    const federationDissolved = buildAgent17FederationAccord({
+      commandIndex: commandDegraded,
+      doctrineAccord: doctrineVoid,
+      commitLattice: latticeFragmented,
+    });
+    push(
+      'adt_dissolved_ops',
+      'Degraded command yields dissolved federation or blocks ops',
+      federationDissolved.band === 'dissolved' ||
+        federationAccordBlocksOps(federationDissolved) ||
+        !federationDissolved.federationUnified,
+      `${federationDissolved.band} unified=${federationDissolved.federationUnified}`
+    );
+
+    const allianceRuptured = buildAgent17AllianceIndex({
+      federationAccord: federationDissolved,
+      dispatchAccord: accordVoid,
+      authorityCharter: charterRevoked,
+    });
+    push(
+      'adt_ruptured_coalition',
+      'Dissolved federation yields ruptured alliance or blocks coalition',
+      allianceRuptured.band === 'ruptured' ||
+        allianceIndexBlocksCoalition(allianceRuptured) ||
+        !allianceRuptured.allianceReady,
+      `${allianceRuptured.band} ready=${allianceRuptured.allianceReady}`
+    );
+
+    const coalitionBroken = buildAgent17CoalitionAccord({
+      allianceIndex: allianceRuptured,
+      federationAccord: federationDissolved,
+      mobilizationIndex: mobilizationStalled,
+    });
+    push(
+      'adt_broken_alliance',
+      'Ruptured alliance yields broken coalition or blocks alliance',
+      coalitionBroken.band === 'broken' ||
+        coalitionAccordBlocksAlliance(coalitionBroken) ||
+        !coalitionBroken.coalitionSealed,
+      `${coalitionBroken.band} sealed=${coalitionBroken.coalitionSealed}`
+    );
+
+    const pactVoid = buildAgent17PactIndex({
+      coalitionAccord: coalitionBroken,
+      theaterCommitment: theaterWithdrawn,
+      executionSummons: summonsRevoked,
+    });
+    push(
+      'pdt_void_unity',
+      'Broken coalition yields void pact or blocks unity',
+      pactVoid.band === 'void' ||
+        pactIndexBlocksUnity(pactVoid) ||
+        !pactVoid.pactBinding,
+      `${pactVoid.band} binding=${pactVoid.pactBinding}`
+    );
+
+    const unityShattered = buildAgent17UnityAccord({
+      pactIndex: pactVoid,
+      coalitionAccord: coalitionBroken,
+      strategicIndex: strategicFractured,
+    });
+    push(
+      'pdt_shattered_pact',
+      'Void pact yields shattered unity or blocks pact',
+      unityShattered.band === 'shattered' ||
+        unityAccordBlocksPact(unityShattered) ||
+        !unityShattered.unityAchieved,
+      `${unityShattered.band} achieved=${unityShattered.unityAchieved}`
+    );
+
+    const compactLoose = buildAgent17CompactIndex({
+      unityAccord: unityShattered,
+      federationAccord: federationDissolved,
+      doctrineAccord: doctrineVoid,
+    });
+    push(
+      'cdt_loose_sovereign',
+      'Shattered unity yields loose compact or blocks sovereign',
+      compactLoose.band === 'loose' ||
+        compactIndexBlocksSovereign(compactLoose) ||
+        !compactLoose.compactLocked,
+      `${compactLoose.band} locked=${compactLoose.compactLocked}`
+    );
+
+    const sovereignAbdicated = buildAgent17SovereignAccord({
+      compactIndex: compactLoose,
+      unityAccord: unityShattered,
+      commandIndex: commandDegraded,
+    });
+    push(
+      'cdt_abdicated_compact',
+      'Loose compact yields abdicated sovereign or blocks compact',
+      sovereignAbdicated.band === 'abdicated' ||
+        sovereignAccordBlocksCompact(sovereignAbdicated) ||
+        !sovereignAbdicated.sovereigntyCrowned,
+      `${sovereignAbdicated.band} crowned=${sovereignAbdicated.sovereigntyCrowned}`
+    );
+
+    const crownUncrowned = buildAgent17CrownIndex({
+      sovereignAccord: sovereignAbdicated,
+      allianceIndex: allianceRuptured,
+      coalitionAccord: coalitionBroken,
+    });
+    push(
+      'rlm_uncrowned_imperial',
+      'Abdicated sovereign yields uncrowned crown or blocks imperial',
+      crownUncrowned.band === 'uncrowned' ||
+        crownIndexBlocksImperial(crownUncrowned) ||
+        !crownUncrowned.crownInvested,
+      `${crownUncrowned.band} invested=${crownUncrowned.crownInvested}`
+    );
+
+    const imperialDissolved = buildAgent17ImperialAccord({
+      crownIndex: crownUncrowned,
+      sovereignAccord: sovereignAbdicated,
+      compactIndex: compactLoose,
+    });
+    push(
+      'rlm_dissolved_crown',
+      'Uncrowned crown yields dissolved imperial or blocks crown',
+      imperialDissolved.band === 'dissolved' ||
+        imperialAccordBlocksCrown(imperialDissolved) ||
+        !imperialDissolved.empireProclaimed,
+      `${imperialDissolved.band} proclaimed=${imperialDissolved.empireProclaimed}`
+    );
+
+    const throneUsurped = buildAgent17ThroneIndex({
+      imperialAccord: imperialDissolved,
+      crownIndex: crownUncrowned,
+      coalitionAccord: coalitionBroken,
+    });
+    push(
+      'rlm_usurped_dynasty',
+      'Dissolved imperial yields usurped throne or blocks dynasty',
+      throneUsurped.band === 'usurped' ||
+        imperialAccordBlocksThrone(imperialDissolved) ||
+        !throneUsurped.throneSeated,
+      `${throneUsurped.band} seated=${throneUsurped.throneSeated}`
+    );
+
+    const dynastyExtinct = buildAgent17DynastyAccord({
+      throneIndex: throneUsurped,
+      imperialAccord: imperialDissolved,
+      crownIndex: crownUncrowned,
+    });
+    push(
+      'rlm_extinct_throne',
+      'Usurped throne yields extinct dynasty or blocks throne',
+      dynastyExtinct.band === 'extinct' ||
+        dynastyAccordBlocksThrone(dynastyExtinct) ||
+        !dynastyExtinct.dynastyProclaimed,
+      `${dynastyExtinct.band} proclaimed=${dynastyExtinct.dynastyProclaimed}`
+    );
+
+    const realmFallen = buildAgent17RealmIndex({
+      dynastyAccord: dynastyExtinct,
+      throneIndex: throneUsurped,
+      imperialAccord: imperialDissolved,
+    });
+    push(
+      'rlm_fallen_succession',
+      'Extinct dynasty yields fallen realm or blocks succession',
+      realmFallen.band === 'fallen' ||
+        dynastyAccordBlocksRealm(dynastyExtinct) ||
+        !realmFallen.realmUnified,
+      `${realmFallen.band} unified=${realmFallen.realmUnified}`
+    );
+
+    const successionVoid = buildAgent17SuccessionAccord({
+      realmIndex: realmFallen,
+      dynastyAccord: dynastyExtinct,
+      throneIndex: throneUsurped,
+    });
+    push(
+      'rlm_void_realm',
+      'Fallen realm yields void succession or blocks realm',
+      successionVoid.band === 'void' ||
+        successionAccordBlocksRealm(successionVoid) ||
+        !successionVoid.successionAnchored,
+      `${successionVoid.band} anchored=${successionVoid.successionAnchored}`
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'rlm_evaluator_depth',
+      'Evaluator attaches realm index and succession accord',
+      !!depth?.realmIndex?.headline &&
+        !!depth?.successionAccord?.headline &&
+        (depth.realmIndex.banners?.length ?? 0) >= 5 &&
+        (depth.successionAccord.clauses?.length ?? 0) >= 5,
+      `${depth?.realmIndex?.band}/${depth?.successionAccord?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('rlm_throw', 'Realm harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Realm Depth Tests: ${passedCount}/${testResults.length} Passed`,
   };
 }
 

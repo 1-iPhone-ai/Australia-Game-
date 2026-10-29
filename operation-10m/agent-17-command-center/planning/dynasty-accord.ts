@@ -99,3 +99,7 @@ export function buildAgent17DynastyAccord(
 export function dynastyAccordBlocksThrone(snapshot: Agent17DynastyAccordSnapshot): boolean {
   return snapshot.band === 'extinct' || !snapshot.dynastyProclaimed;
 }
+
+export function dynastyAccordBlocksRealm(snapshot: Agent17DynastyAccordSnapshot): boolean {
+  return snapshot.band === 'extinct' || !snapshot.dynastyProclaimed;
+}
