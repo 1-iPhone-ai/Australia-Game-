@@ -132,6 +132,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Monetary & rental stress',
     shockIds: ['high_inflation', 'housing_correction'],
     description: 'Restrictive monetary stance with severe rental pressure (harness overlay).'
+  },
+  {
+    id: 'climate_forecast_stress',
+    label: 'Climate & forecast stress',
+    shockIds: ['drought_ag_cycle', 'global_slowdown'],
+    description: 'Disruptive climate transition with wide forecast dispersion (harness overlay).'
   }
 ];
 

@@ -34,6 +34,8 @@ import type { MacroHouseholdConfidenceSpillover } from './bridge-v1013-confidenc
 import type { MacroCapexSpillover } from './bridge-v1008-capex.ts';
 import type { MacroMonetarySpillover } from './bridge-v1010-monetary.ts';
 import type { MacroRentalSpillover } from './bridge-v1014-rental.ts';
+import type { MacroClimatePolicySpillover } from './bridge-v1018-climate-policy.ts';
+import type { MacroForecastDispersionSpillover } from './bridge-v1021-forecast-dispersion.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -76,6 +78,8 @@ export function buildMacroTransmissionReport(params: {
   capex?: MacroCapexSpillover;
   monetary?: MacroMonetarySpillover;
   rental?: MacroRentalSpillover;
+  climate?: MacroClimatePolicySpillover;
+  forecastDispersion?: MacroForecastDispersionSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -103,6 +107,8 @@ export function buildMacroTransmissionReport(params: {
   const capex = params.capex ?? ZERO_SPILLOVER;
   const monetary = params.monetary ?? ZERO_SPILLOVER;
   const rental = params.rental ?? ZERO_SPILLOVER;
+  const climate = params.climate ?? ZERO_SPILLOVER;
+  const forecastDispersion = params.forecastDispersion ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -363,6 +369,22 @@ export function buildMacroTransmissionReport(params: {
       rental.investmentNudge,
       rental.productivityNudge,
       rental.summary
+    ),
+    layer(
+      'v10.18_climate',
+      'Climate policy',
+      climate.cycleNudge,
+      climate.investmentNudge,
+      climate.productivityNudge,
+      climate.summary
+    ),
+    layer(
+      'v10.21_forecast_dispersion',
+      'Forecast dispersion',
+      forecastDispersion.cycleNudge,
+      forecastDispersion.investmentNudge,
+      forecastDispersion.productivityNudge,
+      forecastDispersion.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

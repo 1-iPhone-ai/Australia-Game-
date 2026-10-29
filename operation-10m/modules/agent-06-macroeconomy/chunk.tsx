@@ -125,6 +125,8 @@ export interface NationalMacroEconomyState {
   capexSpilloverSummary: string | null;
   monetarySpilloverSummary: string | null;
   rentalSpilloverSummary: string | null;
+  climateSpilloverSummary: string | null;
+  forecastDispersionSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;
@@ -140,6 +142,7 @@ export interface NationalMacroEconomyState {
   transmissionAlignment: MacroTransmissionAlignmentSnapshot;
   transmissionSynchronization: MacroTransmissionSynchronizationSnapshot;
   transmissionIntensity: MacroTransmissionIntensitySnapshot;
+  transmissionPolarization: MacroTransmissionPolarizationSnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -356,6 +359,20 @@ export interface MacroTransmissionIntensitySnapshot {
   summary: string;
 }
 
+export type MacroTransmissionPolarizationBand =
+  | 'balanced'
+  | 'elevated'
+  | 'restrictive_dominant'
+  | 'supportive_dominant';
+
+export interface MacroTransmissionPolarizationSnapshot {
+  polarizationIndex: number;
+  band: MacroTransmissionPolarizationBand;
+  supportiveMass: number;
+  restrictiveMass: number;
+  summary: string;
+}
+
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';
 
 export interface MacroStressIndexSnapshot {
@@ -470,6 +487,7 @@ export interface MacroEconomyInputs {
   consumerConfidence?: any;
   privateCapex?: any;
   rentalMarket?: any;
+  climatePolicy?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */
@@ -1171,6 +1189,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Monetary & rental stress',
     shockIds: ['high_inflation', 'housing_correction'],
     description: 'Restrictive monetary stance with severe rental pressure (harness overlay).'
+  },
+  {
+    id: 'climate_forecast_stress',
+    label: 'Climate & forecast stress',
+    shockIds: ['drought_ag_cycle', 'global_slowdown'],
+    description: 'Disruptive climate transition with wide forecast dispersion (harness overlay).'
   }
 ];
 
@@ -1719,6 +1743,11 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     consumerConfidence: params?.consumerConfidence ?? params?.households?.consumerConfidence,
     privateCapex: params?.privateCapex ?? params?.companies?.capexCycle ?? params?.privateSector?.capitalExpenditure,
     rentalMarket: params?.rentalMarket ?? params?.housingWellbeing?.rental ?? params?.housing?.rentalMarket,
+    climatePolicy:
+      params?.climatePolicy ??
+      params?.energyEnvironment?.climatePolicy ??
+      params?.industrialEnergy?.climate ??
+      params?.nationalSystems?.climatePolicy,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };
@@ -4373,6 +4402,149 @@ export function applyMacroRentalSpillover(
 }
 
 
+// --- source: bridge-v1018-climate-policy.ts ---
+
+export interface MacroClimatePolicySpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.18 climate policy spillover (Agent 13 domain; never mutates energy state). */
+export function readMacroClimatePolicySpilloverFromV1018Climate(inputs: MacroEconomyInputs): MacroClimatePolicySpillover {
+  const ce: any =
+    inputs.climatePolicy ??
+    inputs.energyEnvironment?.climatePolicy ??
+    inputs.industrialEnergy?.climate ??
+    inputs.nationalSystems?.climatePolicy;
+  if (!ce) return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const transition = String(ce.transitionBand ?? ce.transition?.band ?? ce.policyPace ?? '');
+  const carbon = String(ce.carbonPriceBand ?? ce.carbonIntensityBand ?? ce.levyBand ?? '');
+  const compliance = String(ce.complianceBand ?? ce.regulatoryPressure?.band ?? '');
+
+  if (transition === 'disruptive' || transition === 'shock' || transition === 'forced') {
+    cycleNudge -= 2;
+    investmentNudge -= 2;
+    productivityNudge -= 1;
+    summary = `Disruptive climate transition (${transition}) weighs on macro cycle read.`;
+  } else if (transition === 'accelerating' || transition === 'steady') {
+    investmentNudge += 1;
+    productivityNudge += 0.5;
+    summary = `Orderly climate transition (${transition}) supports green-investment spillover read.`;
+  }
+
+  if (carbon === 'punitive' || carbon === 'severe' || carbon === 'critical') {
+    cycleNudge -= 2;
+    investmentNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Punitive carbon pricing tightens near-term macro cycle interpretation.';
+  } else if (carbon === 'moderate' || carbon === 'incentive_aligned') {
+    investmentNudge += 0.5;
+  }
+
+  if (compliance === 'binding' || compliance === 'severe' || compliance === 'critical') {
+    productivityNudge -= 2;
+    cycleNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Binding climate compliance costs drag productivity spillover read.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroClimatePolicySpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroClimatePolicySpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v1021-forecast-dispersion.ts ---
+
+export interface MacroForecastDispersionSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  productivityNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.21 forecast dispersion spillover (Agent 21 domain; never mutates forecast state). */
+export function readMacroForecastDispersionSpilloverFromV1021(inputs: MacroEconomyInputs): MacroForecastDispersionSpillover {
+  const fl: any =
+    inputs.forecastingLab ??
+    inputs.macroForecasts ??
+    inputs.nationalForecasts ??
+    inputs.nationalSystems?.forecasting;
+  if (!fl) return { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null };
+
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let productivityNudge = 0;
+  let summary: string | null = null;
+
+  const dispersion = String(fl.dispersionBand ?? fl.forecastSpread?.band ?? fl.modelDispersion ?? '');
+  const confidence = String(fl.confidenceBand ?? fl.consensusConfidence?.band ?? '');
+  const disagreement = String(fl.disagreementBand ?? fl.analystSplit?.band ?? '');
+
+  if (dispersion === 'wide' || dispersion === 'extreme' || dispersion === 'critical') {
+    cycleNudge -= 2;
+    investmentNudge -= 2;
+    summary = `Wide forecast dispersion (${dispersion}) obscures macro investment timing read.`;
+  } else if (dispersion === 'tight' || dispersion === 'aligned') {
+    cycleNudge += 0.5;
+    investmentNudge += 0.5;
+    summary = 'Tight forecast dispersion supports coherent macro read.';
+  }
+
+  if (confidence === 'low' || confidence === 'critical' || confidence === 'fragmented') {
+    investmentNudge -= 2;
+    cycleNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Low forecast confidence caps macro investment upside.';
+  } else if (confidence === 'high' || confidence === 'strong') {
+    investmentNudge += 1;
+  }
+
+  if (disagreement === 'severe' || disagreement === 'polarized' || disagreement === 'extreme') {
+    cycleNudge -= 1;
+    productivityNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Polarized forecast disagreement weighs on productivity interpretation.';
+  }
+
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -5, 5),
+    investmentNudge: v1014macroClamp(investmentNudge, -5, 5),
+    productivityNudge: v1014macroClamp(productivityNudge, -4, 4),
+    summary
+  };
+}
+
+export function applyMacroForecastDispersionSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroForecastDispersionSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
 // --- source: macro-transmission.ts ---
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -4415,6 +4587,8 @@ export function buildMacroTransmissionReport(params: {
   capex?: MacroCapexSpillover;
   monetary?: MacroMonetarySpillover;
   rental?: MacroRentalSpillover;
+  climate?: MacroClimatePolicySpillover;
+  forecastDispersion?: MacroForecastDispersionSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -4442,6 +4616,8 @@ export function buildMacroTransmissionReport(params: {
   const capex = params.capex ?? ZERO_SPILLOVER;
   const monetary = params.monetary ?? ZERO_SPILLOVER;
   const rental = params.rental ?? ZERO_SPILLOVER;
+  const climate = params.climate ?? ZERO_SPILLOVER;
+  const forecastDispersion = params.forecastDispersion ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -4702,6 +4878,22 @@ export function buildMacroTransmissionReport(params: {
       rental.investmentNudge,
       rental.productivityNudge,
       rental.summary
+    ),
+    layer(
+      'v10.18_climate',
+      'Climate policy',
+      climate.cycleNudge,
+      climate.investmentNudge,
+      climate.productivityNudge,
+      climate.summary
+    ),
+    layer(
+      'v10.21_forecast_dispersion',
+      'Forecast dispersion',
+      forecastDispersion.cycleNudge,
+      forecastDispersion.investmentNudge,
+      forecastDispersion.productivityNudge,
+      forecastDispersion.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
@@ -5551,6 +5743,54 @@ export function buildMacroTransmissionIntensitySnapshot(
 }
 
 
+// --- source: macro-transmission-polarization.ts ---
+  MacroTransmissionPolarizationBand,
+  MacroTransmissionPolarizationSnapshot,
+  MacroTransmissionReport
+} from './types.ts';
+
+export type { MacroTransmissionPolarizationBand, MacroTransmissionPolarizationSnapshot };
+
+/** Restrictive vs supportive layer mass imbalance across transmission stack. */
+export function buildMacroTransmissionPolarizationSnapshot(
+  report: MacroTransmissionReport
+): MacroTransmissionPolarizationSnapshot {
+  let support = 0;
+  let restrict = 0;
+  for (const layer of report.layers) {
+    const net = layer.cycleContribution + layer.investmentContribution + layer.productivityContribution;
+    if (net > 0.08) support += net;
+    else if (net < -0.08) restrict += Math.abs(net);
+  }
+  const total = support + restrict;
+  if (total <= 0) {
+    return {
+      polarizationIndex: 0,
+      band: 'balanced',
+      supportiveMass: 0,
+      restrictiveMass: 0,
+      summary: 'No directional transmission mass — polarization read is balanced.'
+    };
+  }
+  const skew = (restrict - support) / total;
+  const polarizationIndex = Math.round(v1014macroClamp((Math.abs(skew) + 1) / 2, 0, 1) * 1000) / 10;
+
+  let band: MacroTransmissionPolarizationBand = 'balanced';
+  if (polarizationIndex >= 72) band = skew > 0 ? 'restrictive_dominant' : 'supportive_dominant';
+  else if (polarizationIndex >= 55) band = 'elevated';
+
+  const summary = `Transmission polarization ${polarizationIndex.toFixed(1)} (${band}); restrict ${restrict.toFixed(1)} vs support ${support.toFixed(1)}.`;
+
+  return {
+    polarizationIndex,
+    band,
+    supportiveMass: Math.round(support * 100) / 100,
+    restrictiveMass: Math.round(restrict * 100) / 100,
+    summary
+  };
+}
+
+
 // --- source: scenario-compare.ts ---
 
 export interface MacroScenarioCompareRow {
@@ -5942,6 +6182,32 @@ export function rankMacroScenarioMitigation(rows: MacroScenarioCompareRow[]): Ma
 }
 
 
+// --- source: scenario-adaptation-rank.ts ---
+
+export interface MacroScenarioAdaptationRow {
+  scenarioId: string;
+  adaptationPriority: number;
+}
+
+/** Rank overlays for adaptation planning (mitigation plus recovery cushion). */
+export function rankMacroScenarioAdaptation(rows: MacroScenarioCompareRow[]): MacroScenarioAdaptationRow[] {
+  const mitigation = rankMacroScenarioMitigation(rows);
+  const recovery = rankMacroScenarioRecovery(rows);
+  const mitMax = Math.max(1, ...mitigation.map(m => m.mitigationPriority));
+  const recMax = Math.max(1, ...recovery.map(r => r.recoveryPriority));
+
+  return rows
+    .map(row => {
+      const mit = mitigation.find(m => m.scenarioId === row.scenarioId)?.mitigationPriority ?? 0;
+      const rec = recovery.find(r => r.scenarioId === row.scenarioId)?.recoveryPriority ?? 0;
+      const adaptationPriority =
+        Math.round(((mit / mitMax) * 0.55 + (rec / recMax) * 0.45) * 1000) / 1000;
+      return { scenarioId: row.scenarioId, adaptationPriority };
+    })
+    .sort((a, b) => b.adaptationPriority - a.adaptationPriority);
+}
+
+
 // --- source: regression-harness.ts ---
 
 export interface MacroRegressionCheck {
@@ -5977,6 +6243,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeLogisticsNegotiationStress?: boolean;
   includeConfidenceCapexStress?: boolean;
   includeMonetaryRentalStress?: boolean;
+  includeClimateForecastStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -5996,6 +6263,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeLogisticsNegotiationStress = Boolean(options?.includeLogisticsNegotiationStress);
   const includeConfidenceCapexStress = Boolean(options?.includeConfidenceCapexStress);
   const includeMonetaryRentalStress = Boolean(options?.includeMonetaryRentalStress);
+  const includeClimateForecastStress = Boolean(options?.includeClimateForecastStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -6218,6 +6486,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             vacancyBand: t % 5 === 0 ? 'tight' : 'moderate',
             rentGrowthBand: t % 7 === 0 ? 'surging' : 'stable'
           }
+        : undefined,
+      climatePolicy: includeClimateForecastStress
+        ? {
+            transitionBand: t % 6 === 0 ? 'disruptive' : 'steady',
+            carbonPriceBand: t % 7 === 0 ? 'punitive' : 'moderate',
+            complianceBand: t % 5 === 0 ? 'binding' : 'light'
+          }
+        : undefined,
+      forecastingLab: includeClimateForecastStress
+        ? {
+            dispersionBand: t % 6 === 0 ? 'wide' : 'tight',
+            confidenceBand: t % 7 === 0 ? 'low' : 'high',
+            disagreementBand: t % 5 === 0 ? 'polarized' : 'aligned'
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -6279,7 +6561,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -6291,7 +6573,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_events',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -6303,7 +6585,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_turns',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -6315,7 +6597,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_research',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -6327,7 +6609,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_modes',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -6339,7 +6621,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_cities',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -6351,7 +6633,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_command',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -6363,7 +6645,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'twenty_six_transmission_layers_team',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -6375,7 +6657,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'thirty_transmission_layers_memory',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -6387,7 +6669,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'thirty_transmission_layers_ui',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -6399,7 +6681,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'thirty_two_transmission_layers_logistics',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -6411,7 +6693,7 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'thirty_four_transmission_layers_confidence',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -6423,7 +6705,19 @@ export function runMacroEconomyRegressionHarness(options?: {
     });
     checks.push({
       id: 'thirty_six_transmission_layers_monetary',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 36,
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeClimateForecastStress && prev) {
+    checks.push({
+      id: 'transmission_polarization_finite',
+      passed: Number.isFinite(prev.transmissionPolarization.polarizationIndex),
+      detail: String(prev.transmissionPolarization.polarizationIndex)
+    });
+    checks.push({
+      id: 'thirty_eight_transmission_layers_climate',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 38,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -7270,6 +7564,43 @@ export function evaluateMacroConsistencyGates(
       summary: 'Elevated transmission intensity — many layers carry material nudges simultaneously.'
     });
   }
+  const climate: any = inputs.climatePolicy ?? inputs.energyEnvironment?.climatePolicy;
+  const transition = String(climate?.transitionBand ?? climate?.transition?.band ?? '');
+  if (
+    (transition === 'disruptive' || transition === 'shock') &&
+    (state.energySpilloverSummary != null || state.productivityBand === 'weak')
+  ) {
+    gates.push({
+      id: 'climate_transition_shock',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Disruptive climate transition aligns with strained energy/productivity macro read.'
+    });
+  }
+  const fl: any = inputs.forecastingLab ?? inputs.nationalForecasts;
+  const dispersion = String(fl?.dispersionBand ?? fl?.forecastSpread?.band ?? '');
+  if (
+    (dispersion === 'wide' || dispersion === 'extreme') &&
+    (state.investmentClimate === 'cautious' || state.investmentClimate === 'frozen')
+  ) {
+    gates.push({
+      id: 'forecast_dispersion_wide',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide forecast dispersion coincides with cautious macro investment climate.'
+    });
+  }
+  if (
+    state.transmissionPolarization?.band === 'restrictive_dominant' ||
+    state.transmissionPolarization?.band === 'elevated'
+  ) {
+    gates.push({
+      id: 'transmission_polarization_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission polarization — restrictive layer mass dominates supportive mass.'
+    });
+  }
   return gates;
 }
 
@@ -7487,6 +7818,8 @@ export function computeNationalMacroEconomy(
   const capexSpillover = readMacroCapexSpilloverFromV1008(inputs);
   const monetarySpillover = readMacroMonetarySpilloverFromV1010Monetary(inputs);
   const rentalSpillover = readMacroRentalSpilloverFromV1014Rental(inputs);
+  const climateSpillover = readMacroClimatePolicySpilloverFromV1018Climate(inputs);
+  const forecastDispersionSpillover = readMacroForecastDispersionSpilloverFromV1021(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -7523,7 +7856,9 @@ export function computeNationalMacroEconomy(
   const withCapex = applyMacroCapexSpillover(withConfidence, capexSpillover);
   const withMonetary = applyMacroMonetarySpillover(withCapex, monetarySpillover);
   const withRental = applyMacroRentalSpillover(withMonetary, rentalSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withRental, pushEv);
+  const withClimate = applyMacroClimatePolicySpillover(withRental, climateSpillover);
+  const withForecastDispersion = applyMacroForecastDispersionSpillover(withClimate, forecastDispersionSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withForecastDispersion, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -7587,7 +7922,9 @@ export function computeNationalMacroEconomy(
     confidence: confidenceSpillover,
     capex: capexSpillover,
     monetary: monetarySpillover,
-    rental: rentalSpillover
+    rental: rentalSpillover,
+    climate: climateSpillover,
+    forecastDispersion: forecastDispersionSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -7604,6 +7941,7 @@ export function computeNationalMacroEconomy(
   const transmissionAlignment = buildMacroTransmissionAlignmentSnapshot(transmissionReport);
   const transmissionSynchronization = buildMacroTransmissionSynchronizationSnapshot(transmissionReport);
   const transmissionIntensity = buildMacroTransmissionIntensitySnapshot(transmissionReport);
+  const transmissionPolarization = buildMacroTransmissionPolarizationSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -7690,6 +8028,8 @@ export function computeNationalMacroEconomy(
     capexSpilloverSummary: capexSpillover.summary,
     monetarySpilloverSummary: monetarySpillover.summary,
     rentalSpilloverSummary: rentalSpillover.summary,
+    climateSpilloverSummary: climateSpillover.summary,
+    forecastDispersionSpilloverSummary: forecastDispersionSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
@@ -7705,6 +8045,7 @@ export function computeNationalMacroEconomy(
     transmissionAlignment,
     transmissionSynchronization,
     transmissionIntensity,
+    transmissionPolarization,
     transmissionReport,
     stressIndex: {
       score: 0,
@@ -8365,7 +8706,7 @@ export function runAgent06Round4SelfTests(): {
     strategic: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null },
     housing: { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null }
   });
-  record('R4-03', 'Transmission report has thirty-six layers', report.layers.length === 36, String(report.layers.length));
+  record('R4-03', 'Transmission report has thirty-eight layers', report.layers.length === 38, String(report.layers.length));
   record('R4-04', 'Net cycle nudge finite', Number.isFinite(report.netCycleNudge), String(report.netCycleNudge));
 
   const integrated = computeNationalMacroEconomy(
@@ -8376,7 +8717,7 @@ export function runAgent06Round4SelfTests(): {
     null,
     null
   );
-  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 36, 'ok');
+  record('R4-05', 'State carries transmission report', integrated.state.transmissionReport.layers.length === 38, 'ok');
   record('R4-06', 'Trade summary on state', integrated.state.tradeSpilloverSummary != null, String(integrated.state.tradeSpilloverSummary));
 
   const stress = computeNationalMacroEconomy(
@@ -8519,7 +8860,7 @@ export function runAgent06Round6SelfTests(): {
   );
   record('R6-03', 'State exposes innovation summary', integrated.state.innovationSpilloverSummary != null, 'ok');
   record('R6-04', 'State exposes workforce summary', integrated.state.workforceSpilloverSummary != null, 'ok');
-  record('R6-05', 'Thirty-six transmission layers', integrated.state.transmissionReport.layers.length === 36, String(integrated.state.transmissionReport.layers.length));
+  record('R6-05', 'Thirty-eight transmission layers', integrated.state.transmissionReport.layers.length === 38, String(integrated.state.transmissionReport.layers.length));
 
   const capacity = buildMacroCapacitySnapshot({
     state: integrated.state,
@@ -8603,8 +8944,8 @@ export function runAgent06Round7SelfTests(): {
   record('R7-04', 'State exposes housing summary', integrated.state.housingSpilloverSummary != null, 'ok');
   record(
     'R7-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -8691,8 +9032,8 @@ export function runAgent06Round8SelfTests(): {
   record('R8-04', 'State exposes energy summary', integrated.state.energySpilloverSummary != null, 'ok');
   record(
     'R8-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -8788,8 +9129,8 @@ export function runAgent06Round9SelfTests(): {
   record('R9-04', 'State exposes companies summary', integrated.state.companiesSpilloverSummary != null, 'ok');
   record(
     'R9-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -8882,8 +9223,8 @@ export function runAgent06Round10SelfTests(): {
   record('R10-04', 'State exposes transport summary', integrated.state.transportSpilloverSummary != null, 'ok');
   record(
     'R10-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -8972,8 +9313,8 @@ export function runAgent06Round11SelfTests(): {
   record('R11-04', 'State exposes population summary', integrated.state.populationSpilloverSummary != null, 'ok');
   record(
     'R11-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -9061,8 +9402,8 @@ export function runAgent06Round12SelfTests(): {
   record('R12-04', 'State exposes guardian summary', integrated.state.guardianSpilloverSummary != null, 'ok');
   record(
     'R12-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -9150,8 +9491,8 @@ export function runAgent06Round13SelfTests(): {
   record('R13-04', 'State exposes forecasting summary', integrated.state.forecastingSpilloverSummary != null, 'ok');
   record(
     'R13-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -9239,8 +9580,8 @@ export function runAgent06Round14SelfTests(): {
   record('R14-04', 'State exposes automation summary', integrated.state.automationSpilloverSummary != null, 'ok');
   record(
     'R14-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -9328,8 +9669,8 @@ export function runAgent06Round15SelfTests(): {
   record('R15-04', 'State exposes replay summary', integrated.state.replaySpilloverSummary != null, 'ok');
   record(
     'R15-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -9421,8 +9762,8 @@ export function runAgent06Round16SelfTests(): {
   record('R16-04', 'State exposes dashboards summary', integrated.state.dashboardsSpilloverSummary != null, 'ok');
   record(
     'R16-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -9526,8 +9867,8 @@ export function runAgent06Round17SelfTests(): {
   record('R17-04', 'State exposes utilities summary', integrated.state.utilitiesSpilloverSummary != null, 'ok');
   record(
     'R17-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -9643,8 +9984,8 @@ export function runAgent06Round18SelfTests(): {
   );
   record(
     'R18-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -9742,8 +10083,8 @@ export function runAgent06Round19SelfTests(): {
   record('R19-04', 'State exposes capex summary', integrated.state.capexSpilloverSummary != null, 'ok');
   record(
     'R19-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -9845,8 +10186,8 @@ export function runAgent06Round20SelfTests(): {
   record('R20-04', 'State exposes rental summary', integrated.state.rentalSpilloverSummary != null, 'ok');
   record(
     'R20-05',
-    'Thirty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 36,
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
     String(integrated.state.transmissionReport.layers.length)
   );
 
@@ -9892,6 +10233,114 @@ export function runAgent06Round20SelfTests(): {
   record(
     'R20-10',
     'Monetary/rental regression harness',
+    harness.allPassed,
+    harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: round21-self-tests.ts ---
+
+export function runAgent06Round21SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const climate = readMacroClimatePolicySpilloverFromV1018Climate(
+    makeDefaultV1014_MACRO_TestInputs({
+      climatePolicy: {
+        transitionBand: 'disruptive',
+        carbonPriceBand: 'punitive',
+        complianceBand: 'binding'
+      }
+    })
+  );
+  record('R21-01', 'Disruptive climate drags cycle', climate.cycleNudge < -2, String(climate.cycleNudge));
+
+  const forecast = readMacroForecastDispersionSpilloverFromV1021(
+    makeDefaultV1014_MACRO_TestInputs({
+      forecastingLab: {
+        dispersionBand: 'extreme',
+        confidenceBand: 'low',
+        disagreementBand: 'polarized'
+      }
+    })
+  );
+  record('R21-02', 'Extreme forecast dispersion drags investment', forecast.investmentNudge < -2, String(forecast.investmentNudge));
+
+  const integrated = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      climatePolicy: { transitionBand: 'steady', carbonPriceBand: 'moderate', complianceBand: 'light' },
+      forecastingLab: { dispersionBand: 'tight', confidenceBand: 'high', disagreementBand: 'aligned' }
+    }),
+    null,
+    null
+  );
+  record('R21-03', 'State exposes climate summary', integrated.state.climateSpilloverSummary != null, 'ok');
+  record('R21-04', 'State exposes forecast dispersion summary', integrated.state.forecastDispersionSpilloverSummary != null, 'ok');
+  record(
+    'R21-05',
+    'Thirty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 38,
+    String(integrated.state.transmissionReport.layers.length)
+  );
+
+  const polarization = buildMacroTransmissionPolarizationSnapshot(integrated.state.transmissionReport);
+  record(
+    'R21-06',
+    'Transmission polarization finite',
+    Number.isFinite(polarization.polarizationIndex),
+    String(polarization.polarizationIndex)
+  );
+  record(
+    'R21-07',
+    'Transmission includes climate layer',
+    integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.18_climate'),
+    'ok'
+  );
+
+  const compare = compareMacroEconomyScenarios(
+    makeDefaultV1014_MACRO_TestInputs({ turn: 36 }),
+    [
+      {
+        id: 'climate_shock',
+        overlay: { climatePolicy: { transitionBand: 'shock', complianceBand: 'critical' } }
+      },
+      {
+        id: 'forecast_noise',
+        overlay: { forecastingLab: { dispersionBand: 'critical', confidenceBand: 'fragmented' } }
+      }
+    ],
+    null,
+    null
+  );
+  const adaptation = rankMacroScenarioAdaptation(compare);
+  const mitigation = rankMacroScenarioMitigation(compare);
+  record('R21-08', 'Scenario adaptation preserves row count', adaptation.length === 2, String(adaptation.length));
+  record(
+    'R21-09',
+    'Adaptation and mitigation both rank scenarios',
+    mitigation.length === 2 && adaptation[0].adaptationPriority >= 0,
+    adaptation.map(a => a.scenarioId).join('>')
+  );
+
+  const harness = runMacroEconomyRegressionHarness({
+    turns: 10,
+    scenarioId: 'climate_forecast_stress',
+    includeClimateForecastStress: true
+  });
+  record(
+    'R21-10',
+    'Climate/forecast regression harness',
     harness.allPassed,
     harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
   );
@@ -10089,6 +10538,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const round20 = runAgent06Round20SelfTests();
   for (const r of round20.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round21 = runAgent06Round21SelfTests();
+  for (const r of round21.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

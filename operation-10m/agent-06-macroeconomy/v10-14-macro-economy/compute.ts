@@ -35,6 +35,8 @@ import { applyMacroHouseholdConfidenceSpillover, readMacroHouseholdConfidenceSpi
 import { applyMacroCapexSpillover, readMacroCapexSpilloverFromV1008 } from './bridge-v1008-capex.ts';
 import { applyMacroMonetarySpillover, readMacroMonetarySpilloverFromV1010Monetary } from './bridge-v1010-monetary.ts';
 import { applyMacroRentalSpillover, readMacroRentalSpilloverFromV1014Rental } from './bridge-v1014-rental.ts';
+import { applyMacroClimatePolicySpillover, readMacroClimatePolicySpilloverFromV1018Climate } from './bridge-v1018-climate-policy.ts';
+import { applyMacroForecastDispersionSpillover, readMacroForecastDispersionSpilloverFromV1021 } from './bridge-v1021-forecast-dispersion.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -55,6 +57,7 @@ import { buildMacroTransmissionStabilitySnapshot } from './macro-transmission-st
 import { buildMacroTransmissionAlignmentSnapshot } from './macro-transmission-alignment.ts';
 import { buildMacroTransmissionSynchronizationSnapshot } from './macro-transmission-synchronization.ts';
 import { buildMacroTransmissionIntensitySnapshot } from './macro-transmission-intensity.ts';
+import { buildMacroTransmissionPolarizationSnapshot } from './macro-transmission-polarization.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -154,6 +157,8 @@ export function computeNationalMacroEconomy(
   const capexSpillover = readMacroCapexSpilloverFromV1008(inputs);
   const monetarySpillover = readMacroMonetarySpilloverFromV1010Monetary(inputs);
   const rentalSpillover = readMacroRentalSpilloverFromV1014Rental(inputs);
+  const climateSpillover = readMacroClimatePolicySpilloverFromV1018Climate(inputs);
+  const forecastDispersionSpillover = readMacroForecastDispersionSpilloverFromV1021(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -190,7 +195,9 @@ export function computeNationalMacroEconomy(
   const withCapex = applyMacroCapexSpillover(withConfidence, capexSpillover);
   const withMonetary = applyMacroMonetarySpillover(withCapex, monetarySpillover);
   const withRental = applyMacroRentalSpillover(withMonetary, rentalSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withRental, pushEv);
+  const withClimate = applyMacroClimatePolicySpillover(withRental, climateSpillover);
+  const withForecastDispersion = applyMacroForecastDispersionSpillover(withClimate, forecastDispersionSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withForecastDispersion, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -254,7 +261,9 @@ export function computeNationalMacroEconomy(
     confidence: confidenceSpillover,
     capex: capexSpillover,
     monetary: monetarySpillover,
-    rental: rentalSpillover
+    rental: rentalSpillover,
+    climate: climateSpillover,
+    forecastDispersion: forecastDispersionSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -271,6 +280,7 @@ export function computeNationalMacroEconomy(
   const transmissionAlignment = buildMacroTransmissionAlignmentSnapshot(transmissionReport);
   const transmissionSynchronization = buildMacroTransmissionSynchronizationSnapshot(transmissionReport);
   const transmissionIntensity = buildMacroTransmissionIntensitySnapshot(transmissionReport);
+  const transmissionPolarization = buildMacroTransmissionPolarizationSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -357,6 +367,8 @@ export function computeNationalMacroEconomy(
     capexSpilloverSummary: capexSpillover.summary,
     monetarySpilloverSummary: monetarySpillover.summary,
     rentalSpilloverSummary: rentalSpillover.summary,
+    climateSpilloverSummary: climateSpillover.summary,
+    forecastDispersionSpilloverSummary: forecastDispersionSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
@@ -372,6 +384,7 @@ export function computeNationalMacroEconomy(
     transmissionAlignment,
     transmissionSynchronization,
     transmissionIntensity,
+    transmissionPolarization,
     transmissionReport,
     stressIndex: {
       score: 0,

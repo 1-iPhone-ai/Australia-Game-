@@ -636,5 +636,42 @@ export function evaluateMacroConsistencyGates(
       summary: 'Elevated transmission intensity — many layers carry material nudges simultaneously.'
     });
   }
+  const climate: any = inputs.climatePolicy ?? inputs.energyEnvironment?.climatePolicy;
+  const transition = String(climate?.transitionBand ?? climate?.transition?.band ?? '');
+  if (
+    (transition === 'disruptive' || transition === 'shock') &&
+    (state.energySpilloverSummary != null || state.productivityBand === 'weak')
+  ) {
+    gates.push({
+      id: 'climate_transition_shock',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Disruptive climate transition aligns with strained energy/productivity macro read.'
+    });
+  }
+  const fl: any = inputs.forecastingLab ?? inputs.nationalForecasts;
+  const dispersion = String(fl?.dispersionBand ?? fl?.forecastSpread?.band ?? '');
+  if (
+    (dispersion === 'wide' || dispersion === 'extreme') &&
+    (state.investmentClimate === 'cautious' || state.investmentClimate === 'frozen')
+  ) {
+    gates.push({
+      id: 'forecast_dispersion_wide',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide forecast dispersion coincides with cautious macro investment climate.'
+    });
+  }
+  if (
+    state.transmissionPolarization?.band === 'restrictive_dominant' ||
+    state.transmissionPolarization?.band === 'elevated'
+  ) {
+    gates.push({
+      id: 'transmission_polarization_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission polarization — restrictive layer mass dominates supportive mass.'
+    });
+  }
   return gates;
 }

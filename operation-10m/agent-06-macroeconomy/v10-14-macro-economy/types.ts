@@ -121,6 +121,8 @@ export interface NationalMacroEconomyState {
   capexSpilloverSummary: string | null;
   monetarySpilloverSummary: string | null;
   rentalSpilloverSummary: string | null;
+  climateSpilloverSummary: string | null;
+  forecastDispersionSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;
@@ -136,6 +138,7 @@ export interface NationalMacroEconomyState {
   transmissionAlignment: MacroTransmissionAlignmentSnapshot;
   transmissionSynchronization: MacroTransmissionSynchronizationSnapshot;
   transmissionIntensity: MacroTransmissionIntensitySnapshot;
+  transmissionPolarization: MacroTransmissionPolarizationSnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -352,6 +355,20 @@ export interface MacroTransmissionIntensitySnapshot {
   summary: string;
 }
 
+export type MacroTransmissionPolarizationBand =
+  | 'balanced'
+  | 'elevated'
+  | 'restrictive_dominant'
+  | 'supportive_dominant';
+
+export interface MacroTransmissionPolarizationSnapshot {
+  polarizationIndex: number;
+  band: MacroTransmissionPolarizationBand;
+  supportiveMass: number;
+  restrictiveMass: number;
+  summary: string;
+}
+
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';
 
 export interface MacroStressIndexSnapshot {
@@ -466,6 +483,7 @@ export interface MacroEconomyInputs {
   consumerConfidence?: any;
   privateCapex?: any;
   rentalMarket?: any;
+  climatePolicy?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */
