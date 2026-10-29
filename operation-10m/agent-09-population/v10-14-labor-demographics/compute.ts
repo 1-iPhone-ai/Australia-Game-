@@ -174,6 +174,10 @@ import { computeNationalAdvocacyInclusionCouplingBrief } from './advocacy-inclus
 import { computeNationalInclusionEquityOutlook } from './inclusion-equity-outlook';
 import { computeNationalSubjectInclusionReadinessBrief } from './subject-inclusion-readiness-brief';
 import { computeNationalWorkforceInclusionIndex } from './national-workforce-inclusion-index';
+import { computeNationalInclusionFlexibilityCouplingBrief } from './inclusion-flexibility-coupling-brief';
+import { computeNationalFlexibilityFlowOutlook } from './flexibility-flow-outlook';
+import { computeNationalSubjectFlexibilityReadinessBrief } from './subject-flexibility-readiness-brief';
+import { computeNationalWorkforceFlexibilityIndex } from './national-workforce-flexibility-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -1149,6 +1153,25 @@ export function computeNationalLaborDemographics(
     state.inclusionEquityOutlook,
     state.subjectInclusionReadinessBrief
   );
+  state.inclusionFlexibilityCouplingBrief = computeNationalInclusionFlexibilityCouplingBrief(
+    state,
+    state.nationalWorkforceInclusionIndex
+  );
+  state.flexibilityFlowOutlook = computeNationalFlexibilityFlowOutlook(
+    state,
+    state.inclusionEquityOutlook
+  );
+  state.subjectFlexibilityReadinessBrief = computeNationalSubjectFlexibilityReadinessBrief(
+    state,
+    state.subjectInclusionReadinessBrief,
+    state.nationalWorkforceInclusionIndex
+  );
+  state.nationalWorkforceFlexibilityIndex = computeNationalWorkforceFlexibilityIndex(
+    state,
+    state.inclusionFlexibilityCouplingBrief,
+    state.flexibilityFlowOutlook,
+    state.subjectFlexibilityReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -2083,6 +2106,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceInclusionIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.inclusionFlexibilityCouplingBrief?.band === 'decoupled' ||
+      state.inclusionFlexibilityCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.inclusionFlexibilityCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.flexibilityFlowOutlook?.band === 'ebbing' ||
+      state.flexibilityFlowOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.flexibilityFlowOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectFlexibilityReadinessBrief?.band === 'below_flexibility' ||
+      state.subjectFlexibilityReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectFlexibilityReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceFlexibilityIndex?.band === 'fragile' ||
+      state.nationalWorkforceFlexibilityIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceFlexibilityIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

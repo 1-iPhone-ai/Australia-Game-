@@ -218,6 +218,10 @@ import { computeNationalAdvocacyInclusionCouplingBrief } from './advocacy-inclus
 import { computeNationalInclusionEquityOutlook } from './inclusion-equity-outlook';
 import { computeNationalSubjectInclusionReadinessBrief } from './subject-inclusion-readiness-brief';
 import { computeNationalWorkforceInclusionIndex } from './national-workforce-inclusion-index';
+import { computeNationalInclusionFlexibilityCouplingBrief } from './inclusion-flexibility-coupling-brief';
+import { computeNationalFlexibilityFlowOutlook } from './flexibility-flow-outlook';
+import { computeNationalSubjectFlexibilityReadinessBrief } from './subject-flexibility-readiness-brief';
+import { computeNationalWorkforceFlexibilityIndex } from './national-workforce-flexibility-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2594,6 +2598,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'inclusion steward note'
   );
   check('R4116', inclusionEaseForRegion('NSW', 'technology') > 0, 'inclusion ease for region');
+
+  check('R4201', Boolean(r1.state.inclusionFlexibilityCouplingBrief?.band), 'inclusion flexibility on state');
+  check(
+    'R4202',
+    (r1.state.inclusionFlexibilityCouplingBrief?.inclusionDrag ?? 0) >= 0,
+    'inclusion flexibility drag'
+  );
+  check('R4203', Boolean(r1.state.flexibilityFlowOutlook?.band), 'flexibility flow on state');
+  check(
+    'R4204',
+    (r1.state.flexibilityFlowOutlook?.inclusionDrag ?? 0) >= 0,
+    'flexibility flow inclusion drag'
+  );
+  check('R4205', Boolean(r1.state.subjectFlexibilityReadinessBrief?.band), 'subject flexibility on state');
+  check('R4206', Boolean(r1.state.nationalWorkforceFlexibilityIndex?.band), 'workforce flexibility on state');
+  check(
+    'R4207',
+    detectLaborDemographicsQuery('inclusion flexibility coupling') === 'inclusion_flexibility_coupling',
+    'GI inclusion flexibility detect'
+  );
+  check(
+    'R4208',
+    detectLaborDemographicsQuery('flexibility flow') === 'flexibility_flow',
+    'GI flexibility flow detect'
+  );
+  check(
+    'R4209',
+    detectLaborDemographicsQuery('subject flexibility readiness') === 'subject_flexibility_readiness',
+    'GI subject flexibility detect'
+  );
+  check(
+    'R4210',
+    detectLaborDemographicsQuery('workforce flexibility') === 'workforce_flexibility',
+    'GI workforce flexibility detect'
+  );
+  check(
+    'R4211',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_flexibility').headline.length > 5,
+    'GI workforce flexibility answer'
+  );
+  const inclusionFlexibilityOnly = computeNationalInclusionFlexibilityCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceInclusionIndex
+  );
+  check('R4212', inclusionFlexibilityOnly.summary.length > 10, 'inclusion flexibility standalone summary');
+  const flexibilityFlowOnly = computeNationalFlexibilityFlowOutlook(
+    r1.state,
+    r1.state.inclusionEquityOutlook
+  );
+  check('R4213', flexibilityFlowOnly.band.length > 3, 'flexibility flow band string');
+  const subjectFlexibilityOnly = computeNationalSubjectFlexibilityReadinessBrief(
+    r1.state,
+    r1.state.subjectInclusionReadinessBrief,
+    r1.state.nationalWorkforceInclusionIndex
+  );
+  check('R4214', subjectFlexibilityOnly.flexibilityDrag >= 0, 'subject flexibility drag');
+  check(
+    'R4215',
+    computeNationalWorkforceFlexibilityIndex(
+      rHhBad.state,
+      rHhBad.state.inclusionFlexibilityCouplingBrief,
+      rHhBad.state.flexibilityFlowOutlook,
+      rHhBad.state.subjectFlexibilityReadinessBrief
+    ).stewardNote.length > 8,
+    'flexibility steward note'
+  );
+  check('R4216', flexibilityEaseForRegion('NSW', 'technology') > 0, 'flexibility ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

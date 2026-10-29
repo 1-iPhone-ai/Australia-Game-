@@ -151,7 +151,11 @@ export type LaborGiQueryTopic =
   | 'advocacy_inclusion_coupling'
   | 'inclusion_equity'
   | 'subject_inclusion_readiness'
-  | 'workforce_inclusion';
+  | 'workforce_inclusion'
+  | 'inclusion_flexibility_coupling'
+  | 'flexibility_flow'
+  | 'subject_flexibility_readiness'
+  | 'workforce_flexibility';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -316,6 +320,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_inclusion_readiness';
   }
   if (/\b(workforce inclusion|inclusion index labor workforce)/.test(q)) return 'workforce_inclusion';
+  if (/\b(inclusion flexibility|inclusion-flexibility coupling)/.test(q)) return 'inclusion_flexibility_coupling';
+  if (/\b(flexibility flow|flexibility pipeline flow)/.test(q)) return 'flexibility_flow';
+  if (/\b(subject flexibility readiness|flexibility readiness subject)/.test(q)) {
+    return 'subject_flexibility_readiness';
+  }
+  if (/\b(workforce flexibility|flexibility index labor workforce)/.test(q)) return 'workforce_flexibility';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1518,6 +1528,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Inclusion band ${state.nationalWorkforceInclusionIndex?.band ?? 'unknown'}; inclusion drag ${Math.round(state.nationalWorkforceInclusionIndex?.inclusionDrag ?? 0)}.`,
         inference: state.nationalWorkforceInclusionIndex?.stewardNote || state.summary,
         projection: 'Workforce inclusion synthesizes advocacy-inclusion coupling, inclusion equity, and subject inclusion.'
+      };
+    case 'inclusion_flexibility_coupling':
+      return {
+        topic,
+        headline: state.inclusionFlexibilityCouplingBrief?.summary || 'Inclusion-flexibility coupling unavailable.',
+        fact: `Coupling band ${state.inclusionFlexibilityCouplingBrief?.band ?? 'unknown'}; inclusion drag ${Math.round(state.inclusionFlexibilityCouplingBrief?.inclusionDrag ?? 0)}.`,
+        inference: state.inclusionFlexibilityCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce inclusion with flexibility levers — wave 42 / O10-215 depth.'
+      };
+    case 'flexibility_flow':
+      return {
+        topic,
+        headline: state.flexibilityFlowOutlook?.summary || 'Flexibility flow unavailable.',
+        fact: `Flow band ${state.flexibilityFlowOutlook?.band ?? 'unknown'}; inclusion drag ${Math.round(state.flexibilityFlowOutlook?.inclusionDrag ?? 0)}.`,
+        inference: state.flexibilityFlowOutlook?.stewardNote || state.outlook,
+        projection: 'Flow blends flexibility levers with inclusion equity — bounded indices only.'
+      };
+    case 'subject_flexibility_readiness':
+      return {
+        topic,
+        headline: state.subjectFlexibilityReadinessBrief?.summary || 'Subject flexibility readiness unavailable.',
+        fact: `Flexibility band ${state.subjectFlexibilityReadinessBrief?.band ?? 'unknown'}; flexibility drag ${Math.round(state.subjectFlexibilityReadinessBrief?.flexibilityDrag ?? 0)}.`,
+        inference: state.subjectFlexibilityReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject flexibility readiness gates subject inclusion against workforce inclusion for O10-215 wave 42.'
+      };
+    case 'workforce_flexibility':
+      return {
+        topic,
+        headline: state.nationalWorkforceFlexibilityIndex?.summary || 'Workforce flexibility unavailable.',
+        fact: `Flexibility band ${state.nationalWorkforceFlexibilityIndex?.band ?? 'unknown'}; flexibility drag ${Math.round(state.nationalWorkforceFlexibilityIndex?.flexibilityDrag ?? 0)}.`,
+        inference: state.nationalWorkforceFlexibilityIndex?.stewardNote || state.summary,
+        projection: 'Workforce flexibility synthesizes inclusion-flexibility coupling, flexibility flow, and subject flexibility.'
       };
     default:
       return {

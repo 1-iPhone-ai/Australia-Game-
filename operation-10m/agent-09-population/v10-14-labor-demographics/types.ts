@@ -333,6 +333,10 @@ export interface NationalLaborDemographicsState {
   inclusionEquityOutlook?: NationalInclusionEquityOutlook;
   subjectInclusionReadinessBrief?: NationalSubjectInclusionReadinessBrief;
   nationalWorkforceInclusionIndex?: NationalWorkforceInclusionIndex;
+  inclusionFlexibilityCouplingBrief?: NationalInclusionFlexibilityCouplingBrief;
+  flexibilityFlowOutlook?: NationalFlexibilityFlowOutlook;
+  subjectFlexibilityReadinessBrief?: NationalSubjectFlexibilityReadinessBrief;
+  nationalWorkforceFlexibilityIndex?: NationalWorkforceFlexibilityIndex;
 }
 
 export type MigrationShockKind =
@@ -2009,6 +2013,54 @@ export interface NationalWorkforceInclusionIndex {
   inclusionIndex: number;
   band: WorkforceInclusionBand;
   inclusionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type InclusionFlexibilityCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalInclusionFlexibilityCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: InclusionFlexibilityCouplingBand;
+  inclusionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type FlexibilityFlowBand = 'ebbing' | 'patchy' | 'rising' | 'flowing';
+
+export interface NationalFlexibilityFlowOutlook {
+  turn: number;
+  flowIndex: number;
+  band: FlexibilityFlowBand;
+  inclusionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectFlexibilityReadinessBand =
+  | 'below_flexibility'
+  | 'approaching'
+  | 'flexibility_ready'
+  | 'inclusion_locked';
+
+export interface NationalSubjectFlexibilityReadinessBrief {
+  turn: number;
+  flexibilityIndex: number;
+  band: SubjectFlexibilityReadinessBand;
+  flexibilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceFlexibilityBand = 'fragile' | 'thin' | 'elevated' | 'flexibility';
+
+export interface NationalWorkforceFlexibilityIndex {
+  turn: number;
+  flexibilityIndex: number;
+  band: WorkforceFlexibilityBand;
+  flexibilityDrag: number;
   summary: string;
   stewardNote: string;
 }

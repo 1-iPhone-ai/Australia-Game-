@@ -337,6 +337,10 @@ export interface NationalLaborDemographicsState {
   inclusionEquityOutlook?: NationalInclusionEquityOutlook;
   subjectInclusionReadinessBrief?: NationalSubjectInclusionReadinessBrief;
   nationalWorkforceInclusionIndex?: NationalWorkforceInclusionIndex;
+  inclusionFlexibilityCouplingBrief?: NationalInclusionFlexibilityCouplingBrief;
+  flexibilityFlowOutlook?: NationalFlexibilityFlowOutlook;
+  subjectFlexibilityReadinessBrief?: NationalSubjectFlexibilityReadinessBrief;
+  nationalWorkforceFlexibilityIndex?: NationalWorkforceFlexibilityIndex;
 }
 
 export type MigrationShockKind =
@@ -2017,6 +2021,54 @@ export interface NationalWorkforceInclusionIndex {
   stewardNote: string;
 }
 
+export type InclusionFlexibilityCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalInclusionFlexibilityCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: InclusionFlexibilityCouplingBand;
+  inclusionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type FlexibilityFlowBand = 'ebbing' | 'patchy' | 'rising' | 'flowing';
+
+export interface NationalFlexibilityFlowOutlook {
+  turn: number;
+  flowIndex: number;
+  band: FlexibilityFlowBand;
+  inclusionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectFlexibilityReadinessBand =
+  | 'below_flexibility'
+  | 'approaching'
+  | 'flexibility_ready'
+  | 'inclusion_locked';
+
+export interface NationalSubjectFlexibilityReadinessBrief {
+  turn: number;
+  flexibilityIndex: number;
+  band: SubjectFlexibilityReadinessBand;
+  flexibilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceFlexibilityBand = 'fragile' | 'thin' | 'elevated' | 'flexibility';
+
+export interface NationalWorkforceFlexibilityIndex {
+  turn: number;
+  flexibilityIndex: number;
+  band: WorkforceFlexibilityBand;
+  flexibilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3231,7 +3283,11 @@ export type LaborGiQueryTopic =
   | 'advocacy_inclusion_coupling'
   | 'inclusion_equity'
   | 'subject_inclusion_readiness'
-  | 'workforce_inclusion';
+  | 'workforce_inclusion'
+  | 'inclusion_flexibility_coupling'
+  | 'flexibility_flow'
+  | 'subject_flexibility_readiness'
+  | 'workforce_flexibility';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3246,7 +3302,7 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(youth pipeline|youth entry|apprentice pipeline)/.test(q)) return 'youth_pipeline';
   if (/\b(senior retention|aged workforce retention|elder workforce)/.test(q)) return 'senior_retention';
   if (/\b(labor absorption|regional absorption|absorption headroom)/.test(q)) return 'labor_absorption';
-  if (/\b(participation equity|equity gap|inclusion equity)/.test(q)) return 'participation_equity';
+  if (/\b(participation equity|equity gap)/.test(q)) return 'participation_equity';
   if (/\b(credential mobility|portable credential|skills portability)/.test(q)) return 'credential_mobility';
   if (/\b(household participation coupling|budget participation link)/.test(q)) return 'household_participation_coupling';
   if (/\b(rebalancing stress|corridor stress|interregional stress)/.test(q)) return 'rebalancing_stress';
@@ -3396,6 +3452,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_inclusion_readiness';
   }
   if (/\b(workforce inclusion|inclusion index labor workforce)/.test(q)) return 'workforce_inclusion';
+  if (/\b(inclusion flexibility|inclusion-flexibility coupling)/.test(q)) return 'inclusion_flexibility_coupling';
+  if (/\b(flexibility flow|flexibility pipeline flow)/.test(q)) return 'flexibility_flow';
+  if (/\b(subject flexibility readiness|flexibility readiness subject)/.test(q)) {
+    return 'subject_flexibility_readiness';
+  }
+  if (/\b(workforce flexibility|flexibility index labor workforce)/.test(q)) return 'workforce_flexibility';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -4599,6 +4661,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceInclusionIndex?.stewardNote || state.summary,
         projection: 'Workforce inclusion synthesizes advocacy-inclusion coupling, inclusion equity, and subject inclusion.'
       };
+    case 'inclusion_flexibility_coupling':
+      return {
+        topic,
+        headline: state.inclusionFlexibilityCouplingBrief?.summary || 'Inclusion-flexibility coupling unavailable.',
+        fact: `Coupling band ${state.inclusionFlexibilityCouplingBrief?.band ?? 'unknown'}; inclusion drag ${Math.round(state.inclusionFlexibilityCouplingBrief?.inclusionDrag ?? 0)}.`,
+        inference: state.inclusionFlexibilityCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce inclusion with flexibility levers — wave 42 / O10-215 depth.'
+      };
+    case 'flexibility_flow':
+      return {
+        topic,
+        headline: state.flexibilityFlowOutlook?.summary || 'Flexibility flow unavailable.',
+        fact: `Flow band ${state.flexibilityFlowOutlook?.band ?? 'unknown'}; inclusion drag ${Math.round(state.flexibilityFlowOutlook?.inclusionDrag ?? 0)}.`,
+        inference: state.flexibilityFlowOutlook?.stewardNote || state.outlook,
+        projection: 'Flow blends flexibility levers with inclusion equity — bounded indices only.'
+      };
+    case 'subject_flexibility_readiness':
+      return {
+        topic,
+        headline: state.subjectFlexibilityReadinessBrief?.summary || 'Subject flexibility readiness unavailable.',
+        fact: `Flexibility band ${state.subjectFlexibilityReadinessBrief?.band ?? 'unknown'}; flexibility drag ${Math.round(state.subjectFlexibilityReadinessBrief?.flexibilityDrag ?? 0)}.`,
+        inference: state.subjectFlexibilityReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject flexibility readiness gates subject inclusion against workforce inclusion for O10-215 wave 42.'
+      };
+    case 'workforce_flexibility':
+      return {
+        topic,
+        headline: state.nationalWorkforceFlexibilityIndex?.summary || 'Workforce flexibility unavailable.',
+        fact: `Flexibility band ${state.nationalWorkforceFlexibilityIndex?.band ?? 'unknown'}; flexibility drag ${Math.round(state.nationalWorkforceFlexibilityIndex?.flexibilityDrag ?? 0)}.`,
+        inference: state.nationalWorkforceFlexibilityIndex?.stewardNote || state.summary,
+        projection: 'Workforce flexibility synthesizes inclusion-flexibility coupling, flexibility flow, and subject flexibility.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -5731,6 +5825,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceInclusionIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceInclusionIndex.stewardNote);
+  }
+  if (
+    state.inclusionFlexibilityCouplingBrief?.band === 'decoupled' ||
+    state.inclusionFlexibilityCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.inclusionFlexibilityCouplingBrief.stewardNote);
+  }
+  if (
+    state.flexibilityFlowOutlook?.band === 'ebbing' ||
+    state.flexibilityFlowOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.flexibilityFlowOutlook.stewardNote);
+  }
+  if (
+    state.subjectFlexibilityReadinessBrief?.band === 'below_flexibility' ||
+    state.subjectFlexibilityReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectFlexibilityReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceFlexibilityIndex?.band === 'fragile' ||
+    state.nationalWorkforceFlexibilityIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceFlexibilityIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -16872,6 +16990,278 @@ export function computeNationalWorkforceInclusionIndex(
 }
 
 
+// --- source: inclusion-flexibility-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type InclusionFlexibilityCouplingBand,
+  type NationalInclusionFlexibilityCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceInclusionIndex
+} from './types';
+
+function couplingBand(index: number): InclusionFlexibilityCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-42 / wave-42 inclusion-flexibility coupling — inclusion × flexibility (O10-215). */
+export function computeNationalInclusionFlexibilityCouplingBrief(
+  state: NationalLaborDemographicsState,
+  inclusion: NationalWorkforceInclusionIndex | null | undefined
+): NationalInclusionFlexibilityCouplingBrief {
+  if (!state.enabled || !inclusion) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      inclusionDrag: 0,
+      summary: 'Inclusion-flexibility coupling idle — workforce inclusion unavailable.',
+      stewardNote: 'Compute workforce inclusion before flexibility coupling guidance.'
+    };
+  }
+
+  let flexibilityLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    flexibilityLift += flexibilityEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  flexibilityLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const inclusionDrag = v1014laborClamp(
+    inclusion.inclusionDrag * 0.48 + (inclusion.band === 'fragile' || inclusion.band === 'thin' ? 11 : 3)
+  );
+  const inclusionLift =
+    inclusion.band === 'elevated' || inclusion.band === 'inclusion'
+      ? inclusion.inclusionIndex * 0.24
+      : inclusion.inclusionIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + flexibilityLift * 21 + inclusionLift - inclusionDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained inclusion-flexibility link — deploy flexibility levers before wave-42 flexibility commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard flexibility flow spikes that drain inclusion buffers.'
+        : 'Amplified coupling — pair flexibility packs with subject flexibility readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    inclusionDrag,
+    summary: `Inclusion-flexibility coupling ${band} (index ${Math.round(couplingIndex)}); inclusion drag ${Math.round(inclusionDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: flexibility-flow-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type FlexibilityFlowBand,
+  type NationalFlexibilityFlowOutlook,
+  type NationalInclusionEquityOutlook,
+  type NationalLaborDemographicsState
+} from './types';
+
+function flowBand(index: number): FlexibilityFlowBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'flowing';
+}
+
+export function computeNationalFlexibilityFlowOutlook(
+  state: NationalLaborDemographicsState,
+  inclusionEquity: NationalInclusionEquityOutlook | null | undefined
+): NationalFlexibilityFlowOutlook {
+  if (!state.enabled || !inclusionEquity) {
+    return {
+      turn: state.turn,
+      flowIndex: 50,
+      band: 'patchy',
+      inclusionDrag: 0,
+      summary: 'Flexibility flow idle — inclusion equity unavailable.',
+      stewardNote: 'Compute inclusion equity before flexibility flow guidance.'
+    };
+  }
+
+  let flexibilityLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    flexibilityLift += flexibilityEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  flexibilityLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const inclusionDrag = v1014laborClamp(
+    inclusionEquity.advocacyDrag * 0.46 +
+      (inclusionEquity.band === 'ebbing' || inclusionEquity.band === 'patchy' ? 10 : 3)
+  );
+  const equityLift =
+    inclusionEquity.band === 'rising' || inclusionEquity.band === 'equitable'
+      ? inclusionEquity.equityIndex * 0.2
+      : inclusionEquity.equityIndex * 0.1;
+
+  const flowIndex = v1014laborClamp(24 + flexibilityLift * 22 + equityLift - inclusionDrag);
+  const band = flowBand(flowIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy flexibility flow — deploy flexibility levers before subject flexibility assembly.'
+      : band === 'flowing'
+        ? 'Flowing band — verify inclusion-flexibility coupling before auto workforce pushes.'
+        : 'Rising flow — align with inclusion equity outlook checks.';
+
+  return {
+    turn: state.turn,
+    flowIndex,
+    band,
+    inclusionDrag,
+    summary: `National flexibility flow ${band} (index ${Math.round(flowIndex)}); inclusion drag ${Math.round(inclusionDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-flexibility-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectFlexibilityReadinessBrief,
+  type NationalSubjectInclusionReadinessBrief,
+  type NationalWorkforceInclusionIndex,
+  type SubjectFlexibilityReadinessBand
+} from './types';
+
+function flexibilityBand(index: number): SubjectFlexibilityReadinessBand {
+  if (index <= 34) return 'below_flexibility';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'flexibility_ready';
+  return 'inclusion_locked';
+}
+
+/** Round-42 / wave-42 subject flexibility readiness — inclusion × workforce inclusion (O10-215). */
+export function computeNationalSubjectFlexibilityReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectInclusion: NationalSubjectInclusionReadinessBrief | null | undefined,
+  workforceInclusion: NationalWorkforceInclusionIndex | null | undefined
+): NationalSubjectFlexibilityReadinessBrief {
+  if (!state.enabled || !subjectInclusion || !workforceInclusion) {
+    return {
+      turn: state.turn,
+      flexibilityIndex: 50,
+      band: 'approaching',
+      flexibilityDrag: 0,
+      summary: 'Subject flexibility readiness idle — subject inclusion or workforce inclusion unavailable.',
+      stewardNote: 'Compute subject inclusion and workforce inclusion before flexibility guidance.'
+    };
+  }
+
+  const flexibilityDrag = v1014laborClamp(
+    subjectInclusion.inclusionDrag * 0.38 +
+      workforceInclusion.inclusionDrag * 0.38 +
+      (subjectInclusion.band === 'below_inclusion' || workforceInclusion.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectInclusion.band === 'inclusion_ready' || subjectInclusion.band === 'advocacy_locked'
+      ? subjectInclusion.inclusionIndex * 0.27
+      : subjectInclusion.inclusionIndex * 0.14;
+  const workforceLift =
+    workforceInclusion.band === 'elevated' || workforceInclusion.band === 'inclusion'
+      ? workforceInclusion.inclusionIndex * 0.25
+      : workforceInclusion.inclusionIndex * 0.12;
+
+  const flexibilityIndex = v1014laborClamp(20 + subjectLift + workforceLift - flexibilityDrag);
+  const band = flexibilityBand(flexibilityIndex);
+
+  const stewardNote =
+    band === 'below_flexibility' || band === 'approaching'
+      ? 'Approaching flexibility — hold O10-215 wave-42 scale until inclusion-flexibility syncs.'
+      : band === 'inclusion_locked'
+        ? 'Inclusion-locked flexibility — still monitor flexibility flow during corridor peaks.'
+        : 'Flexibility-ready — pair with workforce flexibility index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    flexibilityIndex,
+    band,
+    flexibilityDrag,
+    summary: `Subject flexibility readiness ${band} (index ${Math.round(flexibilityIndex)}); flexibility drag ${Math.round(flexibilityDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-flexibility-index.ts ---
+  type NationalFlexibilityFlowOutlook,
+  type NationalInclusionFlexibilityCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalSubjectFlexibilityReadinessBrief,
+  type NationalWorkforceFlexibilityIndex,
+  type WorkforceFlexibilityBand
+} from './types';
+
+function flexibilityBand(index: number): WorkforceFlexibilityBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'flexibility';
+}
+
+export function computeNationalWorkforceFlexibilityIndex(
+  state: NationalLaborDemographicsState,
+  flexibilityCoupling: NationalInclusionFlexibilityCouplingBrief | null | undefined,
+  flexibilityFlow: NationalFlexibilityFlowOutlook | null | undefined,
+  subjectFlexibility: NationalSubjectFlexibilityReadinessBrief | null | undefined
+): NationalWorkforceFlexibilityIndex {
+  if (!state.enabled || !flexibilityCoupling || !flexibilityFlow || !subjectFlexibility) {
+    return {
+      turn: state.turn,
+      flexibilityIndex: 50,
+      band: 'thin',
+      flexibilityDrag: 0,
+      summary: 'Workforce flexibility idle — flexibility coupling, flow, or subject flexibility unavailable.',
+      stewardNote: 'Compute O10-215 wave-42 depth stack before flexibility guidance.'
+    };
+  }
+
+  const flexibilityDrag = v1014laborClamp(
+    subjectFlexibility.flexibilityDrag * 0.35 +
+      flexibilityCoupling.inclusionDrag * 0.3 +
+      flexibilityFlow.inclusionDrag * 0.25 +
+      (subjectFlexibility.band === 'below_flexibility' || flexibilityCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    flexibilityCoupling.band === 'amplified' || flexibilityCoupling.band === 'elevated'
+      ? flexibilityCoupling.couplingIndex * 0.2
+      : flexibilityCoupling.couplingIndex * 0.1;
+  const flowLift =
+    flexibilityFlow.band === 'rising' || flexibilityFlow.band === 'flowing'
+      ? flexibilityFlow.flowIndex * 0.18
+      : flexibilityFlow.flowIndex * 0.09;
+  const subjectLift =
+    subjectFlexibility.band === 'flexibility_ready' || subjectFlexibility.band === 'inclusion_locked'
+      ? subjectFlexibility.flexibilityIndex * 0.22
+      : subjectFlexibility.flexibilityIndex * 0.11;
+
+  const flexibilityIndex = v1014laborClamp(18 + couplingLift + flowLift + subjectLift - flexibilityDrag);
+  const band = flexibilityBand(flexibilityIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce flexibility — sequence inclusion-flexibility, flexibility flow, and subject flexibility before post-431df5d tranche.'
+      : band === 'flexibility'
+        ? 'Flexibility band — avoid corridor overload that breaks subject flexibility bands.'
+        : 'Elevated flexibility — refresh subject flexibility checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    flexibilityIndex,
+    band,
+    flexibilityDrag,
+    summary: `National workforce flexibility ${band} (index ${Math.round(flexibilityIndex)}); flexibility drag ${Math.round(flexibilityDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -18018,6 +18408,25 @@ export function computeNationalLaborDemographics(
     state.inclusionEquityOutlook,
     state.subjectInclusionReadinessBrief
   );
+  state.inclusionFlexibilityCouplingBrief = computeNationalInclusionFlexibilityCouplingBrief(
+    state,
+    state.nationalWorkforceInclusionIndex
+  );
+  state.flexibilityFlowOutlook = computeNationalFlexibilityFlowOutlook(
+    state,
+    state.inclusionEquityOutlook
+  );
+  state.subjectFlexibilityReadinessBrief = computeNationalSubjectFlexibilityReadinessBrief(
+    state,
+    state.subjectInclusionReadinessBrief,
+    state.nationalWorkforceInclusionIndex
+  );
+  state.nationalWorkforceFlexibilityIndex = computeNationalWorkforceFlexibilityIndex(
+    state,
+    state.inclusionFlexibilityCouplingBrief,
+    state.flexibilityFlowOutlook,
+    state.subjectFlexibilityReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -18952,6 +19361,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceInclusionIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.inclusionFlexibilityCouplingBrief?.band === 'decoupled' ||
+      state.inclusionFlexibilityCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.inclusionFlexibilityCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.flexibilityFlowOutlook?.band === 'ebbing' ||
+      state.flexibilityFlowOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.flexibilityFlowOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectFlexibilityReadinessBrief?.band === 'below_flexibility' ||
+      state.subjectFlexibilityReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectFlexibilityReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceFlexibilityIndex?.band === 'fragile' ||
+      state.nationalWorkforceFlexibilityIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceFlexibilityIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -21397,6 +21834,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'inclusion steward note'
   );
   check('R4116', inclusionEaseForRegion('NSW', 'technology') > 0, 'inclusion ease for region');
+
+  check('R4201', Boolean(r1.state.inclusionFlexibilityCouplingBrief?.band), 'inclusion flexibility on state');
+  check(
+    'R4202',
+    (r1.state.inclusionFlexibilityCouplingBrief?.inclusionDrag ?? 0) >= 0,
+    'inclusion flexibility drag'
+  );
+  check('R4203', Boolean(r1.state.flexibilityFlowOutlook?.band), 'flexibility flow on state');
+  check(
+    'R4204',
+    (r1.state.flexibilityFlowOutlook?.inclusionDrag ?? 0) >= 0,
+    'flexibility flow inclusion drag'
+  );
+  check('R4205', Boolean(r1.state.subjectFlexibilityReadinessBrief?.band), 'subject flexibility on state');
+  check('R4206', Boolean(r1.state.nationalWorkforceFlexibilityIndex?.band), 'workforce flexibility on state');
+  check(
+    'R4207',
+    detectLaborDemographicsQuery('inclusion flexibility coupling') === 'inclusion_flexibility_coupling',
+    'GI inclusion flexibility detect'
+  );
+  check(
+    'R4208',
+    detectLaborDemographicsQuery('flexibility flow') === 'flexibility_flow',
+    'GI flexibility flow detect'
+  );
+  check(
+    'R4209',
+    detectLaborDemographicsQuery('subject flexibility readiness') === 'subject_flexibility_readiness',
+    'GI subject flexibility detect'
+  );
+  check(
+    'R4210',
+    detectLaborDemographicsQuery('workforce flexibility') === 'workforce_flexibility',
+    'GI workforce flexibility detect'
+  );
+  check(
+    'R4211',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_flexibility').headline.length > 5,
+    'GI workforce flexibility answer'
+  );
+  const inclusionFlexibilityOnly = computeNationalInclusionFlexibilityCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceInclusionIndex
+  );
+  check('R4212', inclusionFlexibilityOnly.summary.length > 10, 'inclusion flexibility standalone summary');
+  const flexibilityFlowOnly = computeNationalFlexibilityFlowOutlook(
+    r1.state,
+    r1.state.inclusionEquityOutlook
+  );
+  check('R4213', flexibilityFlowOnly.band.length > 3, 'flexibility flow band string');
+  const subjectFlexibilityOnly = computeNationalSubjectFlexibilityReadinessBrief(
+    r1.state,
+    r1.state.subjectInclusionReadinessBrief,
+    r1.state.nationalWorkforceInclusionIndex
+  );
+  check('R4214', subjectFlexibilityOnly.flexibilityDrag >= 0, 'subject flexibility drag');
+  check(
+    'R4215',
+    computeNationalWorkforceFlexibilityIndex(
+      rHhBad.state,
+      rHhBad.state.inclusionFlexibilityCouplingBrief,
+      rHhBad.state.flexibilityFlowOutlook,
+      rHhBad.state.subjectFlexibilityReadinessBrief
+    ).stewardNote.length > 8,
+    'flexibility steward note'
+  );
+  check('R4216', flexibilityEaseForRegion('NSW', 'technology') > 0, 'flexibility ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
