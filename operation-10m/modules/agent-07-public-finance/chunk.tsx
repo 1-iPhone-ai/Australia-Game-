@@ -9271,6 +9271,221 @@ export function buildMediumTermAnchorIntegrityCoherenceReport(
 }
 
 
+// --- source: lapse-carry-warrant-coherence/types.ts ---
+export const LAPSE_CARRY_WARRANT_COHERENCE_SCHEMA =
+  'op10m-agent07-lapse-carry-warrant-coherence-v1';
+
+export interface LapseCarryCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface LapseCarryWarrantCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: LapseCarryCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinLapseCarryBand: boolean;
+  alignedWithWarrantLedger: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: lapse-carry-warrant-coherence/compute.ts ---
+
+const LAPSE_CARRY_TOLERANCE = 6.1;
+
+export function buildLapseCarryWarrantCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  lapseRegister: AppropriationLapseRegisterReport,
+  carryForward: AppropriationCarryForwardReport,
+  warrantLedger: AppropriationWarrantLedger
+): LapseCarryWarrantCoherenceReport {
+  const carryGap = Math.abs(
+    carryForward.aggregateSourceLapsePoints - lapseRegister.aggregateLapsePoints * 0.88
+  );
+  const warrantGap = Math.abs(warrantLedger.aggregateLapseRisk - lapseRegister.aggregateLapsePoints * 0.24);
+  const aggregateCoherenceGapPoints = Math.round((carryGap + warrantGap) * 10) / 20;
+
+  const checks: LapseCarryCheck[] = [
+    {
+      id: 'LCWC01',
+      label: 'Lapse register within tolerance',
+      passed: lapseRegister.withinRegisterTolerance || v1012.pressure === 'critical',
+      detail: `ratio=${lapseRegister.lapseToRemainingRatio}, lapse=${lapseRegister.aggregateLapsePoints}`
+    },
+    {
+      id: 'LCWC02',
+      label: 'Carry-forward within portfolio cap',
+      passed: carryForward.withinPortfolioCarryCap || v1012.pressure === 'critical',
+      detail: `carry=${carryForward.aggregateCarryForwardPoints}, ratio=${carryForward.carryToEnvelopeRatio}`
+    },
+    {
+      id: 'LCWC03',
+      label: 'Lapse vs carry source alignment',
+      passed:
+        carryGap <= LAPSE_CARRY_TOLERANCE + 2 ||
+        carryForward.alignedWithLapseRegister ||
+        v1012.pressure === 'critical',
+      detail: `carryGap=${carryGap}, source=${carryForward.aggregateSourceLapsePoints}`
+    }
+  ];
+
+  const withinLapseCarryBand =
+    checks.every(c => c.passed) ||
+    (lapseRegister.withinRegisterTolerance && carryForward.withinPortfolioCarryCap) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithWarrantLedger =
+    lapseRegister.alignedWithWarrantLedger &&
+    (aggregateCoherenceGapPoints <= warrantLedger.aggregateLapseRisk + 2.5 ||
+      warrantLedger.lapseWithinTolerance ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinLapseCarryBand) {
+    warnings.push(`Lapse carry warrant gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithWarrantLedger) {
+    warnings.push('Lapse carry coherence diverges from warrant ledger.');
+  }
+
+  const narrative = withinLapseCarryBand
+    ? `Lapse carry warrant gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Lapse carry warrant alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: LAPSE_CARRY_WARRANT_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinLapseCarryBand,
+    alignedWithWarrantLedger,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: transparency-program-forward-bridge/types.ts ---
+export const TRANSPARENCY_PROGRAM_FORWARD_BRIDGE_SCHEMA =
+  'op10m-agent07-transparency-program-forward-bridge-v1';
+
+export interface TransparencyProgramCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface TransparencyProgramForwardBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: TransparencyProgramCheck[];
+  bridgeGapPoints: number;
+  withinTransparencyProgramBand: boolean;
+  alignedWithForwardCoherence: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: transparency-program-forward-bridge/compute.ts ---
+  TransparencyProgramCheck,
+  TransparencyProgramForwardBridgeReport
+} from './types';
+
+const PROGRAM_FORWARD_TOLERANCE = 6.6;
+
+export function buildTransparencyProgramForwardBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  transparency: FiscalTransparencyIndex,
+  programReview: ProgramPerformanceReview,
+  transparencyForward: TransparencyForwardCoherenceReport
+): TransparencyProgramForwardBridgeReport {
+  const feedbackGap = Math.abs(
+    programReview.aggregateFeedbackPoints - transparency.compositeScore * 0.11
+  );
+  const forwardGap = Math.abs(
+    transparencyForward.aggregateCoherenceGapPoints - feedbackGap * 0.47
+  );
+  const bridgeGapPoints = Math.round((feedbackGap + forwardGap) * 10) / 20;
+
+  const checks: TransparencyProgramCheck[] = [
+    {
+      id: 'TPFB01',
+      label: 'Transparency composite supports program review',
+      passed:
+        transparency.compositeTier !== 'basic' ||
+        programReview.programsAtRisk <= 2 ||
+        v1012.pressure === 'critical',
+      observed: transparency.compositeScore,
+      tolerance: 40
+    },
+    {
+      id: 'TPFB02',
+      label: 'Program feedback within fiscal tolerance',
+      passed:
+        programReview.aggregateFeedbackPoints >= -8 ||
+        programReview.programsAtRisk === 0 ||
+        v1012.pressure === 'critical',
+      observed: programReview.aggregateFeedbackPoints,
+      tolerance: -8
+    },
+    {
+      id: 'TPFB03',
+      label: 'Feedback gap vs transparency forward',
+      passed:
+        forwardGap <= PROGRAM_FORWARD_TOLERANCE + 2 ||
+        transparencyForward.withinTransparencyForwardBand ||
+        v1012.pressure === 'critical',
+      observed: forwardGap,
+      tolerance: PROGRAM_FORWARD_TOLERANCE + 2
+    }
+  ];
+
+  const withinTransparencyProgramBand =
+    checks.every(c => c.passed) ||
+    (transparency.compositeTier !== 'basic' && transparencyForward.withinTransparencyForwardBand) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithForwardCoherence =
+    transparencyForward.alignedWithIntegrityBridge &&
+    (bridgeGapPoints <= transparencyForward.aggregateCoherenceGapPoints + 2.3 ||
+      transparencyForward.withinTransparencyForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinTransparencyProgramBand) {
+    warnings.push(`Transparency program forward bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithForwardCoherence) {
+    warnings.push('Transparency program bridge diverges from forward coherence.');
+  }
+
+  const narrative = withinTransparencyProgramBand
+    ? `Transparency program forward bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Transparency program forward alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: TRANSPARENCY_PROGRAM_FORWARD_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinTransparencyProgramBand,
+    alignedWithForwardCoherence,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -11339,6 +11554,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     forwardEstimatesIntegrity,
     revenueIntegrityForwardBridge
   );
+  const lapseCarryWarrantCoherence = buildLapseCarryWarrantCoherenceReport(
+    turn,
+    v1012,
+    appropriationLapseRegister,
+    appropriationCarryForward,
+    warrantLedger
+  );
+  const transparencyProgramForwardBridge = buildTransparencyProgramForwardBridgeReport(
+    turn,
+    v1012,
+    transparency,
+    programPerf,
+    transparencyForwardCoherence
+  );
 
   checks.push({
     id: 'CF01',
@@ -12252,13 +12481,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `drift=${mediumTermRevenueAnchor.anchorDriftPoints}, bridge=${revenueIntegrityForwardBridge.bridgeGapPoints}`
   });
 
+  checks.push({
+    id: 'CF129',
+    label: 'Lapse carry warrant coherence within band',
+    passed: lapseCarryWarrantCoherence.withinLapseCarryBand || v1012.pressure === 'critical',
+    detail: `gap=${lapseCarryWarrantCoherence.aggregateCoherenceGapPoints}, checks=${lapseCarryWarrantCoherence.checks.filter(c => c.passed).length}/${lapseCarryWarrantCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF130',
+    label: 'Transparency program forward bridge within band',
+    passed: transparencyProgramForwardBridge.withinTransparencyProgramBand || v1012.pressure === 'critical',
+    detail: `gap=${transparencyProgramForwardBridge.bridgeGapPoints}, checks=${transparencyProgramForwardBridge.checks.filter(c => c.passed).length}/${transparencyProgramForwardBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF131',
+    label: 'Lapse carry aligned with warrant ledger',
+    passed: lapseCarryWarrantCoherence.alignedWithWarrantLedger,
+    detail: `lapse=${appropriationLapseRegister.aggregateLapsePoints}, warrant=${warrantLedger.aggregateLapseRisk}`
+  });
+
+  checks.push({
+    id: 'CF132',
+    label: 'Transparency program aligned with forward coherence',
+    passed: transparencyProgramForwardBridge.alignedWithForwardCoherence,
+    detail: `score=${transparency.compositeScore}, forward=${transparencyForwardCoherence.aggregateCoherenceGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 92
+    layerCount: 94
   };
 }
 
@@ -14138,12 +14395,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Ninety-two fiscal layers integrated', healthy.layerCount === 92, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Ninety-four fiscal layers integrated', healthy.layerCount === 94, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 128,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 132,
     'ok'
   );
 
@@ -14155,10 +14412,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF128 ids present',
-    healthy.checks.length === 128 &&
+    'CF01–CF132 ids present',
+    healthy.checks.length === 132 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[127]?.id === 'CF128',
+      healthy.checks[131]?.id === 'CF132',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -18513,6 +18770,152 @@ export function runMediumTermAnchorIntegrityCoherenceSelfTests(): {
     'MTAIC-T03',
     'Aligned with integrity forward bridge',
     healthy.alignedWithIntegrityForwardBridge,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: lapse-carry-warrant-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runLapseCarryWarrantCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const warrantLedger = buildAppropriationWarrantLedger(9, v);
+  const lapseRegister = buildAppropriationLapseRegisterReport(9, v, warrantLedger);
+  const carryForward = buildAppropriationCarryForwardReport(9, v, state.budget, lapseRegister, warrantLedger);
+  const healthy = buildLapseCarryWarrantCoherenceReport(9, v, lapseRegister, carryForward, warrantLedger);
+
+  record('LCWC-T01', 'Three lapse carry checks', healthy.checks.length === 3, 'ok');
+  record(
+    'LCWC-T02',
+    'Within lapse carry band',
+    healthy.withinLapseCarryBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'LCWC-T03',
+    'Aligned with warrant ledger',
+    healthy.alignedWithWarrantLedger,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: transparency-program-forward-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runTransparencyProgramForwardBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const taxSensitivity = buildTaxPolicySensitivityReport(9, v, ledger);
+  const integrity = buildRevenueIntegrityAuditReport(9, v, ledger, taxSensitivity);
+  const anchor = buildMediumTermRevenueAnchorReport(9, v, outlook, revenueForward, growth);
+  const integrityBridge = buildRevenueIntegrityForwardBridgeReport(9, v, integrity, revenueForward, anchor);
+  const transparency = scoreFiscalTransparencyIndex({
+    turn: 9,
+    v1012: v,
+    publishesTaxExpenditure: true,
+    publishesMultiYearEstimates: true,
+    publishesContingentRegister: true,
+    publishesProgramOutcomes: true,
+    auditLagTurns: 2
+  });
+  const transparencyForward = buildTransparencyForwardCoherenceReport(
+    9,
+    v,
+    transparency,
+    forwardIntegrity,
+    integrityBridge
+  );
+  const programReview = reviewProgramPerformance(9, v);
+  const healthy = buildTransparencyProgramForwardBridgeReport(
+    9,
+    v,
+    transparency,
+    programReview,
+    transparencyForward
+  );
+
+  record('TPFB-T01', 'Three transparency program checks', healthy.checks.length === 3, 'ok');
+  record(
+    'TPFB-T02',
+    'Within transparency program band',
+    healthy.withinTransparencyProgramBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'TPFB-T03',
+    'Aligned with forward coherence',
+    healthy.alignedWithForwardCoherence,
     healthy.narrative
   );
 

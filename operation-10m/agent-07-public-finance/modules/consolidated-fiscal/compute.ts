@@ -67,6 +67,8 @@ import { buildInfrastructureStressEnvelopeBridgeReport } from '../infrastructure
 import { buildBudgetNeutralProgramCoherenceReport } from '../budget-neutral-program-coherence/compute';
 import { buildSovereignCreditStressBridgeReport } from '../sovereign-credit-stress-bridge/compute';
 import { buildMediumTermAnchorIntegrityCoherenceReport } from '../medium-term-anchor-integrity-coherence/compute';
+import { buildLapseCarryWarrantCoherenceReport } from '../lapse-carry-warrant-coherence/compute';
+import { buildTransparencyProgramForwardBridgeReport } from '../transparency-program-forward-bridge/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -446,6 +448,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     mediumTermRevenueAnchor,
     forwardEstimatesIntegrity,
     revenueIntegrityForwardBridge
+  );
+  const lapseCarryWarrantCoherence = buildLapseCarryWarrantCoherenceReport(
+    turn,
+    v1012,
+    appropriationLapseRegister,
+    appropriationCarryForward,
+    warrantLedger
+  );
+  const transparencyProgramForwardBridge = buildTransparencyProgramForwardBridgeReport(
+    turn,
+    v1012,
+    transparency,
+    programPerf,
+    transparencyForwardCoherence
   );
 
   checks.push({
@@ -1360,12 +1376,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `drift=${mediumTermRevenueAnchor.anchorDriftPoints}, bridge=${revenueIntegrityForwardBridge.bridgeGapPoints}`
   });
 
+  checks.push({
+    id: 'CF129',
+    label: 'Lapse carry warrant coherence within band',
+    passed: lapseCarryWarrantCoherence.withinLapseCarryBand || v1012.pressure === 'critical',
+    detail: `gap=${lapseCarryWarrantCoherence.aggregateCoherenceGapPoints}, checks=${lapseCarryWarrantCoherence.checks.filter(c => c.passed).length}/${lapseCarryWarrantCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF130',
+    label: 'Transparency program forward bridge within band',
+    passed: transparencyProgramForwardBridge.withinTransparencyProgramBand || v1012.pressure === 'critical',
+    detail: `gap=${transparencyProgramForwardBridge.bridgeGapPoints}, checks=${transparencyProgramForwardBridge.checks.filter(c => c.passed).length}/${transparencyProgramForwardBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF131',
+    label: 'Lapse carry aligned with warrant ledger',
+    passed: lapseCarryWarrantCoherence.alignedWithWarrantLedger,
+    detail: `lapse=${appropriationLapseRegister.aggregateLapsePoints}, warrant=${warrantLedger.aggregateLapseRisk}`
+  });
+
+  checks.push({
+    id: 'CF132',
+    label: 'Transparency program aligned with forward coherence',
+    passed: transparencyProgramForwardBridge.alignedWithForwardCoherence,
+    detail: `score=${transparency.compositeScore}, forward=${transparencyForwardCoherence.aggregateCoherenceGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 92
+    layerCount: 94
   };
 }
