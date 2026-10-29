@@ -3959,6 +3959,293 @@ export function matchExplainabilityOrbitAllowed(report: MatchExplainabilityOrbit
 }
 
 
+// --- source: match-explainability-transit-bundle.ts ---
+  auditMatchExplainabilityOrbitGate,
+  matchExplainabilityOrbitAllowed,
+} from './match-explainability-orbit-gate.ts';
+  buildMatchExplainabilitySustainmentBundle,
+  matchExplainabilitySustainmentReady,
+} from './match-explainability-sustainment-bundle.ts';
+  buildSessionSustainmentExportBundle,
+  sessionSustainmentExportShipped,
+} from './session-sustainment-export-bundle.ts';
+
+export const AGENT19_TRANSIT_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityTransitBundle {
+  transitReady: boolean;
+  orbitAllowed: boolean;
+  sustainmentReady: boolean;
+  sustainmentExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type TransitParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Transit bundle: orbit gate and sustainment export must both be green. */
+export function buildMatchExplainabilityTransitBundle(
+  packs: TurnExplainabilityPack[],
+  params: TransitParams,
+): MatchExplainabilityTransitBundle {
+  const orbit = auditMatchExplainabilityOrbitGate(packs, params);
+  const sustainment = buildMatchExplainabilitySustainmentBundle(packs, params);
+  const sustainExport = buildSessionSustainmentExportBundle(packs, params);
+  const orbitAllowed = matchExplainabilityOrbitAllowed(orbit);
+  const sustainmentReady = matchExplainabilitySustainmentReady(sustainment);
+  const sustainmentExportShipped = sessionSustainmentExportShipped(sustainExport);
+  const transitReady = orbitAllowed && sustainmentReady && sustainmentExportShipped;
+  const narrativeLines = [
+    `Match explainability transit: ${transitReady ? 'READY' : 'PENDING'} (orbit ${orbitAllowed ? 'ok' : 'fail'}, sustain ${sustainmentReady ? 'ok' : 'fail'}).`,
+    ...orbit.narrativeLines.slice(0, 2),
+    ...sustainment.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_TRANSIT_NARRATIVE_CAP);
+  return {
+    transitReady,
+    orbitAllowed,
+    sustainmentReady,
+    sustainmentExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityTransitReady(bundle: MatchExplainabilityTransitBundle): boolean {
+  return bundle.transitReady;
+}
+
+
+// --- source: session-transit-export-bundle.ts ---
+  buildSessionSustainmentExportBundle,
+  type SessionSustainmentExportBundle,
+} from './session-sustainment-export-bundle.ts';
+  buildMatchExplainabilityTransitBundle,
+  matchExplainabilityTransitReady,
+} from './match-explainability-transit-bundle.ts';
+
+export interface SessionTransitExportBundle extends SessionSustainmentExportBundle {
+  transitReady: boolean;
+  transitSchema: string;
+}
+
+/** Transit export wraps sustainment export when transit bundle is ready. */
+export function buildSessionTransitExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionTransitExportBundle {
+  const base = buildSessionSustainmentExportBundle(packs, params);
+  const transit = buildMatchExplainabilityTransitBundle(packs, params);
+  const transitReady = matchExplainabilityTransitReady(transit);
+  const exports = transitReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    transitReady,
+    transitSchema: 'agent19.transit.v1',
+    releaseReady: transitReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Transit export: ${transitReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionTransitExportShipped(bundle: SessionTransitExportBundle): boolean {
+  return (
+    bundle.transitReady &&
+    bundle.exports.length > 0 &&
+    bundle.transitSchema === 'agent19.transit.v1'
+  );
+}
+
+
+// --- source: orbit-transit-bridge.ts ---
+  auditMatchExplainabilityOrbitGate,
+  matchExplainabilityOrbitAllowed,
+} from './match-explainability-orbit-gate.ts';
+  buildMatchExplainabilityTransitBundle,
+  matchExplainabilityTransitReady,
+} from './match-explainability-transit-bundle.ts';
+
+export interface OrbitTransitBridgeReport {
+  aligned: boolean;
+  orbitAllowed: boolean;
+  transitReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Orbit-allowed should match transit-ready when sustainment export stack passes. */
+export function auditOrbitTransitBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): OrbitTransitBridgeReport {
+  const orbit = auditMatchExplainabilityOrbitGate(packs, params);
+  const transit = buildMatchExplainabilityTransitBundle(packs, params);
+  const orbitAllowed = matchExplainabilityOrbitAllowed(orbit);
+  const transitReady = matchExplainabilityTransitReady(transit);
+  const aligned = orbitAllowed === transitReady;
+  const narrativeLines = [
+    `Orbit/transit bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (orbit ${orbitAllowed ? 'ok' : 'fail'}, transit ${transitReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, orbitAllowed, transitReady, narrativeLines };
+}
+
+export function orbitTransitBridgeHealthy(report: OrbitTransitBridgeReport): boolean {
+  return report.orbitAllowed && report.transitReady && report.aligned;
+}
+
+
+// --- source: match-explainability-relay-gate.ts ---
+  buildMatchExplainabilityTransitBundle,
+  matchExplainabilityTransitReady,
+} from './match-explainability-transit-bundle.ts';
+  buildSessionTransitExportBundle,
+  sessionTransitExportShipped,
+} from './session-transit-export-bundle.ts';
+
+export interface MatchExplainabilityRelayGateReport {
+  relayAllowed: boolean;
+  transitReady: boolean;
+  transitExportShipped: boolean;
+  orbitTransitHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Relay gate: transit bundle + transit export + orbit/transit bridge. */
+export function auditMatchExplainabilityRelayGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityRelayGateReport {
+  const transit = buildMatchExplainabilityTransitBundle(packs, params);
+  const transitExport = buildSessionTransitExportBundle(packs, params);
+  const bridge = auditOrbitTransitBridge(packs, params);
+  const transitReady = matchExplainabilityTransitReady(transit);
+  const transitExportShipped = sessionTransitExportShipped(transitExport);
+  const orbitTransitHealthy = orbitTransitBridgeHealthy(bridge);
+  const relayAllowed = transitReady && transitExportShipped && orbitTransitHealthy;
+  const narrativeLines = [
+    `Match explainability relay: ${relayAllowed ? 'ALLOWED' : 'DENIED'} (transit ${transitReady ? 'ok' : 'fail'}, export ${transitExportShipped ? 'ok' : 'fail'}).`,
+    ...transit.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    relayAllowed,
+    transitReady,
+    transitExportShipped,
+    orbitTransitHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityRelayAllowed(report: MatchExplainabilityRelayGateReport): boolean {
+  return report.relayAllowed;
+}
+
+
+// --- source: orbit-recovery-orchestrator.ts ---
+  auditMatchExplainabilityOrbitGate,
+  matchExplainabilityOrbitAllowed,
+} from './match-explainability-orbit-gate.ts';
+
+export const AGENT19_ORBIT_RECOVERY_CAP = 10;
+
+export interface OrbitRecoveryOrchestratorReport {
+  orbitBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when orbit gate blocks relay rollout. */
+export function buildOrbitRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): OrbitRecoveryOrchestratorReport {
+  const orbit = auditMatchExplainabilityOrbitGate(packs, params);
+  const orbitBlocked = !matchExplainabilityOrbitAllowed(orbit);
+  const steps: string[] = [];
+  if (orbitBlocked) {
+    if (!orbit.sustainmentReady) {
+      steps.push('Restore sustainment bundle: fleet and deployment export must pass.');
+    }
+    if (!orbit.sustainmentExportShipped) {
+      steps.push('Emit session sustainment export before orbit clearance.');
+    }
+    if (!orbit.fleetSustainmentHealthy) {
+      steps.push('Reconcile fleet/sustainment bridge before orbit.');
+    }
+    steps.push(...buildFleetRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const sustainment = buildMatchExplainabilitySustainmentBundle(packs, params);
+    if (!sustainment.sustainmentReady) {
+      steps.push('Re-run sustainment readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Orbit gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_ORBIT_RECOVERY_CAP);
+  return {
+    orbitBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Orbit recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function orbitRecoveryOrchestratorWithinCap(report: OrbitRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_ORBIT_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -4227,6 +4514,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityOrbitGate,
   matchExplainabilityOrbitAllowed,
 } from '../match-explainability-orbit-gate.ts';
+  buildMatchExplainabilityTransitBundle,
+  matchExplainabilityTransitReady,
+} from '../match-explainability-transit-bundle.ts';
+  buildSessionTransitExportBundle,
+  sessionTransitExportShipped,
+} from '../session-transit-export-bundle.ts';
+  buildOrbitRecoveryOrchestrator,
+  orbitRecoveryOrchestratorWithinCap,
+} from '../orbit-recovery-orchestrator.ts';
+  auditMatchExplainabilityRelayGate,
+  matchExplainabilityRelayAllowed,
+} from '../match-explainability-relay-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -6716,6 +7015,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityOrbitAllowed(report) && !report.sustainmentReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r17_transit_ready',
+        'Transit bundle ready when orbit and sustainment export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityTransitBundle([pack], params);
+          return matchExplainabilityTransitReady(bundle) && bundle.orbitAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r17_transit_held',
+        'Transit bundle pending when orbit fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 9, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityTransitBundle([pack], {
+            memory: null,
+            currentTurn: 9,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityTransitReady(bundle) && !bundle.orbitAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r17_orbit_recovery',
+        'Orbit recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 3, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 3, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildOrbitRecoveryOrchestrator([pack], params);
+          return report.orbitBlocked && orbitRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r17_orbit_transit_bridge',
+        'Orbit transit bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditOrbitTransitBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return orbitTransitBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r17_transit_export',
+        'Transit export shipped when transit ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionTransitExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionTransitExportShipped(bundle) && bundle.transitSchema === 'agent19.transit.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r17_relay_gate_ok',
+        'Relay gate allowed on healthy transit stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityRelayGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityRelayAllowed(report) && report.transitExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r17_relay_gate_block',
+        'Relay gate denied when transit pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 10, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityRelayGate([pack], {
+            memory: null,
+            currentTurn: 10,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityRelayAllowed(report) && !report.transitReady || JSON.stringify(report);
         },
       ],
     ]),
