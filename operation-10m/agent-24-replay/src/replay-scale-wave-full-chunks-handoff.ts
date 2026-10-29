@@ -7,6 +7,7 @@ import {
   O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE25_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE26_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 export { O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
@@ -44,9 +45,11 @@ export function buildAgent24ReplayScaleWaveFullChunksHandoffSeal(
   const waveRound = input.replayScaleWaveDryrunVerification.waveRound;
   const fullChunksBaselineSha =
     input.fullChunksBaselineSha ??
-    (waveRound >= 26
-      ? O6K_AGENT24_WAVE26_INTEGRATION_BASELINE_SHA
-      : waveRound >= 25
+    (waveRound >= 27
+      ? O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA
+      : waveRound >= 26
+        ? O6K_AGENT24_WAVE26_INTEGRATION_BASELINE_SHA
+        : waveRound >= 25
         ? O6K_AGENT24_WAVE25_INTEGRATION_BASELINE_SHA
         : waveRound >= 24
         ? O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA
@@ -122,8 +125,8 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const dryrunVerification = {
     reportId: 'dv',
     matchId: 'self',
-    waveRound: 26,
-    dryrunBaselineSha: O6K_AGENT24_WAVE26_INTEGRATION_BASELINE_SHA,
+    waveRound: 27,
+    dryrunBaselineSha: O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -134,7 +137,7 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const fullChunksGate = {
     reportId: 'fcg',
     matchId: 'self',
-    waveRound: 26,
+    waveRound: 27,
     chunksGateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -153,9 +156,9 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_full_chunks_baseline',
       passed:
         seal.handoffReady &&
-        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE26_INTEGRATION_BASELINE_SHA,
+        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 26 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 27 },
     {
       name: 'deterministic_fingerprint',
       passed:

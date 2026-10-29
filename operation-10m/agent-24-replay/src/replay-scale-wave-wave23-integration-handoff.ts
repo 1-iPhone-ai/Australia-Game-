@@ -1,7 +1,7 @@
 import { o6kAgent24Fingerprint } from './fingerprint.ts';
 import type { Agent24ArchiveScaleWaveWave23ExportGateReport } from './archive-scale-wave-wave23-export-gate.ts';
 import type { Agent24ReplayScaleWaveFullChunksVerificationReport } from './replay-scale-wave-full-chunks-verification.ts';
-import { O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE25_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE26_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
+import { O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE25_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE26_INTEGRATION_BASELINE_SHA, O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
 
 export interface Agent24ReplayScaleWaveWave23IntegrationHandoffCheckpoint {
   checkpointId: string;
@@ -36,7 +36,10 @@ export function buildAgent24ReplayScaleWaveWave23IntegrationHandoffReport(
   const waveRound = input.replayScaleWaveFullChunksVerification.waveRound;
   const integrationBaselineSha = input.integrationBaselineSha ?? O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA;
   const baselineAligned =
-    waveRound >= 26
+    waveRound >= 27
+      ? input.replayScaleWaveFullChunksVerification.fullChunksBaselineSha ===
+        O6K_AGENT24_WAVE27_INTEGRATION_BASELINE_SHA
+      : waveRound >= 26
       ? input.replayScaleWaveFullChunksVerification.fullChunksBaselineSha ===
         O6K_AGENT24_WAVE26_INTEGRATION_BASELINE_SHA
       : waveRound >= 25
