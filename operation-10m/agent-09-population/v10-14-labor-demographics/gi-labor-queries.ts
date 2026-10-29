@@ -111,7 +111,11 @@ export type LaborGiQueryTopic =
   | 'apogee_inclusion_coupling'
   | 'inclusion_orbit'
   | 'subject_orbit_readiness'
-  | 'workforce_orbit';
+  | 'workforce_orbit'
+  | 'orbit_care_coupling'
+  | 'care_equilibrium'
+  | 'subject_nexus_readiness'
+  | 'workforce_nexus';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -220,6 +224,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(inclusion orbit|inclusion pipeline orbit)/.test(q)) return 'inclusion_orbit';
   if (/\b(subject orbit readiness|orbit readiness subject)/.test(q)) return 'subject_orbit_readiness';
   if (/\b(workforce orbit|orbit index labor)/.test(q)) return 'workforce_orbit';
+  if (/\b(orbit care|orbit-care coupling)/.test(q)) return 'orbit_care_coupling';
+  if (/\b(care equilibrium|care pipeline equilibrium)/.test(q)) return 'care_equilibrium';
+  if (/\b(subject nexus readiness|nexus readiness subject)/.test(q)) return 'subject_nexus_readiness';
+  if (/\b(workforce nexus|nexus index labor)/.test(q)) return 'workforce_nexus';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1102,6 +1110,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Orbit band ${state.nationalWorkforceOrbitIndex?.band ?? 'unknown'}; orbit drag ${Math.round(state.nationalWorkforceOrbitIndex?.orbitDrag ?? 0)}.`,
         inference: state.nationalWorkforceOrbitIndex?.stewardNote || state.summary,
         projection: 'Workforce orbit synthesizes inclusion coupling, inclusion orbit, and subject orbit.'
+      };
+    case 'orbit_care_coupling':
+      return {
+        topic,
+        headline: state.orbitCareCouplingBrief?.summary || 'Orbit-care coupling unavailable.',
+        fact: `Coupling band ${state.orbitCareCouplingBrief?.band ?? 'unknown'}; orbit drag ${Math.round(state.orbitCareCouplingBrief?.orbitDrag ?? 0)}.`,
+        inference: state.orbitCareCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce orbit with care levers — wave 32 / O10-195 depth.'
+      };
+    case 'care_equilibrium':
+      return {
+        topic,
+        headline: state.careEquilibriumOutlook?.summary || 'Care equilibrium unavailable.',
+        fact: `Equilibrium band ${state.careEquilibriumOutlook?.band ?? 'unknown'}; orbit drag ${Math.round(state.careEquilibriumOutlook?.orbitDrag ?? 0)}.`,
+        inference: state.careEquilibriumOutlook?.stewardNote || state.outlook,
+        projection: 'Equilibrium blends care levers with inclusion orbit — bounded indices only.'
+      };
+    case 'subject_nexus_readiness':
+      return {
+        topic,
+        headline: state.subjectNexusReadinessBrief?.summary || 'Subject nexus readiness unavailable.',
+        fact: `Nexus band ${state.subjectNexusReadinessBrief?.band ?? 'unknown'}; nexus drag ${Math.round(state.subjectNexusReadinessBrief?.nexusDrag ?? 0)}.`,
+        inference: state.subjectNexusReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject nexus readiness gates subject orbit against workforce orbit for O10-195 wave 32.'
+      };
+    case 'workforce_nexus':
+      return {
+        topic,
+        headline: state.nationalWorkforceNexusIndex?.summary || 'Workforce nexus unavailable.',
+        fact: `Nexus band ${state.nationalWorkforceNexusIndex?.band ?? 'unknown'}; nexus drag ${Math.round(state.nationalWorkforceNexusIndex?.nexusDrag ?? 0)}.`,
+        inference: state.nationalWorkforceNexusIndex?.stewardNote || state.summary,
+        projection: 'Workforce nexus synthesizes care coupling, care equilibrium, and subject nexus.'
       };
     default:
       return {

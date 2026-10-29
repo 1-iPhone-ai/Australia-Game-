@@ -178,6 +178,10 @@ import { computeNationalApogeeInclusionCouplingBrief } from './apogee-inclusion-
 import { computeNationalInclusionOrbitOutlook } from './inclusion-orbit-outlook';
 import { computeNationalSubjectOrbitReadinessBrief } from './subject-orbit-readiness-brief';
 import { computeNationalWorkforceOrbitIndex } from './national-workforce-orbit-index';
+import { computeNationalOrbitCareCouplingBrief } from './orbit-care-coupling-brief';
+import { computeNationalCareEquilibriumOutlook } from './care-equilibrium-outlook';
+import { computeNationalSubjectNexusReadinessBrief } from './subject-nexus-readiness-brief';
+import { computeNationalWorkforceNexusIndex } from './national-workforce-nexus-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1928,6 +1932,59 @@ export function runV1014LaborDemographicsSelfTests(): {
     'orbit steward note'
   );
   check('R3116', inclusionEaseForRegion('NSW', 'technology') > 0, 'inclusion ease for region');
+
+  check('R3201', Boolean(r1.state.orbitCareCouplingBrief?.band), 'orbit care on state');
+  check('R3202', (r1.state.orbitCareCouplingBrief?.orbitDrag ?? 0) >= 0, 'orbit care drag');
+  check('R3203', Boolean(r1.state.careEquilibriumOutlook?.band), 'care equilibrium on state');
+  check('R3204', (r1.state.careEquilibriumOutlook?.orbitDrag ?? 0) >= 0, 'care equilibrium orbit drag');
+  check('R3205', Boolean(r1.state.subjectNexusReadinessBrief?.band), 'subject nexus on state');
+  check('R3206', Boolean(r1.state.nationalWorkforceNexusIndex?.band), 'workforce nexus on state');
+  check(
+    'R3207',
+    detectLaborDemographicsQuery('orbit care coupling') === 'orbit_care_coupling',
+    'GI orbit care detect'
+  );
+  check(
+    'R3208',
+    detectLaborDemographicsQuery('care equilibrium') === 'care_equilibrium',
+    'GI care equilibrium detect'
+  );
+  check(
+    'R3209',
+    detectLaborDemographicsQuery('subject nexus readiness') === 'subject_nexus_readiness',
+    'GI subject nexus detect'
+  );
+  check(
+    'R3210',
+    detectLaborDemographicsQuery('workforce nexus') === 'workforce_nexus',
+    'GI workforce nexus detect'
+  );
+  check(
+    'R3211',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_nexus').headline.length > 5,
+    'GI workforce nexus answer'
+  );
+  const orbitCareOnly = computeNationalOrbitCareCouplingBrief(r1.state, r1.state.nationalWorkforceOrbitIndex);
+  check('R3212', orbitCareOnly.summary.length > 10, 'orbit care standalone summary');
+  const careEquilibriumOnly = computeNationalCareEquilibriumOutlook(r1.state, r1.state.inclusionOrbitOutlook);
+  check('R3213', careEquilibriumOnly.band.length > 3, 'care equilibrium band string');
+  const subjectNexusOnly = computeNationalSubjectNexusReadinessBrief(
+    r1.state,
+    r1.state.subjectOrbitReadinessBrief,
+    r1.state.nationalWorkforceOrbitIndex
+  );
+  check('R3214', subjectNexusOnly.nexusDrag >= 0, 'subject nexus drag');
+  check(
+    'R3215',
+    computeNationalWorkforceNexusIndex(
+      rHhBad.state,
+      rHhBad.state.orbitCareCouplingBrief,
+      rHhBad.state.careEquilibriumOutlook,
+      rHhBad.state.subjectNexusReadinessBrief
+    ).stewardNote.length > 8,
+    'nexus steward note'
+  );
+  check('R3216', careReliefForRegion('NSW', 'technology') > 0, 'care relief for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

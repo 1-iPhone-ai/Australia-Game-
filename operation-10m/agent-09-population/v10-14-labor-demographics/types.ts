@@ -293,6 +293,10 @@ export interface NationalLaborDemographicsState {
   inclusionOrbitOutlook?: NationalInclusionOrbitOutlook;
   subjectOrbitReadinessBrief?: NationalSubjectOrbitReadinessBrief;
   nationalWorkforceOrbitIndex?: NationalWorkforceOrbitIndex;
+  orbitCareCouplingBrief?: NationalOrbitCareCouplingBrief;
+  careEquilibriumOutlook?: NationalCareEquilibriumOutlook;
+  subjectNexusReadinessBrief?: NationalSubjectNexusReadinessBrief;
+  nationalWorkforceNexusIndex?: NationalWorkforceNexusIndex;
 }
 
 export type MigrationShockKind =
@@ -1493,6 +1497,50 @@ export interface NationalWorkforceOrbitIndex {
   orbitIndex: number;
   band: WorkforceOrbitBand;
   orbitDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type OrbitCareCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalOrbitCareCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: OrbitCareCouplingBand;
+  orbitDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CareEquilibriumBand = 'ebbing' | 'patchy' | 'rising' | 'equilibrium';
+
+export interface NationalCareEquilibriumOutlook {
+  turn: number;
+  equilibriumIndex: number;
+  band: CareEquilibriumBand;
+  orbitDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectNexusReadinessBand = 'below_nexus' | 'approaching' | 'nexus_ready' | 'sealed_locked';
+
+export interface NationalSubjectNexusReadinessBrief {
+  turn: number;
+  nexusIndex: number;
+  band: SubjectNexusReadinessBand;
+  nexusDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceNexusBand = 'fragile' | 'thin' | 'elevated' | 'nexus';
+
+export interface NationalWorkforceNexusIndex {
+  turn: number;
+  nexusIndex: number;
+  band: WorkforceNexusBand;
+  nexusDrag: number;
   summary: string;
   stewardNote: string;
 }

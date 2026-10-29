@@ -297,6 +297,10 @@ export interface NationalLaborDemographicsState {
   inclusionOrbitOutlook?: NationalInclusionOrbitOutlook;
   subjectOrbitReadinessBrief?: NationalSubjectOrbitReadinessBrief;
   nationalWorkforceOrbitIndex?: NationalWorkforceOrbitIndex;
+  orbitCareCouplingBrief?: NationalOrbitCareCouplingBrief;
+  careEquilibriumOutlook?: NationalCareEquilibriumOutlook;
+  subjectNexusReadinessBrief?: NationalSubjectNexusReadinessBrief;
+  nationalWorkforceNexusIndex?: NationalWorkforceNexusIndex;
 }
 
 export type MigrationShockKind =
@@ -1501,6 +1505,50 @@ export interface NationalWorkforceOrbitIndex {
   stewardNote: string;
 }
 
+export type OrbitCareCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalOrbitCareCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: OrbitCareCouplingBand;
+  orbitDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CareEquilibriumBand = 'ebbing' | 'patchy' | 'rising' | 'equilibrium';
+
+export interface NationalCareEquilibriumOutlook {
+  turn: number;
+  equilibriumIndex: number;
+  band: CareEquilibriumBand;
+  orbitDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectNexusReadinessBand = 'below_nexus' | 'approaching' | 'nexus_ready' | 'sealed_locked';
+
+export interface NationalSubjectNexusReadinessBrief {
+  turn: number;
+  nexusIndex: number;
+  band: SubjectNexusReadinessBand;
+  nexusDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceNexusBand = 'fragile' | 'thin' | 'elevated' | 'nexus';
+
+export interface NationalWorkforceNexusIndex {
+  turn: number;
+  nexusIndex: number;
+  band: WorkforceNexusBand;
+  nexusDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -2675,7 +2723,11 @@ export type LaborGiQueryTopic =
   | 'apogee_inclusion_coupling'
   | 'inclusion_orbit'
   | 'subject_orbit_readiness'
-  | 'workforce_orbit';
+  | 'workforce_orbit'
+  | 'orbit_care_coupling'
+  | 'care_equilibrium'
+  | 'subject_nexus_readiness'
+  | 'workforce_nexus';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2784,6 +2836,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(inclusion orbit|inclusion pipeline orbit)/.test(q)) return 'inclusion_orbit';
   if (/\b(subject orbit readiness|orbit readiness subject)/.test(q)) return 'subject_orbit_readiness';
   if (/\b(workforce orbit|orbit index labor)/.test(q)) return 'workforce_orbit';
+  if (/\b(orbit care|orbit-care coupling)/.test(q)) return 'orbit_care_coupling';
+  if (/\b(care equilibrium|care pipeline equilibrium)/.test(q)) return 'care_equilibrium';
+  if (/\b(subject nexus readiness|nexus readiness subject)/.test(q)) return 'subject_nexus_readiness';
+  if (/\b(workforce nexus|nexus index labor)/.test(q)) return 'workforce_nexus';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -3666,6 +3722,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Orbit band ${state.nationalWorkforceOrbitIndex?.band ?? 'unknown'}; orbit drag ${Math.round(state.nationalWorkforceOrbitIndex?.orbitDrag ?? 0)}.`,
         inference: state.nationalWorkforceOrbitIndex?.stewardNote || state.summary,
         projection: 'Workforce orbit synthesizes inclusion coupling, inclusion orbit, and subject orbit.'
+      };
+    case 'orbit_care_coupling':
+      return {
+        topic,
+        headline: state.orbitCareCouplingBrief?.summary || 'Orbit-care coupling unavailable.',
+        fact: `Coupling band ${state.orbitCareCouplingBrief?.band ?? 'unknown'}; orbit drag ${Math.round(state.orbitCareCouplingBrief?.orbitDrag ?? 0)}.`,
+        inference: state.orbitCareCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce orbit with care levers — wave 32 / O10-195 depth.'
+      };
+    case 'care_equilibrium':
+      return {
+        topic,
+        headline: state.careEquilibriumOutlook?.summary || 'Care equilibrium unavailable.',
+        fact: `Equilibrium band ${state.careEquilibriumOutlook?.band ?? 'unknown'}; orbit drag ${Math.round(state.careEquilibriumOutlook?.orbitDrag ?? 0)}.`,
+        inference: state.careEquilibriumOutlook?.stewardNote || state.outlook,
+        projection: 'Equilibrium blends care levers with inclusion orbit — bounded indices only.'
+      };
+    case 'subject_nexus_readiness':
+      return {
+        topic,
+        headline: state.subjectNexusReadinessBrief?.summary || 'Subject nexus readiness unavailable.',
+        fact: `Nexus band ${state.subjectNexusReadinessBrief?.band ?? 'unknown'}; nexus drag ${Math.round(state.subjectNexusReadinessBrief?.nexusDrag ?? 0)}.`,
+        inference: state.subjectNexusReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject nexus readiness gates subject orbit against workforce orbit for O10-195 wave 32.'
+      };
+    case 'workforce_nexus':
+      return {
+        topic,
+        headline: state.nationalWorkforceNexusIndex?.summary || 'Workforce nexus unavailable.',
+        fact: `Nexus band ${state.nationalWorkforceNexusIndex?.band ?? 'unknown'}; nexus drag ${Math.round(state.nationalWorkforceNexusIndex?.nexusDrag ?? 0)}.`,
+        inference: state.nationalWorkforceNexusIndex?.stewardNote || state.summary,
+        projection: 'Workforce nexus synthesizes care coupling, care equilibrium, and subject nexus.'
       };
     default:
       return {
@@ -4559,6 +4647,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceOrbitIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceOrbitIndex.stewardNote);
+  }
+  if (
+    state.orbitCareCouplingBrief?.band === 'decoupled' ||
+    state.orbitCareCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.orbitCareCouplingBrief.stewardNote);
+  }
+  if (
+    state.careEquilibriumOutlook?.band === 'ebbing' ||
+    state.careEquilibriumOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.careEquilibriumOutlook.stewardNote);
+  }
+  if (
+    state.subjectNexusReadinessBrief?.band === 'below_nexus' ||
+    state.subjectNexusReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectNexusReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceNexusIndex?.band === 'fragile' ||
+    state.nationalWorkforceNexusIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceNexusIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -12980,6 +13092,278 @@ export function computeNationalWorkforceOrbitIndex(
 }
 
 
+// --- source: orbit-care-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalOrbitCareCouplingBrief,
+  type NationalWorkforceOrbitIndex,
+  type OrbitCareCouplingBand
+} from './types';
+
+function couplingBand(index: number): OrbitCareCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-32 / wave-32 orbit-care coupling — orbit × care levers (O10-195). */
+export function computeNationalOrbitCareCouplingBrief(
+  state: NationalLaborDemographicsState,
+  orbit: NationalWorkforceOrbitIndex | null | undefined
+): NationalOrbitCareCouplingBrief {
+  if (!state.enabled || !orbit) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      orbitDrag: 0,
+      summary: 'Orbit-care coupling idle — workforce orbit unavailable.',
+      stewardNote: 'Compute workforce orbit before care coupling guidance.'
+    };
+  }
+
+  let careLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    careLift += careReliefForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  careLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const orbitDrag = v1014laborClamp(
+    orbit.orbitDrag * 0.48 + (orbit.band === 'fragile' || orbit.band === 'thin' ? 11 : 3)
+  );
+  const orbitLift =
+    orbit.band === 'elevated' || orbit.band === 'orbit'
+      ? orbit.orbitIndex * 0.24
+      : orbit.orbitIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + careLift * 21 + orbitLift - orbitDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained orbit-care link — deploy care levers before wave-32 nexus commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard care equilibrium spikes that drain orbit buffers.'
+        : 'Amplified coupling — pair care packs with subject nexus readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    orbitDrag,
+    summary: `Orbit-care coupling ${band} (index ${Math.round(couplingIndex)}); orbit drag ${Math.round(orbitDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: care-equilibrium-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type CareEquilibriumBand,
+  type NationalCareEquilibriumOutlook,
+  type NationalInclusionOrbitOutlook,
+  type NationalLaborDemographicsState
+} from './types';
+
+function equilibriumBand(index: number): CareEquilibriumBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'equilibrium';
+}
+
+export function computeNationalCareEquilibriumOutlook(
+  state: NationalLaborDemographicsState,
+  inclusionOrbit: NationalInclusionOrbitOutlook | null | undefined
+): NationalCareEquilibriumOutlook {
+  if (!state.enabled || !inclusionOrbit) {
+    return {
+      turn: state.turn,
+      equilibriumIndex: 50,
+      band: 'patchy',
+      orbitDrag: 0,
+      summary: 'Care equilibrium idle — inclusion orbit unavailable.',
+      stewardNote: 'Compute inclusion orbit before care equilibrium guidance.'
+    };
+  }
+
+  let careLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    careLift += careReliefForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  careLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const orbitDrag = v1014laborClamp(
+    inclusionOrbit.ascentDrag * 0.46 +
+      (inclusionOrbit.band === 'ebbing' || inclusionOrbit.band === 'patchy' ? 10 : 3)
+  );
+  const orbitLift =
+    inclusionOrbit.band === 'rising' || inclusionOrbit.band === 'orbit'
+      ? inclusionOrbit.orbitIndex * 0.2
+      : inclusionOrbit.orbitIndex * 0.1;
+
+  const equilibriumIndex = v1014laborClamp(24 + careLift * 22 + orbitLift - orbitDrag);
+  const band = equilibriumBand(equilibriumIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy care equilibrium — deploy care levers before subject nexus assembly.'
+      : band === 'equilibrium'
+        ? 'Equilibrium band — verify orbit-care coupling before auto workforce pushes.'
+        : 'Rising equilibrium — align with tenacity-care coupling checks.';
+
+  return {
+    turn: state.turn,
+    equilibriumIndex,
+    band,
+    orbitDrag,
+    summary: `National care equilibrium ${band} (index ${Math.round(equilibriumIndex)}); orbit drag ${Math.round(orbitDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-nexus-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectNexusReadinessBrief,
+  type NationalSubjectOrbitReadinessBrief,
+  type NationalWorkforceOrbitIndex,
+  type SubjectNexusReadinessBand
+} from './types';
+
+function nexusBand(index: number): SubjectNexusReadinessBand {
+  if (index <= 34) return 'below_nexus';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'nexus_ready';
+  return 'sealed_locked';
+}
+
+/** Round-32 / wave-32 subject nexus readiness — orbit × workforce orbit (O10-195). */
+export function computeNationalSubjectNexusReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectOrbit: NationalSubjectOrbitReadinessBrief | null | undefined,
+  workforceOrbit: NationalWorkforceOrbitIndex | null | undefined
+): NationalSubjectNexusReadinessBrief {
+  if (!state.enabled || !subjectOrbit || !workforceOrbit) {
+    return {
+      turn: state.turn,
+      nexusIndex: 50,
+      band: 'approaching',
+      nexusDrag: 0,
+      summary: 'Subject nexus readiness idle — subject orbit or workforce orbit unavailable.',
+      stewardNote: 'Compute subject orbit and workforce orbit before nexus guidance.'
+    };
+  }
+
+  const nexusDrag = v1014laborClamp(
+    subjectOrbit.orbitDrag * 0.38 +
+      workforceOrbit.orbitDrag * 0.38 +
+      (subjectOrbit.band === 'below_orbit' || workforceOrbit.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectOrbit.band === 'orbit_ready' || subjectOrbit.band === 'crown_locked'
+      ? subjectOrbit.orbitIndex * 0.27
+      : subjectOrbit.orbitIndex * 0.14;
+  const workforceLift =
+    workforceOrbit.band === 'elevated' || workforceOrbit.band === 'orbit'
+      ? workforceOrbit.orbitIndex * 0.25
+      : workforceOrbit.orbitIndex * 0.12;
+
+  const nexusIndex = v1014laborClamp(20 + subjectLift + workforceLift - nexusDrag);
+  const band = nexusBand(nexusIndex);
+
+  const stewardNote =
+    band === 'below_nexus' || band === 'approaching'
+      ? 'Approaching nexus — hold O10-195 wave-32 scale until orbit-care syncs.'
+      : band === 'sealed_locked'
+        ? 'Sealed-locked nexus — still monitor care equilibrium during corridor peaks.'
+        : 'Nexus-ready — pair with workforce nexus index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    nexusIndex,
+    band,
+    nexusDrag,
+    summary: `Subject nexus readiness ${band} (index ${Math.round(nexusIndex)}); nexus drag ${Math.round(nexusDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-nexus-index.ts ---
+  type NationalCareEquilibriumOutlook,
+  type NationalLaborDemographicsState,
+  type NationalOrbitCareCouplingBrief,
+  type NationalSubjectNexusReadinessBrief,
+  type NationalWorkforceNexusIndex,
+  type WorkforceNexusBand
+} from './types';
+
+function nexusBand(index: number): WorkforceNexusBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'nexus';
+}
+
+export function computeNationalWorkforceNexusIndex(
+  state: NationalLaborDemographicsState,
+  careCoupling: NationalOrbitCareCouplingBrief | null | undefined,
+  careEquilibrium: NationalCareEquilibriumOutlook | null | undefined,
+  subjectNexus: NationalSubjectNexusReadinessBrief | null | undefined
+): NationalWorkforceNexusIndex {
+  if (!state.enabled || !careCoupling || !careEquilibrium || !subjectNexus) {
+    return {
+      turn: state.turn,
+      nexusIndex: 50,
+      band: 'thin',
+      nexusDrag: 0,
+      summary: 'Workforce nexus idle — care coupling, care equilibrium, or subject nexus unavailable.',
+      stewardNote: 'Compute O10-195 wave-32 depth stack before nexus guidance.'
+    };
+  }
+
+  const nexusDrag = v1014laborClamp(
+    subjectNexus.nexusDrag * 0.35 +
+      careCoupling.orbitDrag * 0.3 +
+      careEquilibrium.orbitDrag * 0.25 +
+      (subjectNexus.band === 'below_nexus' || careCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const careLift =
+    careCoupling.band === 'amplified' || careCoupling.band === 'elevated'
+      ? careCoupling.couplingIndex * 0.2
+      : careCoupling.couplingIndex * 0.1;
+  const equilibriumLift =
+    careEquilibrium.band === 'rising' || careEquilibrium.band === 'equilibrium'
+      ? careEquilibrium.equilibriumIndex * 0.18
+      : careEquilibrium.equilibriumIndex * 0.09;
+  const subjectLift =
+    subjectNexus.band === 'nexus_ready' || subjectNexus.band === 'sealed_locked'
+      ? subjectNexus.nexusIndex * 0.22
+      : subjectNexus.nexusIndex * 0.11;
+
+  const nexusIndex = v1014laborClamp(18 + careLift + equilibriumLift + subjectLift - nexusDrag);
+  const band = nexusBand(nexusIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce nexus — sequence orbit-care, care equilibrium, and subject nexus before post-aa70dac tranche.'
+      : band === 'nexus'
+        ? 'Nexus band — avoid corridor overload that breaks subject nexus bands.'
+        : 'Elevated nexus — refresh subject nexus checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    nexusIndex,
+    band,
+    nexusDrag,
+    summary: `National workforce nexus ${band} (index ${Math.round(nexusIndex)}); nexus drag ${Math.round(nexusDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -13936,6 +14320,25 @@ export function computeNationalLaborDemographics(
     state.inclusionOrbitOutlook,
     state.subjectOrbitReadinessBrief
   );
+  state.orbitCareCouplingBrief = computeNationalOrbitCareCouplingBrief(
+    state,
+    state.nationalWorkforceOrbitIndex
+  );
+  state.careEquilibriumOutlook = computeNationalCareEquilibriumOutlook(
+    state,
+    state.inclusionOrbitOutlook
+  );
+  state.subjectNexusReadinessBrief = computeNationalSubjectNexusReadinessBrief(
+    state,
+    state.subjectOrbitReadinessBrief,
+    state.nationalWorkforceOrbitIndex
+  );
+  state.nationalWorkforceNexusIndex = computeNationalWorkforceNexusIndex(
+    state,
+    state.orbitCareCouplingBrief,
+    state.careEquilibriumOutlook,
+    state.subjectNexusReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -14590,6 +14993,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceOrbitIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.orbitCareCouplingBrief?.band === 'decoupled' ||
+      state.orbitCareCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.orbitCareCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.careEquilibriumOutlook?.band === 'ebbing' ||
+      state.careEquilibriumOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.careEquilibriumOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectNexusReadinessBrief?.band === 'below_nexus' ||
+      state.subjectNexusReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectNexusReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceNexusIndex?.band === 'fragile' ||
+      state.nationalWorkforceNexusIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceNexusIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -16409,6 +16840,59 @@ export function runV1014LaborDemographicsSelfTests(): {
     'orbit steward note'
   );
   check('R3116', inclusionEaseForRegion('NSW', 'technology') > 0, 'inclusion ease for region');
+
+  check('R3201', Boolean(r1.state.orbitCareCouplingBrief?.band), 'orbit care on state');
+  check('R3202', (r1.state.orbitCareCouplingBrief?.orbitDrag ?? 0) >= 0, 'orbit care drag');
+  check('R3203', Boolean(r1.state.careEquilibriumOutlook?.band), 'care equilibrium on state');
+  check('R3204', (r1.state.careEquilibriumOutlook?.orbitDrag ?? 0) >= 0, 'care equilibrium orbit drag');
+  check('R3205', Boolean(r1.state.subjectNexusReadinessBrief?.band), 'subject nexus on state');
+  check('R3206', Boolean(r1.state.nationalWorkforceNexusIndex?.band), 'workforce nexus on state');
+  check(
+    'R3207',
+    detectLaborDemographicsQuery('orbit care coupling') === 'orbit_care_coupling',
+    'GI orbit care detect'
+  );
+  check(
+    'R3208',
+    detectLaborDemographicsQuery('care equilibrium') === 'care_equilibrium',
+    'GI care equilibrium detect'
+  );
+  check(
+    'R3209',
+    detectLaborDemographicsQuery('subject nexus readiness') === 'subject_nexus_readiness',
+    'GI subject nexus detect'
+  );
+  check(
+    'R3210',
+    detectLaborDemographicsQuery('workforce nexus') === 'workforce_nexus',
+    'GI workforce nexus detect'
+  );
+  check(
+    'R3211',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_nexus').headline.length > 5,
+    'GI workforce nexus answer'
+  );
+  const orbitCareOnly = computeNationalOrbitCareCouplingBrief(r1.state, r1.state.nationalWorkforceOrbitIndex);
+  check('R3212', orbitCareOnly.summary.length > 10, 'orbit care standalone summary');
+  const careEquilibriumOnly = computeNationalCareEquilibriumOutlook(r1.state, r1.state.inclusionOrbitOutlook);
+  check('R3213', careEquilibriumOnly.band.length > 3, 'care equilibrium band string');
+  const subjectNexusOnly = computeNationalSubjectNexusReadinessBrief(
+    r1.state,
+    r1.state.subjectOrbitReadinessBrief,
+    r1.state.nationalWorkforceOrbitIndex
+  );
+  check('R3214', subjectNexusOnly.nexusDrag >= 0, 'subject nexus drag');
+  check(
+    'R3215',
+    computeNationalWorkforceNexusIndex(
+      rHhBad.state,
+      rHhBad.state.orbitCareCouplingBrief,
+      rHhBad.state.careEquilibriumOutlook,
+      rHhBad.state.subjectNexusReadinessBrief
+    ).stewardNote.length > 8,
+    'nexus steward note'
+  );
+  check('R3216', careReliefForRegion('NSW', 'technology') > 0, 'care relief for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
