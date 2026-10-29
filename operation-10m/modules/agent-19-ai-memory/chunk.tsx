@@ -9695,6 +9695,293 @@ export function sovereignRecoveryOrchestratorWithinCap(report: SovereignRecovery
 }
 
 
+// --- source: match-explainability-imperial-bundle.ts ---
+  auditMatchExplainabilityImperialGate,
+  matchExplainabilityImperialAllowed,
+} from './match-explainability-imperial-gate.ts';
+  buildMatchExplainabilitySovereignBundle,
+  matchExplainabilitySovereignReady,
+} from './match-explainability-sovereign-bundle.ts';
+  buildSessionSovereignExportBundle,
+  sessionSovereignExportShipped,
+} from './session-sovereign-export-bundle.ts';
+
+export const AGENT19_IMPERIAL_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityImperialBundle {
+  imperialReady: boolean;
+  imperialAllowed: boolean;
+  sovereignReady: boolean;
+  sovereignExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type ImperialParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Imperial bundle: imperial gate and sovereign export must both be green. */
+export function buildMatchExplainabilityImperialBundle(
+  packs: TurnExplainabilityPack[],
+  params: ImperialParams,
+): MatchExplainabilityImperialBundle {
+  const imperial = auditMatchExplainabilityImperialGate(packs, params);
+  const sovereign = buildMatchExplainabilitySovereignBundle(packs, params);
+  const sovereignExport = buildSessionSovereignExportBundle(packs, params);
+  const imperialAllowed = matchExplainabilityImperialAllowed(imperial);
+  const sovereignReady = matchExplainabilitySovereignReady(sovereign);
+  const sovereignExportShipped = sessionSovereignExportShipped(sovereignExport);
+  const imperialReady = imperialAllowed && sovereignReady && sovereignExportShipped;
+  const narrativeLines = [
+    `Match explainability imperial bundle: ${imperialReady ? 'READY' : 'PENDING'} (gate ${imperialAllowed ? 'ok' : 'fail'}, sovereign ${sovereignReady ? 'ok' : 'fail'}).`,
+    ...imperial.narrativeLines.slice(0, 2),
+    ...sovereign.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_IMPERIAL_NARRATIVE_CAP);
+  return {
+    imperialReady,
+    imperialAllowed,
+    sovereignReady,
+    sovereignExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityImperialReady(bundle: MatchExplainabilityImperialBundle): boolean {
+  return bundle.imperialReady;
+}
+
+
+// --- source: session-imperial-export-bundle.ts ---
+  buildSessionSovereignExportBundle,
+  type SessionSovereignExportBundle,
+} from './session-sovereign-export-bundle.ts';
+  buildMatchExplainabilityImperialBundle,
+  matchExplainabilityImperialReady,
+} from './match-explainability-imperial-bundle.ts';
+
+export interface SessionImperialExportBundle extends SessionSovereignExportBundle {
+  imperialReady: boolean;
+  imperialSchema: string;
+}
+
+/** Imperial export wraps sovereign export when imperial bundle is ready. */
+export function buildSessionImperialExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionImperialExportBundle {
+  const base = buildSessionSovereignExportBundle(packs, params);
+  const imperial = buildMatchExplainabilityImperialBundle(packs, params);
+  const imperialReady = matchExplainabilityImperialReady(imperial);
+  const exports = imperialReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    imperialReady,
+    imperialSchema: 'agent19.imperial.v1',
+    releaseReady: imperialReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Imperial export: ${imperialReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionImperialExportShipped(bundle: SessionImperialExportBundle): boolean {
+  return (
+    bundle.imperialReady &&
+    bundle.exports.length > 0 &&
+    bundle.imperialSchema === 'agent19.imperial.v1'
+  );
+}
+
+
+// --- source: sovereign-imperial-bridge.ts ---
+  buildMatchExplainabilityImperialBundle,
+  matchExplainabilityImperialReady,
+} from './match-explainability-imperial-bundle.ts';
+  buildMatchExplainabilitySovereignBundle,
+  matchExplainabilitySovereignReady,
+} from './match-explainability-sovereign-bundle.ts';
+
+export interface SovereignImperialBridgeReport {
+  aligned: boolean;
+  imperialReady: boolean;
+  sovereignReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Imperial-ready should match sovereign-ready when sovereign export stack passes. */
+export function auditSovereignImperialBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SovereignImperialBridgeReport {
+  const imperial = buildMatchExplainabilityImperialBundle(packs, params);
+  const sovereign = buildMatchExplainabilitySovereignBundle(packs, params);
+  const imperialReady = matchExplainabilityImperialReady(imperial);
+  const sovereignReady = matchExplainabilitySovereignReady(sovereign);
+  const aligned = imperialReady === sovereignReady;
+  const narrativeLines = [
+    `Sovereign/imperial bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (imperial ${imperialReady ? 'ok' : 'fail'}, sovereign ${sovereignReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, imperialReady, sovereignReady, narrativeLines };
+}
+
+export function sovereignImperialBridgeHealthy(report: SovereignImperialBridgeReport): boolean {
+  return report.imperialReady && report.sovereignReady && report.aligned;
+}
+
+
+// --- source: match-explainability-dominion-gate.ts ---
+  buildMatchExplainabilityImperialBundle,
+  matchExplainabilityImperialReady,
+} from './match-explainability-imperial-bundle.ts';
+  buildSessionImperialExportBundle,
+  sessionImperialExportShipped,
+} from './session-imperial-export-bundle.ts';
+
+export interface MatchExplainabilityDominionGateReport {
+  dominionAllowed: boolean;
+  imperialReady: boolean;
+  imperialExportShipped: boolean;
+  sovereignImperialHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Dominion gate: imperial bundle + imperial export + sovereign/imperial bridge. */
+export function auditMatchExplainabilityDominionGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityDominionGateReport {
+  const imperial = buildMatchExplainabilityImperialBundle(packs, params);
+  const imperialExport = buildSessionImperialExportBundle(packs, params);
+  const bridge = auditSovereignImperialBridge(packs, params);
+  const imperialReady = matchExplainabilityImperialReady(imperial);
+  const imperialExportShipped = sessionImperialExportShipped(imperialExport);
+  const sovereignImperialHealthy = sovereignImperialBridgeHealthy(bridge);
+  const dominionAllowed = imperialReady && imperialExportShipped && sovereignImperialHealthy;
+  const narrativeLines = [
+    `Match explainability dominion: ${dominionAllowed ? 'ALLOWED' : 'DENIED'} (imperial ${imperialReady ? 'ok' : 'fail'}, export ${imperialExportShipped ? 'ok' : 'fail'}).`,
+    ...imperial.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    dominionAllowed,
+    imperialReady,
+    imperialExportShipped,
+    sovereignImperialHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityDominionAllowed(report: MatchExplainabilityDominionGateReport): boolean {
+  return report.dominionAllowed;
+}
+
+
+// --- source: imperial-recovery-orchestrator.ts ---
+  auditMatchExplainabilityImperialGate,
+  matchExplainabilityImperialAllowed,
+} from './match-explainability-imperial-gate.ts';
+
+export const AGENT19_IMPERIAL_RECOVERY_CAP = 10;
+
+export interface ImperialRecoveryOrchestratorReport {
+  imperialBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when imperial gate blocks dominion rollout. */
+export function buildImperialRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): ImperialRecoveryOrchestratorReport {
+  const imperial = auditMatchExplainabilityImperialGate(packs, params);
+  const imperialBlocked = !matchExplainabilityImperialAllowed(imperial);
+  const steps: string[] = [];
+  if (imperialBlocked) {
+    if (!imperial.sovereignReady) {
+      steps.push('Restore sovereign bundle: realm and sovereign export must pass.');
+    }
+    if (!imperial.sovereignExportShipped) {
+      steps.push('Emit session sovereign export before imperial clearance.');
+    }
+    if (!imperial.realmSovereignHealthy) {
+      steps.push('Reconcile realm/sovereign bridge before imperial.');
+    }
+    steps.push(...buildSovereignRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const sovereign = buildMatchExplainabilitySovereignBundle(packs, params);
+    if (!sovereign.sovereignReady) {
+      steps.push('Re-run sovereign readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Imperial gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_IMPERIAL_RECOVERY_CAP);
+  return {
+    imperialBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Imperial recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function imperialRecoveryOrchestratorWithinCap(report: ImperialRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_IMPERIAL_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -10203,6 +10490,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityImperialGate,
   matchExplainabilityImperialAllowed,
 } from '../match-explainability-imperial-gate.ts';
+  buildMatchExplainabilityImperialBundle,
+  matchExplainabilityImperialReady,
+} from '../match-explainability-imperial-bundle.ts';
+  buildSessionImperialExportBundle,
+  sessionImperialExportShipped,
+} from '../session-imperial-export-bundle.ts';
+  buildImperialRecoveryOrchestrator,
+  imperialRecoveryOrchestratorWithinCap,
+} from '../imperial-recovery-orchestrator.ts';
+  auditMatchExplainabilityDominionGate,
+  matchExplainabilityDominionAllowed,
+} from '../match-explainability-dominion-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -15332,6 +15631,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityImperialAllowed(report) && !report.sovereignReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r37_imperial_ready',
+        'Imperial bundle ready when imperial gate and sovereign export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityImperialBundle([pack], params);
+          return matchExplainabilityImperialReady(bundle) && bundle.imperialAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r37_imperial_held',
+        'Imperial bundle pending when imperial gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 49, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityImperialBundle([pack], {
+            memory: null,
+            currentTurn: 49,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityImperialReady(bundle) && !bundle.imperialAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r37_imperial_recovery',
+        'Imperial recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 23, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 23, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildImperialRecoveryOrchestrator([pack], params);
+          return report.imperialBlocked && imperialRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r37_sovereign_imperial_bridge',
+        'Sovereign imperial bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditSovereignImperialBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sovereignImperialBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r37_imperial_export',
+        'Imperial export shipped when imperial ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionImperialExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionImperialExportShipped(bundle) && bundle.imperialSchema === 'agent19.imperial.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r37_dominion_gate_ok',
+        'Dominion gate allowed on healthy imperial stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityDominionGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityDominionAllowed(report) && report.imperialExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r37_dominion_gate_block',
+        'Dominion gate denied when imperial pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 50, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityDominionGate([pack], {
+            memory: null,
+            currentTurn: 50,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityDominionAllowed(report) && !report.imperialReady || JSON.stringify(report);
         },
       ],
     ]),
