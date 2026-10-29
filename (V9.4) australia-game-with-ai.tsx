@@ -240729,6 +240729,8 @@ export function triggerJsonFileDownload(filename: string, data: unknown): boolea
 // prepareSaveLoadTransaction pipeline as file upload loads — slots never bypass validation.
 // Expansion contract: Agents 01–24 may depend on these exports but must not duplicate slot storage.
 // ============================================================================
+// O10_AGENT20_INTEGRATION_ANCHOR — Operation 10M modular idle/automation/autonomous ops
+// (operation-10m/agent-20-automation/ — conditional actions, limits, logs, safe time advance)
 // ============================================================================
 // SECTION 20AN: V10.14 AUTONOMOUS & IDLE NATIONAL MANAGEMENT
 // Agent 20 (Operation 600K) — integration slice for Agent 25 merge into canonical V9.4

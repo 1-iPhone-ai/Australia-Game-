@@ -1,0 +1,15 @@
+{
+  "name": "@operation-10m/agent-20-automation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsx tests/self-tests.ts",
+    "typecheck": "tsc --noEmit",
+    "build:chunk": "node scripts/build-chunk.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.12",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}
