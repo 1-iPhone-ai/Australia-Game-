@@ -133291,6 +133291,228 @@ export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
 }
 
 
+
+// ============================================================================
+// SECTION 20P-A7: O111 RUNTIME INSTRUMENTATION (DEV-ONLY TRACING HOOKS)
+// ============================================================================
+// Operation 111 / Agent 7. Ring-buffer traces for reducer spans and manual probes. Stripped from
+// production builds (no listeners, no window hook). Opt-in at runtime via ?o111Trace=1 or
+// localStorage `o111.trace=1`. Complements DIAG2 (Co-Pilot overlay) without replacing it.
+
+export type O111TraceCategory = 'reducer' | 'dispatch' | 'lifecycle' | 'perf' | 'probe';
+
+export interface O111TraceRecord {
+  seq: number;
+  t: number;
+  category: O111TraceCategory;
+  name: string;
+  ms?: number;
+  detail?: Record<string, unknown>;
+}
+
+export const O111_TRACE_BUFFER_CAPACITY = 200;
+export const O111_TRACE_BUFFER: O111TraceRecord[] = [];
+export let o111TraceSeq = 0;
+
+let o111TraceRuntimeEnabled: boolean | null = null;
+
+export function isO111DevBuild(): boolean {
+  try {
+    const im = typeof import.meta !== 'undefined' ? (import.meta as { env?: { DEV?: boolean; PROD?: boolean } }) : undefined;
+    if (im?.env?.PROD === true) return false;
+    if (im?.env?.DEV === true) return true;
+  } catch {
+    // non-module bundlers
+  }
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') return false;
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') return true;
+  return false;
+}
+
+function readO111TraceOptInFromStorage(): boolean {
+  try {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search || '');
+    if (params.get('o111Trace') === '1' || params.get('o111Trace') === 'true') return true;
+    if (params.get('o111Trace') === '0' || params.get('o111Trace') === 'false') return false;
+    return window.localStorage?.getItem('o111.trace') === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Dev builds only. When unset, follows URL/localStorage opt-in (default off). */
+export function isO111TraceEnabled(): boolean {
+  if (!isO111DevBuild()) return false;
+  if (o111TraceRuntimeEnabled !== null) return o111TraceRuntimeEnabled;
+  return readO111TraceOptInFromStorage();
+}
+
+export function setO111TraceEnabled(enabled: boolean): void {
+  if (!isO111DevBuild()) return;
+  o111TraceRuntimeEnabled = Boolean(enabled);
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage?.setItem('o111.trace', enabled ? '1' : '0');
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function clearO111TraceBuffer(): void {
+  O111_TRACE_BUFFER.length = 0;
+  o111TraceSeq = 0;
+}
+
+export function recordO111Trace(
+  category: O111TraceCategory,
+  name: string,
+  detail?: Record<string, unknown>,
+  ms?: number
+): void {
+  if (!isO111TraceEnabled()) return;
+  o111TraceSeq++;
+  const rec: O111TraceRecord = {
+    seq: o111TraceSeq,
+    t: typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now(),
+    category,
+    name,
+    ...(ms !== undefined ? { ms } : {}),
+    ...(detail && Object.keys(detail).length ? { detail } : {}),
+  };
+  O111_TRACE_BUFFER.unshift(rec);
+  if (O111_TRACE_BUFFER.length > O111_TRACE_BUFFER_CAPACITY) O111_TRACE_BUFFER.pop();
+  if (typeof console !== 'undefined' && console.debug) {
+    const slow = ms !== undefined && ms > 16;
+    const tag = slow ? '[O111 trace SLOW]' : '[O111 trace]';
+    console.debug(`${tag} ${category}/${name}${ms !== undefined ? ` ${ms.toFixed(2)}ms` : ''}`, detail ?? '');
+  }
+}
+
+export function withO111TraceSpan<T>(
+  category: O111TraceCategory,
+  name: string,
+  fn: () => T,
+  detail?: Record<string, unknown>
+): T {
+  if (!isO111TraceEnabled()) return fn();
+  const t0 = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+  try {
+    return fn();
+  } finally {
+    const t1 = typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+    recordO111Trace(category, name, detail, t1 - t0);
+  }
+}
+
+export function createO111TracedReducer<S, A>(
+  reducerName: string,
+  reducer: (state: S, action: A) => S
+): (state: S, action: A) => S {
+  if (!isO111DevBuild()) return reducer;
+  return (state: S, action: A) => {
+    const actionType =
+      action && typeof action === 'object' && 'type' in (action as object)
+        ? String((action as { type?: unknown }).type ?? 'unknown')
+        : 'unknown';
+    return withO111TraceSpan('reducer', `${reducerName}:${actionType}`, () => reducer(state, action), {
+      reducer: reducerName,
+      actionType,
+    });
+  };
+}
+
+export function exportO111TraceSnapshot(): { enabled: boolean; devBuild: boolean; records: O111TraceRecord[] } {
+  return {
+    enabled: isO111TraceEnabled(),
+    devBuild: isO111DevBuild(),
+    records: [...O111_TRACE_BUFFER],
+  };
+}
+
+export interface O111RuntimeDevHooks {
+  enable: (on?: boolean) => void;
+  isEnabled: () => boolean;
+  clear: () => void;
+  dump: () => ReturnType<typeof exportO111TraceSnapshot>;
+  trace: typeof recordO111Trace;
+  span: typeof withO111TraceSpan;
+  diag2Enable: typeof setDiag2RuntimeEnabled;
+  diag2Buffer: typeof DIAG2_EVENT_BUFFER;
+}
+
+let o111DevHooksInstalled = false;
+
+/** Idempotent. Attaches `window.__O111_RUNTIME__` in dev for console-driven tracing. */
+export function installO111RuntimeDevHooks(): O111RuntimeDevHooks | null {
+  if (!isO111DevBuild()) return null;
+  const hooks: O111RuntimeDevHooks = {
+    enable: (on = true) => setO111TraceEnabled(on),
+    isEnabled: () => isO111TraceEnabled(),
+    clear: () => clearO111TraceBuffer(),
+    dump: () => exportO111TraceSnapshot(),
+    trace: recordO111Trace,
+    span: withO111TraceSpan,
+    diag2Enable: setDiag2RuntimeEnabled,
+    diag2Buffer: DIAG2_EVENT_BUFFER,
+  };
+  if (!o111DevHooksInstalled && typeof window !== 'undefined') {
+    (window as unknown as { __O111_RUNTIME__?: O111RuntimeDevHooks }).__O111_RUNTIME__ = hooks;
+    o111DevHooksInstalled = true;
+  }
+  return hooks;
+}
+
+export function runO111RuntimeInstrumentationSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  check('o111_a7_dev_gate', 'Instrumentation APIs exist only in non-production dev detection', () => {
+    const dev = isO111DevBuild();
+    return typeof dev === 'boolean' && typeof installO111RuntimeDevHooks === 'function';
+  });
+  check('o111_a7_trace_buffer', 'Opt-in tracing records reducer spans with duration', () => {
+    const prev = o111TraceRuntimeEnabled;
+    clearO111TraceBuffer();
+    setO111TraceEnabled(true);
+    withO111TraceSpan('probe', 'self_test', () => {
+      let n = 0;
+      for (let i = 0; i < 5000; i++) n += i;
+      return n;
+    });
+    const ok = O111_TRACE_BUFFER.length >= 1 && O111_TRACE_BUFFER[0].category === 'probe' && typeof O111_TRACE_BUFFER[0].ms === 'number';
+    setO111TraceEnabled(prev === true);
+    if (prev === null) o111TraceRuntimeEnabled = null;
+    clearO111TraceBuffer();
+    return ok || JSON.stringify(O111_TRACE_BUFFER.slice(0, 2));
+  });
+  check('o111_a7_traced_reducer', 'Traced reducer delegates to the canonical reducer', () => {
+    const prev = o111TraceRuntimeEnabled;
+    setO111TraceEnabled(true);
+    clearO111TraceBuffer();
+    const r = createO111TracedReducer('test', (s: number, a: { type: string; n: number }) => (a.type === 'inc' ? s + a.n : s));
+    const out = r(2, { type: 'inc', n: 3 });
+    const traced = O111_TRACE_BUFFER.some(e => e.name === 'test:inc' && e.category === 'reducer');
+    setO111TraceEnabled(prev === true);
+    if (prev === null) o111TraceRuntimeEnabled = null;
+    clearO111TraceBuffer();
+    return out === 5 && traced;
+  });
+  check('o111_a7_export', 'exportO111TraceSnapshot returns a copy of the ring buffer', () => {
+    const snap = exportO111TraceSnapshot();
+    return snap.records !== O111_TRACE_BUFFER && Array.isArray(snap.records);
+  });
+  return results;
+}
+
+
 // ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
@@ -135791,6 +136013,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'o111_a7', label: 'O111 Agent 7 Runtime Instrumentation', tier: 'quick', section: 'System Regression', severity: 'MINOR', run: () => runO111RuntimeInstrumentationSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -180475,12 +180698,16 @@ function AustraliaGame() {
   useEffect(() => {
     diag2MountCounter++;
     recordDiag2Event('APP_MOUNT', { mountCount: diag2MountCounter, isStrictModeDoubleMount: diag2MountCounter > 1 });
+    installO111RuntimeDevHooks();
+    recordO111Trace('lifecycle', 'app_mount', { mountCount: diag2MountCounter });
   }, []);
   const surfaceState = useGlobalUISurfaceManager();
 
   // Core game state
-  const [player, dispatchPlayer] = useReducer(playerReducer, initialPlayerState);
-  const [gameState, dispatchGameState] = useReducer(gameStateReducer, initialGameState);
+  const tracedPlayerReducer = useMemo(() => createO111TracedReducer('player', playerReducer), []);
+  const tracedGameStateReducer = useMemo(() => createO111TracedReducer('gameState', gameStateReducer), []);
+  const [player, dispatchPlayer] = useReducer(tracedPlayerReducer, initialPlayerState);
+  const [gameState, dispatchGameState] = useReducer(tracedGameStateReducer, initialGameState);
   const setGameState = (nextState: any) => dispatchGameState({ type: 'LOAD_STATE', payload: nextState });
 
   // AI opponent state
