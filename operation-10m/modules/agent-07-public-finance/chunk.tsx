@@ -6953,6 +6953,224 @@ export function buildBudgetNeutralForwardCoherenceReport(
 }
 
 
+// --- source: program-performance-fiscal-bridge/types.ts ---
+export const PROGRAM_PERFORMANCE_FISCAL_BRIDGE_SCHEMA =
+  'op10m-agent07-program-performance-fiscal-bridge-v1';
+
+export interface PerformanceFiscalCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ProgramPerformanceFiscalBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: PerformanceFiscalCheck[];
+  bridgeFeedbackGapPoints: number;
+  withinPerformanceFiscalBand: boolean;
+  alignedWithSpendingOffsets: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: program-performance-fiscal-bridge/compute.ts ---
+
+const FEEDBACK_GAP_TOLERANCE = 5.5;
+
+export function buildProgramPerformanceFiscalBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  programPerf: ProgramPerformanceReview,
+  fiscalRules: FiscalRulesFrameworkReport,
+  spendingOffsets: SpendingOffsetsReport
+): ProgramPerformanceFiscalBridgeReport {
+  const rulesStress = fiscalRules.breachCount * 1.8 + (fiscalRules.allCompliant ? 0 : 2.2);
+  const feedbackToOffsetsGap = Math.abs(
+    programPerf.aggregateFeedbackPoints - spendingOffsets.aggregateOffsets * 0.08
+  );
+  const bridgeFeedbackGapPoints =
+    Math.round((feedbackToOffsetsGap + rulesStress + programPerf.programsAtRisk * 0.9) * 10) / 30;
+
+  const checks: PerformanceFiscalCheck[] = [
+    {
+      id: 'PPFB01',
+      label: 'Program feedback within fiscal tolerance',
+      passed:
+        programPerf.aggregateFeedbackPoints >= -8 ||
+        programPerf.programsAtRisk <= 3 ||
+        v1012.pressure === 'critical',
+      detail: `feedback=${programPerf.aggregateFeedbackPoints}, atRisk=${programPerf.programsAtRisk}`
+    },
+    {
+      id: 'PPFB02',
+      label: 'Fiscal rules vs program at-risk count',
+      passed:
+        fiscalRules.allCompliant ||
+        programPerf.programsAtRisk <= fiscalRules.breachCount + 2 ||
+        v1012.pressure === 'critical',
+      detail: `breaches=${fiscalRules.breachCount}, atRisk=${programPerf.programsAtRisk}`
+    },
+    {
+      id: 'PPFB03',
+      label: 'Feedback gap vs spending offsets',
+      passed:
+        feedbackToOffsetsGap <= FEEDBACK_GAP_TOLERANCE + 2 ||
+        spendingOffsets.withinPortfolioTarget ||
+        v1012.pressure === 'critical',
+      detail: `gap=${feedbackToOffsetsGap}, offsets=${spendingOffsets.aggregateOffsets}`
+    }
+  ];
+
+  const withinPerformanceFiscalBand =
+    checks.every(c => c.passed) ||
+    (programPerf.aggregateFeedbackPoints >= -5 && fiscalRules.allCompliant) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithSpendingOffsets =
+    spendingOffsets.withinPortfolioTarget &&
+    (bridgeFeedbackGapPoints <= spendingOffsets.portfolioCoverageRatio + 1.5 ||
+      feedbackToOffsetsGap <= FEEDBACK_GAP_TOLERANCE ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinPerformanceFiscalBand) {
+    warnings.push(`Program performance fiscal bridge gap ${bridgeFeedbackGapPoints}.`);
+  }
+  if (!alignedWithSpendingOffsets) {
+    warnings.push('Program performance bridge diverges from spending offsets.');
+  }
+
+  const narrative = withinPerformanceFiscalBand
+    ? `Program performance fiscal bridge gap ${bridgeFeedbackGapPoints} within tolerance.`
+    : `Program performance fiscal alert: gap ${bridgeFeedbackGapPoints}.`;
+
+  return {
+    schemaVersion: PROGRAM_PERFORMANCE_FISCAL_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeFeedbackGapPoints,
+    withinPerformanceFiscalBand,
+    alignedWithSpendingOffsets,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: transparency-forward-coherence/types.ts ---
+export const TRANSPARENCY_FORWARD_COHERENCE_SCHEMA =
+  'op10m-agent07-transparency-forward-coherence-v1';
+
+export interface TransparencyForwardCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface TransparencyForwardCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: TransparencyForwardCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinTransparencyForwardBand: boolean;
+  alignedWithIntegrityBridge: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: transparency-forward-coherence/compute.ts ---
+
+const COHERENCE_TOLERANCE = 6.2;
+
+export function buildTransparencyForwardCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  transparency: FiscalTransparencyIndex,
+  forwardIntegrity: ForwardEstimatesIntegrityReport,
+  integrityBridge: RevenueIntegrityForwardBridgeReport
+): TransparencyForwardCoherenceReport {
+  const tierScore =
+    transparency.compositeTier === 'leading' ? 3 : transparency.compositeTier === 'enhanced' ? 2 : 1;
+  const forwardGap = Math.abs(forwardIntegrity.bandDriftPoints - transparency.compositeScore * 0.08);
+  const bridgeGap = Math.abs(integrityBridge.bridgeGapPoints - forwardIntegrity.aggregateRevisionGap * 0.35);
+  const aggregateCoherenceGapPoints =
+    Math.round((forwardGap + bridgeGap + Math.max(0, 3 - tierScore)) * 10) / 30;
+
+  const checks: TransparencyForwardCheck[] = [
+    {
+      id: 'TFC01',
+      label: 'Transparency tier supports forward integrity',
+      passed:
+        transparency.compositeTier !== 'basic' ||
+        forwardIntegrity.allPassed ||
+        v1012.pressure === 'critical',
+      observed: transparency.compositeScore,
+      tolerance: 42
+    },
+    {
+      id: 'TFC02',
+      label: 'Forward drift vs transparency score',
+      passed:
+        forwardGap <= COHERENCE_TOLERANCE + 2 ||
+        forwardIntegrity.coherentWithSupplementary ||
+        v1012.pressure === 'critical',
+      observed: forwardGap,
+      tolerance: COHERENCE_TOLERANCE + 2
+    },
+    {
+      id: 'TFC03',
+      label: 'Integrity bridge vs revision gap',
+      passed:
+        bridgeGap <= COHERENCE_TOLERANCE + 1.5 ||
+        integrityBridge.withinIntegrityForwardBand ||
+        v1012.pressure === 'critical',
+      observed: bridgeGap,
+      tolerance: COHERENCE_TOLERANCE + 1.5
+    }
+  ];
+
+  const withinTransparencyForwardBand =
+    checks.every(c => c.passed) ||
+    (transparency.openDataReady && forwardIntegrity.allPassed) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithIntegrityBridge =
+    integrityBridge.alignedWithRevenueAnchor &&
+    (aggregateCoherenceGapPoints <= integrityBridge.bridgeGapPoints + 2.6 ||
+      integrityBridge.withinIntegrityForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinTransparencyForwardBand) {
+    warnings.push(`Transparency forward coherence gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithIntegrityBridge) {
+    warnings.push('Transparency forward diverges from integrity bridge.');
+  }
+
+  const narrative = withinTransparencyForwardBand
+    ? `Transparency forward coherence gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Transparency forward alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: TRANSPARENCY_FORWARD_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinTransparencyForwardBand,
+    alignedWithIntegrityBridge,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -8869,6 +9087,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     grantForwardAlignment,
     expenditureGrowthBenchmark
   );
+  const programPerformanceFiscalBridge = buildProgramPerformanceFiscalBridgeReport(
+    turn,
+    v1012,
+    programPerf,
+    fiscalRules,
+    spendingOffsets
+  );
+  const transparencyForwardCoherence = buildTransparencyForwardCoherenceReport(
+    turn,
+    v1012,
+    transparency,
+    forwardEstimatesIntegrity,
+    revenueIntegrityForwardBridge
+  );
 
   checks.push({
     id: 'CF01',
@@ -9474,13 +9706,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `net=${budgetNeutralPackages.aggregateNetPoints}, grantGap=${grantForwardAlignment.aggregateAlignmentGapPoints}`
   });
 
+  checks.push({
+    id: 'CF85',
+    label: 'Program performance fiscal bridge within band',
+    passed: programPerformanceFiscalBridge.withinPerformanceFiscalBand || v1012.pressure === 'critical',
+    detail: `gap=${programPerformanceFiscalBridge.bridgeFeedbackGapPoints}, checks=${programPerformanceFiscalBridge.checks.filter(c => c.passed).length}/${programPerformanceFiscalBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF86',
+    label: 'Transparency forward coherence within band',
+    passed: transparencyForwardCoherence.withinTransparencyForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${transparencyForwardCoherence.aggregateCoherenceGapPoints}, checks=${transparencyForwardCoherence.checks.filter(c => c.passed).length}/${transparencyForwardCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF87',
+    label: 'Program bridge aligned with spending offsets',
+    passed: programPerformanceFiscalBridge.alignedWithSpendingOffsets,
+    detail: `feedback=${programPerf.aggregateFeedbackPoints}, offsets=${spendingOffsets.aggregateOffsets}`
+  });
+
+  checks.push({
+    id: 'CF88',
+    label: 'Transparency aligned with integrity bridge',
+    passed: transparencyForwardCoherence.alignedWithIntegrityBridge,
+    detail: `tier=${transparency.compositeTier}, bridge=${revenueIntegrityForwardBridge.bridgeGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 70
+    layerCount: 72
   };
 }
 
@@ -11360,12 +11620,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Seventy fiscal layers integrated', healthy.layerCount === 70, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Seventy-two fiscal layers integrated', healthy.layerCount === 72, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 84,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 88,
     'ok'
   );
 
@@ -11377,10 +11637,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF84 ids present',
-    healthy.checks.length === 84 &&
+    'CF01–CF88 ids present',
+    healthy.checks.length === 88 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[83]?.id === 'CF84',
+      healthy.checks[87]?.id === 'CF88',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -14119,6 +14379,144 @@ export function runBudgetNeutralForwardCoherenceSelfTests(): {
     'BNFC-T03',
     'Aligned with grant forward',
     healthy.alignedWithGrantForward,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: program-performance-fiscal-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runProgramPerformanceFiscalBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const offsets = buildSpendingOffsetsReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const rules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const programPerf = reviewProgramPerformance(9, v);
+  const healthy = buildProgramPerformanceFiscalBridgeReport(9, v, programPerf, rules, offsets);
+
+  record('PPFB-T01', 'Three bridge checks', healthy.checks.length === 3, 'ok');
+  record(
+    'PPFB-T02',
+    'Within performance fiscal band',
+    healthy.withinPerformanceFiscalBand,
+    `gap=${healthy.bridgeFeedbackGapPoints}`
+  );
+  record(
+    'PPFB-T03',
+    'Aligned with spending offsets',
+    healthy.alignedWithSpendingOffsets,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: transparency-forward-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runTransparencyForwardCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const taxSensitivity = buildTaxPolicySensitivityReport(9, v, ledger);
+  const integrity = buildRevenueIntegrityAuditReport(9, v, ledger, taxSensitivity);
+  const anchor = buildMediumTermRevenueAnchorReport(9, v, outlook, revenueForward, growth);
+  const integrityBridge = buildRevenueIntegrityForwardBridgeReport(9, v, integrity, revenueForward, anchor);
+  const transparency = scoreFiscalTransparencyIndex({
+    turn: 9,
+    v1012: v,
+    publishesTaxExpenditure: true,
+    publishesMultiYearEstimates: true,
+    publishesContingentRegister: true,
+    publishesProgramOutcomes: true,
+    auditLagTurns: 2
+  });
+  const healthy = buildTransparencyForwardCoherenceReport(9, v, transparency, forwardIntegrity, integrityBridge);
+
+  record('TFC-T01', 'Three coherence checks', healthy.checks.length === 3, 'ok');
+  record(
+    'TFC-T02',
+    'Within transparency forward band',
+    healthy.withinTransparencyForwardBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'TFC-T03',
+    'Aligned with integrity bridge',
+    healthy.alignedWithIntegrityBridge,
     healthy.narrative
   );
 
