@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 0a34cec1c115acea3c8389d30bc55ceee4cbfd949f1fc7a6bd7299135aee3a60
-// OP10M_MODULE_VERSION: 10m.1.22.0-agent20
+// OP10M_MANIFEST_SHA256: 40a870b0875935f0a3fc6939873dd03be3aad762d15577d37b5862a9ba98f84c
+// OP10M_MODULE_VERSION: 10m.1.23.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -10711,6 +10711,414 @@ export function runO10Agent20IdleGovernanceProgramWaveScaleDispatchSelfTests(): 
 }
 
 
+// --- source: automation-idle-governance-program-wave-scale-dispatch-compare.ts ---
+
+export interface O10IdleGovernanceProgramWaveScaleDispatchCompareResult {
+  schema: '10m.agent20.idle-governance-program-wave-scale-dispatch-compare.v1';
+  waveRound: number;
+  parityOk: boolean;
+  mismatches: string[];
+  summaryLine: string;
+}
+
+function compareDispatchFields(
+  baseline: O10IdleGovernanceProgramWaveScaleDispatchResult,
+  candidate: O10IdleGovernanceProgramWaveScaleDispatchResult
+): string[] {
+  const mismatches: string[] = [];
+  if (baseline.waveRound !== candidate.waveRound) {
+    mismatches.push(`wave_round ${baseline.waveRound} vs ${candidate.waveRound}`);
+  }
+  if (baseline.dispatchReady !== candidate.dispatchReady) {
+    mismatches.push(`dispatch_ready ${baseline.dispatchReady} vs ${candidate.dispatchReady}`);
+  }
+  if (baseline.closeoutCompare.parityOk !== candidate.closeoutCompare.parityOk) {
+    mismatches.push('closeout_compare_parity');
+  }
+  if (baseline.projectionRollup.projectedLocBand !== candidate.projectionRollup.projectedLocBand) {
+    mismatches.push('projection_loc_band');
+  }
+  if (
+    baseline.projectionRollup.projectionHookLines.length !==
+    candidate.projectionRollup.projectionHookLines.length
+  ) {
+    mismatches.push('projection_hook_count');
+  }
+  return mismatches;
+}
+
+/** Round-23 twin scale dispatch regression compare. */
+export function compareIdleGovernanceProgramWaveScaleDispatches(
+  baseline: O10IdleGovernanceProgramWaveScaleDispatchResult,
+  candidate: O10IdleGovernanceProgramWaveScaleDispatchResult
+): O10IdleGovernanceProgramWaveScaleDispatchCompareResult {
+  const mismatches = compareDispatchFields(baseline, candidate);
+  const waveRound = baseline.waveRound;
+  const parityOk = mismatches.length === 0;
+
+  const summaryLine = [
+    'gov_program_wave_scale_dispatch_compare',
+    `round=${waveRound}`,
+    `parity=${parityOk}`,
+    `mismatches=${mismatches.length}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-scale-dispatch-compare.v1',
+    waveRound,
+    parityOk,
+    mismatches,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveScaleDispatchCompareSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const twin = (): O10IdleGovernanceProgramWaveScaleDispatchResult => ({
+    schema: '10m.agent20.idle-governance-program-wave-scale-dispatch.v1',
+    waveRound: 23,
+    dispatchReady: true,
+    dispatchMarkdown: 'md',
+    summaryLine: 'dsp',
+    primaryCloseout: {} as O10IdleGovernanceProgramWaveScaleDispatchResult['primaryCloseout'],
+    twinCloseout: {} as O10IdleGovernanceProgramWaveScaleDispatchResult['twinCloseout'],
+    closeoutCompare: { parityOk: true } as O10IdleGovernanceProgramWaveScaleDispatchResult['closeoutCompare'],
+    projectionRollup: {
+      projectedLocBand: 'on_track',
+      projectionHookLines: ['a', 'b', 'c', 'd', 'e'],
+    } as O10IdleGovernanceProgramWaveScaleDispatchResult['projectionRollup'],
+  });
+
+  const ok = compareIdleGovernanceProgramWaveScaleDispatches(twin(), twin());
+  push('gov_prog_dsp_cmp_parity', 'identical dispatches report parity', ok.parityOk === true);
+
+  const bad = compareIdleGovernanceProgramWaveScaleDispatches(twin(), {
+    ...twin(),
+    dispatchReady: false,
+  });
+  push(
+    'gov_prog_dsp_cmp_ready',
+    'dispatch_ready drift surfaces mismatch',
+    bad.parityOk === false && bad.mismatches.some(m => m.startsWith('dispatch_ready'))
+  );
+
+  push(
+    'gov_prog_dsp_cmp_schema',
+    'scale dispatch compare schema marker',
+    ok.schema === '10m.agent20.idle-governance-program-wave-scale-dispatch-compare.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-scale-dispatch-replay-parity.ts ---
+  createEmptyIdleGovernanceProgramRegistry,
+  type O10IdleGovernanceProgramRegistry,
+} from './automation-idle-governance-program-registry.js';
+
+export interface O10IdleGovernanceProgramWaveScaleDispatchReplayParityResult {
+  schema: '10m.agent20.idle-governance-program-wave-scale-dispatch-replay-parity.v1';
+  waveRound: number;
+  replayParityOk: boolean;
+  baselineDispatch: O10IdleGovernanceProgramWaveScaleDispatchResult;
+  replayDispatch: O10IdleGovernanceProgramWaveScaleDispatchResult;
+  compare: ReturnType<typeof compareIdleGovernanceProgramWaveScaleDispatches>;
+  summaryLine: string;
+}
+
+/** Round-23 replay parity: re-run scale dispatch and compare to baseline. */
+export function verifyIdleGovernanceProgramWaveScaleDispatchReplayParity(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number,
+  waveRound: number,
+  projectedLocHint: number,
+  baselineDispatch: O10IdleGovernanceProgramWaveScaleDispatchResult,
+  priorRegistry: O10IdleGovernanceProgramRegistry = createEmptyIdleGovernanceProgramRegistry()
+): O10IdleGovernanceProgramWaveScaleDispatchReplayParityResult {
+  const replayDispatch = dispatchIdleGovernanceProgramWaveScale(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    projectedLocHint,
+    priorRegistry
+  );
+  const compare = compareIdleGovernanceProgramWaveScaleDispatches(baselineDispatch, replayDispatch);
+  const replayParityOk =
+    compare.parityOk &&
+    baselineDispatch.dispatchReady === replayDispatch.dispatchReady;
+
+  const summaryLine = [
+    'gov_program_wave_scale_dispatch_replay_parity',
+    `round=${waveRound}`,
+    `parity=${replayParityOk}`,
+    compare.summaryLine,
+  ].join(' | ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-scale-dispatch-replay-parity.v1',
+    waveRound,
+    replayParityOk,
+    baselineDispatch,
+    replayDispatch,
+    compare,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveScaleDispatchReplayParitySelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'drpl1',
+    name: 'Dispatch replay',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const baseline = dispatchIdleGovernanceProgramWaveScale(calmSpec, sampleRule, 1, 3, 23, 1_448_902);
+  const parity = verifyIdleGovernanceProgramWaveScaleDispatchReplayParity(
+    calmSpec,
+    sampleRule,
+    1,
+    3,
+    23,
+    1_448_902,
+    baseline,
+    createEmptyIdleGovernanceProgramRegistry()
+  );
+  push(
+    'gov_prog_dsp_rpl_parity',
+    'replay dispatch matches baseline',
+    parity.replayParityOk === true && parity.compare.parityOk === true
+  );
+
+  push(
+    'gov_prog_dsp_rpl_schema',
+    'dispatch replay parity schema marker',
+    parity.schema === '10m.agent20.idle-governance-program-wave-scale-dispatch-replay-parity.v1'
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-landing-gate.ts ---
+  createEmptyIdleGovernanceProgramRegistry,
+  type O10IdleGovernanceProgramRegistry,
+} from './automation-idle-governance-program-registry.js';
+
+export interface O10IdleGovernanceProgramWaveLandingGateResult {
+  schema: '10m.agent20.idle-governance-program-wave-landing-gate.v1';
+  waveRound: number;
+  landingOpen: boolean;
+  primaryDispatch: ReturnType<typeof dispatchIdleGovernanceProgramWaveScale>;
+  twinDispatch: ReturnType<typeof dispatchIdleGovernanceProgramWaveScale>;
+  dispatchCompare: ReturnType<typeof compareIdleGovernanceProgramWaveScaleDispatches>;
+  replayParity: ReturnType<typeof verifyIdleGovernanceProgramWaveScaleDispatchReplayParity>;
+  landingMarkdown: string;
+  summaryLine: string;
+}
+
+/** Round-23 landing gate: twin dispatch + compare + replay parity for origin landing. */
+export function gateIdleGovernanceProgramWaveLanding(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number,
+  waveRound: number,
+  projectedLocHint: number,
+  priorRegistry: O10IdleGovernanceProgramRegistry = createEmptyIdleGovernanceProgramRegistry()
+): O10IdleGovernanceProgramWaveLandingGateResult {
+  const primaryDispatch = dispatchIdleGovernanceProgramWaveScale(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    projectedLocHint,
+    priorRegistry
+  );
+  const twinDispatch = dispatchIdleGovernanceProgramWaveScale(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    projectedLocHint,
+    priorRegistry
+  );
+  const dispatchCompare = compareIdleGovernanceProgramWaveScaleDispatches(
+    primaryDispatch,
+    twinDispatch
+  );
+  const replayParity = verifyIdleGovernanceProgramWaveScaleDispatchReplayParity(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    waveRound,
+    projectedLocHint,
+    primaryDispatch,
+    priorRegistry
+  );
+
+  const landingOpen =
+    primaryDispatch.dispatchReady && dispatchCompare.parityOk && replayParity.replayParityOk;
+
+  const landingMarkdown = [
+    '# Agent 20 idle governance wave landing gate',
+    '',
+    `- landing_open=${landingOpen}`,
+    `- ${dispatchCompare.summaryLine}`,
+    `- ${replayParity.summaryLine}`,
+    '',
+    primaryDispatch.dispatchMarkdown,
+  ].join('\n');
+
+  const summaryLine = [
+    'gov_program_wave_landing_gate',
+    `round=${waveRound}`,
+    `open=${landingOpen}`,
+    dispatchCompare.summaryLine,
+    replayParity.summaryLine,
+  ].join(' | ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-landing-gate.v1',
+    waveRound,
+    landingOpen,
+    primaryDispatch,
+    twinDispatch,
+    dispatchCompare,
+    replayParity,
+    landingMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveLandingGateSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'land1',
+    name: 'Landing gate',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const gate = gateIdleGovernanceProgramWaveLanding(calmSpec, sampleRule, 1, 3, 23, 1_448_902);
+  push(
+    'gov_prog_land_gate_calm',
+    'calm landing gate opens with dispatch parity',
+    gate.landingOpen === true &&
+      gate.dispatchCompare.parityOk === true &&
+      gate.replayParity.replayParityOk === true
+  );
+
+  const gate2 = gateIdleGovernanceProgramWaveLanding(
+    calmSpec,
+    sampleRule,
+    3,
+    2,
+    23,
+    1_448_902,
+    gate.primaryDispatch.primaryCloseout.primaryGate.primaryExport.run.primaryGate.primaryCloseout
+      .subject.executive.director.operations.registry
+  );
+  push(
+    'gov_prog_land_gate_chain',
+    'chained landing gate accumulates registry',
+    gate2.primaryDispatch.primaryCloseout.primaryGate.primaryExport.run.primaryGate.primaryCloseout
+      .subject.executive.director.registryRollup.entryCount === 2 &&
+      gate2.landingMarkdown.includes('landing gate')
+  );
+
+  push(
+    'gov_prog_land_gate_schema',
+    'landing gate schema marker',
+    gate.schema === '10m.agent20.idle-governance-program-wave-landing-gate.v1'
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -10812,6 +11220,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramWaveCycleCloseoutCompareSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveProjectionRollupSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveScaleDispatchSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveScaleDispatchCompareSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveScaleDispatchReplayParitySelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveLandingGateSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
