@@ -35,6 +35,9 @@ import {
   evaluateWorkstreamBarriers,
   trackWorkstreamBarrierSince,
 } from './workstream-barrier-monitor.ts';
+import { computeRoleChurnIndex } from './role-churn-index.ts';
+import { evaluateLeaseExpiry } from './lease-expiry-watchdog.ts';
+import { computeCoordinationComposite } from './coordination-composite-score.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -160,6 +163,27 @@ export function sanitizeTeamMultiAgentCoordinationState(
         metaRaw.workstreamBarrierSince && typeof metaRaw.workstreamBarrierSince === 'object'
           ? (metaRaw.workstreamBarrierSince as Record<string, number>)
           : undefined,
+      roleChurnIndex:
+        typeof metaRaw.roleChurnIndex === 'number' ? metaRaw.roleChurnIndex : undefined,
+      roleChurnActorIds: Array.isArray(metaRaw.roleChurnActorIds)
+        ? metaRaw.roleChurnActorIds.map(String).slice(0, 8)
+        : undefined,
+      leaseHealthScore:
+        typeof metaRaw.leaseHealthScore === 'number' ? metaRaw.leaseHealthScore : undefined,
+      expiringLeaseIds: Array.isArray(metaRaw.expiringLeaseIds)
+        ? metaRaw.expiringLeaseIds.map(String).slice(0, 8)
+        : undefined,
+      expiredLeaseIds: Array.isArray(metaRaw.expiredLeaseIds)
+        ? metaRaw.expiredLeaseIds.map(String).slice(0, 8)
+        : undefined,
+      coordinationCompositeScore:
+        typeof metaRaw.coordinationCompositeScore === 'number'
+          ? metaRaw.coordinationCompositeScore
+          : undefined,
+      coordinationWeakestDimension:
+        typeof metaRaw.coordinationWeakestDimension === 'string'
+          ? metaRaw.coordinationWeakestDimension
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -280,6 +304,23 @@ export function evaluateTeamMultiAgentLayer(
   );
   workstreamBarriers.notes.forEach(n => diagnostics.push(n));
 
+  const roleChurn = computeRoleChurnIndex(previous?.roles ?? null, roles);
+  roleChurn.notes.forEach(n => diagnostics.push(n));
+
+  const leaseExpiry = evaluateLeaseExpiry(inputs.turn, coordination.leases);
+  leaseExpiry.notes.forEach(n => diagnostics.push(n));
+
+  const coordinationComposite = computeCoordinationComposite({
+    handoffSlaCompliance: handoffSla.complianceScore,
+    handoffReadinessAverage: handoffReadiness.averageReadiness,
+    mutexStabilityIndex: mutexStability.stabilityIndex,
+    workstreamBarrierCompliance: workstreamBarriers.barrierComplianceScore,
+    capacityBalanceScore: capacityLedger.balanceScore,
+    leaseHealthScore: leaseExpiry.leaseHealthScore,
+    roleChurnIndex: roleChurn.churnIndex,
+  });
+  coordinationComposite.notes.forEach(n => diagnostics.push(n));
+
   state = {
     ...state,
     diagnostics,
@@ -306,6 +347,13 @@ export function evaluateTeamMultiAgentLayer(
       workstreamBarrierCompliance: workstreamBarriers.barrierComplianceScore,
       stalledWorkstreamIds: workstreamBarriers.stalledWorkstreamIds,
       workstreamBarrierSince: barrierSince,
+      roleChurnIndex: roleChurn.churnIndex,
+      roleChurnActorIds: roleChurn.churnedActorIds,
+      leaseHealthScore: leaseExpiry.leaseHealthScore,
+      expiringLeaseIds: leaseExpiry.expiringLeaseIds,
+      expiredLeaseIds: leaseExpiry.expiredLeaseIds,
+      coordinationCompositeScore: coordinationComposite.compositeScore,
+      coordinationWeakestDimension: coordinationComposite.weakestDimension,
     },
   };
 

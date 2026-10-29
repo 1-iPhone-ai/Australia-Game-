@@ -243,6 +243,13 @@ export interface TeamMultiAgentCoordinationMeta {
   workstreamBarrierCompliance?: number;
   stalledWorkstreamIds?: string[];
   workstreamBarrierSince?: Record<string, number>;
+  roleChurnIndex?: number;
+  roleChurnActorIds?: string[];
+  leaseHealthScore?: number;
+  expiringLeaseIds?: string[];
+  expiredLeaseIds?: string[];
+  coordinationCompositeScore?: number;
+  coordinationWeakestDimension?: string;
 }
 
 export const AGENT18_LIMITS = {

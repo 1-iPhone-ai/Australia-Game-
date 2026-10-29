@@ -247,6 +247,13 @@ export interface TeamMultiAgentCoordinationMeta {
   workstreamBarrierCompliance?: number;
   stalledWorkstreamIds?: string[];
   workstreamBarrierSince?: Record<string, number>;
+  roleChurnIndex?: number;
+  roleChurnActorIds?: string[];
+  leaseHealthScore?: number;
+  expiringLeaseIds?: string[];
+  expiredLeaseIds?: string[];
+  coordinationCompositeScore?: number;
+  coordinationWeakestDimension?: string;
 }
 
 export const AGENT18_LIMITS = {
@@ -1490,6 +1497,36 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (typeof state.meta.roleChurnIndex === 'number' && state.meta.roleChurnIndex >= 50) {
+    push({
+      severity: 'warning',
+      message: `High role churn (${state.meta.roleChurnIndex}) on ${(state.meta.roleChurnActorIds || []).join(', ') || 'actors'}`,
+      actorIds: state.meta.roleChurnActorIds || [],
+      regionId: null,
+    });
+  }
+
+  if (state.meta.expiredLeaseIds && state.meta.expiredLeaseIds.length > 0) {
+    push({
+      severity: 'warning',
+      message: `Expired leases: ${state.meta.expiredLeaseIds.join(', ')}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.coordinationCompositeScore === 'number' &&
+    state.meta.coordinationCompositeScore < 55
+  ) {
+    push({
+      severity: 'warning',
+      message: `Low coordination composite (${state.meta.coordinationCompositeScore}); weakest: ${state.meta.coordinationWeakestDimension || 'unknown'}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
@@ -1805,6 +1842,27 @@ export function sanitizeTeamMultiAgentCoordinationState(
         metaRaw.workstreamBarrierSince && typeof metaRaw.workstreamBarrierSince === 'object'
           ? (metaRaw.workstreamBarrierSince as Record<string, number>)
           : undefined,
+      roleChurnIndex:
+        typeof metaRaw.roleChurnIndex === 'number' ? metaRaw.roleChurnIndex : undefined,
+      roleChurnActorIds: Array.isArray(metaRaw.roleChurnActorIds)
+        ? metaRaw.roleChurnActorIds.map(String).slice(0, 8)
+        : undefined,
+      leaseHealthScore:
+        typeof metaRaw.leaseHealthScore === 'number' ? metaRaw.leaseHealthScore : undefined,
+      expiringLeaseIds: Array.isArray(metaRaw.expiringLeaseIds)
+        ? metaRaw.expiringLeaseIds.map(String).slice(0, 8)
+        : undefined,
+      expiredLeaseIds: Array.isArray(metaRaw.expiredLeaseIds)
+        ? metaRaw.expiredLeaseIds.map(String).slice(0, 8)
+        : undefined,
+      coordinationCompositeScore:
+        typeof metaRaw.coordinationCompositeScore === 'number'
+          ? metaRaw.coordinationCompositeScore
+          : undefined,
+      coordinationWeakestDimension:
+        typeof metaRaw.coordinationWeakestDimension === 'string'
+          ? metaRaw.coordinationWeakestDimension
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -1925,6 +1983,23 @@ export function evaluateTeamMultiAgentLayer(
   );
   workstreamBarriers.notes.forEach(n => diagnostics.push(n));
 
+  const roleChurn = computeRoleChurnIndex(previous?.roles ?? null, roles);
+  roleChurn.notes.forEach(n => diagnostics.push(n));
+
+  const leaseExpiry = evaluateLeaseExpiry(inputs.turn, coordination.leases);
+  leaseExpiry.notes.forEach(n => diagnostics.push(n));
+
+  const coordinationComposite = computeCoordinationComposite({
+    handoffSlaCompliance: handoffSla.complianceScore,
+    handoffReadinessAverage: handoffReadiness.averageReadiness,
+    mutexStabilityIndex: mutexStability.stabilityIndex,
+    workstreamBarrierCompliance: workstreamBarriers.barrierComplianceScore,
+    capacityBalanceScore: capacityLedger.balanceScore,
+    leaseHealthScore: leaseExpiry.leaseHealthScore,
+    roleChurnIndex: roleChurn.churnIndex,
+  });
+  coordinationComposite.notes.forEach(n => diagnostics.push(n));
+
   state = {
     ...state,
     diagnostics,
@@ -1951,6 +2026,13 @@ export function evaluateTeamMultiAgentLayer(
       workstreamBarrierCompliance: workstreamBarriers.barrierComplianceScore,
       stalledWorkstreamIds: workstreamBarriers.stalledWorkstreamIds,
       workstreamBarrierSince: barrierSince,
+      roleChurnIndex: roleChurn.churnIndex,
+      roleChurnActorIds: roleChurn.churnedActorIds,
+      leaseHealthScore: leaseExpiry.leaseHealthScore,
+      expiringLeaseIds: leaseExpiry.expiringLeaseIds,
+      expiredLeaseIds: leaseExpiry.expiredLeaseIds,
+      coordinationCompositeScore: coordinationComposite.compositeScore,
+      coordinationWeakestDimension: coordinationComposite.weakestDimension,
     },
   };
 
@@ -2108,6 +2190,8 @@ export function bumpPersistTracker(
 
 
 // --- source: dual-team-coordination.ts ---
+  combineDualTeamCoordinationComposite,
+} from './coordination-composite-score.ts';
   auditCrossTeamMutexIsolation,
   assertTasksTeamScoped,
   teamActorScope,
@@ -2124,6 +2208,9 @@ export interface DualTeamMultiAgentResult {
   byTeam: Record<string, TeamMultiAgentLayerState>;
   handoffSlaCombinedCompliance: number;
   mutexStabilityCombined: number;
+  coordinationCompositeCombined: number;
+  roleChurnCombined: number;
+  leaseHealthCombined: number;
 }
 
 /**
@@ -2159,6 +2246,9 @@ export function evaluateDualTeamMultiAgentLayers(
       byTeam: { [friendlyInputs.teamId]: friendly.state },
       handoffSlaCombinedCompliance: friendlySla.complianceScore,
       mutexStabilityCombined: friendly.state.meta.mutexStabilityIndex ?? 100,
+      coordinationCompositeCombined: friendly.state.meta.coordinationCompositeScore ?? 100,
+      roleChurnCombined: friendly.state.meta.roleChurnIndex ?? 0,
+      leaseHealthCombined: friendly.state.meta.leaseHealthScore ?? 100,
     };
   }
 
@@ -2210,6 +2300,38 @@ export function evaluateDualTeamMultiAgentLayers(
         volatileRegionIds: enemy.state.meta.volatileMutexRegionIds ?? [],
         stableRegionCount: 0,
         trackedTurns: enemy.state.meta.mutexHistory.length,
+        notes: [],
+      },
+    ),
+    coordinationCompositeCombined: combineDualTeamCoordinationComposite(
+      friendly.state.meta.coordinationCompositeScore ?? 100,
+      enemy.state.meta.coordinationCompositeScore ?? 100,
+    ),
+    roleChurnCombined: combineDualTeamRoleChurn(
+      {
+        churnIndex: friendly.state.meta.roleChurnIndex ?? 0,
+        churnedActorIds: friendly.state.meta.roleChurnActorIds ?? [],
+        stableActorCount: 0,
+        notes: [],
+      },
+      {
+        churnIndex: enemy.state.meta.roleChurnIndex ?? 0,
+        churnedActorIds: enemy.state.meta.roleChurnActorIds ?? [],
+        stableActorCount: 0,
+        notes: [],
+      },
+    ),
+    leaseHealthCombined: combineDualTeamLeaseHealth(
+      {
+        leaseHealthScore: friendly.state.meta.leaseHealthScore ?? 100,
+        expiringLeaseIds: friendly.state.meta.expiringLeaseIds ?? [],
+        expiredLeaseIds: friendly.state.meta.expiredLeaseIds ?? [],
+        notes: [],
+      },
+      {
+        leaseHealthScore: enemy.state.meta.leaseHealthScore ?? 100,
+        expiringLeaseIds: enemy.state.meta.expiringLeaseIds ?? [],
+        expiredLeaseIds: enemy.state.meta.expiredLeaseIds ?? [],
         notes: [],
       },
     ),
@@ -2741,6 +2863,222 @@ export function trackWorkstreamBarrierSince(
     }
   });
   return next;
+}
+
+
+// --- source: role-churn-index.ts ---
+
+export interface RoleChurnReport {
+  churnIndex: number;
+  churnedActorIds: string[];
+  stableActorCount: number;
+  notes: string[];
+}
+
+/**
+ * Measure how many actors changed primary role since the previous evaluation.
+ */
+export function computeRoleChurnIndex(
+  previousRoles: RoleAssignment[] | null | undefined,
+  currentRoles: RoleAssignment[],
+): RoleChurnReport {
+  if (!previousRoles || previousRoles.length === 0) {
+    return {
+      churnIndex: 0,
+      churnedActorIds: [],
+      stableActorCount: currentRoles.length,
+      notes: [],
+    };
+  }
+
+  const prevByActor = new Map(previousRoles.map(r => [r.actorId, r]));
+  const churnedActorIds: string[] = [];
+  const notes: string[] = [];
+
+  currentRoles.forEach(role => {
+    const prev = prevByActor.get(role.actorId);
+    if (!prev) return;
+    if (prev.primaryRole !== role.primaryRole) {
+      churnedActorIds.push(role.actorId);
+      notes.push(
+        `Actor ${role.actorId} role churn ${prev.primaryRole} → ${role.primaryRole}`,
+      );
+    }
+  });
+
+  const compared = currentRoles.filter(r => prevByActor.has(r.actorId)).length;
+  const stableActorCount = Math.max(0, compared - churnedActorIds.length);
+  const churnRate = compared === 0 ? 0 : churnedActorIds.length / compared;
+  const churnIndex = Math.round(Math.min(100, churnRate * 100));
+
+  return {
+    churnIndex,
+    churnedActorIds: churnedActorIds.slice(0, 8),
+    stableActorCount,
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamRoleChurn(
+  friendly: RoleChurnReport,
+  enemy: RoleChurnReport | null,
+): number {
+  if (!enemy) return friendly.churnIndex;
+  return Math.round((friendly.churnIndex + enemy.churnIndex) / 2);
+}
+
+
+// --- source: lease-expiry-watchdog.ts ---
+
+export interface LeaseExpiryReport {
+  leaseHealthScore: number;
+  expiringLeaseIds: string[];
+  expiredLeaseIds: string[];
+  notes: string[];
+}
+
+export interface LeaseExpiryPolicy {
+  warnTurnsBeforeExpiry: number;
+}
+
+const DEFAULT_POLICY: LeaseExpiryPolicy = {
+  warnTurnsBeforeExpiry: 1,
+};
+
+/**
+ * Score lease portfolio health: expired leases and those expiring within a turn window.
+ */
+export function evaluateLeaseExpiry(
+  turn: number,
+  leases: CoordinationLease[],
+  policy: Partial<LeaseExpiryPolicy> = {},
+): LeaseExpiryReport {
+  const warnWindow = policy.warnTurnsBeforeExpiry ?? DEFAULT_POLICY.warnTurnsBeforeExpiry;
+  const scoped = leases.slice(0, AGENT18_LIMITS.maxLeases);
+  const expiringLeaseIds: string[] = [];
+  const expiredLeaseIds: string[] = [];
+  const notes: string[] = [];
+
+  scoped.forEach(lease => {
+    if (lease.expiresTurn === null) return;
+    if (lease.expiresTurn < turn) {
+      expiredLeaseIds.push(lease.id);
+      notes.push(`Lease ${lease.id} expired at turn ${lease.expiresTurn}`);
+      return;
+    }
+    const remaining = lease.expiresTurn - turn;
+    if (remaining <= warnWindow) {
+      expiringLeaseIds.push(lease.id);
+      notes.push(`Lease ${lease.id} expires in ${remaining} turn(s)`);
+    }
+  });
+
+  const problemCount = expiredLeaseIds.length + expiringLeaseIds.length;
+  const leaseHealthScore =
+    scoped.length === 0
+      ? 100
+      : Math.max(0, Math.round(100 * (1 - problemCount / Math.max(1, scoped.length))));
+
+  return {
+    leaseHealthScore,
+    expiringLeaseIds: expiringLeaseIds.slice(0, 8),
+    expiredLeaseIds: expiredLeaseIds.slice(0, 8),
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamLeaseHealth(
+  friendly: LeaseExpiryReport,
+  enemy: LeaseExpiryReport | null,
+): number {
+  if (!enemy) return friendly.leaseHealthScore;
+  return Math.round((friendly.leaseHealthScore + enemy.leaseHealthScore) / 2);
+}
+
+
+// --- source: coordination-composite-score.ts ---
+export interface CoordinationCompositeInputs {
+  handoffSlaCompliance: number;
+  handoffReadinessAverage: number;
+  mutexStabilityIndex: number;
+  workstreamBarrierCompliance: number;
+  capacityBalanceScore?: number;
+  leaseHealthScore?: number;
+  roleChurnIndex?: number;
+}
+
+export interface CoordinationCompositeReport {
+  compositeScore: number;
+  weakestDimension: string;
+  notes: string[];
+}
+
+const WEIGHTS = {
+  handoffSla: 0.18,
+  handoffReadiness: 0.16,
+  mutexStability: 0.2,
+  workstreamBarrier: 0.16,
+  capacityBalance: 0.12,
+  leaseHealth: 0.1,
+  roleChurn: 0.08,
+} as const;
+
+function clampScore(value: number | undefined, fallback: number): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) return fallback;
+  return Math.max(0, Math.min(100, value));
+}
+
+/**
+ * Weighted rollup of round-4/5/6 coordination metrics for dashboards and dual-team summaries.
+ */
+export function computeCoordinationComposite(
+  inputs: CoordinationCompositeInputs,
+): CoordinationCompositeReport {
+  const sla = clampScore(inputs.handoffSlaCompliance, 100);
+  const readiness = clampScore(inputs.handoffReadinessAverage, 100);
+  const mutex = clampScore(inputs.mutexStabilityIndex, 100);
+  const barrier = clampScore(inputs.workstreamBarrierCompliance, 100);
+  const capacity = clampScore(inputs.capacityBalanceScore, 100);
+  const lease = clampScore(inputs.leaseHealthScore, 100);
+  const churnPenalty = clampScore(inputs.roleChurnIndex, 0);
+  const roleStability = 100 - churnPenalty;
+
+  const dimensions: Array<{ key: string; score: number; weight: number }> = [
+    { key: 'handoff_sla', score: sla, weight: WEIGHTS.handoffSla },
+    { key: 'handoff_readiness', score: readiness, weight: WEIGHTS.handoffReadiness },
+    { key: 'mutex_stability', score: mutex, weight: WEIGHTS.mutexStability },
+    { key: 'workstream_barrier', score: barrier, weight: WEIGHTS.workstreamBarrier },
+    { key: 'capacity_balance', score: capacity, weight: WEIGHTS.capacityBalance },
+    { key: 'lease_health', score: lease, weight: WEIGHTS.leaseHealth },
+    { key: 'role_stability', score: roleStability, weight: WEIGHTS.roleChurn },
+  ];
+
+  const compositeScore = Math.round(
+    dimensions.reduce((sum, d) => sum + d.score * d.weight, 0),
+  );
+
+  const weakest = dimensions.reduce((min, d) => (d.score < min.score ? d : min), dimensions[0]);
+  const notes: string[] = [];
+  if (weakest.score < 60) {
+    notes.push(`Weakest coordination dimension: ${weakest.key} (${weakest.score})`);
+  }
+  if (compositeScore < 70) {
+    notes.push(`Coordination composite below target (${compositeScore}/100)`);
+  }
+
+  return {
+    compositeScore,
+    weakestDimension: weakest.key,
+    notes: notes.slice(0, 4),
+  };
+}
+
+export function combineDualTeamCoordinationComposite(
+  friendly: number,
+  enemy: number | null,
+): number {
+  if (enemy === null) return friendly;
+  return Math.round((friendly + enemy) / 2);
 }
 
 
@@ -3877,6 +4215,112 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
     });
     const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
     return typeof dual.mutexStabilityCombined === 'number';
+  });
+
+  check(results, 'a18_role_churn_detect', 'Role churn: primary role change increments churn index', () => {
+    const prev = [{ actorId: 'player', primaryRole: 'controller' as const, secondaryRole: null, responsibility: '', reason: '', taskIds: [], startTurn: 1, reviewCondition: '', temporary: false, confidence: 1, explicit: false, exclusiveSlotId: null }];
+    const next = [{ ...prev[0], primaryRole: 'explorer' as const }];
+    const report = computeRoleChurnIndex(prev, next);
+    return report.churnIndex === 100 && report.churnedActorIds.includes('player');
+  });
+
+  check(results, 'a18_role_churn_stable', 'Role churn: unchanged roles score zero churn', () => {
+    const roles = [{ actorId: 'mate', primaryRole: 'earner' as const, secondaryRole: null, responsibility: '', reason: '', taskIds: [], startTurn: 1, reviewCondition: '', temporary: false, confidence: 1, explicit: false, exclusiveSlotId: null }];
+    const report = computeRoleChurnIndex(roles, roles);
+    return report.churnIndex === 0 && report.stableActorCount === 1;
+  });
+
+  check(results, 'a18_lease_expiry_warn', 'Lease watchdog: near-expiry lease flagged', () => {
+    const report = evaluateLeaseExpiry(5, [
+      {
+        id: 'lease1',
+        kind: 'region_exclusive',
+        holderActorId: 'player',
+        regionId: 'NSW',
+        taskId: 't1',
+        sinceTurn: 1,
+        expiresTurn: 5,
+        reason: 'test',
+      },
+    ]);
+    return report.expiringLeaseIds.includes('lease1') && report.leaseHealthScore < 100;
+  });
+
+  check(results, 'a18_lease_expired', 'Lease watchdog: expired lease lowers health score', () => {
+    const report = evaluateLeaseExpiry(6, [
+      {
+        id: 'lease_old',
+        kind: 'handoff_pending',
+        holderActorId: 'mate',
+        regionId: null,
+        taskId: null,
+        sinceTurn: 2,
+        expiresTurn: 4,
+        reason: 'test',
+      },
+    ]);
+    return report.expiredLeaseIds.includes('lease_old') && report.leaseHealthScore === 0;
+  });
+
+  check(results, 'a18_coordination_composite', 'Coordination composite: perfect inputs score 100', () => {
+    const report = computeCoordinationComposite({
+      handoffSlaCompliance: 100,
+      handoffReadinessAverage: 100,
+      mutexStabilityIndex: 100,
+      workstreamBarrierCompliance: 100,
+      capacityBalanceScore: 100,
+      leaseHealthScore: 100,
+      roleChurnIndex: 0,
+    });
+    return report.compositeScore === 100;
+  });
+
+  check(results, 'a18_coordination_composite_weak', 'Coordination composite: weak SLA surfaces weakest dimension', () => {
+    const report = computeCoordinationComposite({
+      handoffSlaCompliance: 10,
+      handoffReadinessAverage: 100,
+      mutexStabilityIndex: 100,
+      workstreamBarrierCompliance: 100,
+    });
+    return report.weakestDimension === 'handoff_sla' && report.compositeScore < 90;
+  });
+
+  check(results, 'a18_eval_round6_meta', 'Layer: round-6 meta exposes churn, lease, composite fields', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.roleChurnIndex === 'number' &&
+      typeof m.leaseHealthScore === 'number' &&
+      typeof m.coordinationCompositeScore === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_role_churn', 'Audit: high role churn surfaces warning finding', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = {
+      ...ev.state,
+      meta: { ...ev.state.meta, roleChurnIndex: 75, roleChurnActorIds: ['player'] },
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /role churn/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round6_combined', 'Dual team: round-6 combined composite and lease health exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.coordinationCompositeCombined === 'number' &&
+      typeof dual.leaseHealthCombined === 'number' &&
+      typeof dual.roleChurnCombined === 'number'
+    );
   });
 
   return results;

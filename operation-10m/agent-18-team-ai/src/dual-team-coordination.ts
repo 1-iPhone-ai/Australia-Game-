@@ -1,5 +1,10 @@
 import { evaluateHandoffSla, summarizeDualTeamHandoffSla } from './handoff-sla-monitor.ts';
 import { combineDualTeamMutexStability } from './mutex-stability-index.ts';
+import {
+  combineDualTeamCoordinationComposite,
+} from './coordination-composite-score.ts';
+import { combineDualTeamLeaseHealth } from './lease-expiry-watchdog.ts';
+import { combineDualTeamRoleChurn } from './role-churn-index.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -19,6 +24,9 @@ export interface DualTeamMultiAgentResult {
   byTeam: Record<string, TeamMultiAgentLayerState>;
   handoffSlaCombinedCompliance: number;
   mutexStabilityCombined: number;
+  coordinationCompositeCombined: number;
+  roleChurnCombined: number;
+  leaseHealthCombined: number;
 }
 
 /**
@@ -54,6 +62,9 @@ export function evaluateDualTeamMultiAgentLayers(
       byTeam: { [friendlyInputs.teamId]: friendly.state },
       handoffSlaCombinedCompliance: friendlySla.complianceScore,
       mutexStabilityCombined: friendly.state.meta.mutexStabilityIndex ?? 100,
+      coordinationCompositeCombined: friendly.state.meta.coordinationCompositeScore ?? 100,
+      roleChurnCombined: friendly.state.meta.roleChurnIndex ?? 0,
+      leaseHealthCombined: friendly.state.meta.leaseHealthScore ?? 100,
     };
   }
 
@@ -105,6 +116,38 @@ export function evaluateDualTeamMultiAgentLayers(
         volatileRegionIds: enemy.state.meta.volatileMutexRegionIds ?? [],
         stableRegionCount: 0,
         trackedTurns: enemy.state.meta.mutexHistory.length,
+        notes: [],
+      },
+    ),
+    coordinationCompositeCombined: combineDualTeamCoordinationComposite(
+      friendly.state.meta.coordinationCompositeScore ?? 100,
+      enemy.state.meta.coordinationCompositeScore ?? 100,
+    ),
+    roleChurnCombined: combineDualTeamRoleChurn(
+      {
+        churnIndex: friendly.state.meta.roleChurnIndex ?? 0,
+        churnedActorIds: friendly.state.meta.roleChurnActorIds ?? [],
+        stableActorCount: 0,
+        notes: [],
+      },
+      {
+        churnIndex: enemy.state.meta.roleChurnIndex ?? 0,
+        churnedActorIds: enemy.state.meta.roleChurnActorIds ?? [],
+        stableActorCount: 0,
+        notes: [],
+      },
+    ),
+    leaseHealthCombined: combineDualTeamLeaseHealth(
+      {
+        leaseHealthScore: friendly.state.meta.leaseHealthScore ?? 100,
+        expiringLeaseIds: friendly.state.meta.expiringLeaseIds ?? [],
+        expiredLeaseIds: friendly.state.meta.expiredLeaseIds ?? [],
+        notes: [],
+      },
+      {
+        leaseHealthScore: enemy.state.meta.leaseHealthScore ?? 100,
+        expiringLeaseIds: enemy.state.meta.expiringLeaseIds ?? [],
+        expiredLeaseIds: enemy.state.meta.expiredLeaseIds ?? [],
         notes: [],
       },
     ),

@@ -21,4 +21,7 @@ export * from './directive-quota-guard.ts';
 export * from './handoff-readiness-scorer.ts';
 export * from './mutex-stability-index.ts';
 export * from './workstream-barrier-monitor.ts';
+export * from './role-churn-index.ts';
+export * from './lease-expiry-watchdog.ts';
+export * from './coordination-composite-score.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

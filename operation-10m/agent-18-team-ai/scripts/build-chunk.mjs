@@ -32,6 +32,9 @@ const FILES = [
   'handoff-readiness-scorer.ts',
   'mutex-stability-index.ts',
   'workstream-barrier-monitor.ts',
+  'role-churn-index.ts',
+  'lease-expiry-watchdog.ts',
+  'coordination-composite-score.ts',
   'self-tests.ts',
 ];
 

@@ -43,6 +43,9 @@ import {
   evaluateWorkstreamBarriers,
   trackWorkstreamBarrierSince,
 } from './workstream-barrier-monitor.ts';
+import { computeRoleChurnIndex } from './role-churn-index.ts';
+import { evaluateLeaseExpiry } from './lease-expiry-watchdog.ts';
+import { computeCoordinationComposite } from './coordination-composite-score.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -1148,6 +1151,112 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
     });
     const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
     return typeof dual.mutexStabilityCombined === 'number';
+  });
+
+  check(results, 'a18_role_churn_detect', 'Role churn: primary role change increments churn index', () => {
+    const prev = [{ actorId: 'player', primaryRole: 'controller' as const, secondaryRole: null, responsibility: '', reason: '', taskIds: [], startTurn: 1, reviewCondition: '', temporary: false, confidence: 1, explicit: false, exclusiveSlotId: null }];
+    const next = [{ ...prev[0], primaryRole: 'explorer' as const }];
+    const report = computeRoleChurnIndex(prev, next);
+    return report.churnIndex === 100 && report.churnedActorIds.includes('player');
+  });
+
+  check(results, 'a18_role_churn_stable', 'Role churn: unchanged roles score zero churn', () => {
+    const roles = [{ actorId: 'mate', primaryRole: 'earner' as const, secondaryRole: null, responsibility: '', reason: '', taskIds: [], startTurn: 1, reviewCondition: '', temporary: false, confidence: 1, explicit: false, exclusiveSlotId: null }];
+    const report = computeRoleChurnIndex(roles, roles);
+    return report.churnIndex === 0 && report.stableActorCount === 1;
+  });
+
+  check(results, 'a18_lease_expiry_warn', 'Lease watchdog: near-expiry lease flagged', () => {
+    const report = evaluateLeaseExpiry(5, [
+      {
+        id: 'lease1',
+        kind: 'region_exclusive',
+        holderActorId: 'player',
+        regionId: 'NSW',
+        taskId: 't1',
+        sinceTurn: 1,
+        expiresTurn: 5,
+        reason: 'test',
+      },
+    ]);
+    return report.expiringLeaseIds.includes('lease1') && report.leaseHealthScore < 100;
+  });
+
+  check(results, 'a18_lease_expired', 'Lease watchdog: expired lease lowers health score', () => {
+    const report = evaluateLeaseExpiry(6, [
+      {
+        id: 'lease_old',
+        kind: 'handoff_pending',
+        holderActorId: 'mate',
+        regionId: null,
+        taskId: null,
+        sinceTurn: 2,
+        expiresTurn: 4,
+        reason: 'test',
+      },
+    ]);
+    return report.expiredLeaseIds.includes('lease_old') && report.leaseHealthScore === 0;
+  });
+
+  check(results, 'a18_coordination_composite', 'Coordination composite: perfect inputs score 100', () => {
+    const report = computeCoordinationComposite({
+      handoffSlaCompliance: 100,
+      handoffReadinessAverage: 100,
+      mutexStabilityIndex: 100,
+      workstreamBarrierCompliance: 100,
+      capacityBalanceScore: 100,
+      leaseHealthScore: 100,
+      roleChurnIndex: 0,
+    });
+    return report.compositeScore === 100;
+  });
+
+  check(results, 'a18_coordination_composite_weak', 'Coordination composite: weak SLA surfaces weakest dimension', () => {
+    const report = computeCoordinationComposite({
+      handoffSlaCompliance: 10,
+      handoffReadinessAverage: 100,
+      mutexStabilityIndex: 100,
+      workstreamBarrierCompliance: 100,
+    });
+    return report.weakestDimension === 'handoff_sla' && report.compositeScore < 90;
+  });
+
+  check(results, 'a18_eval_round6_meta', 'Layer: round-6 meta exposes churn, lease, composite fields', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.roleChurnIndex === 'number' &&
+      typeof m.leaseHealthScore === 'number' &&
+      typeof m.coordinationCompositeScore === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_role_churn', 'Audit: high role churn surfaces warning finding', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = {
+      ...ev.state,
+      meta: { ...ev.state.meta, roleChurnIndex: 75, roleChurnActorIds: ['player'] },
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /role churn/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round6_combined', 'Dual team: round-6 combined composite and lease health exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.coordinationCompositeCombined === 'number' &&
+      typeof dual.leaseHealthCombined === 'number' &&
+      typeof dual.roleChurnCombined === 'number'
+    );
   });
 
   return results;
