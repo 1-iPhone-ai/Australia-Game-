@@ -6,11 +6,6 @@
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
-<<<<<<< HEAD
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:architecture": "node tests/source-architecture.mjs"
-=======
     "typecheck": "npm run typecheck:shell && npm run typecheck:game",
     "typecheck:shell": "tsc -p tsconfig.shell.json",
     "typecheck:game": "node scripts/typecheck-game-baseline.mjs",
@@ -18,14 +13,15 @@
     "verify:standalone": "node scripts/verify-standalone-module.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:architecture": "node tests/source-architecture.mjs",
     "verify": "npm run verify:standalone && npm run typecheck && npm run test && npm run build"
->>>>>>> origin/op111/agent-06-devinfra
   },
   "dependencies": {
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
+    "@types/node": "22.15.29",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "5.2.0",

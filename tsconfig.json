@@ -1,21 +1,8 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-<<<<<<< HEAD
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
     "strict": false,
-    "skipLibCheck": true,
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "isolatedModules": true,
     "types": ["vite/client", "vitest/globals"]
-=======
-    "strict": false
->>>>>>> origin/op111/agent-06-devinfra
   },
   "include": ["src", "(V9.4) australia-game-with-ai.tsx"]
 }

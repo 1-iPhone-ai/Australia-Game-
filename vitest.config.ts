@@ -1,10 +1,3 @@
-<<<<<<< HEAD
-import { defineConfig } from "vitest/config";
-
-export default defineConfig({
-  test: {
-    include: ["src/**/*.test.ts"],
-=======
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
@@ -22,7 +15,6 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts"],
->>>>>>> origin/op111/agent-06-devinfra
+    include: ["tests/**/*.test.ts", "src/**/*.test.ts"],
   },
 });
