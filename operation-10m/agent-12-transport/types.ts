@@ -435,8 +435,14 @@ export type RegionalOncologyRadiotherapySupplyStagingPolicy = 'baseline' | 'surg
 
 export type PortAutonomousTugBerthingLogisticsPolicy = 'baseline' | 'expand';
 
+export type GreenHydrogenElectrolyzerExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteOrganTransplantSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortShorePowerColdIroningLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/48';
+  schemaVersion: 'agent12/49';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -786,6 +792,14 @@ export interface TransportInfrastructureState {
   portAutonomousTugBerthingLogisticsShare: number;
   nationalPortAutonomousTugBerthingLogisticsThroughputIndex: number;
   portAutonomousTugBerthingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalGreenHydrogenElectrolyzerExportIndex: number;
+  greenHydrogenElectrolyzerExportByRegion: Record<AuRegionCode, number>;
+  remoteOrganTransplantSupplyStagingShare: number;
+  nationalRemoteOrganTransplantSupplyStagingIndex: number;
+  remoteOrganTransplantSupplyStagingByRegion: Record<AuRegionCode, number>;
+  portShorePowerColdIroningLogisticsShare: number;
+  nationalPortShorePowerColdIroningLogisticsThroughputIndex: number;
+  portShorePowerColdIroningLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -920,6 +934,9 @@ export interface TransportInfrastructureOptions {
   eWasteCriticalMineralsRecoveryExportPolicy?: EWasteCriticalMineralsRecoveryExportPolicy;
   regionalOncologyRadiotherapySupplyStagingPolicy?: RegionalOncologyRadiotherapySupplyStagingPolicy;
   portAutonomousTugBerthingLogisticsPolicy?: PortAutonomousTugBerthingLogisticsPolicy;
+  greenHydrogenElectrolyzerExportPolicy?: GreenHydrogenElectrolyzerExportPolicy;
+  remoteOrganTransplantSupplyStagingPolicy?: RemoteOrganTransplantSupplyStagingPolicy;
+  portShorePowerColdIroningLogisticsPolicy?: PortShorePowerColdIroningLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

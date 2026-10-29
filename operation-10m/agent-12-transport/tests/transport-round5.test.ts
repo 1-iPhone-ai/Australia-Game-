@@ -32,11 +32,11 @@ describe('Agent 12 round 5 catalog', () => {
 });
 
 describe('Agent 12 round 5 systems', () => {
-  it('returns agent12/48 with connectivity, modal balance, and last mile', () => {
+  it('returns agent12/49 with connectivity, modal balance, and last mile', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(25), {
       modalShiftPolicy: 'balanced',
     });
-    assert.equal(state.schemaVersion, 'agent12/48');
+    assert.equal(state.schemaVersion, 'agent12/49');
     assert.ok(state.intercapitalConnectivityIndex >= 0.15);
     assert.ok(state.modalBalanceIndex >= 0.25);
     assert.ok(state.electrifiedFreightShare > 0.1);

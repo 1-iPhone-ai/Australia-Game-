@@ -37,13 +37,13 @@ describe('Agent 12 round 47 catalog', () => {
 });
 
 describe('Agent 12 round 47 systems', () => {
-  it('returns agent12/48 with e-waste, oncology, autonomous tug', () => {
+  it('returns agent12/49 with e-waste, oncology, autonomous tug', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(710), {
       eWasteCriticalMineralsRecoveryExportPolicy: 'accelerate',
       regionalOncologyRadiotherapySupplyStagingPolicy: 'surge',
       portAutonomousTugBerthingLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/48');
+    assert.equal(state.schemaVersion, 'agent12/49');
     assert.ok(state.nationalEWasteCriticalMineralsRecoveryExportIndex >= 5);
     assert.ok(state.nationalRegionalOncologyRadiotherapySupplyStagingIndex >= 6);
     assert.ok(state.portAutonomousTugBerthingLogisticsShare >= 0.03);

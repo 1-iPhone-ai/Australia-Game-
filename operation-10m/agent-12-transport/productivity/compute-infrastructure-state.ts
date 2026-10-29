@@ -754,6 +754,23 @@ import {
   nationalPortAutonomousTugBerthingLogisticsThroughputIndex,
   portAutonomousTugBerthingLogisticsProductivityMultiplier,
 } from './port-autonomous-tug-berthing-logistics-index.ts';
+import {
+  computeGreenHydrogenElectrolyzerExportByRegion,
+  greenHydrogenElectrolyzerExportProductivityMultiplier,
+  nationalGreenHydrogenElectrolyzerExportIndex,
+} from '../network/green-hydrogen-electrolyzer-export-index.ts';
+import {
+  computeRemoteOrganTransplantSupplyStagingByRegion,
+  computeRemoteOrganTransplantSupplyStagingShare,
+  nationalRemoteOrganTransplantSupplyStagingIndex,
+  remoteOrganTransplantSupplyStagingProductivityMultiplier,
+} from '../operations/remote-organ-transplant-supply-staging-index.ts';
+import {
+  computePortShorePowerColdIroningLogisticsShare,
+  computePortShorePowerColdIroningLogisticsThroughputByRegion,
+  nationalPortShorePowerColdIroningLogisticsThroughputIndex,
+  portShorePowerColdIroningLogisticsProductivityMultiplier,
+} from './port-shore-power-cold-ironing-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -2294,6 +2311,40 @@ export function computeTransportInfrastructureState(
     portAutonomousTugBerthingLogisticsShare,
     options?.portAutonomousTugBerthingLogisticsPolicy ?? 'baseline',
   );
+  const greenHydrogenElectrolyzerExportByRegion = computeGreenHydrogenElectrolyzerExportByRegion(ops);
+  const nationalGreenH2 = nationalGreenHydrogenElectrolyzerExportIndex(greenHydrogenElectrolyzerExportByRegion);
+  const greenH2Mult = greenHydrogenElectrolyzerExportProductivityMultiplier(
+    nationalGreenH2,
+    options?.greenHydrogenElectrolyzerExportPolicy ?? 'baseline',
+  );
+  const remoteOrganTransplantSupplyStagingByRegion = computeRemoteOrganTransplantSupplyStagingByRegion(
+    ops,
+    networkStress,
+  );
+  const nationalOrganTransplant = nationalRemoteOrganTransplantSupplyStagingIndex(
+    remoteOrganTransplantSupplyStagingByRegion,
+  );
+  const remoteOrganTransplantSupplyStagingShare = computeRemoteOrganTransplantSupplyStagingShare(
+    ops,
+    options?.remoteOrganTransplantSupplyStagingPolicy ?? 'baseline',
+  );
+  const organTransplantMult = remoteOrganTransplantSupplyStagingProductivityMultiplier(
+    remoteOrganTransplantSupplyStagingShare,
+    options?.remoteOrganTransplantSupplyStagingPolicy ?? 'baseline',
+  );
+  const portShorePowerColdIroningLogisticsThroughputByRegion =
+    computePortShorePowerColdIroningLogisticsThroughputByRegion(ops);
+  const nationalShorePower = nationalPortShorePowerColdIroningLogisticsThroughputIndex(
+    portShorePowerColdIroningLogisticsThroughputByRegion,
+  );
+  const portShorePowerColdIroningLogisticsShare = computePortShorePowerColdIroningLogisticsShare(
+    ops,
+    options?.portShorePowerColdIroningLogisticsPolicy ?? 'baseline',
+  );
+  const shorePowerMult = portShorePowerColdIroningLogisticsProductivityMultiplier(
+    portShorePowerColdIroningLogisticsShare,
+    options?.portShorePowerColdIroningLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2392,6 +2443,9 @@ export function computeTransportInfrastructureState(
     const eWasteBoost = (eWasteCriticalMineralsRecoveryExportByRegion[code] - 5) * 0.0021;
     const oncologyBoost = (regionalOncologyRadiotherapySupplyStagingByRegion[code] - 6) * 0.0017;
     const autonomousTugBoost = (portAutonomousTugBerthingLogisticsThroughputByRegion[code] - 2) * 0.0013;
+    const greenH2Boost = (greenHydrogenElectrolyzerExportByRegion[code] - 5) * 0.002;
+    const organTransplantBoost = (remoteOrganTransplantSupplyStagingByRegion[code] - 6) * 0.0016;
+    const shorePowerBoost = (portShorePowerColdIroningLogisticsThroughputByRegion[code] - 2) * 0.0012;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2489,7 +2543,10 @@ export function computeTransportInfrastructureState(
         droneCargoBoost +
         eWasteBoost +
         oncologyBoost +
-        autonomousTugBoost) *
+        autonomousTugBoost +
+        greenH2Boost +
+        organTransplantBoost +
+        shorePowerBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2585,7 +2642,10 @@ export function computeTransportInfrastructureState(
       droneCargoMult *
       eWasteMult *
       oncologyMult *
-      autonomousTugMult;
+      autonomousTugMult *
+      greenH2Mult *
+      organTransplantMult *
+      shorePowerMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2704,7 +2764,10 @@ export function computeTransportInfrastructureState(
     nationalDroneCargo * 0.003 +
     nationalEWaste * 0.003 +
     nationalOncology * 0.003 +
-    nationalAutonomousTug * 0.003;
+    nationalAutonomousTug * 0.003 +
+    nationalGreenH2 * 0.003 +
+    nationalOrganTransplant * 0.003 +
+    nationalShorePower * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2719,7 +2782,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/48',
+    schemaVersion: 'agent12/49',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -3069,6 +3132,14 @@ export function computeTransportInfrastructureState(
     portAutonomousTugBerthingLogisticsShare,
     nationalPortAutonomousTugBerthingLogisticsThroughputIndex: nationalAutonomousTug,
     portAutonomousTugBerthingLogisticsThroughputByRegion,
+    nationalGreenHydrogenElectrolyzerExportIndex: nationalGreenH2,
+    greenHydrogenElectrolyzerExportByRegion,
+    remoteOrganTransplantSupplyStagingShare,
+    nationalRemoteOrganTransplantSupplyStagingIndex: nationalOrganTransplant,
+    remoteOrganTransplantSupplyStagingByRegion,
+    portShorePowerColdIroningLogisticsShare,
+    nationalPortShorePowerColdIroningLogisticsThroughputIndex: nationalShorePower,
+    portShorePowerColdIroningLogisticsThroughputByRegion,
     computeMs,
   };
 }
