@@ -213,6 +213,22 @@ import {
   dataCentreLogisticsProductivityMultiplier,
   nationalDataCentreLogisticsThroughputIndex,
 } from './data-centre-logistics-index.ts';
+import {
+  computeOffshoreWindLogisticsByRegion,
+  nationalOffshoreWindLogisticsIndex,
+  offshoreWindLogisticsProductivityMultiplier,
+} from '../network/offshore-wind-logistics-index.ts';
+import {
+  batterySupplyProductivityMultiplier,
+  computeBatterySupplyChainByRegion,
+  nationalBatterySupplyChainIndex,
+} from '../operations/battery-supply-chain-index.ts';
+import {
+  computeCruiseTurnaroundShare,
+  computeCruiseTurnaroundThroughputByRegion,
+  cruiseTurnaroundProductivityMultiplier,
+  nationalCruiseTurnaroundThroughputIndex,
+} from './cruise-turnaround-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -848,6 +864,65 @@ export function computeTransportInfrastructureState(
     nationalPacificFeeder * 0.019 +
     nationalDataCentreLogistics * 0.018;
 
+  const offshoreWindLogisticsByRegion = computeOffshoreWindLogisticsByRegion(ops);
+  const nationalOffshoreWind = nationalOffshoreWindLogisticsIndex(offshoreWindLogisticsByRegion);
+  const offshoreMult = offshoreWindLogisticsProductivityMultiplier(
+    nationalOffshoreWind,
+    options?.offshoreWindLogisticsPolicy ?? 'baseline',
+  );
+  const batterySupplyChainByRegion = computeBatterySupplyChainByRegion(ops, networkStress);
+  const nationalBatterySupply = nationalBatterySupplyChainIndex(batterySupplyChainByRegion);
+  const batteryMult = batterySupplyProductivityMultiplier(
+    nationalBatterySupply,
+    options?.batterySupplyChainPolicy ?? 'baseline',
+  );
+  const cruiseTurnaroundThroughputByRegion = computeCruiseTurnaroundThroughputByRegion(ops);
+  const nationalCruiseTurnaround = nationalCruiseTurnaroundThroughputIndex(cruiseTurnaroundThroughputByRegion);
+  const cruiseTurnaroundShare = computeCruiseTurnaroundShare(
+    ops,
+    options?.cruiseTurnaroundPolicy ?? 'baseline',
+  );
+  const cruiseMult = cruiseTurnaroundProductivityMultiplier(
+    cruiseTurnaroundShare,
+    options?.cruiseTurnaroundPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
+    const batteryBoost = (batterySupplyChainByRegion[code] - 16) * 0.0046;
+    const cruiseBoost = (cruiseTurnaroundThroughputByRegion[code] - 2) * 0.0051;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + offshoreBoost + batteryBoost + cruiseBoost) *
+      offshoreMult *
+      batteryMult *
+      cruiseMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023 +
+    nationalDefenceLogistics * 0.022 +
+    nationalDigitalFreight * 0.021 +
+    nationalCriticalMinerals * 0.024 +
+    nationalIndigenousRemoteSupply * 0.019 +
+    nationalGaugeInteroperability * 0.02 +
+    nationalCircularFreight * 0.018 +
+    nationalAgriculturalExport * 0.022 +
+    nationalGreenBunkering * 0.017 +
+    nationalPacificFeeder * 0.019 +
+    nationalDataCentreLogistics * 0.018 +
+    nationalOffshoreWind * 0.017 +
+    nationalBatterySupply * 0.016 +
+    nationalCruiseTurnaround * 0.015;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -861,7 +936,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/16',
+    schemaVersion: 'agent12/17',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -958,6 +1033,13 @@ export function computeTransportInfrastructureState(
     dataCentreLogisticsShare,
     nationalDataCentreLogisticsThroughputIndex: nationalDataCentreLogistics,
     dataCentreLogisticsThroughputByRegion,
+    nationalOffshoreWindLogisticsIndex: nationalOffshoreWind,
+    offshoreWindLogisticsByRegion,
+    nationalBatterySupplyChainIndex: nationalBatterySupply,
+    batterySupplyChainByRegion,
+    cruiseTurnaroundShare,
+    nationalCruiseTurnaroundThroughputIndex: nationalCruiseTurnaround,
+    cruiseTurnaroundThroughputByRegion,
     computeMs,
   };
 }

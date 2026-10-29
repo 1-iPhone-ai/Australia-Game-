@@ -243,8 +243,14 @@ export type MedicalSupplyPolicy = 'baseline' | 'surge';
 
 export type DataCentreLogisticsPolicy = 'baseline' | 'accelerate';
 
+export type OffshoreWindLogisticsPolicy = 'baseline' | 'deploy';
+
+export type BatterySupplyChainPolicy = 'baseline' | 'accelerate';
+
+export type CruiseTurnaroundPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/16';
+  schemaVersion: 'agent12/17';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -341,6 +347,13 @@ export interface TransportInfrastructureState {
   dataCentreLogisticsShare: number;
   nationalDataCentreLogisticsThroughputIndex: number;
   dataCentreLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalOffshoreWindLogisticsIndex: number;
+  offshoreWindLogisticsByRegion: Record<AuRegionCode, number>;
+  nationalBatterySupplyChainIndex: number;
+  batterySupplyChainByRegion: Record<AuRegionCode, number>;
+  cruiseTurnaroundShare: number;
+  nationalCruiseTurnaroundThroughputIndex: number;
+  cruiseTurnaroundThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -379,6 +392,9 @@ export interface TransportInfrastructureOptions {
   pacificFeederPolicy?: PacificFeederPolicy;
   medicalSupplyPolicy?: MedicalSupplyPolicy;
   dataCentreLogisticsPolicy?: DataCentreLogisticsPolicy;
+  offshoreWindLogisticsPolicy?: OffshoreWindLogisticsPolicy;
+  batterySupplyChainPolicy?: BatterySupplyChainPolicy;
+  cruiseTurnaroundPolicy?: CruiseTurnaroundPolicy;
 }
 
 export interface V94ProjectSnapshot {

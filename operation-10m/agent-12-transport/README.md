@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 16
+
+- Schema **`agent12/17`**: offshore wind logistics throughput, battery supply chain readiness, cruise turnaround share (`offshoreWindLogisticsPolicy`, `batterySupplyChainPolicy`, `cruiseTurnaroundPolicy`)
+- Catalog: **234** assets, **62** corridors, **98** scenarios
+- Systems: `network/offshore-wind-logistics-index.ts`, `operations/battery-supply-chain-index.ts`, `productivity/cruise-turnaround-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 15
 
 - Schema **`agent12/16`**: Pacific feeder tradelane throughput, medical supply chain readiness, data-centre logistics share (`pacificFeederPolicy`, `medicalSupplyPolicy`, `dataCentreLogisticsPolicy`)

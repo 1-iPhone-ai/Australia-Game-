@@ -247,8 +247,14 @@ export type MedicalSupplyPolicy = 'baseline' | 'surge';
 
 export type DataCentreLogisticsPolicy = 'baseline' | 'accelerate';
 
+export type OffshoreWindLogisticsPolicy = 'baseline' | 'deploy';
+
+export type BatterySupplyChainPolicy = 'baseline' | 'accelerate';
+
+export type CruiseTurnaroundPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/16';
+  schemaVersion: 'agent12/17';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -345,6 +351,13 @@ export interface TransportInfrastructureState {
   dataCentreLogisticsShare: number;
   nationalDataCentreLogisticsThroughputIndex: number;
   dataCentreLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalOffshoreWindLogisticsIndex: number;
+  offshoreWindLogisticsByRegion: Record<AuRegionCode, number>;
+  nationalBatterySupplyChainIndex: number;
+  batterySupplyChainByRegion: Record<AuRegionCode, number>;
+  cruiseTurnaroundShare: number;
+  nationalCruiseTurnaroundThroughputIndex: number;
+  cruiseTurnaroundThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -383,6 +396,9 @@ export interface TransportInfrastructureOptions {
   pacificFeederPolicy?: PacificFeederPolicy;
   medicalSupplyPolicy?: MedicalSupplyPolicy;
   dataCentreLogisticsPolicy?: DataCentreLogisticsPolicy;
+  offshoreWindLogisticsPolicy?: OffshoreWindLogisticsPolicy;
+  batterySupplyChainPolicy?: BatterySupplyChainPolicy;
+  cruiseTurnaroundPolicy?: CruiseTurnaroundPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1074,6 +1090,47 @@ export const TRANSPORT_CORRIDORS_ROUND15: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round16.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND16: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_sa_offshore_wind_chain',
+    name: 'WA–SA Offshore Wind Chain',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'SA'],
+    requiredTagsByRegion: {
+      WA: ['offshore_wind', 'wind_farm_logistics', 'turbine_staging'],
+      SA: ['offshore_wind', 'offshore_staging', 'wind_farm_logistics'],
+    },
+    productivitySynergyPoints: 6.2,
+    logisticsRelief: 0.036,
+  },
+  {
+    id: 'corr_wa_battery_export_spine',
+    name: 'Western Australia Battery Export Spine',
+    networkKind: 'freight',
+    regionSequence: ['WA'],
+    requiredTagsByRegion: {
+      WA: ['battery_supply', 'lithium_logistics', 'ev_freight'],
+    },
+    productivitySynergyPoints: 6.5,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_qld_nsw_cruise_turnaround',
+    name: 'QLD–NSW Cruise Turnaround Corridor',
+    networkKind: 'mobility',
+    regionSequence: ['QLD', 'NSW'],
+    requiredTagsByRegion: {
+      QLD: ['cruise_turnaround', 'tourism_port', 'passenger_freight'],
+      NSW: ['cruise_turnaround', 'tourism_port'],
+    },
+    productivitySynergyPoints: 5.6,
+    logisticsRelief: 0.033,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1236,6 +1293,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND13,
   ...TRANSPORT_CORRIDORS_ROUND14,
   ...TRANSPORT_CORRIDORS_ROUND15,
+  ...TRANSPORT_CORRIDORS_ROUND16,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -2108,6 +2166,62 @@ export const TRANSPORT_SCENARIOS_ROUND15: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round16.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND16: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_offshore_wind_install_surge',
+    label: 'WA Offshore Wind Install Surge',
+    description: 'Turbine install season overloads Geraldton marshalling berths.',
+    targetRegions: ['WA', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_wa_battery_export_rush',
+    label: 'WA Battery Export Rush',
+    description: 'Lithium concentrate export peaks Pilbara rail and port slots.',
+    targetRegions: ['WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['rail', 'port'],
+  },
+  {
+    id: 'scn_qld_cruise_turnaround_peak',
+    label: 'Queensland Cruise Turnaround Peak',
+    description: 'Seasonal cruise turnaround strains Brisbane tourism berths.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_vic_ev_battery_feed_stress',
+    label: 'Victoria EV Battery Feed Stress',
+    description: 'Cell manufacturing surge overloads Geelong battery rail feed.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['rail', 'logistics'],
+  },
+  {
+    id: 'scn_tas_offshore_staging_delay',
+    label: 'Tasmania Offshore Staging Delay',
+    description: 'Weather delay backs up Hobart offshore staging inventory.',
+    targetRegions: ['TAS', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -2284,6 +2398,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND13,
   ...TRANSPORT_SCENARIOS_ROUND14,
   ...TRANSPORT_SCENARIOS_ROUND15,
+  ...TRANSPORT_SCENARIOS_ROUND16,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -6400,6 +6515,233 @@ export const SCALE_WAVE_ROUND15_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round16-assets.ts ---
+
+export const ROUND16_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_geraldton_offshore_staging',
+    category: 'road',
+    name: 'Geraldton Offshore Wind Staging Link',
+    description: 'Turbine component drayage to offshore wind marshalling.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['offshore_wind', 'wind_farm_logistics', 'turbine_staging', 'coastal_shipping'],
+    laneKilometres: 88,
+    designSpeedKmh: 100,
+    freightShare: 0.39,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_kwinana_battery_spine',
+    category: 'road',
+    name: 'Kwinana Battery Supply Spine',
+    description: 'Lithium and EV cell freight feed to processing hubs.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['freight'],
+    tags: ['battery_supply', 'lithium_logistics', 'ev_freight', 'motorway'],
+    laneKilometres: 52,
+    designSpeedKmh: 100,
+    freightShare: 0.42,
+    urbanShare: 0.18,
+    tollRoad: true,
+  },
+  {
+    id: 'road_qld_cairns_cruise_feed',
+    category: 'road',
+    name: 'Cairns Cruise Turnaround Feed',
+    description: 'Tourism port provisioning and turnaround drayage.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 3.7,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['cruise_turnaround', 'tourism_port', 'passenger_freight'],
+    laneKilometres: 24,
+    designSpeedKmh: 80,
+    freightShare: 0.22,
+    urbanShare: 0.35,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_sydney_cruise_ring',
+    category: 'road',
+    name: 'Sydney Cruise Turnaround Ring',
+    description: 'Circular Quay and White Bay cruise logistics ring.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['mobility'],
+    tags: ['cruise_turnaround', 'tourism_port', 'passenger_freight', 'port_access'],
+    laneKilometres: 18,
+    designSpeedKmh: 70,
+    freightShare: 0.19,
+    urbanShare: 0.42,
+    tollRoad: true,
+  },
+];
+
+export const ROUND16_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_pilbara_battery_export',
+    category: 'rail',
+    name: 'Pilbara Battery Export Rail',
+    description: 'Lithium concentrate and battery precursor rail export.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['battery_supply', 'lithium_logistics', 'ev_freight', 'bulk'],
+    trackKilometres: 420,
+    dualTrackShare: 0.58,
+    electrifiedShare: 0.22,
+    designFreightTonnesPerYear: 28_000_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_sa_spencer_offshore_wind',
+    category: 'rail',
+    name: 'Spencer Gulf Offshore Wind Rail',
+    description: 'Turbine staging feed to Whyalla offshore marshalling.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['freight'],
+    tags: ['offshore_wind', 'offshore_staging', 'wind_farm_logistics', 'freight_rail'],
+    trackKilometres: 165,
+    dualTrackShare: 0.44,
+    electrifiedShare: 0.38,
+    designFreightTonnesPerYear: 6_400_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_vic_geelong_battery',
+    category: 'rail',
+    name: 'Geelong Battery Manufacturing Rail',
+    description: 'EV cell and module freight to port export berths.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['freight'],
+    tags: ['battery_supply', 'cell_manufacturing', 'ev_freight', 'container'],
+    trackKilometres: 78,
+    dualTrackShare: 0.61,
+    electrifiedShare: 0.72,
+    designFreightTonnesPerYear: 5_100_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND16_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_geraldton_offshore',
+    category: 'port',
+    name: 'Geraldton Offshore Wind Marshalling',
+    description: 'Offshore turbine staging and renewable export berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['offshore_wind', 'wind_farm_logistics', 'turbine_staging', 'renewable_export'],
+    berthCount: 5,
+    maxDraftMetres: 14.2,
+    teuCapacityPerYear: 280_000,
+    automationLevel: 1,
+    bulkShare: 0.38,
+  },
+  {
+    id: 'port_qld_brisbane_cruise',
+    category: 'port',
+    name: 'Brisbane Cruise Turnaround Terminal',
+    description: 'Dedicated cruise turnaround and tourism freight berths.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['cruise_turnaround', 'tourism_port', 'passenger_freight', 'container'],
+    berthCount: 4,
+    maxDraftMetres: 12.8,
+    teuCapacityPerYear: 190_000,
+    automationLevel: 2,
+    bulkShare: 0.18,
+  },
+  {
+    id: 'port_tas_hobart_offshore_staging',
+    category: 'port',
+    name: 'Hobart Offshore Staging Berths',
+    description: 'Southern ocean wind and marine logistics staging.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade'],
+    tags: ['offshore_wind', 'offshore_staging', 'wind_farm_logistics', 'renewable_export'],
+    berthCount: 3,
+    maxDraftMetres: 11.5,
+    teuCapacityPerYear: 95_000,
+    automationLevel: 1,
+    bulkShare: 0.29,
+  },
+];
+
+export const ROUND16_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_wa_kwinana_battery_dc',
+    category: 'logistics',
+    name: 'Kwinana Battery Supply DC',
+    description: 'Lithium hydroxide and EV component consolidation.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['freight'],
+    tags: ['battery_supply', 'lithium_logistics', 'ev_freight'],
+    warehouseSqm: 142_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 58,
+  },
+  {
+    id: 'log_sa_whyalla_offshore_yard',
+    category: 'logistics',
+    name: 'Whyalla Offshore Wind Yard',
+    description: 'Turbine blade and nacelle staging yard.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['offshore_wind', 'turbine_staging', 'wind_farm_logistics', 'offshore_staging'],
+    warehouseSqm: 118_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 52,
+  },
+  {
+    id: 'log_nsw_sydney_cruise_provision',
+    category: 'logistics',
+    name: 'Sydney Cruise Provisioning Hub',
+    description: 'Tourism turnaround stores and passenger freight.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['mobility'],
+    tags: ['cruise_turnaround', 'tourism_port', 'passenger_freight'],
+    warehouseSqm: 86_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 74,
+  },
+];
+
+export const SCALE_WAVE_ROUND16_ASSETS = [
+  ...ROUND16_ROADS,
+  ...ROUND16_RAIL,
+  ...ROUND16_PORTS,
+  ...ROUND16_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -6423,6 +6765,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND13_ASSETS,
     ...SCALE_WAVE_ROUND14_ASSETS,
     ...SCALE_WAVE_ROUND15_ASSETS,
+    ...SCALE_WAVE_ROUND16_ASSETS,
   ];
 }
 
@@ -7261,6 +7604,63 @@ export function pacificFeederProductivityMultiplier(
   const policyBoost = policy === 'expand' ? 0.042 : 0;
   const normalized = (throughputIndex - 8) / 100;
   return clamp(1 + normalized * 0.051 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/offshore-wind-logistics-index.ts ---
+
+/** 0–100 offshore wind staging and turbine logistics throughput by region. */
+export function computeOffshoreWindLogisticsByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const windTagged =
+      asset.tags.some(
+        (t) =>
+          t === 'offshore_wind' ||
+          t === 'wind_farm_logistics' ||
+          t === 'turbine_staging' ||
+          t === 'offshore_staging',
+      ) || (asset.category === 'port' && asset.tags.includes('renewable_export'));
+
+    if (!windTagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.1 + asset.teuCapacityPerYear / 190_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 105_000 + (asset.intermodalLinks.includes('port') ? 2.4 : 1);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 820;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 12_000_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalOffshoreWindLogisticsIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 2, 78) * 10) / 10;
+}
+
+export function offshoreWindLogisticsProductivityMultiplier(
+  index: number,
+  policy: OffshoreWindLogisticsPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'deploy' ? 0.044 : 0;
+  const normalized = (index - 6) / 100;
+  return clamp(1 + normalized * 0.049 + policyBoost, 0.93, 1.12);
 }
 
 
@@ -8122,6 +8522,67 @@ export function medicalSupplyProductivityMultiplier(
   const policyBoost = policy === 'surge' ? 0.047 : 0;
   const normalized = (supplyIndex - 38) / 100;
   return clamp(1 + normalized * 0.052 + policyBoost, 0.92, 1.1);
+}
+
+
+// --- source: operations/battery-supply-chain-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type BatterySupplyChainPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 battery / EV supply chain logistics readiness by region. */
+export function computeBatterySupplyChainByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 14])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'battery_supply' || t === 'ev_freight' || t === 'lithium_logistics' || t === 'cell_manufacturing',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 76_000 + asset.intermodalLinks.length * 0.9;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 480;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_500_000;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.8 + asset.bulkShare * 4;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.03 - stress * 0.035), 8, 94) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalBatterySupplyChainIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.46 + max * 0.54, 10, 88) * 10) / 10;
+}
+
+export function batterySupplyProductivityMultiplier(
+  supplyIndex: number,
+  policy: BatterySupplyChainPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.046 : 0;
+  const normalized = (supplyIndex - 18) / 100;
+  return clamp(1 + normalized * 0.051 + policyBoost, 0.92, 1.11);
 }
 
 
@@ -9152,6 +9613,97 @@ export function nationalDataCentreLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/cruise-turnaround-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type CruiseTurnaroundPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of port logistics tied to cruise turnaround and tourism berths. */
+export function computeCruiseTurnaroundShare(
+  operationalAssets: TransportAsset[],
+  policy: CruiseTurnaroundPolicy = 'baseline',
+): number {
+  let cruiseUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'port') {
+      const units = asset.berthCount * 1.4 + asset.teuCapacityPerYear / 420_000;
+      totalUnits += units;
+      if (
+        asset.tags.includes('cruise_turnaround') ||
+        asset.tags.includes('tourism_port') ||
+        asset.tags.includes('passenger_freight')
+      ) {
+        cruiseUnits += units * 0.82;
+      }
+    }
+    if (asset.category === 'logistics' && asset.tags.includes('cruise_turnaround')) {
+      totalUnits += asset.warehouseSqm / 72_000;
+      cruiseUnits += asset.warehouseSqm / 72_000 * 0.65;
+    }
+    if (asset.category === 'road' && asset.tags.includes('tourism_port') && 'laneKilometres' in asset) {
+      totalUnits += asset.laneKilometres / 260;
+      cruiseUnits += asset.laneKilometres / 260 * 0.55;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.05;
+  const policyBoost = policy === 'expand' ? 0.038 : 0;
+  return Math.round(clamp(cruiseUnits / totalUnits + policyBoost, 0.04, 0.42) * 1000) / 1000;
+}
+
+export function cruiseTurnaroundProductivityMultiplier(
+  share: number,
+  policy: CruiseTurnaroundPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.022 : 1;
+  return (1 + (share - 0.08) * 0.034) * bias;
+}
+
+export function computeCruiseTurnaroundThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'cruise_turnaround' || t === 'tourism_port' || t === 'passenger_freight',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 3.2 + asset.teuCapacityPerYear / 380_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 92_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 620;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalCruiseTurnaroundThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.54 + max * 0.46, 2, 62) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -9490,6 +10042,19 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   dataCentreLogisticsProductivityMultiplier,
   nationalDataCentreLogisticsThroughputIndex,
 } from './data-centre-logistics-index.ts';
+  computeOffshoreWindLogisticsByRegion,
+  nationalOffshoreWindLogisticsIndex,
+  offshoreWindLogisticsProductivityMultiplier,
+} from '../network/offshore-wind-logistics-index.ts';
+  batterySupplyProductivityMultiplier,
+  computeBatterySupplyChainByRegion,
+  nationalBatterySupplyChainIndex,
+} from '../operations/battery-supply-chain-index.ts';
+  computeCruiseTurnaroundShare,
+  computeCruiseTurnaroundThroughputByRegion,
+  cruiseTurnaroundProductivityMultiplier,
+  nationalCruiseTurnaroundThroughputIndex,
+} from './cruise-turnaround-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -10124,6 +10689,65 @@ export function computeTransportInfrastructureState(
     nationalPacificFeeder * 0.019 +
     nationalDataCentreLogistics * 0.018;
 
+  const offshoreWindLogisticsByRegion = computeOffshoreWindLogisticsByRegion(ops);
+  const nationalOffshoreWind = nationalOffshoreWindLogisticsIndex(offshoreWindLogisticsByRegion);
+  const offshoreMult = offshoreWindLogisticsProductivityMultiplier(
+    nationalOffshoreWind,
+    options?.offshoreWindLogisticsPolicy ?? 'baseline',
+  );
+  const batterySupplyChainByRegion = computeBatterySupplyChainByRegion(ops, networkStress);
+  const nationalBatterySupply = nationalBatterySupplyChainIndex(batterySupplyChainByRegion);
+  const batteryMult = batterySupplyProductivityMultiplier(
+    nationalBatterySupply,
+    options?.batterySupplyChainPolicy ?? 'baseline',
+  );
+  const cruiseTurnaroundThroughputByRegion = computeCruiseTurnaroundThroughputByRegion(ops);
+  const nationalCruiseTurnaround = nationalCruiseTurnaroundThroughputIndex(cruiseTurnaroundThroughputByRegion);
+  const cruiseTurnaroundShare = computeCruiseTurnaroundShare(
+    ops,
+    options?.cruiseTurnaroundPolicy ?? 'baseline',
+  );
+  const cruiseMult = cruiseTurnaroundProductivityMultiplier(
+    cruiseTurnaroundShare,
+    options?.cruiseTurnaroundPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
+    const batteryBoost = (batterySupplyChainByRegion[code] - 16) * 0.0046;
+    const cruiseBoost = (cruiseTurnaroundThroughputByRegion[code] - 2) * 0.0051;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + offshoreBoost + batteryBoost + cruiseBoost) *
+      offshoreMult *
+      batteryMult *
+      cruiseMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023 +
+    nationalDefenceLogistics * 0.022 +
+    nationalDigitalFreight * 0.021 +
+    nationalCriticalMinerals * 0.024 +
+    nationalIndigenousRemoteSupply * 0.019 +
+    nationalGaugeInteroperability * 0.02 +
+    nationalCircularFreight * 0.018 +
+    nationalAgriculturalExport * 0.022 +
+    nationalGreenBunkering * 0.017 +
+    nationalPacificFeeder * 0.019 +
+    nationalDataCentreLogistics * 0.018 +
+    nationalOffshoreWind * 0.017 +
+    nationalBatterySupply * 0.016 +
+    nationalCruiseTurnaround * 0.015;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -10137,7 +10761,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/16',
+    schemaVersion: 'agent12/17',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -10234,6 +10858,13 @@ export function computeTransportInfrastructureState(
     dataCentreLogisticsShare,
     nationalDataCentreLogisticsThroughputIndex: nationalDataCentreLogistics,
     dataCentreLogisticsThroughputByRegion,
+    nationalOffshoreWindLogisticsIndex: nationalOffshoreWind,
+    offshoreWindLogisticsByRegion,
+    nationalBatterySupplyChainIndex: nationalBatterySupply,
+    batterySupplyChainByRegion,
+    cruiseTurnaroundShare,
+    nationalCruiseTurnaroundThroughputIndex: nationalCruiseTurnaround,
+    cruiseTurnaroundThroughputByRegion,
     computeMs,
   };
 }
@@ -10316,7 +10947,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/16' &&
+      infra.schemaVersion === 'agent12/17' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -10358,8 +10989,16 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalAgriculturalExportThroughputIndex >= 9 &&
       infra.nationalTrackPossessionEfficiencyIndex >= 38 &&
       infra.greenBunkeringShare >= 0.05 &&
-      infra.nationalGreenBunkeringThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} agricultural=${infra.nationalAgriculturalExportThroughputIndex.toFixed(1)} track=${infra.nationalTrackPossessionEfficiencyIndex.toFixed(1)} bunkering=${infra.nationalGreenBunkeringThroughputIndex.toFixed(1)}`,
+      infra.nationalGreenBunkeringThroughputIndex >= 2 &&
+      infra.nationalPacificFeederThroughputIndex >= 7 &&
+      infra.nationalMedicalSupplyChainIndex >= 36 &&
+      infra.dataCentreLogisticsShare >= 0.06 &&
+      infra.nationalDataCentreLogisticsThroughputIndex >= 2 &&
+      infra.nationalOffshoreWindLogisticsIndex >= 6 &&
+      infra.nationalBatterySupplyChainIndex >= 18 &&
+      infra.cruiseTurnaroundShare >= 0.04 &&
+      infra.nationalCruiseTurnaroundThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} offshore=${infra.nationalOffshoreWindLogisticsIndex.toFixed(1)} battery=${infra.nationalBatterySupplyChainIndex.toFixed(1)} cruise=${infra.nationalCruiseTurnaroundThroughputIndex.toFixed(1)}`,
   });
 
   return results;

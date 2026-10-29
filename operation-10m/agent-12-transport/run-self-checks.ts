@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/16' &&
+      infra.schemaVersion === 'agent12/17' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -114,8 +114,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalPacificFeederThroughputIndex >= 7 &&
       infra.nationalMedicalSupplyChainIndex >= 36 &&
       infra.dataCentreLogisticsShare >= 0.06 &&
-      infra.nationalDataCentreLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} pacific=${infra.nationalPacificFeederThroughputIndex.toFixed(1)} medical=${infra.nationalMedicalSupplyChainIndex.toFixed(1)} datacentre=${infra.nationalDataCentreLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalDataCentreLogisticsThroughputIndex >= 2 &&
+      infra.nationalOffshoreWindLogisticsIndex >= 6 &&
+      infra.nationalBatterySupplyChainIndex >= 18 &&
+      infra.cruiseTurnaroundShare >= 0.04 &&
+      infra.nationalCruiseTurnaroundThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} offshore=${infra.nationalOffshoreWindLogisticsIndex.toFixed(1)} battery=${infra.nationalBatterySupplyChainIndex.toFixed(1)} cruise=${infra.nationalCruiseTurnaroundThroughputIndex.toFixed(1)}`,
   });
 
   return results;
