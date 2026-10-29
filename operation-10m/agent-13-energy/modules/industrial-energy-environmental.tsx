@@ -11,6 +11,12 @@ import {
 } from './climate-hazards';
 import { computeRegionalGridStress, type V1014RegionalGridStress } from './grid-coupling';
 import {
+  computeRegionalExtractionEfficiency,
+  computeRegionalGridRecovery,
+  type V1014RegionalExtractionEfficiency,
+  type V1014RegionalGridRecovery,
+} from './grid-recovery-extraction-efficiency';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25466,6 +25472,10 @@ export interface V1014RegionalEnergyProfile {
   environmentalPressure: number;
   gridStressBand: V1014RegionalGridStress['band'];
   gridStressPoints: number;
+  gridRecoveryBand: V1014RegionalGridRecovery['band'];
+  gridRecoveryPoints: number;
+  extractionEfficiencyScore: number;
+  extractionEfficiencyBand: V1014RegionalExtractionEfficiency['band'];
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25701,6 +25711,20 @@ export function computeIndustrialEnergyEnvironmentalState(
     const climateHazards = detectClimateHazardsFromCrises(inputs.crises || [], regionId);
     const climatePressure = aggregateClimatePressure(climateHazards);
 
+    const gridRecovery = computeRegionalGridRecovery({
+      regionId,
+      gridStressBand: gridStress.band,
+      gridStressPoints: gridStress.stressPoints,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+    });
+
+    const extractionEfficiency = computeRegionalExtractionEfficiency({
+      regionId,
+      sites,
+      renewableShareScore,
+    });
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -25708,6 +25732,7 @@ export function computeIndustrialEnergyEnvironmentalState(
     }).slice(0, V1014_LIMITS.maxActiveConstraints);
 
     let pressure = activeRules.reduce((a, r) => a + r.constraintLoss * 100, 0) + energyStress + climatePressure;
+    pressure -= gridRecovery.pressureRelief;
     pressure -= activeRules.reduce((a, r) => a + r.renewableRelief * Math.min(1, renewableShareScore / 55), 0) * 12;
     pressure += sites.filter(s => s.environmentalRisk === 'high').length * 4;
     pressure = v1014Clamp(pressure, 0, 100);
@@ -25722,6 +25747,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       `Extraction score ${extractionScore} (${extractionBand}) from sectors mining ${miningSec.toFixed(0)} / energy ${energySec.toFixed(0)}`,
       `Renewable share score ${renewableShareScore.toFixed(0)} (${renewableBand})`,
       gridStress.summary,
+      gridRecovery.summary,
+      extractionEfficiency.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -25753,6 +25780,17 @@ export function computeIndustrialEnergyEnvironmentalState(
       });
     }
 
+    if (Math.abs(extractionEfficiency.miningModifierBoost) >= 0.5 && miningStr > 20) {
+      modifiers.push({
+        regionId,
+        industry: 'mining',
+        delta: v1014Clamp(extractionEfficiency.miningModifierBoost, V1014_LIMITS.modifierFloor, V1014_LIMITS.modifierCap),
+        provenance: 'v1014_extraction_efficiency',
+        ruleId: `ext_eff_${regionId}`,
+        explanation: extractionEfficiency.summary,
+      });
+    }
+
     const energyMod = modifiers.find(m => m.regionId === regionId && m.industry === 'energy')?.delta ?? null;
     householdHintLists.push(
       buildHouseholdEnergyHints({
@@ -25775,6 +25813,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       environmentalPressure: v1014Round(pressure, 1),
       gridStressBand: gridStress.band,
       gridStressPoints: gridStress.stressPoints,
+      gridRecoveryBand: gridRecovery.band,
+      gridRecoveryPoints: gridRecovery.recoveryPoints,
+      extractionEfficiencyScore: extractionEfficiency.score,
+      extractionEfficiencyBand: extractionEfficiency.band,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -25952,6 +25994,19 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
 
   check('HOUSEHOLD hints bounded', r1.state.householdEnergyHints.every(h => Math.abs(h.relevanceDelta) <= 2), `count=${r1.state.householdEnergyHints.length}`);
   check('AGENT branch id', V1014_INDUSTRIAL_ENERGY_AGENT === 'op10m/agent-13-energy', V1014_INDUSTRIAL_ENERGY_AGENT);
+
+  check('GRID recovery fields', !!r1.state.regions.SA?.gridRecoveryBand, String(r1.state.regions.SA?.gridRecoveryBand));
+  check('EXTRACTION efficiency score', (r1.state.regions.WA?.extractionEfficiencyScore || 0) > 0, `score=${r1.state.regions.WA?.extractionEfficiencyScore}`);
+  const recoveryInp: IndustrialEnergyEnvironmentalInputs = {
+    ...gridInp,
+    completedProjectTypes: ['renewable_grid', 'battery_grid', 'offshore_wind_farm'],
+  };
+  const rr = computeIndustrialEnergyEnvironmentalState(recoveryInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check(
+    'GRID recovery projects boost',
+    (rr.state.regions.WA?.gridRecoveryPoints || 0) > (rg.state.regions.WA?.gridRecoveryPoints || 0),
+    `recPts=${rr.state.regions.WA?.gridRecoveryPoints} vs critPts=${rg.state.regions.WA?.gridRecoveryPoints}`,
+  );
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

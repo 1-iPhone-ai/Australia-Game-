@@ -5,6 +5,10 @@ import {
   detectClimateHazardsFromCrises,
 } from '../modules/climate-hazards.ts';
 import { computeRegionalGridStress } from '../modules/grid-coupling.ts';
+import {
+  computeRegionalExtractionEfficiency,
+  computeRegionalGridRecovery,
+} from '../modules/grid-recovery-extraction-efficiency.ts';
 import { buildHouseholdEnergyHints } from '../modules/household-industry-links.ts';
 
 export function runAgent13SupplementTests(): { passed: number; failed: number; total: number } {
@@ -40,6 +44,30 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
   });
   ok(hints.length >= 2);
   ok(hints.every(h => Math.abs(h.relevanceDelta) <= 2));
+
+  const recovery = computeRegionalGridRecovery({
+    regionId: 'QLD',
+    gridStressBand: 'critical',
+    gridStressPoints: 20,
+    renewableShareScore: 60,
+    completedProjectTypes: ['renewable_grid', 'battery_grid'],
+  });
+  ok(recovery.band !== 'stalled' && recovery.pressureRelief > 0);
+
+  const efficiency = computeRegionalExtractionEfficiency({
+    regionId: 'WA',
+    sites: [
+      {
+        environmentalRisk: 'low',
+        waterIntensity: 0.2,
+        emissionsIntensity: 0.15,
+        requiresPermit: true,
+        rehabilitationYears: 3,
+      },
+    ],
+    renewableShareScore: 45,
+  });
+  ok(efficiency.score >= 50 && efficiency.band !== 'poor');
 
   return { passed, failed, total: passed + failed };
 }
