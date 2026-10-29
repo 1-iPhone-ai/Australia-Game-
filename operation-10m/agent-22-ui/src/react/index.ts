@@ -121,3 +121,7 @@ export { AnnouncementQueueDepthDayCoachStrip } from './AnnouncementQueueDepthDay
 export { DedupSuppressedBatchDayCoachStrip } from './DedupSuppressedBatchDayCoachStrip.js';
 export { LegacyNavRememberAppliedDayCoachStrip } from './LegacyNavRememberAppliedDayCoachStrip.js';
 export { CoachAnnouncementVolumeDayCoachStrip } from './CoachAnnouncementVolumeDayCoachStrip.js';
+export { CalmRecoveryAutoAppliedDayCoachStrip } from './CalmRecoveryAutoAppliedDayCoachStrip.js';
+export { TextScaleDensityAppliedDayCoachStrip } from './TextScaleDensityAppliedDayCoachStrip.js';
+export { MilestoneForecastRosterDayCoachStrip } from './MilestoneForecastRosterDayCoachStrip.js';
+export { PreviewHeavyCoverageDayCoachStrip } from './PreviewHeavyCoverageDayCoachStrip.js';

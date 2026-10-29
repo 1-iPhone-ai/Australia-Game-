@@ -312,6 +312,18 @@ export function SimulationUiEvolutionBridge({
       {result.coachAnnouncementVolumeDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-announcement-volume-day">{result.coachAnnouncementVolumeDayCoachCopy}</div>
       ) : null}
+      {result.calmRecoveryAutoAppliedDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-calm-auto-day">{result.calmRecoveryAutoAppliedDayCoachCopy}</div>
+      ) : null}
+      {result.textScaleDensityAppliedDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-text-scale-applied-day">{result.textScaleDensityAppliedDayCoachCopy}</div>
+      ) : null}
+      {result.milestoneForecastRosterDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-milestone-roster-day">{result.milestoneForecastRosterDayCoachCopy}</div>
+      ) : null}
+      {result.previewHeavyCoverageDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-preview-heavy-day">{result.previewHeavyCoverageDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

@@ -125,6 +125,10 @@ import { buildAnnouncementQueueDepthDayCoach } from '../engine/announcement-queu
 import { buildDedupSuppressedBatchDayCoach } from '../engine/dedup-suppressed-batch-day-coach.js';
 import { buildLegacyNavRememberAppliedDayCoach } from '../engine/legacy-nav-remember-applied-day-coach.js';
 import { buildCoachAnnouncementVolumeDayCoach } from '../engine/coach-announcement-volume-day-coach.js';
+import { buildCalmRecoveryAutoAppliedDayCoach } from '../engine/calm-recovery-auto-applied-day-coach.js';
+import { buildTextScaleDensityAppliedDayCoach } from '../engine/text-scale-density-applied-day-coach.js';
+import { buildMilestoneForecastRosterDayCoach } from '../engine/milestone-forecast-roster-day-coach.js';
+import { buildPreviewHeavyCoverageDayCoach } from '../engine/preview-heavy-coverage-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -258,6 +262,10 @@ export interface DayAdvanceUiEvolutionResult {
   dedupSuppressedBatchDayCoachCopy: string | null;
   legacyNavRememberAppliedDayCoachCopy: string | null;
   coachAnnouncementVolumeDayCoachCopy: string | null;
+  calmRecoveryAutoAppliedDayCoachCopy: string | null;
+  textScaleDensityAppliedDayCoachCopy: string | null;
+  milestoneForecastRosterDayCoachCopy: string | null;
+  previewHeavyCoverageDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -973,6 +981,26 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const calmRecoveryAutoAppliedDayCoach = buildCalmRecoveryAutoAppliedDayCoach({
+    applied: calmApply.applied,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const textScaleDensityAppliedDayCoach = buildTextScaleDensityAppliedDayCoach({
+    applied: textScaleDensityApply.applied,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const milestoneForecastRosterDayCoach = buildMilestoneForecastRosterDayCoach({
+    entries: milestoneEntries,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const previewHeavyCoverageDayCoach = buildPreviewHeavyCoverageDayCoach({
+    snapshot: coverage,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1107,6 +1135,10 @@ export function tickEvolvingUiOnDayAdvance(
     dedupSuppressedBatchDayCoachCopy: dedupSuppressedBatchDayCoach.coachCopy,
     legacyNavRememberAppliedDayCoachCopy: legacyNavRememberAppliedDayCoach.coachCopy,
     coachAnnouncementVolumeDayCoachCopy: coachAnnouncementVolumeDayCoach.coachCopy,
+    calmRecoveryAutoAppliedDayCoachCopy: calmRecoveryAutoAppliedDayCoach.coachCopy,
+    textScaleDensityAppliedDayCoachCopy: textScaleDensityAppliedDayCoach.coachCopy,
+    milestoneForecastRosterDayCoachCopy: milestoneForecastRosterDayCoach.coachCopy,
+    previewHeavyCoverageDayCoachCopy: previewHeavyCoverageDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

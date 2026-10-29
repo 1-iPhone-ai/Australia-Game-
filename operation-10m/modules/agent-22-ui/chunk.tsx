@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 94f0af9f61a9b7f4
+// content-sha256-prefix: f14ad63dd22d60d5
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -963,6 +963,10 @@ export interface DayAdvanceUiEvolutionResult {
   dedupSuppressedBatchDayCoachCopy: string | null;
   legacyNavRememberAppliedDayCoachCopy: string | null;
   coachAnnouncementVolumeDayCoachCopy: string | null;
+  calmRecoveryAutoAppliedDayCoachCopy: string | null;
+  textScaleDensityAppliedDayCoachCopy: string | null;
+  milestoneForecastRosterDayCoachCopy: string | null;
+  previewHeavyCoverageDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1678,6 +1682,26 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const calmRecoveryAutoAppliedDayCoach = buildCalmRecoveryAutoAppliedDayCoach({
+    applied: calmApply.applied,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const textScaleDensityAppliedDayCoach = buildTextScaleDensityAppliedDayCoach({
+    applied: textScaleDensityApply.applied,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const milestoneForecastRosterDayCoach = buildMilestoneForecastRosterDayCoach({
+    entries: milestoneEntries,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const previewHeavyCoverageDayCoach = buildPreviewHeavyCoverageDayCoach({
+    snapshot: coverage,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1812,6 +1836,10 @@ export function tickEvolvingUiOnDayAdvance(
     dedupSuppressedBatchDayCoachCopy: dedupSuppressedBatchDayCoach.coachCopy,
     legacyNavRememberAppliedDayCoachCopy: legacyNavRememberAppliedDayCoach.coachCopy,
     coachAnnouncementVolumeDayCoachCopy: coachAnnouncementVolumeDayCoach.coachCopy,
+    calmRecoveryAutoAppliedDayCoachCopy: calmRecoveryAutoAppliedDayCoach.coachCopy,
+    textScaleDensityAppliedDayCoachCopy: textScaleDensityAppliedDayCoach.coachCopy,
+    milestoneForecastRosterDayCoachCopy: milestoneForecastRosterDayCoach.coachCopy,
+    previewHeavyCoverageDayCoachCopy: previewHeavyCoverageDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -7084,6 +7112,258 @@ export function buildCoachAnnouncementVolumeDayCoach(input: {
     announcementCount: input.coachAnnouncementCount,
     coachCopy: `Day ${input.nextGameDay}: ${input.coachAnnouncementCount} unlock coach announcements prepared for this day advance.`,
   };
+}
+
+// --- source: engine/calm-recovery-auto-applied-day-coach.ts ---
+export interface CalmRecoveryAutoAppliedDayCoach {
+  applied: boolean;
+  coachCopy: string | null;
+}
+
+export function buildCalmRecoveryAutoAppliedDayCoach(input: {
+  applied: boolean;
+  nextGameDay: number;
+}): CalmRecoveryAutoAppliedDayCoach {
+  if (!input.applied) {
+    return { applied: false, coachCopy: null };
+  }
+  return {
+    applied: true,
+    coachCopy: `Day ${input.nextGameDay}: Calm recovery auto-applied — coaching snoozed and spacing widened for upcoming days.`,
+  };
+}
+
+// --- source: engine/text-scale-density-applied-day-coach.ts ---
+export interface TextScaleDensityAppliedDayCoach {
+  applied: boolean;
+  coachCopy: string | null;
+}
+
+export function buildTextScaleDensityAppliedDayCoach(input: {
+  applied: boolean;
+  nextGameDay: number;
+}): TextScaleDensityAppliedDayCoach {
+  if (!input.applied) {
+    return { applied: false, coachCopy: null };
+  }
+  return {
+    applied: true,
+    coachCopy: `Day ${input.nextGameDay}: Text scale hint auto-applied a more readable UI density profile.`,
+  };
+}
+
+// --- source: engine/milestone-forecast-roster-day-coach.ts ---
+export interface MilestoneForecastRosterDayCoach {
+  forecastCount: number;
+  coachCopy: string | null;
+}
+
+export function buildMilestoneForecastRosterDayCoach(input: {
+  entries: MilestoneForecastEntry[];
+  nextGameDay: number;
+  limit?: number;
+}): MilestoneForecastRosterDayCoach {
+  const entries = input.entries.slice(0, input.limit ?? 2);
+  if (!entries.length) {
+    return { forecastCount: 0, coachCopy: null };
+  }
+  const next = entries[0];
+  const eta =
+    next.estimatedDaysAway != null ? ` (~${next.estimatedDaysAway} day${next.estimatedDaysAway === 1 ? '' : 's'})` : '';
+  const extra = entries.length > 1 ? ` (+${entries.length - 1} more milestones tracked)` : '';
+  return {
+    forecastCount: entries.length,
+    coachCopy: `Day ${input.nextGameDay}: Milestone forecast — ${next.title}${eta}${extra}.`,
+  };
+}
+
+// --- source: engine/preview-heavy-coverage-day-coach.ts ---
+export interface PreviewHeavyCoverageDayCoach {
+  previewCount: number;
+  visibleCount: number;
+  coachCopy: string | null;
+}
+
+export function buildPreviewHeavyCoverageDayCoach(input: {
+  snapshot: Pick<ProgressionCoverageSnapshot, 'preview' | 'visible'>;
+  nextGameDay: number;
+}): PreviewHeavyCoverageDayCoach {
+  if (input.snapshot.preview <= input.snapshot.visible || input.snapshot.preview < 2) {
+    return {
+      previewCount: input.snapshot.preview,
+      visibleCount: input.snapshot.visible,
+      coachCopy: null,
+    };
+  }
+  return {
+    previewCount: input.snapshot.preview,
+    visibleCount: input.snapshot.visible,
+    coachCopy: `Day ${input.nextGameDay}: ${input.snapshot.preview} panels in preview vs ${input.snapshot.visible} visible — unlock hints show what is left.`,
+  };
+}
+
+// --- source: engine/round37-self-tests.ts ---
+export function runAgent22Round37SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r37_calm_applied',
+    'calm recovery auto applied day coach',
+    (() => {
+      const coach = buildCalmRecoveryAutoAppliedDayCoach({ applied: true, nextGameDay: 5 });
+      return coach.applied && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r37_text_scale_applied',
+    'text scale density applied day coach',
+    (() => {
+      const coach = buildTextScaleDensityAppliedDayCoach({ applied: true, nextGameDay: 6 });
+      return coach.applied && Boolean(coach.coachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r37_milestone_roster',
+    'milestone forecast roster day coach',
+    (() => {
+      const entries = forecastUpcomingMilestones(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        2
+      );
+      const coach = buildMilestoneForecastRosterDayCoach({
+        entries,
+        nextGameDay: 2,
+      });
+      return entries.length === 0 || Boolean(coach.coachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r37_preview_heavy',
+    'preview heavy coverage day coach',
+    (() => {
+      const coach = buildPreviewHeavyCoverageDayCoach({
+        snapshot: { preview: 5, visible: 2 },
+        nextGameDay: 7,
+      });
+      return Boolean(coach.coachCopy?.includes('Day 7'));
+    })()
+  );
+
+  check(
+    'r37_tick_calm',
+    'tick exposes calm recovery auto applied day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.calmRecoveryAutoAppliedDayCoachCopy === 'string' || r.calmRecoveryAutoAppliedDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r37_tick_text_scale',
+    'tick exposes text scale density applied day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn', autoApplyTextScaleDensity: true }
+      );
+      return typeof r.textScaleDensityAppliedDayCoachCopy === 'string' || r.textScaleDensityAppliedDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r37_tick_milestone',
+    'tick exposes milestone forecast roster day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.milestoneForecastRosterDayCoachCopy === 'string' || r.milestoneForecastRosterDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r37_tick_preview',
+    'tick exposes preview heavy coverage day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.previewHeavyCoverageDayCoachCopy === 'string' || r.previewHeavyCoverageDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r37_calm_not_applied',
+    'calm applied null when false',
+    (() => {
+      const coach = buildCalmRecoveryAutoAppliedDayCoach({ applied: false, nextGameDay: 1 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r37_preview_balanced',
+    'preview heavy null when balanced',
+    (() => {
+      const coach = buildPreviewHeavyCoverageDayCoach({
+        snapshot: { preview: 1, visible: 4 },
+        nextGameDay: 3,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r37_roster_empty',
+    'milestone roster null when empty',
+    (() => {
+      const coach = buildMilestoneForecastRosterDayCoach({ entries: [], nextGameDay: 4 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r37_coverage_snapshot',
+    'preview heavy uses snapshot from progression coverage',
+    (() => {
+      const snapshot = buildProgressionCoverageSnapshot(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      );
+      const coach = buildPreviewHeavyCoverageDayCoach({ snapshot, nextGameDay: 3 });
+      return coach.previewCount === snapshot.preview;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round36-self-tests.ts ---
@@ -13972,6 +14252,18 @@ export function SimulationUiEvolutionBridge({
       ) : null}
       {result.coachAnnouncementVolumeDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-announcement-volume-day">{result.coachAnnouncementVolumeDayCoachCopy}</div>
+      ) : null}
+      {result.calmRecoveryAutoAppliedDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-calm-auto-day">{result.calmRecoveryAutoAppliedDayCoachCopy}</div>
+      ) : null}
+      {result.textScaleDensityAppliedDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-text-scale-applied-day">{result.textScaleDensityAppliedDayCoachCopy}</div>
+      ) : null}
+      {result.milestoneForecastRosterDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-milestone-roster-day">{result.milestoneForecastRosterDayCoachCopy}</div>
+      ) : null}
+      {result.previewHeavyCoverageDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-preview-heavy-day">{result.previewHeavyCoverageDayCoachCopy}</div>
       ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
