@@ -92,6 +92,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     accountabilityLoadIndex: 0,
     delegationFidelityScore: 100,
     governanceEnduranceScore: 100,
+    fiduciaryBurdenIndex: 0,
+    trustAssuranceScore: 100,
+    governanceDurabilityScore: 100,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {

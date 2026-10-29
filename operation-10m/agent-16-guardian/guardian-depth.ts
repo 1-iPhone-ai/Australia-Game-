@@ -519,6 +519,62 @@ export function buildGuardianDepthAccountabilityReport(snapshot: GuardianCoPilot
   return lines.slice(0, 3);
 }
 
+export function computeFiduciaryBurdenIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceEnduranceScore < 50) load += Math.min(25, 50 - snapshot.governanceEnduranceScore);
+  if (snapshot.governanceEnduranceScore < 35) load += 10;
+  if (snapshot.delegationFidelityScore < 45) load += 20;
+  if (snapshot.delegationFidelityScore < 35) load += 10;
+  if (snapshot.accountabilityLoadIndex >= 55) load += 20;
+  if (snapshot.accountabilityLoadIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.escalationLatchScore >= 55) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeTrustAssuranceScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.fiduciaryBurdenIndex >= 45) score -= Math.min(30, Math.round(snapshot.fiduciaryBurdenIndex * 0.35));
+  if (snapshot.delegationFidelityScore < 50) score -= Math.min(25, 50 - snapshot.delegationFidelityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotHoldsControl) score -= 10;
+  if (snapshot.governanceEnduranceScore < 40) score -= 15;
+  if (snapshot.humanRelayPressure >= 50) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceDurabilityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.fiduciaryBurdenIndex >= 40) score -= Math.min(30, Math.round(snapshot.fiduciaryBurdenIndex * 0.32));
+  if (snapshot.trustAssuranceScore < 50) score -= Math.min(25, 50 - snapshot.trustAssuranceScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.sustainabilityMarginScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthFiduciaryReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.fiduciaryBurdenIndex >= 55) {
+    lines.push(
+      `Fiduciary burden ${snapshot.fiduciaryBurdenIndex} — stacked fiduciary review may exceed operator assurance capacity`
+    );
+  }
+  if (snapshot.trustAssuranceScore < 45) {
+    lines.push(
+      `Trust assurance ${snapshot.trustAssuranceScore} — align Co-Pilot autonomy with Guardian fiduciary posture`
+    );
+  }
+  if (snapshot.governanceDurabilityScore < 40) {
+    lines.push(
+      `Governance durability ${snapshot.governanceDurabilityScore} — little durability to sustain fiduciary oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -603,9 +659,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withAccountability: GuardianCoPilotMonitorSnapshot = { ...withSustainability, accountabilityLoadIndex };
   const delegationFidelityScore = computeDelegationFidelityScore(withAccountability);
   const withFidelity: GuardianCoPilotMonitorSnapshot = { ...withAccountability, delegationFidelityScore };
-  return {
+  const withEndurance: GuardianCoPilotMonitorSnapshot = {
     ...withFidelity,
     governanceEnduranceScore: computeGovernanceEnduranceScore(withFidelity),
+    fiduciaryBurdenIndex: 0,
+    trustAssuranceScore: 100,
+    governanceDurabilityScore: 100,
+  };
+  const fiduciaryBurdenIndex = computeFiduciaryBurdenIndex(withEndurance);
+  const withFiduciaryBurden: GuardianCoPilotMonitorSnapshot = { ...withEndurance, fiduciaryBurdenIndex };
+  const trustAssuranceScore = computeTrustAssuranceScore(withFiduciaryBurden);
+  const withAssurance: GuardianCoPilotMonitorSnapshot = { ...withFiduciaryBurden, trustAssuranceScore };
+  return {
+    ...withAssurance,
+    governanceDurabilityScore: computeGovernanceDurabilityScore(withAssurance),
   };
 }
 
@@ -892,6 +959,41 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceEnduranceScore(snap) < 35;
+  });
+  ok('gd_fiduciary_burden', () => {
+    const snap = {
+      governanceEnduranceScore: 30,
+      delegationFidelityScore: 32,
+      accountabilityLoadIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      escalationLatchScore: 60,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeFiduciaryBurdenIndex(snap) >= 70;
+  });
+  ok('gd_trust_assurance', () => {
+    const snap = {
+      fiduciaryBurdenIndex: 72,
+      delegationFidelityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      copilotHoldsControl: true,
+      governanceEnduranceScore: 32,
+      humanRelayPressure: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeTrustAssuranceScore(snap) < 40;
+  });
+  ok('gd_governance_durability', () => {
+    const snap = {
+      fiduciaryBurdenIndex: 78,
+      trustAssuranceScore: 32,
+      recoveryHeadroomScore: 28,
+      sustainabilityMarginScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceDurabilityScore(snap) < 35;
   });
   return out;
 }

@@ -97,6 +97,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   accountabilityLoadIndex: number;
   delegationFidelityScore: number;
   governanceEnduranceScore: number;
+  fiduciaryBurdenIndex: number;
+  trustAssuranceScore: number;
+  governanceDurabilityScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -899,6 +902,62 @@ export function buildGuardianDepthAccountabilityReport(snapshot: GuardianCoPilot
   return lines.slice(0, 3);
 }
 
+export function computeFiduciaryBurdenIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceEnduranceScore < 50) load += Math.min(25, 50 - snapshot.governanceEnduranceScore);
+  if (snapshot.governanceEnduranceScore < 35) load += 10;
+  if (snapshot.delegationFidelityScore < 45) load += 20;
+  if (snapshot.delegationFidelityScore < 35) load += 10;
+  if (snapshot.accountabilityLoadIndex >= 55) load += 20;
+  if (snapshot.accountabilityLoadIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.escalationLatchScore >= 55) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeTrustAssuranceScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.fiduciaryBurdenIndex >= 45) score -= Math.min(30, Math.round(snapshot.fiduciaryBurdenIndex * 0.35));
+  if (snapshot.delegationFidelityScore < 50) score -= Math.min(25, 50 - snapshot.delegationFidelityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotHoldsControl) score -= 10;
+  if (snapshot.governanceEnduranceScore < 40) score -= 15;
+  if (snapshot.humanRelayPressure >= 50) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceDurabilityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.fiduciaryBurdenIndex >= 40) score -= Math.min(30, Math.round(snapshot.fiduciaryBurdenIndex * 0.32));
+  if (snapshot.trustAssuranceScore < 50) score -= Math.min(25, 50 - snapshot.trustAssuranceScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.sustainabilityMarginScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthFiduciaryReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.fiduciaryBurdenIndex >= 55) {
+    lines.push(
+      `Fiduciary burden ${snapshot.fiduciaryBurdenIndex} — stacked fiduciary review may exceed operator assurance capacity`
+    );
+  }
+  if (snapshot.trustAssuranceScore < 45) {
+    lines.push(
+      `Trust assurance ${snapshot.trustAssuranceScore} — align Co-Pilot autonomy with Guardian fiduciary posture`
+    );
+  }
+  if (snapshot.governanceDurabilityScore < 40) {
+    lines.push(
+      `Governance durability ${snapshot.governanceDurabilityScore} — little durability to sustain fiduciary oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -983,9 +1042,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withAccountability: GuardianCoPilotMonitorSnapshot = { ...withSustainability, accountabilityLoadIndex };
   const delegationFidelityScore = computeDelegationFidelityScore(withAccountability);
   const withFidelity: GuardianCoPilotMonitorSnapshot = { ...withAccountability, delegationFidelityScore };
-  return {
+  const withEndurance: GuardianCoPilotMonitorSnapshot = {
     ...withFidelity,
     governanceEnduranceScore: computeGovernanceEnduranceScore(withFidelity),
+    fiduciaryBurdenIndex: 0,
+    trustAssuranceScore: 100,
+    governanceDurabilityScore: 100,
+  };
+  const fiduciaryBurdenIndex = computeFiduciaryBurdenIndex(withEndurance);
+  const withFiduciaryBurden: GuardianCoPilotMonitorSnapshot = { ...withEndurance, fiduciaryBurdenIndex };
+  const trustAssuranceScore = computeTrustAssuranceScore(withFiduciaryBurden);
+  const withAssurance: GuardianCoPilotMonitorSnapshot = { ...withFiduciaryBurden, trustAssuranceScore };
+  return {
+    ...withAssurance,
+    governanceDurabilityScore: computeGovernanceDurabilityScore(withAssurance),
   };
 }
 
@@ -1272,6 +1342,41 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceEnduranceScore(snap) < 35;
+  });
+  ok('gd_fiduciary_burden', () => {
+    const snap = {
+      governanceEnduranceScore: 30,
+      delegationFidelityScore: 32,
+      accountabilityLoadIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      escalationLatchScore: 60,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeFiduciaryBurdenIndex(snap) >= 70;
+  });
+  ok('gd_trust_assurance', () => {
+    const snap = {
+      fiduciaryBurdenIndex: 72,
+      delegationFidelityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      copilotHoldsControl: true,
+      governanceEnduranceScore: 32,
+      humanRelayPressure: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeTrustAssuranceScore(snap) < 40;
+  });
+  ok('gd_governance_durability', () => {
+    const snap = {
+      fiduciaryBurdenIndex: 78,
+      trustAssuranceScore: 32,
+      recoveryHeadroomScore: 28,
+      sustainabilityMarginScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceDurabilityScore(snap) < 35;
   });
   return out;
 }
@@ -2647,6 +2752,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_9: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_9_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_9.length;
 
 
+// --- source: monitor-rules-scale-wave-10.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_10: AdvisoryMonitorRule[] = [
+  {
+    id: 'fiduciary_burden_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Fiduciary Burden High',
+    detailTemplate: 'Fiduciary burden is in the high band — reduce overlapping warn-only fiduciary review demands',
+    evidenceFields: ['fiduciaryBurdenIndex', 'governanceEnduranceScore', 'trustAssuranceScore'],
+    evaluate: s => s.fiduciaryBurdenIndex >= 70,
+  },
+  {
+    id: 'fiduciary_burden_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fiduciary Burden Elevated',
+    detailTemplate: 'Fiduciary burden is elevated — expect slower assurance review across turns',
+    evidenceFields: ['fiduciaryBurdenIndex', 'accountabilityLoadIndex'],
+    evaluate: s => s.fiduciaryBurdenIndex >= 45 && s.fiduciaryBurdenIndex < 70,
+  },
+  {
+    id: 'trust_assurance_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Trust Assurance Low',
+    detailTemplate: 'Trust assurance is critically low — defer stacked autonomous actions',
+    evidenceFields: ['trustAssuranceScore', 'fiduciaryBurdenIndex', 'delegationFidelityScore'],
+    evaluate: s => s.trustAssuranceScore < 35,
+  },
+  {
+    id: 'trust_assurance_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Assurance While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate trust assurance',
+    evidenceFields: ['trustAssuranceScore', 'copilotAutonomousActive', 'fiduciaryBurdenIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.trustAssuranceScore >= 35 && s.trustAssuranceScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_durability_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Durability Low',
+    detailTemplate: 'Little governance durability remains for warn-only fiduciary oversight across turns',
+    evidenceFields: ['governanceDurabilityScore', 'fiduciaryBurdenIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceDurabilityScore < 35,
+  },
+  {
+    id: 'governance_durability_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Durability While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance durability',
+    evidenceFields: ['governanceDurabilityScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceDurabilityScore >= 35 && s.governanceDurabilityScore < 55,
+  },
+  {
+    id: 'fiduciary_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Fiduciary Envelope Pressured',
+    detailTemplate: 'Fiduciary burden and low trust assurance align in the pressured envelope band',
+    evidenceFields: ['fiduciaryBurdenIndex', 'trustAssuranceScore', 'governanceDurabilityScore'],
+    evaluate: s => s.fiduciaryBurdenIndex >= 55 && s.trustAssuranceScore < 50,
+  },
+  {
+    id: 'rival_fiduciary_burden',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Fiduciary Burden',
+    detailTemplate: 'Rival victory progress plus elevated fiduciary burden',
+    evidenceFields: ['rivalVictoryProgressPct', 'fiduciaryBurdenIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.fiduciaryBurdenIndex >= 50,
+  },
+  {
+    id: 'team_plan_fiduciary_burden',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Fiduciary Burden',
+    detailTemplate: 'Pending team plan while fiduciary burden is elevated',
+    evidenceFields: ['teamPlanPending', 'fiduciaryBurdenIndex', 'governanceDurabilityScore'],
+    evaluate: s => s.teamPlanPending && s.fiduciaryBurdenIndex >= 55,
+  },
+  {
+    id: 'guardian_fiduciary_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Fiduciary Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance durability',
+    evidenceFields: ['guardianRiskBand', 'governanceDurabilityScore', 'fiduciaryBurdenIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceDurabilityScore < 40,
+  },
+  {
+    id: 'copilot_fiduciary_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Fiduciary Burden',
+    detailTemplate: 'Autonomous Co-Pilot while fiduciary burden is high',
+    evidenceFields: ['copilotAutonomousActive', 'fiduciaryBurdenIndex', 'trustAssuranceScore'],
+    evaluate: s => s.copilotAutonomousActive && s.fiduciaryBurdenIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_durability',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Durability',
+    detailTemplate: 'Expiring contracts while governance durability is low',
+    evidenceFields: ['expiringContractCount', 'governanceDurabilityScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceDurabilityScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_10_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_10.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -2885,6 +3123,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_7,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_8,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_9,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_10,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -3228,6 +3467,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     accountabilityLoadIndex: 0,
     delegationFidelityScore: 100,
     governanceEnduranceScore: 100,
+    fiduciaryBurdenIndex: 0,
+    trustAssuranceScore: 100,
+    governanceDurabilityScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -3311,6 +3553,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     accountabilityLoadIndex: 0,
     delegationFidelityScore: 100,
     governanceEnduranceScore: 100,
+    fiduciaryBurdenIndex: 0,
+    trustAssuranceScore: 100,
+    governanceDurabilityScore: 100,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
@@ -4079,6 +4324,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['accountability_envelope_pressured', 'guardian_accountability_envelope_critical'],
     notes: 'Pressured accountability envelope with critical Guardian band',
   },
+  {
+    id: 'sc_fiduciary_burden_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 12,
+      minCashReserve: 500,
+      debt: 1580,
+      maxSpendPerAction: 9200,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['fiduciary_burden_high', 'trust_assurance_low'],
+    notes: 'High fiduciary burden with critical trust assurance',
+  },
+  {
+    id: 'sc_governance_durability_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 24,
+      minCashReserve: 500,
+      debt: 1050,
+      maxSpendPerAction: 7300,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_durability_low', 'contracts_governance_durability'],
+    notes: 'Low governance durability with expiring contracts',
+  },
+  {
+    id: 'sc_fiduciary_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 17,
+      minCashReserve: 500,
+      debt: 1180,
+      maxSpendPerAction: 8050,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['fiduciary_envelope_pressured', 'guardian_fiduciary_envelope_critical'],
+    notes: 'Pressured fiduciary envelope with critical Guardian band',
+  },
 ];
 
 
@@ -4254,8 +4567,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 9 scale wave brings monitor catalog to 142+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 142;
+  check(results, 'a16_expansion_count', 'Round 10 scale wave brings monitor catalog to 154+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 154;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -4481,6 +4794,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthAccountabilityReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round10_metrics', 'Round 10 fiduciary envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.fiduciaryBurdenIndex >= 40 &&
+      snap.trustAssuranceScore <= 100 &&
+      snap.governanceDurabilityScore <= 100
+    );
+  });
+
+  check(results, 'a16_fiduciary_report', 'Guardian depth fiduciary report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthFiduciaryReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
