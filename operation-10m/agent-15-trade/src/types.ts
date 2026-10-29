@@ -222,6 +222,8 @@ export interface GTELPersisted {
   bilateralScaleWaveReentryGateSmoothing?: number;
   scaleWaveReentryContinuitySmoothing?: number;
   bilateralNextWavePrimingGateSmoothing?: number;
+  nextWavePrimingContinuitySmoothing?: number;
+  bilateralPrimedWaveLaunchGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -313,6 +315,8 @@ export interface GTELState {
   bilateralScaleWaveReentryGate: GTELBilateralScaleWaveReentryGateSnapshot;
   scaleWaveReentryContinuity: GTELScaleWaveReentryContinuitySnapshot;
   bilateralNextWavePrimingGate: GTELBilateralNextWavePrimingGateSnapshot;
+  nextWavePrimingContinuity: GTELNextWavePrimingContinuitySnapshot;
+  bilateralPrimedWaveLaunchGate: GTELBilateralPrimedWaveLaunchGateSnapshot;
   inputHash: string;
 }
 
@@ -1217,6 +1221,26 @@ export interface GTELBilateralNextWavePrimingGateSnapshot {
   band: GTELBilateralNextWavePrimingGateBand;
   reentryContinuityFeed: number;
   renewalLift: number;
+  summary: string;
+}
+
+export type GTELNextWavePrimingContinuityBand = 'settled' | 'holding' | 'unsettled' | 'void';
+
+export interface GTELNextWavePrimingContinuitySnapshot {
+  score: number;
+  band: GTELNextWavePrimingContinuityBand;
+  primingGateSupport: number;
+  reentryAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralPrimedWaveLaunchGateBand = 'launched' | 'arming' | 'held' | 'blocked';
+
+export interface GTELBilateralPrimedWaveLaunchGateSnapshot {
+  score: number;
+  band: GTELBilateralPrimedWaveLaunchGateBand;
+  continuityFeed: number;
+  cycleReentryLift: number;
   summary: string;
 }
 

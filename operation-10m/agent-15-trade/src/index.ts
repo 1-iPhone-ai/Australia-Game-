@@ -85,5 +85,7 @@ export * from './sealed-scale-loop-continuity.ts';
 export * from './bilateral-scale-wave-reentry-gate.ts';
 export * from './scale-wave-reentry-continuity.ts';
 export * from './bilateral-next-wave-priming-gate.ts';
+export * from './next-wave-priming-continuity.ts';
+export * from './bilateral-primed-wave-launch-gate.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

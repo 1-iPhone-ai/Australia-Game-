@@ -349,6 +349,16 @@ import {
   createEmptyBilateralNextWavePrimingGateSnapshot,
   bilateralNextWavePrimingGateExportScale,
 } from './bilateral-next-wave-priming-gate.ts';
+import {
+  computeNextWavePrimingContinuitySnapshot,
+  createEmptyNextWavePrimingContinuitySnapshot,
+  nextWavePrimingContinuityExportScale,
+} from './next-wave-priming-continuity.ts';
+import {
+  computeBilateralPrimedWaveLaunchGateSnapshot,
+  createEmptyBilateralPrimedWaveLaunchGateSnapshot,
+  bilateralPrimedWaveLaunchGateExportScale,
+} from './bilateral-primed-wave-launch-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -2392,6 +2402,58 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralNextWavePrimingGateExportScale(primed) >= bilateralNextWavePrimingGateExportScale(blocked),
       'expected next wave priming scale lift',
+    );
+  });
+
+  ok('next wave priming continuity improves when priming gate is primed', () => {
+    const gate = {
+      ...createEmptyBilateralNextWavePrimingGateSnapshot(),
+      score: 0.95,
+      band: 'primed' as const,
+    };
+    const reentry = {
+      ...createEmptyScaleWaveReentryContinuitySnapshot(),
+      score: 0.93,
+      band: 'established' as const,
+    };
+    const settled = computeNextWavePrimingContinuitySnapshot({
+      bilateralNextWavePrimingGate: gate,
+      scaleWaveReentryContinuity: reentry,
+      persisted: { ...createEmptyGTELPersisted(), nextWavePrimingContinuitySmoothing: 0.98 },
+    }).snapshot;
+    const voided = computeNextWavePrimingContinuitySnapshot({
+      bilateralNextWavePrimingGate: { ...gate, score: 0.1, band: 'blocked' },
+      scaleWaveReentryContinuity: { ...reentry, score: 0.08, band: 'lost' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(settled.score > voided.score, 'expected settled priming continuity');
+    gtelAssert(
+      nextWavePrimingContinuityExportScale(settled) >= nextWavePrimingContinuityExportScale(voided),
+      'expected priming continuity scale lift',
+    );
+  });
+
+  ok('bilateral primed wave launch gate improves when priming continuity is settled', () => {
+    const continuity = {
+      ...createEmptyNextWavePrimingContinuitySnapshot(),
+      score: 0.96,
+      band: 'settled' as const,
+    };
+    const cycle = { ...createEmptyBilateralCycleReentryGateSnapshot(), score: 0.91, band: 'entered' as const };
+    const launched = computeBilateralPrimedWaveLaunchGateSnapshot({
+      nextWavePrimingContinuity: continuity,
+      bilateralCycleReentryGate: cycle,
+      persisted: { ...createEmptyGTELPersisted(), bilateralPrimedWaveLaunchGateSmoothing: 0.99 },
+    }).snapshot;
+    const blocked = computeBilateralPrimedWaveLaunchGateSnapshot({
+      nextWavePrimingContinuity: { ...continuity, score: 0.11, band: 'void' },
+      bilateralCycleReentryGate: { ...cycle, score: 0.08, band: 'denied' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(launched.score > blocked.score, 'expected wave launch when settled');
+    gtelAssert(
+      bilateralPrimedWaveLaunchGateExportScale(launched) >= bilateralPrimedWaveLaunchGateExportScale(blocked),
+      'expected wave launch scale lift',
     );
   });
 

@@ -74,6 +74,8 @@ import { sanitizeSealedScaleLoopContinuitySmoothing } from './sealed-scale-loop-
 import { sanitizeBilateralScaleWaveReentryGateSmoothing } from './bilateral-scale-wave-reentry-gate.ts';
 import { sanitizeScaleWaveReentryContinuitySmoothing } from './scale-wave-reentry-continuity.ts';
 import { sanitizeBilateralNextWavePrimingGateSmoothing } from './bilateral-next-wave-priming-gate.ts';
+import { sanitizeNextWavePrimingContinuitySmoothing } from './next-wave-priming-continuity.ts';
+import { sanitizeBilateralPrimedWaveLaunchGateSmoothing } from './bilateral-primed-wave-launch-gate.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -166,6 +168,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralScaleWaveReentryGateSmoothing: 0.52,
     scaleWaveReentryContinuitySmoothing: 0.52,
     bilateralNextWavePrimingGateSmoothing: 0.52,
+    nextWavePrimingContinuitySmoothing: 0.52,
+    bilateralPrimedWaveLaunchGateSmoothing: 0.52,
   };
 }
 
@@ -479,6 +483,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   );
   base.bilateralNextWavePrimingGateSmoothing = sanitizeBilateralNextWavePrimingGateSmoothing(
     r.bilateralNextWavePrimingGateSmoothing,
+  );
+  base.nextWavePrimingContinuitySmoothing = sanitizeNextWavePrimingContinuitySmoothing(
+    r.nextWavePrimingContinuitySmoothing,
+  );
+  base.bilateralPrimedWaveLaunchGateSmoothing = sanitizeBilateralPrimedWaveLaunchGateSmoothing(
+    r.bilateralPrimedWaveLaunchGateSmoothing,
   );
   return base;
 }
