@@ -14191,6 +14191,289 @@ export function convergenceRecoveryOrchestratorWithinCap(report: ConvergenceReco
 }
 
 
+// --- source: match-explainability-fusion-bundle.ts ---
+  auditMatchExplainabilityMatrixGate,
+  matchExplainabilityMatrixAllowed,
+} from './match-explainability-matrix-gate.ts';
+  buildMatchExplainabilityFusionBundle,
+  matchExplainabilityFusionReady,
+} from './match-explainability-projection-bundle.ts';
+  buildSessionFusionExportBundle,
+  sessionFusionExportShipped,
+} from './session-projection-export-bundle.ts';
+
+export const AGENT19_CONVERGENCE_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityFusionBundle {
+  fusionReady: boolean;
+  fusionAllowed: boolean;
+  projectionReady: boolean;
+  projectionExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type FusionParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Fusion bundle: fusion gate and projection export must both be green. */
+export function buildMatchExplainabilityFusionBundle(
+  packs: TurnExplainabilityPack[],
+  params: FusionParams,
+): MatchExplainabilityFusionBundle {
+  const fusion = auditMatchExplainabilityMatrixGate(packs, params);
+  const projection = buildMatchExplainabilityFusionBundle(packs, params);
+  const projectionExport = buildSessionFusionExportBundle(packs, params);
+  const fusionAllowed = matchExplainabilityMatrixAllowed(fusion);
+  const projectionReady = matchExplainabilityFusionReady(projection);
+  const projectionExportShipped = sessionFusionExportShipped(projectionExport);
+  const fusionReady = fusionAllowed && projectionReady && projectionExportShipped;
+  const narrativeLines = [
+    `Match explainability fusion bundle: ${fusionReady ? 'READY' : 'PENDING'} (gate ${fusionAllowed ? 'ok' : 'fail'}, projection ${projectionReady ? 'ok' : 'fail'}).`,
+    ...fusion.narrativeLines.slice(0, 2),
+    ...projection.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_CONVERGENCE_NARRATIVE_CAP);
+  return {
+    fusionReady,
+    fusionAllowed,
+    projectionReady,
+    projectionExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityFusionReady(bundle: MatchExplainabilityFusionBundle): boolean {
+  return bundle.fusionReady;
+}
+
+
+// --- source: session-fusion-export-bundle.ts ---
+  buildSessionNexusExportBundle,
+  type SessionNexusExportBundle,
+} from './session-nexus-export-bundle.ts';
+  buildMatchExplainabilityFusionBundle,
+  matchExplainabilityFusionReady,
+} from './match-explainability-fusion-bundle.ts';
+
+export interface SessionFusionExportBundle extends SessionNexusExportBundle {
+  fusionReady: boolean;
+  fusionSchema: string;
+}
+
+/** Fusion export wraps nexus export when fusion bundle is ready. */
+export function buildSessionFusionExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionFusionExportBundle {
+  const base = buildSessionNexusExportBundle(packs, params);
+  const fusion = buildMatchExplainabilityFusionBundle(packs, params);
+  const fusionReady = matchExplainabilityFusionReady(fusion);
+  const exports = fusionReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    fusionReady,
+    fusionSchema: 'agent19.fusion.v1',
+    releaseReady: fusionReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Fusion export: ${fusionReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionFusionExportShipped(bundle: SessionFusionExportBundle): boolean {
+  return bundle.fusionReady && bundle.exports.length > 0 && bundle.fusionSchema === 'agent19.fusion.v1';
+}
+
+
+// --- source: apex-fusion-bridge.ts ---
+  buildMatchExplainabilityFusionBundle,
+  matchExplainabilityFusionReady,
+} from './match-explainability-fusion-bundle.ts';
+  buildMatchExplainabilityProjectionBundle,
+  matchExplainabilityProjectionReady,
+} from './match-explainability-fusion-bundle.ts';
+
+export interface ApexFusionBridgeReport {
+  aligned: boolean;
+  fusionReady: boolean;
+  projectionReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Projection-ready should match projection-ready when fusion export stack passes. */
+export function auditApexFusionBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): ApexFusionBridgeReport {
+  const fusion = buildMatchExplainabilityFusionBundle(packs, params);
+  const projection = buildMatchExplainabilityProjectionBundle(packs, params);
+  const fusionReady = matchExplainabilityFusionReady(fusion);
+  const projectionReady = matchExplainabilityProjectionReady(projection);
+  const aligned = fusionReady === projectionReady;
+  const narrativeLines = [
+    `Apex/fusion bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (fusion ${fusionReady ? 'ok' : 'fail'}, projection ${projectionReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, fusionReady, projectionReady, narrativeLines };
+}
+
+export function apexFusionBridgeHealthy(report: ApexFusionBridgeReport): boolean {
+  return report.fusionReady && report.projectionReady && report.aligned;
+}
+
+
+// --- source: match-explainability-matrix-gate.ts ---
+  buildMatchExplainabilityFusionBundle,
+  matchExplainabilityFusionReady,
+} from './match-explainability-fusion-bundle.ts';
+  buildSessionFusionExportBundle,
+  sessionFusionExportShipped,
+} from './session-fusion-export-bundle.ts';
+
+export interface MatchExplainabilityMatrixGateReport {
+  matrixAllowed: boolean;
+  fusionReady: boolean;
+  fusionExportShipped: boolean;
+  nexusFusionHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Matrix gate: fusion bundle + fusion export + nexus/fusion bridge. */
+export function auditMatchExplainabilityMatrixGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityMatrixGateReport {
+  const fusion = buildMatchExplainabilityFusionBundle(packs, params);
+  const fusionExport = buildSessionFusionExportBundle(packs, params);
+  const bridge = auditMatrixFusionBridge(packs, params);
+  const fusionReady = matchExplainabilityFusionReady(fusion);
+  const fusionExportShipped = sessionFusionExportShipped(fusionExport);
+  const nexusFusionHealthy = matrixFusionBridgeHealthy(bridge);
+  const matrixAllowed = fusionReady && fusionExportShipped && nexusFusionHealthy;
+  const narrativeLines = [
+    `Match explainability matrix: ${matrixAllowed ? 'ALLOWED' : 'DENIED'} (fusion ${fusionReady ? 'ok' : 'fail'}, export ${fusionExportShipped ? 'ok' : 'fail'}).`,
+    ...fusion.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    matrixAllowed,
+    fusionReady,
+    fusionExportShipped,
+    nexusFusionHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityMatrixAllowed(report: MatchExplainabilityMatrixGateReport): boolean {
+  return report.matrixAllowed;
+}
+
+
+// --- source: fusion-recovery-orchestrator.ts ---
+  auditMatchExplainabilityMatrixGate,
+  matchExplainabilityMatrixAllowed,
+} from './match-explainability-matrix-gate.ts';
+
+export const AGENT19_FUSION_RECOVERY_CAP = 10;
+
+export interface FusionRecoveryOrchestratorReport {
+  fusionBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when fusion gate blocks matrix rollout. */
+export function buildFusionRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): FusionRecoveryOrchestratorReport {
+  const fusion = auditMatchExplainabilityMatrixGate(packs, params);
+  const fusionBlocked = !matchExplainabilityMatrixAllowed(fusion);
+  const steps: string[] = [];
+  if (fusionBlocked) {
+    if (!fusion.resonanceReady) {
+      steps.push('Restore resonance bundle: vertex and resonance export must pass.');
+    }
+    if (!fusion.resonanceExportShipped) {
+      steps.push('Emit session resonance export before fusion clearance.');
+    }
+    if (!fusion.vertexResonanceHealthy) {
+      steps.push('Reconcile vertex/resonance bridge before fusion.');
+    }
+    steps.push(...buildFusionRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const resonance = auditMatchExplainabilityResonanceGate(packs, params);
+    if (!resonance.resonanceReady) {
+      steps.push('Re-run resonance readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Fusion gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_FUSION_RECOVERY_CAP);
+  return {
+    fusionBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Fusion recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function fusionRecoveryOrchestratorWithinCap(report: FusionRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_FUSION_RECOVERY_CAP;
+}
+
+
 // --- source: match-explainability-projection-bundle.ts ---
   auditMatchExplainabilityLatticeGate,
   matchExplainabilityLatticeAllowed,
