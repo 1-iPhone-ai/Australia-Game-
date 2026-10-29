@@ -80,6 +80,12 @@ import { nrDashBuildResilienceBandDiversity } from '../core/resilience-band-dive
 import { nrDashBuildBottleneckSeverityLoad } from '../core/bottleneck-severity-load.ts';
 import { nrDashBuildRivalRiskExposureShare } from '../core/rival-risk-exposure-share.ts';
 import { nrDashBuildHeatRowStrainConcentration } from '../core/heat-row-strain-concentration.ts';
+import { nrDashBuildHighRiskConcentration } from '../core/high-risk-concentration.ts';
+import { nrDashBuildDependencyNetworkSpan } from '../core/dependency-network-span.ts';
+import { nrDashBuildNationalBottleneckDensity } from '../core/national-bottleneck-density.ts';
+import { nrDashBuildNeutralRiskExposureShare } from '../core/neutral-risk-exposure-share.ts';
+import { nrDashBuildUtilHeadroomDivergence } from '../core/util-headroom-divergence.ts';
+import { nrDashBuildBorderStressConcentration } from '../core/border-stress-concentration.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -699,6 +705,39 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_heat_row_strain_conc', 'Heat row strain concentration splits NSW and VIC', () => {
     const conc = nrDashBuildHeatRowStrainConcentration(createAgent23NsFixture())!;
     return conc.concentrationIndex === 0.5 && conc.topRegionShare === 0.5;
+  });
+
+  check('a23_high_risk_conc', 'High-risk concentration peaks on NSW fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const conc = nrDashBuildHighRiskConcentration(snap)!;
+    return conc.topRegionId === 'NSW' && conc.concentrationIndex === 1;
+  });
+
+  check('a23_dep_network_span', 'Dependency network span covers three networks', () => {
+    const span = nrDashBuildDependencyNetworkSpan(createAgent23NsFixture())!;
+    return span.edgeCount === 3 && span.distinctNetworks === 3;
+  });
+
+  check('a23_bottleneck_density', 'National bottleneck density counts one active', () => {
+    const density = nrDashBuildNationalBottleneckDensity(createAgent23NsFixture())!;
+    return density.activeBottlenecks === 1 && density.density === 0.125;
+  });
+
+  check('a23_neutral_risk_share', 'Neutral risk exposure share tracks VIC neutral row', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { VIC: 'neutral' })!;
+    const share = nrDashBuildNeutralRiskExposureShare(snap)!;
+    return share.neutralRegionCount === 1 && share.neutralShare === 0.1;
+  });
+
+  check('a23_util_headroom_div', 'Util headroom divergence compares national spreads', () => {
+    const snap = nrDashBuildAuthSnapshot(5, null, createAgent23NsFixture(), null)!;
+    const div = nrDashBuildUtilHeadroomDivergence(snap)!;
+    return div.utilizationSpread === 0.2 && div.headroomSpread === 0.2 && div.divergence === 0;
+  });
+
+  check('a23_border_stress_conc', 'Border stress concentration peaks on NSW fixture', () => {
+    const conc = nrDashBuildBorderStressConcentration(createAgent23NsFixture())!;
+    return conc.topRegionId === 'NSW' && conc.concentrationIndex > 0.1;
   });
 
   return results;

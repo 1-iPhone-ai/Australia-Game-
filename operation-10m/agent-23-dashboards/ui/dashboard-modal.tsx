@@ -84,6 +84,12 @@ import { nrDashBuildResilienceBandDiversity } from '../core/resilience-band-dive
 import { nrDashBuildBottleneckSeverityLoad } from '../core/bottleneck-severity-load.ts';
 import { nrDashBuildRivalRiskExposureShare } from '../core/rival-risk-exposure-share.ts';
 import { nrDashBuildHeatRowStrainConcentration } from '../core/heat-row-strain-concentration.ts';
+import { nrDashBuildHighRiskConcentration } from '../core/high-risk-concentration.ts';
+import { nrDashBuildDependencyNetworkSpan } from '../core/dependency-network-span.ts';
+import { nrDashBuildNationalBottleneckDensity } from '../core/national-bottleneck-density.ts';
+import { nrDashBuildNeutralRiskExposureShare } from '../core/neutral-risk-exposure-share.ts';
+import { nrDashBuildUtilHeadroomDivergence } from '../core/util-headroom-divergence.ts';
+import { nrDashBuildBorderStressConcentration } from '../core/border-stress-concentration.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -158,6 +164,14 @@ export const NrDashOverviewTab: React.FC<{
         </div>
       ) : null;
     })()}
+    {(() => {
+      const conc = nrDashBuildHighRiskConcentration(snap);
+      return conc ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-high-risk-concentration">
+          High-risk concentration {conc.concentrationIndex} · top {conc.topRegionId ?? '—'} ({conc.totalHighRisks} risks)
+        </div>
+      ) : null;
+    })()}
     <NrDashOwnerStressGapCard gap={nrDashBuildOwnerStressGap(snap)} />
     <NrDashOwnedMomentumSkewCard skew={nrDashBuildOwnedMomentumSkew(snap)} />
     {(() => {
@@ -207,6 +221,15 @@ export const NrDashOverviewTab: React.FC<{
       return rivalShare ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-rival-risk-share">
           Rival risk exposure share {rivalShare.rivalShare} · {rivalShare.rivalExposure}/{rivalShare.totalExposure} index
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const neutralShare = nrDashBuildNeutralRiskExposureShare(snap);
+      return neutralShare ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-neutral-risk-share">
+          Neutral risk exposure share {neutralShare.neutralShare} · {neutralShare.neutralExposure}/{neutralShare.totalExposure}{' '}
+          index
         </div>
       ) : null;
     })()}
@@ -339,6 +362,14 @@ export const NrDashRegionsTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const span = nrDashBuildDependencyNetworkSpan(nsState);
+      return span ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-network-span">
+          Dependency network span {span.distinctNetworks}/{span.edgeCount} · {span.networks.join(', ')}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const bands = nrDashBuildMomentumBandDiversity(snap);
       return bands ? (
         <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-momentum-band-diversity">
@@ -459,6 +490,9 @@ export const NrDashNetworksTab: React.FC<{
   const couplingSpread = nrDashBuildNetworkCouplingSpread(ns);
   const bottleneckLoad = nrDashBuildBottleneckSeverityLoad(ns);
   const heatStrainConc = nrDashBuildHeatRowStrainConcentration(ns);
+  const nsSnap = nrDashBuildAuthSnapshot(ns.turn ?? 0, null, ns, null);
+  const bottleneckDensity = nrDashBuildNationalBottleneckDensity(ns);
+  const utilHeadroomDiv = nrDashBuildUtilHeadroomDivergence(nsSnap);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
       <NrDashUtilAlignmentStrip drift={utilDrift} />
@@ -542,6 +576,18 @@ export const NrDashNetworksTab: React.FC<{
       {heatStrainConc && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-heat-row-strain-concentration">
           Heat row strain concentration {heatStrainConc.concentrationIndex} · top {heatStrainConc.topRegionId ?? '—'}
+        </div>
+      )}
+      {bottleneckDensity && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-density">
+          National bottleneck density {bottleneckDensity.density} · {bottleneckDensity.activeBottlenecks}/
+          {bottleneckDensity.regionCount} regions
+        </div>
+      )}
+      {utilHeadroomDiv && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-util-headroom-divergence">
+          Util ↔ headroom divergence {utilHeadroomDiv.divergence} · util spread {utilHeadroomDiv.utilizationSpread} · headroom{' '}
+          {utilHeadroomDiv.headroomSpread}
         </div>
       )}
       {bottleneckConc && (
@@ -734,6 +780,15 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-corridor-stress-concentration">
             Corridor stress concentration {conc.concentrationIndex} · top {conc.topCorridorKey ?? '—'} (
             {Math.round(conc.topCorridorShare * 100)}%)
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const borderConc = nrDashBuildBorderStressConcentration(nsState);
+        return borderConc ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-border-stress-concentration">
+            Border stress concentration {borderConc.concentrationIndex} · top {borderConc.topRegionId ?? '—'} (
+            {Math.round(borderConc.topRegionShare * 100)}%)
           </p>
         ) : null;
       })()}

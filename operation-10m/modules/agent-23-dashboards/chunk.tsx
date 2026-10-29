@@ -3371,6 +3371,169 @@ export function nrDashBuildHeatRowStrainConcentration(
   };
 }
 
+// --- bundled from core/high-risk-concentration.ts ---
+export interface NrDashHighRiskConcentration {
+  totalHighRisks: number;
+  topRegionId: string | null;
+  concentrationIndex: number;
+  topRegionShare: number;
+}
+
+/** Herfindahl clustering of LR high-severity risk counts across regions. */
+export function nrDashBuildHighRiskConcentration(
+  snap: NrDashAuthSnapshot | null
+): NrDashHighRiskConcentration | null {
+  if (!snap?.regions.length) return null;
+  const totalHighRisks = snap.regions.reduce((s, r) => s + r.highRisks, 0);
+  if (totalHighRisks <= 0) return null;
+  let topRegionId: string | null = null;
+  let topCount = 0;
+  let concentrationIndex = 0;
+  snap.regions.forEach(r => {
+    if (r.highRisks > topCount) {
+      topCount = r.highRisks;
+      topRegionId = r.regionId;
+    }
+    const share = r.highRisks / totalHighRisks;
+    concentrationIndex += share * share;
+  });
+  return {
+    totalHighRisks,
+    topRegionId,
+    concentrationIndex: Math.round(concentrationIndex * 1000) / 1000,
+    topRegionShare: Math.round((topCount / totalHighRisks) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/dependency-network-span.ts ---
+export interface NrDashDependencyNetworkSpan {
+  edgeCount: number;
+  distinctNetworks: number;
+  networks: NationalNetworkKind[];
+}
+
+/** Count distinct NS network kinds referenced by interregional dependencies. */
+export function nrDashBuildDependencyNetworkSpan(
+  ns: NationalSystemsState | null
+): NrDashDependencyNetworkSpan | null {
+  if (!ns?.dependencies?.length) return null;
+  const set = new Set<NationalNetworkKind>();
+  ns.dependencies.forEach(d => set.add(d.network));
+  const networks = [...set].sort();
+  return {
+    edgeCount: ns.dependencies.length,
+    distinctNetworks: networks.length,
+    networks,
+  };
+}
+
+// --- bundled from core/national-bottleneck-density.ts ---
+export interface NrDashNationalBottleneckDensity {
+  regionCount: number;
+  activeBottlenecks: number;
+  density: number;
+}
+
+/** Active NS bottlenecks per canonical region slot (state list length). */
+export function nrDashBuildNationalBottleneckDensity(
+  ns: NationalSystemsState | null
+): NrDashNationalBottleneckDensity | null {
+  if (!ns) return null;
+  const regionCount = COMM_REGION_CODES.length;
+  const activeBottlenecks = ns.bottlenecks.length;
+  return {
+    regionCount,
+    activeBottlenecks,
+    density: Math.round((activeBottlenecks / regionCount) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/neutral-risk-exposure-share.ts ---
+export interface NrDashNeutralRiskExposureShare {
+  neutralRegionCount: number;
+  totalExposure: number;
+  neutralExposure: number;
+  neutralShare: number;
+}
+
+/** Share of aggregate LR risk exposure on neutral-owned regions. */
+export function nrDashBuildNeutralRiskExposureShare(
+  snap: NrDashAuthSnapshot | null
+): NrDashNeutralRiskExposureShare | null {
+  const exposure = nrDashBuildRiskExposure(snap);
+  if (!exposure || exposure.totalExposure <= 0) return null;
+  const neutral = exposure.rows.filter(r => {
+    const row = snap?.regions.find(x => x.regionId === r.regionId);
+    return row?.owner === 'neutral';
+  });
+  if (!neutral.length) return null;
+  const neutralExposure = neutral.reduce((s, r) => s + r.exposureScore, 0);
+  return {
+    neutralRegionCount: neutral.length,
+    totalExposure: exposure.totalExposure,
+    neutralExposure,
+    neutralShare: Math.round((neutralExposure / exposure.totalExposure) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/util-headroom-divergence.ts ---
+export interface NrDashUtilHeadroomDivergence {
+  utilizationSpread: number;
+  headroomSpread: number;
+  /** Util spread minus headroom spread (positive = util more dispersed). */
+  divergence: number;
+}
+
+/** Compare national utilization skew spread to capacity headroom spread. */
+export function nrDashBuildUtilHeadroomDivergence(
+  snap: NrDashAuthSnapshot | null
+): NrDashUtilHeadroomDivergence | null {
+  const skew = nrDashBuildUtilizationSkew(snap);
+  const headroom = nrDashBuildCapacityHeadroom(snap);
+  if (!skew || !headroom) return null;
+  const divergence = Math.round((skew.spread - headroom.spread) * 1000) / 1000;
+  return {
+    utilizationSpread: skew.spread,
+    headroomSpread: headroom.spread,
+    divergence,
+  };
+}
+
+// --- bundled from core/border-stress-concentration.ts ---
+export interface NrDashBorderStressConcentration {
+  regionCount: number;
+  topRegionId: string | null;
+  concentrationIndex: number;
+  topRegionShare: number;
+}
+
+/** Herfindahl clustering of per-region max land-border corridor stress. */
+export function nrDashBuildBorderStressConcentration(
+  ns: NationalSystemsState | null
+): NrDashBorderStressConcentration | null {
+  const rows = nrDashBuildBorderStressRows(ns);
+  if (!rows.length) return null;
+  const total = rows.reduce((s, r) => s + r.maxCorridorStress, 0);
+  if (total <= 0) return null;
+  let topRegionId: string | null = null;
+  let topStress = 0;
+  let concentrationIndex = 0;
+  rows.forEach(r => {
+    if (r.maxCorridorStress > topStress) {
+      topStress = r.maxCorridorStress;
+      topRegionId = r.regionId;
+    }
+    const share = r.maxCorridorStress / total;
+    concentrationIndex += share * share;
+  });
+  return {
+    regionCount: rows.length,
+    topRegionId,
+    concentrationIndex: Math.round(concentrationIndex * 1000) / 1000,
+    topRegionShare: Math.round((topStress / total) * 1000) / 1000,
+  };
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -4115,6 +4278,14 @@ export const NrDashOverviewTab: React.FC<{
         </div>
       ) : null;
     })()}
+    {(() => {
+      const conc = nrDashBuildHighRiskConcentration(snap);
+      return conc ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-high-risk-concentration">
+          High-risk concentration {conc.concentrationIndex} · top {conc.topRegionId ?? '—'} ({conc.totalHighRisks} risks)
+        </div>
+      ) : null;
+    })()}
     <NrDashOwnerStressGapCard gap={nrDashBuildOwnerStressGap(snap)} />
     <NrDashOwnedMomentumSkewCard skew={nrDashBuildOwnedMomentumSkew(snap)} />
     {(() => {
@@ -4164,6 +4335,15 @@ export const NrDashOverviewTab: React.FC<{
       return rivalShare ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-rival-risk-share">
           Rival risk exposure share {rivalShare.rivalShare} · {rivalShare.rivalExposure}/{rivalShare.totalExposure} index
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const neutralShare = nrDashBuildNeutralRiskExposureShare(snap);
+      return neutralShare ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-neutral-risk-share">
+          Neutral risk exposure share {neutralShare.neutralShare} · {neutralShare.neutralExposure}/{neutralShare.totalExposure}{' '}
+          index
         </div>
       ) : null;
     })()}
@@ -4296,6 +4476,14 @@ export const NrDashRegionsTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const span = nrDashBuildDependencyNetworkSpan(nsState);
+      return span ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-network-span">
+          Dependency network span {span.distinctNetworks}/{span.edgeCount} · {span.networks.join(', ')}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const bands = nrDashBuildMomentumBandDiversity(snap);
       return bands ? (
         <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-momentum-band-diversity">
@@ -4416,6 +4604,9 @@ export const NrDashNetworksTab: React.FC<{
   const couplingSpread = nrDashBuildNetworkCouplingSpread(ns);
   const bottleneckLoad = nrDashBuildBottleneckSeverityLoad(ns);
   const heatStrainConc = nrDashBuildHeatRowStrainConcentration(ns);
+  const nsSnap = nrDashBuildAuthSnapshot(ns.turn ?? 0, null, ns, null);
+  const bottleneckDensity = nrDashBuildNationalBottleneckDensity(ns);
+  const utilHeadroomDiv = nrDashBuildUtilHeadroomDivergence(nsSnap);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
       <NrDashUtilAlignmentStrip drift={utilDrift} />
@@ -4499,6 +4690,18 @@ export const NrDashNetworksTab: React.FC<{
       {heatStrainConc && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-heat-row-strain-concentration">
           Heat row strain concentration {heatStrainConc.concentrationIndex} · top {heatStrainConc.topRegionId ?? '—'}
+        </div>
+      )}
+      {bottleneckDensity && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-density">
+          National bottleneck density {bottleneckDensity.density} · {bottleneckDensity.activeBottlenecks}/
+          {bottleneckDensity.regionCount} regions
+        </div>
+      )}
+      {utilHeadroomDiv && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-util-headroom-divergence">
+          Util ↔ headroom divergence {utilHeadroomDiv.divergence} · util spread {utilHeadroomDiv.utilizationSpread} · headroom{' '}
+          {utilHeadroomDiv.headroomSpread}
         </div>
       )}
       {bottleneckConc && (
@@ -4691,6 +4894,15 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-corridor-stress-concentration">
             Corridor stress concentration {conc.concentrationIndex} · top {conc.topCorridorKey ?? '—'} (
             {Math.round(conc.topCorridorShare * 100)}%)
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const borderConc = nrDashBuildBorderStressConcentration(nsState);
+        return borderConc ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-border-stress-concentration">
+            Border stress concentration {borderConc.concentrationIndex} · top {borderConc.topRegionId ?? '—'} (
+            {Math.round(borderConc.topRegionShare * 100)}%)
           </p>
         ) : null;
       })()}
@@ -5464,6 +5676,39 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_heat_row_strain_conc', 'Heat row strain concentration splits NSW and VIC', () => {
     const conc = nrDashBuildHeatRowStrainConcentration(createAgent23NsFixture())!;
     return conc.concentrationIndex === 0.5 && conc.topRegionShare === 0.5;
+  });
+
+  check('a23_high_risk_conc', 'High-risk concentration peaks on NSW fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const conc = nrDashBuildHighRiskConcentration(snap)!;
+    return conc.topRegionId === 'NSW' && conc.concentrationIndex === 1;
+  });
+
+  check('a23_dep_network_span', 'Dependency network span covers three networks', () => {
+    const span = nrDashBuildDependencyNetworkSpan(createAgent23NsFixture())!;
+    return span.edgeCount === 3 && span.distinctNetworks === 3;
+  });
+
+  check('a23_bottleneck_density', 'National bottleneck density counts one active', () => {
+    const density = nrDashBuildNationalBottleneckDensity(createAgent23NsFixture())!;
+    return density.activeBottlenecks === 1 && density.density === 0.125;
+  });
+
+  check('a23_neutral_risk_share', 'Neutral risk exposure share tracks VIC neutral row', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { VIC: 'neutral' })!;
+    const share = nrDashBuildNeutralRiskExposureShare(snap)!;
+    return share.neutralRegionCount === 1 && share.neutralShare === 0.1;
+  });
+
+  check('a23_util_headroom_div', 'Util headroom divergence compares national spreads', () => {
+    const snap = nrDashBuildAuthSnapshot(5, null, createAgent23NsFixture(), null)!;
+    const div = nrDashBuildUtilHeadroomDivergence(snap)!;
+    return div.utilizationSpread === 0.2 && div.headroomSpread === 0.2 && div.divergence === 0;
+  });
+
+  check('a23_border_stress_conc', 'Border stress concentration peaks on NSW fixture', () => {
+    const conc = nrDashBuildBorderStressConcentration(createAgent23NsFixture())!;
+    return conc.topRegionId === 'NSW' && conc.concentrationIndex > 0.1;
   });
 
   return results;
