@@ -1174,6 +1174,7 @@ export function evaluateSuggestedActionGate(params: { autonomy: CommunicationAut
   if (params.plan && (params.plan.status === 'paused' || params.plan.status === 'cancelled')) return { allowed: false, needsApproval: false, reason: `The team plan is ${params.plan.status}, so plan-driven suggestions are on hold.` };
   if (params.autonomy === 'assisted') return { allowed: true, needsApproval: true, reason: null };
   if (!params.copilotEnabled) return { allowed: true, needsApproval: true, reason: 'Delegated actions still need the Co-Pilot; approval required while it is off.' };
+  if (params.autonomy === 'delegated') return { allowed: true, needsApproval: true, reason: null };
   return { allowed: true, needsApproval: false, reason: null };
 }
 
@@ -4232,6 +4233,26 @@ const UX_ASSIST_SETTING_KEYS = [
   'groupedInventoryCardsEnabled'
 ] as const;
 const MINIMUM_WAGER = 50; // Minimum wager required for challenges
+
+export function adaptiveChallengeWager(wager: number, money: number, aggression: number, risk: number): number {
+  const wagerMultiplier = 1 + Math.min(0.3, ((aggression + risk) / 100) * 0.12);
+  return Math.max(MINIMUM_WAGER, Math.min(money, Math.floor(wager * wagerMultiplier)));
+}
+
+export function preferRankedDecisionType<T extends { type: string }>(ranked: T[], preferredType: string | null | undefined): T[] {
+  if (!preferredType || ranked.length === 0) return ranked;
+  const preferred = ranked.filter(decision => decision.type === preferredType);
+  if (preferred.length === 0) return ranked;
+  return [...preferred, ...ranked.filter(decision => decision.type !== preferredType)];
+}
+
+export function guardianBlocksAutomation(result: { allowedToProceed?: boolean; highestSeverity?: string; confirmationRequired?: boolean } | null | undefined, protectionLevel?: string): boolean {
+  if (!result) return false;
+  if (result.allowedToProceed === false) return true;
+  if (result.highestSeverity === 'critical') return true;
+  if (protectionLevel === 'maximum_protection' && result.confirmationRequired) return true;
+  return false;
+}
 const MAX_INVENTORY = 50; // Maximum inventory capacity for players and AI
 const OVERRIDE_DAILY_CAP = 3;
 const OVERRIDE_BASE_COST = 500;
@@ -8760,21 +8781,23 @@ export function applyTransitProgress(
   const newDaysRemaining = currentJourney.daysRemaining - 1;
   const expeditionRoll = drawGameplayRandom('Expedition');
   const hazardRisk = currentJourney.hazardRisk ?? getHazardRiskForTerritory(currentJourney.destinationRegion);
+  const survivalOn = !settings || settings.survivalMechanicsEnabled !== false;
+  const retreatOn = !settings || settings.forcedRetreatEnabled !== false;
 
-  // Daily supply burn during transit
-  const baseDailyBurn = settings?.dailySupplyConsumptionRate ?? 10;
+  // Daily supply burn during transit. Both switches off means the journey does not consume supplies.
+  const baseDailyBurn = survivalOn ? (settings?.dailySupplyConsumptionRate ?? 10) : 0;
   let currentSupp = Math.max(0, (actor.currentSupplies ?? 100) - baseDailyBurn);
   let hazardTriggered = false;
 
-  if (expeditionRoll < hazardRisk) {
+  if (survivalOn && expeditionRoll < hazardRisk) {
     hazardTriggered = true;
     currentSupp = Math.max(0, currentSupp - 15);
   }
 
   const newCondition = calculateActorConditionState(currentSupp, actor.maxSupplies || 100);
 
-  // Forced retreat check: trigger if supplies hit 0 or condition drops to critical
-  if (currentSupp <= 0 || newCondition === 'critical') {
+  // Forced retreat only when that switch is on.
+  if (retreatOn && (currentSupp <= 0 || newCondition === 'critical')) {
     const origin = currentJourney.originRegion || actor.committedOriginRegion || 'NSW';
     const destData = getRegionData(currentJourney.destinationRegion);
     const destName = destData?.name || currentJourney.destinationRegion;
@@ -9128,6 +9151,11 @@ const tickDebuffs = (debuffs: Debuff[] = []) => {
     .filter(debuff => debuff.remainingDays > 0);
 };
 
+/** Team days tick debuffs once, on the day wrap. Non-team human End Turn is that tick. */
+export function debuffsAfterHumanEndTurn(debuffs: Debuff[] = [], isTeamMode = false): Debuff[] {
+  return isTeamMode ? debuffs : tickDebuffs(debuffs);
+}
+
 const upsertDebuff = (debuffs: Debuff[] = [], type: string, duration: number) => {
   const normalized = debuffs.filter(debuff => debuff.remainingDays > 0);
   const existing = normalized.find(debuff => debuff.type === type);
@@ -9157,6 +9185,8 @@ const calculateInventoryMarketValue = (
 };
 
 export function generateDynamicEvent(gameState: any, turnCounter: number, activeRegions: string[], worldContext?: { instability: number; shortage: number } | null): any {
+  const nationalEvents = gameState?.gameSettings?.nationalEventsEnabled ?? gameState?.nationalEventsEnabled;
+  if (nationalEvents === false) return null;
   const turn = typeof turnCounter === 'number' && Number.isFinite(turnCounter) ? Math.max(1, turnCounter) : 1;
   const regions = Array.isArray(activeRegions) && activeRegions.length > 0
     ? activeRegions
@@ -10143,6 +10173,46 @@ export function createDefaultScenarioV73State() {
   };
 }
 
+export function scenarioStandingValue(player: any, gameState: any): number {
+  const actorId = player?.id || 'player';
+  const mapped = gameState?.standingPerActor?.[actorId];
+  const mappedValues = mapped ? (Object.values(mapped) as number[]) : [];
+  if (mappedValues.length > 0) return Math.max(...mappedValues);
+  const legacy = player?.regionalStanding || {};
+  const legacyValues = Object.values(legacy) as number[];
+  return legacyValues.length > 0 ? Math.max(...legacyValues) : 0;
+}
+export function scenarioControlsRegion(player: any, gameState: any, regionId: string): boolean {
+  const deposits = sanitizeRegionDeposits(gameState?.regionDeposits);
+  const entry = deposits?.[regionId] || {};
+  const snapshot = getRegionControlSnapshot(entry);
+  const actorId = player?.id || 'player';
+  return snapshot.controllerId === actorId || snapshot.controllerId === player?.teamId;
+}
+export function scenarioDebtCleared(player: any): boolean {
+  const simple = Array.isArray(player?.loans) ? player.loans.length : 0;
+  const advanced = Array.isArray(player?.advancedLoans) ? player.advancedLoans.length : 0;
+  const debt = Number(player?.debt) || 0;
+  return simple === 0 && advanced === 0 && debt <= 0;
+}
+export function scenarioSabotageFree(player: any): boolean {
+  return (Number(player?.sabotageTargetedCount) || 0) === 0;
+}
+export function activeInfrastructureMaintenance(gameState: any): number {
+  const projects = gameState?.infrastructureProjects;
+  if (!projects || typeof projects !== 'object') return 0;
+  return Object.values(projects).reduce((sum: number, proj: any) => {
+    if (!proj || (proj.status !== 'active' && proj.status !== 'upgraded')) return sum;
+    const cost = Number(proj.maintenanceCostPerTurn) || 0;
+    return sum + (cost > 0 ? cost : 0);
+  }, 0);
+}
+export function actionSpendAllowed(cost: number, remaining: number): { allowed: boolean; spend: number } {
+  const priced = Number(cost) || 0;
+  if (priced <= 0) return { allowed: true, spend: 0 };
+  if ((Number(remaining) || 0) < priced) return { allowed: false, spend: 0 };
+  return { allowed: true, spend: priced };
+}
 export function evaluateScenarioObjective(
   objective: ScenarioObjective,
   context: {
@@ -10183,12 +10253,9 @@ export function evaluateScenarioObjective(
       break;
 
     case 'standing_reached':
-    case 'regionalStanding': {
-      const standingData = player?.regionalStanding || {};
-      const standingValues = Object.values(standingData) as number[];
-      currentValue = standingValues.length > 0 ? Math.max(...standingValues) : 0;
+    case 'regionalStanding':
+      currentValue = scenarioStandingValue(player, gameState);
       break;
-    }
 
     case 'ai_eliminated': {
       const aiMoney = aiPlayer?.money || 0;
@@ -10220,7 +10287,7 @@ export function evaluateScenarioObjective(
       break;
 
     case 'debt_cleared':
-      currentValue = (player?.loans || []).length === 0 ? 1 : 0;
+      currentValue = scenarioDebtCleared(player) ? 1 : 0;
       break;
 
     case 'investments_count':
@@ -10240,12 +10307,12 @@ export function evaluateScenarioObjective(
         sanitizeRegionDeposits(gameState.regionDeposits),
         gameState.regionControlStats?.controlHistory || []
       );
-      currentValue = (regStats.totalControlled?.[player?.id || 'player'] || 0) > 0 && player?.currentRegion === targetReg ? 1 : 0;
+      currentValue = scenarioControlsRegion(player, gameState, targetReg) ? 1 : 0;
       break;
     }
 
     case 'zero_sabotage_taken':
-      currentValue = (player?.sabotageTargetedCount || 0) === 0 ? 1 : 0;
+      currentValue = scenarioSabotageFree(player) ? 1 : 0;
       break;
 
     case 'governance_proposals_passed':
@@ -11100,6 +11167,7 @@ export function advanceActiveRegionalContractsDay(contracts: Record<string, any>
 
 /** The single contract payout rule (reward, XP, regional development). Caller guarantees objectives are done. */
 export function completeRegionalContractPayout(nextState: any, contract: any, actor: any): void {
+  if (!contract || contract.status === 'completed' || contract.status === 'failed' || contract.status === 'expired') return;
   const baseRewardMoney = contract.rewards?.money || 0;
   const rewardBoost = actor?.rewardBoostPct ?? 0;
   actor.money += Math.round(baseRewardMoney * (1 + rewardBoost));
@@ -11215,11 +11283,35 @@ export function applySimpleLoanTick(state: { money: number; loans?: any[] }): { 
     // longer compounds — one unpayable $500 loan used to exceed $4,600 within 10 days (1.25^n death spiral).
     const principal = typeof loan.principal === 'number' && loan.principal > 0 ? loan.principal : Math.min(loan.amount, LOAN_AMOUNT);
     const interest = Math.floor(principal * LOAN_INTEREST_RATE);
-    const payment = Math.min(interest, money);
+    const payable = Number.isFinite(money) && money > 0 ? money : 0;
+    const payment = Math.min(interest, payable);
     money -= payment;
     return { ...loan, principal, amount: loan.amount + interest - payment, accrued: (loan.accrued || 0) + interest };
   }).filter((loan: any) => loan.amount > 0.5);
   return { money, loans };
+}
+
+const V95_MAX_WALLET_AMOUNT = 1e9;
+
+function v95ParseWalletAmount(value: unknown): number {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') return NaN;
+    return Number(trimmed);
+  }
+  return typeof value === 'number' ? value : Number(value);
+}
+
+function v95WalletAmount(value: unknown, min: number): number | null {
+  const n = v95ParseWalletAmount(value);
+  if (!Number.isFinite(n) || n < min || n > V95_MAX_WALLET_AMOUNT) return null;
+  return n;
+}
+
+function v95FirstWalletAmount(candidates: unknown[], fallback: number, min: number): number | null {
+  const specified = candidates.find(v => v !== undefined && v !== null);
+  if (specified === undefined) return v95WalletAmount(fallback, min);
+  return v95WalletAmount(specified, min);
 }
 
 export function reduceGameAction(
@@ -11261,15 +11353,22 @@ export function reduceGameAction(
         case 'movement':
         case 'travel': {
           const targetRegion = action.targetRegion || action.parameters?.region || action.parameters?.destinationRegion || action.parameters?.targetRegion || action.parameters?.destination;
-          const cost = action.price || action.parameters?.cost || 0;
-          if (actor && targetRegion) {
+          const specifiedCost = action.price !== undefined && action.price !== null ? action.price : (action.parameters?.cost !== undefined && action.parameters?.cost !== null ? action.parameters.cost : undefined);
+          const parsedCost = specifiedCost === undefined ? 0 : v95ParseWalletAmount(specifiedCost);
+          const knownRegion = typeof targetRegion === 'string' && (Boolean(REGIONS[targetRegion]) || Boolean(EXTERNAL_TERRITORIES[targetRegion]));
+          const cost = specifiedCost === undefined || parsedCost === 0
+            ? getActorTravelCost(nextState, actor, actor?.currentRegion, targetRegion, gameSettings)
+            : parsedCost;
+          const travelAp = actor ? getActionPointCost(action.type, actor, gameSettings) : 0;
+          if (actor && gameSettings?.actionLimitsEnabled !== false && travelAp > 0 && getRemainingActionPoints(actor, gameSettings) < travelAp) break;
+          if (actor && knownRegion && Number.isFinite(cost) && cost >= 0 && cost <= V95_MAX_WALLET_AMOUNT && Number.isFinite(actor.money) && actor.money >= cost) {
+            const nextMoney = actor.money - cost;
+            if (!Number.isFinite(nextMoney)) break;
             actor.currentRegion = targetRegion;
             if (!actor.visitedRegions?.includes(targetRegion)) {
               actor.visitedRegions = [...(actor.visitedRegions || []), targetRegion];
             }
-            if (cost > 0 && actor.money >= cost) {
-              actor.money -= cost;
-            }
+            actor.money = nextMoney;
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
             const apCost = typeof action.apCost === 'number' ? action.apCost : (typeof action.parameters?.apCost === 'number' ? action.parameters.apCost : 1);
             if (typeof actor.actionPoints === 'number') {
@@ -11296,10 +11395,23 @@ export function reduceGameAction(
         case 'take_advanced_loan':
         case 'take_loan':
         case 'draw_credit_line': {
-          const principal = action.investmentAmount || action.price || action.parameters?.principal || action.parameters?.amount || 1000;
-          if (actor) {
+          const specifiedPrincipal = [action.investmentAmount, action.price, action.parameters?.principal, action.parameters?.amount].find(v => v !== undefined && v !== null);
+          const principal = specifiedPrincipal === undefined ? v95WalletAmount(1000, 0) : v95WalletAmount(specifiedPrincipal, 0);
+          if (actor && principal !== null && principal > 0 && Number.isFinite(actor.money) && Number.isFinite(actor.money + principal)) {
             actor.money += principal;
-            actor.debt = (actor.debt || 0) + principal;
+            const scheduleId = nextCorrelationId(nextState.counters || globalDeterministicCounters, 'loan');
+            const termDays = Number(action.parameters?.termDays || action.parameters?.term) || 5;
+            actor.advancedLoans = [...(actor.advancedLoans || []), {
+              id: scheduleId,
+              tierId: action.parameters?.tierId || 'canonical',
+              amount: principal,
+              baseInterestRate: 0.05,
+              actualInterestRate: 0.05,
+              accrued: 0,
+              term: termDays,
+              daysRemaining: termDays,
+              issuedDay: nextState.day || 1
+            }];
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
             const apCost = typeof action.apCost === 'number' ? action.apCost : (typeof action.parameters?.apCost === 'number' ? action.parameters.apCost : (action.type === 'emergency_loan' ? 0 : 1));
             if (typeof actor.actionPoints === 'number') {
@@ -11313,6 +11425,21 @@ export function reduceGameAction(
         case 'repay_emergency_loan':
         case 'repay_advanced_loan':
         case 'repay_loan': {
+          if ((action.type as string) === 'repay_advanced_loan' && actor && Array.isArray(actor.advancedLoans)) {
+            const loanId = action.parameters?.loanId || action.item;
+            const open = actor.advancedLoans.filter((loan: any) => loan && Number(loan.amount) > 0);
+            const target = loanId ? open.find((loan: any) => loan.id === loanId) : open[0];
+            const principal = Number(target?.amount);
+            const accrued = Number(target?.accrued);
+            const owed = principal + (Number.isFinite(accrued) && accrued > 0 ? accrued : 0);
+            if (target && Number.isFinite(owed) && owed > 0 && Number.isFinite(actor.money) && actor.money >= owed) {
+              actor.money -= owed;
+              actor.advancedLoans = actor.advancedLoans.filter((loan: any) => loan !== target);
+              actor.debt = actor.advancedLoans.reduce((sum: number, loan: any) => sum + (Number(loan?.amount) > 0 ? Number(loan.amount) : 0), 0);
+              actionExecuted = true;
+            }
+            break;
+          }
           // V9.1: simple emergency loans (the `loans` list) are repaid by principal, smallest first. Like taking
           // one, repaying via 'repay_emergency_loan' costs no action (same as the human Quick Action).
           const simpleLoans = Array.isArray(actor?.loans) ? actor.loans.filter((l: any) => l && Number(l.amount) > 0) : [];
@@ -11326,12 +11453,18 @@ export function reduceGameAction(
             }
             break;
           }
-          const amount = action.investmentAmount || action.price || action.parameters?.repaymentAmount || action.parameters?.amount || 500;
-          const currentDebt = actor?.debt || actor?.loans || 0;
-          if (actor && actor.money >= amount && currentDebt > 0) {
+          const specifiedRepay = [action.investmentAmount, action.price, action.parameters?.repaymentAmount, action.parameters?.amount].find((v: unknown) => v !== undefined && v !== null);
+          const amount = specifiedRepay === undefined ? v95WalletAmount(500, 0) : v95WalletAmount(specifiedRepay, 0);
+          const debtNumber = Number(actor?.debt);
+          const loanNumber = typeof actor?.loans === 'number' ? Number(actor.loans) : NaN;
+          const currentDebt = Number.isFinite(debtNumber) && debtNumber > 0 ? debtNumber : loanNumber;
+          if (actor && amount !== null && amount > 0 && Number.isFinite(currentDebt) && currentDebt > 0 && Number.isFinite(actor.money) && actor.money >= amount) {
             const actualRepay = Math.min(amount, currentDebt);
-            actor.money -= actualRepay;
-            actor.debt = Math.max(0, currentDebt - actualRepay);
+            const nextMoney = actor.money - actualRepay;
+            const nextDebt = currentDebt - actualRepay;
+            if (!(Number.isFinite(actualRepay) && actualRepay > 0 && Number.isFinite(nextMoney) && Number.isFinite(nextDebt) && nextMoney <= actor.money && nextDebt <= currentDebt)) break;
+            actor.money = nextMoney;
+            actor.debt = Math.max(0, nextDebt);
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
             const apCost = typeof action.apCost === 'number' ? action.apCost : (typeof action.parameters?.apCost === 'number' ? action.parameters.apCost : 1);
             if (typeof actor.actionPoints === 'number') {
@@ -11343,17 +11476,35 @@ export function reduceGameAction(
         }
 
         case 'refinance_advanced_loan': {
-          const newPrincipal = action.parameters?.newPrincipal ?? 5000;
-          const oldPrincipal = actor?.debt || actor?.loans || 0;
-          const debtDelta = newPrincipal - oldPrincipal;
-          if (actor) {
-            if (debtDelta > 0) {
-              actor.money += debtDelta;
+          const specifiedPrincipal = action.parameters?.newPrincipal;
+          const newPrincipal = specifiedPrincipal === undefined || specifiedPrincipal === null ? v95WalletAmount(5000, 0) : v95WalletAmount(specifiedPrincipal, 0);
+          const scheduledPrincipal = Array.isArray(actor?.advancedLoans) ? actor.advancedLoans.reduce((sum: number, loan: any) => sum + (Number(loan?.amount) > 0 ? Number(loan.amount) : 0), 0) : 0;
+          const debtPrincipal = Number(actor?.debt);
+          const oldPrincipal = Number.isFinite(debtPrincipal) && debtPrincipal > 0 ? debtPrincipal : scheduledPrincipal;
+          if (actor && newPrincipal !== null && newPrincipal > 0 && Number.isFinite(oldPrincipal) && oldPrincipal > 0 && Number.isFinite(actor.money)) {
+            const debtDelta = newPrincipal - oldPrincipal;
+            const nextMoney = actor.money + debtDelta;
+            if (Number.isFinite(debtDelta) && Number.isFinite(nextMoney) && (debtDelta > 0 || actor.money >= Math.abs(debtDelta))) {
+              actor.money = nextMoney;
               actor.debt = newPrincipal;
-              actionExecuted = true;
-            } else if (debtDelta <= 0 && actor.money >= Math.abs(debtDelta)) {
-              actor.money += debtDelta;
-              actor.debt = newPrincipal;
+              if (Array.isArray(actor.advancedLoans)) {
+                const open = actor.advancedLoans.filter((loan: any) => loan && Number(loan.amount) > 0);
+                if (open.length === 1) {
+                  open[0].amount = newPrincipal;
+                } else if (open.length > 1) {
+                  const sum = open.reduce((total: number, loan: any) => total + Number(loan.amount), 0);
+                  let assigned = 0;
+                  open.forEach((loan: any, index: number) => {
+                    if (index === open.length - 1) {
+                      loan.amount = Math.max(0, newPrincipal - assigned);
+                    } else {
+                      const share = sum > 0 ? Math.floor(newPrincipal * (Number(loan.amount) / sum)) : 0;
+                      loan.amount = share;
+                      assigned += share;
+                    }
+                  });
+                }
+              }
               actionExecuted = true;
             }
           }
@@ -11381,7 +11532,10 @@ export function reduceGameAction(
                   regionId,
                   stateCode: (regionId as 'NSW' | 'VIC' | 'QLD' | 'WA' | 'SA' | 'TAS' | 'NT' | 'ACT') || 'NSW',
                   requiredDevTier: 1,
-                  totalCost: action.price || action.parameters?.cost || 5000,
+                  totalCost: (() => {
+                    const specifiedProjectCost = [action.price, action.parameters?.cost].find((v: unknown) => v !== undefined && v !== null);
+                    return specifiedProjectCost === undefined ? 5000 : v95WalletAmount(specifiedProjectCost, 0);
+                  })(),
                   laborTurnsRequired: action.parameters?.laborTurnsRequired || 5,
                   currentLaborTurnsCompleted: 0,
                   totalInvestedMoney: 0,
@@ -11390,6 +11544,7 @@ export function reduceGameAction(
                   providedBonuses: [],
                   maintenanceCostPerTurn: 50
                 };
+                if (project.totalCost === null) break;
                 nextState.infrastructureProjects[projectId] = project;
               } else if (project.status === 'locked' || project.status === 'unlocked') {
                 project.status = 'under_construction';
@@ -11399,11 +11554,15 @@ export function reduceGameAction(
             }
             break;
           }
+          const buildAp = actor ? getActionPointCost('build_infrastructure', actor, gameSettings) : 0;
+          if (actor && gameSettings?.actionLimitsEnabled !== false && buildAp > 0 && getRemainingActionPoints(actor, gameSettings) < buildAp) break;
           const reg = action.targetRegion || action.parameters?.region || actor?.currentRegion || 'NSW';
           const type = (action.parameters?.infrastructureType || 'trade_depot') as InfrastructureProjectType;
-          const cost = action.investmentAmount || action.price || action.parameters?.capitalAmount || action.parameters?.cost || 350;
-          if (actor && actor.money >= cost) {
-            actor.money -= cost;
+          const cost = v95FirstWalletAmount([action.investmentAmount, action.price, action.parameters?.capitalAmount, action.parameters?.cost], 350, 0);
+          if (actor && cost !== null && Number.isFinite(actor.money) && actor.money >= cost) {
+            const nextMoney = actor.money - cost;
+            if (!Number.isFinite(nextMoney)) break;
+            actor.money = nextMoney;
             if (!nextState.infrastructureProjects) nextState.infrastructureProjects = {};
             // Deterministic id (replay / save-load must reproduce the same state from the same inputs).
             const requestedId = action.parameters?.projectId;
@@ -11434,9 +11593,11 @@ export function reduceGameAction(
 
         case 'launch_expedition': {
           const siteId = action.targetRegion || action.parameters?.siteId || action.parameters?.targetId || action.item || 'site_1';
-          const cost = action.investmentAmount || action.price || action.parameters?.initialCost || action.parameters?.cost || 250;
-          if (actor && actor.money >= cost) {
-            actor.money -= cost;
+          const cost = v95FirstWalletAmount([action.investmentAmount, action.price, action.parameters?.initialCost, action.parameters?.cost], 250, 0);
+          if (actor && cost !== null && Number.isFinite(actor.money) && actor.money >= cost) {
+            const nextMoney = actor.money - cost;
+            if (!Number.isFinite(nextMoney)) break;
+            actor.money = nextMoney;
             if (!nextState.activeExpeditions) nextState.activeExpeditions = {};
             const expLog: ExpeditionLog = {
               id: siteId,
@@ -11460,9 +11621,11 @@ export function reduceGameAction(
         }
 
         case 'emergency_rescue': {
-          const cost = action.investmentAmount || action.price || action.parameters?.cost || 200;
-          if (actor && actor.money >= cost) {
-            actor.money -= cost;
+          const cost = v95FirstWalletAmount([action.investmentAmount, action.price, action.parameters?.cost], 200, 0);
+          if (actor && cost !== null && Number.isFinite(actor.money) && actor.money >= cost) {
+            const nextMoney = actor.money - cost;
+            if (!Number.isFinite(nextMoney)) break;
+            actor.money = nextMoney;
             if (nextState.activeDynamicEvent) {
               nextState.activeDynamicEvent.severity = Math.max(0, (nextState.activeDynamicEvent.severity || 1) - 1);
             }
@@ -11472,8 +11635,20 @@ export function reduceGameAction(
         }
 
         case 'work': {
-          const wage = action.price || action.parameters?.wage || action.parameters?.amount || 50;
-          if (actor) {
+          // A zero price is the free cost the intent mapper stamps from costEstimate, not the wage.
+          // The wage is parameters.wage / parameters.amount, otherwise a positive price, otherwise $50.
+          // A negative or non-finite wage does not pay.
+          const named = [action.parameters?.wage, action.parameters?.amount].find((v: unknown) => v !== undefined && v !== null);
+          const namedWage = named === undefined ? null : v95WalletAmount(named, 0);
+          if (named !== undefined && (namedWage === null || namedWage <= 0)) break;
+          let wage = namedWage && namedWage > 0 ? namedWage : null;
+          if (wage === null && action.price !== undefined && action.price !== null) {
+            const priced = Number(action.price) > 0 ? v95WalletAmount(action.price, 0) : null;
+            if (Number(action.price) !== 0 && (priced === null || priced <= 0)) break;
+            if (priced && priced > 0) wage = priced;
+          }
+          if (wage === null) wage = v95WalletAmount(50, 0);
+          if (actor && wage !== null && wage > 0 && Number.isFinite(actor.money) && Number.isFinite(actor.money + wage)) {
             actor.money += wage;
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
             actionExecuted = true;
@@ -11485,37 +11660,45 @@ export function reduceGameAction(
           const item = action.item || action.parameters?.output || action.parameters?.recipeId;
           const inputs: Record<string, number> = action.parameters?.inputs || {};
           const craftTime = action.parameters?.craftTime || 1;
-          if (actor) {
-            if (actor.inventory) {
-              for (const [res, count] of Object.entries(inputs)) {
-                for (let i = 0; i < (count as number); i++) {
-                  const idx = actor.inventory.indexOf(res);
-                  if (idx !== -1) actor.inventory.splice(idx, 1);
-                }
-              }
-            }
-            if (item) {
+          const inputRows = Object.entries(inputs);
+          if (actor && item && inputRows.length > 0) {
+            const bag = Array.isArray(actor.inventory) ? [...actor.inventory] : [];
+            const affordable = inputRows.every(([res, count]) => {
+              const need = Number(count);
+              return Number.isFinite(need) && need > 0 && bag.filter(entry => entry === res).length >= need;
+            });
+            if (affordable) {
+              inputRows.forEach(([res, count]) => {
+                let left = Number(count);
+                actor.inventory = (actor.inventory || []).filter((entry: string) => {
+                  if (entry === res && left > 0) { left -= 1; return false; }
+                  return true;
+                });
+              });
               actor.inventory = [...(actor.inventory || []), item];
+              actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
+              void craftTime;
+              actionExecuted = true;
             }
-            actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
-            actionExecuted = true;
           }
           break;
         }
 
         case 'challenge': {
-          const wager = action.parameters?.wager || action.price || 0;
-          const isWin = action.parameters?.isWin !== false;
-          const reward = action.parameters?.reward || wager * 2;
+          const wager = Number(action.parameters?.wager ?? action.price ?? 0);
+          const isWin = action.parameters?.isWin === true;
+          const reward = Number(action.parameters?.reward ?? (Number.isFinite(wager) ? wager * 2 : NaN));
           const xpGain = action.parameters?.xpGain || 20;
-          if (actor) {
+          if (actor && action.parameters && typeof action.parameters.isWin === 'boolean' && Number.isFinite(wager) && wager >= 0 && Number.isFinite(reward) && reward >= 0) {
             if (isWin) {
               actor.money += reward;
               actor.consecutiveWins = (actor.consecutiveWins || 0) + 1;
               actor.xp = (actor.xp || 0) + xpGain;
-            } else {
+            } else if (actor.money >= wager) {
               actor.money = Math.max(0, actor.money - wager);
               actor.consecutiveWins = 0;
+            } else {
+              break;
             }
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
             actionExecuted = true;
@@ -11524,15 +11707,14 @@ export function reduceGameAction(
         }
 
         case 'double_or_nothing': {
-          const reward = action.parameters?.reward || 0;
-          const isWin = action.parameters?.isWin !== false;
-          if (actor) {
-            if (isWin) {
-              actor.money += reward;
-            } else {
-              actor.money = Math.max(0, actor.money - reward);
+          const reward = v95WalletAmount(action.parameters?.reward ?? 0, 0);
+          const isWin = action.parameters?.isWin;
+          if (actor && typeof isWin === 'boolean' && reward !== null && Number.isFinite(actor.money) && (isWin || actor.money >= reward)) {
+            const nextMoney = isWin ? actor.money + reward : actor.money - reward;
+            if (Number.isFinite(nextMoney)) {
+              actor.money = nextMoney;
+              actionExecuted = true;
             }
-            actionExecuted = true;
           }
           break;
         }
@@ -11540,9 +11722,12 @@ export function reduceGameAction(
         case 'region_deposit': {
           const region = action.targetRegion || action.parameters?.regionCode || action.parameters?.region;
           const amount = action.investmentAmount || action.price || action.parameters?.amount || 0;
+          const knownRegion = typeof region === 'string' && (Boolean(REGIONS[region]) || Boolean(EXTERNAL_TERRITORIES[region]));
           const ownerKey = actorId;
-          if (actor && region && Number.isFinite(amount) && amount > 0 && actor.money >= amount) {
-            actor.money -= amount;
+          if (actor && knownRegion && Number.isFinite(amount) && amount > 0 && amount <= V95_MAX_WALLET_AMOUNT && Number.isFinite(actor.money) && actor.money >= amount) {
+            const nextMoney = actor.money - amount;
+            if (!Number.isFinite(nextMoney)) break;
+            actor.money = nextMoney;
             if (!nextState.regions) nextState.regions = {};
             if (!nextState.regions[region]) nextState.regions[region] = {};
             nextState.regions[region][ownerKey] = (nextState.regions[region][ownerKey] || 0) + amount;
@@ -11557,12 +11742,13 @@ export function reduceGameAction(
         case 'give_cash':
         case 'transfer_cash': {
           const targetId = action.targetActorId || action.parameters?.targetActorId;
-          const amount = action.price || action.parameters?.amount || 50;
+          const specifiedTransfer = [action.price, action.parameters?.amount].find((v: unknown) => v !== undefined && v !== null);
+          const amount = specifiedTransfer === undefined ? 50 : v95ParseWalletAmount(specifiedTransfer);
           const recipient = targetId ? nextState.actorsById[targetId] : null;
           // V9.5: a negative / non-finite amount used to reverse the transfer (taking the recipient's cash).
-          if (actor && Number.isFinite(amount) && amount > 0 && actor.money >= amount) {
+          if (actor && recipient && Number.isFinite(amount) && amount > 0 && actor.money >= amount) {
             actor.money -= amount;
-            if (recipient) recipient.money += amount;
+            recipient.money += amount;
             if (team) {
               team.supportLedger = team.supportLedger || createDefaultTeamSupportLedger();
               const ledgerAny = team.supportLedger as unknown as Record<string, any>;
@@ -11591,10 +11777,12 @@ export function reduceGameAction(
           // Co-Pilot/AI investments free control that the human's identical purchase never got).
           const region = action.targetRegion || action.parameters?.regionCode || actor?.currentRegion || 'QLD';
           const canonicalCost = REGIONAL_INVESTMENTS[region]?.cost;
-          const amount = canonicalCost ?? (action.investmentAmount || action.price || action.parameters?.cost || action.parameters?.amount || 100);
-          const alreadyOwned = canonicalCost !== undefined && (actor?.investments || []).includes(region);
-          if (actor && actor.money >= amount && !alreadyOwned) {
-            actor.money -= amount;
+          const amount = typeof canonicalCost === 'number' ? v95WalletAmount(canonicalCost, 0) : null;
+          const alreadyOwned = amount !== null && (actor?.investments || []).includes(region);
+          if (actor && amount !== null && Number.isFinite(actor.money) && actor.money >= amount && !alreadyOwned) {
+            const nextMoney = actor.money - amount;
+            if (!Number.isFinite(nextMoney)) break;
+            actor.money = nextMoney;
             actor.investments = [...(actor.investments || []), region];
             const apCost = typeof action.apCost === 'number' ? action.apCost : (typeof action.parameters?.apCost === 'number' ? action.parameters.apCost : 1);
             if (typeof actor.actionPoints === 'number') {
@@ -11609,9 +11797,11 @@ export function reduceGameAction(
         case 'equipment':
         case 'buy_equipment_for_actor': {
           const item = action.item || action.parameters?.itemId || action.parameters?.item;
-          const price = action.price || action.parameters?.cost || action.parameters?.price || 50;
-          if (actor && item && actor.money >= price) {
-            actor.money -= price;
+          const price = v95FirstWalletAmount([action.price, action.parameters?.cost, action.parameters?.price], 50, 0);
+          if (actor && item && price !== null && Number.isFinite(actor.money) && actor.money >= price) {
+            const nextMoney = actor.money - price;
+            if (!Number.isFinite(nextMoney)) break;
+            actor.money = nextMoney;
             actor.equipment = [...(actor.equipment || []), item];
             actor.inventory = [...(actor.inventory || []), item];
             actor.actionsUsedThisTurn = (actor.actionsUsedThisTurn || 0) + getActionPointCost(action.type, actor, gameSettings);
@@ -11631,10 +11821,13 @@ export function reduceGameAction(
         case 'sell':
         case 'sellResource': {
           const item = action.item || action.parameters?.resource || action.parameters?.item;
-          const quantity = action.parameters?.quantity || 1;
+          const rawQuantity = action.parameters?.quantity;
+          const quantity = rawQuantity === undefined || rawQuantity === null ? 1 : Number(rawQuantity);
           const isBuy = action.type === 'buy_market' || action.type === 'buyResource' || (action.parameters?.isBuy !== false && action.type !== 'sell' && action.type !== 'sellResource');
-          const unitPrice = action.price || action.parameters?.unitPrice || action.parameters?.price || nextState.markets?.resourcePrices?.[item] || 100;
+          const specifiedPrice = [action.price, action.parameters?.unitPrice, action.parameters?.price].find(v => v !== undefined && v !== null);
+          const unitPrice = specifiedPrice === undefined ? Number(nextState.markets?.resourcePrices?.[item] ?? 100) : Number(specifiedPrice);
           const totalPrice = unitPrice * quantity;
+          if (!Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > V95_MAX_WALLET_AMOUNT || !Number.isFinite(totalPrice) || totalPrice < 0 || totalPrice > V95_MAX_WALLET_AMOUNT) break;
           if (actor && item) {
             if (isBuy && actor.money >= totalPrice) {
               actor.money -= totalPrice;
@@ -11655,18 +11848,16 @@ export function reduceGameAction(
                 actionExecuted = true;
               }
             }
-          } else if (actor && typeof action.parameters?.moneyDelta === 'number') {
-            actor.money += action.parameters.moneyDelta;
-            actionExecuted = true;
           }
           break;
         }
 
         case 'sabotage': {
           const targetId = action.targetActorId || action.parameters?.targetActorId;
-          const cost = action.price || action.parameters?.cost || 0;
+          const rawSabotageCost = action.price ?? action.parameters?.cost ?? 0;
+          const cost = Number(rawSabotageCost);
           const targetActor = targetId ? nextState.actorsById[targetId] : null;
-          if (actor && actor.money >= cost) {
+          if (actor && Number.isFinite(cost) && cost >= 0 && actor.money >= cost) {
             actor.money -= cost;
             if (targetActor) {
               targetActor.debuffs = [...(targetActor.debuffs || []), {
@@ -11699,12 +11890,9 @@ export function reduceGameAction(
         }
 
         case 'ai_action': {
-          if (action.parameters?.payload) {
-            const p = action.parameters.payload;
-            if (p.moneyDelta && actor) actor.money += p.moneyDelta;
-            if (p.region && actor) actor.currentRegion = p.region;
-            actionExecuted = true;
-          } else {
+          const region = action.parameters?.payload?.region;
+          if (actor && typeof region === 'string' && (REGIONS[region] || EXTERNAL_TERRITORIES[region])) {
+            actor.currentRegion = region;
             actionExecuted = true;
           }
           break;
@@ -11781,6 +11969,11 @@ export function reduceGameAction(
               }
             }
           }
+          if (nextState.gameState && typeof nextState.gameState === 'object' && nextState.gameState !== nextState) {
+            nextState.gameState.turnCounter = nextState.turnCounter;
+            nextState.gameState.turn = nextState.turn;
+            if (typeof nextState.day === 'number') nextState.gameState.day = nextState.day;
+          }
           actionExecuted = true;
           break;
         }
@@ -11841,13 +12034,15 @@ export function reduceGameAction(
         case 'invest_infrastructure_project':
         case 'investInfrastructure': {
           const projectId = action.parameters?.projectId;
-          const investment = action.investmentAmount || action.price || action.parameters?.amount || 1000;
-          if (projectId && nextState.infrastructureProjects?.[projectId] && actor && actor.money >= investment) {
+          const investment = v95FirstWalletAmount([action.investmentAmount, action.price, action.parameters?.amount], 1000, 0);
+          if (projectId && nextState.infrastructureProjects?.[projectId] && actor && investment !== null && investment > 0 && Number.isFinite(actor.money) && actor.money >= investment) {
             const project = nextState.infrastructureProjects[projectId];
             // V9.3: a locked project (site committed to a competing project, or not yet opened) cannot be funded.
             if (project.status === 'locked') break; // actionExecuted stays false → the canonical failure path reports it
             if (project.status !== 'active') {
-              actor.money -= investment;
+              const nextMoney = actor.money - investment;
+              if (!Number.isFinite(nextMoney)) break;
+              actor.money = nextMoney;
               project.totalInvestedMoney += investment;
               project.contributions = { ...(project.contributions || {}), [actorId]: ((project.contributions || {})[actorId] || 0) + investment };
               project.status = 'under_construction';
@@ -11969,7 +12164,10 @@ export function reduceGameAction(
           if (projectId && nextState.infrastructureProjects?.[projectId]) {
             const project = nextState.infrastructureProjects[projectId];
             if (project.status === 'under_construction' || project.status === 'unlocked') {
-              if (capitalAmount > 0 && actor && actor.money >= capitalAmount) {
+              if (capitalAmount > 0 && (!actor || actor.money < capitalAmount)) {
+                break;
+              }
+              if (capitalAmount > 0 && actor) {
                 actor.money -= capitalAmount;
                 project.totalInvestedMoney = (project.totalInvestedMoney || 0) + capitalAmount;
               }
@@ -12010,6 +12208,8 @@ export function reduceGameAction(
           const projectId = action.parameters?.projectId || action.item;
           if (projectId && nextState.infrastructureProjects?.[projectId]) {
             const project = nextState.infrastructureProjects[projectId];
+            const invested = Number(project.totalInvestedMoney);
+            if (!(Number.isFinite(invested) && invested > 0)) break;
             project.status = 'active';
             project.completionTurn = nextState.turn;
             const reg = project.regionId;
@@ -12267,14 +12467,12 @@ export function reduceGameAction(
                 if (chosenOutcome.moneyDelta !== undefined) {
                   if (chosenOutcome.moneyDelta > 0) {
                     moneyGained = chosenOutcome.moneyDelta;
-                    exp.collectedMoney = (exp.collectedMoney || 0) + moneyGained;
                   }
                   actorObj.money = Math.max(0, (actorObj.money ?? 0) + chosenOutcome.moneyDelta);
                 }
                 if (chosenOutcome.standingDelta !== undefined) {
                   if (chosenOutcome.standingDelta > 0) {
                     standingGained = chosenOutcome.standingDelta;
-                    exp.standingDelta = (exp.standingDelta || 0) + standingGained;
                   }
                   if (exp.expeditionTargetId) {
                     const target = nextState.expeditionTargets?.[exp.expeditionTargetId];
@@ -12332,7 +12530,7 @@ export function reduceGameAction(
                   actorObj.currentSupplies = Math.max(actorObj.currentSupplies || 0, 10);
                   actorObj.condition = 'strained';
                   actorObj.lastRetreatReason = `Forced retreat: Supplies exhausted or critical hazard in story choice.`;
-                } else {
+                } else if (!chosenOutcome.statusOverride) {
                   exp.status = 'exploring';
                 }
                 if (exp.status !== 'aborted') {
@@ -12509,7 +12707,7 @@ export function reduceGameAction(
                   exp.collectedMoney += completionBonus;
 
                   if (actor) {
-                    actor.money += exp.collectedMoney;
+                    actor.money += completionBonus;
                   }
 
                   if (target && target.externalTerritoryId && exp.standingDelta) {
@@ -12575,18 +12773,28 @@ export function reduceGameAction(
         case 'buySupplies': {
           if (actor) {
             const actAny = action as FlexibleAction;
-            const amount = action.parameters?.amount || actAny.amount || (typeof actAny.payload === 'number' ? actAny.payload : actAny.payload?.amount || 0);
-            const costPerUnit = action.parameters?.costPerUnit ?? actAny.payload?.costPerUnit ?? 10;
-            const totalCost = action.parameters?.totalCost ?? actAny.payload?.totalCost ?? (amount * costPerUnit);
-            if (actor.money >= totalCost) {
-              actor.money -= totalCost;
+            const rawAmount = action.parameters?.amount ?? actAny.amount ?? (typeof actAny.payload === 'number' ? actAny.payload : actAny.payload?.amount);
+            const amount = rawAmount === undefined || rawAmount === null ? null : v95WalletAmount(rawAmount, 0);
+            const rawUnit = action.parameters?.costPerUnit ?? actAny.payload?.costPerUnit;
+            const costPerUnit = rawUnit === undefined || rawUnit === null ? v95WalletAmount(10, 0) : v95WalletAmount(rawUnit, 0);
+            const rawTotal = action.parameters?.totalCost ?? actAny.payload?.totalCost;
+            const totalCost = rawTotal === undefined || rawTotal === null
+              ? (amount !== null && costPerUnit !== null ? amount * costPerUnit : null)
+              : v95WalletAmount(rawTotal, 0);
+            const before = actor.currentSupplies ?? 100;
+            if (amount !== null && amount > 0 && costPerUnit !== null && totalCost !== null && Number.isFinite(totalCost) && totalCost >= 0 && Number.isFinite(actor.money) && actor.money >= totalCost) {
+              const nextMoney = actor.money - totalCost;
               const maxSupp = actor.maxSupplies ?? 100;
-              actor.currentSupplies = Math.min(maxSupp, (actor.currentSupplies ?? 100) + amount);
-              actor.condition = calculateActorConditionState(actor.currentSupplies, maxSupp);
-              if (nextState.player && (actorId === 'player' || actorId === nextState.player.id)) {
-                nextState.player = actor;
+              const nextSupp = Math.min(maxSupp, before + amount);
+              if (Number.isFinite(nextMoney) && Number.isFinite(nextSupp) && nextMoney <= actor.money && nextSupp >= before) {
+                actor.money = nextMoney;
+                actor.currentSupplies = nextSupp;
+                actor.condition = calculateActorConditionState(actor.currentSupplies, maxSupp);
+                if (nextState.player && (actorId === 'player' || actorId === nextState.player.id)) {
+                  nextState.player = actor;
+                }
+                actionExecuted = true;
               }
-              actionExecuted = true;
             }
           }
           break;
@@ -12597,14 +12805,19 @@ export function reduceGameAction(
         case 'consumeSupplies': {
           if (actor) {
             const actAny = action as FlexibleAction;
-            const amount = action.parameters?.amount || actAny.amount || (typeof actAny.payload === 'number' ? actAny.payload : actAny.payload?.amount || 0);
+            const rawAmount = action.parameters?.amount ?? actAny.amount ?? (typeof actAny.payload === 'number' ? actAny.payload : actAny.payload?.amount);
+            const amount = rawAmount === undefined || rawAmount === null ? null : v95WalletAmount(rawAmount, 0);
             const maxSupp = actor.maxSupplies ?? 100;
-            actor.currentSupplies = Math.max(0, (actor.currentSupplies ?? 100) - amount);
-            actor.condition = calculateActorConditionState(actor.currentSupplies, maxSupp);
-            if (nextState.player && (actorId === 'player' || actorId === nextState.player.id)) {
-              nextState.player = actor;
+            const before = actor.currentSupplies ?? 100;
+            const nextSupp = amount === null ? NaN : Math.max(0, before - amount);
+            if (amount !== null && amount > 0 && Number.isFinite(before) && Number.isFinite(nextSupp) && nextSupp <= before) {
+              actor.currentSupplies = nextSupp;
+              actor.condition = calculateActorConditionState(actor.currentSupplies, maxSupp);
+              if (nextState.player && (actorId === 'player' || actorId === nextState.player.id)) {
+                nextState.player = actor;
+              }
+              actionExecuted = true;
             }
-            actionExecuted = true;
           }
           break;
         }
@@ -12723,9 +12936,10 @@ export function reduceGameAction(
                 if (stage) {
                   const choice = stage.choices.find((c: CrisisChoice) => c.id === choiceId);
                   if (choice && actor) {
-                    if (choice.costMoney > 0 && actor.money >= choice.costMoney) {
-                      actor.money -= choice.costMoney;
+                    if (choice.costMoney > 0 && actor.money < choice.costMoney) {
+                      break;
                     }
+                    if (choice.costMoney > 0) actor.money -= choice.costMoney;
                     const isSuccess = drawGameplayRandom('RandomEvents') <= choice.successProbability;
                     const outcomeCons = (isSuccess ? choice?.successConsequences : choice?.failureConsequences) || {};
                     
@@ -13110,11 +13324,11 @@ export function reduceGameAction(
           break;
         }
 
+        case 'think':
+        case 'wait':
+          break;
+
         default: {
-          if (actor && action.parameters?.moneyDelta) {
-            actor.money += action.parameters.moneyDelta;
-          }
-          actionExecuted = true;
           break;
         }
       }
@@ -13165,11 +13379,16 @@ export function reduceGameAction(
           }
         }
       }
-      if (team && actor) {
-        (team as FlexibleTeamState).money = actor.money;
-        (team as FlexibleTeamState).netWorth = actor.money;
-        if (nextState.teamsById && nextState.teamsById[teamId]) (nextState.teamsById[teamId] as FlexibleTeamState).money = actor.money;
-        if (nextState.teamStateMap && nextState.teamStateMap[teamId]) (nextState.teamStateMap[teamId] as FlexibleTeamState).money = actor.money;
+      if (actionExecuted && team && actor) {
+        const teamCash = Number((team as FlexibleTeamState).money);
+        const personalCash = Number(actor.money);
+        const teamIsLarger = Number.isFinite(teamCash) && Number.isFinite(personalCash) && teamCash > personalCash;
+        if (!teamIsLarger) {
+          (team as FlexibleTeamState).money = actor.money;
+          (team as FlexibleTeamState).netWorth = actor.money;
+          if (nextState.teamsById && nextState.teamsById[teamId]) (nextState.teamsById[teamId] as FlexibleTeamState).money = actor.money;
+          if (nextState.teamStateMap && nextState.teamStateMap[teamId]) (nextState.teamStateMap[teamId] as FlexibleTeamState).money = actor.money;
+        }
       }
 
       const stateHash = computeCanonicalStateHash(nextState);
@@ -14136,6 +14355,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   nationalPrioritiesEnabled: true,
   economicGeographyEnabled: true,
   workforceHumanCapitalEnabled: true,
+  strategicCapitalEnabled: true,
   stateCapacityEnabled: true,
   publicFinanceEnabled: true,
   householdsEnabled: true,
@@ -14799,7 +15019,7 @@ export function createDefaultTeamAutoModePolicy(targetTeamId: string, teamName: 
 }
 
 export function sanitizeTeamAutoModePolicy(input: unknown): TeamAutoModePolicy {
-  const validPermissions: AutoModePermission[] = ['locked', 'observe', 'recommend', 'assist_only', 'challenge_only', 'full_adaptive', 'disabled', 'recommend_only', 'auto_apply_non_intrusive', 'full_auto'];
+  const validPermissions: string[] = ['locked', 'observe', 'recommend', 'assist_only', 'challenge_only', 'full_adaptive', 'disabled', 'recommend_only', 'auto_apply_non_intrusive', 'full_auto', 'read_only', 'recommendation_only', 'assisted', 'autonomous'];
   const validCategories: AutoModeCategory[] = [
     'pricing', 'capacity', 'route_expansion', 'borrowing', 'debt_repayment',
     'marketing', 'alliance', 'tax_relief', 'subsidy', 'dividend',
@@ -15232,6 +15452,10 @@ export function sanitizeGameSettings(input: unknown): GameSettingsState {
     showConflictExplanations: typeof src.conflictShowExplanations === 'boolean' ? src.conflictShowExplanations : false,
     customPriorityOrder: sanitizePriorityMatrix(src.floatingUiPriorityMatrix as Record<string, number>)
   });
+  if (typeof src.conflictControlEnabled === 'boolean') sanitizedConflictControl.enabled = src.conflictControlEnabled;
+  if (typeof src.conflictAllowRelocation === 'boolean') sanitizedConflictControl.allowRelocation = src.conflictAllowRelocation;
+  if (typeof src.conflictReturnToPreferred === 'boolean') sanitizedConflictControl.returnToPreferred = src.conflictReturnToPreferred;
+  if (typeof src.conflictShowExplanations === 'boolean') sanitizedConflictControl.showConflictExplanations = src.conflictShowExplanations;
 
   return {
     ...defaults,
@@ -15766,6 +15990,10 @@ export interface RecordedRandomDraw {
 const pendingReplayRandomDraws: RecordedRandomDraw[] = [];
 const pendingReplayDirectorEvents: Array<{ category: ReplayEventCategory; summary: string; payload: Record<string, unknown> }> = [];
 
+export function drainPendingReplayRandomDraws(): RecordedRandomDraw[] {
+  return pendingReplayRandomDraws.splice(0, pendingReplayRandomDraws.length);
+}
+
 function flushPendingReplaySideChannels(
   recording: ReplayFile,
   day: number,
@@ -15825,7 +16053,23 @@ export interface DrawGameRandomOptions {
 }
 
 export function drawGameplayRandom(domain?: RngScopeDomain): number {
-  return globalRngRegistry.draw(domain);
+  const resultVal = globalRngRegistry.draw(domain);
+  const streamState = domain && typeof getRngStreamState === 'function' ? getRngStreamState(domain) : undefined;
+  pendingReplayRandomDraws.push({
+    timestamp: Date.now(),
+    step: 1,
+    scope: String(domain || 'default'),
+    seed: streamState ? (streamState.seed ?? streamState.streamSeed) : undefined,
+    state: streamState ? String(streamState.step ?? streamState.drawCount) : undefined,
+    value: resultVal,
+    stream: String(domain || 'default'),
+    context: String(domain || 'default'),
+    mode: 'deterministic',
+    system: String(domain || 'default'),
+    day: 1,
+    turn: 1
+  });
+  return resultVal;
 }
 
 export function drawGameRandom(
@@ -15876,9 +16120,10 @@ export function drawGameRandom(
   }
 
   let resultVal: number;
+  let gameplayDrawRecorded = false;
   switch (selectedMode) {
     case 'legacy_random':
-      resultVal = Math.random();
+      resultVal = NATIVE_MATH_RANDOM();
       break;
 
     case 'recorded_chaos':
@@ -15899,6 +16144,7 @@ export function drawGameRandom(
       );
       if (allowFallback) {
         resultVal = drawGameplayRandom(domain);
+        gameplayDrawRecorded = true;
         break;
       }
       const domainName = String(domain || 'World');
@@ -15907,16 +16153,18 @@ export function drawGameRandom(
     case 'hybrid':
       try {
         resultVal = drawGameplayRandom(domain);
+        gameplayDrawRecorded = true;
       } catch {
         // V9.5: hybrid mode may fall back, but never silently claim a certified deterministic replay.
-        globalRngRegistry.markReplayUncertified(`Hybrid RNG fallback to Math.random for ${String(domain || 'World')}`);
-        resultVal = Math.random();
+        globalRngRegistry.markReplayUncertified(`Hybrid RNG fallback to native random for ${String(domain || 'World')}`);
+        resultVal = NATIVE_MATH_RANDOM();
       }
       break;
 
     case 'deterministic':
     default:
       resultVal = drawGameplayRandom(domain);
+      gameplayDrawRecorded = true;
       break;
   }
 
@@ -15935,7 +16183,7 @@ export function drawGameRandom(
     day: gameStateRef?.day ?? 1,
     turn: gameStateRef?.turn ?? 1
   };
-  if (selectedMode === 'recorded_chaos' || selectedMode === 'hybrid') {
+  if (!gameplayDrawRecorded && (selectedMode === 'recorded_chaos' || selectedMode === 'hybrid')) {
     pendingReplayRandomDraws.push(drawRecord);
   }
   const activeReplay = gameStateRef?.autoModeRuntime?.replayEvents?.[gameStateRef.autoModeRuntime.replayEvents.length - 1];
@@ -16338,6 +16586,13 @@ export function nextCorrelationId(counters: DeterministicCounters = globalDeterm
   counters.correlation += 1;
   return `${matchId}:corr:${counters.correlation}`;
 }
+export function restoreRngRegistryForLoad(saved: Record<string, any> | null | undefined, masterSeed: number): void {
+  const savedObj = saved && typeof saved === 'object' ? saved : null;
+  const coversAll = Boolean(savedObj && RNG_STREAM_NAMES.every(domain => savedObj[domain] || savedObj[String(domain).toLowerCase()]));
+  if (!coversAll) globalRngRegistry.initStreams(masterSeed);
+  if (savedObj) globalRngRegistry.importStreamStates(savedObj);
+}
+
 export function setRngMasterSeed(seed: number, isDeterministic: boolean = true) {
   globalRngRegistry.isDeterministic = isDeterministic;
   globalRngRegistry.setAuditPolicy(isDeterministic ? 'strict' : 'monitor');
@@ -17247,14 +17502,19 @@ interface PipelineTraceRecord {
   timestamp: number;
 }
 
-// Team Treasury Phase T1: transaction types. approved_funding_request/partial_funding_approval/
-// emergency_zero_cash_support/refund/unused_funds_return are declared now for schema stability but
-// no code path produces them until Phase T2 — this phase only ever writes manual_contribution/
-// automatic_contribution/excess_cash_contribution.
+// Team Treasury transaction types. An emergency_only resolution writes emergency_zero_cash_support.
+// A direct manual withdrawal and a generic refund are not separate actions: approved requests write
+// approved_funding_request or partial_funding_approval, and unused restricted funds write unused_funds_return.
 type TreasuryTransactionType =
   | 'manual_contribution' | 'automatic_contribution' | 'excess_cash_contribution'
   | 'manual_withdrawal' | 'approved_funding_request' | 'partial_funding_approval'
   | 'emergency_zero_cash_support' | 'refund' | 'unused_funds_return';
+
+export function treasuryResolutionTransactionType(control: string, partial: boolean): TreasuryTransactionType {
+  if (control === 'emergency_only') return 'emergency_zero_cash_support';
+  if (partial) return 'partial_funding_approval';
+  return 'approved_funding_request';
+}
 
 interface TreasuryTransaction {
   id: string;
@@ -21339,6 +21599,72 @@ export function isHumanActor(actorOrId: any, gameState?: any): boolean {
   return false;
 }
 
+/** Solo day commit. Override AP and the free-challenge flag do not survive the day. */
+export function soloDayBoundaryPlayerMerge(projected: any): Record<string, unknown> {
+  return {
+    actionsUsedThisTurn: projected?.actionsUsedThisTurn ?? 0,
+    overridesUsedToday: projected?.overridesUsedToday ?? 0,
+    overrideFatigue: projected?.overrideFatigue ?? 0,
+    overrideActionsGranted: 0,
+    usedFreeChallengeThisTurn: false,
+    lentActionsUsedToday: projected?.lentActionsUsedToday ?? 0,
+    receivedActionsUsedToday: projected?.receivedActionsUsedToday ?? 0,
+    completedThisSeason: projected?.completedThisSeason ?? [],
+    challengesCompleted: projected?.challengesCompleted ?? [],
+    advancedLoans: projected?.advancedLoans,
+    creditScore: projected?.creditScore,
+    loanHistory: projected?.loanHistory,
+    daysSinceLastBankruptcy: projected?.daysSinceLastBankruptcy
+  };
+}
+
+/** Versus bankruptcy and mercy belong to mode `ai`. Single may end broke without naming an AI winner. */
+export function soloVersusFailurePolicy(mode: string | null | undefined): {
+  endOnPlayerBankruptcy: boolean;
+  bankruptcyNamesAiWinner: boolean;
+  endOnAiBankruptcy: boolean;
+  applyMercy: boolean;
+} {
+  if (mode === 'ai') {
+    return { endOnPlayerBankruptcy: true, bankruptcyNamesAiWinner: true, endOnAiBankruptcy: true, applyMercy: true };
+  }
+  if (mode === 'single') {
+    return { endOnPlayerBankruptcy: true, bankruptcyNamesAiWinner: false, endOnAiBankruptcy: false, applyMercy: false };
+  }
+  return { endOnPlayerBankruptcy: false, bankruptcyNamesAiWinner: false, endOnAiBankruptcy: false, applyMercy: false };
+}
+
+/** Match-boundary release for the AI turn lock. Load, restart, and mode init all call this. */
+export function releaseInFlightAiTurnLocks(locks: {
+  isAiThinking: { current: boolean };
+  startedTeamAiTurnKeys: { current: Set<string> };
+  activeAiTurnSessions: { current: Record<string, unknown> };
+}): void {
+  locks.isAiThinking.current = false;
+  locks.startedTeamAiTurnKeys.current = new Set();
+  locks.activeAiTurnSessions.current = {};
+}
+
+/** Human End Turn evaluates Auto Mode once, as `player`. The old extra `'0'` dispatch and the advance-actor copy are not boundaries. */
+export function shouldEmitAutoModeBoundary(site: 'turn_transition' | 'finish_team_ai' | 'human_end_turn_extra' | 'advance_actor'): boolean {
+  return site === 'turn_transition' || site === 'finish_team_ai';
+}
+
+let advanceDayEndedMatch = false;
+export function noteMatchEndedDuringAdvance(): void { advanceDayEndedMatch = true; }
+export function clearMatchEndedDuringAdvance(): void { advanceDayEndedMatch = false; }
+export function consumeAdvanceDayEndedMatch(): boolean {
+  const ended = advanceDayEndedMatch;
+  advanceDayEndedMatch = false;
+  return ended;
+}
+export function shouldHandTurnBackAfterMatchAdvance(gameMode: string | null | undefined): boolean {
+  return gameMode !== 'end';
+}
+export function replayFileAlreadySealed(file: { finalResult?: unknown } | null | undefined): boolean {
+  return Boolean(file && file.finalResult);
+}
+
 export function isHumanPlayerTurn(gameStateOrContext: any, explicitPlayerOrFlag?: any): boolean {
   if (!gameStateOrContext) {
     if (typeof explicitPlayerOrFlag === 'boolean') return explicitPlayerOrFlag;
@@ -21366,13 +21692,22 @@ export function isHumanPlayerTurn(gameStateOrContext: any, explicitPlayerOrFlag?
   const humanPlayerId = gameState?.humanPlayerId ?? (isHumanActor(resolvedHumanPlayer?.id, gameState) ? resolvedHumanPlayer?.id : 'player');
 
   // Determine if Team Mode is active (where currentActorId is the authoritative source of truth)
-  const mode = gameState?.selectedMode || gameState?.gameMode || gameState?.mode;
+  const mode = gameState?.selectedMode || gameState?.mode;
+  // team_ai_vs_ai has no human seat. The id "player" is an AI actor, and gameState.actorsById is empty after init.
+  if (mode === 'team_ai_vs_ai') return false;
   const isTeam = mode === 'team_human_ai_vs_ai_ai' || mode === 'team_ai_vs_ai' || (typeof mode === 'string' && mode.startsWith('team')) || Boolean(gameState?.teamsById && Object.keys(gameState.teamsById).length > 0);
 
   if (isTeam) {
     // 1. Team Mode: Authoritative Active Actor check (do NOT require gameState.currentTurn === 'player')
     const activeActorId = gameState.currentActorId ?? gameState.activeActorId ?? gameState.activePlayerId;
     if (activeActorId !== undefined && activeActorId !== null) {
+      const explicitActor = typeof explicitPlayerOrFlag === 'object' && explicitPlayerOrFlag ? explicitPlayerOrFlag : null;
+      const activeActor = gameState.actorsById?.[activeActorId]
+        || gameState.actorsById?.[String(activeActorId)]
+        || (explicitActor && (explicitActor.id === activeActorId || String(explicitActor.id) === String(activeActorId)) ? explicitActor : null)
+        || (gameState?.player && (gameState.player.id === activeActorId || String(gameState.player.id) === String(activeActorId)) ? gameState.player : null);
+      if (activeActor && (activeActor.kind === 'ai' || activeActor.isAi === true)) return false;
+      if (activeActor && activeActor.kind === 'human') return true;
       if (activeActorId === humanPlayerId || String(activeActorId) === String(humanPlayerId) || activeActorId === 'player' || activeActorId === 0 || activeActorId === '0') {
         if (isHumanActor(activeActorId, gameState)) {
           return true;
@@ -22673,6 +23008,10 @@ export interface ReplayCompatibilityReport {
   canBranch: boolean;
   canCompare: boolean;
   integrityStatus: ReplayIntegrityStatus;
+  /** Checksum that arrived with the file, kept even when the migrated bytes get a new checksum. */
+  originalChecksum?: string;
+  /** True only when the exported checksum is the original file's checksum. */
+  checksumPresentedAsOriginal?: boolean;
 }
 
 export interface ReplayMigrationResult {
@@ -22892,6 +23231,7 @@ export function migrateReplayFileWithReport(raw: unknown): ReplayMigrationResult
     bookmarks: Array.isArray(data.bookmarks) ? data.bookmarks : [],
     branches: Array.isArray(data.branches) ? data.branches : []
   };
+  compatibility.originalChecksum = typeof data.checksum === 'string' ? data.checksum : undefined;
   const checksumCheck = verifyReplayChecksum({ ...originalCandidate, checksum: typeof data.checksum === 'string' ? data.checksum : undefined });
   const checksumOk = typeof data.checksum === 'string' && checksumCheck.ok;
   if (!checksumOk) {
@@ -22929,6 +23269,8 @@ export function migrateReplayFileWithReport(raw: unknown): ReplayMigrationResult
   migrated.migrationsApplied = compatibility.migrationsApplied;
   const migratedChecksum = computeReplayChecksum(migrated);
   migrated.checksum = migratedChecksum;
+  compatibility.checksumPresentedAsOriginal = checksumOk && migratedChecksum === compatibility.originalChecksum;
+  if (!checksumOk) compatibility.integrityStatus = 'Corrupted';
 
   const hasSnapshots = migrated.checkpoints.some(cp => Boolean(cp.fullStateSnapshot));
   const hasInitialConfig = Boolean(migrated.initialConfig && migrated.initialConfig.actorsById);
@@ -22963,6 +23305,15 @@ export function migrateReplayFileWithReport(raw: unknown): ReplayMigrationResult
     compatibility.warnings.push('No full-state checkpoints — seeking falls back to event roll-forward.');
   }
   return { file: migrated, compatibility };
+}
+
+export function reexportImportedReplay(result: ReplayMigrationResult): { integrityStatus: string; checksumPresentedAsOriginal: boolean; checksum?: string; originalChecksum?: string } {
+  return {
+    integrityStatus: result.compatibility.integrityStatus,
+    checksumPresentedAsOriginal: result.compatibility.checksumPresentedAsOriginal === true,
+    checksum: result.file?.checksum,
+    originalChecksum: result.compatibility.originalChecksum
+  };
 }
 
 const migrateReplayFile = (raw: unknown): ReplayFile | null => {
@@ -23359,7 +23710,9 @@ const applyReplayEventToIsolatedRuntime = (runtime: IsolatedReplayRuntime, ev: R
   const actorId = ev.actorId || 'player';
   if (next.actors[actorId]) {
     const actor = { ...next.actors[actorId] };
-    if (typeof canonical.price === 'number' && (ev.category === 'market' || ev.category === 'human_action' || ev.category === 'ai_execution')) {
+    const moneyDelta = typeof payload.moneyDelta === 'number' ? payload.moneyDelta : (typeof (canonical as { moneyDelta?: unknown }).moneyDelta === 'number' ? (canonical as { moneyDelta: number }).moneyDelta : undefined);
+    if (typeof moneyDelta === 'number') actor.money += moneyDelta;
+    else if (typeof canonical.price === 'number' && (ev.category === 'market' || ev.category === 'human_action' || ev.category === 'ai_execution')) {
       const summary = (ev.summary || '').toLowerCase();
       if (summary.includes('sold') || summary.includes('sell')) actor.money += canonical.price;
       else if (summary.includes('bought') || summary.includes('buy') || summary.includes('purchas') || summary.includes('travel')) actor.money = Math.max(0, actor.money - canonical.price);
@@ -23467,7 +23820,7 @@ export function seekReplayToSequenceDeterministic(
     try {
       applyReplayEventReducer(simCtx, ev);
       const actualHash = computeCanonicalStateHash(simCtx.currentSimState);
-      const expectedHash = ev.stateHashAfter || ev.stateHash;
+      const expectedHash = replayRecordedPostHash(ev);
       if (validateHashes && expectedHash && expectedHash !== actualHash) {
         divergedSequence = ev.sequence;
         error = `Deterministic reconstruction diverged at sequence ${ev.sequence}. Recorded playback remains available.`;
@@ -23797,7 +24150,8 @@ export function buildReplayBranchExperiment(label: string, current?: Record<stri
   const nextDifficulty = REPLAY_DIFFICULTY_CYCLE[(Math.max(0, REPLAY_DIFFICULTY_CYCLE.indexOf(difficulty as typeof REPLAY_DIFFICULTY_CYCLE[number])) + 1) % REPLAY_DIFFICULTY_CYCLE.length];
   const currentMode = (typeof settings.randomnessMode === 'string' ? settings.randomnessMode : 'deterministic') as RandomnessMode;
   const nextMode = REPLAY_RANDOMNESS_CYCLE[(Math.max(0, REPLAY_RANDOMNESS_CYCLE.indexOf(currentMode)) + 1) % REPLAY_RANDOMNESS_CYCLE.length];
-  const worldSeed = typeof settings.worldSeed === 'number' ? settings.worldSeed : 1337;
+  const worldSeed = typeof settings.worldRngSeed === 'number' ? settings.worldRngSeed : (typeof settings.worldSeed === 'number' ? settings.worldSeed : 1337);
+  const aiSeed = typeof settings.aiDeterministicSeed === 'number' ? settings.aiDeterministicSeed : (typeof settings.aiSeed === 'number' ? settings.aiSeed : worldSeed);
   switch (label) {
     case 'Let AI Choose':
       return { label, branchReason: 'auto_mode', branchSeedPolicy: 'preserve_original', title: 'Let AI Choose', modifiedSettings: { autoModeEnabled: true, coPilotEnabled: true } };
@@ -23808,7 +24162,7 @@ export function buildReplayBranchExperiment(label: string, current?: Record<stri
     case 'Disable Auto Mode':
       return { label, branchReason: 'auto_mode', branchSeedPolicy: 'preserve_original', title: 'Disable Auto Mode', modifiedSettings: { autoModeEnabled: false } };
     case 'Change Seed':
-      return { label, branchReason: 'randomness', branchSeedPolicy: 'new_seed', title: 'Change Seed', modifiedSettings: { worldSeed: worldSeed + 1, aiSeed: (typeof settings.aiSeed === 'number' ? settings.aiSeed : worldSeed) + 1 } };
+      return { label, branchReason: 'randomness', branchSeedPolicy: 'new_seed', title: 'Change Seed', modifiedSettings: { worldSeed: worldSeed + 1, aiSeed: aiSeed + 1, worldRngSeed: worldSeed + 1, aiDeterministicSeed: aiSeed + 1 } };
     case 'Change Randomness Mode':
       return { label, branchReason: 'randomness', branchSeedPolicy: 'preserve_original', title: `Change Randomness Mode to ${nextMode}`, modifiedSettings: { randomnessMode: nextMode } };
     case 'Change AI Strategy': {
@@ -24001,6 +24355,39 @@ export function replayCategoryToCheckpointKind(category: ReplayEventCategory): R
 
 export function shouldThrottleReplayDetail(detailLevel: string | undefined, usage: number, isCritical: boolean): boolean {
   return usage >= 0.9 && !isCritical && (detailLevel || 'standard') === 'standard';
+}
+
+/** A dropped non-critical event is a truncation, not a missing event. */
+export function noteReplayThrottleDrop(recording: { events: Array<{ sequence?: number }>; truncated?: boolean; truncatedAtSequence?: number }, usage: number, detailLevel: string | undefined, isCritical: boolean): boolean {
+  if (!shouldThrottleReplayDetail(detailLevel, usage, isCritical)) return false;
+  if (!recording.truncated) {
+    recording.truncated = true;
+    const last = recording.events.length > 0 ? recording.events[recording.events.length - 1] : undefined;
+    const nextSequence = typeof last?.sequence === 'number' ? last.sequence + 1 : recording.events.length;
+    if (recording.truncatedAtSequence === undefined) recording.truncatedAtSequence = nextSequence;
+  }
+  return true;
+}
+
+/** Stamp a pre-state hash only. A post-state hash is written when the caller supplied one. */
+export function stampReplayEventHashes(
+  fields: { stateHashBefore?: string; stateHashAfter?: string; payload?: Record<string, unknown> },
+  preState: unknown
+): { stateHashBefore: string; stateHashAfter: string; stateHash: string } {
+  const payload = fields.payload || {};
+  const before = fields.stateHashBefore || (typeof payload.stateHashBefore === 'string' ? payload.stateHashBefore : '') || computeCanonicalStateHash(preState);
+  const suppliedAfter = fields.stateHashAfter || (typeof payload.stateHashAfter === 'string' ? payload.stateHashAfter : '');
+  return { stateHashBefore: before, stateHashAfter: suppliedAfter, stateHash: suppliedAfter };
+}
+
+/** A hash copied from the pre-state is not a post-state hash. */
+export function replayRecordedPostHash(ev: { stateHashBefore?: string; stateHashAfter?: string; stateHash?: string; payload?: Record<string, unknown> | null }): string {
+  const after = typeof ev.stateHashAfter === 'string' ? ev.stateHashAfter : '';
+  if (after && after !== ev.stateHashBefore) return after;
+  const fromPayload = ev.payload && typeof ev.payload.stateHash === 'string' ? ev.payload.stateHash : '';
+  const generic = typeof ev.stateHash === 'string' && ev.stateHash ? ev.stateHash : fromPayload;
+  if (generic && generic !== ev.stateHashBefore) return generic;
+  return '';
 }
 
 export function computeReplayChecksumLegacy(file: Omit<ReplayFile, 'checksum'>): string {
@@ -24702,7 +25089,7 @@ export function reexecuteReplayMatch(
     currentSimState = simCtx.currentSimState;
 
     const actualHash = computeCanonicalStateHash(currentSimState);
-    const expectedHash = ev.stateHash || (payload.stateHash as string) || '';
+    const expectedHash = replayRecordedPostHash({ stateHashBefore: ev.stateHashBefore, stateHashAfter: ev.stateHashAfter, stateHash: ev.stateHash, payload });
 
     let isDivergent = false;
     let expectedHashForComparison = expectedHash;
@@ -24884,10 +25271,15 @@ export function createMatchCheckpoint(
   }
 
   const expectedStateHash = computeCanonicalStateHash(gameState);
-  const counters: DeterministicCounters = JSON.parse(
-    JSON.stringify(gameState?.deterministicCounters || gameState?.counters || globalDeterministicCounters)
-  );
-  const cpId = nextCheckpointId(counters);
+  const liveCounters = (gameState?.deterministicCounters && typeof gameState.deterministicCounters === 'object')
+    ? gameState.deterministicCounters
+    : globalDeterministicCounters;
+  if (liveCounters !== globalDeterministicCounters) {
+    liveCounters.checkpoint = Math.max(Number(liveCounters.checkpoint) || 0, Number(globalDeterministicCounters.checkpoint) || 0);
+  }
+  const cpId = nextCheckpointId(liveCounters);
+  globalDeterministicCounters.checkpoint = liveCounters.checkpoint;
+  const counters: DeterministicCounters = JSON.parse(JSON.stringify(liveCounters));
 
   const rngRegistry = gameState?.rngRegistry || globalRngRegistry;
   const rngMasterSeed = rngRegistry?.masterSeed ?? gameState?.rng?.masterSeed ?? 1337;
@@ -24933,6 +25325,23 @@ export function createMatchCheckpoint(
   };
 }
 
+export function applyNewSeedToBranchSave<T extends { gameSettings?: GameSettingsState; aiRuntime?: { queue?: unknown[]; currentAction?: unknown; rngState?: number; worldRngState?: number }; rngRegistryState?: Record<string, RngStreamState> }>(save: T, overrides?: Record<string, unknown> | null): T {
+  if (!overrides) return save;
+  const nextWorld = typeof overrides.worldRngSeed === 'number' ? overrides.worldRngSeed : (typeof overrides.worldSeed === 'number' ? overrides.worldSeed : null);
+  const nextAi = typeof overrides.aiDeterministicSeed === 'number' ? overrides.aiDeterministicSeed : (typeof overrides.aiSeed === 'number' ? overrides.aiSeed : null);
+  if (nextWorld == null && nextAi == null) return save;
+  const world = nextWorld ?? (Number(save.gameSettings?.worldRngSeed) || 1337);
+  const ai = nextAi ?? world;
+  const reg = new GameplayRngRegistry(world);
+  reg.initStreams(world);
+  return {
+    ...save,
+    gameSettings: { ...(save.gameSettings || {}), ...overrides, worldRngSeed: world, aiDeterministicSeed: ai } as GameSettingsState,
+    rngRegistryState: reg.exportStreamStates(),
+    aiRuntime: { ...(save.aiRuntime || { queue: [], currentAction: null, rngState: ai, worldRngState: world }), rngState: ai, worldRngState: world }
+  };
+}
+
 export function spawnMatchBranchFromCheckpoint(
   checkpoint: ReplayCheckpoint,
   sourceReplayFile?: ReplayFile,
@@ -24959,7 +25368,7 @@ export function spawnMatchBranchFromCheckpoint(
     if (overrides) {
       saveData.gameSettings = { ...(saveData.gameSettings || {}), ...overrides };
     }
-    return saveData;
+    return applyNewSeedToBranchSave(saveData, overrides as Record<string, unknown> | undefined);
   }
 
   // PRIORITY 2: Fast-forward roll-forward re-simulation from sequence 0 up to checkpoint.sequence
@@ -25082,7 +25491,7 @@ export function spawnMatchBranchFromCheckpoint(
       deterministicCounters: simCtx?.counters ? { ...createInitialDeterministicCounters(), ...simCtx.counters } : undefined
     };
 
-    return saveData;
+    return applyNewSeedToBranchSave(saveData, overrides as Record<string, unknown> | undefined);
   }
 
   // FALLBACK (If sourceReplayFile is not provided)
@@ -25132,7 +25541,7 @@ export function spawnMatchBranchFromCheckpoint(
     deterministicCounters: { ...globalDeterministicCounters }
   };
 
-  return saveData;
+  return applyNewSeedToBranchSave(saveData, overrides as Record<string, unknown> | undefined);
 }
 
 // MILESTONE 6: PHASES 15, 17, 18 TYPES & PURE LOGIC FUNCTIONS
@@ -26511,6 +26920,7 @@ export type GameSettingsState = {
   economicGeographyEnabled?: boolean;
   /** V10.10 Workforce, Skills & Human Capital (needs National Systems; off = no workforce layer, V10.0–V10.9 unchanged). */
   workforceHumanCapitalEnabled?: boolean;
+  strategicCapitalEnabled?: boolean;
   /** V10.11 Adaptive Governance, Institutions & State Capacity (needs National Systems; off = no state capacity layer, V10.0–V10.10 unchanged). */
   stateCapacityEnabled?: boolean;
   /** V10.12 Public Finance, National Budget & Fiscal Capacity (needs National Systems; off = no fiscal capacity layer, V10.0–V10.11 unchanged). */
@@ -27274,6 +27684,7 @@ export function mapGoalKindToPlanType(goal: TeamGoal, context: TeamAiContext): T
 export function gameStateReducer(state: any, action: any) {
   switch (action.type) {
     case 'NEXT_DAY': {
+      if (state?.gameMode === 'end' || state?.gameMode === 'menu') return state;
       const newDay = state.day + 1;
       const seasons = ["Summer", "Autumn", "Winter", "Spring"];
       const newSeason = seasons[Math.floor((newDay - 1) / 7) % 4];
@@ -27303,8 +27714,11 @@ export function gameStateReducer(state: any, action: any) {
       };
     case 'UPDATE_MARKET_TREND':
       return { ...state, marketTrend: action.payload };
-    case 'SET_GAME_MODE':
-      return { ...state, gameMode: action.payload };
+    case 'SET_GAME_MODE': {
+      const nextMode = action.payload;
+      if (nextMode !== 'game' && nextMode !== 'menu' && nextMode !== 'end' && nextMode !== 'start_screen') return state;
+      return { ...state, gameMode: nextMode };
+    }
     case 'SET_SCENARIO_OUTCOME':
       return { ...state, scenarioOutcome: action.payload };
     case 'SET_CUSTOM_SCENARIO_BUILDER':
@@ -27372,6 +27786,7 @@ export function gameStateReducer(state: any, action: any) {
       };
     }
     case 'SET_TURN': {
+      if (state?.gameMode === 'menu' || state?.gameMode === 'end') return state;
       const rawTurnPayload = action.payload;
       const fromCoPilotExecutor = Boolean(rawTurnPayload && typeof rawTurnPayload === 'object' && (rawTurnPayload as any).fromCoPilotExecutor);
       const nextTurn = (rawTurnPayload && typeof rawTurnPayload === 'object' && (rawTurnPayload as any).turn !== undefined)
@@ -27474,6 +27889,7 @@ export function gameStateReducer(state: any, action: any) {
     }
     // CPFIX2: Handle team mode multi-actor turn rotation atomically with missing actor rejection
     case 'ADVANCE_ACTOR_TURN': {
+      if (state?.gameMode === 'menu' || state?.gameMode === 'end') return state;
       if (typeof isNonExecutorAdvanceBlocked === 'function' && isNonExecutorAdvanceBlocked(state, action.payload)) {
         recordDiag2Event('COPILOT_CLAIM_BLOCK_ADVANCE', {
           currentActorId: state.currentActorId,
@@ -27667,7 +28083,7 @@ export function gameStateReducer(state: any, action: any) {
     case 'SET_TURN_ORDER':
       return { ...state, turnOrder: Array.isArray(action.payload) ? action.payload : state.turnOrder };
     case 'SET_TURN_COUNTER': {
-      const nextCounter = typeof action.payload === 'number' ? action.payload : state.turnCounter;
+      const nextCounter = typeof action.payload === 'number' && Number.isFinite(action.payload) && action.payload >= 0 ? action.payload : state.turnCounter;
       const isTeam = isTeamModeSelection(state.selectedMode || state.gameMode || state.mode) || Boolean(state.teamsById && Object.keys(state.teamsById).length > 0);
       // DIAG1/DIAG2: Instrumentation for SET_TURN_COUNTER write
       recordDiag2Event('SET_TURN_COUNTER', {
@@ -28103,7 +28519,9 @@ export function gameStateReducer(state: any, action: any) {
       return {
         ...initialGameState,
         gameMode: state.gameMode,
-        selectedMode: state.selectedMode,
+        // Return to Menu rebuilds a 1v1 human roster. Keeping a team selectedMode
+        // described a four-actor match that this reset just deleted.
+        selectedMode: null,
         aiDifficulty: state.aiDifficulty,
         takeoverSession: null,
         coPilotSettings: {
@@ -32818,8 +33236,12 @@ function getActorScaledInvestmentReturn(
   }
 
   let relicIncomeMultiplier = 1.0;
-  if (actor?.equippedRelics) {
-    Object.values(actor.equippedRelics).forEach((relic: any) => {
+  const relicBag = {
+    ...(actor?.equippedRelics || {}),
+    ...(gameState?.equippedRelicsByActor?.[actor?.id || 'player'] || {})
+  };
+  if (Object.keys(relicBag).length > 0) {
+    Object.values(relicBag).forEach((relic: any) => {
       if (relic && Array.isArray(relic.passiveEffects)) {
         relic.passiveEffects.forEach((eff: RelicPassiveEffect) => {
           if (eff.statKey === 'income_multiplier') {
@@ -33138,22 +33560,33 @@ const processAdvancedLoans = (
       gameSettings.creditScoreEnabled ? creditRange.multiplier : 1.0,
       gameSettings.interestAccrualRate
     );
-    updatedLoan.accrued += interestAmount;
+    updatedLoan.accrued += Number.isFinite(interestAmount) ? interestAmount : 0;
 
     // Check for default (term expired)
     if (updatedLoan.daysRemaining <= 0) {
       const totalOwed = updatedLoan.amount + updatedLoan.accrued;
-      const penalty = totalOwed * (gameSettings.defaultPenaltyMultiplier - 1.0);
+      const penalty = totalOwed * ((Number(gameSettings.defaultPenaltyMultiplier) || 1) - 1);
 
-      updatedPlayer.money -= (totalOwed + penalty);
-      loanHistory.defaultCount += 1;
-
-      notifications.push({
-        message: `Loan defaulted! Paid $${Math.floor(totalOwed + penalty)} (includes ${Math.floor(penalty)} penalty)`,
-        type: 'error'
-      });
-
-      loansToRemove.push(loan.id);
+      const due = totalOwed + penalty;
+      const available = Math.max(0, Number(updatedPlayer.money) || 0);
+      if (available >= due) {
+        updatedPlayer.money = available - due;
+        loanHistory.defaultCount += 1;
+        notifications.push({
+          message: `Loan defaulted! Paid $${Math.floor(due)} (includes ${Math.floor(penalty)} penalty)`,
+          type: 'error'
+        });
+        loansToRemove.push(loan.id);
+      } else {
+        updatedPlayer.money = 0;
+        updatedLoan.amount = Math.max(0, due - available);
+        updatedLoan.accrued = 0;
+        updatedLoan.daysRemaining = 1;
+        notifications.push({
+          message: `Loan came due. Paid $${Math.floor(available)}. $${Math.floor(due - available)} is still owed.`,
+          type: 'error'
+        });
+      }
 
       // Update bankruptcy tracking
       if (updatedPlayer.money < BANKRUPTCY_THRESHOLD) {
@@ -34407,9 +34840,10 @@ export function computeCanonicalStateHash(stateObj: any): string {
     const budget = { n: 0 };
     const seen = new WeakSet<object>();
 
-    if (stateObj && typeof stateObj === 'object' && (stateObj.day !== undefined || stateObj.turnCounter !== undefined || stateObj.teamStateMap !== undefined || stateObj.teamsById !== undefined || stateObj.actorsById !== undefined || stateObj.player !== undefined)) {
+    const walletHost = stateObj && typeof stateObj === 'object' && !stateObj.actorsById && !stateObj.player && stateObj.w && typeof stateObj.w === 'object' ? stateObj.w : null;
+    if (stateObj && typeof stateObj === 'object' && (stateObj.day !== undefined || stateObj.turnCounter !== undefined || stateObj.teamStateMap !== undefined || stateObj.teamsById !== undefined || stateObj.actorsById !== undefined || stateObj.player !== undefined || walletHost)) {
       const teams: Record<string, unknown> = {};
-      const teamMap = stateObj.teamStateMap || stateObj.teamsById || {};
+      const teamMap = stateObj.teamStateMap || stateObj.teamsById || walletHost?.teamStateMap || walletHost?.teamsById || {};
       Object.keys(teamMap).sort().forEach(tId => {
         const t = teamMap[tId];
         if (t) {
@@ -34418,17 +34852,17 @@ export function computeCanonicalStateHash(stateObj: any): string {
       });
 
       const actors: Record<string, unknown> = {};
-      const actorMap = stateObj.actorsById || {};
-      const actorKeys = Object.keys(actorMap).length > 0 ? Object.keys(actorMap).sort() : (stateObj.player ? ['player'] : []);
+      const actorMap = stateObj.actorsById || walletHost?.actorsById || {};
+      const actorKeys = Object.keys(actorMap).length > 0 ? Object.keys(actorMap).sort() : (stateObj.player ? ['player'] : (walletHost?.player ? ['player'] : []));
 
       actorKeys.forEach(aId => {
-        const a = actorMap[aId] || (aId === 'player' ? stateObj.player : null);
+        const a = actorMap[aId] || (aId === 'player' ? (stateObj.player || walletHost?.player) : null);
         if (a) {
           actors[aId] = canonicalize(a, seen, 0, budget);
         }
       });
 
-      const territoryMap = stateObj.regions || stateObj.territoryStateMap || stateObj.territories || {};
+      const territoryMap = stateObj.regions || stateObj.territoryStateMap || stateObj.territories || walletHost?.regions || walletHost?.territoryStateMap || walletHost?.territories || {};
       const territories: Record<string, unknown> = {};
       Object.keys(territoryMap).sort().forEach(rId => {
         const r = territoryMap[rId];
@@ -34439,7 +34873,7 @@ export function computeCanonicalStateHash(stateObj: any): string {
 
       cleanState = {
         day: typeof stateObj.day === 'number' ? stateObj.day : 1,
-        turnCounter: typeof stateObj.turnCounter === 'number' ? stateObj.turnCounter : (typeof stateObj.currentTurn === 'number' ? stateObj.currentTurn : 1),
+        turnCounter: typeof stateObj.turnCounter === 'number' ? stateObj.turnCounter : (typeof stateObj.turn === 'number' ? stateObj.turn : (typeof stateObj.currentTurn === 'number' ? stateObj.currentTurn : 1)),
         activePlayer: String(stateObj.activePlayer || ''),
         season: String(stateObj.season || ''),
         economicPhase: String(stateObj.economicPhase || 'normal'),
@@ -36003,13 +36437,24 @@ export function playerReducer(state: any, action: any) {
       const apCost = typeof action.payload === 'object' && typeof action.payload?.apCost === 'number' ? action.payload.apCost : 0;
       const updatedInventory = [...(state.inventory || [])];
       const index = updatedInventory.indexOf(resourceName);
-      if (index > -1) updatedInventory.splice(index, 1);
+      if (index < 0) return state;
+      updatedInventory.splice(index, 1);
       return {
         ...state,
         inventory: updatedInventory,
         money: state.money + price,
         actionsUsedThisTurn: (state.actionsUsedThisTurn || 0) + apCost
       };
+    }
+    case 'ADD_INVESTMENT': {
+      const region = String(action.payload || '');
+      if (!region || (state.investments || []).includes(region)) return state;
+      return { ...state, investments: [...(state.investments || []), region] };
+    }
+    case 'ADD_EQUIPMENT': {
+      const itemId = String(action.payload || '');
+      if (!itemId) return state;
+      return { ...state, equipment: [...(state.equipment || []), itemId] };
     }
     case 'INCREMENT_ACTIONS':
       return { ...state, actionsUsedThisTurn: state.actionsUsedThisTurn + 1 };
@@ -38474,7 +38919,7 @@ export function sanitizeAutoModeGlobalSettings(input: unknown): AutoModeGlobalSe
   const src = input as Record<string, unknown>;
 
   const validIntensities: AutoModeIntensity[] = ['gentle', 'balanced', 'responsive', 'director', 'subtle', 'standard', 'aggressive', 'dynamic'];
-  const validPermissions: AutoModePermission[] = ['locked', 'observe', 'recommend', 'assist_only', 'challenge_only', 'full_adaptive', 'disabled', 'recommend_only', 'auto_apply_non_intrusive', 'full_auto'];
+  const validPermissions: string[] = ['locked', 'observe', 'recommend', 'assist_only', 'challenge_only', 'full_adaptive', 'disabled', 'recommend_only', 'auto_apply_non_intrusive', 'full_auto', 'read_only', 'recommendation_only', 'assisted', 'autonomous'];
   const validTransparencies: AutoModeTransparency[] = ['minimal', 'standard', 'detailed', 'developer', 'silent', 'ledger_only', 'toast_notifications', 'modal_approvals', 'full_diagnostics'];
 
   const categoryTogglesSrc = (src['categoryToggles'] && typeof src['categoryToggles'] === 'object')
@@ -40859,19 +41304,35 @@ export const askToolExplainAutoDecision = askGameToolExplainAutoDecision;
 /**
  * 14. set_automode_goal / askGameToolSetAutoModeGoal
  */
-export function askGameToolSetAutoModeGoal(state: any, actorId: string, primaryGoal: string): any {
+export function goalNamedInAskQuery(query: string): string | null {
+  const q = String(query || '').toLowerCase();
+  if (/wealth/.test(q)) return 'wealth_accumulation';
+  if (/expansion|regional control|focus control/.test(q)) return 'rapid_expansion';
+  if (/crisis|stabil/.test(q)) return 'crisis_stabilization';
+  if (/aggressive|takeover/.test(q)) return 'aggressive_takeover';
+  if (/balanced/.test(q)) return 'balanced_strategy';
+  return null;
+}
+
+export function askGameToolSetAutoModeGoal(state: any, actorId: string, primaryGoal: string, options?: { allowSettingsWrite?: boolean }): any {
   const validGoals = ['balanced_strategy', 'wealth_accumulation', 'rapid_expansion', 'crisis_stabilization', 'aggressive_takeover'];
-  const targetGoal = validGoals.includes(primaryGoal) ? primaryGoal : 'balanced_strategy';
-  
-  if (state?.gameSettings?.autoModeSettings) {
-    state.gameSettings.autoModeSettings.primaryGoal = targetGoal as any;
+  const current = state?.gameSettings?.autoModeSettings?.primaryGoal;
+  if (options?.allowSettingsWrite !== true || !validGoals.includes(primaryGoal)) {
+    return {
+      success: false,
+      actorId,
+      newPrimaryGoal: current,
+      message: 'Auto Mode goal was not changed. A confirmed settings write and an explicit goal are required.'
+    };
   }
-  
+  if (state?.gameSettings?.autoModeSettings) {
+    state.gameSettings.autoModeSettings.primaryGoal = primaryGoal as any;
+  }
   return {
     success: true,
     actorId,
-    newPrimaryGoal: targetGoal,
-    message: `Auto Mode primary strategic goal updated to '${targetGoal}' for actor ${actorId}.`
+    newPrimaryGoal: primaryGoal,
+    message: `Auto Mode primary strategic goal updated to '${primaryGoal}' for actor ${actorId}.`
   };
 }
 export const askToolSetAutoModeGoal = askGameToolSetAutoModeGoal;
@@ -40990,7 +41451,7 @@ export function executeAskGameTool(
       case 'set_automode_goal':
       case 'askgametoolsetautomodegoal':
       case 'asktoolsetautomodegoal':
-        result = askGameToolSetAutoModeGoal(gameState, actorId, args.primaryGoal || args.goal || 'balanced_strategy');
+        result = askGameToolSetAutoModeGoal(gameState, actorId, args.primaryGoal || args.goal || goalNamedInAskQuery(args.rawQuery || '') || '', { allowSettingsWrite: args.allowSettingsWrite === true });
         break;
 
 
@@ -41590,7 +42051,10 @@ export async function processAskGameQuery(
           infrastructureType: resolvedEntities.infrastructureTypes[0],
           settingKey: resolvedEntities.settingKeys[0],
           rawQuery: rawQuery,
-          normalizedQuery: normalized.normalizedQuery
+          normalizedQuery: normalized.normalizedQuery,
+          primaryGoal: goalNamedInAskQuery(rawQuery) || undefined,
+          goal: goalNamedInAskQuery(rawQuery) || undefined,
+          allowSettingsWrite: userPermissions.includes('SETTINGS_WRITE')
         };
         const toolRes = executeAskGameTool(toolName, params, gameState, resolvedEntities.actors[0] || 'player');
         toolResults.push(toolRes);
@@ -45490,7 +45954,7 @@ export function evaluateGuardianRiskPipeline(
   }
 
   // Dispatch Activity Ledger Event (Req #37)
-  if (context.settings.logToActivityLedger && activeState) {
+  if (context.settings.logToActivityLedger && activeState && allowedToProceed) {
     dispatchGuardianLedgerEvent(
       activeState,
       'evaluation',
@@ -46595,7 +47059,7 @@ export const GuardianAiCenterModal: React.FC<GuardianAiCenterModalProps> = ({
       if (e.key === 'Escape') {
         e.stopPropagation();
         onCloseRef.current();
-      } else if (e.key === 'Tab' && modalRef.current) {
+      } else if (e.key === 'Tab' && modalRef.current && modalShouldTrapFocus(gameSettings?.accessibilitySettings)) {
         const focusables = Array.from(
           modalRef.current.querySelectorAll<HTMLElement>(
             'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -47198,7 +47662,7 @@ export interface AIAction {
     | 'invest_infrastructure' | 'invest_infrastructure_project' | 'start_infrastructure_project' | 'startInfrastructure' | 'contribute_infrastructure_labor' | 'contributeInfrastructureLabor' | 'complete_infrastructure_project' | 'upgrade_regional_dev_level' | 'apply_regional_bonus'
     | 'resolve_crisis_choice' | 'resolveCrisisChoice' | 'mitigate_crisis' | 'mitigateCrisis' | 'work' | 'double_or_nothing' | 'support' | 'progress_contract_objective' | 'deliver_contract_objectives'
     | 'megaproject_contribute'
-    | 'create_replay_branch' | 'createReplayBranch' | 'switch_replay_branch' | 'switchReplayBranch' | 'switch_active_timeline' | 'simulate_alternative_action' | 'compute_branch_delta' | 'prune_replay_branch' | 'merge_timeline_outcomes';
+    | 'create_replay_branch' | 'createReplayBranch' | 'switch_replay_branch' | 'switchReplayBranch' | 'switch_active_timeline' | 'create_whatif_timeline' | 'createWhatIfTimeline' | 'simulate_alternative_action' | 'compute_branch_delta' | 'prune_replay_branch' | 'merge_timeline_outcomes';
   description: string;
   data?: any;
   parameters?: any;
@@ -48472,6 +48936,23 @@ export interface AiTuningLabSelfTestResult {
   id: string;
   passed: boolean;
   detail: string;
+}
+
+export function withIsolatedRng<T>(fn: () => T): T {
+  const streams = globalRngRegistry.exportStreamStates();
+  const counters = JSON.parse(JSON.stringify(globalDeterministicCounters));
+  const master = globalRngRegistry.masterSeed;
+  const deterministic = globalRngRegistry.isDeterministic;
+  const policy = globalRngRegistry.auditPolicy;
+  try {
+    return fn();
+  } finally {
+    globalRngRegistry.masterSeed = master;
+    globalRngRegistry.isDeterministic = deterministic;
+    if (policy) globalRngRegistry.setAuditPolicy(policy);
+    globalRngRegistry.importStreamStates(streams);
+    Object.assign(globalDeterministicCounters, counters);
+  }
 }
 
 export function runAiTuningLabSelfTests(): AiTuningLabSelfTestResult[] {
@@ -58561,6 +59042,9 @@ export function runCoPilotCategory9SelfTests(
     humanPlayerId: 'player',
     turnCounter: 1,
     selectedMode: 'ai',
+    // initialGameState is the menu. Menu and end no longer accept turn advances (SIM-035).
+    // These cases describe a live match.
+    gameMode: 'game',
     player: { id: 'player', money: 5000, actionsUsedThisTurn: 0, actionPoints: 3, currentRegion: 'Sydney', ...(overrides?.player || {}) },
     gameSettings: { ...(settings as any), playerActionsPerDay: 3, actionLimitsEnabled: true, coPilotSettings: activeSettings },
     ...overrides
@@ -60346,6 +60830,7 @@ interface CommandCenterDashboardModalProps {
   teamsById?: Record<string, any>;
   onExecuteRecommendation?: (rec: CommandCenterRecommendation) => void;
   onAskCoPilot?: (prompt: string) => void;
+  accessibilitySettings?: { trapFocusInModals?: boolean } | null;
 }
 
 export const CommandCenterDashboardModal: React.FC<CommandCenterDashboardModalProps> = ({
@@ -60363,9 +60848,17 @@ export const CommandCenterDashboardModal: React.FC<CommandCenterDashboardModalPr
   aiPlayer,
   teamsById,
   onExecuteRecommendation,
-  onAskCoPilot
+  onAskCoPilot,
+  accessibilitySettings
 }) => {
   const surfaceState = useGlobalUISurfaceManager();
+  const { containerRef: commandCenterTrapRef } = useModalAccessibility({
+    activeModalId: 'ai_command_center_modal',
+    isOpen,
+    onEscape: onClose,
+    trapFocus: modalShouldTrapFocus(accessibilitySettings || gameState?.gameSettings?.accessibilitySettings),
+    restoreFocusOnClose: true
+  });
   const [previewedRecId, setPreviewedRecId] = safeUseState<string | null>(null);
   const [showWhyRecId, setShowWhyRecId] = safeUseState<string | null>(null);
   const [jsonSearchFilter, setJsonSearchFilter] = safeUseState('');
@@ -60492,6 +60985,7 @@ export const CommandCenterDashboardModal: React.FC<CommandCenterDashboardModalPr
 
   return (
     <div
+      ref={commandCenterTrapRef}
       role="presentation"
       className={`fixed inset-0 ${(!surfaceState?.backdropOwner || surfaceState.backdropOwner === "ai_command_center_modal") ? "bg-black/85 backdrop-blur-md" : "bg-transparent"} flex items-center justify-center p-4 overflow-hidden`} style={{ zIndex: globalUISurfaceManager.getZIndex("ai_command_center_modal") }}
       onClick={onClose}
@@ -61727,8 +62221,9 @@ export function validateCoPilotActionPermissions(
   if (guardianSettings && guardianSettings.enabled && guardianSettings.protectionLevel !== 'off') {
     const requiringConfirmationModes: CoPilotAuthorityMode[] = ['ask_before_acting', 'automatic_rescue', 'full_co_pilot'];
     if (requiringConfirmationModes.includes(safeSettings.authorityMode)) {
+      const liveLedger = state?.gameActivityLedger;
       const evalCtx: GuardianEvaluationContext = {
-        gameState: state || {},
+        gameState: { ...(state || {}), gameActivityLedger: liveLedger ? { ...liveLedger, events: [...(liveLedger.events || [])] } : liveLedger },
         settings: guardianSettings,
         actorId: actorIdStr,
         actionType: actionTypeStr,
@@ -71632,18 +72127,33 @@ export function generateCoPilotPlayerActionCandidates(
   }
 
   // Category 6: Expedition / Discovery
+  // Preset targets have `name`, not `title`, and their prep cost is the external-territory price.
+  // Offering the first one as a $250 "inland" start_expedition made Do It verify as a no-op, so
+  // the action point never moved. An affordable target uses that real price. Otherwise the card
+  // is the $250 inland launch the label describes, which does spend one action.
   const expedTargets = gs.expeditionTargets ? Object.values(gs.expeditionTargets) : [];
-  const targetExped: any = expedTargets[0];
-  const expedSiteId = targetExped?.id || targetExped?.siteId || `site_${currentRegion}_${currentTurn}`;
-  const expedCost = 250;
+  const expeditionRegionBlocked = (target: any) => Boolean(
+    target?.externalTerritoryId && currentRegion !== target.externalTerritoryId && (
+      currentRegion === 'SYD' || (EXTERNAL_TERRITORIES && EXTERNAL_TERRITORIES[currentRegion] && currentRegion !== target.externalTerritoryId)
+    )
+  );
+  const affordableExped: any = expedTargets.find((target: any) => {
+    const id = target?.id || target?.siteId;
+    if (!id || expeditionRegionBlocked(target)) return false;
+    const prep = calculateExpeditionPrepCost(target);
+    return Number.isFinite(prep) && prep > 0 && cash >= prep;
+  });
+  const expedSiteId = affordableExped ? (affordableExped.id || affordableExped.siteId) : `inland_${currentRegion}_${currentTurn}`;
+  const expedCost = affordableExped ? calculateExpeditionPrepCost(affordableExped) : 250;
+  const expedBlocker = !affordableExped && cash < expedCost ? 'Insufficient cash for expedition' : null;
   candidates.push({
     id: makeId(6, 'expedition'),
     category: 'expeditions',
     categoryIndex: 6,
     categoryName: 'Expedition / Discovery',
-    title: targetExped?.title ? `Launch ${targetExped.title}` : 'Dispatch Inland Discovery Expedition',
+    title: affordableExped ? `Launch ${affordableExped.name || affordableExped.title || expedSiteId}` : 'Dispatch Inland Discovery Expedition',
     description: 'Send exploration team into target territory to survey ancient artifact sites.',
-    actionType: 'start_expedition',
+    actionType: affordableExped ? 'start_expedition' : 'launch_expedition',
     apCost: 1,
     costEstimate: expedCost,
     expectedOutcome: 'Recover rare relic artifact and unlock strategic research data',
@@ -71652,9 +72162,10 @@ export function generateCoPilotPlayerActionCandidates(
     rewardScore: 95,
     longTermScore: 85,
     expectedStateDelta: { cashDelta: -expedCost, apDelta: -1, progressDelta: 25 },
-    isValid: true,
+    isValid: !expedBlocker,
+    invalidationReason: expedBlocker || undefined,
     targetId: expedSiteId,
-    parameters: { siteId: expedSiteId, targetId: expedSiteId }
+    parameters: { siteId: expedSiteId, targetId: expedSiteId, initialCost: expedCost, cost: expedCost }
   });
 
   // Category 7: Competitive Action / Sabotage / Intel
@@ -74732,6 +75243,27 @@ export function formatPayloadValue(key: string, value: unknown): string {
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
+export function soloActionCommits(actionType: string, flags?: { travelBlocked?: boolean }): boolean {
+  if (actionType === 'think') return false;
+  if (actionType === 'travel' && flags?.travelBlocked) return false;
+  return true;
+}
+
+export function soloRefinanceMayRepay(actor: { level?: number; advancedLoans?: Array<{ id?: string }> } | null | undefined, loanId: string, tier: { levelRequired?: number } | null | undefined, settings: { loanRefinancingEnabled?: boolean } | null | undefined, loansEnabled: boolean): boolean {
+  if (!actor || !tier || !loanId || !loansEnabled) return false;
+  if (settings && settings.loanRefinancingEnabled === false) return false;
+  if ((actor.level || 1) < (tier.levelRequired || 1)) return false;
+  return (actor.advancedLoans || []).some(loan => loan?.id === loanId);
+}
+
+export function humanAutomationRunNowAllowed(settings: { humanAutomationEnabled?: boolean } | null | undefined, automation: { enabled?: boolean; authorityMode?: string } | null | undefined): boolean {
+  if (!settings?.humanAutomationEnabled) return false;
+  if (!automation || automation.enabled === false) return false;
+  const authority = automation.authorityMode;
+  if (authority === 'confirm_before_running' || authority === 'disabled') return false;
+  return true;
+}
+
 export function normalizePermissionMode(input: any): AutoModePermission {
   if (!input) return 'recommend';
   const str = String(input);
@@ -74743,10 +75275,17 @@ export function normalizePermissionMode(input: any): AutoModePermission {
     case 'observe':
     case '1':
       return 'observe';
+    case 'read_only':
+      return 'observe';
+    case 'recommendation_only':
     case 'recommend_only':
     case 'recommend':
     case '2':
       return 'recommend';
+    case 'assisted':
+      return 'assist_only';
+    case 'autonomous':
+      return 'full_adaptive';
     case 'auto_apply_non_intrusive':
     case 'assist_only':
     case '3':
@@ -76486,6 +77025,9 @@ export function handleApproveProposal(
     forceExecution: true,
     approvedProposalId: proposalId
   });
+  if (!pipelineResult.success) {
+    return JSON.parse(JSON.stringify(gameState)) as ExtendedGameState;
+  }
 
   const nextState = pipelineResult.updatedState;
   if (pipelineResult.success && nextState.autoModeRuntime?.activePackages) {
@@ -77163,6 +77705,8 @@ export function executeCoPilotActionIntent<T extends GameState | ExtendedGameSta
     coPilotSettings?: Partial<CoPilotSettings>;
     mode?: CoPilotAuthorityMode;
     forceExecution?: boolean;
+    /** The player clicked the recommended action. This is their move, not a Co-Pilot commit. */
+    playerClicked?: boolean;
     dispatchPlayer?: (action: any) => void;
     dispatchGameState?: (action: any) => void;
     context?: CoPilotRuntimeContext;
@@ -77227,9 +77771,8 @@ export function executeCoPilotActionIntent<T extends GameState | ExtendedGameSta
     settings.authorityMode = options.mode;
   }
 
-  if (options?.forceExecution) {
+  if (options?.forceExecution && (settings.authorityMode === 'ask_before_acting' || settings.authorityMode === 'automatic_rescue' || settings.authorityMode === 'full_co_pilot')) {
     settings.coPilotEnabled = true;
-    settings.authorityMode = 'full_co_pilot';
   }
 
   if ((intent as any).executionGeneration !== undefined && session?.executionGeneration !== undefined && (intent as any).executionGeneration !== session.executionGeneration) {
@@ -77274,8 +77817,9 @@ export function executeCoPilotActionIntent<T extends GameState | ExtendedGameSta
     };
   }
 
+  const playerClicked = Boolean(options?.playerClicked);
   const nonExec: CoPilotAuthorityMode[] = ['off', 'monitor_only', 'warnings', 'recommendations'];
-  if (!settings.coPilotEnabled || nonExec.includes(settings.authorityMode)) {
+  if (!playerClicked && (!settings.coPilotEnabled || nonExec.includes(settings.authorityMode))) {
     const stateHash = hashCoPilotLiveState(gameState);
     return {
       updatedState: gameState,
@@ -77296,6 +77840,28 @@ export function executeCoPilotActionIntent<T extends GameState | ExtendedGameSta
     };
   }
 
+  const askConfirmed = Boolean(playerClicked || (options as any)?.confirmed || (options as any)?.userConfirmed || (intent as any)?.confirmed || (intent.parameters as any)?.confirmed);
+  if (settings.authorityMode === 'ask_before_acting' && !askConfirmed) {
+    const stateHash = hashCoPilotLiveState(gameState);
+    return {
+      updatedState: gameState,
+      updatedPlayer: playerObj,
+      executionResult: {
+        actionId: `action_${Date.now()}_awaiting_confirmation`,
+        actionType: intent.actionType,
+        status: 'failed',
+        success: false,
+        stateHashBefore: stateHash,
+        stateHashAfter: stateHash,
+        error: 'AWAITING_CONFIRMATION',
+        failureReason: 'ask_before_acting does not commit until the player confirms.',
+        validationResult: { isValid: false, reason: 'ask_before_acting does not commit until the player confirms.' },
+        turn: typeof (gameState as any).turnCounter === 'number' ? (gameState as any).turnCounter : (gameState as any).turn,
+        timestamp: Date.now()
+      }
+    };
+  }
+
   const actionToValidate = {
     type: intent.actionType,
     actorId: actorIdStr,
@@ -77304,7 +77870,8 @@ export function executeCoPilotActionIntent<T extends GameState | ExtendedGameSta
   };
 
   const validationState = runtimeContext ? { ...gameState, player: playerObj, gameSettings } : gameState;
-  const permCheck = validateCoPilotActionPermissions(settings, actionToValidate, validationState, options?.currentTurnSpend ?? session?.spentThisPlayerTurn ?? 0);
+  const permSettings = playerClicked ? { ...settings, coPilotEnabled: true, authorityMode: 'full_co_pilot' as CoPilotAuthorityMode } : settings;
+  const permCheck = validateCoPilotActionPermissions(permSettings, actionToValidate, validationState, options?.currentTurnSpend ?? session?.spentThisPlayerTurn ?? 0);
   if (!permCheck.allowed) {
     const stateHash = hashCoPilotLiveState(gameState);
     return {
@@ -77353,6 +77920,46 @@ export function executeCoPilotActionIntent<T extends GameState | ExtendedGameSta
     },
     actorsById: resolvedActorsById
   };
+
+  const guardianSettings = (gameState as any)?.guardianAiSettings || (gameSettings as any)?.guardianAiSettings;
+  if (guardianSettings?.enabled && typeof evaluateGuardianRiskPipeline === 'function' && typeof guardianBlocksAutomation === 'function') {
+    const guardianVerdict = evaluateGuardianRiskPipeline({
+      gameState,
+      settings: guardianSettings,
+      actorId: actorIdStr,
+      actionType: intent.actionType,
+      actionPayload: { ...(intent.parameters || {}), ...(intent.targetId ? { destinationRegion: intent.targetId, targetId: intent.targetId } : {}), cost: intent.costEstimate },
+      source: 'co_pilot',
+      day: Number((gameState as any)?.day) || 1,
+      turn: Number((gameState as any)?.turnCounter ?? (gameState as any)?.turn) || 1,
+      currentActionTokens: typeof getRemainingActionPoints === 'function' ? getRemainingActionPoints(playerObj, gameSettings) : Number(playerObj?.actionPoints) || 0,
+      currentCash: Number(playerObj?.money) || 0,
+      activeContracts: [],
+      activeExpeditions: [],
+      activePlans: [],
+      isReplay: false
+    });
+    if (guardianBlocksAutomation(guardianVerdict, guardianSettings.protectionLevel)) {
+      const stateHash = hashCoPilotLiveState(gameState);
+      return {
+        updatedState: gameState,
+        updatedPlayer: playerObj,
+        executionResult: {
+          actionId: `action_${Date.now()}_guardian_denied`,
+          actionType: intent.actionType,
+          status: 'failed',
+          success: false,
+          stateHashBefore: stateHash,
+          stateHashAfter: stateHash,
+          error: 'GUARDIAN_DENIED',
+          failureReason: 'Guardian refused this action.',
+          validationResult: { isValid: false, reason: guardianVerdict.summary || 'Guardian refused this action.' },
+          turn: typeof (gameState as any).turnCounter === 'number' ? (gameState as any).turnCounter : (gameState as any).turn,
+          timestamp: Date.now()
+        }
+      };
+    }
+  }
 
   setCoPilotStartPhase('execute_begin');
   const verificationResult = executeActionWithPostconditionVerification(
@@ -77742,6 +78349,11 @@ export function executeAutoModePipeline(
   recordStage('GuardianValidation', true, `Guardian AI and Reserve Floor checks passed`);
 
   // Stage 7: Approval (Check if auto-approved or pushed to proposal queue)
+  const permissionNow = normalizePermissionMode(effectivePolicy.permissionMode);
+  if (permissionNow === 'locked' || permissionNow === 'observe') {
+    recordStage('Approval', true, 'Read-only permission does not enqueue or apply a package');
+    return { success: true, status: 'SKIPPED', actorId, stageHistory, updatedState };
+  }
   const isHuman = isHumanActor(currentActor);
   const allowHumanAutopilot = settings?.autoModeSettings?.allowHumanAutopilot === true;
   const currentDay = updatedState.day || 1;
@@ -79173,12 +79785,13 @@ export function resolveStoryDecision(
     updatedPlayer.money = Math.max(0, (updatedPlayer.money || 0) + cons.moneyDelta);
   }
 
-  if (cons.standingDelta && updatedPlayer.regionalStanding) {
-    const updatedStanding = { ...updatedPlayer.regionalStanding };
+  let updatedStandingMap = gameState.standingPerActor;
+  if (cons.standingDelta) {
+    const actorId = updatedPlayer.id || 'player';
+    updatedStandingMap = { ...(gameState.standingPerActor || {}) };
     for (const [reg, delta] of Object.entries(cons.standingDelta)) {
-      updatedStanding[reg] = Math.min(100, Math.max(0, (updatedStanding[reg] || 50) + (delta as number)));
+      updatedStandingMap = modifyActorRegionalStanding(updatedStandingMap, actorId, reg, delta as number);
     }
-    updatedPlayer.regionalStanding = updatedStanding;
   }
 
   if (cons.stabilityDelta) {
@@ -79200,6 +79813,7 @@ export function resolveStoryDecision(
   return {
     ...gameState,
     player: updatedPlayer,
+    standingPerActor: updatedStandingMap,
     publicStabilityState: updatedPublicStability,
     campaignState: {
       ...gameState.campaignState,
@@ -83005,7 +83619,7 @@ export function executeStrategyPlannerCoPilotStep(
     newState.coPilotAuthorityMode ||
     'full_co_pilot';
 
-  if (mode === 'off' || mode === 'monitor_only') {
+  if (mode === 'off' || mode === 'monitor_only' || mode === 'warnings') {
     return { executed: false, pausedAtCheckpoint: false, newState };
   }
 
@@ -83051,7 +83665,7 @@ export function executeStrategyPlannerCoPilotStep(
     {
       mode: mode,
       coPilotSettings: stepCoPilotSettings,
-      forceExecution: true
+      forceExecution: false
     }
   );
 
@@ -84829,7 +85443,7 @@ export const QuickActionsCustomizerModal: React.FC<QuickActionsCustomizerModalPr
     activeModalId: 'quick_actions_customizer',
     isOpen,
     onEscape: onClose,
-    trapFocus: true,
+    trapFocus: modalShouldTrapFocus(uiState?.accessibilitySettings),
     restoreFocusOnClose: true
   });
 
@@ -85647,6 +86261,48 @@ export interface ModalAccessibilityOptions {
   restoreFocusOnClose?: boolean;
 }
 
+/** Default on, matching createDefaultAccessibilitySettings. Off means Tab may leave the dialog. */
+export function modalShouldTrapFocus(settings?: { trapFocusInModals?: boolean } | null): boolean {
+  if (!settings || typeof settings.trapFocusInModals !== 'boolean') return true;
+  return settings.trapFocusInModals;
+}
+
+export function modalTabWouldLeave(trap: boolean, atEdge: boolean): boolean {
+  return !trap && atEdge;
+}
+
+/** A control the browser will actually Tab to. Disabled and tabindex="-1" nodes are not stops. */
+export function isModalTabStop(el: { tabIndex?: number | null; disabled?: boolean; hasAttribute?: (name: string) => boolean; getAttribute?: (name: string) => string | null }): boolean {
+  if (typeof el.tabIndex === 'number' && el.tabIndex < 0) return false;
+  if (el.disabled === true) return false;
+  if (typeof el.hasAttribute === 'function' && (el.hasAttribute('disabled') || el.hasAttribute('hidden'))) return false;
+  if (typeof el.getAttribute === 'function' && el.getAttribute('aria-hidden') === 'true') return false;
+  return true;
+}
+
+/**
+ * Where Tab should move while a dialog is open.
+ * Null means the browser may move to another stop inside the dialog.
+ * The default of trapFocusInModals is not decided here.
+ */
+export function modalTabWrapTarget<T>(input: {
+  trap: boolean;
+  tabbables: readonly T[];
+  active: T | null;
+  activeInside: boolean;
+  shiftKey: boolean;
+}): T | null {
+  if (!input.trap || input.tabbables.length === 0) return null;
+  const first = input.tabbables[0];
+  const last = input.tabbables[input.tabbables.length - 1];
+  if (input.shiftKey) {
+    if (!input.activeInside || input.active === first) return last;
+    return null;
+  }
+  if (!input.activeInside || input.active === last) return first;
+  return null;
+}
+
 export function useModalAccessibility(options: ModalAccessibilityOptions) {
   const { activeModalId, isOpen, onEscape, trapFocus = true, restoreFocusOnClose = true } = options;
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -85666,11 +86322,14 @@ export function useModalAccessibility(options: ModalAccessibilityOptions) {
   const onEscapeRef = useRef(onEscape);
   useEffect(() => { onEscapeRef.current = onEscape; }, [onEscape]);
 
+  const shiftTabRef = useRef(false);
+  const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+  const tabStopsIn = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>(focusableSelector)).filter(isModalTabStop);
+
   // Autofocus: once per open.
   useEffect(() => {
     if (!isOpen || !containerRef.current || !trapFocus) return;
-    const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    const first = containerRef.current.querySelector<HTMLElement>(focusableSelector);
+    const first = tabStopsIn(containerRef.current)[0];
     if (first) first.focus();
   }, [isOpen, trapFocus]);
 
@@ -85678,8 +86337,14 @@ export function useModalAccessibility(options: ModalAccessibilityOptions) {
     if (!isOpen || !containerRef.current || !trapFocus) return;
 
     const element = containerRef.current;
-    const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    const focusables = Array.from(element.querySelectorAll<HTMLElement>(focusableSelector));
+
+    const wrapTab = (active: HTMLElement | null, shiftKey: boolean): HTMLElement | null => modalTabWrapTarget({
+      trap: true,
+      tabbables: tabStopsIn(element),
+      active,
+      activeInside: Boolean(active && element.contains(active)),
+      shiftKey
+    });
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && onEscapeRef.current) {
@@ -85692,25 +86357,31 @@ export function useModalAccessibility(options: ModalAccessibilityOptions) {
         return;
       }
 
-      if (e.key === 'Tab' && focusables.length > 0) {
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (e.shiftKey) {
-          if (document.activeElement === first) {
-            e.preventDefault?.();
-            last.focus();
-          }
-        } else {
-          if (document.activeElement === last) {
-            e.preventDefault?.();
-            first.focus();
-          }
-        }
-      }
+      if (e.key !== 'Tab') return;
+      shiftTabRef.current = e.shiftKey;
+      const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const destination = wrapTab(active, e.shiftKey);
+      if (!destination) return;
+      e.preventDefault?.();
+      try { destination.focus(); } catch (_) {}
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    // If Tab's default action still moves outside, pull focus back into this dialog.
+    const handleFocusIn = (event: FocusEvent) => {
+      const node = event.target;
+      if (!(node instanceof Node) || element.contains(node)) return;
+      const destination = wrapTab(null, shiftTabRef.current);
+      if (!destination) return;
+      event.preventDefault?.();
+      try { destination.focus(); } catch (_) {}
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener('focusin', handleFocusIn, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('focusin', handleFocusIn, true);
+    };
   }, [isOpen, trapFocus, restoreFocusOnClose]);
 
   const prevIsOpenRef = useRef(isOpen);
@@ -94145,7 +94816,7 @@ export function createDefaultActorAutoModePolicy(targetActorId: string | number,
 }
 
 export function sanitizeActorAutoModePolicy(input: unknown): ActorAutoModePolicy {
-  const validPermissions: AutoModePermission[] = ['locked', 'observe', 'recommend', 'assist_only', 'challenge_only', 'full_adaptive', 'disabled', 'recommend_only', 'auto_apply_non_intrusive', 'full_auto'];
+  const validPermissions: string[] = ['locked', 'observe', 'recommend', 'assist_only', 'challenge_only', 'full_adaptive', 'disabled', 'recommend_only', 'auto_apply_non_intrusive', 'full_auto', 'read_only', 'recommendation_only', 'assisted', 'autonomous'];
   const validCategories: AutoModeCategory[] = [
     'pricing', 'capacity', 'route_expansion', 'borrowing', 'debt_repayment',
     'marketing', 'alliance', 'tax_relief', 'subsidy', 'dividend',
@@ -98995,7 +99666,7 @@ export const SettingsExperienceShell: React.FC<SettingsExperienceShellProps> = (
       if (e.key === 'Escape') {
         e.preventDefault?.();
         handleCloseRef.current();
-      } else if (e.key === 'Tab' && modalRef.current) {
+      } else if (e.key === 'Tab' && modalRef.current && modalShouldTrapFocus(gameSettings?.accessibilitySettings)) {
         const focusables = Array.from(
           modalRef.current.querySelectorAll<HTMLElement>(
             'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -120549,7 +121220,7 @@ export function beginDealActivation(state: DiplomacyState, dealId: string, turn:
 
 export function confirmDealActivation(state: DiplomacyState, dealId: string, results: Array<{ termId: string; success: boolean; reason?: string | null }>, turn: number, names: Record<string, string> = {}): { state: DiplomacyState; activated: boolean; consequences: DNConsequence[] } {
   const deal = state.deals.find(d => d.id === dealId);
-  if (!deal) return { state, activated: false, consequences: [] };
+  if (!deal || deal.status === 'active') return { state, activated: false, consequences: [] };
   const failed = results.filter(r => !r.success);
   const events = [...state.events];
   if (failed.length) {
@@ -128372,7 +129043,8 @@ export const BALANCE_PACE_PRESETS: Record<'fast' | 'normal' | 'long_strategic', 
 };
 
 export function createBalanceSimConfig(o: Partial<BalanceSimConfig> = {}): BalanceSimConfig {
-  return { seed: 1, days: 30, apPerDay: 3, winCondition: 'money', startingMoney: 1000, features: { ...BAL_DEFAULT_FEATURES, ...(o.features || {}) }, ...o, ...(o.features ? { features: { ...BAL_DEFAULT_FEATURES, ...o.features } } : {}) };
+  const { features: featureOverride, ...balanceRest } = o;
+  return { seed: 1, days: 30, apPerDay: 3, winCondition: 'money', startingMoney: 1000, ...balanceRest, features: { ...BAL_DEFAULT_FEATURES, ...(featureOverride && typeof featureOverride === 'object' ? featureOverride : {}) } };
 }
 
 function balNext(w: BalanceWorld): number { const r = mulberry32Next(w.rng >>> 0); w.rng = r.nextState; return r.value; }
@@ -133329,6 +134001,28 @@ export function sanitizeSavedRngRegistryState(raw: unknown): Record<string, RngS
 }
 
 /** Counters are id sources: non-finite / negative values are repaired so ids can never be reused after load. */
+export function deterministicCountersCoveringSaveIds(raw: unknown, saved?: DeterministicCounters): DeterministicCounters {
+  const base = { ...(saved || createInitialDeterministicCounters()) };
+  let blob = '';
+  try { blob = JSON.stringify(raw ?? null); } catch { blob = ''; }
+  const patterns: Array<[keyof DeterministicCounters, RegExp]> = [
+    ['correlation', /:corr:(\d+)/g],
+    ['actionAttempt', /:action:(\d+)/g],
+    ['ledgerEvent', /:glevt:(\d+)/g],
+    ['replayEvent', /:replayevt:(\d+)/g]
+  ];
+  patterns.forEach(([key, re]) => {
+    let max = Number(base[key]) || 0;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(blob))) {
+      const n = Number(match[1]);
+      if (Number.isFinite(n) && n > max) max = n;
+    }
+    base[key] = max;
+  });
+  return base;
+}
+
 export function sanitizeSavedDeterministicCounters(raw: unknown): DeterministicCounters | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const base = createInitialDeterministicCounters();
@@ -133366,7 +134060,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'strategicCapitalEnabled'
 ] as const;
 
 /**
@@ -133621,10 +134315,10 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         stats: sanitizeStats(data?.stats),
         level: v95IsFiniteNum(data?.level) ? Math.max(1, Math.floor(data.level)) : initialPlayerState.level,
         xp: v95IsFiniteNum(data?.xp) ? Math.max(0, data.xp) : initialPlayerState.xp,
-        consecutiveWins: typeof data?.consecutiveWins === 'number' ? data.consecutiveWins : 0,
+        consecutiveWins: v95IsFiniteNum(data?.consecutiveWins) ? Math.max(0, Math.floor(data.consecutiveWins)) : 0,
         specialAbilityUses: typeof data?.specialAbilityUses === 'number' ? data.specialAbilityUses : character.specialAbility.usesLeft,
         name: typeof data?.name === 'string' && data.name.trim() ? data.name : fallbackName,
-        actionsUsedThisTurn: typeof data?.actionsUsedThisTurn === 'number' ? data.actionsUsedThisTurn : 0,
+        actionsUsedThisTurn: v95IsFiniteNum(data?.actionsUsedThisTurn) ? Math.max(0, Math.floor(data.actionsUsedThisTurn)) : 0,
         overridesUsedToday: typeof data?.overridesUsedToday === 'number' ? data.overridesUsedToday : 0,
         overrideFatigue: typeof data?.overrideFatigue === 'number' ? data.overrideFatigue : 0,
         lentActionsUsedToday: typeof data?.lentActionsUsedToday === 'number' ? data.lentActionsUsedToday : 0,
@@ -135099,7 +135793,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
       // V9.5: these were written by buildSaveData but silently dropped here, so every load reseeded the
       // gameplay RNG streams and reset id counters (determinism drift + possible id reuse after load).
       rngRegistryState: sanitizeSavedRngRegistryState(raw.rngRegistryState),
-      deterministicCounters: sanitizeSavedDeterministicCounters(raw.deterministicCounters)
+      deterministicCounters: deterministicCountersCoveringSaveIds(raw, sanitizeSavedDeterministicCounters(raw.deterministicCounters))
     };
 }
 
@@ -135374,6 +136068,275 @@ export function validateCriticalGameInvariants(s: V95InvariantInput): V95Invaria
   return out;
 }
 
+// ============================================================================
+// SECTION 20P-A90: O111 DIAGNOSTICS & RECOVERY (LIVE BUNDLE + SAFE REPAIR)
+// ============================================================================
+// Operation 111 / Agent 90. Pure helpers that reuse V9.5 save health + invariant checks; optional bounded
+// repairs for live matches (never auto-runs in production). Dev console: window.__O111_RECOVERY__.
+
+export interface O111DiagnosticBundle {
+  at: number;
+  invariantCount: number;
+  blockerCount: number;
+  criticalCount: number;
+  violations: V95InvariantViolation[];
+  saveIntegrity: SaveHealthReport['integrityStatus'] | null;
+  saveLoadable: boolean | null;
+  surfaceErrorCount: number;
+  recentSurfaceErrors: Array<{ surface: string; message: string; at: number }>;
+}
+
+export interface O111LiveRecoveryOptions {
+  repairNonFiniteMoney?: boolean;
+  repairTurnActor?: boolean;
+  capNotifications?: boolean;
+  capLedger?: boolean;
+  repairTurnCounters?: boolean;
+}
+
+export interface O111LiveRecoveryReport {
+  changed: boolean;
+  actions: string[];
+  beforeViolations: number;
+  afterViolations: number;
+  remainingBlockers: number;
+  snapshot: V95LiveSnapshot;
+}
+
+function isO111RecoveryDevBuild(): boolean {
+  try {
+    const im = typeof import.meta !== 'undefined' ? (import.meta as { env?: { DEV?: boolean; PROD?: boolean } }) : undefined;
+    if (im?.env?.PROD === true) return false;
+    if (im?.env?.DEV === true) return true;
+  } catch { /* non-module bundlers */ }
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') return false;
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') return true;
+  return false;
+}
+
+export function clearO111SurfaceErrorRing(): number {
+  const n = V95_SURFACE_ERRORS.length;
+  V95_SURFACE_ERRORS.length = 0;
+  return n;
+}
+
+export function buildO111DiagnosticBundle(snap: V95LiveSnapshot, savePayload?: unknown): O111DiagnosticBundle {
+  const violations = validateCriticalGameInvariants(snap);
+  let saveIntegrity: SaveHealthReport['integrityStatus'] | null = null;
+  let saveLoadable: boolean | null = null;
+  if (savePayload !== undefined) {
+    try {
+      const input = typeof savePayload === 'string' ? savePayload : JSON.stringify(savePayload);
+      const { report } = prepareSaveLoadTransaction(input);
+      saveIntegrity = report.integrityStatus;
+      saveLoadable = report.loadable;
+    } catch {
+      saveIntegrity = 'corrupt';
+      saveLoadable = false;
+    }
+  }
+  return {
+    at: Date.now(),
+    invariantCount: violations.length,
+    blockerCount: violations.filter(v => v.severity === 'BLOCKER').length,
+    criticalCount: violations.filter(v => v.severity === 'CRITICAL').length,
+    violations,
+    saveIntegrity,
+    saveLoadable,
+    surfaceErrorCount: V95_SURFACE_ERRORS.length,
+    recentSurfaceErrors: V95_SURFACE_ERRORS.slice(0, 8).map(e => ({ surface: e.surface, message: e.message, at: e.at })),
+  };
+}
+
+function o111DeepClone<T>(value: T): T {
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(v => o111DeepClone(v)) as T;
+  const out: Record<string, unknown> = {};
+  Object.entries(value as Record<string, unknown>).forEach(([k, v]) => { out[k] = o111DeepClone(v); });
+  return out as T;
+}
+
+function o111CloneLiveSnapshot(snap: V95LiveSnapshot): V95LiveSnapshot {
+  return {
+    player: o111DeepClone(snap.player ?? {}),
+    aiPlayer: o111DeepClone(snap.aiPlayer ?? {}),
+    gameState: o111DeepClone(snap.gameState ?? {}),
+    gameSettings: snap.gameSettings ? o111DeepClone(snap.gameSettings) : snap.gameSettings,
+    actorsById: snap.actorsById ? o111DeepClone(snap.actorsById) : snap.actorsById,
+    notifications: Array.isArray(snap.notifications) ? snap.notifications.map(n => ({ ...n })) : snap.notifications,
+  };
+}
+
+function o111RepairActorMoney(actor: any, label: string, actions: string[]): void {
+  if (!actor || typeof actor !== 'object') return;
+  if (typeof actor.money === 'number' && !Number.isFinite(actor.money)) {
+    actor.money = 0;
+    actions.push(`${label}.money: non-finite → 0`);
+  }
+  if (actor.actionsUsedThisTurn !== undefined && (typeof actor.actionsUsedThisTurn !== 'number' || !Number.isFinite(actor.actionsUsedThisTurn) || actor.actionsUsedThisTurn < 0)) {
+    actor.actionsUsedThisTurn = 0;
+    actions.push(`${label}.actionsUsedThisTurn: clamped to 0`);
+  }
+}
+
+/**
+ * Bounded, explicit repairs for a live snapshot. Does not touch unknown regions, consent flags, or blockers
+ * beyond counter/money hygiene. Caller applies `snapshot` back through normal reducers.
+ */
+export function attemptO111LiveStateRecovery(snap: V95LiveSnapshot, opts: O111LiveRecoveryOptions = {}): O111LiveRecoveryReport {
+  const options: Required<O111LiveRecoveryOptions> = {
+    repairNonFiniteMoney: opts.repairNonFiniteMoney !== false,
+    repairTurnActor: opts.repairTurnActor !== false,
+    capNotifications: opts.capNotifications !== false,
+    capLedger: opts.capLedger !== false,
+    repairTurnCounters: opts.repairTurnCounters !== false,
+  };
+  const before = validateCriticalGameInvariants(snap);
+  const next = o111CloneLiveSnapshot(snap);
+  const actions: string[] = [];
+
+  if (options.capNotifications && Array.isArray(next.notifications) && next.notifications.length > V95_NOTIFICATION_HISTORY_CAP) {
+    const prev = next.notifications.length;
+    next.notifications = capNotificationHistory(next.notifications);
+    actions.push(`notifications: capped ${prev} → ${next.notifications.length}`);
+  }
+
+  const gs = next.gameState || {};
+  if (options.repairTurnActor && Array.isArray(gs.turnOrder) && gs.turnOrder.length && typeof gs.currentActorId === 'string' && !gs.turnOrder.includes(gs.currentActorId)) {
+    gs.currentActorId = gs.turnOrder[0];
+    actions.push(`gameState.currentActorId: synced to ${gs.currentActorId}`);
+  }
+  if (options.repairTurnCounters) {
+    if (typeof gs.day === 'number' && (!Number.isFinite(gs.day) || gs.day < 1)) {
+      gs.day = 1;
+      actions.push('gameState.day: set to 1');
+    }
+    if (gs.turnCounter !== undefined && (typeof gs.turnCounter !== 'number' || !Number.isFinite(gs.turnCounter) || gs.turnCounter < 0)) {
+      gs.turnCounter = 0;
+      actions.push('gameState.turnCounter: set to 0');
+    }
+  }
+  if (options.capLedger && Array.isArray(gs.gameActivityLedger?.events) && gs.gameActivityLedger.events.length > GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING) {
+    const prev = gs.gameActivityLedger.events.length;
+    gs.gameActivityLedger.events = gs.gameActivityLedger.events.slice(-GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING);
+    actions.push(`gameActivityLedger.events: truncated ${prev} → ${gs.gameActivityLedger.events.length}`);
+  }
+  next.gameState = gs;
+
+  if (options.repairNonFiniteMoney) {
+    o111RepairActorMoney(next.player, 'player', actions);
+    o111RepairActorMoney(next.aiPlayer, 'ai', actions);
+    Object.entries(next.actorsById || {}).forEach(([id, a]) => o111RepairActorMoney(a, id, actions));
+  }
+
+  const after = validateCriticalGameInvariants(next);
+  return {
+    changed: actions.length > 0,
+    actions,
+    beforeViolations: before.length,
+    afterViolations: after.length,
+    remainingBlockers: after.filter(v => v.severity === 'BLOCKER').length,
+    snapshot: next,
+  };
+}
+
+export interface O111RecoveryDevHooks {
+  bundle: (snap: V95LiveSnapshot, save?: unknown) => O111DiagnosticBundle;
+  recover: typeof attemptO111LiveStateRecovery;
+  clearSurfaceErrors: typeof clearO111SurfaceErrorRing;
+  surfaceErrors: typeof V95_SURFACE_ERRORS;
+  saveHealth: typeof buildSaveHealthReport;
+  invariants: typeof validateCriticalGameInvariants;
+}
+
+let o111RecoveryHooksInstalled = false;
+
+/** Idempotent. Attaches `window.__O111_RECOVERY__` in dev for console-driven diagnostics. */
+export function installO111RecoveryDevHooks(): O111RecoveryDevHooks | null {
+  if (!isO111RecoveryDevBuild()) return null;
+  const hooks: O111RecoveryDevHooks = {
+    bundle: buildO111DiagnosticBundle,
+    recover: attemptO111LiveStateRecovery,
+    clearSurfaceErrors: clearO111SurfaceErrorRing,
+    surfaceErrors: V95_SURFACE_ERRORS,
+    saveHealth: buildSaveHealthReport,
+    invariants: validateCriticalGameInvariants,
+  };
+  if (!o111RecoveryHooksInstalled && typeof window !== 'undefined') {
+    (window as unknown as { __O111_RECOVERY__?: O111RecoveryDevHooks }).__O111_RECOVERY__ = hooks;
+    o111RecoveryHooksInstalled = true;
+  }
+  return hooks;
+}
+
+export function runO111DiagnosticsRecoverySelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  check('o111_a90_bundle', 'Diagnostic bundle aggregates invariant severities', () => {
+    const snap: V95LiveSnapshot = {
+      player: { money: 100, currentRegion: 'NSW', character: CHARACTERS[0] },
+      aiPlayer: { money: 50, character: CHARACTERS[1] },
+      gameState: { day: 1, turnOrder: ['player', 'ai'], currentActorId: 'player' },
+    };
+    const b = buildO111DiagnosticBundle(snap);
+    return b.invariantCount >= 0 && b.blockerCount === 0 && typeof b.at === 'number';
+  });
+
+  check('o111_a90_recover_money', 'Recovery repairs non-finite actor money', () => {
+    const snap: V95LiveSnapshot = {
+      player: { money: Number.NaN, currentRegion: 'NSW', character: CHARACTERS[0], actionsUsedThisTurn: -2 },
+      aiPlayer: { money: 50, character: CHARACTERS[1] },
+      gameState: { day: 1 },
+    };
+    const r = attemptO111LiveStateRecovery(snap);
+    return r.changed && r.snapshot.player.money === 0 && r.snapshot.player.actionsUsedThisTurn === 0;
+  });
+
+  check('o111_a90_recover_turn', 'Recovery syncs currentActorId into turnOrder', () => {
+    const snap: V95LiveSnapshot = {
+      player: { money: 100, currentRegion: 'NSW', character: CHARACTERS[0] },
+      aiPlayer: { money: 50, character: CHARACTERS[1] },
+      gameState: { day: 2, turnOrder: ['player', 'ai'], currentActorId: 'ghost' },
+    };
+    const r = attemptO111LiveStateRecovery(snap);
+    return r.snapshot.gameState.currentActorId === 'player' && r.afterViolations <= r.beforeViolations;
+  });
+
+  check('o111_a90_recover_notifications', 'Recovery caps runaway notification history', () => {
+    const snap: V95LiveSnapshot = {
+      player: { money: 100, currentRegion: 'NSW', character: CHARACTERS[0] },
+      aiPlayer: { money: 50, character: CHARACTERS[1] },
+      gameState: { day: 1 },
+      notifications: Array.from({ length: V95_NOTIFICATION_HISTORY_CAP + 40 }, (_, i) => ({ id: `n${i}`, read: true })),
+    };
+    const r = attemptO111LiveStateRecovery(snap);
+    return (r.snapshot.notifications?.length ?? 0) <= V95_NOTIFICATION_HISTORY_CAP;
+  });
+
+  check('o111_a90_reject_load', 'prepareSaveLoadTransaction rejects invalid JSON without data', () => {
+    const r = prepareSaveLoadTransaction('{');
+    return r.ok === false && r.data === null && r.report.fatalErrors.length > 0;
+  });
+
+  check('o111_a90_surface_ring', 'Surface error ring can be cleared', () => {
+    V95_SURFACE_ERRORS.unshift({ surface: 'test', message: 'probe', at: Date.now() });
+    const cleared = clearO111SurfaceErrorRing();
+    return cleared >= 1 && V95_SURFACE_ERRORS.length === 0;
+  });
+
+  check('o111_a90_dev_hooks', 'Recovery dev hooks installer is defined', () => typeof installO111RecoveryDevHooks === 'function');
+
+  return results;
+}
+
 // ---- Replay integrity + first-divergence classification ---------------------------------------------------
 export interface ReplayIntegrityIssue { severity: V95Severity; code: string; message: string; sequence?: number }
 export interface ReplayIntegrityReport {
@@ -135600,18 +136563,28 @@ export interface V95StressResult {
   maxTurnMs: number;
   durationMs: number;
   moneyConservationBreaks: number;
+  yields: number;
 }
 
-export function runV95LongMatchStress(opts: { seed?: number; turns?: number; sampleEvery?: number } = {}): V95StressResult {
+interface V95StressCarry { state: any; rng: any; genome: any; res: V95StressResult; t0: number }
+
+function v95StressSlice(opts: { seed?: number; turns?: number; sampleEvery?: number; fromTurn?: number; toTurn?: number }, carry: V95StressCarry | null): V95StressCarry {
   const seed = opts.seed ?? 9501, turns = opts.turns ?? 100, every = opts.sampleEvery ?? 20;
-  const t0 = v95Now();
-  const res: V95StressResult = { seed, turns: 0, actions: 0, errors: [], violations: [], sizes: [], finalHash: '', maxTurnMs: 0, durationMs: 0, moneyConservationBreaks: 0 };
-  try {
+  const fromTurn = opts.fromTurn ?? 1;
+  const toTurn = opts.toTurn ?? turns;
+  let state: any; let rng: any; let genome: any; let res: V95StressResult; let t0: number;
+  if (!carry) {
+    t0 = v95Now();
+    res = { seed, turns: 0, actions: 0, errors: [], violations: [], sizes: [], finalHash: '', maxTurnMs: 0, durationMs: 0, moneyConservationBreaks: 0, yields: 0 };
     setRngMasterSeed(seed, true);
-    const rng = createSeededRng(seed);
-    const genome = createSeedGenome();
-    let state = createTuningMatchState(seed, false);
-    for (let turn = 1; turn <= turns; turn++) {
+    rng = createSeededRng(seed);
+    genome = createSeedGenome();
+    state = createTuningMatchState(seed, false);
+  } else {
+    state = carry.state; rng = carry.rng; genome = carry.genome; res = carry.res; t0 = carry.t0;
+  }
+  try {
+    for (let turn = fromTurn; turn <= toTurn; turn++) {
       const tt = v95Now();
       const actorId = turn % 2 === 1 ? 'player' : 'ai';
       state.turnCounter = turn; (state as any).turn = turn; state.day = Math.floor((turn - 1) / 2) + 1;
@@ -135637,14 +136610,32 @@ export function runV95LongMatchStress(opts: { seed?: number; turns?: number; sam
       if (turn % every === 0) { try { res.sizes.push({ turn, bytes: JSON.stringify(state).length }); } catch { res.errors.push(`turn ${turn}: state not serializable`); } }
       res.turns = turn;
       res.maxTurnMs = Math.max(res.maxTurnMs, Math.round((v95Now() - tt) * 100) / 100);
+      if (turn % 20 === 0 || turn === turns) res.yields += 1;
     }
-    res.finalHash = computeCanonicalStateHash(state);
+    if (toTurn >= turns) res.finalHash = computeCanonicalStateHash(state);
   } catch (err) {
     res.errors.push(err instanceof Error ? `${err.message}` : String(err));
   }
   res.durationMs = Math.round(v95Now() - t0);
-  return res;
+  return { state, rng, genome, res, t0 };
 }
+
+export function runV95LongMatchStress(opts: { seed?: number; turns?: number; sampleEvery?: number } = {}): V95StressResult {
+  return v95StressSlice(opts, null).res;
+}
+
+/** Same match as runV95LongMatchStress, pausing the event loop at each 20-turn boundary. */
+export async function runV95LongMatchStressYielding(opts: { seed?: number; turns?: number; sampleEvery?: number } = {}): Promise<V95StressResult> {
+  const turns = opts.turns ?? 100;
+  const chunk = 20;
+  let carry: V95StressCarry | null = null;
+  for (let from = 1; from <= turns; from += chunk) {
+    carry = v95StressSlice({ ...opts, turns, fromTurn: from, toTurn: Math.min(turns, from + chunk - 1) }, carry);
+    await new Promise<void>(resolve => { setTimeout(resolve, 0); });
+  }
+  return carry!.res;
+}
+
 
 // ---- Resource conservation / numeric-boundary fuzz on the canonical executor -------------------------------
 export interface V95FuzzResult { cases: number; breaches: string[] }
@@ -135811,11 +136802,23 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
+  { id: 'o111_a90', label: 'O111 Agent 90 Diagnostics & Recovery', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runO111DiagnosticsRecoverySelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
     ...runAiMemoryPhase4SelfTests().results, ...runAiMemoryPhase5SelfTests().results, ...runAiMemoryPhase6SelfTests().results, ...runAiMemoryPhase61SelfTests().results
   ] }
+];
+
+/** Developer harnesses that stay out of the release gate. Quick mode also skips tier "full" by design. */
+export const V95_SUITE_GATE_INDEX: Array<{ id: string; gate: 'in' | 'out'; reason: string }> = [
+  { id: 'runAutoModeDevSelfTests', gate: 'out', reason: 'Auto Mode developer harness. Not part of the release gate.' },
+  { id: 'runStrategyPlannerM3DevTests', gate: 'out', reason: 'Strategy planner M3 harness. Not part of the release gate.' },
+  { id: 'runStrategyPlannerM4DevTests', gate: 'out', reason: 'Strategy planner M4 harness. Not part of the release gate.' },
+  { id: 'runStrategyPlannerM5DevTests', gate: 'out', reason: 'Strategy planner M5 harness. Not part of the release gate.' },
+  { id: 'runAiCommandCenterM4DevTests', gate: 'out', reason: 'Command center M4 harness. Not part of the release gate.' },
+  { id: 'runAiCommandCenterM5DevTests', gate: 'out', reason: 'Command center M5 harness. Not part of the release gate.' },
+  { id: 'runGlobalUISurfaceManagerDevTests', gate: 'out', reason: 'Global UI surface manager harness. Not part of the release gate.' }
 ];
 
 export function runV95ExistingSuite(spec: V95SuiteSpec): V95CheckResult[] {
@@ -135855,6 +136858,24 @@ export function v95WithIsolatedGlobals<T>(fn: () => T): T {
   }
 }
 
+export async function v95WithIsolatedGlobalsAsync<T>(fn: () => Promise<T>): Promise<T> {
+  const reg: any = globalRngRegistry as any;
+  const streams = globalRngRegistry.exportStreamStates();
+  const flags = { isDeterministic: reg.isDeterministic, auditPolicy: reg.auditPolicy, strictAuditMode: reg.strictAuditMode, isReplayCertified: reg.isReplayCertified };
+  const counters = { ...globalDeterministicCounters };
+  try { return await fn(); }
+  finally {
+    globalRngRegistry.importStreamStates(streams);
+    Object.assign(reg, flags);
+    Object.assign(globalDeterministicCounters, counters);
+  }
+}
+
+/** LAB self-tests restore the live match RNG even when a suite reseeds mid-run. */
+export function isolateLabSelfTestRun<T>(fn: () => T): T {
+  return v95WithIsolatedGlobals(fn);
+}
+
 function v95SyntheticReplay(n = 6): ReplayFile {
   const events: ReplayEvent[] = Array.from({ length: n }, (_, i) => ({
     id: `v95e${i}`, sequence: i, category: (i === n - 1 ? 'match_result' : i % 2 ? 'ai_decision' : 'human_action') as ReplayEventCategory,
@@ -135878,7 +136899,7 @@ const V95_TEST_SECTION: Record<string, V95ReleaseSection> = {
   i: 'Critical Invariants', p: 'Performance', u: 'UI Recovery', v: 'System Regression', rr: 'System Regression', k: 'Known Issues'
 };
 
-export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } = {}): V9SelfTestResult[] {
+export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number; preparedStress?: [V95StressResult, V95StressResult] } = {}): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
   const check = (id: string, name: string, fn: () => true | string) => {
     try { const r = fn(); results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) }); }
@@ -136061,8 +137082,8 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
   // ---- Determinism + long match
   const turns = opts.stressTurns ?? 60;
   const sampleEvery = Math.max(5, Math.floor(turns / 6));
-  const s1 = v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 9501, turns, sampleEvery }));
-  const s2 = v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 9501, turns, sampleEvery }));
+  const s1 = opts.preparedStress?.[0] || v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 9501, turns, sampleEvery }));
+  const s2 = opts.preparedStress?.[1] || v95WithIsolatedGlobals(() => runV95LongMatchStress({ seed: 9501, turns, sampleEvery }));
   check('d_stress_repeatable', `AI vs AI ${turns}-turn match is deterministic for a seed`, () => (s1.finalHash !== '' && s1.finalHash === s2.finalHash) || `${s1.finalHash} vs ${s2.finalHash} ${s1.errors.join('|')}`);
   check('d_isolation', 'Stress runs never change the live RNG streams or id counters', () => {
     const before = JSON.stringify([globalRngRegistry.exportStreamStates(), globalDeterministicCounters]);
@@ -136128,6 +137149,738 @@ export function runV95ReleaseReadinessSelfTests(opts: { stressTurns?: number } =
   check('k_findings_classified', 'Every audit finding has a severity and a status', () => V95_AUDIT_FINDINGS.every(f => f.severity && f.status && f.title) || 'unclassified finding');
   check('k_no_open_blockers', 'No open blocker/critical finding remains', () => { const o = V95_AUDIT_FINDINGS.filter(f => f.status !== 'fixed' && (f.severity === 'BLOCKER' || f.severity === 'CRITICAL')); return o.length === 0 || o.map(f => f.id).join(','); });
 
+  check('u_team_ai_seat_not_human', 'AI vs AI player seat is not a human turn (CORE-002)', () => {
+    const aiVsAi = isHumanPlayerTurn({ selectedMode: 'team_ai_vs_ai', gameMode: 'game', currentActorId: 'player', currentTurn: 'ai', actorsById: {}, turnOrder: ['player', 'ai'] });
+    const humanTeam = isHumanPlayerTurn({ selectedMode: 'team_human_ai_vs_ai_ai', gameMode: 'game', currentActorId: 'player', currentTurn: 'player', actorsById: {} });
+    const allyTurn = isHumanPlayerTurn({ selectedMode: 'team_human_ai_vs_ai_ai', gameMode: 'game', currentActorId: 'ally_ai', currentTurn: 'ai', actorsById: { ally_ai: { id: 'ally_ai', kind: 'ai' } } });
+    const explicitAi = isHumanPlayerTurn({ selectedMode: 'team_human_ai_vs_ai_ai', gameMode: 'game', currentActorId: 'player', currentTurn: 'player', actorsById: {} }, { id: 'player', kind: 'ai' });
+    return (!aiVsAi && humanTeam && !allyTurn && !explicitAi) || `aiVsAi=${aiVsAi} human=${humanTeam} ally=${allyTurn} explicit=${explicitAi}`;
+  });
+  check('u_single_day_clears_override_and_season', 'Single-player day commit clears override AP, the free challenge, and seasonal challenges (CORE-003, CORE-006)', () => {
+    const before: any = { actionsUsedThisTurn: 3, overrideActionsGranted: 2, overridesUsedToday: 1, usedFreeChallengeThisTurn: true, overrideFatigue: 0.1, challengesCompleted: ['Reef'], completedThisSeason: ['Reef'], money: 100 };
+    const projected = { ...before, actionsUsedThisTurn: 0, overridesUsedToday: 0, overrideFatigue: 0, challengesCompleted: [], completedThisSeason: [] };
+    const next = playerReducer(before, { type: 'MERGE_STATE', payload: soloDayBoundaryPlayerMerge(projected) });
+    return (next.overrideActionsGranted === 0 && next.usedFreeChallengeThisTurn === false && next.challengesCompleted.length === 0 && next.completedThisSeason.length === 0 && next.actionsUsedThisTurn === 0) || JSON.stringify({ g: next.overrideActionsGranted, f: next.usedFreeChallengeThisTurn, c: next.challengesCompleted });
+  });
+  check('u_solo_failure_policy', 'Single-player bankruptcy does not name an AI winner, and mercy stays on mode ai (CORE-004)', () => {
+    const single = soloVersusFailurePolicy('single');
+    const ai = soloVersusFailurePolicy('ai');
+    const tour = soloVersusFailurePolicy('grand_tour');
+    const scenario = soloVersusFailurePolicy('scenario');
+    return (single.endOnPlayerBankruptcy && !single.bankruptcyNamesAiWinner && !single.applyMercy && !single.endOnAiBankruptcy
+      && ai.bankruptcyNamesAiWinner && ai.applyMercy && ai.endOnAiBankruptcy
+      && !tour.applyMercy && !tour.endOnPlayerBankruptcy && !scenario.applyMercy && !scenario.endOnPlayerBankruptcy) || 'policy';
+  });
+  check('u_team_end_does_not_tick_debuff', 'Human End Turn does not tick debuffs in team mode (CORE-005)', () => {
+    const debuffs = [{ type: 'rumors', remainingDays: 2 }];
+    const team = debuffsAfterHumanEndTurn(debuffs as any, true);
+    const solo = debuffsAfterHumanEndTurn(debuffs as any, false);
+    return (team[0].remainingDays === 2 && solo[0].remainingDays === 1) || `${team[0].remainingDays}/${solo[0].remainingDays}`;
+  });
+  check('u_auto_mode_one_boundary', 'Human End Turn does not emit the actor-0 or advance-actor Auto Mode boundary (CORE-007)', () => {
+    return (shouldEmitAutoModeBoundary('turn_transition') && shouldEmitAutoModeBoundary('finish_team_ai') && !shouldEmitAutoModeBoundary('human_end_turn_extra') && !shouldEmitAutoModeBoundary('advance_actor')) || 'boundary policy';
+  });
+  check('u_restart_drops_team_mode', 'Restart does not keep a team mode over a 1v1 roster (CORE-009)', () => {
+    const next = gameStateReducer({ ...initialGameState, selectedMode: 'team_human_ai_vs_ai_ai', gameMode: 'end', turnOrder: ['player', 'ai', 'ally_ai', 'enemy_support_ai'], currentActorId: 'ally_ai', turnCounter: 4 }, { type: 'RESET_GAME' });
+    return (next.selectedMode === null && JSON.stringify(next.turnOrder) === JSON.stringify(['player', 'ai'])) || `mode=${next.selectedMode} order=${JSON.stringify(next.turnOrder)}`;
+  });
+  check('u_release_inflight_ai_locks', 'A new match releases an in-flight AI turn lock (CORE-001)', () => {
+    const locks = { isAiThinking: { current: true }, startedTeamAiTurnKeys: { current: new Set(['player:3']) }, activeAiTurnSessions: { current: { player: { isFinished: false } } } };
+    releaseInFlightAiTurnLocks(locks);
+    return (!locks.isAiThinking.current && locks.startedTeamAiTurnKeys.current.size === 0 && Object.keys(locks.activeAiTurnSessions.current).length === 0) || 'locks remained';
+  });
+  check('u_think_is_not_a_commit', 'A solo think token is not a successful action (AI-001)', () => {
+    return (soloActionCommits('think') === false && soloActionCommits('travel', { travelBlocked: true }) === false && soloActionCommits('sell') === true) || 'think still commits';
+  });
+  check('u_read_only_does_not_apply', 'Catalog read_only sanitizes to observe and does not apply (AI-007)', () => {
+    const sanitized = sanitizeAutoModeGlobalSettings({ permissionMode: 'read_only', autoModeEnabled: true });
+    const apply = shouldAutoApplyAutoModeForActor(true, sanitized.permissionMode, true, null);
+    return (normalizePermissionMode('read_only') === 'observe' && sanitized.permissionMode === 'observe' && apply === false) || `perm=${sanitized.permissionMode} apply=${apply}`;
+  });
+  check('u_ask_goal_needs_write', 'Ask the Game does not rewrite the Auto Mode goal without a settings write (AI-003)', () => {
+    const state: any = { gameSettings: { autoModeSettings: { primaryGoal: 'wealth_accumulation' } } };
+    const refused = askGameToolSetAutoModeGoal(state, 'player', 'balanced_strategy', { allowSettingsWrite: false });
+    const named = goalNamedInAskQuery('set auto mode goal to wealth');
+    return (refused.success === false && state.gameSettings.autoModeSettings.primaryGoal === 'wealth_accumulation' && named === 'wealth_accumulation') || state.gameSettings.autoModeSettings.primaryGoal;
+  });
+  check('u_delegated_suggestion_needs_approval', 'Delegated communication does not execute a loan suggestion (AI-004)', () => {
+    const gate = evaluateSuggestedActionGate({ autonomy: 'delegated', copilotEnabled: true, copilotAuthority: 'recommendations', action: { id: 's1', type: 'take_advanced_loan', label: 'Borrow', status: 'pending' } as any, alreadyCommittedIds: [] });
+    return (gate.allowed && gate.needsApproval) || JSON.stringify(gate);
+  });
+  check('u_refinance_checks_before_repay', 'Solo refinance does not repay when the new tier is illegal (AI-010)', () => {
+    const illegal = soloRefinanceMayRepay({ level: 1, advancedLoans: [{ id: 'L1' }] }, 'L1', { levelRequired: 5 }, { loanRefinancingEnabled: true }, true);
+    const legal = soloRefinanceMayRepay({ level: 6, advancedLoans: [{ id: 'L1' }] }, 'L1', { levelRequired: 5 }, { loanRefinancingEnabled: true }, true);
+    return (illegal === false && legal === true) || `illegal=${illegal} legal=${legal}`;
+  });
+  check('u_run_now_respects_authority', 'Run Now does not bypass confirm-before-running (AI-006)', () => {
+    const blocked = humanAutomationRunNowAllowed({ humanAutomationEnabled: true }, { enabled: true, authorityMode: 'confirm_before_running' });
+    const disabled = humanAutomationRunNowAllowed({ humanAutomationEnabled: false }, { enabled: true, authorityMode: 'silent_autorun' });
+    const allowed = humanAutomationRunNowAllowed({ humanAutomationEnabled: true }, { enabled: true, authorityMode: 'silent_autorun' });
+    return (!blocked && !disabled && allowed) || `b=${blocked} d=${disabled} a=${allowed}`;
+  });
+  check('u_legacy_random_does_not_throw', 'legacy_random returns a native draw under strict audit (SAVE-001)', () => {
+    const streams = globalRngRegistry.exportStreamStates();
+    const counters = JSON.parse(JSON.stringify(globalDeterministicCounters));
+    try {
+      setRngMasterSeed(5, true);
+      const n = drawGameRandom({ day: 1, turn: 1 }, 'World', 'legacy_random');
+      return (typeof n === 'number' && n >= 0 && n < 1) || String(n);
+    } finally {
+      globalRngRegistry.importStreamStates(streams);
+      Object.assign(globalDeterministicCounters, counters);
+    }
+  });
+  check('u_checkpoint_ids_advance', 'Replay checkpoints get distinct ids and keep match start (SAVE-002)', () => {
+    const previous = globalDeterministicCounters.checkpoint;
+    try {
+      globalDeterministicCounters.checkpoint = 0;
+      const first = createMatchCheckpoint({ day: 1, turnCounter: 0, deterministicCounters: globalDeterministicCounters } as any, 'match_start', 'Match start');
+      const second = createMatchCheckpoint({ day: 2, turnCounter: 1, deterministicCounters: globalDeterministicCounters } as any, 'day', 'Day 2');
+      const third = createMatchCheckpoint({ day: 3, turnCounter: 2, deterministicCounters: globalDeterministicCounters } as any, 'day', 'Day 3');
+      const ids = [first.id, second.id, third.id];
+      return (new Set(ids).size === 3 && ids[0] !== ids[2]) || ids.join(',');
+    } finally {
+      globalDeterministicCounters.checkpoint = previous;
+    }
+  });
+  check('u_partial_rng_reseeds_missing', 'A partial RNG registry reseeds the missing stream from the save seed (SAVE-004)', () => {
+    const streams = globalRngRegistry.exportStreamStates();
+    const counters = JSON.parse(JSON.stringify(globalDeterministicCounters));
+    try {
+      setRngMasterSeed(111, true);
+      const fresh = globalRngRegistry.exportStreamStates().World.currentState;
+      globalRngRegistry.draw('World');
+      const moved = globalRngRegistry.exportStreamStates().World.currentState;
+      const partial = globalRngRegistry.exportStreamStates();
+      delete partial.World;
+      delete partial.world;
+      delete partial.map;
+      delete partial.player;
+      restoreRngRegistryForLoad(partial, 111);
+      const restored = globalRngRegistry.exportStreamStates().World.currentState;
+      const kept = globalRngRegistry.exportStreamStates().AIReasoning.currentState === partial.AIReasoning.currentState;
+      return (restored === fresh && restored !== moved && kept) || `fresh=${fresh} moved=${moved} restored=${restored} kept=${kept}`;
+    } finally {
+      globalRngRegistry.importStreamStates(streams);
+      Object.assign(globalDeterministicCounters, counters);
+    }
+  });
+  check('u_tuning_lab_restores_rng', 'Tuning Lab work restores the live RNG streams (UI-007)', () => {
+    const streams = globalRngRegistry.exportStreamStates();
+    const counters = JSON.parse(JSON.stringify(globalDeterministicCounters));
+    try {
+      setRngMasterSeed(42, true);
+      const before = globalRngRegistry.exportStreamStates().World.currentState;
+      withIsolatedRng(() => { setRngMasterSeed(99, true); globalRngRegistry.draw('World'); return 1; });
+      const after = globalRngRegistry.exportStreamStates().World.currentState;
+      return before === after || `before=${before} after=${after}`;
+    } finally {
+      globalRngRegistry.importStreamStates(streams);
+      Object.assign(globalDeterministicCounters, counters);
+    }
+  });
+  check('u_match_end_does_not_hand_back', 'A sealed match does not hand the turn back (CORE-010)', () => {
+    const open = shouldHandTurnBackAfterMatchAdvance('game');
+    const closed = shouldHandTurnBackAfterMatchAdvance('end');
+    noteMatchEndedDuringAdvance();
+    const first = consumeAdvanceDayEndedMatch();
+    const second = consumeAdvanceDayEndedMatch();
+    const sealed = replayFileAlreadySealed({ finalResult: { reason: 'mercy' } });
+    const openFile = replayFileAlreadySealed({ events: [] });
+    return (open && !closed && first && !second && sealed && !openFile) || `open=${open} closed=${closed} first=${first} second=${second}`;
+  });
+  check('u_adaptive_wager_moves', 'Adaptive AI changes a solo challenge wager when the phase is all-in (AI-002)', () => {
+    const calm = adaptiveChallengeWager(100, 1000, 0, 0);
+    const allIn = adaptiveChallengeWager(100, 1000, 80, 80);
+    return (calm === 100 && allIn > calm) || `calm=${calm} allIn=${allIn}`;
+  });
+  check('u_genome_stays_on_ranked_actions', 'An opponent genome prefers a ranked legal action (AI-011)', () => {
+    const ranked = [{ type: 'invest' }, { type: 'challenge' }, { type: 'sell' }];
+    const preferred = preferRankedDecisionType(ranked, 'challenge');
+    const missing = preferRankedDecisionType(ranked, 'think');
+    return (preferred[0].type === 'challenge' && preferred.length === 3 && missing[0].type === 'invest' && missing.every((row, i) => row.type === ranked[i].type)) || JSON.stringify(preferred);
+  });
+  check('u_guardian_blocks_silent_automation', 'Guardian can block a silent automation (AI-006)', () => {
+    const blocked = guardianBlocksAutomation({ allowedToProceed: false, highestSeverity: 'critical', confirmationRequired: true }, 'maximum_protection');
+    const confirm = guardianBlocksAutomation({ allowedToProceed: true, highestSeverity: 'caution', confirmationRequired: true }, 'maximum_protection');
+    const clear = guardianBlocksAutomation({ allowedToProceed: true, highestSeverity: 'none', confirmationRequired: false }, 'maximum_protection');
+    return (blocked && confirm && !clear) || `b=${blocked} c=${confirm} clear=${clear}`;
+  });
+  check('u_sell_does_not_pay_missing_stock', 'Selling a missing item does not pay (ECON-003)', () => {
+    const once = playerReducer({ inventory: ['Wheat'], money: 100, actionsUsedThisTurn: 0 }, { type: 'SELL_RESOURCE', payload: { resource: 'Wheat', price: 40 } });
+    const twice = playerReducer(once, { type: 'SELL_RESOURCE', payload: { resource: 'Wheat', price: 40 } });
+    return (once.money === 140 && once.inventory.length === 0 && twice.money === 140) || `once=${once.money} twice=${twice.money}`;
+  });
+  check('u_owned_lists_append', 'Two investments in one turn both stick (ECON-013)', () => {
+    let state: any = { investments: [], equipment: [], money: 500 };
+    state = playerReducer(state, { type: 'ADD_INVESTMENT', payload: 'NSW' });
+    state = playerReducer(state, { type: 'ADD_INVESTMENT', payload: 'VIC' });
+    state = playerReducer(state, { type: 'ADD_EQUIPMENT', payload: 'map' });
+    return (state.investments.join(',') === 'NSW,VIC' && state.equipment[0] === 'map') || JSON.stringify(state.investments);
+  });
+  check('u_scenario_reads_live_facts', 'Scenario objectives read standing, the named region, and real debt (ECON-007)', () => {
+    const standing = scenarioStandingValue({ id: 'player' }, { standingPerActor: { player: { QLD: 80 } } });
+    const wrongRegion = scenarioControlsRegion({ id: 'player' }, { regionDeposits: { NSW: { player: 5 }, QLD: { ai: 5 } } }, 'QLD');
+    const indebted = scenarioDebtCleared({ loans: [], advancedLoans: [{ id: 'L' }], debt: 0 });
+    const clear = scenarioDebtCleared({ loans: [], advancedLoans: [], debt: 0 });
+    return (standing === 80 && wrongRegion === false && indebted === false && clear === true) || `s=${standing} r=${wrongRegion} d=${indebted}`;
+  });
+  check('u_buy_ap_respects_cost', 'A zero-cost buy does not spend an action point (ECON-002)', () => {
+    const free = actionSpendAllowed(0, 0);
+    const blocked = actionSpendAllowed(1, 0);
+    const priced = actionSpendAllowed(1, 2);
+    return (free.allowed && free.spend === 0 && !blocked.allowed && priced.spend === 1) || JSON.stringify([free, blocked, priced]);
+  });
+  check('u_maintenance_is_charged', 'Active project maintenance is a real daily cost (ECON-008)', () => {
+    const cost = activeInfrastructureMaintenance({ infrastructureProjects: { a: { status: 'active', maintenanceCostPerTurn: 25 }, b: { status: 'locked', maintenanceCostPerTurn: 99 } } });
+    return cost === 25 || String(cost);
+  });
+  check('u_unpaid_loan_stays', 'A loan that cannot be paid in full stays on the book (ECON-011)', () => {
+    const result = processAdvancedLoans({ money: 10, advancedLoans: [{ id: 'L', amount: 100, accrued: 0, daysRemaining: 1, term: 5, baseInterestRate: 0, actualInterestRate: 0 }], loanHistory: { totalTaken: 100, totalRepaid: 0, defaultCount: 0, earlyRepaymentCount: 0 } }, { ...createDefaultGameSettings(), advancedLoansEnabled: true, defaultPenaltyMultiplier: 1, creditScoreEnabled: false, interestAccrualRate: 0 }, 3);
+    const left = result.updatedPlayer.advancedLoans || [];
+    return (result.updatedPlayer.money === 0 && left.length === 1 && left[0].amount > 0) || JSON.stringify(result.updatedPlayer);
+  });
+  check('u_story_choice_pays_cash', 'A story choice money delta reaches the player (ECON-006)', () => {
+    const next = resolveStoryDecision({
+      narrativePopup: { currentDecision: { id: 'd', choices: [{ id: 'c', consequences: { moneyDelta: 6000 } }] }, isOpen: true, dialogueQueue: [] },
+      publicStabilityState: { nationalStability: 50 },
+      campaignState: { campaignVariables: {}, storyDecisionHistory: {} },
+      standingPerActor: {}
+    } as any, 'd', 'c', { id: 'player', money: 100 });
+    return next.player?.money === 6100 || String(next.player?.money);
+  });
+  check('u_workforce_reads_infrastructure_projects', 'Workforce inputs include infrastructure projects (WORLD-002)', () => {
+    const inputs = buildWorkforceInputsFromGameState({ turn: 2, gameState: { infrastructureProjects: { park: { id: 'infra_park', status: 'under_construction', title: 'Parkes' } } } });
+    return (inputs.projects || []).some((project: any) => project.id === 'infra_park') || JSON.stringify(inputs.projects);
+  });
+  check('u_public_finance_emits_world_root', 'A fiscal-pressure change emits one world-reaction root (WORLD-003)', () => {
+    const entry: FiscalHistoryEntry = {
+      id: 'pf1', turn: 3, kind: 'fiscal_pressure_became_strained',
+      pressure: 'strained', sustainability: 'stressed', headroom: 10,
+      maintenanceLoad: 20, debtLevel: 40,
+      text: 'Fiscal pressure became strained.',
+      significance: 'major', regionIds: ['NSW']
+    };
+    const off = publicFinanceWorldRoots(false, [entry], ['player'], 2);
+    const on = publicFinanceWorldRoots(true, [entry], ['player'], 2);
+    const out = processWorldReactions(createEmptyWorldReactionState(), on, createSWRFixtureInputs(), { persist: true });
+    const roots = out.events.filter(e => e.reactionDepth === 0 && e.sourceSystem === 'public_finance');
+    return (off.length === 0 && roots.length === 1 && roots[0].strategicMeaning === entry.text) || `off=${off.length} roots=${roots.length}`;
+  });
+  check('u_household_affordability_emits_world_root', 'An affordability move to strained emits one world-reaction root (WORLD-004)', () => {
+    const entry: HouseholdWorldReactionEvent = {
+      id: 'hh1', turn: 4, kind: 'affordability_became_strained', regionIds: ['NSW'],
+      significance: 'major', title: 'Affordability strained', summary: 'Household affordability moved to strained.', dedupeKey: 'aff:4'
+    };
+    const off = householdWorldRoots(false, [entry], ['player'], 2);
+    const on = householdWorldRoots(true, [entry], ['player'], 2);
+    const out = processWorldReactions(createEmptyWorldReactionState(), on, createSWRFixtureInputs(), { persist: true });
+    const roots = out.events.filter(e => e.reactionDepth === 0 && e.sourceSystem === 'households');
+    return (off.length === 0 && roots.length === 1 && roots[0].strategicMeaning === entry.summary) || `off=${off.length} roots=${roots.length}`;
+  });
+  check('u_replay_prehash_is_not_divergence', 'A money event stamped from the pre-state does not diverge when cash matches (SAVE-005)', () => v95WithIsolatedGlobals(() => {
+    const pre = { day: 1, turnCounter: 1, actorsById: { player: { id: 'player', money: 100, inventory: [] } }, player: { id: 'player', money: 100, inventory: [] }, teamsById: {}, regions: {}, activeEvents: [] };
+    const payload = { actionType: 'take_loan', investmentAmount: 40 };
+    const stamped = stampReplayEventHashes({ payload }, pre);
+    const ev = { id: 'e0', sequence: 0, category: 'market' as const, day: 1, turn: 1, actorId: 'player', teamId: 'team_player', summary: 'balance updated', payload, timestamp: 1, stateHashBefore: stamped.stateHashBefore, stateHashAfter: stamped.stateHashAfter, stateHash: stamped.stateHash };
+    const file = {
+      schemaVersion: 4, matchId: 'hashfix', events: [ev],
+      checkpoints: [{ id: 'cp', sequence: -1, day: 1, turn: 1, label: 'pre', fullStateSnapshot: { gameState: pre } }],
+      initialConfig: { worldSeed: 1337, actorsById: {}, teamsById: {}, gameSettings: createDefaultGameSettings(), selectedMode: 'single', aiDifficulty: 'medium', aiSeed: 1337 }
+    };
+    const sought = seekReplayToSequenceDeterministic(file as any, 0, 'strict', true);
+    const cash = sought.runtime.actors.player?.money;
+    return (!sought.error && stamped.stateHashAfter === '' && cash === 140) || `err=${sought.error} cash=${cash} after=${stamped.stateHashAfter}`;
+  }));
+  check('u_deterministic_world_draw_is_compared', 'A flipped deterministic World draw is an RNG divergence (SAVE-006)', () => {
+    drainPendingReplayRandomDraws();
+    const draws = v95WithIsolatedGlobals(() => {
+      setRngMasterSeed(42, true);
+      drawGameRandom('World', 'deterministic');
+      drawGameRandom('World', 'deterministic');
+      return drainPendingReplayRandomDraws();
+    });
+    const flipped = draws.map((draw, index) => index === 1 ? { ...draw, value: draw.value === 0 ? 0.2 : 0 } : draw);
+    const div = findFirstReplayRngDivergence({ randomDraws: draws } as ReplayFile, { randomDraws: flipped } as ReplayFile);
+    drainPendingReplayRandomDraws();
+    return (draws.length >= 2 && draws.every(draw => draw.mode === 'deterministic' && draw.stream === 'World') && div?.sequence === 1) || JSON.stringify({ n: draws.length, mode: draws[0]?.mode, div });
+  });
+  check('u_throttle_marks_truncated', 'Dropping a non-critical event at 91% records truncation (SAVE-007)', () => {
+    const recording = { events: Array.from({ length: 91 }, (_, i) => ({ sequence: i })), truncated: false as boolean, truncatedAtSequence: undefined as number | undefined };
+    const dropped = noteReplayThrottleDrop(recording, 0.91, 'standard', false);
+    const critical = noteReplayThrottleDrop({ events: recording.events, truncated: false }, 0.91, 'standard', true);
+    return (dropped && recording.truncated === true && recording.truncatedAtSequence === 91 && critical === false) || JSON.stringify(recording);
+  });
+  check('u_isolated_sell_reads_money_delta', 'Isolated playback applies moneyDelta without a sold keyword (SAVE-008)', () => {
+    const runtime = { actors: { player: { id: 'player', name: 'Player', money: 100, netWorth: 100, region: 'NSW', inventory: {} } }, teams: {}, day: 1, turn: 1, sequence: 0, regions: {}, activeEvents: [], stateHash: '' } as IsolatedReplayRuntime;
+    const next = applyReplayEventToIsolatedRuntime(runtime, { id: 's', sequence: 1, category: 'market', day: 1, turn: 1, actorId: 'player', summary: 'quoted', payload: { moneyDelta: 40 }, timestamp: 1 } as ReplayEvent);
+    return next.actors.player.money === 140 || String(next.actors.player.money);
+  });
+  check('u_change_seed_changes_world_draw', 'Change Seed writes worldRngSeed and the next World draw differs (SAVE-009)', () => v95WithIsolatedGlobals(() => {
+    setRngMasterSeed(100, true);
+    const continued = drawGameplayRandom('World');
+    const plan = buildReplayBranchExperiment('Change Seed', { worldRngSeed: 100, worldSeed: 100, aiDeterministicSeed: 50, aiSeed: 50 });
+    const save = spawnMatchBranchFromCheckpoint({ id: 'c', sequence: 0, day: 1, turn: 0, label: 'start', kind: 'match_start' } as ReplayCheckpoint, undefined, plan.modifiedSettings as Partial<GameSettingsState>);
+    const branchedSeed = save.gameSettings.worldRngSeed;
+    setRngMasterSeed(branchedSeed, true);
+    const branched = drawGameplayRandom('World');
+    return (plan.branchSeedPolicy === 'new_seed' && branchedSeed === 101 && save.gameSettings.aiDeterministicSeed === 51 && branched !== continued) || `seed=${branchedSeed} continued=${continued} branched=${branched}`;
+  }));
+  check('u_bad_checksum_stays_corrupt', 'A flipped replay byte stays corrupted after import and re-export (SAVE-010)', () => {
+    const raw: any = v95SyntheticReplay();
+    const original = raw.checksum;
+    raw.events[0].summary = String(raw.events[0].summary) + '!';
+    const imported = migrateReplayFileWithReport(raw);
+    const exported = reexportImportedReplay(imported);
+    return (imported.compatibility.integrityStatus === 'Corrupted' && exported.integrityStatus === 'Corrupted' && exported.checksumPresentedAsOriginal === false && exported.checksum !== original && exported.originalChecksum === original) || JSON.stringify(exported);
+  });
+
+  check('u_settings_trap_follows_setting', 'Modal focus trapping follows trapFocusInModals (UI-003)', () => {
+    const on = modalShouldTrapFocus({ trapFocusInModals: true });
+    const off = modalShouldTrapFocus({ trapFocusInModals: false });
+    const fallback = modalShouldTrapFocus(undefined);
+    return (on && !off && fallback && modalTabWouldLeave(on, true) === false && modalTabWouldLeave(off, true) === true) || `on=${on} off=${off}`;
+  });
+  check('u_modal_tab_wraps_inside_dialog', 'Tab on the last dialog control wraps when trapping is on (SIM-058)', () => {
+    const controls = ['first', 'middle', 'last'];
+    const forward = modalTabWrapTarget({ trap: true, tabbables: controls, active: 'last', activeInside: true, shiftKey: false });
+    const backward = modalTabWrapTarget({ trap: true, tabbables: controls, active: 'first', activeInside: true, shiftKey: true });
+    const middle = modalTabWrapTarget({ trap: true, tabbables: controls, active: 'middle', activeInside: true, shiftKey: false });
+    const released = modalTabWrapTarget({ trap: false, tabbables: controls, active: 'last', activeInside: true, shiftKey: false });
+    const escaped = modalTabWrapTarget({ trap: true, tabbables: controls, active: 'page', activeInside: false, shiftKey: false });
+    const hook = Function.prototype.toString.call(useModalAccessibility);
+    const requeries = hook.includes('modalTabWrapTarget') && hook.includes('focusin') && hook.includes('tabStopsIn(element)') && !hook.includes('const focusables =');
+    const stops = isModalTabStop({ tabIndex: 0 }) && !isModalTabStop({ tabIndex: -1 }) && !isModalTabStop({ tabIndex: 0, disabled: true });
+    const ok = forward === 'first' && backward === 'last' && middle === null && released === null && escaped === 'first' && requeries && stops;
+    return ok || JSON.stringify({ forward, backward, middle, released, escaped, requeries, stops });
+  });
+  check('u_work_click_pays_the_wage', 'Do It on Work for Wages pays $50 when the cost estimate is 0 (SIM-059)', () => {
+    const settings = { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 3, coPilotSettings: { ...createDefaultCoPilotSettings(), coPilotEnabled: false, authorityMode: 'off' as const } };
+    const player = { id: 'player', money: 1220, currentRegion: 'QLD', actionsUsedThisTurn: 2, actionPoints: 3, inventory: ['Wheat'], teamId: 'team_player' };
+    const state: any = { day: 1, turn: 1, turnCounter: 1, gameMode: 'game', selectedMode: 'single', currentTurn: 'player', currentActorId: 'player', player, actorsById: { player: { ...player } }, gameSettings: settings };
+    const clicked = executeCoPilotActionIntent({ gameState: state, player, gameSettings: settings, actorsById: state.actorsById }, { actionType: 'work', actorId: 'player', parameters: { wage: 50, amount: 50 }, costEstimate: 0, expectedCashDelta: 50, expectedAPDelta: -1 }, { forceExecution: true, playerClicked: true });
+    const money = clicked.updatedState?.player?.money;
+    const used = clicked.updatedState?.player?.actionsUsedThisTurn;
+    const refused = reduceGameAction(state, { type: 'work', actorId: 'player', price: -400 } as any);
+    const ok = clicked.executionResult.success && money === 1270 && used === 3 && !refused.success && refused.nextState.player.money === 1220;
+    return ok || JSON.stringify({ ok: clicked.executionResult.success, err: clicked.executionResult.error, money, used, refused: refused.nextState.player.money });
+  });
+  check('u_stress_yields_and_lab_restores_rng', 'Long stress yields and a mid-match lab run restores RNG (UI-008)', () => {
+    const before = JSON.stringify([globalRngRegistry.exportStreamStates(), globalDeterministicCounters]);
+    const paced = isolateLabSelfTestRun(() => runV95LongMatchStress({ seed: 3, turns: 4 }));
+    const after = JSON.stringify([globalRngRegistry.exportStreamStates(), globalDeterministicCounters]);
+    return (before === after && paced.yields >= 1) || `yields=${paced.yields} same=${before === after}`;
+  });
+  check('u_dev_suites_are_indexed_out_of_gate', 'Uncalled dev suites are listed as outside the release gate (UI-009)', () => {
+    const ids = ['runAutoModeDevSelfTests', 'runStrategyPlannerM3DevTests', 'runStrategyPlannerM4DevTests', 'runStrategyPlannerM5DevTests', 'runAiCommandCenterM4DevTests', 'runAiCommandCenterM5DevTests', 'runGlobalUISurfaceManagerDevTests'];
+    const indexed = ids.every(id => V95_SUITE_GATE_INDEX.some(row => row.id === id && row.gate === 'out'));
+    const notInGate = ids.every(id => !V95_EXISTING_SUITES.some(suite => suite.id === id));
+    return (indexed && notInGate) || `indexed=${indexed} notInGate=${notInGate}`;
+  });
+
+  check('u_uistate_before_command_center', 'Command center memo reads uiState only after it is initialized (BOOT-001)', () => {
+    const src = Function.prototype.toString.call(AustraliaGame);
+    for (const name of ['uiState2', 'uiState']) {
+      const use = src.indexOf(name + '.showAiCommandCenterModal');
+      if (use === -1) continue;
+      const decl = src.indexOf('const [' + name);
+      return (decl !== -1 && decl < use) || `decl=${decl} use=${use} name=${name}`;
+    }
+    return 'command center modal flag is not read from uiState';
+  });
+
+  check('u_australiagame_first_render_no_tdz', 'AustraliaGame first render does not read a const before it is initialized (BOOT-002)', () => v95WithIsolatedGlobals(() => {
+    const internals = (React as any).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+    if (!internals || !('H' in internals)) return 'React hook dispatcher is not available';
+    const previous = internals.H;
+    const noop = () => {};
+    const dispatcher: any = {
+      useState: (init: any) => [typeof init === 'function' ? init() : init, noop],
+      useReducer: (_reducer: any, init: any, initFn?: any) => [typeof initFn === 'function' ? initFn(init) : init, noop],
+      useMemo: (fn: any) => fn(),
+      useCallback: (fn: any) => fn,
+      useRef: (init: any) => ({ current: init }),
+      useEffect: () => {},
+      useLayoutEffect: () => {},
+      useImperativeHandle: () => {},
+      useDebugValue: () => {},
+      useId: () => 'boot',
+      useContext: (context: any) => context && (context._currentValue ?? context._currentValue2),
+      useSyncExternalStore: (_subscribe: any, getSnapshot: any) => getSnapshot(),
+      useTransition: () => [false, noop],
+      useDeferredValue: (value: any) => value,
+      useOptimistic: (value: any) => value,
+      useInsertionEffect: () => {},
+      use: (value: any) => value
+    };
+    internals.H = dispatcher;
+    try {
+      AustraliaGame();
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/before initialization/.test(msg)) return msg;
+      return true;
+    } finally {
+      internals.H = previous;
+    }
+  }));
+  check('u_bad_amounts_do_not_mint', 'Bad loan, buy, sell, sabotage, and challenge amounts do not mint cash (SIM-001)', () => {
+    const base: any = { day: 1, turnCounter: 1, player: { id: 'player', money: 1000, inventory: ['wool'], currentRegion: 'QLD', actionsUsedThisTurn: 0 }, actorsById: { player: { id: 'player', money: 1000, inventory: ['wool'], currentRegion: 'QLD', actionsUsedThisTurn: 0 }, ai: { id: 'ai', money: 1000 } }, teamsById: { team_player: { id: 'team_player', money: 99999 } }, gameState: { day: 1, turnCounter: 4 } };
+    const cash = (r: any) => r.nextState.player.money;
+    const loan = reduceGameAction(base, { type: 'take_loan', actorId: 'player', investmentAmount: -5000 } as any);
+    const zero = reduceGameAction(base, { type: 'take_loan', actorId: 'player', investmentAmount: 0 } as any);
+    const inf = reduceGameAction(base, { type: 'take_loan', actorId: 'player', investmentAmount: Infinity } as any);
+    const nan = reduceGameAction(base, { type: 'take_loan', actorId: 'player', investmentAmount: NaN, price: NaN, parameters: { principal: NaN, amount: NaN } } as any);
+    const buy = reduceGameAction(base, { type: 'buy_market', actorId: 'player', item: 'Wheat', price: 50, parameters: { quantity: -4, resource: 'Wheat' } } as any);
+    const none = reduceGameAction(base, { type: 'buy_market', actorId: 'player', item: 'Wheat', price: 50, parameters: { quantity: 0, resource: 'Wheat' } } as any);
+    const sell = reduceGameAction(base, { type: 'sell', actorId: 'player', parameters: { moneyDelta: 250000 } } as any);
+    const mint = reduceGameAction(base, { type: 'mint_cash', actorId: 'player', parameters: { moneyDelta: 9000 } } as any);
+    const sab = reduceGameAction(base, { type: 'sabotage', actorId: 'player', targetActorId: 'ai', price: -800, parameters: { sabotageId: 'delay' } } as any);
+    const chal = reduceGameAction(base, { type: 'challenge', actorId: 'player', parameters: { reward: 1000000 } } as any);
+    const wage = reduceGameAction(base, { type: 'work', actorId: 'player', price: -400 } as any);
+    const gift = reduceGameAction(base, { type: 'give_cash', actorId: 'player', targetActorId: 'nobody', price: 300 } as any);
+    const borrowed = reduceGameAction(base, { type: 'take_loan', actorId: 'player', investmentAmount: 1000 } as any);
+    const refinanced = reduceGameAction(borrowed.nextState, { type: 'refinance_advanced_loan', actorId: 'player', parameters: { newPrincipal: 1000 } } as any);
+    const ok = !loan.success && cash(loan) === 1000 && !zero.success && cash(zero) === 1000 && !inf.success && Number.isFinite(cash(inf)) && cash(inf) === 1000 && !nan.success && cash(nan) === 1000 && !buy.success && cash(buy) === 1000 && !none.success && cash(none) === 1000 && !sell.success && cash(sell) === 1000 && !mint.success && cash(mint) === 1000 && !sab.success && cash(sab) === 1000 && !chal.success && cash(chal) === 1000 && !wage.success && cash(wage) === 1000 && !gift.success && cash(gift) === 1000 && borrowed.success && cash(borrowed) === 2000 && cash(refinanced) === 2000;
+    return ok || JSON.stringify({ loan: cash(loan), zero: cash(zero), inf: cash(inf), nan: cash(nan), buy: cash(buy), sell: cash(sell), mint: cash(mint), sab: cash(sab), chal: cash(chal) });
+  });
+  check('u_travel_requires_fare_and_region', 'Travel does not move without a known region and the fare (SIM-002)', () => {
+    const base: any = { day: 1, turnCounter: 1, player: { id: 'player', money: 100, inventory: [], currentRegion: 'QLD' }, actorsById: { player: { id: 'player', money: 100, inventory: [], currentRegion: 'QLD' } } };
+    const dear = reduceGameAction(base, { type: 'travel', actorId: 'player', targetRegion: 'NSW', price: 5000 } as any);
+    const unknown = reduceGameAction(base, { type: 'travel', actorId: 'player', targetRegion: 'NOT_A_REGION', price: 10 } as any);
+    return (!dear.success && dear.nextState.player.currentRegion === 'QLD' && dear.nextState.player.money === 100 && !unknown.success && unknown.nextState.player.currentRegion === 'QLD') || JSON.stringify({ dear: dear.nextState.player, unknown: unknown.nextState.player.currentRegion });
+  });
+  check('u_craft_needs_inputs', 'Crafting does not grant an output the inputs cannot pay for (SIM-003)', () => {
+    const base: any = { day: 1, turnCounter: 1, player: { id: 'player', money: 1000, inventory: ['wool'], currentRegion: 'QLD' }, actorsById: { player: { id: 'player', money: 1000, inventory: ['wool'], currentRegion: 'QLD' } } };
+    const crafted = reduceGameAction(base, { type: 'craft', actorId: 'player', item: 'jacket', parameters: { output: 'jacket', inputs: { wool: 2, steel: 1 } } } as any);
+    const bag = crafted.nextState.player.inventory || [];
+    return (!crafted.success && bag.includes('wool') && !bag.includes('jacket')) || JSON.stringify(bag);
+  });
+  check('u_failed_action_keeps_team_cash', 'A rejected action does not rewrite team cash (SIM-004)', () => {
+    const base: any = { day: 1, turnCounter: 1, player: { id: 'player', money: 1000, inventory: [], currentRegion: 'QLD', teamId: 'team_player' }, actorsById: { player: { id: 'player', money: 1000, inventory: [], currentRegion: 'QLD', teamId: 'team_player' } }, teamsById: { team_player: { id: 'team_player', money: 99999 } } };
+    const deposited = reduceGameAction(base, { type: 'region_deposit', actorId: 'player', teamId: 'team_player', investmentAmount: 50000, targetRegion: 'NSW' } as any);
+    return (!deposited.success && deposited.nextState.player.money === 1000 && deposited.nextState.teamsById.team_player.money === 99999) || JSON.stringify({ player: deposited.nextState.player.money, team: deposited.nextState.teamsById.team_player.money, ok: deposited.success });
+  });
+  check('u_noop_actions_do_not_succeed', 'think, wait, and unknown actions do not spend an action or succeed (SIM-005)', () => {
+    const base: any = { day: 4, turn: 4, turnCounter: 4, player: { id: 'player', money: 1000, inventory: [], currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3 }, actorsById: { player: { id: 'player', money: 1000, inventory: [], currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3 } }, gameState: { day: 4, turnCounter: 4 } };
+    const think = reduceGameAction(base, { type: 'think', actorId: 'player' } as any);
+    const wait = reduceGameAction(base, { type: 'wait', actorId: 'player' } as any);
+    const unknown = reduceGameAction(base, { type: 'not_a_real_action', actorId: 'player' } as any);
+    const ended = reduceGameAction(base, { type: 'end_turn', actorId: 'player' } as any);
+    const quiet = !think.success && think.nextState.player.actionsUsedThisTurn === 0 && !wait.success && wait.nextState.player.actionsUsedThisTurn === 0 && !unknown.success && unknown.nextState.player.money === 1000;
+    const turned = ended.success && ended.nextState.turnCounter === 5 && ended.nextState.gameState.turnCounter === 5;
+    return (quiet && turned) || JSON.stringify({ think: think.success, wait: wait.success, unknown: unknown.success, end: ended.success, root: ended.nextState.turnCounter, nested: ended.nextState.gameState.turnCounter, used: think.nextState.player.actionsUsedThisTurn });
+  });
+  check('u_save_repairs_infinite_counters', 'A live save does not keep infinite action counters (SIM-006)', () => {
+    const saved: any = JSON.parse(JSON.stringify(createV95SaveFixture()));
+    saved.player.actionsUsedThisTurn = Infinity;
+    saved.player.consecutiveWins = Infinity;
+    const validated = validateSaveDataCore(saved);
+    return (validated.player.actionsUsedThisTurn === 0 && validated.player.consecutiveWins === 0) || JSON.stringify({ used: validated.player.actionsUsedThisTurn, wins: validated.player.consecutiveWins });
+  });
+  check('u_missing_counters_do_not_reuse_ids', 'A save without counters does not reissue an existing correlation id (SIM-007)', () => {
+    const saved: any = JSON.parse(JSON.stringify(createV95SaveFixture()));
+    delete saved.deterministicCounters;
+    saved.notifications = [{ id: 'x:corr:5', type: 'info', message: 'kept', read: true }];
+    const loaded = prepareSaveLoadTransaction(saved);
+    const counters = loaded.data?.deterministicCounters;
+    const next = counters ? nextCorrelationId({ ...counters }, 'x') : '';
+    return (Boolean(loaded.ok && counters && counters.correlation >= 5 && next === 'x:corr:6')) || JSON.stringify({ ok: loaded.ok, counters, next });
+  });
+  check('u_gameplay_random_is_logged', 'A World draw from drawGameplayRandom is on the replay draw log (SIM-008)', () => {
+    drainPendingReplayRandomDraws();
+    const drawn = v95WithIsolatedGlobals(() => {
+      setRngMasterSeed(77001, true);
+      const value = drawGameplayRandom('World');
+      return { value, draws: drainPendingReplayRandomDraws() };
+    });
+    drainPendingReplayRandomDraws();
+    return (drawn.draws.length === 1 && drawn.draws[0].value === drawn.value && drawn.draws[0].stream === 'World') || JSON.stringify(drawn);
+  });
+  check('u_negative_cash_does_not_pay_a_loan', 'A loan tick does not treat negative cash as a payment (SIM-009)', () => {
+    const ticked = applySimpleLoanTick({ money: -100, loans: [{ id: 'L', amount: 500, accrued: 0 }] });
+    return (ticked.money === -100 && ticked.loans.length === 1 && ticked.loans[0].amount === 625) || JSON.stringify(ticked);
+  });
+  check('u_balance_config_keeps_features', 'An explicit undefined features override does not wipe the balance sim (SIM-010)', () => {
+    const cfg = createBalanceSimConfig({ features: undefined as any });
+    return Boolean(cfg.features && cfg.features.contracts !== undefined) || JSON.stringify(cfg.features);
+  });
+  check('u_negative_prices_do_not_mint', 'Negative prices do not credit cash (SIM-019)', () => {
+    const pocket = () => ({ day: 1, turnCounter: 1, player: { id: 'player', money: 1000, inventory: [], equipment: [], investments: [], currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3, teamId: 'team_player' }, actorsById: { player: { id: 'player', money: 1000, inventory: [], equipment: [], investments: [], currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3, teamId: 'team_player' } }, teamsById: { team_player: { id: 'team_player', money: 99999, netWorth: 99999 } } });
+    const rows = [
+      { type: 'buy_equipment', item: 'Compass', price: -80 },
+      { type: 'buy_equipment', item: 'Compass', price: '-80' },
+      { type: 'launch_expedition', price: -250, targetRegion: 'site_1' },
+      { type: 'build_infrastructure', investmentAmount: -350, targetRegion: 'QLD' },
+      { type: 'emergency_rescue', price: -200 },
+      { type: 'emergency_rescue', investmentAmount: -Infinity },
+      { type: 'invest', targetRegion: 'NOT_A_REGION', investmentAmount: -400 },
+      { type: 'invest_infrastructure_project', investmentAmount: -1000, parameters: { projectId: 'infra_hsr_nsw_vic' } },
+      { type: 'start_infrastructure_project', investmentAmount: -5000 }
+    ];
+    const bad = rows.map(action => {
+      const result = reduceGameAction(pocket(), { ...action, actorId: 'player' } as any);
+      const player = result.nextState.player;
+      const project = result.nextState.infrastructureProjects?.infra_hsr_nsw_vic;
+      return { type: action.type, success: result.success, money: player.money, team: result.nextState.teamsById?.team_player?.money, equipment: player.equipment || [], investments: player.investments || [], projectMoney: project?.totalInvestedMoney };
+    });
+    const closed = bad.every(row => row.success === false && row.money === 1000 && row.team === 99999 && Number.isFinite(row.money) && !row.equipment.includes('Compass') && !row.investments.includes('NOT_A_REGION') && !(row.projectMoney < 0));
+    const legalEquip = reduceGameAction(pocket(), { type: 'buy_equipment', actorId: 'player', item: 'Compass', price: 80 } as any);
+    const rich = pocket();
+    rich.player.money = 10000;
+    rich.actorsById.player.money = 10000;
+    const legalInvest = reduceGameAction(rich, { type: 'invest', actorId: 'player', targetRegion: 'NSW', investmentAmount: -400 } as any);
+    const nswCost = REGIONAL_INVESTMENTS.NSW?.cost;
+    return (closed && legalEquip.success && legalEquip.nextState.player.money === 920 && (legalEquip.nextState.player.equipment || []).includes('Compass') && legalInvest.success && legalInvest.nextState.player.money === 10000 - nswCost && nswCost === 3200 && (legalInvest.nextState.player.investments || []).includes('NSW')) || JSON.stringify({ bad, equip: legalEquip.nextState.player.money, invest: legalInvest.nextState.player.money, nswCost });
+  });
+  check('u_double_or_nothing_needs_a_result', 'double_or_nothing does not treat a missing result as a win (SIM-020)', () => {
+    const pocket = (money = 1000) => ({ day: 1, turnCounter: 1, player: { id: 'player', money, currentRegion: 'QLD' }, actorsById: { player: { id: 'player', money, currentRegion: 'QLD' } } });
+    const missing = reduceGameAction(pocket(100), { type: 'double_or_nothing', actorId: 'player', parameters: { reward: 1000000 } } as any);
+    const loss = reduceGameAction(pocket(), { type: 'double_or_nothing', actorId: 'player', parameters: { isWin: false, reward: -500 } } as any);
+    const win = reduceGameAction(pocket(), { type: 'double_or_nothing', actorId: 'player', parameters: { isWin: true, reward: -500 } } as any);
+    const infinite = reduceGameAction(pocket(), { type: 'double_or_nothing', actorId: 'player', parameters: { reward: Infinity } } as any);
+    const fair = reduceGameAction(pocket(), { type: 'double_or_nothing', actorId: 'player', parameters: { isWin: true, reward: 100 } } as any);
+    const closed = !missing.success && missing.nextState.player.money === 100 && !loss.success && loss.nextState.player.money === 1000 && !win.success && win.nextState.player.money === 1000 && !infinite.success && infinite.nextState.player.money === 1000;
+    return (closed && fair.success && fair.nextState.player.money === 1100 && Number.isFinite(fair.nextState.player.money)) || JSON.stringify({ missing: missing.nextState.player.money, loss: loss.nextState.player.money, win: win.nextState.player.money, infinite: infinite.nextState.player.money, fair: fair.nextState.player.money });
+  });
+  check('u_refinance_needs_a_loan', 'Refinance, repayment, and huge wages cannot mint a non-finite wallet (SIM-021)', () => {
+    const actor = (extra: Record<string, unknown> = {}) => ({ id: 'player', money: 1000, currentRegion: 'QLD', debt: 0, advancedLoans: [] as any[], ...extra });
+    const state = (a: ReturnType<typeof actor>) => ({ day: 1, turnCounter: 1, player: { ...a, advancedLoans: [...(a.advancedLoans || [])] }, actorsById: { player: { ...a, advancedLoans: [...(a.advancedLoans || [])] } } });
+    const minted = reduceGameAction(state(actor()), { type: 'refinance_advanced_loan', actorId: 'player', parameters: { newPrincipal: 50000 } } as any);
+    const infinite = reduceGameAction(state(actor()), { type: 'refinance_advanced_loan', actorId: 'player', parameters: { newPrincipal: Infinity } } as any);
+    const repay = reduceGameAction(state(actor({ debt: 800 })), { type: 'repay_loan', actorId: 'player', investmentAmount: -100 } as any);
+    const wage = reduceGameAction(state(actor()), { type: 'work', actorId: 'player', price: 1e308 } as any);
+    const loan = reduceGameAction(state(actor()), { type: 'take_loan', actorId: 'player', investmentAmount: 1e308 } as any);
+    const borrowed = reduceGameAction(state(actor()), { type: 'take_loan', actorId: 'player', investmentAmount: 1000 } as any);
+    const refinanced = reduceGameAction(borrowed.nextState, { type: 'refinance_advanced_loan', actorId: 'player', parameters: { newPrincipal: 1500 } } as any);
+    const closed = !minted.success && minted.nextState.player.money === 1000 && minted.nextState.player.debt !== 50000 && !infinite.success && infinite.nextState.player.money === 1000 && Number.isFinite(infinite.nextState.player.money) && !repay.success && repay.nextState.player.money === 1000 && repay.nextState.player.debt === 800 && !wage.success && wage.nextState.player.money === 1000 && !loan.success && loan.nextState.player.money === 1000 && !(loan.nextState.player.advancedLoans || []).some((row: any) => !Number.isFinite(row.amount) || row.amount > 1e9);
+    return (closed && borrowed.success && borrowed.nextState.player.money === 2000 && refinanced.success && refinanced.nextState.player.money === 2500 && refinanced.nextState.player.debt === 1500 && Number.isFinite(refinanced.nextState.player.money)) || JSON.stringify({ minted: minted.nextState.player.money, infinite: infinite.nextState.player.money, repay: repay.nextState.player, wage: wage.nextState.player.money, loan: loan.nextState.player.money, borrowed: borrowed.nextState.player.money, refinanced: { money: refinanced.nextState.player.money, debt: refinanced.nextState.player.debt, ok: refinanced.success } });
+  });
+  check('u_omitted_travel_charges_fare', 'Travel at price 0 or with no price charges the real fare (SIM-022)', () => {
+    const pocket = (money: number) => ({ day: 1, turnCounter: 1, player: { id: 'player', money, currentRegion: 'QLD', visitedRegions: ['QLD'], teamId: 'team_player' }, actorsById: { player: { id: 'player', money, currentRegion: 'QLD', visitedRegions: ['QLD'], teamId: 'team_player' } }, teamsById: { team_player: { id: 'team_player', money: 99999 } } });
+    const omitted = reduceGameAction(pocket(100), { type: 'travel', actorId: 'player', targetRegion: 'NSW' } as any);
+    const zero = reduceGameAction(pocket(100), { type: 'travel', actorId: 'player', targetRegion: 'NSW', price: 0 } as any);
+    const paid = reduceGameAction(pocket(1000), { type: 'travel', actorId: 'player', targetRegion: 'NSW' } as any);
+    const quoted = getActorTravelCost(pocket(1000), pocket(1000).player, 'QLD', 'NSW');
+    const stayed = !omitted.success && omitted.nextState.player.currentRegion === 'QLD' && omitted.nextState.player.money === 100 && omitted.nextState.teamsById.team_player.money === 99999 && !zero.success && zero.nextState.player.currentRegion === 'QLD' && zero.nextState.player.money === 100;
+    return (quoted === 200 && stayed && paid.success && paid.nextState.player.currentRegion === 'NSW' && paid.nextState.player.money === 800) || JSON.stringify({ quoted, omitted: omitted.nextState.player, zero: zero.nextState.player, paid: paid.nextState.player });
+  });
+  check('u_fractional_buy_and_negative_supplies', 'A fractional buy and a negative supply action do not mint (SIM-023)', () => {
+    const pocket = () => ({ day: 1, turnCounter: 1, player: { id: 'player', money: 1000, inventory: ['wool'], currentSupplies: 40, maxSupplies: 100, currentRegion: 'QLD' }, actorsById: { player: { id: 'player', money: 1000, inventory: ['wool'], currentSupplies: 40, maxSupplies: 100, currentRegion: 'QLD' } } });
+    const fractional = reduceGameAction(pocket(), { type: 'buy_market', actorId: 'player', item: 'Wheat', price: 40, parameters: { quantity: 1.5, resource: 'Wheat' } } as any);
+    const buyNeg = reduceGameAction(pocket(), { type: 'buy_supplies', actorId: 'player', parameters: { amount: -4, costPerUnit: 10 } } as any);
+    const unitNeg = reduceGameAction(pocket(), { type: 'buy_supplies', actorId: 'player', parameters: { amount: 5, costPerUnit: -10 } } as any);
+    const totalNeg = reduceGameAction(pocket(), { type: 'buy_supplies', actorId: 'player', parameters: { amount: 1, totalCost: -800 } } as any);
+    const consume = reduceGameAction(pocket(), { type: 'consume_supplies', actorId: 'player', parameters: { amount: -20 } } as any);
+    const bought = reduceGameAction(pocket(), { type: 'buy_market', actorId: 'player', item: 'Wheat', price: 40, parameters: { quantity: 1, resource: 'Wheat' } } as any);
+    const supplied = reduceGameAction(pocket(), { type: 'buy_supplies', actorId: 'player', parameters: { amount: 2, costPerUnit: 10 } } as any);
+    const eaten = reduceGameAction(pocket(), { type: 'consume_supplies', actorId: 'player', parameters: { amount: 5 } } as any);
+    const still = (row: any) => !row.success && row.nextState.player.money === 1000 && row.nextState.player.currentSupplies === 40 && (row.nextState.player.inventory || []).join(',') === 'wool';
+    const closed = still(fractional) && still(buyNeg) && still(unitNeg) && still(totalNeg) && still(consume);
+    const legal = bought.success && bought.nextState.player.money === 960 && (bought.nextState.player.inventory || []).filter((item: string) => item === 'Wheat').length === 1 && supplied.success && supplied.nextState.player.money === 980 && supplied.nextState.player.currentSupplies === 42 && eaten.success && eaten.nextState.player.currentSupplies === 35 && eaten.nextState.player.money === 1000;
+    return (closed && legal) || JSON.stringify({ fractional: fractional.nextState.player, buyNeg: buyNeg.nextState.player, unitNeg: unitNeg.nextState.player, totalNeg: totalNeg.nextState.player, consume: consume.nextState.player, bought: bought.nextState.player, supplied: supplied.nextState.player, eaten: eaten.nextState.player });
+  });
+  check('u_deposit_needs_a_region', 'A deposit is not stored for an unknown region (SIM-024)', () => {
+    const pocket = () => ({ day: 1, turnCounter: 1, player: { id: 'player', money: 1000, currentRegion: 'QLD' }, actorsById: { player: { id: 'player', money: 1000, currentRegion: 'QLD' } }, regions: {}, gameState: { regionDeposits: {} } });
+    const unknown = reduceGameAction(pocket(), { type: 'region_deposit', actorId: 'player', targetRegion: 'NOT_A_REGION', investmentAmount: 40 } as any);
+    const atlantis = reduceGameAction(pocket(), { type: 'region_deposit', actorId: 'player', targetRegion: 'ATLANTIS', investmentAmount: 40 } as any);
+    const nsw = reduceGameAction(pocket(), { type: 'region_deposit', actorId: 'player', targetRegion: 'NSW', investmentAmount: 40 } as any);
+    const absent = (row: any, region: string) => !row.success && row.nextState.player.money === 1000 && !row.nextState.regions?.[region] && !row.nextState.gameState?.regionDeposits?.[region];
+    const stored = Boolean(nsw.success && nsw.nextState.player.money === 960 && nsw.nextState.regions?.NSW && nsw.nextState.gameState?.regionDeposits?.NSW);
+    return (absent(unknown, 'NOT_A_REGION') && absent(atlantis, 'ATLANTIS') && stored) || JSON.stringify({ unknown: unknown.nextState.player.money, atlantis: atlantis.nextState.regions, nsw: { ok: nsw.success, money: nsw.nextState.player.money, regions: nsw.nextState.regions } });
+  });
+  check('u_chaos_fallback_logs_once', 'An empty recorded_chaos queue logs the fallback draw once (SIM-025)', () => {
+    drainPendingReplayRandomDraws();
+    const drawn = v95WithIsolatedGlobals(() => {
+      setRngMasterSeed(77001, true);
+      const fallback = drawGameRandom({ domain: 'World', mode: 'recorded_chaos', recordedQueue: [], allowFallback: true });
+      const fallbackDraws = drainPendingReplayRandomDraws();
+      setRngMasterSeed(77001, true);
+      const deterministic = drawGameRandom('World', 'deterministic');
+      const deterministicDraws = drainPendingReplayRandomDraws();
+      const hybrid = drawGameRandom('World', 'hybrid');
+      const hybridDraws = drainPendingReplayRandomDraws();
+      const queued = drawGameRandom({ domain: 'World', mode: 'recorded_chaos', recordedQueue: [0.25] });
+      const queuedDraws = drainPendingReplayRandomDraws();
+      return { fallback, fallbackDraws, deterministic, deterministicDraws, hybrid, hybridDraws, queued, queuedDraws };
+    });
+    drainPendingReplayRandomDraws();
+    const once = (value: number, draws: { value: number }[]) => draws.length === 1 && draws[0].value === value;
+    return (once(drawn.fallback, drawn.fallbackDraws) && once(drawn.deterministic, drawn.deterministicDraws) && once(drawn.hybrid, drawn.hybridDraws) && drawn.queued === 0.25 && once(0.25, drawn.queuedDraws)) || JSON.stringify({ fallback: drawn.fallbackDraws.map(draw => draw.value), deterministic: drawn.deterministicDraws.length, hybrid: drawn.hybridDraws.length, queued: drawn.queuedDraws.map(draw => draw.value) });
+  });
+  check('u_canonical_hash_reads_wallet_and_turn', 'Canonical hashes distinguish wallet and turn (SIM-026)', () => {
+    const poor = computeCanonicalStateHash({ w: { actorsById: { player: { money: 1 } } }, day: 6, turn: 6 });
+    const rich = computeCanonicalStateHash({ w: { actorsById: { player: { money: 99999 } } }, day: 6, turn: 6 });
+    const later = computeCanonicalStateHash({ w: { actorsById: { player: { money: 1 } } }, day: 6, turn: 7 });
+    const stable = computeCanonicalStateHash({ day: 6, turnCounter: 6, actorsById: { player: { money: 1 } } });
+    const again = computeCanonicalStateHash({ day: 6, turnCounter: 6, actorsById: { player: { money: 1 } } });
+    const moved = computeCanonicalStateHash({ day: 6, turnCounter: 6, actorsById: { player: { money: 99999 } } });
+    return (poor !== rich && poor !== later && poor !== 'd0fe2bdd' && stable === again && stable === poor && moved === rich && stable !== moved) || JSON.stringify({ poor, rich, later, stable, moved });
+  });
+  check('u_return_to_menu_is_initialized', 'Return to Main Menu does not name handleReturnToMenu before it exists (SIM-028)', () => {
+    const src = Function.prototype.toString.call(AustraliaGame);
+    const decl = src.indexOf('const handleReturnToMenu');
+    const uses = ['handleReturnToMenu()', 'onClick={handleReturnToMenu}', 'onClick: handleReturnToMenu', 'onReturnToMenu={handleReturnToMenu}', 'onReturnToMenu: handleReturnToMenu']
+      .map(token => src.indexOf(token))
+      .filter(index => index >= 0);
+    const menu = src.indexOf('Return to Main Menu');
+    const button = menu < 0 ? '' : src.slice(Math.max(0, menu - 500), menu);
+    const ordered = uses.every(index => decl >= 0 && decl < index);
+    const buttonUsesRef = button.includes('handleReturnToMenuRef.current') && !button.includes('handleReturnToMenu()');
+    return (decl !== -1 && uses.length > 0 && ordered && buttonUsesRef) || `decl=${decl} uses=${uses.join(',')} button=${button.slice(-160)}`;
+  });
+  check('u_inland_expedition_spends_an_action', 'Dispatch Inland Discovery Expedition spends one action when it commits (SIM-029)', () => {
+    const player = { id: 'player', money: 1000, currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3, teamId: 'team_player' };
+    const state: any = { day: 1, turn: 1, turnCounter: 1, selectedMode: 'team_human_ai_vs_ai_ai', currentTurn: 'player', currentActorId: 'player', player, actorsById: { player: { ...player } }, teamsById: { team_player: { id: 'team_player', money: 1000 } }, expeditionTargets: getBuiltinExpeditionTargets(), gameSettings: { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 3, coPilotSettings: { ...createDefaultCoPilotSettings(), coPilotEnabled: true, authorityMode: 'full_co_pilot' } } };
+    const card = generateCoPilotPlayerActionCandidates(state, player, state.gameSettings).candidates.find((c: any) => c.title === 'Dispatch Inland Discovery Expedition');
+    const executed = card ? executeCoPilotActionIntent(state, { actionType: card.actionType, actorId: 'player', parameters: card.parameters, targetId: card.targetId, costEstimate: card.costEstimate, expectedCashDelta: card.expectedStateDelta?.cashDelta, expectedAPDelta: -(card.apCost ?? 1) }, { forceExecution: true }) : null;
+    const after = executed?.updatedState?.player;
+    const remaining = after ? getRemainingActionPoints(after, state.gameSettings) : -1;
+    const launched = Boolean(executed?.updatedState?.activeExpeditions && Object.keys(executed.updatedState.activeExpeditions).length);
+    const ok = Boolean(card && card.isValid && card.actionType === 'launch_expedition' && card.apCost === 1 && card.costEstimate === 250 && executed?.executionResult?.success && after?.money === 750 && remaining === 2 && launched);
+    return ok || JSON.stringify({ card: card && { type: card.actionType, cost: card.costEstimate, ap: card.apCost, valid: card.isValid }, success: executed?.executionResult?.success, error: executed?.executionResult?.error, money: after?.money, remaining, launched });
+  });
+  check('u_guardian_refusal_does_not_commit', 'A refused Guardian travel and an unconfirmed ask do not commit (SIM-030)', () => {
+    const guardianSettings = { ...createDefaultGuardianAiSettings(), enabled: true, protectionLevel: 'strategic_caution' as const, logToActivityLedger: true };
+    const player = { id: 'player', money: 5000, currentRegion: 'NSW', actionsUsedThisTurn: 0, actionPoints: 1, inventory: ['Iron Ore'] };
+    const live: any = { day: 1, turn: 1, turnCounter: 1, gameMode: 'game', currentTurn: 'player', currentActorId: 'player', player, actorsById: { player: { ...player } }, gameActivityLedger: { events: [] as any[] }, guardianAiSettings: guardianSettings, gameSettings: { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 1, guardianAiSettings: guardianSettings, coPilotSettings: { ...createDefaultCoPilotSettings(), coPilotEnabled: true, authorityMode: 'full_co_pilot' } } };
+    const verdict = evaluateGuardianRiskPipeline({ gameState: live, settings: guardianSettings, actorId: 'player', actionType: 'travel', actionPayload: { destinationRegion: 'VIC', cost: 400 }, source: 'co_pilot', day: 1, turn: 1, currentActionTokens: 1, currentCash: 5000, activeContracts: [], activeExpeditions: [], activePlans: [], isReplay: false });
+    const blocked = executeCoPilotActionIntent(live, { actionType: 'travel', actorId: 'player', targetId: 'VIC', parameters: { destinationRegion: 'VIC' }, costEstimate: 400, expectedCashDelta: -400, expectedAPDelta: -1 }, { mode: 'full_co_pilot' });
+    const seller = { ...player, money: 4000, actionPoints: 3 };
+    const askState: any = { ...live, player: seller, actorsById: { player: { ...seller } }, guardianAiSettings: { ...guardianSettings, enabled: false }, gameSettings: { ...live.gameSettings, playerActionsPerDay: 3, guardianAiSettings: { ...guardianSettings, enabled: false }, coPilotSettings: { ...createDefaultCoPilotSettings(), coPilotEnabled: true, authorityMode: 'ask_before_acting' } } };
+    const sell = { actionType: 'sell', actorId: 'player', item: 'Iron Ore', price: 100, parameters: { resource: 'Iron Ore', price: 100 }, costEstimate: 100, expectedCashDelta: 100, expectedAPDelta: 0 };
+    const unconfirmed = executeCoPilotActionIntent(askState, sell, { mode: 'ask_before_acting' });
+    const forced = executeCoPilotActionIntent(askState, sell, { mode: 'recommendations', forceExecution: true });
+    const confirmed = executeCoPilotActionIntent(askState, sell, { mode: 'ask_before_acting', confirmed: true });
+    const ledgerQuiet = (live.gameActivityLedger.events || []).length === 0 && verdict.allowedToProceed === false && !blocked.executionResult.success && blocked.executionResult.error === 'GUARDIAN_DENIED' && live.player.money === 5000 && live.player.currentRegion === 'NSW';
+    const adviceQuiet = !unconfirmed.executionResult.success && unconfirmed.executionResult.error === 'AWAITING_CONFIRMATION' && askState.player.money === 4000 && !forced.executionResult.success && forced.executionResult.error === 'COPILOT_AUTHORITY_DENIED' && confirmed.executionResult.success === true && confirmed.updatedState.player.money === 4100;
+    return (ledgerQuiet && adviceQuiet) || JSON.stringify({ allowed: verdict.allowedToProceed, ledger: (live.gameActivityLedger.events || []).length, blocked: blocked.executionResult.error, ask: unconfirmed.executionResult.error, forced: forced.executionResult.error, confirmed: confirmed.executionResult.error, money: confirmed.updatedState?.player?.money });
+  });
+  check('u_unfunded_project_stays_inactive', 'An unfunded or negative-priced project is not activated (SIM-031)', () => {
+    const player = { id: 'player', money: 20000, currentRegion: 'WA', actionsUsedThisTurn: 0, actionPoints: 3 };
+    const rail = { id: 'wa_rail', status: 'unlocked', totalInvestedMoney: 0, totalCost: 70000, regionId: 'WA', assignedWorkers: [] as string[] };
+    const state: any = { day: 1, turnCounter: 1, player, actorsById: { player: { ...player } }, infrastructureProjects: { wa_rail: rail } };
+    const completed = reduceGameAction(state, { type: 'complete_infrastructure_project', actorId: 'player', parameters: { projectId: 'wa_rail' } } as any);
+    const named = reduceGameAction(state, { type: 'start_infrastructure_project', actorId: 'player', item: 'neg_depot', price: -500 } as any);
+    const quiet = !completed.success && completed.nextState.infrastructureProjects.wa_rail.status === 'unlocked' && completed.nextState.player.money === 20000 && !named.success && named.nextState.player.money === 20000 && !named.nextState.infrastructureProjects.neg_depot;
+    return quiet || JSON.stringify({ complete: completed.success, status: completed.nextState.infrastructureProjects.wa_rail.status, named: named.success, depot: named.nextState.infrastructureProjects.neg_depot });
+  });
+  check('u_zero_ap_blocks_travel_and_build', 'Travel and build do not run at 0 action points (SIM-032)', () => {
+    const player = { id: 'player', money: 20000, currentRegion: 'QLD', actionsUsedThisTurn: 3, actionPoints: 0 };
+    const state: any = { day: 1, turnCounter: 1, player, actorsById: { player: { ...player } }, gameSettings: { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 3 } };
+    const travelled = reduceGameAction(state, { type: 'travel', actorId: 'player', targetRegion: 'NSW', price: 200 } as any);
+    const built = reduceGameAction(state, { type: 'build_infrastructure', actorId: 'player', targetRegion: 'QLD', price: 350 } as any);
+    const held = (row: any) => !row.success && row.nextState.player.currentRegion === 'QLD' && row.nextState.player.money === 20000 && row.nextState.player.actionsUsedThisTurn === 3 && row.nextState.player.actionPoints === 0;
+    return (held(travelled) && held(built) && built.nextState.player.money === 20000) || JSON.stringify({ travel: travelled.nextState.player, build: built.nextState.player, travelOk: travelled.success, buildOk: built.success });
+  });
+  check('u_zero_transfer_and_second_confirm', 'A zero transfer and a second deal confirm do not invent a payment (SIM-033)', () => {
+    const player = { id: 'player', money: 1000, currentRegion: 'QLD' };
+    const ai = { id: 'ai', money: 4000, currentRegion: 'NSW' };
+    const state: any = { day: 1, turnCounter: 1, player, aiPlayer: ai, actorsById: { player: { ...player }, ai: { ...ai } } };
+    const zero = reduceGameAction(state, { type: 'transfer_cash', actorId: 'player', targetActorId: 'ai', price: 0, parameters: { amount: 0 } } as any);
+    const nan = reduceGameAction(state, { type: 'transfer_cash', actorId: 'player', targetActorId: 'ai', price: NaN, parameters: { amount: NaN } } as any);
+    const diplomacy = createEmptyDiplomacyState();
+    diplomacy.deals.push({ id: 'd1', status: 'active', terms: [{ id: 't1', kind: 'pay_cash', actorId: 'player', amount: 3000 }], history: [] } as any);
+    const again = confirmDealActivation(diplomacy, 'd1', [{ termId: 't1', success: true }], 4);
+    const still = !zero.success && zero.nextState.player.money === 1000 && zero.nextState.actorsById.ai.money === 4000 && !nan.success && nan.nextState.player.money === 1000 && nan.nextState.actorsById.ai.money === 4000 && again.activated === false && again.state.events.length === 0;
+    return still || JSON.stringify({ zero: zero.nextState.player.money, ai: zero.nextState.actorsById.ai.money, nan: nan.nextState.player.money, activated: again.activated, events: again.state.events.length });
+  });
+  check('u_conflict_toggles_survive_sanitize', 'Conflict toggles are not replaced by the nested object (SIM-034)', () => {
+    const toggled = { ...DEFAULT_GAME_SETTINGS, conflictControlEnabled: false, conflictAllowRelocation: false, conflictReturnToPreferred: false, conflictShowExplanations: true };
+    const sanitized = sanitizeGameSettings(toggled);
+    const kept = sanitized.conflictControlEnabled === false && sanitized.conflictAllowRelocation === false && sanitized.conflictReturnToPreferred === false && sanitized.conflictShowExplanations === true;
+    return kept || JSON.stringify({ enabled: sanitized.conflictControlEnabled, relocation: sanitized.conflictAllowRelocation, ret: sanitized.conflictReturnToPreferred, explain: sanitized.conflictShowExplanations });
+  });
+  check('u_turn_reducer_rejects_closed_match', 'The turn reducer rejects a closed match, an unknown mode, and a bad counter (SIM-035)', () => {
+    const live: any = { gameMode: 'game', day: 4, turnCounter: 2, currentTurn: 'player', currentActorId: 'player' };
+    const menu = gameStateReducer({ ...live, gameMode: 'menu' }, { type: 'SET_TURN', payload: 'ai' });
+    const endedTurn = gameStateReducer({ ...live, gameMode: 'end' }, { type: 'SET_TURN', payload: 'ai' });
+    const endedDay = gameStateReducer({ ...live, gameMode: 'end' }, { type: 'NEXT_DAY' });
+    const unknown = gameStateReducer(live, { type: 'SET_GAME_MODE', payload: 'not_a_mode' });
+    const nan = gameStateReducer(live, { type: 'SET_TURN_COUNTER', payload: NaN });
+    const negative = gameStateReducer(live, { type: 'SET_TURN_COUNTER', payload: -5 });
+    const advanced = gameStateReducer(live, { type: 'NEXT_DAY' });
+    const closed = menu.currentTurn === 'player' && menu.turnCounter === 2 && endedTurn.currentTurn === 'player' && endedTurn.turnCounter === 2 && endedDay.day === 4 && unknown.gameMode === 'game' && nan.turnCounter === 2 && negative.turnCounter === 2 && advanced.day === 5;
+    return closed || JSON.stringify({ menu, endedTurn, endedDay: endedDay.day, mode: unknown.gameMode, nan: nan.turnCounter, negative: negative.turnCounter, day: advanced.day });
+  });
+  check('u_larger_team_cash_stays', 'A success does not replace a larger team balance with personal cash (SIM-036)', () => {
+    const player = { id: 'player', money: 1000, currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3, teamId: 'team_player' };
+    const state: any = { day: 1, turnCounter: 1, player, actorsById: { player: { ...player } }, teamsById: { team_player: { id: 'team_player', money: 99999, netWorth: 99999 } }, gameSettings: { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 3 } };
+    const worked = reduceGameAction(state, { type: 'work', actorId: 'player', price: 50 } as any);
+    const team = worked.nextState.teamsById.team_player.money;
+    return (worked.success && worked.nextState.player.money === 1050 && team === 99999) || JSON.stringify({ ok: worked.success, player: worked.nextState.player.money, team });
+  });
+  check('u_survival_off_does_not_retreat', 'Supply exhaustion does not retreat when survival and forced retreat are off (SIM-038)', () => {
+    const actor = { id: 'a', name: 'A', kind: 'human', currentRegion: 'VIC', currentSupplies: 5, maxSupplies: 100, activeJourney: { daysRemaining: 2, destinationRegion: 'WA', originRegion: 'NSW', hazardRisk: 0 } };
+    const offSettings = { ...DEFAULT_GAME_SETTINGS, survivalMechanicsEnabled: false, forcedRetreatEnabled: false };
+    const onSettings = { ...DEFAULT_GAME_SETTINGS, survivalMechanicsEnabled: true, forcedRetreatEnabled: true };
+    const stayed = applyTransitProgress(actor, undefined, offSettings);
+    const retreated = applyTransitProgress(actor, undefined, onSettings);
+    const ok = stayed.currentRegion === 'VIC' && stayed.activeJourney && stayed.currentSupplies === 5 && retreated.currentRegion === 'NSW' && !retreated.activeJourney;
+    return ok || JSON.stringify({ stayed: { region: stayed.currentRegion, supplies: stayed.currentSupplies, journey: Boolean(stayed.activeJourney) }, retreated: { region: retreated.currentRegion, journey: Boolean(retreated.activeJourney) } });
+  });
+  check('u_national_events_follow_the_switch', 'National events stay off unless nationalEventsEnabled is on (SIM-039)', () => {
+    const off = generateDynamicEvent({ day: 2, gameSettings: { nationalEventsEnabled: false } }, 2, ['QLD']);
+    const on = generateDynamicEvent({ day: 2, gameSettings: { nationalEventsEnabled: true } }, 2, ['QLD']);
+    const pocket = (enabled: boolean) => ({ day: 1, turn: 1, turnCounter: 1, player: { id: 'player', money: 1000, currentRegion: 'QLD', actionsUsedThisTurn: 0 }, actorsById: { player: { id: 'player', money: 1000, currentRegion: 'QLD', actionsUsedThisTurn: 0 } }, gameSettings: { ...DEFAULT_GAME_SETTINGS, nationalEventsEnabled: enabled } });
+    const endedOff = reduceGameAction(pocket(false) as any, { type: 'end_turn', actorId: 'player' } as any);
+    const endedOn = reduceGameAction(pocket(true) as any, { type: 'end_turn', actorId: 'player' } as any);
+    const ok = off === null && Boolean(on && on.name) && !endedOff.nextState.activeDynamicEvent && Boolean(endedOn.nextState.activeDynamicEvent && endedOn.nextState.activeDynamicEvent.name);
+    return ok || JSON.stringify({ off, on: on && on.name, endedOff: endedOff.nextState.activeDynamicEvent, endedOn: endedOn.nextState.activeDynamicEvent && endedOn.nextState.activeDynamicEvent.name });
+  });
+  check('u_emergency_treasury_type', 'An emergency treasury resolution is stored as emergency support (SIM-040)', () => {
+    const emergency = treasuryResolutionTransactionType('emergency_only', true);
+    const partial = treasuryResolutionTransactionType('approve_partial', true);
+    const full = treasuryResolutionTransactionType('approve_full', false);
+    return (emergency === 'emergency_zero_cash_support' && partial === 'partial_funding_approval' && full === 'approved_funding_request') || JSON.stringify({ emergency, partial, full });
+  });
+  check('u_advanced_loan_repay_and_refinance_follow_the_schedule', 'Repay and refinance update the advanced loan schedule (SIM-048)', () => {
+    const player = { id: 'player', money: 6000, currentRegion: 'QLD', debt: 0, advancedLoans: [{ id: 'L1', amount: 1000, accrued: 0 }] };
+    const pocket = () => ({ day: 1, turnCounter: 1, player: { ...player, advancedLoans: [{ id: 'L1', amount: 1000, accrued: 0 }] }, actorsById: { player: { ...player, advancedLoans: [{ id: 'L1', amount: 1000, accrued: 0 }] } } });
+    const repaid = reduceGameAction(pocket(), { type: 'repay_advanced_loan', actorId: 'player' } as any);
+    const refinanced = reduceGameAction({ ...pocket(), player: { ...player, money: 5000, advancedLoans: [{ id: 'L1', amount: 1000, accrued: 0 }] }, actorsById: { player: { ...player, money: 5000, advancedLoans: [{ id: 'L1', amount: 1000, accrued: 0 }] } } }, { type: 'refinance_advanced_loan', actorId: 'player', parameters: { newPrincipal: 800 } } as any);
+    const schedule = (row: any) => row.nextState.player.advancedLoans || [];
+    const cleared = repaid.success && repaid.nextState.player.money === 5000 && schedule(repaid).length === 0 && repaid.nextState.player.debt === 0;
+    const resized = refinanced.success && refinanced.nextState.player.money === 4800 && refinanced.nextState.player.debt === 800 && schedule(refinanced)[0]?.amount === 800;
+    return (cleared && resized) || JSON.stringify({ repay: { ok: repaid.success, money: repaid.nextState.player.money, debt: repaid.nextState.player.debt, loans: schedule(repaid) }, refinance: { ok: refinanced.success, money: refinanced.nextState.player.money, debt: refinanced.nextState.player.debt, loans: schedule(refinanced) } });
+  });
+  check('u_completed_contract_pays_once', 'A completed contract does not pay out a second time (SIM-049)', () => {
+    const actor: any = { id: 'player', money: 1000, xp: 0 };
+    const contract: any = { id: 'c1', status: 'active', issuingRegionId: 'QLD', rewards: { money: 500 } };
+    const state: any = { turn: 4, regionalDevLevels: {}, standingPerActor: { player: { QLD: 0 } } };
+    completeRegionalContractPayout(state, contract, actor);
+    const once = actor.money;
+    completeRegionalContractPayout(state, contract, actor);
+    return (once === 1500 && actor.money === 1500 && contract.status === 'completed') || JSON.stringify({ once, money: actor.money, status: contract.status });
+  });
+  check('u_player_click_commits_when_copilot_is_off', 'A player click on the recommended depot commits when Co-Pilot is off (SIM-047)', () => {
+    const player = { id: 'player', money: 1000, currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3, inventory: ['Iron Ore'] };
+    const state: any = { day: 1, turn: 1, turnCounter: 1, gameMode: 'game', selectedMode: 'single', currentTurn: 'player', currentActorId: 'player', player, actorsById: { player: { ...player } }, gameSettings: { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 3, coPilotSettings: { ...createDefaultCoPilotSettings(), coPilotEnabled: false, authorityMode: 'off' } } };
+    const depot = { actionType: 'start_infrastructure_project', actorId: 'player', parameters: { region: 'QLD', infrastructureType: 'trade_depot', capitalAmount: 350 }, costEstimate: 350, expectedCashDelta: -350, expectedAPDelta: -1 };
+    const clicked = executeCoPilotActionIntent(state, depot, { playerClicked: true });
+    const alone = executeCoPilotActionIntent(state, depot, { forceExecution: true });
+    const seller = { ...player, money: 4000 };
+    const askState: any = { ...state, player: seller, actorsById: { player: { ...seller } }, gameSettings: { ...state.gameSettings, coPilotSettings: { ...createDefaultCoPilotSettings(), coPilotEnabled: true, authorityMode: 'ask_before_acting' } } };
+    const sell = { actionType: 'sell', actorId: 'player', item: 'Iron Ore', price: 100, parameters: { resource: 'Iron Ore', price: 100 }, costEstimate: 100, expectedCashDelta: 100, expectedAPDelta: 0 };
+    const unconfirmed = executeCoPilotActionIntent(askState, sell, { mode: 'ask_before_acting' });
+    const forced = executeCoPilotActionIntent(askState, sell, { mode: 'recommendations', forceExecution: true });
+    const after = clicked.updatedState?.player;
+    const remaining = after ? getRemainingActionPoints(after, state.gameSettings) : -1;
+    const built = Boolean(clicked.executionResult.success && after?.money === 650 && remaining === 2);
+    const held = !alone.executionResult.success && alone.executionResult.error === 'COPILOT_AUTHORITY_DENIED' && state.player.money === 1000 && unconfirmed.executionResult.error === 'AWAITING_CONFIRMATION' && !forced.executionResult.success && forced.executionResult.error === 'COPILOT_AUTHORITY_DENIED';
+    return (built && held) || JSON.stringify({ click: clicked.executionResult.error, money: after?.money, remaining, alone: alone.executionResult.error, ask: unconfirmed.executionResult.error, forced: forced.executionResult.error });
+  });
+  check('u_team_whatif_timeline_is_routed', 'Team AI routes create_whatif_timeline onto the canonical timeline (SIM-055)', () => {
+    const player = { id: 'player', money: 5000, currentRegion: 'QLD', actionsUsedThisTurn: 0, actionPoints: 3 };
+    const pocket: any = { day: 4, turn: 2, turnCounter: 2, player, actorsById: { player: { ...player } }, whatIfTimelines: {}, gameSettings: { ...DEFAULT_GAME_SETTINGS, actionLimitsEnabled: true, playerActionsPerDay: 3 } };
+    const made = reduceGameAction(pocket, { type: 'create_whatif_timeline', actorId: 'player', parameters: { timelineId: 'tl_probe', name: 'Probe' } } as any);
+    const timeline = made.nextState.whatIfTimelines?.tl_probe;
+    const routed = String(AustraliaGame).includes("runCanonicalTeamAction('create_whatif_timeline'") || String(AustraliaGame).includes('runCanonicalTeamAction("create_whatif_timeline"');
+    const ok = made.success && timeline && timeline.title === 'Probe' && timeline.status === 'active' && made.nextState.activeTimelineId === 'tl_probe' && made.nextState.player.money === 5000 && made.nextState.player.actionsUsedThisTurn === 1 && routed;
+    return ok || JSON.stringify({ success: made.success, cash: made.nextState.player.money, ap: made.nextState.player.actionsUsedThisTurn, title: timeline && timeline.title, active: made.nextState.activeTimelineId, routed });
+  });
+
   return results;
 }
 
@@ -136152,7 +137905,12 @@ export async function runV95ReleaseCheck(mode: 'quick' | 'full', onProgress?: (l
   const checks: V95CheckResult[] = [];
   onProgress?.('V9.5 release checks', 0, total);
   await yieldToUi();
-  const own = v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: mode === 'full' ? 120 : 40 }));
+  const stressTurns = mode === 'full' ? 120 : 40;
+  const sampleEvery = Math.max(5, Math.floor(stressTurns / 6));
+  const s1 = await v95WithIsolatedGlobalsAsync(() => runV95LongMatchStressYielding({ seed: 9501, turns: stressTurns, sampleEvery }));
+  await yieldToUi();
+  const s2 = await v95WithIsolatedGlobalsAsync(() => runV95LongMatchStressYielding({ seed: 9501, turns: stressTurns, sampleEvery }));
+  const own = v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns, preparedStress: [s1, s2] }));
   own.forEach(t => checks.push(v95ClassifyOwnTest(t)));
   let done = 1;
   for (const s of suites) {
@@ -154400,7 +156158,7 @@ function validateStrategicCapitalState(state: StrategicCapitalState): { valid: b
 // MAIN ORCHESTRATOR: computeStrategicCapital
 // ============================================================================
 
-function computeStrategicCapital(
+export function computeStrategicCapital(
   i: StrategicCapitalInputs,
   rawPersisted?: StrategicCapitalPersisted | null
 ): {
@@ -160412,7 +162170,9 @@ export function buildWorkforceInputsFromGameState(params: {
     ...(Array.isArray(player?.projects) ? player.projects : []),
     ...(Array.isArray(gameState?.projects) ? gameState.projects : []),
     ...(Array.isArray(gameState?.activeProjects) ? gameState.activeProjects : []),
-    ...(Array.isArray(gameState?.megaprojects) ? gameState.megaprojects : [])
+    ...(Array.isArray(gameState?.megaprojects) ? gameState.megaprojects : []),
+    ...(gameState?.infrastructureProjects && typeof gameState.infrastructureProjects === 'object' ? Object.values(gameState.infrastructureProjects) : []),
+    ...(gameState?.megaprojects?.programs && typeof gameState.megaprojects.programs === 'object' ? Object.values(gameState.megaprojects.programs) : [])
   ];
 
   for (const p of rawProjects) {
@@ -171613,6 +173373,62 @@ export function publicFinanceToWorldEvent(entry: FiscalHistoryEntry): {
   };
 }
 
+const FISCAL_SWR_KIND: Record<FiscalHistoryEntry['kind'], SWRKind> = {
+  fiscal_pressure_became_strained: 'debt_pressure_changed',
+  fiscal_pressure_became_critical: 'debt_pressure_changed',
+  fiscal_headroom_recovered: 'liquidity_improved',
+  fiscal_reserve_became_weak: 'liquidity_deteriorated',
+  fiscal_reserve_restored: 'liquidity_improved',
+  debt_pressure_increased: 'debt_pressure_changed',
+  maintenance_burden_became_high: 'debt_pressure_changed',
+  funding_conflict_emerged: 'crisis_escalated',
+  funding_conflict_resolved: 'crisis_resolved',
+  major_commitment_completed: 'project_completed',
+  recovery_spending_ended: 'liquidity_improved'
+};
+
+/** Fiscal history rows are not StrategicWorldEvents. This adapter is what the live effect emits. */
+export function fiscalEntryToStrategicEvent(entry: FiscalHistoryEntry, observers: string[] = ['player'], day = 1): StrategicWorldEvent {
+  const significance: SWRSignificance = entry.significance;
+  return {
+    id: `swr_${entry.id}`,
+    turn: entry.turn,
+    day,
+    sourceSystem: 'public_finance',
+    sourceEventId: entry.id,
+    actorId: null,
+    teamId: null,
+    kind: FISCAL_SWR_KIND[entry.kind] || 'debt_pressure_changed',
+    subjectType: entry.regionIds.length === 1 ? 'region' : 'nation',
+    subjectId: entry.regionIds.length === 1 ? entry.regionIds[0] : 'australia',
+    magnitude: significance === 'critical' ? 90 : significance === 'major' ? 75 : 55,
+    significance,
+    visibility: 'public',
+    observers,
+    evidence: [entry.text],
+    before: {},
+    after: { pressure: entry.pressure, sustainability: entry.sustainability },
+    delta: {},
+    strategicMeaning: entry.text,
+    affectedDomains: ['economy', 'strategy'],
+    tags: ['v1012_public_finance', `kind:${entry.kind}`],
+    layer: 'world',
+    confidence: 'high',
+    claimKind: 'fact',
+    causedByEventId: null,
+    contributingCauses: [],
+    rootEventId: `swr_${entry.id}`,
+    reactionDepth: 0,
+    expiresTurn: entry.turn + 4,
+    dedupeKey: `v1012:${entry.kind}:${entry.turn}`
+  };
+}
+
+export function publicFinanceWorldRoots(enabled: boolean, events: FiscalHistoryEntry[] | null | undefined, observers: string[] = ['player'], day = 1): StrategicWorldEvent[] {
+  if (!enabled || !events || events.length === 0) return [];
+  return events.map(entry => fiscalEntryToStrategicEvent(entry, observers, day));
+}
+
 // ---- Part 101–102: What-If Simulator (Pure, Non-Mutating) -------------------------------------------
 
 export function simulatePublicFinanceWhatIf(
@@ -177916,6 +179732,60 @@ export function householdToWorldEvent(transition: LivingStandardsTransition): {
   };
 }
 
+const HOUSEHOLD_SWR_KIND: Record<HouseholdWorldEventKind, SWRKind> = {
+  living_standards_improved: 'liquidity_improved',
+  living_standards_deteriorated: 'market_shift_major',
+  affordability_became_strained: 'regional_need_became_critical',
+  affordability_recovered: 'liquidity_improved',
+  housing_pressure_became_severe: 'regional_need_became_critical',
+  domestic_demand_strengthened: 'market_shift_major',
+  domestic_demand_weakened: 'market_shift_major',
+  regional_living_standards_diverged: 'market_shift_major',
+  household_resilience_improved: 'liquidity_improved',
+  household_resilience_deteriorated: 'market_shift_major'
+};
+
+/** Household reaction rows are not StrategicWorldEvents. Do not reuse householdToWorldEvent for this. */
+export function householdReactionToStrategicEvent(entry: HouseholdWorldReactionEvent, observers: string[] = ['player'], day = 1): StrategicWorldEvent {
+  return {
+    id: `swr_${entry.id}`,
+    turn: entry.turn,
+    day,
+    sourceSystem: 'households',
+    sourceEventId: entry.id,
+    actorId: null,
+    teamId: null,
+    kind: HOUSEHOLD_SWR_KIND[entry.kind] || 'market_shift_major',
+    subjectType: entry.regionIds.length === 1 ? 'region' : 'nation',
+    subjectId: entry.regionIds.length === 1 ? entry.regionIds[0] : 'australia',
+    magnitude: entry.significance === 'critical' ? 90 : entry.significance === 'major' ? 75 : 55,
+    significance: entry.significance,
+    visibility: 'public',
+    observers,
+    evidence: [entry.summary || entry.title],
+    before: {},
+    after: { kind: entry.kind },
+    delta: {},
+    strategicMeaning: entry.summary || entry.title,
+    affectedDomains: ['economy', 'regions'],
+    tags: ['v1013_households', `kind:${entry.kind}`],
+    layer: 'world',
+    confidence: 'high',
+    claimKind: 'fact',
+    causedByEventId: null,
+    contributingCauses: [],
+    rootEventId: `swr_${entry.id}`,
+    reactionDepth: 0,
+    expiresTurn: entry.turn + 4,
+    dedupeKey: entry.dedupeKey || `v1013:${entry.kind}:${entry.turn}`
+  };
+}
+
+export function householdWorldRoots(enabled: boolean, events: HouseholdWorldReactionEvent[] | null | undefined, observers: string[] = ['player'], day = 1): StrategicWorldEvent[] {
+  if (!enabled || !events || events.length === 0) return [];
+  return events.map(entry => householdReactionToStrategicEvent(entry, observers, day));
+}
+
 // ============================================================================
 // AI, GI3, BACKGROUND AI, GUARDIAN & CONTEXTUAL ACTIONS
 // ============================================================================
@@ -180475,6 +182345,7 @@ function AustraliaGame() {
   useEffect(() => {
     diag2MountCounter++;
     recordDiag2Event('APP_MOUNT', { mountCount: diag2MountCounter, isStrictModeDoubleMount: diag2MountCounter > 1 });
+    installO111RecoveryDevHooks();
   }, []);
   const surfaceState = useGlobalUISurfaceManager();
 
@@ -180676,37 +182547,6 @@ function AustraliaGame() {
     return gameSettings.commandCenterSettings || createDefaultCommandCenterSettings();
   }, [gameSettings.commandCenterSettings]);
 
-  const liveCommandCenterState = useMemo(() => {
-    const enabled = Boolean(gameSettings.aiCommandCenterUiEnabled ?? false);
-    const surfaceOn = Boolean(
-      enabled &&
-      (commandCenterSettings?.enabled ?? true) &&
-      ((commandCenterSettings?.showInPlayerStatusHeader ?? false) || (commandCenterSettings?.showCompactFloatingWidget ?? false))
-    );
-    if (!surfaceOn) {
-      return createDefaultCommandCenterState();
-    }
-    return evaluateCommandCenterDeduplicated(
-      gameState,
-      commandCenterSettings,
-      player?.id || 'player'
-    );
-  }, [gameState, commandCenterSettings, player?.id, gameSettings.aiCommandCenterUiEnabled]);
-  const builderState = gameState.customScenarioBuilder;
-
-  // Milestone 7: Co-Pilot Dev Self-Tests State
-  const [coPilotSelfTestResult, setCoPilotSelfTestResult] = useState<CoPilotDevSelfTestReport | null>(null);
-  const [isExecutingCoPilotSelfTests, setIsExecutingCoPilotSelfTests] = useState<boolean>(false);
-  const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
-
-
-
-
-
-
-  // Phase 12: Pre-Scenario Settings Snapshot
-  const [savedPreScenarioSettings, setSavedPreScenarioSettings] = useState<GameSettingsState | null>(null);
-
   // UI state
   const [uiState, setUiState] = useState<UIState>({
     experienceLayer: 'play' as ExperienceLayer,
@@ -180795,6 +182635,38 @@ function AustraliaGame() {
     intentTeaching: null,
     intentAdjustment: null
   });
+
+  const liveCommandCenterState = useMemo(() => {
+    const enabled = Boolean(gameSettings.aiCommandCenterUiEnabled ?? false);
+    const surfaceOn = Boolean(
+      enabled &&
+      (commandCenterSettings?.enabled ?? true) &&
+      (Boolean(uiState.showAiCommandCenterModal) || (commandCenterSettings?.showInPlayerStatusHeader ?? false) || (commandCenterSettings?.showCompactFloatingWidget ?? false))
+    );
+    if (!surfaceOn) {
+      return createDefaultCommandCenterState();
+    }
+    return evaluateCommandCenterDeduplicated(
+      gameState,
+      commandCenterSettings,
+      player?.id || 'player'
+    );
+  }, [gameState, commandCenterSettings, player?.id, gameSettings.aiCommandCenterUiEnabled, uiState.showAiCommandCenterModal]);
+  const builderState = gameState.customScenarioBuilder;
+
+  // Milestone 7: Co-Pilot Dev Self-Tests State
+  const [coPilotSelfTestResult, setCoPilotSelfTestResult] = useState<CoPilotDevSelfTestReport | null>(null);
+  const [isExecutingCoPilotSelfTests, setIsExecutingCoPilotSelfTests] = useState<boolean>(false);
+  const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
+
+
+
+
+
+
+  // Phase 12: Pre-Scenario Settings Snapshot
+  const [savedPreScenarioSettings, setSavedPreScenarioSettings] = useState<GameSettingsState | null>(null);
+
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -181420,6 +183292,12 @@ function AustraliaGame() {
   // CPFIX2: Ref-indirection for advanceDay, handleTurnTransition, and updatePersonalRecords to supply missing helpers to Co-Pilot without TDZ issues
   const advanceDayRef = useRef<(() => void) | null>(null);
   const handleTurnTransitionRef = useRef<((actor: 'player' | 'ai') => void) | null>(null);
+  // Keyboard shortcuts list handleEndTurn before that callback exists. The ref is assigned
+  // once the callback is created, so the shortcut effect can depend on the ref instead of the binding.
+  const handleEndTurnRef = useRef<(() => void) | null>(null);
+  // Scenario game-over returns before the menu callback. The button calls the ref, which is
+  // assigned once that callback exists, so the click cannot read the const during its dead zone.
+  const handleReturnToMenuRef = useRef<(() => void) | null>(null);
   const updatePersonalRecordsRef = useRef<((type: string, value: any) => void) | null>(null);
   const getCompetitiveMetricValueRef = useRef<((metric: WinMetric, options: any) => number) | null>(null);
   const bankDrawEligibilityRef = useRef<((actorId: string, decision: any | null) => { eligible: boolean; reasonLabel: string }) | null>(null);
@@ -181970,7 +183848,7 @@ function AustraliaGame() {
       || category === 'ai_execution' || category === 'human_action' || category === 'lead_change_event'
       || category === 'rng_draw' || category === 'director_event' || category === 'auto_mode_package_applied';
     const usage = recording.events.length / Math.max(100, gameSettings.aiReplayMaxEvents);
-    if (shouldThrottleReplayDetail(gameSettings.replayDetailLevel, usage, isCritical)) {
+    if (noteReplayThrottleDrop(recording, usage, gameSettings.replayDetailLevel, isCritical)) {
       return;
     }
     const maxEvents = Math.max(100, gameSettings.aiReplayMaxEvents);
@@ -181984,8 +183862,9 @@ function AustraliaGame() {
       return;
     }
     const nextSequence = recording.events.length > 0 ? recording.events[recording.events.length - 1].sequence + 1 : 0;
-    const stateHashBefore = fields.stateHashBefore || (fields.payload?.stateHashBefore as string) || computeCanonicalStateHash(gameState);
-    const stateHashAfter = fields.stateHashAfter || (fields.payload?.stateHashAfter as string) || computeCanonicalStateHash(gameState);
+    const stampedHashes = stampReplayEventHashes(fields, gameState);
+    const stateHashBefore = stampedHashes.stateHashBefore;
+    const stateHashAfter = stampedHashes.stateHashAfter;
     const event: ReplayEvent = {
       id: nextCorrelationId(globalDeterministicCounters, 'replayevt'),
       sequence: nextSequence,
@@ -182926,7 +184805,7 @@ function dispatchGameSettingsChange(
         sessionToken: takeoverSession?.sessionToken,
         takeoverSession
       },
-      { forceExecution: true }
+      { forceExecution: true, playerClicked: true }
     );
     if (executionResult.success) {
       commitMatchMemory({
@@ -182957,7 +184836,7 @@ function dispatchGameSettingsChange(
         setTakeoverSession(updateTakeoverSession(takeoverSession, costEstimate, gameState.turnCounter, actionType, postState, undefined, true));
       }
     } else {
-      addNotification(`Failed to execute Co-Pilot move: ${executionResult.error || executionResult.failureReason || 'Action failed'}`, 'error');
+      addNotification(`Could not do that: ${executionResult.error || executionResult.failureReason || 'Action failed'}`, 'error');
     }
 
     const stateHashAfter = typeof computeCanonicalStateHash === 'function' ? computeCanonicalStateHash(postState || gameState) : computeGameStateHash(postState || gameState);
@@ -183255,7 +185134,7 @@ function dispatchGameSettingsChange(
   // was never turned on for this match.
   const finalizeReplayRecording = useCallback((finalResult: ReplayFinalResult) => {
     const recording = replayRecordingRef.current;
-    if (!gameSettings.aiReplayRecordingEnabled || !recording) return;
+    if (!gameSettings.aiReplayRecordingEnabled || !recording || replayFileAlreadySealed(recording)) return;
     const scoresByTeam: Record<string, number> = { ...(finalResult.scoresByTeam || {}) };
     Object.keys(teamsById || {}).forEach(id => {
       const team = teamsById[id];
@@ -184714,10 +186593,9 @@ function dispatchGameSettingsChange(
       : normalizedImpactPercent;
     let nextData = nextDecision.data;
     if (nextDecision.type === 'challenge' && typeof nextDecision.data?.wager === 'number' && actor.money > 0) {
-      const wagerMultiplier = 1 + Math.min(0.3, ((aggression + risk) / 100) * 0.12);
       nextData = {
         ...nextDecision.data,
-        wager: Math.max(MINIMUM_WAGER, Math.min(actor.money, Math.floor(nextDecision.data.wager * wagerMultiplier)))
+        wager: adaptiveChallengeWager(nextDecision.data.wager, actor.money, aggression, risk)
       };
     }
 
@@ -187363,12 +189241,16 @@ function dispatchGameSettingsChange(
           settings: gameSettings
         }
       );
-      return tuningChoice || {
+      const baseChoice = tuningChoice || {
         type: 'end_turn',
         description: 'Ending turn',
         data: null,
         score: 0
       };
+      if (gameSettings.adaptiveAiEnabled && aiState) {
+        return applyActorAdaptiveEffectsToDecision(aiState, { ...baseChoice, score: typeof baseChoice.score === 'number' ? baseChoice.score : 1 });
+      }
+      return baseChoice;
 
       // Sometimes make mistakes based on difficulty
       if (aiRandom() < profile.mistakeChance) {
@@ -188013,9 +189895,11 @@ function dispatchGameSettingsChange(
     }
     if (!previousProgress.finalCompleted && nextProgress.finalCompleted) {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
+      noteMatchEndedDuringAdvance();
+      finalizeReplayRecording({ winnerTeamId: null, winnerActorId: actorId, reason: 'grand tour finale', day: gameState.day, turn: gameState.turnCounter });
       addNotification(`${actorLabel} won the Grand Tour Rival Race by completing the National Champion finale.`, actorId === 'player' ? 'success' : 'ai', true, 'system');
     }
-  }, [addNotification, gameState.grandTourState, gameState.selectedMode, getActorDisplayName]);
+  }, [addNotification, finalizeReplayRecording, gameState.day, gameState.grandTourState, gameState.selectedMode, gameState.turnCounter, getActorDisplayName]);
 
   // CRITICAL FIX: Execute AI action with async/await for state consistency
   // Returns Promise<boolean> indicating success/failure
@@ -188457,7 +190341,7 @@ function dispatchGameSettingsChange(
         const cost = actionData.cost;
         if (gameSettings.sabotageEnabled && isTravelBlocked(currentAi.debuffs)) {
           addNotification(`🤖 ${currentAi.name} couldn't travel due to sabotage`, 'ai', false);
-          break;
+          if (!soloActionCommits('travel', { travelBlocked: true })) return false;
         }
         updateAiPlayerState((prev: any) => ({
           ...prev,
@@ -188585,7 +190469,7 @@ function dispatchGameSettingsChange(
         }));
         dispatchPlayer({
           type: 'MERGE_STATE',
-          payload: { debuffs: upsertDebuff(player.debuffs || [], sabotage.id, sabotage.duration) }
+          payload: { debuffs: upsertDebuff(player.debuffs || [], sabotage.id, sabotage.duration), sabotageTargetedCount: (player.sabotageTargetedCount || 0) + 1 }
         });
         addNotification(`🤖 ${currentAi.name} used ${sabotage.name}!`, 'ai', true);
         addNotification(`${sabotage.name} is active on you.`, 'warning', true);
@@ -188756,6 +190640,10 @@ function dispatchGameSettingsChange(
         }
 
         case 'refinance_advanced_loan': {
+          const refinanceTier = LOAN_TIERS.find(t => t.id === actionData.tierId);
+          if (!soloRefinanceMayRepay(currentAi, actionData.loanId, refinanceTier, gameSettings, isAdvancedLoansEnabledForActor(currentAi))) {
+            return false;
+          }
           const repaid = repayAdvancedLoanForActor('ai', actionData.loanId, false, { silent: true });
           if (!repaid) return false;
           const borrowed = takeAdvancedLoanForActor('ai', actionData.tierId, false, undefined, { silent: false });
@@ -188778,6 +190666,7 @@ function dispatchGameSettingsChange(
           'ai',
           false
         );
+        if (!soloActionCommits('think')) return false;
         break;
 
       default:
@@ -188950,8 +190839,9 @@ function dispatchGameSettingsChange(
     if (v95MatchEpochRef.current !== epochAtStart) { v96Flow('AI_FINALIZE_ABORTED', 'match replaced'); return false; }
     const live = gameStateLiveRef.current;
     const aiName = aiPlayerRef.current?.name || 'AI';
-    if (live.gameMode !== 'game') {
+    if (live.gameMode !== 'game' || advanceDayEndedMatch) {
       // Game over during the AI turn: no hand-back as if the match continued; just release the AI.
+      consumeAdvanceDayEndedMatch();
       isAiThinkingRef.current = false;
       dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
       finishSoloAiTurnClaim(soloAiClaimsRef.current, rt.turnKey);
@@ -188969,6 +190859,12 @@ function dispatchGameSettingsChange(
     const dayBefore = Number(live.day) || 0;
     if (advanceDayRef.current) advanceDayRef.current(); else console.error('[V9.6] advanceDayRef missing at AI turn end');
     v96Flow('DAY_ADVANCED', `from day ${dayBefore}`);
+    if (consumeAdvanceDayEndedMatch() || !shouldHandTurnBackAfterMatchAdvance(gameStateLiveRef.current?.gameMode)) {
+      finishSoloAiTurnClaim(soloAiClaimsRef.current, rt.turnKey);
+      rt.phase = 'finished'; setSoloAiPhase('idle');
+      v96Flow('AI_TURN_ENDED_GAME_OVER', rt.turnKey);
+      return true;
+    }
     dispatchPlayer({ type: 'RESET_ACTIONS' });
     v96Flow('PLAYER_AP_RESET', '');
     dispatchGameState({ type: 'SET_TURN', payload: 'player' });
@@ -189204,7 +191100,7 @@ function dispatchGameSettingsChange(
       switch (shortcut.action) {
         case 'endTurn':
           if (isHumanPlayerTurn(gameState) && gameState.day < gameSettings.totalDays) {
-            handleEndTurn();
+            handleEndTurnRef.current?.();
           }
           break;
         case 'openChallenges':
@@ -189703,6 +191599,12 @@ function dispatchGameSettingsChange(
       clearTimeout(teamAiTurnTimeoutRef.current);
       teamAiTurnTimeoutRef.current = null;
     }
+    clearMatchEndedDuringAdvance();
+    releaseInFlightAiTurnLocks({
+      isAiThinking: isAiThinkingRef,
+      startedTeamAiTurnKeys: startedTeamAiTurnKeysRef,
+      activeAiTurnSessions: activeAiTurnSessionRef
+    });
 
     const selectedCharacter = CHARACTERS[uiState.selectedCharacter] || CHARACTERS[0];
     const aiCharacters = pickRandomCharacters(3, [uiState.selectedCharacter]);
@@ -190170,6 +192072,7 @@ function dispatchGameSettingsChange(
     lastAutomationTurnKeyRef.current = '';
     lastAutomationDayRef.current = -1;
     rejectionPenaltyLedgerRef.current = {};
+    clearMatchEndedDuringAdvance();
     replayRecordingRef.current = null;
     pendingReplayStartRef.current = false;
     pendingReplayBranchSourceMatchIdRef.current = null;
@@ -190247,6 +192150,9 @@ function dispatchGameSettingsChange(
     // "AI is thinking" state from surviving the load and hanging the game.
     isAiThinkingRef.current = false;
     dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+    clearMatchEndedDuringAdvance();
+    replayRecordingRef.current = null;
+    pendingReplayStartRef.current = false;
     setCurrentAiAction(null);
 
     // AUDIT-BUG-002 & AUDIT-BUG-003: Clear approval request IDs and active AI turn sessions during save load
@@ -190416,15 +192322,15 @@ function dispatchGameSettingsChange(
       ? data.aiRuntime.worldRngState
       : normalizeAiSeed(data.gameSettings.worldRngSeed);
     if (data.rngRegistryState) {
-      globalRngRegistry.importStreamStates(data.rngRegistryState);
+      restoreRngRegistryForLoad(data.rngRegistryState, data.gameSettings?.worldRngSeed || data.gameSettings?.aiDeterministicSeed || 1337);
     } else {
       const seed = data.gameSettings?.worldRngSeed || data.gameSettings?.aiDeterministicSeed || 1337;
       setRngMasterSeed(seed, true);
     }
     if (data.deterministicCounters) {
-      setGlobalDeterministicCounters(data.deterministicCounters);
+      setGlobalDeterministicCounters(deterministicCountersCoveringSaveIds(data, data.deterministicCounters));
     } else {
-      resetGlobalDeterministicCounters();
+      setGlobalDeterministicCounters(deterministicCountersCoveringSaveIds(data));
     }
     const selectedCharacterIndex = CHARACTERS.findIndex(char => char.name === data.player.character.name);
 	    updateUiState({
@@ -190562,7 +192468,7 @@ function dispatchGameSettingsChange(
       rngRegistryState: config.rngRegistryState || globalRngRegistry.exportStreamStates(),
       deterministicCounters: config.deterministicCounters || { ...globalDeterministicCounters }
     };
-    applyLoadedState(day1Data);
+    applyLoadedState(applyNewSeedToBranchSave(day1Data, overrides as Record<string, unknown>));
     addNotification(`Branched from ${sourceFile.matchId}'s Day 1 configuration.`, 'success', true, 'system');
   }, [addNotification, applyLoadedState, buildSaveData, gameState.gameActivityLedger, uiState.theme]);
 
@@ -193691,8 +195597,6 @@ function dispatchGameSettingsChange(
     const nextDeposits = sanitizeRegionDeposits(workingDeposits);
     const regionEntry = { ...(nextDeposits[proposal.region] || {}) };
     const beforeSnapshot = getRegionControlSnapshot(regionEntry);
-    const highestDeposit = beforeSnapshot.highestDeposit;
-    regionEntry[actorId] = Math.max(Math.floor(regionEntry[actorId] || 0), highestDeposit + 1);
     nextDeposits[proposal.region] = regionEntry;
     const afterSnapshot = getRegionControlSnapshot(regionEntry);
 
@@ -193759,7 +195663,7 @@ function dispatchGameSettingsChange(
     if (dynamicEvt && dynamicEvt.name) {
       dispatchGameState({ type: 'SET_DYNAMIC_EVENT', payload: dynamicEvt });
     }
-    if (gameSettings?.autoModeSettings?.autoModeEnabled) {
+    if (shouldEmitAutoModeBoundary('turn_transition') && gameSettings?.autoModeSettings?.autoModeEnabled) {
       dispatchGameState({ type: 'EVALUATE_AUTO_MODE_TURN_STEP', payload: { settings: gameSettings, options: { actorId: _sourcePlayer, boundaryType: 'actor_turn_completed' } } });
     }
     if (!gameSettings.negotiationMode || !isCompetitiveMode || gameState.selectedMode === 'team_ai_vs_ai') {
@@ -194379,6 +196283,13 @@ function dispatchGameSettingsChange(
     const amount = Math.max(1, Math.floor(Number(rawAmount) || 0));
     const actorState = getActorState(actorId);
     if (!actorState) return false;
+    if (actorState.kind === 'human' && options?.consumeAction !== false) {
+      const depositAp = getActionPointCost('regional_deposit', gameSettings, false);
+      if (!actionSpendAllowed(depositAp, getRemainingActionPoints(actorState, gameSettings)).allowed) {
+        if (!options?.silent) addNotification('Not enough action points to deposit.', 'warning', false, 'deposit');
+        return false;
+      }
+    }
     const ownerKey = getRegionOwnerKey(actorId);
     if ((actorState.money || 0) < amount) {
       if (!options?.silent) {
@@ -194459,7 +196370,8 @@ function dispatchGameSettingsChange(
     }
 
     if (actorState.kind === 'human' && options?.consumeAction !== false) {
-      incrementAction();
+      const depositAp = getActionPointCost('regional_deposit', gameSettings, false);
+      if (depositAp > 0) dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: depositAp, actionId: 'regional_deposit' } });
     }
 
     if (!options?.silent) {
@@ -194542,6 +196454,10 @@ function dispatchGameSettingsChange(
     const snapshot = getRegionControlSnapshot(regionEntry);
     const actorState = getActorState(actorId);
     if (!actorState) return false;
+    if (actorState.kind === 'human' && options?.consumeAction !== false && !actionSpendAllowed(1, getRemainingActionPoints(actorState, gameSettings)).allowed) {
+      if (!options?.silent) addNotification('Not enough action points to cash out.', 'warning', false, 'deposit');
+      return false;
+    }
     const ownerKey = getRegionOwnerKey(actorId);
     const actorDeposit = Math.floor(regionEntry[ownerKey] || 0);
 
@@ -195169,7 +197085,7 @@ function dispatchGameSettingsChange(
       turn: gameState.turnCounter,
       teamId,
       actorId: request.requestingActorId,
-      type: partial ? 'partial_funding_approval' : 'approved_funding_request',
+      type: treasuryResolutionTransactionType(control, partial),
       amount,
       balanceBefore,
       balanceAfter,
@@ -196730,7 +198646,7 @@ function dispatchGameSettingsChange(
       return;
     }
     const executed = markSuggestedAction(action, 'executed', comms.committedActionIds);
-    if (executed.executed && action.regionId) {
+    if (executed.executed && action.type === 'reserve_region' && action.regionId) {
       issueTeamDirective({
         fromActorId: 'player',
         toActorId: gameState.aiCommunication?.selectedSpeakerId || ALLY_AI_ID,
@@ -197650,7 +199566,13 @@ function dispatchGameSettingsChange(
           inventory: [...(prev.inventory || []), ...purchased]
         }));
         if (actorState.kind === 'human' && options?.consumeAction !== false) {
-          incrementAction();
+          const buyAp = getActionPointCost('buy_resources', gameSettings, false);
+          const buyGate = actionSpendAllowed(buyAp, getRemainingActionPoints(actorState, gameSettings));
+          if (!buyGate.allowed) {
+            addNotification('Not enough action points to buy.', 'warning', false, 'market');
+            return;
+          }
+          if (buyGate.spend > 0) dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: buyGate.spend, actionId: 'buy_resources' } });
         }
 
         if (!options?.silent) {
@@ -197763,7 +199685,7 @@ function dispatchGameSettingsChange(
               dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: invApCost, actionId: 'investments' } });
             }
             dispatchPlayer({ type: 'UPDATE_MONEY', payload: -investment.cost });
-        dispatchPlayer({ type: 'MERGE_STATE', payload: { investments: [...(player.investments || []), regionCode] } });
+        dispatchPlayer({ type: 'ADD_INVESTMENT', payload: regionCode });
         addNotification(`Purchased ${investment.name} in ${REGIONS[regionCode]?.name || regionCode} for $${investment.cost}.`, 'success', true);
         // AP consumed via CONSUME_ACTION_POINTS above - no duplicate incrementAction
       }
@@ -197839,7 +199761,7 @@ function dispatchGameSettingsChange(
       },
       (_attempt) => {
         dispatchPlayer({ type: 'UPDATE_MONEY', payload: -effectiveCost });
-        dispatchPlayer({ type: 'MERGE_STATE', payload: { equipment: [...(player.equipment || []), itemId] } });
+        dispatchPlayer({ type: 'ADD_EQUIPMENT', payload: itemId });
         addNotification(`Purchased ${item.name} for $${effectiveCost}.`, 'success', true);
         if (equipApCost > 0) {
           dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: equipApCost, actionId: 'equipment_purchase' } });
@@ -197868,6 +199790,12 @@ function dispatchGameSettingsChange(
     // Check if player has required materials
     if (!canCraftRecipe(recipe, player.inventory)) {
       addNotification('Not enough materials to craft this item.', 'error');
+      return;
+    }
+    const tourismFree = recipe.category === 'tourism' && player.character?.craftingBonus?.effect?.categorySpeedBonus?.tourism === 1.0;
+    const craftCost = tourismFree ? 0 : (recipe.craftTime || 1);
+    if (!actionSpendAllowed(craftCost, getRemainingActionPoints(player, gameSettings)).allowed) {
+      addNotification('Not enough action points to craft.', 'warning');
       return;
     }
 
@@ -197989,7 +199917,7 @@ function dispatchGameSettingsChange(
     }
     updateActorState(resolvedTargetId, (prev: any) => ({
       ...prev,
-      debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, sabotage.duration)
+      debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, sabotage.duration), sabotageTargetedCount: (prev.sabotageTargetedCount || 0) + 1
     }));
     dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotage.cost });
     commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotage.cost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} used ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
@@ -198028,7 +199956,9 @@ function dispatchGameSettingsChange(
       setActiveSpecialAbility(null);
       setFailedChallengeData(null);
       setUsedFreeChallengeThisTurn(false);
-      dispatchPlayer({ type: 'MERGE_STATE', payload: { debuffs: tickDebuffs(player.debuffs || []) } });
+      if (!isTeamMode) {
+        dispatchPlayer({ type: 'MERGE_STATE', payload: { debuffs: debuffsAfterHumanEndTurn(player.debuffs || [], false) } });
+      }
       
       // Reset Co-Pilot deduplication set and compact panel dismissal for new turn
       setCoPilotDeduplicationSet(new Set());
@@ -198037,9 +199967,6 @@ function dispatchGameSettingsChange(
       addNotification('Your turn ended', 'info');
       // Turn-transition subsystems run after main player actions complete.
       handleTurnTransition('player');
-      if (gameSettings?.autoModeSettings?.autoModeEnabled) {
-        dispatchGameState({ type: 'EVALUATE_AUTO_MODE_TURN_STEP', payload: { settings: gameSettings, options: { actorId: '0', boundaryType: 'actor_turn_completed' } } });
-      }
 
       if (isTeamMode) {
         if (advanceToNextActorTurnRef.current) {
@@ -198078,6 +200005,7 @@ function dispatchGameSettingsChange(
       confirmEndTurn();
     }
   }, [player, gameState, gameSettings, addNotification, handleTurnTransition, isTeamMode, showConfirmation, updatePersonalRecords]);
+  handleEndTurnRef.current = handleEndTurn;
 
   // V6.7 Phase 3a: single entry point / performance safeguard for all Phase 3a state mutation
   // (plan generation/reevaluation, plan-driven auto-reservation). The early-return guard below is
@@ -198263,6 +200191,7 @@ function dispatchGameSettingsChange(
   };
 
   const advanceDay = useCallback(() => {
+    if (advanceDayEndedMatch) return;
     const prevDay = gameState.day;
     const currentPlayer = player;
     const currentAi = aiPlayerRef.current;
@@ -198542,7 +200471,8 @@ function dispatchGameSettingsChange(
               currentTurn,
               currentDayWeather,
               currentDaySeason,
-              activeEventsList
+              activeEventsList,
+              gameState
             );
           }, 0);
 
@@ -198800,6 +200730,12 @@ function dispatchGameSettingsChange(
       projectedPrimaryPlayerValue = projectedTeamMetricValues[gameSettings.winCondition].player;
       projectedPrimaryOpponentValue = projectedTeamMetricValues[gameSettings.winCondition].ai;
 
+      const sealTeamEnd = (reason: string, winnerTeamId: string | null) => {
+        noteMatchEndedDuringAdvance();
+        dispatchPlayer({ type: 'LOAD_STATE', payload: projectedPlayer });
+        playerRef.current = projectedPlayer;
+        finalizeReplayRecording({ winnerTeamId, winnerActorId: null, reason, day: newDay, turn: projectedTurnCounter });
+      };
       const playerStreak = projectedPlayerTeamCash < BANKRUPTCY_THRESHOLD ? gameState.bankruptcyTracker.player + 1 : 0;
       const aiStreak = projectedOpponentTeamCash < BANKRUPTCY_THRESHOLD ? gameState.bankruptcyTracker.ai + 1 : 0;
       dispatchGameState({ type: 'SET_BANKRUPTCY_TRACKER', payload: { player: playerStreak, ai: aiStreak } });
@@ -198811,6 +200747,7 @@ function dispatchGameSettingsChange(
       } else if (playerStreak >= BANKRUPTCY_STREAK_DAYS) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
         addNotification('Bankruptcy! Your team fell below $50 for 3 days. The AI squad wins.', 'error', true);
+        sealTeamEnd('team bankruptcy', TEAM_OPPONENT_ID);
         return;
       }
 
@@ -198821,6 +200758,7 @@ function dispatchGameSettingsChange(
       } else if (aiStreak >= BANKRUPTCY_STREAK_DAYS) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
         addNotification('The opposing team went bankrupt for 3 days. Victory!', 'success', true);
+        sealTeamEnd('opposing team bankruptcy', TEAM_PLAYER_ID);
         return;
       }
 
@@ -198835,11 +200773,13 @@ function dispatchGameSettingsChange(
       if (playerDominance >= 5) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
         addNotification(`Mercy rule: your team dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days. Victory!`, 'success', true);
+        sealTeamEnd('team mercy', TEAM_PLAYER_ID);
         return;
       }
       if (aiDominance >= 5) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
         addNotification(`Mercy rule: the AI squad dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days straight.`, 'ai', true);
+        sealTeamEnd('team mercy', TEAM_OPPONENT_ID);
         return;
       }
 
@@ -198858,6 +200798,7 @@ function dispatchGameSettingsChange(
             dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
             dispatchGameState({ type: 'SET_SCENARIO_OUTCOME', payload: outcome });
             addNotification(outcome.reason, outcome.isVictory ? 'success' : 'error', true, 'system');
+            sealTeamEnd(outcome.reason || 'scenario', outcome.isVictory ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID);
             return;
           }
         }
@@ -199711,6 +201652,7 @@ function dispatchGameSettingsChange(
           true,
           'system'
         );
+        noteMatchEndedDuringAdvance();
         finalizeReplayRecording({
           winnerTeamId: outcome.playerWon ? TEAM_PLAYER_ID : TEAM_OPPONENT_ID,
           winnerActorId: null,
@@ -199759,6 +201701,8 @@ function dispatchGameSettingsChange(
 
     projectedPlayer.actionsUsedThisTurn = 0;
     projectedPlayer.overridesUsedToday = 0;
+    projectedPlayer.overrideActionsGranted = 0;
+    projectedPlayer.usedFreeChallengeThisTurn = false;
     projectedPlayer.overrideFatigue = Math.max(0, (projectedPlayer.overrideFatigue || 0) * OVERRIDE_FATIGUE_DECAY);
     projectedPlayer.lentActionsUsedToday = 0;
     projectedPlayer.receivedActionsUsedToday = 0;
@@ -199849,7 +201793,8 @@ function dispatchGameSettingsChange(
           newDay,
           currentDayWeather,
           currentDaySeason,
-          activeEventsList
+          activeEventsList,
+          gameState
         );
       }, 0);
       if (playerInvestmentIncome > 0) {
@@ -199866,7 +201811,8 @@ function dispatchGameSettingsChange(
           newDay,
           currentDayWeather,
           currentDaySeason,
-          activeEventsList
+          activeEventsList,
+          gameState
         );
       }, 0);
       if (aiInvestmentIncome > 0) {
@@ -199957,6 +201903,22 @@ function dispatchGameSettingsChange(
     }
 
     // Bankruptcy tracking and mercy rule
+    let soloDayCommitted = false;
+    const commitSoloDayProjection = () => {
+      if (soloDayCommitted) return;
+      soloDayCommitted = true;
+      dispatchPlayer({ type: 'MERGE_STATE', payload: soloDayBoundaryPlayerMerge(projectedPlayer) });
+      dispatchPlayer({ type: 'SET_LOANS', payload: projectedPlayer.loans });
+      dispatchPlayer({ type: 'SET_INVENTORY', payload: projectedPlayer.inventory });
+      dispatchPlayer({ type: 'UPDATE_MONEY', payload: projectedPlayer.money - currentPlayer.money });
+      setAiPlayer(projectedAi);
+      aiPlayerRef.current = projectedAi;
+    };
+    const sealSoloEnd = (reason: string, winnerActorId: string | null, commitCash: boolean) => {
+      noteMatchEndedDuringAdvance();
+      if (commitCash) commitSoloDayProjection();
+      finalizeReplayRecording({ winnerTeamId: null, winnerActorId, reason, day: newDay, turn: gameState.turnCounter });
+    };
     const updatedPlayerWorth = computeNetWorth(projectedPlayer);
     const updatedAiWorth = computeNetWorth(projectedAi);
     const playerBroke = projectedPlayer.money < BANKRUPTCY_THRESHOLD;
@@ -199966,17 +201928,25 @@ function dispatchGameSettingsChange(
     const aiStreak = aiBroke ? gameState.bankruptcyTracker.ai + 1 : 0;
     dispatchGameState({ type: 'SET_BANKRUPTCY_TRACKER', payload: { player: playerStreak, ai: aiStreak } });
 
+    const failurePolicy = soloVersusFailurePolicy(gameState.selectedMode);
     if (playerStreak === 1) {
       addNotification('⚠️ Funds critically low. Three days under $50 triggers bankruptcy.', 'warning', true);
     } else if (playerStreak === 2) {
       addNotification('⚠️ One day until bankruptcy! Improve cash above $50.', 'warning', true);
-    } else if (playerStreak >= BANKRUPTCY_STREAK_DAYS) {
+    } else if (playerStreak >= BANKRUPTCY_STREAK_DAYS && failurePolicy.endOnPlayerBankruptcy) {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
-      addNotification('Bankruptcy! You fell below $50 for 3 days. AI wins.', 'error', true);
+      addNotification(
+        failurePolicy.bankruptcyNamesAiWinner
+          ? 'Bankruptcy! You fell below $50 for 3 days. AI wins.'
+          : 'Bankruptcy! You fell below $50 for 3 days.',
+        'error',
+        true
+      );
+      sealSoloEnd(failurePolicy.bankruptcyNamesAiWinner ? 'player bankruptcy' : 'player bankruptcy', failurePolicy.bankruptcyNamesAiWinner ? 'ai' : 'player', true);
       return;
     }
 
-    if (gameState.selectedMode === 'ai') {
+    if (failurePolicy.endOnAiBankruptcy) {
       if (aiStreak === 1) {
         addNotification('🤖 AI is broke. Three days under $50 will end the game.', 'ai', true);
       } else if (aiStreak === 2) {
@@ -199984,6 +201954,7 @@ function dispatchGameSettingsChange(
       } else if (aiStreak >= BANKRUPTCY_STREAK_DAYS) {
         dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
         addNotification('AI bankrupt for 3 days. You win!', 'success', true);
+        sealSoloEnd('ai bankruptcy', 'player', true);
         return;
       }
     }
@@ -200012,14 +201983,16 @@ function dispatchGameSettingsChange(
       : (soloPrimaryPlayerValue > 0 && soloPrimaryAiValue / soloPrimaryPlayerValue >= 5 ? gameState.dominanceTracker.ai + 1 : 0);
     dispatchGameState({ type: 'SET_DOMINANCE_TRACKER', payload: { player: playerDominance, ai: aiDominance } });
 
-    if (playerDominance >= 5) {
+    if (failurePolicy.applyMercy && playerDominance >= 5) {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
       addNotification(`Mercy rule: you dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days. Victory!`, 'success', true);
+      sealSoloEnd('mercy', 'player', true);
       return;
     }
-    if (aiDominance >= 5) {
+    if (failurePolicy.applyMercy && aiDominance >= 5) {
       dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
       addNotification(`Mercy rule: AI dominated on ${WIN_METRIC_LABELS[gameSettings.winCondition].toLowerCase()} for 5 days straight.`, 'ai', true);
+      sealSoloEnd('mercy', 'ai', true);
       return;
     }
 
@@ -200092,27 +202065,7 @@ function dispatchGameSettingsChange(
     }
 
     // Commit projected player state changes
-    dispatchPlayer({
-      type: 'MERGE_STATE',
-      payload: {
-        actionsUsedThisTurn: projectedPlayer.actionsUsedThisTurn,
-        overridesUsedToday: projectedPlayer.overridesUsedToday,
-        overrideFatigue: projectedPlayer.overrideFatigue,
-        lentActionsUsedToday: projectedPlayer.lentActionsUsedToday,
-        receivedActionsUsedToday: projectedPlayer.receivedActionsUsedToday,
-        completedThisSeason: projectedPlayer.completedThisSeason,
-        advancedLoans: projectedPlayer.advancedLoans,
-        creditScore: projectedPlayer.creditScore,
-        loanHistory: projectedPlayer.loanHistory,
-        daysSinceLastBankruptcy: projectedPlayer.daysSinceLastBankruptcy
-      }
-    });
-    dispatchPlayer({ type: 'SET_LOANS', payload: projectedPlayer.loans });
-    dispatchPlayer({ type: 'SET_INVENTORY', payload: projectedPlayer.inventory });
-    dispatchPlayer({ type: 'UPDATE_MONEY', payload: projectedPlayer.money - currentPlayer.money });
-
-    setAiPlayer(projectedAi);
-    aiPlayerRef.current = projectedAi;
+    commitSoloDayProjection();
 
     if (!gameSettings.showDayTransition) {
       addNotification(`Market trend: ${nextTrend}`, 'market', true);
@@ -200137,6 +202090,7 @@ function dispatchGameSettingsChange(
             dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
             dispatchGameState({ type: 'SET_SCENARIO_OUTCOME', payload: outcome });
             addNotification(outcome.reason, outcome.isVictory ? 'success' : 'error', true, 'system');
+            sealSoloEnd(outcome.reason || 'scenario', outcome.isVictory ? 'player' : 'ai', false);
             return;
           }
         }
@@ -200147,6 +202101,8 @@ function dispatchGameSettingsChange(
 	      dispatchGameState({ type: 'SET_GAME_MODE', payload: 'end' });
 	      if (gameState.selectedMode === 'grand_tour') {
           const outcome = evaluateGrandTourOutcome(projectedPlayer as ActorState, projectedAi as ActorState, gameState.grandTourState);
+          noteMatchEndedDuringAdvance();
+          finalizeReplayRecording({ winnerTeamId: null, winnerActorId: outcome.playerWon ? 'player' : 'ai', reason: outcome.reason || 'grand tour day limit', day: newDay, turn: gameState.turnCounter });
           addNotification(
             `Game Over! ${outcome.playerWon ? 'You win' : 'AI wins'} the Grand Tour tie-break. ${outcome.reason}`,
             outcome.playerWon ? 'success' : 'ai',
@@ -200165,6 +202121,7 @@ function dispatchGameSettingsChange(
             true,
             'system'
           );
+          noteMatchEndedDuringAdvance();
           finalizeReplayRecording({
             winnerTeamId: null,
             winnerActorId: outcome.playerWon ? 'player' : 'ai',
@@ -200173,6 +202130,8 @@ function dispatchGameSettingsChange(
             turn: gameState.turnCounter
           });
 	      } else {
+	        noteMatchEndedDuringAdvance();
+	        finalizeReplayRecording({ winnerTeamId: null, winnerActorId: 'player', reason: 'final day', day: newDay, turn: gameState.turnCounter });
 	        addNotification(`Game Over! Final Day Reached (${gameSettings.totalDays} days).`, 'success', true, 'system');
 	      }
 	    }
@@ -200857,7 +202816,7 @@ function dispatchGameSettingsChange(
     }));
     updateActorState(targetActor.id, (prev: any) => ({
       ...prev,
-      debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, sabotage.duration)
+      debuffs: upsertDebuff(prev.debuffs || [], sabotage.id, sabotage.duration), sabotageTargetedCount: (prev.sabotageTargetedCount || 0) + 1
     }));
     appendTeammatePerformanceSample(actor.teamId, actorId, {
       turn: gameState.turnCounter,
@@ -201336,6 +203295,17 @@ function dispatchGameSettingsChange(
         actionSucceeded = runCanonicalTeamAction('merge_timeline_outcomes', { sourceTimelineId, targetTimelineId });
         break;
       }
+      case 'create_whatif_timeline':
+      case 'createWhatIfTimeline': {
+        const act = action as unknown as Record<string, any>;
+        const timelineId = act.data?.timelineId || act.parameters?.timelineId;
+        const name = act.data?.name || act.parameters?.name || act.data?.title || act.parameters?.title;
+        actionSucceeded = runCanonicalTeamAction('create_whatif_timeline', {
+          ...(timelineId ? { timelineId } : {}),
+          ...(name ? { name } : {})
+        });
+        break;
+      }
       case 'end_turn': {
         const turnKey = `${actorId}:${gameState.day}:${gameState.turnCounter}`;
         if (humanAutomationLastEndTurnKeyRef.current === turnKey) {
@@ -201756,6 +203726,23 @@ function dispatchGameSettingsChange(
         const gate = evaluateActionRequirements(actor, built.action, { cost: built.resolvedCost, wager: built.action.data?.wager }, [automation.conditions]);
         if (!gate.approved) continue;
       }
+      const automationGuardian = evaluateGuardianRiskPipeline({
+        settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(),
+        gameState,
+        actorId: actor.id || 'player',
+        actionType: built.action.type || 'automation_action',
+        actionPayload: built.action.data || {},
+        source: 'human_automation',
+        day: gameState.day || 1,
+        turn: gameState.turnCounter || 1,
+        currentActionTokens: (actor as any).actionPoints || 3,
+        currentCash: actor.money,
+        activeContracts: [],
+        activeExpeditions: [],
+        activePlans: [],
+        isReplay: false
+      });
+      if (guardianBlocksAutomation(automationGuardian, gameSettings.guardianAiSettings?.protectionLevel)) continue;
       if (automation.authorityMode === 'confirm_before_running') {
         // Bug/polish pass (post-HA3): skip if this automation already has an unresolved
         // confirm_before_running request sitting in the queue (e.g. dismissed without resolving,
@@ -201826,6 +203813,7 @@ function dispatchGameSettingsChange(
   const executeHumanAutomationNow = useCallback(async (automationId: string) => {
     const automation = humanAutomations.find(a => a.id === automationId);
     if (!automation) return;
+    if (!humanAutomationRunNowAllowed(gameSettings, automation)) return;
     const actor = getActorState('player');
     if (!actor || actor.kind !== 'human') return;
     const spendableCash = getActorSpendableCash(actor, gameSettings.teamCashVaultEnabled);
@@ -201837,6 +203825,26 @@ function dispatchGameSettingsChange(
     const safety = checkHumanAutomationSafetyLimits(automation, spendableCash, built.resolvedCost);
     if (!safety.ok) {
       addNotification(`Could not execute "${automation.name}": ${safety.reason}`, 'error', false, 'system');
+      return;
+    }
+    const runNowGuardian = evaluateGuardianRiskPipeline({
+      settings: gameSettings.guardianAiSettings || createDefaultGuardianAiSettings(),
+      gameState,
+      actorId: actor.id || 'player',
+      actionType: built.action.type || 'automation_action',
+      actionPayload: built.action.data || {},
+      source: 'human_automation',
+      day: gameState.day || 1,
+      turn: gameState.turnCounter || 1,
+      currentActionTokens: (actor as any).actionPoints || 3,
+      currentCash: actor.money,
+      activeContracts: [],
+      activeExpeditions: [],
+      activePlans: [],
+      isReplay: false
+    });
+    if (guardianBlocksAutomation(runNowGuardian, gameSettings.guardianAiSettings?.protectionLevel)) {
+      addNotification(`Could not execute "${automation.name}": Guardian blocked it.`, 'warning', false, 'system');
       return;
     }
     if (automation.conditions) {
@@ -205435,7 +207443,11 @@ function dispatchGameSettingsChange(
     if (!actor) {
       return { type: 'end_turn', description: 'End turn' };
     }
-    if (gameSettings.opponentGenomeId && actor.teamId === TEAM_OPPONENT_ID) {
+    const ranked = getRankedTeamAiDecisions(actorId);
+    let decisions = rejectedSignatures && rejectedSignatures.size > 0
+      ? ranked.filter(c => !rejectedSignatures.has(getDecisionSignature(c)))
+      : ranked;
+    if (gameSettings.opponentGenomeId && actor.teamId === TEAM_OPPONENT_ID && decisions.length > 0) {
       const tuningWeights = resolveLiveAiGenomeWeights(gameSettings, tuningArchiveRef.current, actorId);
       const tuningCanonical = canonicalStateFromLiveRuntime({
         gameState,
@@ -205451,14 +207463,8 @@ function dispatchGameSettingsChange(
         createCallbackSeededRng(aiRandom),
         { difficultyKey: String(gameState.aiDifficulty || 'expert'), settings: gameSettings }
       );
-      if (tuned && !(rejectedSignatures && rejectedSignatures.has(getDecisionSignature(tuned)))) {
-        return tuned;
-      }
+      if (tuned?.type) decisions = preferRankedDecisionType(decisions, tuned.type);
     }
-    const ranked = getRankedTeamAiDecisions(actorId);
-    const decisions = rejectedSignatures && rejectedSignatures.size > 0
-      ? ranked.filter(c => !rejectedSignatures.has(getDecisionSignature(c)))
-      : ranked;
     const difficultyBehavior = getTeamDifficultyBehavior(actor.teamId);
     if (decisions.length === 0) {
       updateActorState(actorId, (prev: any) => ({
@@ -205881,10 +207887,6 @@ function dispatchGameSettingsChange(
       return;
     }
 
-    if (gameSettings?.autoModeSettings?.autoModeEnabled) {
-      dispatchGameState({ type: 'EVALUATE_AUTO_MODE_TURN_STEP', payload: { settings: gameSettings, options: { actorId: gameState.currentActorId || '0', boundaryType: 'actor_turn_completed' } } });
-    }
-
     dispatchGameState({
       type: 'ADVANCE_ACTOR_TURN',
       payload: {
@@ -205935,8 +207937,17 @@ function dispatchGameSettingsChange(
     // for Co-Pilot when the order wraps) → advanceDay() on wrap. The forced-actor ref only seeds the
     // first AI turn after the human's End Turn, so it is cleared here.
     const copilotLiveHandoff = false;
+    const forcedSeat = coPilotForcedAiActorIdRef.current;
     coPilotForcedAiActorIdRef.current = null;
     const session = activeAiTurnSessionRef.current[actorId];
+    const liveActorId = gameStateLiveRef.current?.currentActorId;
+    if (!copilotLiveHandoff && !forcedSeat && liveActorId && liveActorId !== actorId) {
+      if (session) session.isFinished = true;
+      delete activeAiTurnSessionRef.current[actorId];
+      isAiThinkingRef.current = false;
+      dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+      return;
+    }
     if (session) {
       assertApprovalSessionInvariants(session, 'finishTeamAiTurn:pre');
     }
@@ -206014,7 +208025,7 @@ function dispatchGameSettingsChange(
       if (actorId === 'ai') {
         handleTurnTransition('ai');
       }
-      if (gameSettings?.autoModeSettings?.autoModeEnabled) {
+      if (shouldEmitAutoModeBoundary('finish_team_ai') && gameSettings?.autoModeSettings?.autoModeEnabled) {
         dispatchGameState({ type: 'EVALUATE_AUTO_MODE_TURN_STEP', payload: { settings: gameSettings, options: { actorId, boundaryType: 'actor_turn_completed' } } });
       }
       dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
@@ -206932,6 +208943,7 @@ function dispatchGameSettingsChange(
   const performTeamAiTurn = useCallback(async () => {
     const live = gameStateLiveRef.current || gameState;
     const actorId = coPilotForcedAiActorIdRef.current || live.currentActorId || '';
+    const teamTurnOwnedLiveSeat = !coPilotForcedAiActorIdRef.current;
     const turnKey = `${actorId}:${live.turnCounter}`;
     if (!isTeamMode || live.gameMode !== 'game' || (live.isAiThinking && !coPilotForcedAiActorIdRef.current) || isAiThinkingRef.current) {
       startedTeamAiTurnKeysRef.current.delete(turnKey);
@@ -206966,6 +208978,11 @@ function dispatchGameSettingsChange(
     const teamEpochAtStart = v95MatchEpochRef.current;
     const TEAM_AI_TURN_STALE = { staleTeamAiTurn: true };
     const throwIfTeamTurnStale = () => { if (v95MatchEpochRef.current !== teamEpochAtStart) throw TEAM_AI_TURN_STALE; };
+    const throwIfTeamSeatMoved = () => {
+      if (!teamTurnOwnedLiveSeat) return;
+      const nowId = gameStateLiveRef.current?.currentActorId;
+      if (nowId && nowId !== actorId) throw TEAM_AI_TURN_STALE;
+    };
     try {
       if (!copilotWaitingHandoff) {
         refreshTeamLiquidityLedger(actor.teamId);
@@ -207264,7 +209281,7 @@ function dispatchGameSettingsChange(
       setCoPilotStartPhase('team_ai_rank');
       await new Promise<void>((resolve) => { afterNextPaint(() => resolve()); });
       while (actionsTaken < actionBudget) {
-        throwIfTeamTurnStale();
+        throwIfTeamTurnStale(); throwIfTeamSeatMoved();
         const roundPlanEntry = (actionsTaken === 0 && gameSettings.teamCompetitiveAiEnabled && gameSettings.parallelAiPlanningEnabled)
           ? teamRoundPlanRef.current?.[actor.id]
           : undefined;
@@ -207490,9 +209507,9 @@ function dispatchGameSettingsChange(
           console.warn('[Diagnostic Inspector Guard] Non-fatal pre-execution diagnostic error:', diagError);
         }
 
-        throwIfTeamTurnStale();
+        throwIfTeamTurnStale(); throwIfTeamSeatMoved();
         const success = (revalidated && requirementsResult.approved) ? await executeTeamAiAction(actor.id, decision as unknown as AIAction) : false;
-        throwIfTeamTurnStale();
+        throwIfTeamTurnStale(); throwIfTeamSeatMoved();
 
         try {
           if (pipelineExecutionBefore) {
@@ -207556,9 +209573,9 @@ function dispatchGameSettingsChange(
           }
           if (dispatch === 'fallback') {
             const fallbackDecision = { type: 'think', description: 'Requirement fallback', data: {} } as unknown as ScoredTeamAiDecision;
-            throwIfTeamTurnStale();
+            throwIfTeamTurnStale(); throwIfTeamSeatMoved();
             const fallbackSuccess = await executeTeamAiAction(actor.id, fallbackDecision as unknown as AIAction);
-            throwIfTeamTurnStale();
+            throwIfTeamTurnStale(); throwIfTeamSeatMoved();
             if (!fallbackSuccess) break;
             successfulActions += 1;
             checkRoleFulfillment(actor, fallbackDecision.type);
@@ -207787,11 +209804,16 @@ function dispatchGameSettingsChange(
         }
       }
 
-      throwIfTeamTurnStale();
+      throwIfTeamTurnStale(); throwIfTeamSeatMoved();
       finishTeamAiTurn(actor.id);
     } catch (error) {
       if (error === TEAM_AI_TURN_STALE) {
-        // The match was replaced; the load / restart already reset turn ownership and thinking flags.
+        // Epoch change: init / load / restart already released the lock.
+        // Same match, seat already moved: release the lock without a second advance.
+        if (v95MatchEpochRef.current === teamEpochAtStart) {
+          isAiThinkingRef.current = false;
+          dispatchGameState({ type: 'SET_AI_THINKING', payload: false });
+        }
         setCoPilotStartPhase(`team_ai_abandoned_stale:${actor.id}`);
         return;
       }
@@ -211830,7 +213852,7 @@ function dispatchGameSettingsChange(
     Object.entries(teamsById || {}).forEach(([tid, t]: [string, any]) => { ownerNames[tid] = String(t?.name || (tid === TEAM_PLAYER_ID ? 'Your team' : 'Rival team')); ownerTeams[tid] = tid; });
     const inv = (a: any) => { const out: Record<string, number> = {}; (Array.isArray(a?.inventory) ? a.inventory : []).forEach((it: any) => { const k = typeof it === 'string' ? it : String(it?.name || ''); if (k) out[k] = (out[k] || 0) + 1; }); return out; };
     const rawProjects = gameState.infrastructureProjects || {};
-    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 16).map((p: any) => { const total = Number(p.totalCost || p.fundingGoal || 0); const inv2 = Number(p.totalInvestedMoney ?? p.currentFunding ?? 0); return { id: String(p.id), title: String(p.title || p.name || p.id), regionId: p.regionId ? String(p.regionId) : null, status: p.projectType && /^(active|upgraded)$/.test(String(p.status)) ? 'completed' : String(p.status || 'planned'), progress: total > 0 ? Math.max(0, Math.min(1, inv2 / total)) : /complet/.test(String(p.status)) ? 1 : 0 }; });
+    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 64).map((p: any) => { const total = Number(p.totalCost || p.fundingGoal || 0); const inv2 = Number(p.totalInvestedMoney ?? p.currentFunding ?? 0); return { id: String(p.id), title: String(p.title || p.name || p.id), regionId: p.regionId ? String(p.regionId) : null, status: p.projectType && /^(active|upgraded)$/.test(String(p.status)) ? 'completed' : String(p.status || 'planned'), progress: total > 0 ? Math.max(0, Math.min(1, inv2 / total)) : /complet/.test(String(p.status)) ? 1 : 0 }; });
     let contracts: SWRInputs['contracts'] = [];
     try { contracts = listRegionalContracts(gameState).slice(0, 16).map((c: any) => ({ id: String(c.id), title: String(c.title || c.name || c.id), regionId: c.regionId ? String(c.regionId) : null, status: String(c.status || 'available'), rewardMoney: Number(c.rewardMoney ?? c.reward ?? c.payout ?? 0), turnsRemaining: typeof c.turnsRemaining === 'number' ? c.turnsRemaining : null, assignedActorId: c.assignedActorId ? String(c.assignedActorId) : null })); } catch { contracts = []; }
     const teams: SWRInputs['teams'] = isTeamMode ? Object.entries(teamsById || {}).map(([tid, t]: [string, any]) => {
@@ -211881,7 +213903,7 @@ function dispatchGameSettingsChange(
     const devs = (gameState.regionalDevLevels || {}) as Record<string, any>;
     const stab = gameSettings.publicStabilityEnabled && gameState.publicStabilityState ? (gameState.publicStabilityState.regionalStability || {}) as Record<string, number> : null;
     const rawProjects = gameState.infrastructureProjects || {};
-    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 24).map((p: any) => {
+    const projects = (Array.isArray(rawProjects) ? rawProjects : Object.values(rawProjects)).filter(Boolean).slice(0, 64).map((p: any) => {
       const total = Number(p.totalCost || 0); const inv = Number(p.totalInvestedMoney || 0);
       return { id: String(p.id), title: String(p.title || p.id), regionId: p.regionId ? String(p.regionId) : null, projectType: String(p.projectType || ''), status: String(p.status || 'locked'), progress: total > 0 ? Math.max(0, Math.min(1, inv / total)) : 0, remainingCost: Math.max(0, total - inv), completionTurn: typeof p.completionTurn === 'number' ? p.completionTurn : null };
     });
@@ -212177,7 +214199,7 @@ function dispatchGameSettingsChange(
   const icPersisted = useMemo(() => sanitizeInnovationPersisted(icStoredRaw), [icStoredRaw]);
   const icPersistedRef = useRef<InnovationPersisted | null>(icPersisted); icPersistedRef.current = icPersisted;
   const icSectorKey = JSON.stringify(Object.keys(lrState?.regions || {}).sort().map(k => [k, Math.round(Number((lrState as any)?.regions?.[k]?.sectors?.renewables || 0))]));
-  const icModifiers = useMemo<CapabilityModifiers>(() => (icEnabled ? innovationCapabilityModifiers(icPersisted, Object.fromEntries(Object.entries((lrState?.regions || {}) as Record<string, any>).map(([k, r]) => [k, r?.sectors || {}]))) : { national: {}, industries: {} }),
+  const icModifiers = useMemo<CapabilityModifiers>(() => innovationCapabilityModifiers(icPersisted, Object.fromEntries(Object.entries((lrState?.regions || {}) as Record<string, any>).map(([k, r]) => [k, r?.sectors || {}]))),
     [icEnabled, icPersisted, icSectorKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const nsModifiersLive = useMemo(() => mergeCapabilityModifiers(nsScenarioModifiers, icModifiers.national), [nsScenarioModifiers, icModifiers]);
   const nsInputs = useMemo<NationalSystemsInputs>(() => buildNationalSystemsInputs({
@@ -212300,7 +214322,7 @@ function dispatchGameSettingsChange(
   attachInfraView();
   const inDiagRef = useRef<{ recomputes: number; lastReason: string; lastMs: number; eventsEmitted: number }>({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0 });
   useEffect(() => {
-    if (!inEnabled || !nsState) return;
+    if (!inEnabled || !nsState || gameSettings.industriesEnabled === false) return;
     const prev = inPersistedRef.current;
     if (prev && prev.inputHash === inHash && prev.initializedTurn !== null) return;
     const res = computeStrategicInfrastructureNetworks(inInputs, prev && prev.initializedTurn !== null ? prev : null);
@@ -212458,7 +214480,7 @@ function dispatchGameSettingsChange(
   const ndProfileRef = useRef<NationalDevelopmentProfile | null>(ndProfile); ndProfileRef.current = ndProfile;
   const ndDiagRef = useRef({ recomputes: 0, lastReason: 'not yet computed', lastMs: 0, eventsEmitted: 0 });
   useEffect(() => {
-    if (!ndEnabled || !ndInputs || gameState.gameMode !== 'game') return;
+    if (!ndEnabled || !ndInputs || gameState.gameMode !== 'game' || gameSettings.megaprojectsEnabled === false) return;
     const prev = ndPersistedRef.current;
     if (prev && prev.inputHash === ndHash && prev.current.lastTurn === ndInputs.turn) return;
     const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
@@ -212760,10 +214782,30 @@ function dispatchGameSettingsChange(
   }, [egState, egInputs, egPersisted, nsInputs, scInputs, npViewerId, npActors]);
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, geography: egEnabled ? egView : null };
 
-  // ---- V10.10 Workforce & V10.11 Adaptive Governance, Institutions & State Capacity: live wiring ----------
+  const capEnabled = Boolean(nsEnabled && gameSettings.strategicCapitalEnabled !== false);
+  const capState = useMemo(() => {
+    if (!capEnabled || !nsState) return null;
+    try {
+      const inputs = buildStrategicCapitalInputs({
+        turn: lrInputs.turn,
+        actorId: player?.id || 'player',
+        cash: Number(player?.money) || 0,
+        projects: gameState.infrastructureProjects,
+        regionDeposits: gameState.regionDeposits,
+        national: nsState,
+        industries: scState,
+        networks: inState
+      });
+      return computeStrategicCapital(inputs, (gameState as any).strategicCapital || null).state;
+    } catch (err) {
+      console.warn('[Strategic Capital] skipped:', err);
+      return null;
+    }
+  }, [capEnabled, nsState, lrInputs.turn, player?.id, player?.money, gameState.infrastructureProjects, gameState.regionDeposits, (gameState as any).strategicCapital, scState, inState]);
   const wfEnabled = Boolean(nsEnabled && gameSettings.workforceHumanCapitalEnabled !== false);
   const wfStoredRaw = (gameState as any).workforceHumanCapital;
   const wfPersisted = useMemo(() => (wfStoredRaw ? sanitizeWorkforcePersisted(wfStoredRaw) : null), [wfStoredRaw]);
+  const wfPersistedLiveRef = useRef<any>(null);
   const wfState = useMemo<NationalWorkforceState | null>(() => {
     if (!wfEnabled || !nsState) return null;
     const wfInputs = buildWorkforceInputsFromGameState({
@@ -212772,10 +214814,21 @@ function dispatchGameSettingsChange(
       gameState,
       economicGeography: egEnabled ? egState : null,
       systemicRisk: srEnabled ? srState : null,
-      nationalPriorities: npEnabled ? npState : null
+      nationalPriorities: npEnabled ? npState : null,
+      strategicCapital: capEnabled ? capState : null
     });
-    return computeNationalWorkforce(wfInputs, wfPersisted || undefined).state;
-  }, [wfEnabled, nsState, lrInputs.turn, player, gameState.infrastructureProjects, gameState.regionalContracts, egEnabled, egState, srEnabled, srState, npEnabled, npState, wfPersisted]);
+    const workforceResult = computeNationalWorkforce(wfInputs, wfPersisted || undefined);
+    wfPersistedLiveRef.current = workforceResult.persisted;
+    return workforceResult.state;
+  }, [wfEnabled, nsState, lrInputs.turn, player, gameState.infrastructureProjects, gameState.regionalContracts, egEnabled, egState, srEnabled, srState, npEnabled, npState, wfPersisted, capEnabled, capState]);
+  useEffect(() => {
+    if (!wfEnabled || gameState.gameMode !== 'game') return;
+    const persisted = wfPersistedLiveRef.current;
+    if (!persisted) return;
+    const previous = (gameState as any).workforceHumanCapital;
+    if (previous && previous.lastComputedTurn === persisted.lastComputedTurn && previous.lastInputHash === persisted.lastInputHash) return;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { workforceHumanCapital: persisted } as any });
+  }, [wfEnabled, wfState, gameState.gameMode, (gameState as any).workforceHumanCapital]);
 
   const sc11Enabled = Boolean(nsEnabled && gameSettings.stateCapacityEnabled !== false);
   const sc11StoredRaw = (gameState as any).stateCapacity;
@@ -212788,6 +214841,7 @@ function dispatchGameSettingsChange(
       viewerId: npViewerId,
       gameState,
       player,
+      strategicCapital: capEnabled ? capState : null,
       regionalFactions: rfState,
       nationalSystems: nsState,
       industries: scState,
@@ -212885,6 +214939,16 @@ function dispatchGameSettingsChange(
     const prev = pf12PersistedRef.current;
     if (prev && prev.lastInputHash === pf12Hash) return;
     const res = computeNationalPublicFinance(pf12Inputs, prev);
+    if (res.events.length && pf12Enabled) {
+      try {
+        const day = Number(gameState.day || 1);
+        const roots = publicFinanceWorldRoots(true, res.events, lrObservers, day);
+        if (roots.length) {
+          const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), roots, swrInputs, { handlers: swrHandlers });
+          persistWorldReaction(out.state);
+        }
+      } catch (err) { console.warn('[Public finance] world reaction skipped:', err); }
+    }
     pf12PersistedRef.current = res.persisted;
     dispatchGameState({ type: 'LOAD_STATE', payload: { publicFinance: res.persisted, publicFinanceState: res.state } as any });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -212964,6 +215028,16 @@ function dispatchGameSettingsChange(
     const prev = hh13PersistedRef.current;
     if (prev && prev.lastInputHash === hh13Hash) return;
     const res = computeNationalHouseholdEconomy(hh13Inputs, prev, hh13StateRef.current);
+    if (res.events.length && hh13Enabled) {
+      try {
+        const day = Number(gameState.day || 1);
+        const roots = householdWorldRoots(true, res.events, lrObservers, day);
+        if (roots.length) {
+          const out = processWorldReactions(sanitizeWorldReactionState(swrStateRef.current), roots, swrInputs, { handlers: swrHandlers });
+          persistWorldReaction(out.state);
+        }
+      } catch (err) { console.warn('[Households] world reaction skipped:', err); }
+    }
     hh13PersistedRef.current = res.persisted;
     dispatchGameState({ type: 'LOAD_STATE', payload: { householdEconomy: res.persisted, householdEconomyState: res.state } as any });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -229416,6 +231490,7 @@ function dispatchGameSettingsChange(
           />
 
           {pf12Enabled && pf12View && <PublicFinancePlayChip view={pf12View} onClick={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
+          {capEnabled && capState && <StrategicCapitalPlayCard state={capState} theme={themeStyles} onOpenCenter={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
           {hh13Enabled && hh13State && <HouseholdsPlaySignalBanner state={hh13State} onOpenIntel={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
           {egEnabled && egState && <EconomicGeographyPlayCard state={egState} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {npEnabled && npState?.primary && <NationalPriorityPlayCard state={npState} viewerId={npViewerId} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
@@ -229761,7 +231836,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...v95WithIsolatedGlobals(() => runV95ReleaseReadinessSelfTests({ stressTurns: 30 }))];
+            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
@@ -233575,7 +235650,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
         e.preventDefault();
         e.stopPropagation();
         onClose();
-      } else if (e.key === 'Tab' && modalRef.current) {
+      } else if (e.key === 'Tab' && modalRef.current && modalShouldTrapFocus(gameSettings?.accessibilitySettings)) {
         const focusables = Array.from(
           modalRef.current.querySelectorAll<HTMLElement>(
             'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -238973,7 +241048,11 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                 key={choice.id}
                 type="button"
                 onClick={() => {
-                  const updatedState = resolveStoryDecision(gameState, decision.id, choice.id);
+                  const cashBefore = player.money || 0;
+                  const updatedState = resolveStoryDecision(gameState, decision.id, choice.id, player);
+                  const cashDelta = (updatedState.player?.money || 0) - cashBefore;
+                  if (cashDelta) dispatchPlayer({ type: 'UPDATE_MONEY', payload: cashDelta });
+                  if (updatedState.standingPerActor) dispatchGameState({ type: 'UPDATE_REGIONAL_STANDING', payload: updatedState.standingPerActor });
                   dispatchGameState({ type: 'SET_NARRATIVE_POPUP', payload: updatedState.narrativePopup });
                   dispatchGameState({ type: 'SET_CAMPAIGN_STATE', payload: updatedState.campaignState });
                   dispatchGameState({ type: 'SET_PUBLIC_STABILITY_STATE', payload: updatedState.publicStabilityState });
@@ -240542,6 +242621,11 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
 	  // Game Over Screen
 	  const renderGameOver = () => {
       const isDark = resolveIsDarkTheme(uiState.theme, systemPrefersDark);
+      const handleReturnToMenu = () => {
+        handleRestartGame();
+        dispatchGameState({ type: 'SET_GAME_MODE', payload: 'menu' });
+      };
+      handleReturnToMenuRef.current = handleReturnToMenu;
 
       if (gameState.selectedMode === 'scenario' || gameState.scenarioOutcome || gameSettings.scenarioModeEnabled) {
         const activeScenario = findActiveScenario(gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios);
@@ -240613,7 +242697,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                 <button
                   onClick={() => {
                     restorePreScenarioSettings();
-                    handleReturnToMenu();
+                    handleReturnToMenuRef.current?.();
                   }}
                   className={`flex-1 py-3.5 rounded-xl font-semibold text-sm transition-all ${
                     isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-200 border border-gray-600' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
@@ -240633,11 +242717,6 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
       const playerContributors = isTeamMode ? getTeamActors(TEAM_PLAYER_ID) : [];
       const playerContributionSummary = isTeamMode ? getTeamContributionSummary(TEAM_PLAYER_ID) : null;
       const outcomeMetricLabel = (WIN_METRIC_LABELS as Record<string, string>)[outcome.decidingMetric];
-	    
-      const handleReturnToMenu = () => {
-        handleRestartGame();
-        dispatchGameState({ type: 'SET_GAME_MODE', payload: 'menu' });
-      };
 
       const renderLegacyStatsContent = () => (
         <div className="space-y-4 text-left text-sm">
@@ -240936,7 +243015,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                 <div>Sigma: {tuningSigma.toFixed(3)} · Neither streak: {tuningNeitherStreak}</div>
                 <button type="button" disabled={tuningFeatureCeiling} onClick={runTuningLabGeneration} className="px-4 py-2 rounded bg-fuchsia-700 font-semibold disabled:opacity-40">Run generation</button>
                 <div className="text-slate-400 text-xs">{tuningLabProgress}</div>
-                <button type="button" className="px-3 py-1 rounded bg-slate-700 text-xs" onClick={() => setTuningSelfTestReport(runAiTuningLabSelfTests())}>Run lab self-tests</button>
+                <button type="button" className="px-3 py-1 rounded bg-slate-700 text-xs" onClick={() => setTuningSelfTestReport(withIsolatedRng(() => runAiTuningLabSelfTests()))}>Run lab self-tests</button>
               </div>
               <div className="space-y-2">
                 <div className="font-semibold">Champion manager</div>
@@ -241239,6 +243318,13 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
                 The launcher and dock render an entry only when its open-callback
                 prop is supplied, so passing undefined removes the Ask Game /
                 AI Command entries when those surfaces are switched off. */}
+            {uiState.showStrategyPlannerModal ? (
+              <StrategyPlannerModal
+                isOpen
+                onClose={() => updateUiState({ showStrategyPlannerModal: false })}
+                gameState={gameState}
+              />
+            ) : null}
             <UnifiedInterfaceLauncher
               settings={gameSettings.launcherSettings || createDefaultLauncherSettings()}
               unreadCount={askAI.hasUnread ? 1 : 0}
@@ -241422,6 +243508,7 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
         return (
           <CommandCenterDashboardModal
             isOpen={shouldShowCommandCenterModal}
+            accessibilitySettings={gameSettings.accessibilitySettings}
             onClose={() => updateUiState({ showAiCommandCenterModal: false })}
             commandCenterState={liveCommandCenterState}
             commandCenterSettings={gameSettings.commandCenterSettings || createDefaultCommandCenterSettings()}
