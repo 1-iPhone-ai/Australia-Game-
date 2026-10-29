@@ -1,7 +1,7 @@
 # Agent 03 — Integration Contract (Research / Technology / Progression)
 
 **Module root:** `operation-10m/agent-03-research-tech/`  
-**Schema version:** `op10m-agent03-v2` (persisted core; derived fields recomputed on load)  
+**Schema version:** `op10m-agent03-v3` (persisted core + `coreFingerprint`, `migrationLog`, `emphasisRevision`)  
 **Owner:** Agent 03 (content + pure engine). **Assembly:** Agent 25 only.
 
 ## Purpose
@@ -33,12 +33,11 @@ import {
 gameState.researchProgress: ResearchProgressPersistedCore | null;
 ```
 
-Use `prepareResearchProgressForSave(state)` before write; on load `computeResearchProgressFromSave(inputs, raw)`.
+Use `prepareResearchProgressForSave(state)` before write; on load `applyResearchProgressSavePipeline(inputs, raw)` or `computeResearchProgressFromSave`.
 
-**v2 persisted core** (migration-safe): `revision`, `unlockSeq`, `unlockedNodes`, `institutionUpgrades`, `branchEmphasis`, `leadingResearchRegion`, `turn`.  
-**Derived (not saved):** `diffusion`, `readinessByBranch`, `activeHookIds`, `lateGameDiffusion`, `scaleWave`, `inputHash`.
+**v3 persisted core** adds `coreFingerprint`, `emphasisRevision`, `migrationLog`. Validates via `validatePersistedCoreForWrite`; guard derived keys with `detectForeignSaveFields`.
 
-Legacy `op10m-agent03-v1` full blobs migrate via `migrateResearchProgressSave()`.
+Legacy `op10m-agent03-v2` and `op10m-agent03-v1` migrate via `migrateResearchProgressSave()`.
 
 ### Input wiring
 

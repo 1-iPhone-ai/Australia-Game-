@@ -73,16 +73,32 @@ export function runAgent03ResearchTechSelfTests(): {
   const state = computeResearchProgress(inputs, createEmptyResearchProgressState());
   push('agent03_chunk_04', state.unlockedNodes.some(u => u.nodeId === 'df_t1_campus_foundation'));
   push('agent03_chunk_05', (state.institutionUpgrades?.length ?? 0) >= 6, String(state.institutionUpgrades?.length));
-  push('agent03_chunk_06', OP10M_AGENT03_MODULE_META.schemaVersion === 'op10m-agent03-v2');
+  push('agent03_chunk_06', OP10M_AGENT03_MODULE_META.schemaVersion === 'op10m-agent03-v3');
+  const saved = prepareResearchProgressForSave(state);
+  push('agent03_chunk_07', validatePersistedCoreForWrite(saved).length === 0);
 
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
+export function runAgent03ResearchSaveFormatSelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; passed: boolean; detail?: string }> = [];
+  const push = (id: string, passed: boolean, detail?: string) => results.push({ id, passed, detail });
+  const v2 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v2', turn: 1, revision: 0, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [] });
+  push('savefmt_v2_to_v3', v2?.schemaVersion === 'op10m-agent03-v3');
+  push('savefmt_foreign', detectForeignSaveFields({ diffusion: [] }).includes('diffusion'));
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT03_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent03-v2',
-  saveFormatVersion: 2,
+  schemaVersion: 'op10m-agent03-v3',
+  saveFormatVersion: 3,
   touchesSaveFormat: true,
   proposedGameStateField: 'researchProgress',
   integrationDoc: 'operation-10m/agent-03-research-tech/INTEGRATION.md',
@@ -124,6 +140,8 @@ const manifest = {
   touchesSaveFormat: true,
   proposedGameStateField: "researchProgress",
   contentSha256: hash,
+  saveFormatVersion: 3,
+  schemaVersion: "op10m-agent03-v3",
   chunkPath: "operation-10m/modules/agent-03-research-tech/chunk.tsx",
 };
 

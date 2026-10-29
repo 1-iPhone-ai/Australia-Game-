@@ -142,6 +142,8 @@ export function createEmptyResearchProgressState(turn = 0): ResearchProgressStat
     scaleWave: null,
     unlockSeq: 0,
     branchEmphasis: defaultBranchEmphasis(),
+    emphasisRevision: 0,
+    migrationLog: [],
   };
 }
 
@@ -228,6 +230,15 @@ export function computeResearchProgressFromSave(
 ): ResearchProgressState {
   const hydrated = sanitizeResearchProgressPersisted(persistedRaw);
   return computeResearchProgress(inputs, hydrated);
+}
+
+export function applyResearchProgressSavePipeline(
+  inputs: ResearchProgressInputs,
+  persistedRaw: unknown
+): { state: ResearchProgressState; persist: ReturnType<typeof prepareResearchProgressForSave> } {
+  const state = computeResearchProgressFromSave(inputs, persistedRaw);
+  const persist = prepareResearchProgressForSave(state);
+  return { state, persist };
 }
 
 function mergeMonotonicInstitutionUpgrades(

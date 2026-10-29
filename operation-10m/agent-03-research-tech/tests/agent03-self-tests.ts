@@ -24,6 +24,11 @@ import {
   assertResearchProgressSaveIntegrity,
   RESEARCH_PROGRESS_SCHEMA_VERSION,
   computeResearchProgressFromSave,
+  applyResearchProgressSavePipeline,
+  detectForeignSaveFields,
+  emptyResearchProgressCore,
+  validatePersistedCoreForWrite,
+  setResearchBranchEmphasisOnCore,
   type Agent03SelfTestResult,
   type ResearchProgressInputs,
 } from '../src/index.ts';
@@ -310,6 +315,67 @@ tests.push(
 );
 
 tests.push(
+  test('save_v2_migrates_to_v3_with_log', () => {
+    const v2 = {
+      schemaVersion: 'op10m-agent03-v2',
+      turn: 9,
+      revision: 2,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+    };
+    const core = migrateResearchProgressSave(v2);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert((core?.migrationLog.length ?? 0) >= 1);
+    assert(core?.migrationLog[0]?.fromVersion === 'op10m-agent03-v2');
+    assert(typeof core?.coreFingerprint === 'string' && core.coreFingerprint.length > 0);
+  })
+);
+
+tests.push(
+  test('detect_foreign_save_fields', () => {
+    const bad = { schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION, diffusion: [], readinessByBranch: {} };
+    const foreign = detectForeignSaveFields(bad);
+    assert(foreign.includes('diffusion'));
+    assert(foreign.includes('readinessByBranch'));
+  })
+);
+
+tests.push(
+  test('validate_persisted_core_fingerprint', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const saved = prepareResearchProgressForSave(computeResearchProgress(inputs, null));
+    assert(validatePersistedCoreForWrite(saved).length === 0);
+    const tampered = { ...saved, revision: saved.revision + 99 };
+    assert(validatePersistedCoreForWrite(tampered).includes('coreFingerprint mismatch'));
+  })
+);
+
+tests.push(
+  test('set_branch_emphasis_bumps_revision', () => {
+    const core = emptyResearchProgressCore(1);
+    const next = setResearchBranchEmphasisOnCore(core, 'digital_frontier', 'fundamental', 5);
+    assert(next.emphasisRevision === 1);
+    assert(next.branchEmphasis.find(e => e.branchId === 'digital_frontier')?.emphasis === 'fundamental');
+  })
+);
+
+tests.push(
+  test('save_pipeline_roundtrip', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const { state, persist } = applyResearchProgressSavePipeline(inputs, null);
+    assert(state.unlockedNodes.length >= 1);
+    assert(persist.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(detectForeignSaveFields(persist).length === 0);
+  })
+);
+
+tests.push(
   test('save_v1_migrates_to_v2_core', () => {
     const legacy = {
       schemaVersion: 'op10m-agent03-v1',
@@ -326,6 +392,7 @@ tests.push(
     assert(core?.revision === 1);
     assert(core?.unlockedNodes.length === 1);
     assert(!('diffusion' in (core as object)));
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v1'));
   })
 );
 

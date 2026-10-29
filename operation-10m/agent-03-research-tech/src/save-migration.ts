@@ -8,6 +8,7 @@ import type {
   ResearchProgramEmphasis,
   ResearchProgressSchemaVersion,
   ResearchProgressState,
+  ResearchSaveMigrationEntry,
   UnlockedResearchNode,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
@@ -40,16 +41,95 @@ export interface ResearchProgressPersistedCore {
   leadingResearchRegion: ResearchProgressState['leadingResearchRegion'];
   unlockSeq: number;
   branchEmphasis: ResearchBranchEmphasisState[];
+  /** Stable hash of persistable payload (excludes fingerprint field). */
+  coreFingerprint: string;
+  /** Increment when player/system changes branch emphasis on save core. */
+  emphasisRevision: number;
+  /** Audit trail of schema hops applied to this blob. */
+  migrationLog: ResearchSaveMigrationEntry[];
 }
 
+export type { ResearchSaveMigrationEntry } from './types.ts';
+
 const LEGACY_V1 = 'op10m-agent03-v1' as const;
+const LEGACY_V2 = 'op10m-agent03-v2' as const;
+
+/** Keys that must never appear on persisted save blobs (Agent 25 guard). */
+export const RESEARCH_SAVE_DERIVED_KEYS = [
+  'diffusion',
+  'readinessByBranch',
+  'activeHookIds',
+  'inputHash',
+  'lateGameDiffusion',
+  'scaleWave',
+] as const;
+
+function finalizeCoreForPersist(
+  partial: Omit<ResearchProgressPersistedCore, 'coreFingerprint'> & { coreFingerprint?: string }
+): ResearchProgressPersistedCore {
+  const draft: Omit<ResearchProgressPersistedCore, 'coreFingerprint'> = {
+    schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+    revision: partial.revision,
+    turn: partial.turn,
+    unlockedNodes: partial.unlockedNodes,
+    institutionUpgrades: partial.institutionUpgrades,
+    leadingResearchRegion: partial.leadingResearchRegion,
+    unlockSeq: partial.unlockSeq,
+    branchEmphasis: partial.branchEmphasis,
+    emphasisRevision: partial.emphasisRevision ?? 0,
+    migrationLog: partial.migrationLog ?? [],
+  };
+  return { ...draft, coreFingerprint: computePersistedCoreFingerprint(draft) };
+}
+
+export function computePersistedCoreFingerprint(
+  core: Omit<ResearchProgressPersistedCore, 'coreFingerprint'>
+): string {
+  let h = 2166136261 >>> 0;
+  const payload = JSON.stringify({
+    schemaVersion: core.schemaVersion,
+    revision: core.revision,
+    turn: core.turn,
+    unlockSeq: core.unlockSeq,
+    emphasisRevision: core.emphasisRevision,
+    leadingResearchRegion: core.leadingResearchRegion,
+    unlockedNodes: core.unlockedNodes,
+    institutionUpgrades: core.institutionUpgrades,
+    branchEmphasis: core.branchEmphasis,
+    migrationLog: core.migrationLog,
+  });
+  for (let i = 0; i < payload.length; i++) {
+    h ^= payload.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(36);
+}
+
+function upgradeToCurrentCore(
+  base: Omit<ResearchProgressPersistedCore, 'coreFingerprint' | 'emphasisRevision' | 'migrationLog'> & {
+    emphasisRevision?: number;
+    migrationLog?: ResearchSaveMigrationEntry[];
+  },
+  fromVersion: ResearchSaveMigrationEntry['fromVersion']
+): ResearchProgressPersistedCore {
+  const migrationLog: ResearchSaveMigrationEntry[] = [
+    ...(base.migrationLog ?? []),
+    { fromVersion, toVersion: RESEARCH_PROGRESS_SCHEMA_VERSION, turn: base.turn },
+  ];
+  return finalizeCoreForPersist({
+    ...base,
+    schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+    emphasisRevision: base.emphasisRevision ?? 0,
+    migrationLog,
+  });
+}
 
 export function emptyResearchProgressCore(turn = 0): ResearchProgressPersistedCore {
   return emptyCore(turn);
 }
 
 function emptyCore(turn = 0): ResearchProgressPersistedCore {
-  return {
+  return finalizeCoreForPersist({
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: 0,
     turn,
@@ -58,7 +138,9 @@ function emptyCore(turn = 0): ResearchProgressPersistedCore {
     leadingResearchRegion: null,
     unlockSeq: 0,
     branchEmphasis: defaultBranchEmphasis(),
-  };
+    emphasisRevision: 0,
+    migrationLog: [],
+  });
 }
 
 function sanitizeUnlockedNodes(raw: unknown): UnlockedResearchNode[] {
@@ -145,7 +227,7 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
 
   if (ver === RESEARCH_PROGRESS_SCHEMA_VERSION) {
     const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
-    return {
+    const draft = finalizeCoreForPersist({
       schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
       revision: Number(o.revision) || 0,
       turn: Number(o.turn) || 0,
@@ -154,33 +236,62 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
       leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
       unlockSeq: Number(o.unlockSeq) || computeUnlockSeq(nodes),
       branchEmphasis: sanitizeBranchEmphasis(o.branchEmphasis),
-    };
+      emphasisRevision: Number(o.emphasisRevision) || 0,
+      migrationLog: Array.isArray(o.migrationLog) ? (o.migrationLog as ResearchSaveMigrationEntry[]) : [],
+    });
+    if (typeof o.coreFingerprint === 'string' && o.coreFingerprint !== draft.coreFingerprint) {
+      return draft;
+    }
+    return draft;
+  }
+
+  if (ver === LEGACY_V2) {
+    const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
+    return upgradeToCurrentCore(
+      {
+        schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+        revision: Number(o.revision) || 0,
+        turn: Number(o.turn) || 0,
+        unlockedNodes: nodes,
+        institutionUpgrades: sanitizeInstitutionUpgrades(o.institutionUpgrades),
+        leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
+        unlockSeq: Number(o.unlockSeq) || computeUnlockSeq(nodes),
+        branchEmphasis: sanitizeBranchEmphasis(o.branchEmphasis),
+      },
+      LEGACY_V2
+    );
   }
 
   if (ver === LEGACY_V1) {
     const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
-    return {
-      schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
-      revision: 1,
-      turn: Number(o.turn) || 0,
-      unlockedNodes: nodes,
-      institutionUpgrades: sanitizeInstitutionUpgrades(o.institutionUpgrades),
-      leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
-      unlockSeq: computeUnlockSeq(nodes),
-      branchEmphasis: defaultBranchEmphasis(),
-    };
+    return upgradeToCurrentCore(
+      {
+        schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+        revision: 1,
+        turn: Number(o.turn) || 0,
+        unlockedNodes: nodes,
+        institutionUpgrades: sanitizeInstitutionUpgrades(o.institutionUpgrades),
+        leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
+        unlockSeq: computeUnlockSeq(nodes),
+        branchEmphasis: defaultBranchEmphasis(),
+      },
+      LEGACY_V1
+    );
   }
 
   if (Array.isArray(raw)) {
     const nodes = sanitizeUnlockedNodes(raw);
-    return { ...emptyCore(0), revision: 1, unlockedNodes: nodes, unlockSeq: computeUnlockSeq(nodes) };
+    return upgradeToCurrentCore(
+      { ...emptyCore(0), revision: 1, unlockedNodes: nodes, unlockSeq: computeUnlockSeq(nodes) },
+      'array-legacy'
+    );
   }
 
   return null;
 }
 
 export function extractPersistedCore(state: ResearchProgressState): ResearchProgressPersistedCore {
-  return {
+  return finalizeCoreForPersist({
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: state.revision ?? 0,
     turn: state.turn,
@@ -189,7 +300,9 @@ export function extractPersistedCore(state: ResearchProgressState): ResearchProg
     leadingResearchRegion: state.leadingResearchRegion,
     unlockSeq: state.unlockSeq ?? computeUnlockSeq(state.unlockedNodes),
     branchEmphasis: state.branchEmphasis ?? defaultBranchEmphasis(),
-  };
+    emphasisRevision: state.emphasisRevision ?? 0,
+    migrationLog: state.migrationLog ?? [],
+  });
 }
 
 export function prepareResearchProgressForSave(state: ResearchProgressState): ResearchProgressPersistedCore {
@@ -211,6 +324,8 @@ export function hydrateResearchProgressCore(core: ResearchProgressPersistedCore 
     leadingResearchRegion: core.leadingResearchRegion,
     unlockSeq: core.unlockSeq,
     branchEmphasis: core.branchEmphasis,
+    emphasisRevision: core.emphasisRevision,
+    migrationLog: core.migrationLog,
     diffusion: V94_REGION_CODES.map(regionId => ({
       regionId,
       score: 0,
@@ -248,7 +363,47 @@ export function mergeComputedResearchState(
     institutionUpgrades: mergedUpgrades,
     unlockSeq: Math.max(core.unlockSeq, unlockedNodes.length),
     branchEmphasis: core.branchEmphasis,
+    emphasisRevision: core.emphasisRevision,
+    migrationLog: core.migrationLog,
   };
+}
+
+export function detectForeignSaveFields(raw: unknown): string[] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+  const o = raw as Record<string, unknown>;
+  return RESEARCH_SAVE_DERIVED_KEYS.filter(k => k in o);
+}
+
+export function validatePersistedCoreForWrite(core: ResearchProgressPersistedCore): string[] {
+  const issues: string[] = [];
+  if (core.schemaVersion !== RESEARCH_PROGRESS_SCHEMA_VERSION) {
+    issues.push(`schema must be ${RESEARCH_PROGRESS_SCHEMA_VERSION}`);
+  }
+  const { coreFingerprint, ...rest } = core;
+  if (coreFingerprint !== computePersistedCoreFingerprint(rest)) {
+    issues.push('coreFingerprint mismatch');
+  }
+  if ((core.unlockSeq ?? 0) < core.unlockedNodes.length) {
+    issues.push('unlockSeq behind unlockedNodes length');
+  }
+  return issues;
+}
+
+export function setResearchBranchEmphasisOnCore(
+  core: ResearchProgressPersistedCore,
+  branchId: ResearchBranchId,
+  emphasis: ResearchProgramEmphasis,
+  turn: number
+): ResearchProgressPersistedCore {
+  const branchEmphasis = core.branchEmphasis.map(e =>
+    e.branchId === branchId ? { ...e, emphasis, setTurn: turn } : e
+  );
+  return finalizeCoreForPersist({
+    ...core,
+    branchEmphasis,
+    emphasisRevision: core.emphasisRevision + 1,
+    turn: Math.max(core.turn, turn),
+  });
 }
 
 export function sanitizeResearchProgressPersisted(raw: unknown): ResearchProgressState | null {
@@ -258,7 +413,11 @@ export function sanitizeResearchProgressPersisted(raw: unknown): ResearchProgres
 
 export function assertResearchProgressSaveIntegrity(state: ResearchProgressState): string[] {
   const issues: string[] = [];
-  if (state.schemaVersion !== RESEARCH_PROGRESS_SCHEMA_VERSION && state.schemaVersion !== LEGACY_V1) {
+  if (
+    state.schemaVersion !== RESEARCH_PROGRESS_SCHEMA_VERSION &&
+    state.schemaVersion !== LEGACY_V1 &&
+    state.schemaVersion !== LEGACY_V2
+  ) {
     issues.push(`unexpected schema ${state.schemaVersion}`);
   }
   if ((state.unlockSeq ?? 0) < state.unlockedNodes.length) {

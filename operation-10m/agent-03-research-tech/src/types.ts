@@ -162,9 +162,18 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v2' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v3' as const;
 
-export type ResearchProgressSchemaVersion = typeof RESEARCH_PROGRESS_SCHEMA_VERSION | 'op10m-agent03-v1';
+export type ResearchProgressSchemaVersion =
+  | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v2'
+  | 'op10m-agent03-v1';
+
+export interface ResearchSaveMigrationEntry {
+  fromVersion: ResearchProgressSchemaVersion | 'array-legacy';
+  toVersion: ResearchProgressSchemaVersion;
+  turn: number;
+}
 
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
@@ -181,6 +190,8 @@ export interface ResearchProgressState {
   scaleWave: ResearchScaleWaveReport | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
+  emphasisRevision?: number;
+  migrationLog?: ResearchSaveMigrationEntry[];
 }
 
 export interface StrategyHookDefinition {
