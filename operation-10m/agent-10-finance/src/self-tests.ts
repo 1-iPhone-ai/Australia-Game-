@@ -3332,7 +3332,7 @@ export function runAgent10FinanceSelfTests(): {
     'a10_r31_11',
     'round31 preset corporate markup stack',
     (() => {
-      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_markup_cascade_stack');
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'corporate_markup_pass_through_stack');
       return inp?.highInflationScenario === true && inp.householdInflationScenarioActive === true;
     })(),
   );

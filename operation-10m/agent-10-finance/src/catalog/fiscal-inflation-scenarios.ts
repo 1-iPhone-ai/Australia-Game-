@@ -1057,9 +1057,8 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     tags: ['inflation', 'fiscal', 'household', 'round30'],
   },
   {
-    id: 'corporate_markup_cascade_stack',
-    label: 'Corporate markup cascade stack',
-    description: 'Dominant pricing power with full markup pass-through latch.',
+    id: 'corporate_markup_pass_through_stack',
+    label: 'Corporate markup pass-through stack',
     patch: {
       highInflationScenario: true,
       householdInflationScenarioActive: true,
