@@ -79,4 +79,7 @@ export * from './batch-national-tick-session-wave-scorecard-compare.js';
 export * from './batch-national-tick-session-wave-assembly-run.js';
 export * from './batch-national-tick-session-wave-assembly-export.js';
 export * from './batch-national-tick-session-wave-assembly-replay-parity.js';
+export * from './batch-national-tick-session-wave-assembly-export-compare.js';
+export * from './batch-national-tick-session-wave-assembly-batch.js';
+export * from './batch-national-tick-session-wave-assembly-batch-export.js';
 export * from './engine.js';
