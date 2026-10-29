@@ -147,4 +147,7 @@ export * from './forecast-round42-console';
 export * from './forecast-wave43-projection-sync';
 export * from './forecast-integration-wave43-origin-handoff';
 export * from './forecast-round43-console';
+export * from './forecast-wave44-projection-sync';
+export * from './forecast-integration-wave44-origin-handoff';
+export * from './forecast-round44-console';
 export * from './strategic-forecast-policy-lab';
