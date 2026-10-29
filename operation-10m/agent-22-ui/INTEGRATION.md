@@ -1,5 +1,11 @@
 # Agent 22 — Assembly integration (Evolving UI)
 
+## Assembly chunk
+
+- Path: `operation-10m/modules/agent-22-ui/chunk.tsx`
+- Markers: `OP10M_MODULE_BEGIN agent-22-ui` … `OP10M_MODULE_END agent-22-ui`
+- Regenerate: `npm run build:agent22-chunk` (from this directory)
+
 ## Export surface (`src/index.ts`)
 
 Agent 25 should re-export or inline the following into V9.4 near existing **Interface Layout Presets** and **Contextual Hiding Engine** (≈ line 17600–18100):

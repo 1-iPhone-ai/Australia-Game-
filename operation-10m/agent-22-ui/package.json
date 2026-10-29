@@ -6,7 +6,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:agent22-chunk": "node scripts/build-chunk.mjs"
   },
   "dependencies": {
     "react": "19.3.1"
