@@ -292,6 +292,12 @@ export * from './core/combined-merged-derived-major-snippet-source-gap.ts';
 export * from './core/merged-hub-national-chokepoint-border-link-saturation-share.ts';
 export * from './core/merged-peripheral-national-chokepoint-border-link-saturation-share.ts';
 export * from './core/critical-derived-major-history-overlap-gap.ts';
+export * from './core/all-regions-open-needs-severity-tier-spread.ts';
+export * from './core/you-rival-open-needs-severity-tier-spread.ts';
+export * from './core/triad-merged-derived-major-snippet-source-gap.ts';
+export * from './core/rim-merged-national-chokepoint-border-link-saturation-share.ts';
+export * from './core/adjacency-merged-national-chokepoint-border-link-saturation-share.ts';
+export * from './core/high-derived-major-history-overlap-gap.ts';
 export * from './ui/charts.tsx';
 export * from './ui/compare-insights.tsx';
 export * from './ui/map-legend.tsx';
@@ -312,3 +318,9 @@ export {
   runAgent23NationalRegionalDashboardSelfTests,
   summarizeAgent23Tests,
 } from './tests/agent23-self-tests.ts';
+export * from './core/all-regions-open-needs-severity-tier-spread.ts';
+export * from './core/you-rival-open-needs-severity-tier-spread.ts';
+export * from './core/triad-merged-derived-major-snippet-source-gap.ts';
+export * from './core/rim-merged-national-chokepoint-border-link-saturation-share.ts';
+export * from './core/adjacency-merged-national-chokepoint-border-link-saturation-share.ts';
+export * from './core/high-derived-major-history-overlap-gap.ts';

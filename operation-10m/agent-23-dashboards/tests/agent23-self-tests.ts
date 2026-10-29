@@ -302,6 +302,12 @@ import { nrDashBuildCombinedMergedDerivedMajorSnippetSourceGap } from '../core/c
 import { nrDashBuildMergedHubNationalChokepointBorderLinkSaturationShare } from '../core/merged-hub-national-chokepoint-border-link-saturation-share.ts';
 import { nrDashBuildMergedPeripheralNationalChokepointBorderLinkSaturationShare } from '../core/merged-peripheral-national-chokepoint-border-link-saturation-share.ts';
 import { nrDashBuildCriticalDerivedMajorHistoryOverlapGap } from '../core/critical-derived-major-history-overlap-gap.ts';
+import { nrDashBuildAllRegionsOpenNeedsSeverityTierSpread } from '../core/all-regions-open-needs-severity-tier-spread.ts';
+import { nrDashBuildYouRivalOpenNeedsSeverityTierSpread } from '../core/you-rival-open-needs-severity-tier-spread.ts';
+import { nrDashBuildTriadMergedDerivedMajorSnippetSourceGap } from '../core/triad-merged-derived-major-snippet-source-gap.ts';
+import { nrDashBuildRimMergedNationalChokepointBorderLinkSaturationShare } from '../core/rim-merged-national-chokepoint-border-link-saturation-share.ts';
+import { nrDashBuildAdjacencyMergedNationalChokepointBorderLinkSaturationShare } from '../core/adjacency-merged-national-chokepoint-border-link-saturation-share.ts';
+import { nrDashBuildHighDerivedMajorHistoryOverlapGap } from '../core/high-derived-major-history-overlap-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -2477,6 +2483,60 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const ns = createAgent23NsFixture();
     const gap = nrDashBuildCriticalDerivedMajorHistoryOverlapGap(lr, ns)!;
     return gap.criticalDerivedMajorCount >= 1 && gap.overlapGap >= 0;
+  });
+
+  check('a23_all_regions_open_needs_severity_tier_spread', 'All regions open-needs severity tier spread splits active regions', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs[0]!.severity = 'critical';
+    lr.state.regions.VIC!.needs = [{ category: 'health', status: 'open', severity: 'low' }];
+    const snap = nrDashBuildAuthSnapshot(5, lr, null, { NSW: 'you', VIC: 'rival', QLD: 'neutral' })!;
+    const spread = nrDashBuildAllRegionsOpenNeedsSeverityTierSpread(lr, snap)!;
+    return spread.regionCount >= 2 && spread.severityTierSpread > 0;
+  });
+
+  check('a23_you_rival_open_needs_severity_tier_spread', 'You rival open-needs severity tier spread splits you and rival', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs[0]!.severity = 'critical';
+    lr.state.regions.VIC!.needs = [{ category: 'health', status: 'open', severity: 'low' }];
+    const snap = nrDashBuildAuthSnapshot(5, lr, null, { NSW: 'you', VIC: 'rival', QLD: 'neutral' })!;
+    const spread = nrDashBuildYouRivalOpenNeedsSeverityTierSpread(lr, snap)!;
+    return spread.youRivalRegionCount >= 2 && spread.severityTierSpread > 0;
+  });
+
+  check('a23_triad_merged_derived_major_snippet_source_gap', 'Triad merged derived major snippet source gap counts triad lane', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 5, text: 'Major lane', significance: 'major' });
+    const ns = createAgent23NsFixture();
+    const snap = nrDashBuildAuthSnapshot(5, lr, ns, null)!;
+    const gap = nrDashBuildTriadMergedDerivedMajorSnippetSourceGap(lr, ns, snap)!;
+    return gap.triadMergedDerivedMajorSourceCount >= 2 && gap.matchedSnippetCount >= 0;
+  });
+
+  check('a23_rim_merged_national_chokepoint_border_link_saturation_share', 'Rim merged national chokepoint border link saturation share', () => {
+    const lr = createAgent23LrFixture();
+    const ns = createAgent23NsFixture();
+    const snap = nrDashBuildAuthSnapshot(5, lr, ns, null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    const share = nrDashBuildRimMergedNationalChokepointBorderLinkSaturationShare(ns, nodes);
+    return share === null || share.saturationShare >= 0;
+  });
+
+  check('a23_adjacency_merged_national_chokepoint_border_link_saturation_share', 'Adjacency merged national chokepoint border link saturation share', () => {
+    const lr = createAgent23LrFixture();
+    const ns = createAgent23NsFixture();
+    const snap = nrDashBuildAuthSnapshot(5, lr, ns, null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    const share = nrDashBuildAdjacencyMergedNationalChokepointBorderLinkSaturationShare(ns, nodes);
+    return share === null || share.saturationShare >= 0;
+  });
+
+  check('a23_high_derived_major_history_overlap_gap', 'High derived major history overlap gap under high open needs', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs[0]!.severity = 'high';
+    lr.state.derived.push({ turn: 5, text: 'Major lane', significance: 'major' });
+    const ns = createAgent23NsFixture();
+    const gap = nrDashBuildHighDerivedMajorHistoryOverlapGap(lr, ns)!;
+    return gap.highDerivedMajorCount >= 1 && gap.overlapGap >= 0;
   });
 
   return results;
