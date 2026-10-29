@@ -197,6 +197,22 @@ import {
   type BatchNationalTickOrchestratedResult,
 } from './batch-advance-national-tick-orchestrator.js';
 import { computeBatchNationalTickOrchestratedDigest } from './batch-national-tick-orchestrator-digest.js';
+import {
+  gateBatchExternalStabilizationUnified,
+  type BatchExternalStabilizationUnifiedBatchGateResult,
+} from './batch-external-stabilization-unified-batch-gate.js';
+import {
+  runNationalTickOrchestratedSession,
+  computeBatchNationalTickSessionDigest,
+  type BatchNationalTickSessionResult,
+} from './batch-national-tick-session.js';
+import {
+  createBatchNationalTickLedger,
+  appendBatchNationalTickLedgerEntry,
+  type BatchNationalTickLedger,
+} from './batch-national-tick-ledger.js';
+import { computeBatchNationalTickLedgerDigest } from './batch-national-tick-ledger-digest.js';
+import { exportBatchNationalTickScorecard } from './batch-national-tick-scorecard-export.js';
 import { computeBatchStabilizationAlignmentScore } from './batch-stabilization-alignment-score.js';
 import {
   gateBatchAdvancePostStabilization,
@@ -671,6 +687,38 @@ export class TurnTimeEngine {
     scorecard: BatchOrchestratedScorecard,
   ): string {
     return computeBatchNationalTickOrchestratedDigest(audit, scorecard);
+  }
+
+  gateBatchExternalStabilizationUnified(
+    batch: BatchAdvanceResult,
+    externalByTurn: Readonly<Record<number, readonly string[]>>,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+    stabilizationOptions?: ExternalStabilizationBatchGateOptions,
+  ): BatchExternalStabilizationUnifiedBatchGateResult {
+    return gateBatchExternalStabilizationUnified(
+      batch,
+      externalByTurn,
+      stabilizationByTurn,
+      stabilizationOptions,
+    );
+  }
+
+  runNationalTickOrchestratedSession(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof runNationalTickOrchestratedSession>[3],
+    ledger?: BatchNationalTickLedger,
+    tickIndex?: number,
+  ): BatchNationalTickSessionResult {
+    return runNationalTickOrchestratedSession(this, maxSteps, budget, input, ledger, tickIndex);
+  }
+
+  createBatchNationalTickLedger(): BatchNationalTickLedger {
+    return createBatchNationalTickLedger();
+  }
+
+  exportBatchNationalTickScorecard(result: BatchNationalTickOrchestratedResult) {
+    return exportBatchNationalTickScorecard(result);
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {

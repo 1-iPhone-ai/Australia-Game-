@@ -14,8 +14,9 @@ import {
   type BatchNationalTickOrchestratedResult,
 } from './batch-national-tick-orchestrator-digest.js';
 
-export type { BatchNationalTickOrchestratedResult };
 import type { BatchOrchestratedAuditedReport } from './batch-advance-orchestrated-audited-step.js';
+
+export type { BatchNationalTickOrchestratedResult };
 
 /**
  * Round 14 national-tick orchestrator hook (Agent 02 / 25): audited orchestrated batch + plan coverage + scorecard.
