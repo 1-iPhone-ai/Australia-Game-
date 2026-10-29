@@ -439,8 +439,14 @@ export type RegionalOncologyRadiotherapySupplyStagingPolicy = 'baseline' | 'surg
 
 export type PortAutonomousTugBerthingLogisticsPolicy = 'baseline' | 'expand';
 
+export type GreenHydrogenElectrolyzerExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteOrganTransplantSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortShorePowerColdIroningLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/48';
+  schemaVersion: 'agent12/49';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -790,6 +796,14 @@ export interface TransportInfrastructureState {
   portAutonomousTugBerthingLogisticsShare: number;
   nationalPortAutonomousTugBerthingLogisticsThroughputIndex: number;
   portAutonomousTugBerthingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalGreenHydrogenElectrolyzerExportIndex: number;
+  greenHydrogenElectrolyzerExportByRegion: Record<AuRegionCode, number>;
+  remoteOrganTransplantSupplyStagingShare: number;
+  nationalRemoteOrganTransplantSupplyStagingIndex: number;
+  remoteOrganTransplantSupplyStagingByRegion: Record<AuRegionCode, number>;
+  portShorePowerColdIroningLogisticsShare: number;
+  nationalPortShorePowerColdIroningLogisticsThroughputIndex: number;
+  portShorePowerColdIroningLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -924,6 +938,9 @@ export interface TransportInfrastructureOptions {
   eWasteCriticalMineralsRecoveryExportPolicy?: EWasteCriticalMineralsRecoveryExportPolicy;
   regionalOncologyRadiotherapySupplyStagingPolicy?: RegionalOncologyRadiotherapySupplyStagingPolicy;
   portAutonomousTugBerthingLogisticsPolicy?: PortAutonomousTugBerthingLogisticsPolicy;
+  greenHydrogenElectrolyzerExportPolicy?: GreenHydrogenElectrolyzerExportPolicy;
+  remoteOrganTransplantSupplyStagingPolicy?: RemoteOrganTransplantSupplyStagingPolicy;
+  portShorePowerColdIroningLogisticsPolicy?: PortShorePowerColdIroningLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2957,6 +2974,48 @@ export const TRANSPORT_CORRIDORS_ROUND47: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round48.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND48: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_qld_green_h2_electrolyzer',
+    name: 'WA–QLD Green H2 Electrolyzer',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['green_hydrogen_electrolyzer', 'electrolyzer_export', 'renewable_h2_logistics'],
+      QLD: ['green_hydrogen_electrolyzer', 'electrolyzer_export', 'renewable_h2_logistics'],
+    },
+    productivitySynergyPoints: 7.2,
+    logisticsRelief: 0.043,
+  },
+  {
+    id: 'corr_nsw_act_organ_transplant',
+    name: 'NSW–ACT Organ Transplant',
+    networkKind: 'mobility',
+    regionSequence: ['NSW', 'ACT'],
+    requiredTagsByRegion: {
+      NSW: ['remote_organ_transplant', 'organ_cold_chain_staging', 'transplant_logistics'],
+      ACT: ['remote_organ_transplant', 'organ_cold_chain_staging', 'transplant_logistics'],
+    },
+    productivitySynergyPoints: 7.0,
+    logisticsRelief: 0.037,
+  },
+  {
+    id: 'corr_nsw_vic_shore_power',
+    name: 'NSW–VIC Shore Power',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['port_shore_power', 'cold_ironing_logistics', 'zero_emission_berthing'],
+      VIC: ['port_shore_power', 'cold_ironing_logistics', 'zero_emission_berthing'],
+    },
+    productivitySynergyPoints: 6.9,
+    logisticsRelief: 0.04,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -3151,6 +3210,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND45,
   ...TRANSPORT_CORRIDORS_ROUND46,
   ...TRANSPORT_CORRIDORS_ROUND47,
+  ...TRANSPORT_CORRIDORS_ROUND48,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -5815,6 +5875,62 @@ export const TRANSPORT_SCENARIOS_ROUND47: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round48.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND48: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_h2_export_surge',
+    label: 'WA H2 Export Surge',
+    description: 'Electrolyzer restart overloads Kwinana berths.',
+    targetRegions: ['WA', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_qld_h2_feed_delay',
+    label: 'QLD H2 Feed Delay',
+    description: 'Heat slows Gladstone electrolyzer feed.',
+    targetRegions: ['QLD', 'WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail', 'road'],
+  },
+  {
+    id: 'scn_nsw_transplant_resupply',
+    label: 'NSW Transplant Resupply',
+    description: 'Demand surge strains Sydney transplant hub.',
+    targetRegions: ['NSW', 'ACT'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.31,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_vic_shore_power_peak',
+    label: 'VIC Shore Power Peak',
+    description: 'Container peak loads Melbourne cold ironing terminal.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_nsw_botany_ironing_backlog',
+    label: 'NSW Botany Ironing Backlog',
+    description: 'Grid constraint delays Port Botany shore power depot.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -6023,6 +6139,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND45,
   ...TRANSPORT_SCENARIOS_ROUND46,
   ...TRANSPORT_SCENARIOS_ROUND47,
+  ...TRANSPORT_SCENARIOS_ROUND48,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -17502,6 +17619,265 @@ export const SCALE_WAVE_ROUND47_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round48-assets.ts ---
+
+export const ROUND48_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_kwinana_h2_electrolyzer_haul',
+    category: 'road',
+    name: 'Kwinana H2 Electrolyzer Haul',
+    description: 'WA renewable hydrogen export staging road.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['green_hydrogen_electrolyzer', 'electrolyzer_export', 'renewable_h2_logistics'],
+    laneKilometres: 28,
+    designSpeedKmh: 86,
+    freightShare: 0.32,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_gladstone_h2_feed',
+    category: 'road',
+    name: 'Gladstone H2 Feed',
+    description: 'QLD electrolyzer export connector.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade'],
+    tags: ['green_hydrogen_electrolyzer', 'electrolyzer_export', 'renewable_h2_logistics'],
+    laneKilometres: 26,
+    designSpeedKmh: 84,
+    freightShare: 0.3,
+    urbanShare: 0.11,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_westmead_transplant_access',
+    category: 'road',
+    name: 'Westmead Transplant Access',
+    description: 'NSW organ cold-chain staging road.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_organ_transplant', 'organ_cold_chain_staging', 'transplant_logistics'],
+    laneKilometres: 20,
+    designSpeedKmh: 77,
+    freightShare: 0.08,
+    urbanShare: 0.18,
+    tollRoad: false,
+  },
+  {
+    id: 'road_act_canberra_transplant_staging',
+    category: 'road',
+    name: 'Canberra Transplant Staging',
+    description: 'ACT transplant logistics connector.',
+    hostRegion: 'ACT',
+    servedRegions: ['ACT', 'NSW'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['remote_organ_transplant', 'organ_cold_chain_staging', 'transplant_logistics'],
+    laneKilometres: 18,
+    designSpeedKmh: 75,
+    freightShare: 0.07,
+    urbanShare: 0.17,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_botany_shore_power_feed',
+    category: 'road',
+    name: 'Botany Shore Power Feed',
+    description: 'NSW cold ironing logistics road.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_shore_power', 'cold_ironing_logistics', 'zero_emission_berthing'],
+    laneKilometres: 23,
+    designSpeedKmh: 83,
+    freightShare: 0.27,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_geelong_shore_power_staging',
+    category: 'road',
+    name: 'Geelong Shore Power Staging',
+    description: 'VIC zero-emission berthing connector.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade'],
+    tags: ['port_shore_power', 'cold_ironing_logistics', 'zero_emission_berthing'],
+    laneKilometres: 19,
+    designSpeedKmh: 79,
+    freightShare: 0.25,
+    urbanShare: 0.11,
+    tollRoad: false,
+  },
+];
+
+export const ROUND48_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_pilbara_h2_rail',
+    category: 'rail',
+    name: 'Pilbara H2 Export Rail',
+    description: 'WA electrolyzer export feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 6.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['green_hydrogen_electrolyzer', 'electrolyzer_export', 'renewable_h2_logistics'],
+    trackKilometres: 40,
+    dualTrackShare: 0.44,
+    electrifiedShare: 0.46,
+    designFreightTonnesPerYear: 3_800_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_sydney_transplant_rail',
+    category: 'rail',
+    name: 'Sydney Transplant Rail',
+    description: 'NSW organ staging express feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['remote_organ_transplant', 'organ_cold_chain_staging', 'transplant_logistics'],
+    trackKilometres: 34,
+    dualTrackShare: 0.52,
+    electrifiedShare: 0.48,
+    designFreightTonnesPerYear: 1_200_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_vic_port_phillip_shore_power_rail',
+    category: 'rail',
+    name: 'Port Phillip Shore Power Rail',
+    description: 'VIC cold ironing port feed.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_shore_power', 'cold_ironing_logistics', 'zero_emission_berthing'],
+    trackKilometres: 36,
+    dualTrackShare: 0.47,
+    electrifiedShare: 0.55,
+    designFreightTonnesPerYear: 2_600_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND48_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_kwinana_h2_export',
+    category: 'port',
+    name: 'Kwinana H2 Export',
+    description: 'Western Australia green hydrogen electrolyzer export port.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 6.4,
+    strategicNetworks: ['trade'],
+    tags: ['green_hydrogen_electrolyzer', 'electrolyzer_export', 'renewable_h2_logistics'],
+    berthCount: 3,
+    maxDraftMetres: 12.8,
+    teuCapacityPerYear: 88_000,
+    automationLevel: 2,
+    bulkShare: 0.41,
+  },
+  {
+    id: 'port_nsw_sydney_transplant_hub',
+    category: 'port',
+    name: 'Sydney Transplant Hub',
+    description: 'NSW organ transplant cold-chain logistics port.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 6.0,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['remote_organ_transplant', 'organ_cold_chain_staging', 'transplant_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.6,
+    teuCapacityPerYear: 102_000,
+    automationLevel: 1,
+    bulkShare: 0.08,
+  },
+  {
+    id: 'port_vic_melbourne_shore_power_terminal',
+    category: 'port',
+    name: 'Melbourne Shore Power Terminal',
+    description: 'VIC cold ironing and zero-emission berthing staging.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 6.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_shore_power', 'cold_ironing_logistics', 'zero_emission_berthing'],
+    berthCount: 5,
+    maxDraftMetres: 13.4,
+    teuCapacityPerYear: 205_000,
+    automationLevel: 3,
+    bulkShare: 0.04,
+  },
+];
+
+export const ROUND48_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_qld_gladstone_h2_stores',
+    category: 'logistics',
+    name: 'Gladstone H2 Stores',
+    description: 'QLD electrolyzer export consolidation yard.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade'],
+    tags: ['green_hydrogen_electrolyzer', 'electrolyzer_export', 'renewable_h2_logistics'],
+    warehouseSqm: 51_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port', 'rail'],
+    lastMileCoveragePct: 44,
+  },
+  {
+    id: 'log_act_canberra_transplant_stores',
+    category: 'logistics',
+    name: 'Canberra Transplant Stores',
+    description: 'ACT organ cold-chain consolidation yard.',
+    hostRegion: 'ACT',
+    servedRegions: ['ACT', 'NSW'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_organ_transplant', 'organ_cold_chain_staging', 'transplant_logistics'],
+    warehouseSqm: 28_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 48,
+  },
+  {
+    id: 'log_nsw_port_botany_shore_power_depot',
+    category: 'logistics',
+    name: 'Port Botany Shore Power Depot',
+    description: 'NSW cold ironing logistics depot.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_shore_power', 'cold_ironing_logistics', 'zero_emission_berthing'],
+    warehouseSqm: 38_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 54,
+  },
+];
+
+export const SCALE_WAVE_ROUND48_ASSETS = [
+  ...ROUND48_ROADS,
+  ...ROUND48_RAIL,
+  ...ROUND48_PORTS,
+  ...ROUND48_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -17557,6 +17933,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND45_ASSETS,
     ...SCALE_WAVE_ROUND46_ASSETS,
     ...SCALE_WAVE_ROUND47_ASSETS,
+    ...SCALE_WAVE_ROUND48_ASSETS,
   ];
 }
 
@@ -20249,6 +20626,67 @@ export function nationalEWasteCriticalMineralsRecoveryExportIndex(
 export function eWasteCriticalMineralsRecoveryExportProductivityMultiplier(
   index: number,
   policy: EWasteCriticalMineralsRecoveryExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.03 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.033 + policyBoost, 0.93, 1.09);
+}
+
+
+// --- source: network/green-hydrogen-electrolyzer-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type GreenHydrogenElectrolyzerExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 green hydrogen electrolyzer export throughput by region. */
+export function computeGreenHydrogenElectrolyzerExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'green_hydrogen_electrolyzer' ||
+        t === 'electrolyzer_export' ||
+        t === 'renewable_h2_logistics',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.86 + asset.maxDraftMetres * 0.32;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 62_000 + asset.intermodalLinks.length * 0.57;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 422;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_000_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalGreenHydrogenElectrolyzerExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.46 + max * 0.54, 5, 72) * 10) / 10;
+}
+
+export function greenHydrogenElectrolyzerExportProductivityMultiplier(
+  index: number,
+  policy: GreenHydrogenElectrolyzerExportPolicy = 'baseline',
 ): number {
   const policyBoost = policy === 'accelerate' ? 0.03 : 0;
   const normalized = (index - 5) / 100;
@@ -23845,6 +24283,96 @@ export function regionalOncologyRadiotherapySupplyStagingProductivityMultiplier(
   policy: RegionalOncologyRadiotherapySupplyStagingPolicy,
 ): number {
   const bias = policy === 'surge' ? 1.011 : 1;
+  return (1 + (share - 0.04) * 0.016) * bias;
+}
+
+
+// --- source: operations/remote-organ-transplant-supply-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RemoteOrganTransplantSupplyStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 remote organ transplant supply staging readiness by region. */
+export function computeRemoteOrganTransplantSupplyStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'remote_organ_transplant' ||
+          t === 'organ_cold_chain_staging' ||
+          t === 'transplant_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 54_000 + (asset.coldChainCapable ? 1.35 : 0.71);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 392;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.82;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 228;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.022 - stress * 0.016), 5, 74) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRemoteOrganTransplantSupplyStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 72) * 10) / 10;
+}
+
+export function computeRemoteOrganTransplantSupplyStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: RemoteOrganTransplantSupplyStagingPolicy = 'baseline',
+): number {
+  let transplantUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('remote_organ_transplant') || asset.tags.includes('transplant_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 50_000;
+        transplantUnits += (asset.warehouseSqm / 50_000) * 0.52;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 358;
+        transplantUnits += (asset.laneKilometres / 358) * 0.44;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.03;
+  const policyBoost = policy === 'surge' ? 0.018 : 0;
+  return Math.round(clamp(transplantUnits / totalUnits + policyBoost, 0.028, 0.18) * 1000) / 1000;
+}
+
+export function remoteOrganTransplantSupplyStagingProductivityMultiplier(
+  share: number,
+  policy: RemoteOrganTransplantSupplyStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.01 : 1;
   return (1 + (share - 0.04) * 0.016) * bias;
 }
 
@@ -27713,6 +28241,102 @@ export function nationalPortAutonomousTugBerthingLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/port-shore-power-cold-ironing-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PortShorePowerColdIroningLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of port logistics supporting shore-power cold ironing. */
+export function computePortShorePowerColdIroningLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: PortShorePowerColdIroningLogisticsPolicy = 'baseline',
+): number {
+  let shoreUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'port_shore_power' ||
+          t === 'cold_ironing_logistics' ||
+          t === 'zero_emission_berthing',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 0.91 + asset.teuCapacityPerYear / 420_000;
+        shoreUnits += (asset.berthCount * 0.91) * 0.5;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 47_000;
+        shoreUnits += (asset.warehouseSqm / 47_000) * 0.47;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 328;
+        shoreUnits += (asset.laneKilometres / 328) * 0.39;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.032;
+  const policyBoost = policy === 'expand' ? 0.02 : 0;
+  return Math.round(clamp(shoreUnits / totalUnits + policyBoost, 0.031, 0.19) * 1000) / 1000;
+}
+
+export function portShorePowerColdIroningLogisticsProductivityMultiplier(
+  share: number,
+  policy: PortShorePowerColdIroningLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.012 : 1;
+  return (1 + (share - 0.05) * 0.016) * bias;
+}
+
+export function computePortShorePowerColdIroningLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'port_shore_power' ||
+          t === 'cold_ironing_logistics' ||
+          t === 'zero_emission_berthing',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 43_000 + asset.lastMileCoveragePct / 92;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 338;
+    }
+    if (asset.category === 'rail' && 'trackKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 202;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPortShorePowerColdIroningLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.44 + max * 0.56, 2, 68) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -28496,6 +29120,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalPortAutonomousTugBerthingLogisticsThroughputIndex,
   portAutonomousTugBerthingLogisticsProductivityMultiplier,
 } from './port-autonomous-tug-berthing-logistics-index.ts';
+  computeGreenHydrogenElectrolyzerExportByRegion,
+  greenHydrogenElectrolyzerExportProductivityMultiplier,
+  nationalGreenHydrogenElectrolyzerExportIndex,
+} from '../network/green-hydrogen-electrolyzer-export-index.ts';
+  computeRemoteOrganTransplantSupplyStagingByRegion,
+  computeRemoteOrganTransplantSupplyStagingShare,
+  nationalRemoteOrganTransplantSupplyStagingIndex,
+  remoteOrganTransplantSupplyStagingProductivityMultiplier,
+} from '../operations/remote-organ-transplant-supply-staging-index.ts';
+  computePortShorePowerColdIroningLogisticsShare,
+  computePortShorePowerColdIroningLogisticsThroughputByRegion,
+  nationalPortShorePowerColdIroningLogisticsThroughputIndex,
+  portShorePowerColdIroningLogisticsProductivityMultiplier,
+} from './port-shore-power-cold-ironing-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -30035,6 +30673,40 @@ export function computeTransportInfrastructureState(
     portAutonomousTugBerthingLogisticsShare,
     options?.portAutonomousTugBerthingLogisticsPolicy ?? 'baseline',
   );
+  const greenHydrogenElectrolyzerExportByRegion = computeGreenHydrogenElectrolyzerExportByRegion(ops);
+  const nationalGreenH2 = nationalGreenHydrogenElectrolyzerExportIndex(greenHydrogenElectrolyzerExportByRegion);
+  const greenH2Mult = greenHydrogenElectrolyzerExportProductivityMultiplier(
+    nationalGreenH2,
+    options?.greenHydrogenElectrolyzerExportPolicy ?? 'baseline',
+  );
+  const remoteOrganTransplantSupplyStagingByRegion = computeRemoteOrganTransplantSupplyStagingByRegion(
+    ops,
+    networkStress,
+  );
+  const nationalOrganTransplant = nationalRemoteOrganTransplantSupplyStagingIndex(
+    remoteOrganTransplantSupplyStagingByRegion,
+  );
+  const remoteOrganTransplantSupplyStagingShare = computeRemoteOrganTransplantSupplyStagingShare(
+    ops,
+    options?.remoteOrganTransplantSupplyStagingPolicy ?? 'baseline',
+  );
+  const organTransplantMult = remoteOrganTransplantSupplyStagingProductivityMultiplier(
+    remoteOrganTransplantSupplyStagingShare,
+    options?.remoteOrganTransplantSupplyStagingPolicy ?? 'baseline',
+  );
+  const portShorePowerColdIroningLogisticsThroughputByRegion =
+    computePortShorePowerColdIroningLogisticsThroughputByRegion(ops);
+  const nationalShorePower = nationalPortShorePowerColdIroningLogisticsThroughputIndex(
+    portShorePowerColdIroningLogisticsThroughputByRegion,
+  );
+  const portShorePowerColdIroningLogisticsShare = computePortShorePowerColdIroningLogisticsShare(
+    ops,
+    options?.portShorePowerColdIroningLogisticsPolicy ?? 'baseline',
+  );
+  const shorePowerMult = portShorePowerColdIroningLogisticsProductivityMultiplier(
+    portShorePowerColdIroningLogisticsShare,
+    options?.portShorePowerColdIroningLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -30133,6 +30805,9 @@ export function computeTransportInfrastructureState(
     const eWasteBoost = (eWasteCriticalMineralsRecoveryExportByRegion[code] - 5) * 0.0021;
     const oncologyBoost = (regionalOncologyRadiotherapySupplyStagingByRegion[code] - 6) * 0.0017;
     const autonomousTugBoost = (portAutonomousTugBerthingLogisticsThroughputByRegion[code] - 2) * 0.0013;
+    const greenH2Boost = (greenHydrogenElectrolyzerExportByRegion[code] - 5) * 0.002;
+    const organTransplantBoost = (remoteOrganTransplantSupplyStagingByRegion[code] - 6) * 0.0016;
+    const shorePowerBoost = (portShorePowerColdIroningLogisticsThroughputByRegion[code] - 2) * 0.0012;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -30230,7 +30905,10 @@ export function computeTransportInfrastructureState(
         droneCargoBoost +
         eWasteBoost +
         oncologyBoost +
-        autonomousTugBoost) *
+        autonomousTugBoost +
+        greenH2Boost +
+        organTransplantBoost +
+        shorePowerBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -30326,7 +31004,10 @@ export function computeTransportInfrastructureState(
       droneCargoMult *
       eWasteMult *
       oncologyMult *
-      autonomousTugMult;
+      autonomousTugMult *
+      greenH2Mult *
+      organTransplantMult *
+      shorePowerMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -30445,7 +31126,10 @@ export function computeTransportInfrastructureState(
     nationalDroneCargo * 0.003 +
     nationalEWaste * 0.003 +
     nationalOncology * 0.003 +
-    nationalAutonomousTug * 0.003;
+    nationalAutonomousTug * 0.003 +
+    nationalGreenH2 * 0.003 +
+    nationalOrganTransplant * 0.003 +
+    nationalShorePower * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -30460,7 +31144,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/48',
+    schemaVersion: 'agent12/49',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -30810,6 +31494,14 @@ export function computeTransportInfrastructureState(
     portAutonomousTugBerthingLogisticsShare,
     nationalPortAutonomousTugBerthingLogisticsThroughputIndex: nationalAutonomousTug,
     portAutonomousTugBerthingLogisticsThroughputByRegion,
+    nationalGreenHydrogenElectrolyzerExportIndex: nationalGreenH2,
+    greenHydrogenElectrolyzerExportByRegion,
+    remoteOrganTransplantSupplyStagingShare,
+    nationalRemoteOrganTransplantSupplyStagingIndex: nationalOrganTransplant,
+    remoteOrganTransplantSupplyStagingByRegion,
+    portShorePowerColdIroningLogisticsShare,
+    nationalPortShorePowerColdIroningLogisticsThroughputIndex: nationalShorePower,
+    portShorePowerColdIroningLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -30892,7 +31584,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/48' &&
+      infra.schemaVersion === 'agent12/49' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -31057,8 +31749,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalEWasteCriticalMineralsRecoveryExportIndex >= 5 &&
       infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex >= 6 &&
       infra.portAutonomousTugBerthingLogisticsShare >= 0.03 &&
-      infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex >= 2 &&
+      infra.nationalGreenHydrogenElectrolyzerExportIndex >= 5 &&
+      infra.nationalRemoteOrganTransplantSupplyStagingIndex >= 6 &&
+      infra.portShorePowerColdIroningLogisticsShare >= 0.03 &&
+      infra.nationalPortShorePowerColdIroningLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)}`,
   });
 
   return results;
