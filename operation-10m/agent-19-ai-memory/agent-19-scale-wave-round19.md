@@ -30,6 +30,8 @@
 npm run build:agent19-chunk && npm run test:agent19
 ```
 
+**Result:** 139/139 passed (includes r18 + r19).
+
 ## Next wave (round 20 sketch)
 
 Follow the same ladder: bundle → session export → bridge → gate → prior-gate recovery orchestrator. Signal gate is the new head; round 20 would typically add signal recovery + the next bundle/gate tier.
