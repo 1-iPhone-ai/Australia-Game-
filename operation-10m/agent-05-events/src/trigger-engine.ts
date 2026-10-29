@@ -68,6 +68,10 @@ import {
   OP10M_AGENT25_ORIGIN_WAVE_ATTESTED_FLAG,
   OP10M_SCALE_WAVE_ORIGIN_GATE_FLAG,
 } from './compute-turn-scale-wave-origin-gate-coordinator.ts';
+import {
+  OP10M_AGENT25_PROJECTION_WAVE_READY_FLAG,
+  OP10M_SCALE_WAVE_PROJECTION_LATCH_FLAG,
+} from './compute-turn-scale-wave-projection-latch-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -388,6 +392,16 @@ export function evaluateRequirements(
       case 'agent25_origin_wave_attested':
         if (!sim.flags[OP10M_AGENT25_ORIGIN_WAVE_ATTESTED_FLAG]) {
           return { ok: false, reason: 'agent25 origin wave not attested' };
+        }
+        break;
+      case 'scale_wave_projection_latch':
+        if (!sim.flags[OP10M_SCALE_WAVE_PROJECTION_LATCH_FLAG]) {
+          return { ok: false, reason: 'scale wave projection not latched' };
+        }
+        break;
+      case 'agent25_projection_wave_ready':
+        if (!sim.flags[OP10M_AGENT25_PROJECTION_WAVE_READY_FLAG]) {
+          return { ok: false, reason: 'agent25 projection wave not ready' };
         }
         break;
       default:

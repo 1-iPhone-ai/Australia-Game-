@@ -20,6 +20,7 @@ State-triggered crisis chains with cooldowns, passive persistent modifiers, and 
 - `generated/chain-catalog-tranche17.ts` — 320 scale-wave-bundle-latch lattice chains (`scripts/generate-catalog-tranche17.py`)
 - `generated/chain-catalog-tranche18.ts` — 320 scale-wave-catalog-commit lattice chains (`scripts/generate-catalog-tranche18.py`)
 - `generated/chain-catalog-tranche19.ts` — 320 scale-wave-origin-gate lattice chains (`scripts/generate-catalog-tranche19.py`)
+- `generated/chain-catalog-tranche20.ts` — 320 scale-wave-projection-latch lattice chains (`scripts/generate-catalog-tranche20.py`)
 - `src/pending-response-expiry-coordinator.ts` — expired dilemma prune + queue-clear flags on compute hook
 - `src/pending-response-stabilization-coordinator.ts` — post-clear calm + stabilization wave flags on compute hook
 - `src/pending-stabilization-closure-coordinator.ts` — digest closure latch after finalize on compute hook
@@ -32,6 +33,7 @@ State-triggered crisis chains with cooldowns, passive persistent modifiers, and 
 - `src/compute-turn-scale-wave-bundle-latch-coordinator.ts` — Agent 25 assembly wave readiness after manifest seal
 - `src/compute-turn-scale-wave-catalog-commit-coordinator.ts` — scale-wave catalog commit after bundle latch
 - `src/compute-turn-scale-wave-origin-gate-coordinator.ts` — scale-wave origin gate after catalog commit
+- `src/compute-turn-scale-wave-projection-latch-coordinator.ts` — projection wave latch after origin gate
 - `src/compute-turn-reconcile.ts` — digest drift reconcile + eligibility priming on compute turn hook
 - `src/compute-turn-drift-settle.ts` — drift settlement + turn-gap ack flags on compute turn hook
 - `generated/regional-hook-catalog.ts` — 120 cross-region hooks (`scripts/generate-regional-hooks.py`)
