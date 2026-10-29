@@ -24,6 +24,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     research_pipeline_paths,
     maritime_trade_paths,
     intermodal_freight_paths,
+    housing_affordability_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -43,6 +44,7 @@ ICLOG_MARKER = "export function runV1017IclogTurn"
 RPIPE_MARKER = "export function runV1020RpipeTurn"
 MTRD_MARKER = "export function runV1019MtrdTurn"
 IMFD_MARKER = "export function runV1021ImfdTurn"
+HAFF_MARKER = "export function runV1022HaffTurn"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -127,6 +129,13 @@ IMFD_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20BP: V10.21 INTERMODAL FREIGHT — CORRIDOR HANDOFFS, DWELL HUBS & CROSS-STACK BRIDGES (O6K-45)\n"
     "// Renumbered from shard 20BO (canonical 20BO = T6 mega4 wave-5 lattice, push #17)\n"
+    "// ============================================================================\n"
+)
+
+HAFF_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BQ: V10.22 HOUSING AFFORDABILITY — STRESS SCENARIOS, SUPPLY PIPELINE & ZONING FRICTION (O6K-49)\n"
+    "// Renumbered from shard 20BP (canonical 20BP = intermodal freight, push #18)\n"
     "// ============================================================================\n"
 )
 
@@ -1608,6 +1617,159 @@ def push_imfd(text: str) -> str:
     return text
 
 
+HAFF_HELPERS = """
+function V1022_HAFF_readPersistedFromGameState(gs: any): V1022HaffPersisted | null {
+  const raw = (gs?.save?.meta?.v1022 as any)?.housing_affordability;
+  return raw ? sanitizeV1022HaffPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1022_HAFF_applyToGameState(gs: any, out: V1022HaffTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1022 = { ...(meta.v1022 || {}) };
+  v1022.housing_affordability = out.persisted;
+  meta.v1022 = v1022;
+  save.meta = meta;
+  return { ...gs, save, v1022HousingAffordability: out.state };
+}
+
+export function buildV1022HaffTurnInputFromGameState(gs: any, turn: number): V1022HaffTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10220;
+  const inp = buildV1022HaffTurnInputFromGameStateStub(turn, seed);
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const supply = gs?.v1014SupplyChain ?? null;
+  const workforce = gs?.v1014WorkforceMigration ?? gs?.workforceHumanCapital ?? null;
+  const pubsvc = gs?.v1014PublicServicesCrosswalk ?? null;
+  const ffed = gs?.v1018FiscalFederalism ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      supplyPipelineIndex: Number(supply?.supplyPipelineIndex ?? inp.supply20bb.supplyPipelineIndex),
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+      importDependencyRatio: Number(trade?.importDependencyRatio ?? inp.trade20ba.importDependencyRatio),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+      reserveMarginPct: Number(energy?.reserveMarginPct ?? inp.energy20bc.reserveMarginPct),
+      carbonStress: Number(energy?.carbonStress ?? inp.energy20bc.carbonStress),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      specialistGap: Number(workforce?.specialistGap ?? inp.workforce20bf.specialistGap),
+      nationalReadiness: Number(workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+      mismatchIndex: Number(workforce?.mismatchIndex ?? inp.workforce20bf.mismatchIndex),
+    },
+    publicServices20az: {
+      ...inp.publicServices20az,
+      turn,
+      clinicCapacityScore: Number(pubsvc?.clinicCapacityScore ?? inp.publicServices20az.clinicCapacityScore),
+      digitalServiceCoverage: Number(
+        pubsvc?.digitalServiceCoverage ?? inp.publicServices20az.digitalServiceCoverage,
+      ),
+      serviceDeliveryReadiness: Number(
+        pubsvc?.serviceDeliveryReadiness ?? inp.publicServices20az.serviceDeliveryReadiness,
+      ),
+    },
+    fiscalFederalism20bj: {
+      ...inp.fiscalFederalism20bj,
+      turn,
+      transferBackpressure: Number(ffed?.transferBackpressure ?? inp.fiscalFederalism20bj.transferBackpressure),
+      grantStackLoad: Number(ffed?.grantStackLoad ?? inp.fiscalFederalism20bj.grantStackLoad),
+      zoningBacklogTurns: Number(ffed?.zoningBacklogTurns ?? inp.fiscalFederalism20bj.zoningBacklogTurns),
+    },
+    persisted: null,
+  };
+}
+"""
+
+HAFF_DAY_HOOK = """
+      if (typeof runV1022HaffTurn === 'function') {
+        try {
+          const haffIn = buildV1022HaffTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          haffIn.persisted = V1022_HAFF_readPersistedFromGameState(mergedGameState);
+          const haffOut = runV1022HaffTurn(haffIn);
+          mergedGameState = V1022_HAFF_applyToGameState(mergedGameState, haffOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_haff_day_hook(text: str) -> str:
+    marker = "runV1022HaffTurn(haffIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:40000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip haff day hook (present)")
+        return text
+    imfd_tail = """      if (typeof runV1021ImfdTurn === 'function') {
+        try {
+          const imfdIn = buildV1021ImfdTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          imfdIn.persisted = V1021_IMFD_readPersistedFromGameState(mergedGameState);
+          const imfdOut = runV1021ImfdTurn(imfdIn);
+          mergedGameState = V1021_IMFD_applyToGameState(mergedGameState, imfdOut);
+        } catch (_) { /* isolated */ }
+      }"""
+    if imfd_tail not in text:
+        raise SystemExit("imfd day hook anchor missing for haff hook")
+    return text.replace(imfd_tail, imfd_tail + HAFF_DAY_HOOK, 1)
+
+
+def wire_haff_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1021ImfdPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1022HaffPersisted === 'function') {\n"
+        "    const haffRaw = (migrated.gameState as any)?.save?.meta?.v1022?.housing_affordability;\n"
+        "    if (haffRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1022 = { ...(meta.v1022 || {}) };\n"
+        "      v1022.housing_affordability = sanitizeV1022HaffPersisted(haffRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1022 = v1022;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1022.housing_affordability = sanitizeV1022HaffPersisted" in text:
+        print("skip haff §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("imfd §6 anchor missing for haff migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_haff(text: str) -> str:
+    block = HAFF_SECTION + bundle_local_files(housing_affordability_paths()) + HAFF_HELPERS
+    text = insert_before(text, block, HAFF_MARKER, "T6 push #19 v1022-housing-affordability (PR #346)")
+    text = wire_haff_day_hook(text)
+    text = wire_haff_migration(text)
+    lab = """  { id: 'v1022_housing_affordability', label: 'V10.22 Housing affordability (20BQ stress & supply pipeline)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1022HaffSelfTestsForLab() },
+"""
+    imfd_lab = (
+        "  { id: 'v1021_intermodal_freight', label: 'V10.21 Intermodal freight (20BP corridors & handoff stacks)', "
+        "tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1021ImfdSelfTestsForLab() },"
+    )
+    if "{ id: 'v1022_housing_affordability'" not in text:
+        if imfd_lab in text:
+            text = text.replace(imfd_lab, imfd_lab + "\n" + lab.strip(), 1)
+            print("registered LAB v1022_housing_affordability")
+        else:
+            text = wire_lab(text, lab, "v1022_housing_affordability")
+            print("registered LAB v1022_housing_affordability (fallback)")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -1622,7 +1784,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -1653,6 +1815,8 @@ def main() -> None:
         text = push_mtrd(text)
     elif args.push == 18:
         text = push_imfd(text)
+    elif args.push == 19:
+        text = push_haff(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

@@ -344,6 +344,50 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1021ImfdPersisted,\n  v1021ImfdInputHash,\n  sanitizeV1021ImfdPersisted,\n} from '../engine/intermodal-freight-orchestrator';",
             "  v1021ImfdInputHash,\n} from '../engine/intermodal-freight-orchestrator';\nimport {\n  createEmptyV1021ImfdPersisted,\n  sanitizeV1021ImfdPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1022-housing-affordability" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BP", "SECTION 20BQ")
+        src = src.replace("SECTION 20BO", "SECTION 20BQ")
+        src = src.replace("SECTION 20BL", "SECTION 20BQ")
+    if "housing-affordability/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1022HaffClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1022HaffClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1022_HAFF_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1022_HAFF_MIG_REGIONS", src)
+    if "housing-affordability-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1022HaffPersisted, sanitizeV1022HaffPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1022_HAFF_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1022_HAFF_ORCH_REGIONS.forEach", src)
+    if "housing-affordability-utils.ts" in name:
+        src = re.sub(
+            r"export function V1022_HAFF_supplyPipelineGraphHash",
+            "export function V1022_HAFF_utilSupplyPipelineGraphHash",
+            src,
+        )
+    if "v1022-housing-affordability/supply-pipeline-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1022_HAFF_supplyPipelineGraphHash as imfdPgHashCore",
+            "V1022_HAFF_utilSupplyPipelineGraphHash as haffPgHashCore",
+            src,
+        )
+        src = re.sub(r"imfdPgHashCore", "haffPgHashCore", src)
+    if "run-v1022-haff-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1022HaffSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1022HaffSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1022HaffBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1022HaffBaseInput(", src)
+        src = src.replace(
+            "  runV1022HaffTurn,\n  createEmptyV1022HaffPersisted,\n  v1022HaffInputHash,\n  sanitizeV1022HaffPersisted,\n} from '../engine/housing-affordability-orchestrator';",
+            "  runV1022HaffTurn,\n  v1022HaffInputHash,\n} from '../engine/housing-affordability-orchestrator';\nimport {\n  createEmptyV1022HaffPersisted,\n  sanitizeV1022HaffPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1022HaffPersisted,\n  v1022HaffInputHash,\n  sanitizeV1022HaffPersisted,\n} from '../engine/housing-affordability-orchestrator';",
+            "  v1022HaffInputHash,\n} from '../engine/housing-affordability-orchestrator';\nimport {\n  createEmptyV1022HaffPersisted,\n  sanitizeV1022HaffPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -820,6 +864,50 @@ def intermodal_freight_paths() -> list[str]:
             for p in root.rglob("*.ts")
             if p.name not in {"index.ts", "run-self-tests.ts"}
             and "/scripts/" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def housing_affordability_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1022-housing-affordability"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/supply-pipeline-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/stress-scenarios/" in s:
+            return (3, s)
+        if "/generated/supply-pipeline-stacks/" in s:
+            return (4, s)
+        if "stress-registry" in s or "supply-pipeline-bundle" in s:
+            return (5, s)
+        if "/zoning-friction-nodes/" in s:
+            return (6, s)
+        if "housing-affordability-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "housing-affordability-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
         ),
         key=sort_key,
     )

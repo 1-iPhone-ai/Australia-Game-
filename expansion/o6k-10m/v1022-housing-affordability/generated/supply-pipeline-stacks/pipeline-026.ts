@@ -1,0 +1,31 @@
+import type { V1022HaffSupplyPipelineEdge } from '../../types/core.ts';
+
+/** Supply pipeline graph shard 026 (rent/mortgage/social corridor coupling). */
+export const V1022_HAFF_SUPPLY_PIPELINE_SHARD_026: readonly V1022HaffSupplyPipelineEdge[] = [
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.518, lagTurns: 10, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.524, lagTurns: 11, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.428, lagTurns: 12, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.434, lagTurns: 13, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.44, lagTurns: 10, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.446, lagTurns: 11, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.452, lagTurns: 12, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.458, lagTurns: 13, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.464, lagTurns: 10, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.47, lagTurns: 11, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.476, lagTurns: 12, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.482, lagTurns: 13, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.488, lagTurns: 10, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.494, lagTurns: 11, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.5, lagTurns: 12, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.506, lagTurns: 13, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.512, lagTurns: 10, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.518, lagTurns: 11, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.524, lagTurns: 12, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.428, lagTurns: 13, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.434, lagTurns: 10, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.44, lagTurns: 11, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.446, lagTurns: 12, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.452, lagTurns: 13, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.458, lagTurns: 10, nodeId: 'zoning_node_02' },
+  { fromTenure: 'regional', toTenure: 'co_living', weight: 0.464, lagTurns: 11, nodeId: 'zoning_node_02' },
+];
