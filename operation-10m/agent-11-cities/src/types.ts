@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.31' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.32' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -314,7 +314,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'existential_final_nullity_sentence'
   | 'collapse_absolute_singularity_culmination'
   | 'void_complete_erosion_extinction'
-  | 'existential_total_nullity_decree';
+  | 'existential_total_nullity_decree'
+  | 'collapse_omni_singularity_synthesis'
+  | 'void_total_erosion_annihilation'
+  | 'existential_absolute_nullity_mandate';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -1161,6 +1164,36 @@ export interface OP10M_A11_ExistentialTotalNullityDecreeRow {
   narrative: string;
 }
 
+export type OP10M_A11_CollapseOmniSingularitySynthesisBand = 'latent' | 'forming' | 'total' | 'synthesis';
+
+export interface OP10M_A11_CollapseOmniSingularitySynthesisRow {
+  regionId: OP10M_A11_RegionId;
+  synthesisScore: number;
+  band: OP10M_A11_CollapseOmniSingularitySynthesisBand;
+  anchors: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_VoidTotalErosionAnnihilationBand = 'inactive' | 'annihilating' | 'total' | 'complete_annihilation';
+
+export interface OP10M_A11_VoidTotalErosionAnnihilationRow {
+  regionId: OP10M_A11_RegionId;
+  annihilationScore: number;
+  band: OP10M_A11_VoidTotalErosionAnnihilationBand;
+  phases: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_ExistentialAbsoluteNullityMandateBand = 'trace' | 'mandating' | 'absolute' | 'total_mandate';
+
+export interface OP10M_A11_ExistentialAbsoluteNullityMandateRow {
+  regionId: OP10M_A11_RegionId;
+  mandateScore: number;
+  band: OP10M_A11_ExistentialAbsoluteNullityMandateBand;
+  marks: string[];
+  narrative: string;
+}
+
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
 export interface OP10M_A11_MigrationPressureRow {
@@ -1439,6 +1472,12 @@ export interface OP10M_A11_CompositeState {
   nationalVoidCompleteErosionExtinctionIndex: number;
   existentialTotalNullityDecree: OP10M_A11_ExistentialTotalNullityDecreeRow[];
   nationalExistentialTotalNullityDecreeIndex: number;
+  collapseOmniSingularitySynthesis: OP10M_A11_CollapseOmniSingularitySynthesisRow[];
+  nationalCollapseOmniSingularitySynthesisIndex: number;
+  voidTotalErosionAnnihilation: OP10M_A11_VoidTotalErosionAnnihilationRow[];
+  nationalVoidTotalErosionAnnihilationIndex: number;
+  existentialAbsoluteNullityMandate: OP10M_A11_ExistentialAbsoluteNullityMandateRow[];
+  nationalExistentialAbsoluteNullityMandateIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -1532,5 +1571,8 @@ export interface OP10M_A11_CompositePersisted {
   lastCollapseAbsoluteSingularityCulminationIndex: number;
   lastVoidCompleteErosionExtinctionIndex: number;
   lastExistentialTotalNullityDecreeIndex: number;
+  lastCollapseOmniSingularitySynthesisIndex: number;
+  lastVoidTotalErosionAnnihilationIndex: number;
+  lastExistentialAbsoluteNullityMandateIndex: number;
   inputHash: string;
 }
