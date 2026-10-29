@@ -104,6 +104,9 @@ import type {
   Wave38GateTrajectorySnapshot,
   Wave38IntegrationMonitor,
   Agent25Wave38ProjectionHandoffBrief,
+  Wave39GateTrajectorySnapshot,
+  Wave39IntegrationMonitor,
+  Agent25Wave39ProjectionHandoffBrief,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -214,6 +217,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   wave38GateTrajectory?: Wave38GateTrajectorySnapshot;
   wave38IntegrationMonitor?: Wave38IntegrationMonitor;
   agent25Wave38ProjectionHandoffBrief?: Agent25Wave38ProjectionHandoffBrief;
+  wave39GateTrajectory?: Wave39GateTrajectorySnapshot;
+  wave39IntegrationMonitor?: Wave39IntegrationMonitor;
+  agent25Wave39ProjectionHandoffBrief?: Agent25Wave39ProjectionHandoffBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -613,6 +619,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.agent25Wave38ProjectionHandoffBrief?.shouldProjectWave38) {
     giNotes.push(args.agent25Wave38ProjectionHandoffBrief.summary);
   }
+  if (args.wave39GateTrajectory?.band === 'blocked') {
+    giNotes.push(
+      `Wave 39 gate ${args.wave39GateTrajectory.band} (EMA ${args.wave39GateTrajectory.wave39GateEma})`
+    );
+  }
+  if (args.wave39IntegrationMonitor && !args.wave39IntegrationMonitor.shouldRunO10m210DryRun) {
+    giNotes.push(args.wave39IntegrationMonitor.summary);
+  }
+  if (args.agent25Wave39ProjectionHandoffBrief?.shouldProjectWave39) {
+    giNotes.push(args.agent25Wave39ProjectionHandoffBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -690,6 +707,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('Agent 25 wave 37 / O10-206 projection ready');
   } else if (args.agent25Wave38ProjectionHandoffBrief?.shouldProjectWave38) {
     headlineParts.push('Agent 25 wave 38 / O10-208 projection ready');
+  } else if (args.agent25Wave39ProjectionHandoffBrief?.shouldProjectWave39) {
+    headlineParts.push('Agent 25 wave 39 / O10-210 projection ready');
   }
 
   return {
