@@ -51,6 +51,8 @@ export interface TurnStrategicBriefing {
   coalitionAnchoredGovernanceStreakDays: number;
   institutionalCoalitionPermanence: boolean;
   coalitionInstitutionalPermanenceStreakDays: number;
+  generationalCoalitionContinuity: boolean;
+  coalitionGenerationalContinuityStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;

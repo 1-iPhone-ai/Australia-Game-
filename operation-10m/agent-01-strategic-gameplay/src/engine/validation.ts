@@ -34,6 +34,7 @@ import { integratedCoalitionMaturityStreakIssues } from './coalition-integrated-
 import { coalitionStewardshipStreakIssues } from './coalition-stewardship-gates.ts';
 import { coalitionAnchoredGovernanceStreakIssues } from './coalition-anchored-governance-gates.ts';
 import { coalitionInstitutionalPermanenceStreakIssues } from './coalition-institutional-permanence-gates.ts';
+import { coalitionGenerationalContinuityStreakIssues } from './coalition-generational-continuity-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -291,6 +292,7 @@ export function validateAction(
     issues.push(...coalitionStewardshipStreakIssues(action, state));
     issues.push(...coalitionAnchoredGovernanceStreakIssues(action, state));
     issues.push(...coalitionInstitutionalPermanenceStreakIssues(action, state));
+    issues.push(...coalitionGenerationalContinuityStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

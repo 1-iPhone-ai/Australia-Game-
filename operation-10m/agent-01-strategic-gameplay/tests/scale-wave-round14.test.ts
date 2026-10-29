@@ -108,7 +108,7 @@ describe('scale wave round 14 — institutional coalition permanence', () => {
       coalitionInstitutionalPermanenceStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(12);
+    expect(save.version).toBe(13);
     expect(save.coalitionInstitutionalPermanenceStreakDays).toBe(5);
   });
 });

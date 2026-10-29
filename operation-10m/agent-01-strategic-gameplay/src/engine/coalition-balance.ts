@@ -118,3 +118,13 @@ export function institutionalPermanenceRankingBonus(
   if (streak >= action.minCoalitionInstitutionalPermanenceStreakDays) return 7;
   return 2;
 }
+
+export function generationalContinuityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionGenerationalContinuityStreakDays === undefined) return 0;
+  const streak = state.coalitionGenerationalContinuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionGenerationalContinuityStreakDays) return 8;
+  return 2;
+}

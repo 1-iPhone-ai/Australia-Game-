@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const moduleRoot = resolve(__dirname, '..');
 const moduleId = 'agent-01-strategic-gameplay';
-const moduleVersion = '2.4.0';
+const moduleVersion = '2.5.0';
 
 /** Stable concat order: dependencies before dependents. */
 const SOURCE_FILES = [
@@ -122,7 +122,7 @@ function bundleSources(): string {
     `  results.push({`,
     `    id: 'agent01_catalog',`,
     `    name: 'strategic action catalog non-empty',`,
-    `    passed: listStrategicActions().length >= 30,`,
+    `    passed: listStrategicActions().length >= 32,`,
     `  });`,
     `  const contracts = createMemoryStrategicContracts();`,
     `  const action = getStrategicAction('sga_supply_chain_buffer');`,

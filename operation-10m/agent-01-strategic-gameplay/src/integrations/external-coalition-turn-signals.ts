@@ -9,6 +9,7 @@ import { isIntegratedCoalitionMaturity } from '../engine/coalition-integrated-ma
 import { isSustainedIntegratedCoalitionStewardship } from '../engine/coalition-stewardship.ts';
 import { isAnchoredCoalitionGovernance } from '../engine/coalition-anchored-governance.ts';
 import { isInstitutionalCoalitionPermanence } from '../engine/coalition-institutional-permanence.ts';
+import { isGenerationalCoalitionContinuity } from '../engine/coalition-generational-continuity.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -27,6 +28,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionAnchoredGovernanceStreakDays: number;
   institutionalCoalitionPermanence: boolean;
   coalitionInstitutionalPermanenceStreakDays: number;
+  generationalCoalitionContinuity: boolean;
+  coalitionGenerationalContinuityStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -49,6 +52,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionAnchoredGovernanceStreakDays: state.coalitionAnchoredGovernanceStreakDays ?? 0,
     institutionalCoalitionPermanence: isInstitutionalCoalitionPermanence(state),
     coalitionInstitutionalPermanenceStreakDays: state.coalitionInstitutionalPermanenceStreakDays ?? 0,
+    generationalCoalitionContinuity: isGenerationalCoalitionContinuity(state),
+    coalitionGenerationalContinuityStreakDays: state.coalitionGenerationalContinuityStreakDays ?? 0,
   };
 }
 
@@ -71,5 +76,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionAnchoredGovernanceStreakDays: raw?.coalitionAnchoredGovernanceStreakDays ?? 0,
     institutionalCoalitionPermanence: raw?.institutionalCoalitionPermanence ?? false,
     coalitionInstitutionalPermanenceStreakDays: raw?.coalitionInstitutionalPermanenceStreakDays ?? 0,
+    generationalCoalitionContinuity: raw?.generationalCoalitionContinuity ?? false,
+    coalitionGenerationalContinuityStreakDays: raw?.coalitionGenerationalContinuityStreakDays ?? 0,
   };
 }

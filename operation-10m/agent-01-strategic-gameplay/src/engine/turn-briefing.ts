@@ -16,6 +16,7 @@ import { isIntegratedCoalitionMaturity } from './coalition-integrated-maturity.t
 import { isSustainedIntegratedCoalitionStewardship } from './coalition-stewardship.ts';
 import { isAnchoredCoalitionGovernance } from './coalition-anchored-governance.ts';
 import { isInstitutionalCoalitionPermanence } from './coalition-institutional-permanence.ts';
+import { isGenerationalCoalitionContinuity } from './coalition-generational-continuity.ts';
 import { listStakeholderWarnings } from './stakeholder-coalition.ts';
 import { rankStrategicActions } from './strategic-recommendations.ts';
 import { listStrategicActions } from '../catalog/strategic-action-catalog.ts';
@@ -61,6 +62,8 @@ export function buildTurnStrategicBriefing(
     coalitionAnchoredGovernanceStreakDays: state.coalitionAnchoredGovernanceStreakDays ?? 0,
     institutionalCoalitionPermanence: isInstitutionalCoalitionPermanence(state),
     coalitionInstitutionalPermanenceStreakDays: state.coalitionInstitutionalPermanenceStreakDays ?? 0,
+    generationalCoalitionContinuity: isGenerationalCoalitionContinuity(state),
+    coalitionGenerationalContinuityStreakDays: state.coalitionGenerationalContinuityStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,

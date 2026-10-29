@@ -102,6 +102,7 @@ export {
   stewardshipRankingBonus,
   anchoredGovernanceRankingBonus,
   institutionalPermanenceRankingBonus,
+  generationalContinuityRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -237,6 +238,16 @@ export {
   applyInstitutionalPermanenceMandateBonus,
 } from './engine/coalition-institutional-permanence.ts';
 
+export { coalitionGenerationalContinuityStreakIssues } from './engine/coalition-generational-continuity-gates.ts';
+
+export {
+  GENERATIONAL_COALITION_CONTINUITY_THRESHOLD,
+  advanceCoalitionGenerationalContinuityStreak,
+  resetCoalitionGenerationalContinuityStreak,
+  isGenerationalCoalitionContinuity,
+  applyGenerationalContinuityMandateBonus,
+} from './engine/coalition-generational-continuity.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '2.4.0';
+export const AGENT_01_MODULE_VERSION = '2.5.0';
