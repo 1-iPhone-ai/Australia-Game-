@@ -312,6 +312,14 @@ import {
   assessDashboardRegionalInflationOverlaySurge,
   type DashboardRegionalInflationOverlaySurgeBand,
 } from '../inflation/dashboard-regional-inflation-overlay-surge.js';
+import {
+  assessCommandCenterInflationAlertPressureLatch,
+  type CommandCenterInflationAlertPressureLatchBand,
+} from '../inflation/command-center-inflation-alert-pressure-latch.js';
+import {
+  assessTransportFreightInflationGridlockSurge,
+  type TransportFreightInflationGridlockSurgeBand,
+} from '../inflation/transport-freight-inflation-gridlock-surge.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -398,6 +406,8 @@ export interface InflationForecastPoint {
   automationSynthesisInflationCascadeSurgeBand: AutomationSynthesisInflationCascadeSurgeBand;
   uiShellInflationAttentionLatchBand: UiShellInflationAttentionLatchBand;
   dashboardRegionalInflationOverlaySurgeBand: DashboardRegionalInflationOverlaySurgeBand;
+  commandCenterInflationAlertPressureLatchBand: CommandCenterInflationAlertPressureLatchBand;
+  transportFreightInflationGridlockSurgeBand: TransportFreightInflationGridlockSurgeBand;
 }
 
 export interface InflationForecastPath {
@@ -1163,6 +1173,28 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const commandAlertPressure = assessCommandCenterInflationAlertPressureLatch({
+      macroAlertLevel: inputs.highInflationScenario ? 'red' : inputs.creditShockActive ? 'amber' : 'green',
+      inflationFusionScore: inputs.fiscalPressure === 'critical' ? 0.8 : 0.5,
+      wave44CommandAlertLatch: inputs.householdInflationScenarioActive,
+      commandAlertPressureBand:
+        inputs.systemicLiquidityBand === 'critical'
+          ? 'critical'
+          : inputs.highInflationScenario
+            ? 'elevated'
+            : 'contained',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const freightGridlockSurge = assessTransportFreightInflationGridlockSurge({
+      freightCapacityBand: inputs.fiscalPressure === 'critical' ? 'critical' : inputs.creditShockActive ? 'tight' : 'balanced',
+      fuelSurchargeActive: inputs.creditShockActive,
+      wave44FreightGridlockLatch: inputs.creditShockActive,
+      freightGridlockSurgeBand:
+        inputs.fiscalPressure === 'critical' ? 'ruptured' : inputs.systemicLiquidityBand === 'critical' ? 'building' : 'clear',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -1249,6 +1281,8 @@ export function projectInflationForecastPath(
       automationSynthesisInflationCascadeSurgeBand: automationCascadeSurge.surgeBand,
       uiShellInflationAttentionLatchBand: uiShellAttention.latchBand,
       dashboardRegionalInflationOverlaySurgeBand: dashboardOverlaySurge.surgeBand,
+      commandCenterInflationAlertPressureLatchBand: commandAlertPressure.latchBand,
+      transportFreightInflationGridlockSurgeBand: freightGridlockSurge.surgeBand,
     });
   }
 

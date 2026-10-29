@@ -80,11 +80,13 @@ import type { MemoryRealmInflationPersistenceLatchBand } from '../inflation/memo
 import type { AutomationSynthesisInflationCascadeSurgeBand } from '../inflation/automation-synthesis-inflation-cascade-surge.js';
 import type { UiShellInflationAttentionLatchBand } from '../inflation/ui-shell-inflation-attention-latch.js';
 import type { DashboardRegionalInflationOverlaySurgeBand } from '../inflation/dashboard-regional-inflation-overlay-surge.js';
+import type { CommandCenterInflationAlertPressureLatchBand } from '../inflation/command-center-inflation-alert-pressure-latch.js';
+import type { TransportFreightInflationGridlockSurgeBand } from '../inflation/transport-freight-inflation-gridlock-surge.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r43';
+  schemaVersion: '10.14.agent10.r44';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -166,6 +168,8 @@ export interface Agent21InflationForecastBundle {
   terminalAutomationSynthesisInflationCascadeSurge: AutomationSynthesisInflationCascadeSurgeBand;
   terminalUiShellInflationAttentionLatch: UiShellInflationAttentionLatchBand;
   terminalDashboardRegionalInflationOverlaySurge: DashboardRegionalInflationOverlaySurgeBand;
+  terminalCommandCenterInflationAlertPressureLatch: CommandCenterInflationAlertPressureLatchBand;
+  terminalTransportFreightInflationGridlockSurge: TransportFreightInflationGridlockSurgeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -194,7 +198,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r43',
+    schemaVersion: '10.14.agent10.r44',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -278,6 +282,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalAutomationSynthesisInflationCascadeSurge: lastPoint?.automationSynthesisInflationCascadeSurgeBand ?? 'stable',
     terminalUiShellInflationAttentionLatch: lastPoint?.uiShellInflationAttentionLatchBand ?? 'muted',
     terminalDashboardRegionalInflationOverlaySurge: lastPoint?.dashboardRegionalInflationOverlaySurgeBand ?? 'routine',
+    terminalCommandCenterInflationAlertPressureLatch: lastPoint?.commandCenterInflationAlertPressureLatchBand ?? 'subdued',
+    terminalTransportFreightInflationGridlockSurge: lastPoint?.transportFreightInflationGridlockSurgeBand ?? 'clear',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

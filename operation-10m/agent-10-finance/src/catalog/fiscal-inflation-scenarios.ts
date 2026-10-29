@@ -1580,6 +1580,47 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'ui', 'dashboard', 'round43'],
   },
+  {
+    id: 'command_alert_pressure_latch_stack',
+    label: 'Command alert pressure latch stack',
+    description: 'Critical command alert pressure under fusion latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.48,
+      publicStability: 31,
+    },
+    tags: ['inflation', 'command', 'round44'],
+  },
+  {
+    id: 'transport_freight_gridlock_surge_stress',
+    label: 'Transport freight gridlock surge stress',
+    description: 'Ruptured freight gridlock under logistics latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.45,
+      publicStability: 27,
+    },
+    tags: ['inflation', 'transport', 'round44'],
+  },
+  {
+    id: 'command_transport_wave44_fusion_stress',
+    label: 'Command & transport wave 44 fusion stress',
+    description: 'Alert crisis latch colliding with freight gridlock surge.',
+    patch: {
+      inflationSettingMultiplier: 1.55,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 17,
+    },
+    tags: ['inflation', 'command', 'transport', 'round44'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

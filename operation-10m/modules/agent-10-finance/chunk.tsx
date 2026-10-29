@@ -7083,6 +7083,140 @@ export function dashboardRegionalInflationOverlaySurgeScoreAdjustment(
 }
 
 
+// --- source: inflation/command-center-inflation-alert-pressure-latch.ts ---
+
+export type CommandCenterInflationAlertPressureLatchBand = 'subdued' | 'building' | 'latched' | 'alert_crisis';
+
+export interface CommandCenterInflationAlertPressureLatchAssessment {
+  latchBand: CommandCenterInflationAlertPressureLatchBand;
+  alertIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Command center inflation alert pressure latch (Agent 17, round 44). */
+export function assessCommandCenterInflationAlertPressureLatch(input: {
+  macroAlertLevel: 'green' | 'amber' | 'red';
+  inflationFusionScore: number;
+  wave44CommandAlertLatch: boolean;
+  commandAlertPressureBand: 'contained' | 'elevated' | 'critical';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): CommandCenterInflationAlertPressureLatchAssessment {
+  let pressure = 0;
+  if (input.macroAlertLevel === 'red') pressure += 0.21;
+  else if (input.macroAlertLevel === 'amber') pressure += 0.1;
+  pressure += finClamp(input.inflationFusionScore, 0, 1) * 0.19;
+  if (input.wave44CommandAlertLatch) pressure += 0.14;
+  if (input.commandAlertPressureBand === 'critical') pressure += 0.23;
+  else if (input.commandAlertPressureBand === 'elevated') pressure += 0.11;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') pressure += 0.05;
+
+  pressure = finClamp(pressure + input.turn * 0.0036, 0, 1.05);
+  const alertIndex = finRound(100 + pressure * 16, 1);
+
+  let latchBand: CommandCenterInflationAlertPressureLatchBand = 'subdued';
+  if (pressure >= 0.58) latchBand = 'alert_crisis';
+  else if (pressure >= 0.38) latchBand = 'latched';
+  else if (pressure >= 0.17) latchBand = 'building';
+
+  const inflationScoreNudge =
+    latchBand === 'alert_crisis'
+      ? 0.092
+      : latchBand === 'latched'
+        ? 0.059
+        : latchBand === 'building'
+          ? 0.028
+          : 0;
+
+  const narrative =
+    latchBand === 'alert_crisis' || latchBand === 'latched'
+      ? 'Command alert pressure latch elevating CPI fusion metadata.'
+      : latchBand === 'building'
+        ? 'Command center alert latch building under fusion score.'
+        : 'Command alert pressure latch subdued versus headline CPI.';
+
+  return { latchBand, alertIndex, inflationScoreNudge, narrative };
+}
+
+export function commandCenterInflationAlertPressureLatchScoreAdjustment(
+  band: CommandCenterInflationAlertPressureLatchBand,
+): number {
+  if (band === 'alert_crisis') return 4;
+  if (band === 'latched') return 3;
+  if (band === 'building') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/transport-freight-inflation-gridlock-surge.ts ---
+
+export type TransportFreightInflationGridlockSurgeBand = 'clear' | 'building' | 'surge' | 'gridlock_crisis';
+
+export interface TransportFreightInflationGridlockSurgeAssessment {
+  surgeBand: TransportFreightInflationGridlockSurgeBand;
+  gridlockIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Transport freight inflation gridlock surge (Agent 12, round 44). */
+export function assessTransportFreightInflationGridlockSurge(input: {
+  freightCapacityBand: 'ample' | 'balanced' | 'tight' | 'critical';
+  fuelSurchargeActive: boolean;
+  wave44FreightGridlockLatch: boolean;
+  freightGridlockSurgeBand: 'clear' | 'building' | 'ruptured';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): TransportFreightInflationGridlockSurgeAssessment {
+  let pressure = 0;
+  if (input.freightCapacityBand === 'critical') pressure += 0.22;
+  else if (input.freightCapacityBand === 'tight') pressure += 0.12;
+  if (input.fuelSurchargeActive) pressure += 0.15;
+  if (input.wave44FreightGridlockLatch) pressure += 0.13;
+  if (input.freightGridlockSurgeBand === 'ruptured') pressure += 0.21;
+  else if (input.freightGridlockSurgeBand === 'building') pressure += 0.1;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') pressure += 0.05;
+
+  pressure = finClamp(pressure + input.turn * 0.0037, 0, 1.05);
+  const gridlockIndex = finRound(100 + pressure * 15, 1);
+
+  let surgeBand: TransportFreightInflationGridlockSurgeBand = 'clear';
+  if (pressure >= 0.57) surgeBand = 'gridlock_crisis';
+  else if (pressure >= 0.37) surgeBand = 'surge';
+  else if (pressure >= 0.16) surgeBand = 'building';
+
+  const inflationScoreNudge =
+    surgeBand === 'gridlock_crisis'
+      ? 0.091
+      : surgeBand === 'surge'
+        ? 0.058
+        : surgeBand === 'building'
+          ? 0.027
+          : 0;
+
+  const narrative =
+    surgeBand === 'gridlock_crisis' || surgeBand === 'surge'
+      ? 'Freight gridlock surge feeding CPI logistics metadata.'
+      : surgeBand === 'building'
+        ? 'Freight gridlock latch building under capacity stress.'
+        : 'Transport freight gridlock surge clear versus headline CPI.';
+
+  return { surgeBand, gridlockIndex, inflationScoreNudge, narrative };
+}
+
+export function transportFreightInflationGridlockSurgeScoreAdjustment(
+  band: TransportFreightInflationGridlockSurgeBand,
+): number {
+  if (band === 'gridlock_crisis') return 4;
+  if (band === 'surge') return 3;
+  if (band === 'building') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -8901,6 +9035,47 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'ui', 'dashboard', 'round43'],
   },
+  {
+    id: 'command_alert_pressure_latch_stack',
+    label: 'Command alert pressure latch stack',
+    description: 'Critical command alert pressure under fusion latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.48,
+      publicStability: 31,
+    },
+    tags: ['inflation', 'command', 'round44'],
+  },
+  {
+    id: 'transport_freight_gridlock_surge_stress',
+    label: 'Transport freight gridlock surge stress',
+    description: 'Ruptured freight gridlock under logistics latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.45,
+      publicStability: 27,
+    },
+    tags: ['inflation', 'transport', 'round44'],
+  },
+  {
+    id: 'command_transport_wave44_fusion_stress',
+    label: 'Command & transport wave 44 fusion stress',
+    description: 'Alert crisis latch colliding with freight gridlock surge.',
+    patch: {
+      inflationSettingMultiplier: 1.55,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 17,
+    },
+    tags: ['inflation', 'command', 'transport', 'round44'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {
@@ -10341,6 +10516,10 @@ export interface Agent12TransportSnapshot {
   wave36LogisticsInflationLatch?: boolean;
   /** Round 36: freight cascade congestion band. */
   freightCascadeCongestionBand?: 'clear' | 'building' | 'ruptured';
+  /** Round 44: freight gridlock inflation latch. */
+  wave44FreightGridlockLatch?: boolean;
+  /** Round 44: freight gridlock surge band. */
+  freightGridlockSurgeBand?: 'clear' | 'building' | 'ruptured';
 }
 
 export function mergeAgent12IntoMacroFinancialInputs(
@@ -10392,6 +10571,13 @@ export function mergeAgent12IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.freightCascadeCongestionBand === 'building' && snapshot.freightCapacityBand === 'critical') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave44FreightGridlockLatch && snapshot.freightGridlockSurgeBand === 'ruptured') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.freightGridlockSurgeBand === 'building' && snapshot.freightCapacityBand === 'critical') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
@@ -10739,6 +10925,10 @@ export interface Agent17CommandSnapshot {
   wave36FusionLatch?: boolean;
   /** Round 36: command inflation escalation band. */
   commandInflationEscalationBand?: 'stable' | 'elevated' | 'critical';
+  /** Round 44: command alert inflation latch. */
+  wave44CommandAlertLatch?: boolean;
+  /** Round 44: command alert pressure band. */
+  commandAlertPressureBand?: 'contained' | 'elevated' | 'critical';
 }
 
 export function mergeAgent17IntoMacroFinancialInputs(
@@ -10785,6 +10975,13 @@ export function mergeAgent17IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.commandInflationEscalationBand === 'elevated' && snapshot.macroAlertLevel === 'red') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave44CommandAlertLatch && snapshot.commandAlertPressureBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.commandAlertPressureBand === 'elevated' && snapshot.macroAlertLevel === 'red') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
@@ -11541,6 +11738,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessDashboardRegionalInflationOverlaySurge,
   type DashboardRegionalInflationOverlaySurgeBand,
 } from '../inflation/dashboard-regional-inflation-overlay-surge.js';
+  assessCommandCenterInflationAlertPressureLatch,
+  type CommandCenterInflationAlertPressureLatchBand,
+} from '../inflation/command-center-inflation-alert-pressure-latch.js';
+  assessTransportFreightInflationGridlockSurge,
+  type TransportFreightInflationGridlockSurgeBand,
+} from '../inflation/transport-freight-inflation-gridlock-surge.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -11627,6 +11830,8 @@ export interface InflationForecastPoint {
   automationSynthesisInflationCascadeSurgeBand: AutomationSynthesisInflationCascadeSurgeBand;
   uiShellInflationAttentionLatchBand: UiShellInflationAttentionLatchBand;
   dashboardRegionalInflationOverlaySurgeBand: DashboardRegionalInflationOverlaySurgeBand;
+  commandCenterInflationAlertPressureLatchBand: CommandCenterInflationAlertPressureLatchBand;
+  transportFreightInflationGridlockSurgeBand: TransportFreightInflationGridlockSurgeBand;
 }
 
 export interface InflationForecastPath {
@@ -12392,6 +12597,28 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const commandAlertPressure = assessCommandCenterInflationAlertPressureLatch({
+      macroAlertLevel: inputs.highInflationScenario ? 'red' : inputs.creditShockActive ? 'amber' : 'green',
+      inflationFusionScore: inputs.fiscalPressure === 'critical' ? 0.8 : 0.5,
+      wave44CommandAlertLatch: inputs.householdInflationScenarioActive,
+      commandAlertPressureBand:
+        inputs.systemicLiquidityBand === 'critical'
+          ? 'critical'
+          : inputs.highInflationScenario
+            ? 'elevated'
+            : 'contained',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const freightGridlockSurge = assessTransportFreightInflationGridlockSurge({
+      freightCapacityBand: inputs.fiscalPressure === 'critical' ? 'critical' : inputs.creditShockActive ? 'tight' : 'balanced',
+      fuelSurchargeActive: inputs.creditShockActive,
+      wave44FreightGridlockLatch: inputs.creditShockActive,
+      freightGridlockSurgeBand:
+        inputs.fiscalPressure === 'critical' ? 'ruptured' : inputs.systemicLiquidityBand === 'critical' ? 'building' : 'clear',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -12478,6 +12705,8 @@ export function projectInflationForecastPath(
       automationSynthesisInflationCascadeSurgeBand: automationCascadeSurge.surgeBand,
       uiShellInflationAttentionLatchBand: uiShellAttention.latchBand,
       dashboardRegionalInflationOverlaySurgeBand: dashboardOverlaySurge.surgeBand,
+      commandCenterInflationAlertPressureLatchBand: commandAlertPressure.latchBand,
+      transportFreightInflationGridlockSurgeBand: freightGridlockSurge.surgeBand,
     });
   }
 
@@ -12583,7 +12812,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r43';
+  schemaVersion: '10.14.agent10.r44';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -12665,6 +12894,8 @@ export interface Agent21InflationForecastBundle {
   terminalAutomationSynthesisInflationCascadeSurge: AutomationSynthesisInflationCascadeSurgeBand;
   terminalUiShellInflationAttentionLatch: UiShellInflationAttentionLatchBand;
   terminalDashboardRegionalInflationOverlaySurge: DashboardRegionalInflationOverlaySurgeBand;
+  terminalCommandCenterInflationAlertPressureLatch: CommandCenterInflationAlertPressureLatchBand;
+  terminalTransportFreightInflationGridlockSurge: TransportFreightInflationGridlockSurgeBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -12693,7 +12924,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r43',
+    schemaVersion: '10.14.agent10.r44',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -12777,6 +13008,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalAutomationSynthesisInflationCascadeSurge: lastPoint?.automationSynthesisInflationCascadeSurgeBand ?? 'stable',
     terminalUiShellInflationAttentionLatch: lastPoint?.uiShellInflationAttentionLatchBand ?? 'muted',
     terminalDashboardRegionalInflationOverlaySurge: lastPoint?.dashboardRegionalInflationOverlaySurgeBand ?? 'routine',
+    terminalCommandCenterInflationAlertPressureLatch: lastPoint?.commandCenterInflationAlertPressureLatchBand ?? 'subdued',
+    terminalTransportFreightInflationGridlockSurge: lastPoint?.transportFreightInflationGridlockSurgeBand ?? 'clear',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -13132,6 +13365,12 @@ export function effectiveTierLoanRate(
   assessDashboardRegionalInflationOverlaySurge,
   dashboardRegionalInflationOverlaySurgeScoreAdjustment,
 } from './inflation/dashboard-regional-inflation-overlay-surge.js';
+  assessCommandCenterInflationAlertPressureLatch,
+  commandCenterInflationAlertPressureLatchScoreAdjustment,
+} from './inflation/command-center-inflation-alert-pressure-latch.js';
+  assessTransportFreightInflationGridlockSurge,
+  transportFreightInflationGridlockSurgeScoreAdjustment,
+} from './inflation/transport-freight-inflation-gridlock-surge.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -13536,7 +13775,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r43');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r44');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -13683,7 +13922,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -13775,7 +14014,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -13874,7 +14113,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -13972,7 +14211,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -14070,7 +14309,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -14160,7 +14399,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -14250,7 +14489,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -14340,7 +14579,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -14430,7 +14669,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -14522,7 +14761,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r16_10',
       'agent21 r16 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalFinancialServicesFee !== undefined &&
         bundle.terminalAgriculturalFarmgatePressure !== undefined,
     );
@@ -14618,7 +14857,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r17_10',
       'agent21 r17 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalPublicUtilitiesGridTariff !== undefined &&
         bundle.terminalUiInflationSalience !== undefined,
     );
@@ -14722,7 +14961,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r18_10',
       'agent21 r18 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalHousingMortgageEssential !== undefined &&
         bundle.terminalMacroTransmissionMerge !== undefined,
     );
@@ -14827,7 +15066,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r19_10',
       'agent21 r19 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalDynamicEventsInflationSpillover !== undefined &&
         bundle.terminalDashboardMapInflationOverlay !== undefined,
     );
@@ -14932,7 +15171,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r20_10',
       'agent21 r20 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalPublicFinanceDebtService !== undefined &&
         bundle.terminalPopulationLaborWage !== undefined,
     );
@@ -15042,7 +15281,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r21_10',
       'agent21 r21 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalWholesaleEnergyTransition !== undefined &&
         bundle.terminalUrbanRentDispersion !== undefined,
     );
@@ -15144,7 +15383,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r22_10',
       'agent21 r22 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalCorporatePricingPassThrough !== undefined &&
         bundle.terminalTradeExchangeImport !== undefined,
     );
@@ -15250,7 +15489,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r23_10',
       'agent21 r23 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalGuardianInflationIntervention !== undefined &&
         bundle.terminalTeamIntelligenceConsensus !== undefined,
     );
@@ -15356,7 +15595,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r24_10',
       'agent21 r24 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalStrategicGeopoliticalPremium !== undefined &&
         bundle.terminalAiMemoryInflationRecall !== undefined,
     );
@@ -15462,7 +15701,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r25_10',
       'agent21 r25 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalCalendarSeasonInflationCarryover !== undefined &&
         bundle.terminalAutomationAutopilotInflationDrift !== undefined,
     );
@@ -15578,7 +15817,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r26_10',
       'agent21 r26 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalResearchProductivityInflationOffset !== undefined &&
         bundle.terminalScenarioSandboxInflationBias !== undefined,
     );
@@ -15691,7 +15930,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r27_10',
       'agent21 r27 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalEventsNarrativeInflationPersistence !== undefined &&
         bundle.terminalMacroDemandOverheatInflationSlippage !== undefined,
     );
@@ -15800,7 +16039,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r28_10',
       'agent21 r28 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalFreightLogisticsInflationCongestion !== undefined &&
         bundle.terminalHousingWellbeingInflationEssentialStress !== undefined,
     );
@@ -15904,7 +16143,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r29_10',
       'agent21 r29 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalCommandCenterInflationFusionEscalation !== undefined &&
         bundle.terminalUiPlayerInflationSalienceNudge !== undefined,
     );
@@ -16012,7 +16251,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r30_10',
       'agent21 r30 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalFiscalIndexationInflationAnchorBreach !== undefined &&
         bundle.terminalHouseholdWageInflationDeanchoring !== undefined,
     );
@@ -16120,7 +16359,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r31_10',
       'agent21 r31 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalCorporateMarkupInflationCascade !== undefined &&
         bundle.terminalTradeTariffImportInflationPipeline !== undefined,
     );
@@ -16230,7 +16469,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r32_10',
       'agent21 r32 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalMetroUrbanRentInflationSurge !== undefined &&
         bundle.terminalWholesaleGridEnergyInflationCascade !== undefined,
     );
@@ -16344,7 +16583,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r33_10',
       'agent21 r33 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalGuardianGuardrailInflationEscalation !== undefined &&
         bundle.terminalTeamConsensusInflationBriefingDrift !== undefined,
     );
@@ -16467,7 +16706,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r34_10',
       'agent21 r34 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalMemoryCommonwealthInflationRecallGate !== undefined &&
         bundle.terminalAutomationSynthesisInflationCascadeDrift !== undefined,
     );
@@ -16591,7 +16830,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r35_10',
       'agent21 r35 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalUiShellInflationSalienceEscalation !== undefined &&
         bundle.terminalDashboardHeatmapInflationOverlayCascade !== undefined,
     );
@@ -16717,7 +16956,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r36_10',
       'agent21 r36 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalCommandCenterInflationFusionLatch !== undefined &&
         bundle.terminalTransportFreightInflationCongestionCascade !== undefined,
     );
@@ -16841,7 +17080,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r37_10',
       'agent21 r37 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalEventsStagedInflationShockPersistence !== undefined &&
         bundle.terminalModesSandboxInflationStressCascade !== undefined,
     );
@@ -16964,7 +17203,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r38_10',
       'agent21 r38 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalFiscalAppropriationInflationPressureLatch !== undefined &&
         bundle.terminalHouseholdBudgetInflationStressCascade !== undefined,
     );
@@ -17088,7 +17327,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r39_10',
       'agent21 r39 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalCorporateSurvivalPricingInflationLatch !== undefined &&
         bundle.terminalTradeTariffExchangeInflationEscalation !== undefined,
     );
@@ -17212,7 +17451,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r40_10',
       'agent21 r40 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalMetroCapacityRentInflationLatch !== undefined &&
         bundle.terminalGridWholesaleTariffInflationSurge !== undefined,
     );
@@ -17334,7 +17573,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r41_10',
       'agent21 r41 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalGuardianCopilotInflationPressureLatch !== undefined &&
         bundle.terminalTeamBriefingConsensusInflationUnmooring !== undefined,
     );
@@ -17456,7 +17695,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r42_10',
       'agent21 r42 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalMemoryRealmInflationPersistenceLatch !== undefined &&
         bundle.terminalAutomationSynthesisInflationCascadeSurge !== undefined,
     );
@@ -17578,7 +17817,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r43_10',
       'agent21 r43 fields',
-      bundle.schemaVersion === '10.14.agent10.r43' &&
+      bundle.schemaVersion === '10.14.agent10.r44' &&
         bundle.terminalUiShellInflationAttentionLatch !== undefined &&
         bundle.terminalDashboardRegionalInflationOverlaySurge !== undefined,
     );
@@ -17614,6 +17853,129 @@ export function runAgent10FinanceSelfTests(): {
         'ui_dashboard_wave43_fusion_stress',
       );
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.53;
+    })(),
+  );
+
+  {
+    const alert = assessCommandCenterInflationAlertPressureLatch({
+      macroAlertLevel: 'red',
+      inflationFusionScore: 0.78,
+      wave44CommandAlertLatch: true,
+      commandAlertPressureBand: 'critical',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r44_01',
+      'command latched or alert crisis',
+      alert.latchBand === 'latched' || alert.latchBand === 'alert_crisis',
+    );
+    check(
+      'a10_r44_02',
+      'command alert score adj',
+      commandCenterInflationAlertPressureLatchScoreAdjustment(alert.latchBand) >= 3,
+    );
+  }
+  {
+    const gridlock = assessTransportFreightInflationGridlockSurge({
+      freightCapacityBand: 'critical',
+      fuelSurchargeActive: true,
+      wave44FreightGridlockLatch: true,
+      freightGridlockSurgeBand: 'ruptured',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r44_03',
+      'freight surge or gridlock crisis',
+      gridlock.surgeBand === 'surge' || gridlock.surgeBand === 'gridlock_crisis',
+    );
+    check(
+      'a10_r44_04',
+      'freight gridlock score adj',
+      transportFreightInflationGridlockSurgeScoreAdjustment(gridlock.surgeBand) >= 3,
+    );
+  }
+  {
+    const merged17 = mergeAgent17IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      macroAlertLevel: 'red',
+      inflationFusionScore: 0.75,
+      coordinatedTighteningSuggested: true,
+      wave44CommandAlertLatch: true,
+      commandAlertPressureBand: 'critical',
+    });
+    check('a10_r44_05', 'agent17 critical latch merge', merged17.highInflationScenario === true);
+    check('a10_r44_06', 'agent17 bridge note', agent17CommandBridgeIntegrationNote().includes('Agent 17'));
+  }
+  {
+    const merged12 = mergeAgent12IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      freightCapacityBand: 'critical',
+      fuelSurchargeActive: true,
+      portBacklogBand: 'severe',
+      logisticsInflationScenarioActive: true,
+      wave44FreightGridlockLatch: true,
+      freightGridlockSurgeBand: 'ruptured',
+    });
+    check('a10_r44_07', 'agent12 ruptured merge', merged12.highInflationScenario === true);
+    check('a10_r44_08', 'agent12 bridge note', agent12TransportBridgeIntegrationNote().includes('Agent 12'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r44_09',
+      'forecast command alert and freight gridlock fields',
+      path.points.every(
+        (p) => !!p.commandCenterInflationAlertPressureLatchBand && !!p.transportFreightInflationGridlockSurgeBand,
+      ),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r44_10',
+      'agent21 r44 fields',
+      bundle.schemaVersion === '10.14.agent10.r44' &&
+        bundle.terminalCommandCenterInflationAlertPressureLatch !== undefined &&
+        bundle.terminalTransportFreightInflationGridlockSurge !== undefined,
+    );
+  }
+  check(
+    'a10_r44_11',
+    'round44 preset command alert stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(
+        makeDefaultMacroFinancialTestInputs(),
+        'command_alert_pressure_latch_stack',
+      );
+      return inp?.highInflationScenario === true && inp.householdInflationScenarioActive === true;
+    })(),
+  );
+  check(
+    'a10_r44_12',
+    'round44 preset freight gridlock surge stress',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(
+        makeDefaultMacroFinancialTestInputs(),
+        'transport_freight_gridlock_surge_stress',
+      );
+      return inp?.highInflationScenario === true && inp.systemicLiquidityBand === 'critical';
+    })(),
+  );
+  check(
+    'a10_r44_13',
+    'round44 preset command transport fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(
+        makeDefaultMacroFinancialTestInputs(),
+        'command_transport_wave44_fusion_stress',
+      );
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.54;
     })(),
   );
 
@@ -20467,6 +20829,79 @@ export function UiDashboardWaveInflationPanel(props: UiDashboardWaveInflationPan
       </p>
       <p data-testid="ui-dashboard-wave-note">{attention.narrative}</p>
       <p>{overlay.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/CommandTransportWaveInflationPanel.tsx ---
+  assessCommandCenterInflationAlertPressureLatch,
+  commandCenterInflationAlertPressureLatchScoreAdjustment,
+} from '../inflation/command-center-inflation-alert-pressure-latch.js';
+  assessTransportFreightInflationGridlockSurge,
+  transportFreightInflationGridlockSurgeScoreAdjustment,
+} from '../inflation/transport-freight-inflation-gridlock-surge.js';
+
+export interface CommandTransportWaveInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent17?: Agent17CommandSnapshot | null;
+  agent12?: Agent12TransportSnapshot | null;
+}
+
+export function CommandTransportWaveInflationPanel(props: CommandTransportWaveInflationPanelProps) {
+  const command = props.agent17 ?? {
+    turn: props.inputs.turn,
+    macroAlertLevel: props.inputs.highInflationScenario ? ('red' as const) : ('amber' as const),
+    inflationFusionScore: 0.75,
+    coordinatedTighteningSuggested: props.inputs.creditShockActive,
+    wave44CommandAlertLatch: props.inputs.householdInflationScenarioActive,
+    commandAlertPressureBand:
+      props.inputs.systemicLiquidityBand === 'critical' ? ('critical' as const) : ('elevated' as const),
+  };
+
+  const transport = props.agent12 ?? {
+    turn: props.inputs.turn,
+    freightCapacityBand: props.inputs.fiscalPressure === 'critical' ? ('critical' as const) : ('tight' as const),
+    fuelSurchargeActive: props.inputs.creditShockActive,
+    portBacklogBand: props.inputs.highInflationScenario ? ('severe' as const) : ('moderate' as const),
+    logisticsInflationScenarioActive: props.inputs.highInflationScenario,
+    wave44FreightGridlockLatch: props.inputs.creditShockActive,
+    freightGridlockSurgeBand:
+      props.inputs.fiscalPressure === 'critical' ? ('ruptured' as const) : ('building' as const),
+  };
+
+  const alert = assessCommandCenterInflationAlertPressureLatch({
+    macroAlertLevel: command.macroAlertLevel,
+    inflationFusionScore: command.inflationFusionScore,
+    wave44CommandAlertLatch: command.wave44CommandAlertLatch === true,
+    commandAlertPressureBand: command.commandAlertPressureBand ?? 'contained',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const gridlock = assessTransportFreightInflationGridlockSurge({
+    freightCapacityBand: transport.freightCapacityBand,
+    fuelSurchargeActive: transport.fuelSurchargeActive,
+    wave44FreightGridlockLatch: transport.wave44FreightGridlockLatch === true,
+    freightGridlockSurgeBand: transport.freightGridlockSurgeBand ?? 'clear',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-command-transport-wave-inflation" data-testid="command-transport-wave-inflation-panel">
+      <h4>Command alert latch & freight gridlock surge (round 44)</h4>
+      <p>
+        Command {alert.latchBand} · index {alert.alertIndex.toFixed(0)} · score adj{' '}
+        {commandCenterInflationAlertPressureLatchScoreAdjustment(alert.latchBand)}
+      </p>
+      <p>
+        Freight {gridlock.surgeBand} · index {gridlock.gridlockIndex.toFixed(0)} · score adj{' '}
+        {transportFreightInflationGridlockSurgeScoreAdjustment(gridlock.surgeBand)}
+      </p>
+      <p data-testid="command-transport-wave-note">{alert.narrative}</p>
+      <p>{gridlock.narrative}</p>
     </div>
   );
 }

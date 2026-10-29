@@ -17,6 +17,10 @@ export interface Agent17CommandSnapshot {
   wave36FusionLatch?: boolean;
   /** Round 36: command inflation escalation band. */
   commandInflationEscalationBand?: 'stable' | 'elevated' | 'critical';
+  /** Round 44: command alert inflation latch. */
+  wave44CommandAlertLatch?: boolean;
+  /** Round 44: command alert pressure band. */
+  commandAlertPressureBand?: 'contained' | 'elevated' | 'critical';
 }
 
 export function mergeAgent17IntoMacroFinancialInputs(
@@ -63,6 +67,13 @@ export function mergeAgent17IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.commandInflationEscalationBand === 'elevated' && snapshot.macroAlertLevel === 'red') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave44CommandAlertLatch && snapshot.commandAlertPressureBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.commandAlertPressureBand === 'elevated' && snapshot.macroAlertLevel === 'red') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
