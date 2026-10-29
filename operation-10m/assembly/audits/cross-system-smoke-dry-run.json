@@ -1,6 +1,6 @@
 {
   "smokeId": "cross-system-smoke-dry-run",
-  "ranAt": "2026-10-29T14:36:11.088Z",
+  "ranAt": "2026-10-29T14:47:39.219Z",
   "mode": "dry-run-export-presence",
   "artifact": "/home/ubuntu/australia-game-gate/build/tranche-full-chunks-projection.tsx",
   "canonicalModified": false,
