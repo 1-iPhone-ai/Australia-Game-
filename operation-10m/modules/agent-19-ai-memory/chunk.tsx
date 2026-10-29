@@ -2608,6 +2608,246 @@ export function matchRecoveryPlaybookWithinCap(playbook: MatchRecoveryPlaybook):
 }
 
 
+// --- source: match-explainability-delivery-bundle.ts ---
+  auditMatchExplainabilityFinalGate,
+  matchExplainabilityFinalGateOpen,
+} from './match-explainability-final-gate.ts';
+
+export const AGENT19_DELIVERY_NARRATIVE_CAP = 8;
+
+export interface MatchExplainabilityDeliveryBundle {
+  shippable: boolean;
+  exportBundle: SessionExportBundle | null;
+  giRollup: SessionGiClaimsRollup;
+  recoveryPlaybook: MatchRecoveryPlaybook | null;
+  narrativeLines: string[];
+}
+
+type DeliveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Player-facing delivery bundle: exports when final gate open, playbook when closed. */
+export function buildMatchExplainabilityDeliveryBundle(
+  packs: TurnExplainabilityPack[],
+  params: DeliveryParams,
+): MatchExplainabilityDeliveryBundle {
+  const finalGate = auditMatchExplainabilityFinalGate(packs, params);
+  const giRollup = buildSessionGiClaimsRollup(packs, {
+    memoryInfluenceEnabled: params.memoryInfluenceEnabled,
+  });
+  const sessionRollup = buildSessionExplainabilityRollup(packs);
+  const shippable = matchExplainabilityFinalGateOpen(finalGate);
+  let exportBundle: SessionExportBundle | null = null;
+  let recoveryPlaybook: MatchRecoveryPlaybook | null = null;
+  if (shippable) {
+    exportBundle = buildSessionExportBundle(packs, params);
+  } else {
+    recoveryPlaybook = buildMatchRecoveryPlaybook(packs, params);
+  }
+  const narrativeLines = [
+    `Match explainability delivery: ${shippable ? 'SHIPPABLE' : 'BLOCKED'} (${packs.length} turn pack(s)).`,
+    ...sessionRollup.narrativeLines.slice(0, 1),
+    ...giRollup.narrativeLines.slice(0, 1),
+    ...(shippable && exportBundle ? exportBundle.narrativeLines : recoveryPlaybook?.narrativeLines.slice(0, 1) || []),
+  ].slice(0, AGENT19_DELIVERY_NARRATIVE_CAP);
+  return { shippable, exportBundle, giRollup, recoveryPlaybook, narrativeLines };
+}
+
+export function matchExplainabilityDeliveryShippable(bundle: MatchExplainabilityDeliveryBundle): boolean {
+  return bundle.shippable;
+}
+
+
+// --- source: session-gi-delivery-bundle.ts ---
+
+export interface SessionGiDeliveryBundle {
+  deliverable: boolean;
+  giWithinCap: boolean;
+  claimCount: number;
+  narrativeLines: string[];
+}
+
+/** Ask-the-Game delivery bundle: GI rollup only when base match gate is open. */
+export function buildSessionGiDeliveryBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionGiDeliveryBundle {
+  const gate = auditMatchExplainabilityGate(packs, params);
+  const giRollup = buildSessionGiClaimsRollup(packs, {
+    memoryInfluenceEnabled: params.memoryInfluenceEnabled,
+  });
+  const giWithinCap = sessionGiRollupWithinCap(giRollup);
+  const deliverable = matchExplainabilityGateOpen(gate) && giWithinCap && packs.length > 0;
+  const narrativeLines = [
+    `Session GI delivery: ${deliverable ? 'READY' : 'HELD'} (${giRollup.claimCount} claim(s), cap ${giWithinCap ? 'ok' : 'FAIL'}).`,
+    ...giRollup.narrativeLines.slice(0, 2),
+  ];
+  return {
+    deliverable,
+    giWithinCap,
+    claimCount: giRollup.claimCount,
+    narrativeLines,
+  };
+}
+
+export function sessionGiDeliveryReady(bundle: SessionGiDeliveryBundle): boolean {
+  return bundle.deliverable;
+}
+
+
+// --- source: final-gate-recovery-bridge.ts ---
+
+export const AGENT19_FINAL_RECOVERY_HINT_CAP = 6;
+
+/** Maps final-gate sub-check failures to targeted recovery hints. */
+export function buildFinalGateRecoveryHints(report: MatchExplainabilityFinalGateReport): string[] {
+  const hints: string[] = [];
+  if (!report.matchGateOpen) {
+    hints.push('Close session GI cap or confidence band issues before reopening the match gate.');
+  }
+  if (!report.traceContinuityOpen) {
+    hints.push('Restore dropped decision option types — memory must not remove legal choices.');
+  }
+  if (!report.horizonAlignmentOk) {
+    hints.push('Remove influence slices that cite inactive horizons in the post-turn snapshot.');
+  }
+  if (!report.traceCompositeAllPassed) {
+    hints.push('Fix per-turn slice attribution or trace/composite bridge failures.');
+  }
+  if (report.finalOpen) {
+    hints.push('Final explainability gate is open — delivery bundle may ship.');
+  }
+  return hints.slice(0, AGENT19_FINAL_RECOVERY_HINT_CAP);
+}
+
+export function finalGateRecoveryNeeded(report: MatchExplainabilityFinalGateReport): boolean {
+  return !report.finalOpen;
+}
+
+
+// --- source: negotiation-export-bridge.ts ---
+
+export interface NegotiationExportBridgeReport {
+  includeNegotiationNotes: boolean;
+  exportTurnCount: number;
+  alignedTurns: number;
+  narrativeLines: string[];
+}
+
+/** Adds negotiation rollup metadata to export bundle eligibility. */
+export function auditNegotiationExportBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    relationship: Partial<AiRelationship> | null | undefined;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): NegotiationExportBridgeReport {
+  const negotiation = buildNegotiationSessionRollup(packs, {
+    relationship: params.relationship,
+    decisionsByTurn: params.decisionsByTurn.map(d => ({ after: d.after })),
+  });
+  const exportBundle = buildSessionExportBundle(packs, params);
+  const includeNegotiationNotes =
+    negotiationSessionMostlyAligned(negotiation) && exportBundle.exports.length > 0;
+  const narrativeLines = [
+    `Negotiation export bridge: notes ${includeNegotiationNotes ? 'included' : 'withheld'} (${negotiation.alignedTurns}/${negotiation.turnCount} aligned).`,
+    ...negotiation.narrativeLines,
+    ...exportBundle.narrativeLines.slice(0, 1),
+  ];
+  return {
+    includeNegotiationNotes,
+    exportTurnCount: exportBundle.exports.length,
+    alignedTurns: negotiation.alignedTurns,
+    narrativeLines,
+  };
+}
+
+export function negotiationExportNotesIncluded(report: NegotiationExportBridgeReport): boolean {
+  return report.includeNegotiationNotes;
+}
+
+
+// --- source: match-explainability-shipment-gate.ts ---
+  auditMatchExplainabilityFinalGate,
+  matchExplainabilityFinalGateOpen,
+} from './match-explainability-final-gate.ts';
+  buildNegotiationSessionRollup,
+  negotiationSessionMostlyAligned,
+} from './negotiation-session-rollup.ts';
+
+export interface MatchExplainabilityShipmentGateReport {
+  shipmentAllowed: boolean;
+  finalGateOpen: boolean;
+  confidenceExportOk: boolean;
+  negotiationAligned: boolean;
+  narrativeLines: string[];
+}
+
+/** Shipment gate: final gate + confidence/export bridge + negotiation session alignment. */
+export function auditMatchExplainabilityShipmentGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityShipmentGateReport {
+  const finalGate = auditMatchExplainabilityFinalGate(packs, params);
+  const finalGateOpen = matchExplainabilityFinalGateOpen(finalGate);
+  const confidenceExport = auditConfidenceExportBridge(packs, params);
+  const confidenceExportOk = confidenceExportBridgeAllowed(confidenceExport);
+  const negotiation = buildNegotiationSessionRollup(packs, {
+    relationship: params.relationship,
+    decisionsByTurn: params.decisionsByTurn.map(d => ({ after: d.after })),
+  });
+  const negotiationAligned = negotiationSessionMostlyAligned(negotiation);
+  const shipmentAllowed = finalGateOpen && confidenceExportOk && negotiationAligned;
+  const narrativeLines = [
+    `Match explainability shipment: ${shipmentAllowed ? 'ALLOWED' : 'BLOCKED'} (final ${finalGateOpen ? 'ok' : 'fail'}, export ${confidenceExportOk ? 'ok' : 'fail'}, negotiation ${negotiationAligned ? 'ok' : 'fail'}).`,
+    ...finalGate.narrativeLines.slice(0, 1),
+    ...confidenceExport.narrativeLines.slice(0, 1),
+  ];
+  return {
+    shipmentAllowed,
+    finalGateOpen,
+    confidenceExportOk,
+    negotiationAligned,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityShipmentAllowed(report: MatchExplainabilityShipmentGateReport): boolean {
+  return report.shipmentAllowed;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -2805,6 +3045,20 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   matchRecoveryPlaybookWithinCap,
   AGENT19_RECOVERY_PLAYBOOK_CAP,
 } from '../match-recovery-playbook.ts';
+  buildMatchExplainabilityDeliveryBundle,
+  matchExplainabilityDeliveryShippable,
+  AGENT19_DELIVERY_NARRATIVE_CAP,
+} from '../match-explainability-delivery-bundle.ts';
+  buildFinalGateRecoveryHints,
+  finalGateRecoveryNeeded,
+  AGENT19_FINAL_RECOVERY_HINT_CAP,
+} from '../final-gate-recovery-bridge.ts';
+  auditNegotiationExportBridge,
+  negotiationExportNotesIncluded,
+} from '../negotiation-export-bridge.ts';
+  auditMatchExplainabilityShipmentGate,
+  matchExplainabilityShipmentAllowed,
+} from '../match-explainability-shipment-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -4431,6 +4685,204 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return playbook.steps[0].includes('open') && playbook.stepCount >= 1 || playbook.steps.join('|');
+        },
+      ],
+      [
+        'a19_r12_delivery_ship',
+        'Delivery bundle ships exports when final gate open',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'm' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const delivery = buildMatchExplainabilityDeliveryBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return (
+            matchExplainabilityDeliveryShippable(delivery) &&
+            delivery.exportBundle !== null &&
+            delivery.recoveryPlaybook === null &&
+            delivery.narrativeLines.length <= AGENT19_DELIVERY_NARRATIVE_CAP
+          ) || JSON.stringify(delivery);
+        },
+      ],
+      [
+        'a19_r12_delivery_blocked',
+        'Delivery bundle returns playbook when trace fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const delivery = buildMatchExplainabilityDeliveryBundle([pack], {
+            memory: null,
+            currentTurn: 2,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return (
+            !matchExplainabilityDeliveryShippable(delivery) &&
+            delivery.recoveryPlaybook !== null &&
+            delivery.exportBundle === null
+          ) || JSON.stringify(delivery);
+        },
+      ],
+      [
+        'a19_r12_final_recovery_bridge',
+        'Final gate recovery hints cite trace when continuity fails',
+        () => {
+          const decisionsBefore = [{ type: 'a', score: 1 }, { type: 'b', score: 1 }];
+          const decisionsAfter = [{ type: 'a', score: 3, memoryInfluence: 1, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 1, reason: 't' }] }];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const finalGate = auditMatchExplainabilityFinalGate([pack], {
+            memory: null,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          const hints = buildFinalGateRecoveryHints(finalGate);
+          return (
+            finalGateRecoveryNeeded(finalGate) &&
+            hints.some(h => h.includes('option types') || h.includes('Restore')) &&
+            hints.length <= AGENT19_FINAL_RECOVERY_HINT_CAP
+          ) || hints.join('|');
+        },
+      ],
+      [
+        'a19_r12_gi_delivery',
+        'Session GI delivery ready when match gate open',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'a', score: 5 }];
+          const decisionsAfter = [
+            {
+              type: 'a',
+              score: 10,
+              memoryInfluence: 5,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 't' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const gi = buildSessionGiDeliveryBundle([pack], {
+            memory: mem,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionGiDeliveryReady(gi) && gi.giWithinCap || JSON.stringify(gi);
+        },
+      ],
+      [
+        'a19_r12_negotiation_export',
+        'Negotiation export bridge includes notes when aligned',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'a', score: 5 }];
+          const decisionsAfter = [
+            {
+              type: 'a',
+              score: 10,
+              memoryInfluence: 5,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 't' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditNegotiationExportBridge([pack], {
+            memory: mem,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return negotiationExportNotesIncluded(report) && report.exportTurnCount === 1 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r12_shipment_gate_ok',
+        'Shipment gate allows healthy diplomacy session',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditMatchExplainabilityShipmentGate([pack], {
+            memory: mem,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityShipmentAllowed(report) && report.finalGateOpen || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r12_shipment_gate_fail',
+        'Shipment gate blocks when final trace continuity fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({
+            turn: 3,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditMatchExplainabilityShipmentGate([pack], {
+            memory: null,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityShipmentAllowed(report) && !report.finalGateOpen || JSON.stringify(report);
         },
       ],
     ]),
