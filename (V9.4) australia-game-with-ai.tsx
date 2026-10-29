@@ -136512,6 +136512,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
+  { id: 'o111_a86', label: 'O111 Agent 86 Simulation Performance', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runO111SimulationPerformanceSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
@@ -139911,6 +139912,62 @@ export function runV100NationalSystemsSelfTests(): V9SelfTestResult[] {
     const ans = q ? composeNationalSystemsAnswer(q, gw) : null;
     const text = ans ? ans.sections.flatMap(x => x.claims.map(c => c.text)).join(' ') : '';
     return (imp.beneficiaries.includes('VIC') && /Public good/.test(text) && /Value to your strategy/.test(text) && ans!.sections.some(x => x.claims.some(c => c.kind === 'projection'))) || `${imp.beneficiaries} :: ${text.slice(0, 200)}`;
+  });
+  return results;
+}
+
+/** Shallow-merge partial gameState payloads for a single LOAD_STATE dispatch (Operation 111 / Agent 86). Later keys win. */
+export function o111CoalesceLoadStatePayloads(parts: ReadonlyArray<Record<string, unknown>>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const part of parts) {
+    if (!part || typeof part !== 'object') continue;
+    Object.assign(out, part);
+  }
+  return out;
+}
+
+/** Operation 111 Agent 86 — simulation hash gates, compute budgets, LOAD_STATE coalescing helpers. */
+export function runO111SimulationPerformanceSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => true | string) => {
+    try {
+      const r = fn();
+      results.push({ id, name, passed: r === true, detail: r === true ? '' : String(r) });
+    } catch (err) {
+      results.push({ id, name, passed: false, detail: `threw: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  };
+  const fx = createNationalSystemsFixtureInputs;
+  check('a86_hash_deterministic', 'nationalSystemsInputHash is stable for identical inputs', () => {
+    const i = fx({ projects: [nsProj('p1', 'SA', 'renewable_grid')] });
+    const h1 = nationalSystemsInputHash(i);
+    const h2 = nationalSystemsInputHash(JSON.parse(JSON.stringify(i)));
+    return (h1.length > 0 && h1 === h2) || `${h1} vs ${h2}`;
+  });
+  check('a86_hash_quantized', 'Sector quantization prevents tiny float churn in national hash', () => {
+    const base = fx({ regions: { VIC: { sectors: { technology: 40.2 } } } });
+    const near = fx({ regions: { VIC: { sectors: { technology: 40.49 } } } });
+    return nationalSystemsInputHash(base) === nationalSystemsInputHash(near) || 'hashes differ within quantization band';
+  });
+  check('a86_compute_ms', 'computeNationalSystems exposes computeMs on state', () => {
+    const r = computeNationalSystems(fx());
+    return (typeof r.state.computeMs === 'number' && Number.isFinite(r.state.computeMs) && r.state.computeMs >= 0) || String(r.state.computeMs);
+  });
+  check('a86_compute_budget', 'National Systems fixture compute stays under 750ms (CI headroom)', () => {
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    computeNationalSystems(fx({ projects: [nsProj('g', 'SA', 'renewable_grid'), nsProj('r', 'QLD', 'inland_rail_hub')] }));
+    const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+    return ms < 750 || `took ${Math.round(ms)}ms`;
+  });
+  check('a86_skip_persist', 'Unchanged inputHash does not bump persisted revision', () => {
+    const i = fx();
+    const first = computeNationalSystems(i, null);
+    const second = computeNationalSystems(i, first.persisted);
+    return (second.persisted.revision === first.persisted.revision && second.persisted.inputHash === first.persisted.inputHash) || `rev ${first.persisted.revision}→${second.persisted.revision}`;
+  });
+  check('a86_coalesce_load', 'o111CoalesceLoadStatePayloads merges persist keys for one dispatch', () => {
+    const merged = o111CoalesceLoadStatePayloads([{ nationalSystems: { revision: 1 } }, { industries: { revision: 2 } }, { nationalSystems: { revision: 3 } }]);
+    return (merged.industries && (merged.nationalSystems as any).revision === 3) || JSON.stringify(merged);
   });
   return results;
 }
