@@ -676,6 +676,23 @@ export type {
   TransitionConfirmationBand,
 } from './production-transition-confirmation';
 
+export {
+  AGENT08_TRANSITION_FINALIZATION_SCHEMA_VERSION,
+  buildFirmProductionTransitionFinalization,
+  classifyNationalFinalizationBand,
+  computeNationalFinalizationPressure,
+  computeNationalProductionTransitionFinalization,
+  summarizeRegionalTransitionFinalization,
+  runAgent08TransitionFinalizationSelfTests,
+} from './production-transition-finalization';
+
+export type {
+  FirmProductionTransitionFinalization,
+  NationalProductionTransitionFinalization,
+  RegionalTransitionFinalizationSummary,
+  TransitionFinalizationBand,
+} from './production-transition-finalization';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -716,6 +733,7 @@ import { runAgent08TransitionRecognitionSelfTests } from './production-transitio
 import { runAgent08TransitionPrecedenceSelfTests } from './production-transition-precedence';
 import { runAgent08TransitionRatificationSelfTests } from './production-transition-ratification';
 import { runAgent08TransitionConfirmationSelfTests } from './production-transition-confirmation';
+import { runAgent08TransitionFinalizationSelfTests } from './production-transition-finalization';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -920,6 +938,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionFinalization = runAgent08TransitionFinalizationSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -961,5 +984,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionPrecedence,
     ...transitionRatification,
     ...transitionConfirmation,
+    ...transitionFinalization,
   ];
 }
