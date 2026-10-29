@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.5' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.6' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -236,7 +236,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'convergence_stall'
   | 'peri_urban_sprawl_pressure'
   | 'infrastructure_backlog_critical'
-  | 'governance_coordination_breakdown';
+  | 'governance_coordination_breakdown'
+  | 'housing_spillover_cascade'
+  | 'regional_talent_drain'
+  | 'climate_displacement_exposure';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -299,6 +302,37 @@ export interface OP10M_A11_GovernanceFrictionRow {
   frictionScore: number;
   band: OP10M_A11_GovernanceFrictionBand;
   coordinationGaps: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_HousingSpilloverBand = 'localized' | 'spreading' | 'cascade' | 'systemic';
+
+export interface OP10M_A11_HousingSpilloverRow {
+  regionId: OP10M_A11_RegionId;
+  spilloverScore: number;
+  band: OP10M_A11_HousingSpilloverBand;
+  corridorPush: number;
+  channels: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_TalentRetentionBand = 'stable' | 'leaky' | 'draining' | 'collapse';
+
+export interface OP10M_A11_TalentRetentionRow {
+  regionId: OP10M_A11_RegionId;
+  drainScore: number;
+  band: OP10M_A11_TalentRetentionBand;
+  riskFactors: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_ClimateDisplacementBand = 'low' | 'elevated' | 'acute' | 'critical';
+
+export interface OP10M_A11_ClimateDisplacementRow {
+  regionId: OP10M_A11_RegionId;
+  displacementScore: number;
+  band: OP10M_A11_ClimateDisplacementBand;
+  hazards: string[];
   narrative: string;
 }
 
@@ -424,6 +458,12 @@ export interface OP10M_A11_CompositeState {
   nationalInfrastructureBacklogIndex: number;
   governanceFriction: OP10M_A11_GovernanceFrictionRow[];
   nationalGovernanceFrictionIndex: number;
+  housingSpillover: OP10M_A11_HousingSpilloverRow[];
+  nationalHousingSpilloverIndex: number;
+  talentRetention: OP10M_A11_TalentRetentionRow[];
+  nationalTalentDrainIndex: number;
+  climateDisplacement: OP10M_A11_ClimateDisplacementRow[];
+  nationalClimateDisplacementIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -441,5 +481,7 @@ export interface OP10M_A11_CompositePersisted {
   lastServiceEquityIndex: number;
   lastInfrastructureBacklogIndex: number;
   lastGovernanceFrictionIndex: number;
+  lastHousingSpilloverIndex: number;
+  lastClimateDisplacementIndex: number;
   inputHash: string;
 }

@@ -60,6 +60,9 @@ import {
 } from './peri-urban-expansion-pressure.ts';
 import { op10mA11ComputeRegionalInfrastructureBacklog } from './regional-infrastructure-backlog.ts';
 import { op10mA11ComputeMultiTierGovernanceFriction } from './multi-tier-governance-friction.ts';
+import { op10mA11ComputeRegionalHousingSpilloverPressure } from './regional-housing-spillover-pressure.ts';
+import { op10mA11ComputeInterregionalTalentRetentionStress } from './interregional-talent-retention-stress.ts';
+import { op10mA11ComputeClimateSettlementDisplacementRisk } from './climate-settlement-displacement-risk.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -386,7 +389,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.5',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.6',
     composite.state.schemaVersion,
   );
 
@@ -479,7 +482,9 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_36',
     composite.persisted.lastCohesionIndex === composite.state.regionalCohesionIndex &&
       composite.persisted.lastServiceEquityIndex === composite.state.nationalServiceEquityIndex &&
-      composite.persisted.lastInfrastructureBacklogIndex === composite.state.nationalInfrastructureBacklogIndex,
+      composite.persisted.lastInfrastructureBacklogIndex === composite.state.nationalInfrastructureBacklogIndex &&
+      composite.persisted.lastHousingSpilloverIndex === composite.state.nationalHousingSpilloverIndex &&
+      composite.persisted.lastClimateDisplacementIndex === composite.state.nationalClimateDisplacementIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -631,6 +636,83 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
         (g) => g.band === 'strained' || g.band === 'fragmented' || g.band === 'breakdown',
       ),
     composite.state.governanceFriction[0]?.band ?? 'none',
+  );
+
+  const housingSpill = op10mA11ComputeRegionalHousingSpilloverPressure({
+    absorptionStress: composite.state.absorptionStress,
+    periUrbanPressure: composite.state.periUrbanPressure,
+    corridorFlows: composite.state.corridorFlows,
+  });
+  push(
+    out,
+    'a11_53',
+    composite.state.housingSpillover.length === 8 &&
+      composite.state.nationalHousingSpilloverIndex === housingSpill.nationalIndex,
+    `housing spillover ${composite.state.nationalHousingSpilloverIndex}`,
+  );
+
+  const talent = op10mA11ComputeInterregionalTalentRetentionStress({
+    migrationPressure: composite.state.migrationPressure,
+    linkageHubs: composite.state.linkageHubs,
+    fiscalUrbanCoupling: composite.state.fiscalUrbanCoupling,
+  });
+  push(
+    out,
+    'a11_54',
+    composite.state.talentRetention.length === 8 && composite.state.nationalTalentDrainIndex === talent.nationalIndex,
+    `talent drain ${composite.state.nationalTalentDrainIndex}`,
+  );
+
+  const climate = op10mA11ComputeClimateSettlementDisplacementRisk({
+    settlementVulnerability: composite.state.settlementVulnerability,
+    bottlenecks: composite.state.infra.bottlenecks,
+    networkDigital: compositeIn.infra.networkDigital,
+    corridorStressIndex: composite.state.infra.corridorStressIndex,
+  });
+  push(
+    out,
+    'a11_55',
+    composite.state.climateDisplacement.length === 8 &&
+      composite.state.nationalClimateDisplacementIndex === climate.nationalIndex,
+    `climate displacement ${composite.state.nationalClimateDisplacementIndex}`,
+  );
+
+  push(
+    out,
+    'a11_56',
+    composite.state.housingSpillover.every((h) => h.narrative.includes('housing spillover')),
+    composite.state.housingSpillover[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_57',
+    composite.derived.some((d) => d.kind === 'housing_spillover_cascade') ||
+      composite.state.housingSpillover.some((h) => h.band === 'cascade' || h.band === 'systemic'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_58',
+    composite.derived.some((d) => d.kind === 'regional_talent_drain') ||
+      composite.state.talentRetention.some((t) => t.band === 'draining' || t.band === 'collapse'),
+    composite.state.talentRetention[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_59',
+    composite.persisted.lastHousingSpilloverIndex === composite.state.nationalHousingSpilloverIndex,
+    `persisted spillover ${composite.persisted.lastHousingSpilloverIndex}`,
+  );
+
+  push(
+    out,
+    'a11_60',
+    composite.derived.some((d) => d.kind === 'climate_displacement_exposure') ||
+      composite.state.climateDisplacement.some((c) => c.band === 'acute' || c.band === 'critical'),
+    composite.state.climateDisplacement[0]?.band ?? 'none',
   );
 
   return out;

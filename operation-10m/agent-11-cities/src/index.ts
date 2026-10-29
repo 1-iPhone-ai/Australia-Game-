@@ -22,5 +22,8 @@ export * from './regional-convergence-velocity.ts';
 export * from './peri-urban-expansion-pressure.ts';
 export * from './regional-infrastructure-backlog.ts';
 export * from './multi-tier-governance-friction.ts';
+export * from './regional-housing-spillover-pressure.ts';
+export * from './interregional-talent-retention-stress.ts';
+export * from './climate-settlement-displacement-risk.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';
