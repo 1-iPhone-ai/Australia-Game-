@@ -9,7 +9,7 @@
 | Wave baseline | **`8d741ac7`** (O10-181 anchor) |
 | Round 25 subject | Fortitude–inclusion coupling, hybrid anchor, subject crown readiness, culmination index |
 | Self-tests | **442** cases (`npm run test:agent09`) |
-| Chunk lines | *(see `npm run build:agent09-chunk` output after pull)* |
+| Chunk lines | **13555** (`operation-10m/modules/agent-09-population/chunk.tsx`) |
 | V9.4 / promote | **Out of scope** · PR [#327](https://github.com/1-iPhone-ai/Australia-Game-/pull/327) open |
 
 ## What landed in round 25

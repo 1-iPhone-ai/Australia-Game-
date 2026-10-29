@@ -87,7 +87,11 @@ export type LaborGiQueryTopic =
   | 'fortitude_inclusion_coupling'
   | 'hybrid_anchor'
   | 'subject_crown_readiness'
-  | 'workforce_culmination';
+  | 'workforce_culmination'
+  | 'culmination_mentorship_coupling'
+  | 'onboarding_sustain'
+  | 'subject_apex_readiness'
+  | 'workforce_apex';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -172,6 +176,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(hybrid anchor|hybrid work anchor)/.test(q)) return 'hybrid_anchor';
   if (/\b(subject crown readiness|crown readiness subject)/.test(q)) return 'subject_crown_readiness';
   if (/\b(workforce culmination|culmination index labor)/.test(q)) return 'workforce_culmination';
+  if (/\b(culmination mentorship|culmination-mentorship coupling)/.test(q)) return 'culmination_mentorship_coupling';
+  if (/\b(onboarding sustain|onboarding pipeline sustain)/.test(q)) return 'onboarding_sustain';
+  if (/\b(subject apex readiness|apex readiness subject)/.test(q)) return 'subject_apex_readiness';
+  if (/\b(workforce apex|apex index labor)/.test(q)) return 'workforce_apex';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -862,6 +870,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Culmination band ${state.nationalWorkforceCulminationIndex?.band ?? 'unknown'}; crown drag ${Math.round(state.nationalWorkforceCulminationIndex?.crownDrag ?? 0)}.`,
         inference: state.nationalWorkforceCulminationIndex?.stewardNote || state.summary,
         projection: 'Culmination synthesizes inclusion coupling, hybrid anchor, and subject crown for Agent 25 merge.'
+      };
+    case 'culmination_mentorship_coupling':
+      return {
+        topic,
+        headline: state.culminationMentorshipCouplingBrief?.summary || 'Culmination-mentorship coupling unavailable.',
+        fact: `Coupling band ${state.culminationMentorshipCouplingBrief?.band ?? 'unknown'}; culmination drag ${Math.round(state.culminationMentorshipCouplingBrief?.culminationDrag ?? 0)}.`,
+        inference: state.culminationMentorshipCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce culmination with mentorship levers — wave 26 / O10-183 depth.'
+      };
+    case 'onboarding_sustain':
+      return {
+        topic,
+        headline: state.onboardingSustainOutlook?.summary || 'Onboarding sustain unavailable.',
+        fact: `Sustain band ${state.onboardingSustainOutlook?.band ?? 'unknown'}; anchor drag ${Math.round(state.onboardingSustainOutlook?.anchorDrag ?? 0)}.`,
+        inference: state.onboardingSustainOutlook?.stewardNote || state.outlook,
+        projection: 'Onboarding sustain blends onboarding levers with hybrid anchor — bounded indices only.'
+      };
+    case 'subject_apex_readiness':
+      return {
+        topic,
+        headline: state.subjectApexReadinessBrief?.summary || 'Subject apex readiness unavailable.',
+        fact: `Apex band ${state.subjectApexReadinessBrief?.band ?? 'unknown'}; apex drag ${Math.round(state.subjectApexReadinessBrief?.apexDrag ?? 0)}.`,
+        inference: state.subjectApexReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject apex readiness gates crown against culmination for O10-183 wave 26.'
+      };
+    case 'workforce_apex':
+      return {
+        topic,
+        headline: state.nationalWorkforceApexIndex?.summary || 'Workforce apex unavailable.',
+        fact: `Apex band ${state.nationalWorkforceApexIndex?.band ?? 'unknown'}; apex drag ${Math.round(state.nationalWorkforceApexIndex?.apexDrag ?? 0)}.`,
+        inference: state.nationalWorkforceApexIndex?.stewardNote || state.summary,
+        projection: 'Workforce apex synthesizes mentorship coupling, onboarding sustain, and subject apex readiness.'
       };
     default:
       return {

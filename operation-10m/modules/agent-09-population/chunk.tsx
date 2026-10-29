@@ -273,6 +273,10 @@ export interface NationalLaborDemographicsState {
   hybridAnchorOutlook?: NationalHybridAnchorOutlook;
   subjectCrownReadinessBrief?: NationalSubjectCrownReadinessBrief;
   nationalWorkforceCulminationIndex?: NationalWorkforceCulminationIndex;
+  culminationMentorshipCouplingBrief?: NationalCulminationMentorshipCouplingBrief;
+  onboardingSustainOutlook?: NationalOnboardingSustainOutlook;
+  subjectApexReadinessBrief?: NationalSubjectApexReadinessBrief;
+  nationalWorkforceApexIndex?: NationalWorkforceApexIndex;
 }
 
 export type MigrationShockKind =
@@ -1209,6 +1213,50 @@ export interface NationalWorkforceCulminationIndex {
   culminationIndex: number;
   band: WorkforceCulminationBand;
   crownDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CulminationMentorshipCouplingBand = 'decoupled' | 'strained' | 'guided' | 'elevated';
+
+export interface NationalCulminationMentorshipCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: CulminationMentorshipCouplingBand;
+  culminationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type OnboardingSustainBand = 'depleted' | 'thin' | 'sustained' | 'deep';
+
+export interface NationalOnboardingSustainOutlook {
+  turn: number;
+  sustainIndex: number;
+  band: OnboardingSustainBand;
+  anchorDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectApexReadinessBand = 'below_apex' | 'approaching' | 'apex_ready' | 'summit_locked';
+
+export interface NationalSubjectApexReadinessBrief {
+  turn: number;
+  apexIndex: number;
+  band: SubjectApexReadinessBand;
+  apexDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceApexBand = 'fragile' | 'thin' | 'elevated' | 'summit';
+
+export interface NationalWorkforceApexIndex {
+  turn: number;
+  apexIndex: number;
+  band: WorkforceApexBand;
+  apexDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -2363,7 +2411,11 @@ export type LaborGiQueryTopic =
   | 'fortitude_inclusion_coupling'
   | 'hybrid_anchor'
   | 'subject_crown_readiness'
-  | 'workforce_culmination';
+  | 'workforce_culmination'
+  | 'culmination_mentorship_coupling'
+  | 'onboarding_sustain'
+  | 'subject_apex_readiness'
+  | 'workforce_apex';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2448,6 +2500,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(hybrid anchor|hybrid work anchor)/.test(q)) return 'hybrid_anchor';
   if (/\b(subject crown readiness|crown readiness subject)/.test(q)) return 'subject_crown_readiness';
   if (/\b(workforce culmination|culmination index labor)/.test(q)) return 'workforce_culmination';
+  if (/\b(culmination mentorship|culmination-mentorship coupling)/.test(q)) return 'culmination_mentorship_coupling';
+  if (/\b(onboarding sustain|onboarding pipeline sustain)/.test(q)) return 'onboarding_sustain';
+  if (/\b(subject apex readiness|apex readiness subject)/.test(q)) return 'subject_apex_readiness';
+  if (/\b(workforce apex|apex index labor)/.test(q)) return 'workforce_apex';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -3138,6 +3194,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Culmination band ${state.nationalWorkforceCulminationIndex?.band ?? 'unknown'}; crown drag ${Math.round(state.nationalWorkforceCulminationIndex?.crownDrag ?? 0)}.`,
         inference: state.nationalWorkforceCulminationIndex?.stewardNote || state.summary,
         projection: 'Culmination synthesizes inclusion coupling, hybrid anchor, and subject crown for Agent 25 merge.'
+      };
+    case 'culmination_mentorship_coupling':
+      return {
+        topic,
+        headline: state.culminationMentorshipCouplingBrief?.summary || 'Culmination-mentorship coupling unavailable.',
+        fact: `Coupling band ${state.culminationMentorshipCouplingBrief?.band ?? 'unknown'}; culmination drag ${Math.round(state.culminationMentorshipCouplingBrief?.culminationDrag ?? 0)}.`,
+        inference: state.culminationMentorshipCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce culmination with mentorship levers — wave 26 / O10-183 depth.'
+      };
+    case 'onboarding_sustain':
+      return {
+        topic,
+        headline: state.onboardingSustainOutlook?.summary || 'Onboarding sustain unavailable.',
+        fact: `Sustain band ${state.onboardingSustainOutlook?.band ?? 'unknown'}; anchor drag ${Math.round(state.onboardingSustainOutlook?.anchorDrag ?? 0)}.`,
+        inference: state.onboardingSustainOutlook?.stewardNote || state.outlook,
+        projection: 'Onboarding sustain blends onboarding levers with hybrid anchor — bounded indices only.'
+      };
+    case 'subject_apex_readiness':
+      return {
+        topic,
+        headline: state.subjectApexReadinessBrief?.summary || 'Subject apex readiness unavailable.',
+        fact: `Apex band ${state.subjectApexReadinessBrief?.band ?? 'unknown'}; apex drag ${Math.round(state.subjectApexReadinessBrief?.apexDrag ?? 0)}.`,
+        inference: state.subjectApexReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject apex readiness gates crown against culmination for O10-183 wave 26.'
+      };
+    case 'workforce_apex':
+      return {
+        topic,
+        headline: state.nationalWorkforceApexIndex?.summary || 'Workforce apex unavailable.',
+        fact: `Apex band ${state.nationalWorkforceApexIndex?.band ?? 'unknown'}; apex drag ${Math.round(state.nationalWorkforceApexIndex?.apexDrag ?? 0)}.`,
+        inference: state.nationalWorkforceApexIndex?.stewardNote || state.summary,
+        projection: 'Workforce apex synthesizes mentorship coupling, onboarding sustain, and subject apex readiness.'
       };
     default:
       return {
@@ -3887,6 +3975,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceCulminationIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceCulminationIndex.stewardNote);
+  }
+  if (
+    state.culminationMentorshipCouplingBrief?.band === 'decoupled' ||
+    state.culminationMentorshipCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.culminationMentorshipCouplingBrief.stewardNote);
+  }
+  if (
+    state.onboardingSustainOutlook?.band === 'depleted' ||
+    state.onboardingSustainOutlook?.band === 'thin'
+  ) {
+    hints.push(state.onboardingSustainOutlook.stewardNote);
+  }
+  if (
+    state.subjectApexReadinessBrief?.band === 'below_apex' ||
+    state.subjectApexReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectApexReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceApexIndex?.band === 'fragile' ||
+    state.nationalWorkforceApexIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceApexIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -10679,6 +10791,278 @@ export function computeNationalWorkforceCulminationIndex(
 }
 
 
+// --- source: culmination-mentorship-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type CulminationMentorshipCouplingBand,
+  type NationalCulminationMentorshipCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceCulminationIndex
+} from './types';
+
+function couplingBand(index: number): CulminationMentorshipCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'guided';
+  return 'elevated';
+}
+
+export function computeNationalCulminationMentorshipCouplingBrief(
+  state: NationalLaborDemographicsState,
+  culmination: NationalWorkforceCulminationIndex | null | undefined
+): NationalCulminationMentorshipCouplingBrief {
+  if (!state.enabled || !culmination) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      culminationDrag: 0,
+      summary: 'Culmination-mentorship coupling idle — workforce culmination unavailable.',
+      stewardNote: 'Compute workforce culmination before mentorship coupling guidance.'
+    };
+  }
+
+  let mentorshipLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    mentorshipLift += mentorshipEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  mentorshipLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const culminationDrag = v1014laborClamp(
+    culmination.crownDrag * 0.48 +
+      (culmination.band === 'fragile' || culmination.band === 'thin' ? 11 : 3)
+  );
+  const culminationLift =
+    culmination.band === 'ready' || culmination.band === 'summit'
+      ? culmination.culminationIndex * 0.24
+      : culmination.culminationIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + mentorshipLift * 21 + culminationLift - culminationDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained culmination-mentorship link — ease mentorship levers before wave-26 apex commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard onboarding sustain spikes that drain mentorship buffers.'
+        : 'Guided coupling — pair mentorship packs with subject apex readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    culminationDrag,
+    summary: `Culmination-mentorship coupling ${band} (index ${Math.round(couplingIndex)}); culmination drag ${Math.round(culminationDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: onboarding-sustain-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalHybridAnchorOutlook,
+  type NationalLaborDemographicsState,
+  type NationalOnboardingSustainOutlook,
+  type OnboardingSustainBand
+} from './types';
+
+function sustainBand(index: number): OnboardingSustainBand {
+  if (index <= 34) return 'depleted';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'sustained';
+  return 'deep';
+}
+
+export function computeNationalOnboardingSustainOutlook(
+  state: NationalLaborDemographicsState,
+  hybridAnchor: NationalHybridAnchorOutlook | null | undefined
+): NationalOnboardingSustainOutlook {
+  if (!state.enabled || !hybridAnchor) {
+    return {
+      turn: state.turn,
+      sustainIndex: 50,
+      band: 'thin',
+      anchorDrag: 0,
+      summary: 'Onboarding sustain idle — hybrid anchor unavailable.',
+      stewardNote: 'Compute hybrid anchor before onboarding sustain guidance.'
+    };
+  }
+
+  let onboardingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    onboardingLift += onboardingEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  onboardingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const anchorDrag = v1014laborClamp(
+    hybridAnchor.bindDrag * 0.46 +
+      (hybridAnchor.band === 'drifting' || hybridAnchor.band === 'mixed' ? 10 : 3)
+  );
+  const anchorLift =
+    hybridAnchor.band === 'anchored' || hybridAnchor.band === 'fixed'
+      ? hybridAnchor.anchorIndex * 0.2
+      : hybridAnchor.anchorIndex * 0.1;
+
+  const sustainIndex = v1014laborClamp(24 + onboardingLift * 22 + anchorLift - anchorDrag);
+  const band = sustainBand(sustainIndex);
+
+  const stewardNote =
+    band === 'depleted' || band === 'thin'
+      ? 'Thin onboarding sustain — deploy onboarding levers before subject apex assembly.'
+      : band === 'deep'
+        ? 'Deep sustain band — verify culmination-mentorship coupling before auto workforce pushes.'
+        : 'Sustained onboarding — align sustain with onboarding velocity outlook checks.';
+
+  return {
+    turn: state.turn,
+    sustainIndex,
+    band,
+    anchorDrag,
+    summary: `National onboarding sustain ${band} (index ${Math.round(sustainIndex)}); anchor drag ${Math.round(anchorDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-apex-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectApexReadinessBrief,
+  type NationalSubjectCrownReadinessBrief,
+  type NationalWorkforceCulminationIndex,
+  type SubjectApexReadinessBand
+} from './types';
+
+function apexBand(index: number): SubjectApexReadinessBand {
+  if (index <= 34) return 'below_apex';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'apex_ready';
+  return 'summit_locked';
+}
+
+/** Round-26 / wave-26 subject apex readiness — crown × culmination gate (O10-183). */
+export function computeNationalSubjectApexReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectCrown: NationalSubjectCrownReadinessBrief | null | undefined,
+  culmination: NationalWorkforceCulminationIndex | null | undefined
+): NationalSubjectApexReadinessBrief {
+  if (!state.enabled || !subjectCrown || !culmination) {
+    return {
+      turn: state.turn,
+      apexIndex: 50,
+      band: 'approaching',
+      apexDrag: 0,
+      summary: 'Subject apex readiness idle — subject crown or culmination unavailable.',
+      stewardNote: 'Compute subject crown readiness and workforce culmination before apex guidance.'
+    };
+  }
+
+  const apexDrag = v1014laborClamp(
+    subjectCrown.crownDrag * 0.38 +
+      culmination.crownDrag * 0.38 +
+      (subjectCrown.band === 'uncrowned' || culmination.band === 'fragile' ? 12 : 3)
+  );
+  const crownLift =
+    subjectCrown.band === 'crowned' || subjectCrown.band === 'sealed'
+      ? subjectCrown.crownIndex * 0.27
+      : subjectCrown.crownIndex * 0.14;
+  const culminationLift =
+    culmination.band === 'ready' || culmination.band === 'summit'
+      ? culmination.culminationIndex * 0.25
+      : culmination.culminationIndex * 0.12;
+
+  const apexIndex = v1014laborClamp(20 + crownLift + culminationLift - apexDrag);
+  const band = apexBand(apexIndex);
+
+  const stewardNote =
+    band === 'below_apex' || band === 'approaching'
+      ? 'Approaching apex — hold O10-183 wave-26 scale until culmination-mentorship syncs.'
+      : band === 'summit_locked'
+        ? 'Summit-locked apex — still monitor onboarding sustain during corridor peaks.'
+        : 'Apex-ready — pair with workforce apex index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    apexIndex,
+    band,
+    apexDrag,
+    summary: `Subject apex readiness ${band} (index ${Math.round(apexIndex)}); apex drag ${Math.round(apexDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-apex-index.ts ---
+  type NationalCulminationMentorshipCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalOnboardingSustainOutlook,
+  type NationalSubjectApexReadinessBrief,
+  type NationalWorkforceApexIndex,
+  type WorkforceApexBand
+} from './types';
+
+function apexBand(index: number): WorkforceApexBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'summit';
+}
+
+export function computeNationalWorkforceApexIndex(
+  state: NationalLaborDemographicsState,
+  mentorshipCoupling: NationalCulminationMentorshipCouplingBrief | null | undefined,
+  onboardingSustain: NationalOnboardingSustainOutlook | null | undefined,
+  subjectApex: NationalSubjectApexReadinessBrief | null | undefined
+): NationalWorkforceApexIndex {
+  if (!state.enabled || !mentorshipCoupling || !onboardingSustain || !subjectApex) {
+    return {
+      turn: state.turn,
+      apexIndex: 50,
+      band: 'thin',
+      apexDrag: 0,
+      summary: 'Workforce apex idle — mentorship coupling, onboarding sustain, or subject apex unavailable.',
+      stewardNote: 'Compute O10-183 wave-26 depth stack before apex guidance.'
+    };
+  }
+
+  const apexDrag = v1014laborClamp(
+    subjectApex.apexDrag * 0.35 +
+      mentorshipCoupling.culminationDrag * 0.3 +
+      onboardingSustain.anchorDrag * 0.25 +
+      (subjectApex.band === 'below_apex' || mentorshipCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const mentorshipLift =
+    mentorshipCoupling.band === 'guided' || mentorshipCoupling.band === 'elevated'
+      ? mentorshipCoupling.couplingIndex * 0.2
+      : mentorshipCoupling.couplingIndex * 0.1;
+  const sustainLift =
+    onboardingSustain.band === 'sustained' || onboardingSustain.band === 'deep'
+      ? onboardingSustain.sustainIndex * 0.18
+      : onboardingSustain.sustainIndex * 0.09;
+  const subjectLift =
+    subjectApex.band === 'apex_ready' || subjectApex.band === 'summit_locked'
+      ? subjectApex.apexIndex * 0.22
+      : subjectApex.apexIndex * 0.11;
+
+  const apexIndex = v1014laborClamp(18 + mentorshipLift + sustainLift + subjectLift - apexDrag);
+  const band = apexBand(apexIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce apex — sequence culmination-mentorship, onboarding sustain, and subject apex before post-de3079f9 tranche.'
+      : band === 'summit'
+        ? 'Summit apex — avoid corridor overload that breaks subject apex bands.'
+        : 'Elevated apex — refresh subject apex checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    apexIndex,
+    band,
+    apexDrag,
+    summary: `National workforce apex ${band} (index ${Math.round(apexIndex)}); apex drag ${Math.round(apexDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -11524,6 +11908,22 @@ export function computeNationalLaborDemographics(
     state.hybridAnchorOutlook,
     state.subjectCrownReadinessBrief
   );
+  state.culminationMentorshipCouplingBrief = computeNationalCulminationMentorshipCouplingBrief(
+    state,
+    state.nationalWorkforceCulminationIndex
+  );
+  state.onboardingSustainOutlook = computeNationalOnboardingSustainOutlook(state, state.hybridAnchorOutlook);
+  state.subjectApexReadinessBrief = computeNationalSubjectApexReadinessBrief(
+    state,
+    state.subjectCrownReadinessBrief,
+    state.nationalWorkforceCulminationIndex
+  );
+  state.nationalWorkforceApexIndex = computeNationalWorkforceApexIndex(
+    state,
+    state.culminationMentorshipCouplingBrief,
+    state.onboardingSustainOutlook,
+    state.subjectApexReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -12010,6 +12410,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceCulminationIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.culminationMentorshipCouplingBrief?.band === 'decoupled' ||
+      state.culminationMentorshipCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.culminationMentorshipCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.onboardingSustainOutlook?.band === 'depleted' ||
+      state.onboardingSustainOutlook?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.onboardingSustainOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectApexReadinessBrief?.band === 'below_apex' ||
+      state.subjectApexReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectApexReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceApexIndex?.band === 'fragile' ||
+      state.nationalWorkforceApexIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceApexIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -13492,6 +13920,66 @@ export function runV1014LaborDemographicsSelfTests(): {
     'culmination steward note'
   );
   check('R2516', inclusionEaseForRegion('NSW', 'technology') > 0, 'inclusion ease for region');
+
+  check('R2601', Boolean(r1.state.culminationMentorshipCouplingBrief?.band), 'culmination mentorship on state');
+  check(
+    'R2602',
+    (r1.state.culminationMentorshipCouplingBrief?.culminationDrag ?? 0) >= 0,
+    'culmination mentorship drag'
+  );
+  check('R2603', Boolean(r1.state.onboardingSustainOutlook?.band), 'onboarding sustain on state');
+  check('R2604', (r1.state.onboardingSustainOutlook?.anchorDrag ?? 0) >= 0, 'onboarding anchor drag');
+  check('R2605', Boolean(r1.state.subjectApexReadinessBrief?.band), 'subject apex on state');
+  check('R2606', Boolean(r1.state.nationalWorkforceApexIndex?.band), 'workforce apex on state');
+  check(
+    'R2607',
+    detectLaborDemographicsQuery('culmination mentorship coupling') === 'culmination_mentorship_coupling',
+    'GI culmination mentorship detect'
+  );
+  check(
+    'R2608',
+    detectLaborDemographicsQuery('onboarding sustain') === 'onboarding_sustain',
+    'GI onboarding sustain detect'
+  );
+  check(
+    'R2609',
+    detectLaborDemographicsQuery('subject apex readiness') === 'subject_apex_readiness',
+    'GI subject apex detect'
+  );
+  check(
+    'R2610',
+    detectLaborDemographicsQuery('workforce apex') === 'workforce_apex',
+    'GI workforce apex detect'
+  );
+  check(
+    'R2611',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_apex').headline.length > 5,
+    'GI workforce apex answer'
+  );
+  const mentorshipCouplingOnly = computeNationalCulminationMentorshipCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceCulminationIndex
+  );
+  check('R2612', mentorshipCouplingOnly.summary.length > 10, 'mentorship coupling standalone summary');
+  const onboardingSustainOnly = computeNationalOnboardingSustainOutlook(r1.state, r1.state.hybridAnchorOutlook);
+  check('R2613', onboardingSustainOnly.band.length > 3, 'onboarding sustain band string');
+  const subjectApexOnly = computeNationalSubjectApexReadinessBrief(
+    r1.state,
+    r1.state.subjectCrownReadinessBrief,
+    r1.state.nationalWorkforceCulminationIndex
+  );
+  check('R2614', subjectApexOnly.apexDrag >= 0, 'subject apex drag');
+  check(
+    'R2615',
+    computeNationalWorkforceApexIndex(
+      rHhBad.state,
+      rHhBad.state.culminationMentorshipCouplingBrief,
+      rHhBad.state.onboardingSustainOutlook,
+      rHhBad.state.subjectApexReadinessBrief
+    ).stewardNote.length > 8,
+    'apex steward note'
+  );
+  check('R2616', mentorshipEaseForRegion('NSW', 'technology') > 0, 'mentorship ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

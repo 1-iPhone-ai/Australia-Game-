@@ -269,6 +269,10 @@ export interface NationalLaborDemographicsState {
   hybridAnchorOutlook?: NationalHybridAnchorOutlook;
   subjectCrownReadinessBrief?: NationalSubjectCrownReadinessBrief;
   nationalWorkforceCulminationIndex?: NationalWorkforceCulminationIndex;
+  culminationMentorshipCouplingBrief?: NationalCulminationMentorshipCouplingBrief;
+  onboardingSustainOutlook?: NationalOnboardingSustainOutlook;
+  subjectApexReadinessBrief?: NationalSubjectApexReadinessBrief;
+  nationalWorkforceApexIndex?: NationalWorkforceApexIndex;
 }
 
 export type MigrationShockKind =
@@ -1205,6 +1209,50 @@ export interface NationalWorkforceCulminationIndex {
   culminationIndex: number;
   band: WorkforceCulminationBand;
   crownDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CulminationMentorshipCouplingBand = 'decoupled' | 'strained' | 'guided' | 'elevated';
+
+export interface NationalCulminationMentorshipCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: CulminationMentorshipCouplingBand;
+  culminationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type OnboardingSustainBand = 'depleted' | 'thin' | 'sustained' | 'deep';
+
+export interface NationalOnboardingSustainOutlook {
+  turn: number;
+  sustainIndex: number;
+  band: OnboardingSustainBand;
+  anchorDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectApexReadinessBand = 'below_apex' | 'approaching' | 'apex_ready' | 'summit_locked';
+
+export interface NationalSubjectApexReadinessBrief {
+  turn: number;
+  apexIndex: number;
+  band: SubjectApexReadinessBand;
+  apexDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceApexBand = 'fragile' | 'thin' | 'elevated' | 'summit';
+
+export interface NationalWorkforceApexIndex {
+  turn: number;
+  apexIndex: number;
+  band: WorkforceApexBand;
+  apexDrag: number;
   summary: string;
   stewardNote: string;
 }

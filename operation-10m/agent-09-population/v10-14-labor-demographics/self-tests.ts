@@ -154,6 +154,10 @@ import { computeNationalFortitudeInclusionCouplingBrief } from './fortitude-incl
 import { computeNationalHybridAnchorOutlook } from './hybrid-anchor-outlook';
 import { computeNationalSubjectCrownReadinessBrief } from './subject-crown-readiness-brief';
 import { computeNationalWorkforceCulminationIndex } from './national-workforce-culmination-index';
+import { computeNationalCulminationMentorshipCouplingBrief } from './culmination-mentorship-coupling-brief';
+import { computeNationalOnboardingSustainOutlook } from './onboarding-sustain-outlook';
+import { computeNationalSubjectApexReadinessBrief } from './subject-apex-readiness-brief';
+import { computeNationalWorkforceApexIndex } from './national-workforce-apex-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1567,6 +1571,66 @@ export function runV1014LaborDemographicsSelfTests(): {
     'culmination steward note'
   );
   check('R2516', inclusionEaseForRegion('NSW', 'technology') > 0, 'inclusion ease for region');
+
+  check('R2601', Boolean(r1.state.culminationMentorshipCouplingBrief?.band), 'culmination mentorship on state');
+  check(
+    'R2602',
+    (r1.state.culminationMentorshipCouplingBrief?.culminationDrag ?? 0) >= 0,
+    'culmination mentorship drag'
+  );
+  check('R2603', Boolean(r1.state.onboardingSustainOutlook?.band), 'onboarding sustain on state');
+  check('R2604', (r1.state.onboardingSustainOutlook?.anchorDrag ?? 0) >= 0, 'onboarding anchor drag');
+  check('R2605', Boolean(r1.state.subjectApexReadinessBrief?.band), 'subject apex on state');
+  check('R2606', Boolean(r1.state.nationalWorkforceApexIndex?.band), 'workforce apex on state');
+  check(
+    'R2607',
+    detectLaborDemographicsQuery('culmination mentorship coupling') === 'culmination_mentorship_coupling',
+    'GI culmination mentorship detect'
+  );
+  check(
+    'R2608',
+    detectLaborDemographicsQuery('onboarding sustain') === 'onboarding_sustain',
+    'GI onboarding sustain detect'
+  );
+  check(
+    'R2609',
+    detectLaborDemographicsQuery('subject apex readiness') === 'subject_apex_readiness',
+    'GI subject apex detect'
+  );
+  check(
+    'R2610',
+    detectLaborDemographicsQuery('workforce apex') === 'workforce_apex',
+    'GI workforce apex detect'
+  );
+  check(
+    'R2611',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_apex').headline.length > 5,
+    'GI workforce apex answer'
+  );
+  const mentorshipCouplingOnly = computeNationalCulminationMentorshipCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceCulminationIndex
+  );
+  check('R2612', mentorshipCouplingOnly.summary.length > 10, 'mentorship coupling standalone summary');
+  const onboardingSustainOnly = computeNationalOnboardingSustainOutlook(r1.state, r1.state.hybridAnchorOutlook);
+  check('R2613', onboardingSustainOnly.band.length > 3, 'onboarding sustain band string');
+  const subjectApexOnly = computeNationalSubjectApexReadinessBrief(
+    r1.state,
+    r1.state.subjectCrownReadinessBrief,
+    r1.state.nationalWorkforceCulminationIndex
+  );
+  check('R2614', subjectApexOnly.apexDrag >= 0, 'subject apex drag');
+  check(
+    'R2615',
+    computeNationalWorkforceApexIndex(
+      rHhBad.state,
+      rHhBad.state.culminationMentorshipCouplingBrief,
+      rHhBad.state.onboardingSustainOutlook,
+      rHhBad.state.subjectApexReadinessBrief
+    ).stewardNote.length > 8,
+    'apex steward note'
+  );
+  check('R2616', mentorshipEaseForRegion('NSW', 'technology') > 0, 'mentorship ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
