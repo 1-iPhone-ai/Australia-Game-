@@ -1564,6 +1564,52 @@ export function evaluateMacroConsistencyGates(
       summary: 'Integration health wave 45 export not ready coincides with strained integration health spillover.'
     });
   }
+  const wave46Ui: any =
+    inputs.uiResponsivenessWave46Export ??
+    inputs.uiResponsiveness?.wave46Export ??
+    inputs.gameUi?.responsivenessWave46Export;
+  const round46Ready = Boolean(
+    wave46Ui?.round46Ready ?? wave46Ui?.payload?.round46Ready ?? wave46Ui?.exportReady
+  );
+  if (
+    wave46Ui &&
+    !round46Ready &&
+    (state.uiSpilloverSummary != null || state.uiResponsivenessWave46ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'ui_responsiveness_wave46_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'UI responsiveness wave 46 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave46Dash: any =
+    inputs.dashboardClarityWave46Export ??
+    inputs.dashboardClarity?.wave46Export ??
+    inputs.dashboards?.clarityWave46Export;
+  const clarity46Ready = Boolean(
+    wave46Dash?.clarityReady ?? wave46Dash?.round46Ready ?? wave46Dash?.payload?.clarityReady
+  );
+  if (
+    wave46Dash &&
+    !clarity46Ready &&
+    (state.dashboardsSpilloverSummary != null || state.dashboardClarityWave46ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'dashboard_clarity_wave46_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Dashboard clarity wave 46 export not ready — macro spillover read is strained.'
+    });
+  }
+  if (state.transmissionEnvelope?.band === 'wide') {
+    gates.push({
+      id: 'transmission_envelope_wide_wave46',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide transmission envelope after wave 46 UI/dashboard export layers — spillover spread is elevated.'
+    });
+  }
   if (state.transmissionPersistence?.band === 'cohesive') {
     gates.push({
       id: 'transmission_persistence_cohesive',
