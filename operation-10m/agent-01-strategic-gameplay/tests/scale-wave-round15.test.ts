@@ -110,7 +110,7 @@ describe('scale wave round 15 — generational coalition continuity', () => {
       coalitionGenerationalContinuityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(21);
+    expect(save.version).toBe(22);
     expect(save.coalitionGenerationalContinuityStreakDays).toBe(5);
     expect(save.coalitionCivilizationalEnduranceStreakDays).toBe(0);
   });

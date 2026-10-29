@@ -105,6 +105,8 @@ export interface StrategicActionDefinition {
   minCoalitionAbsoluteSanctityStreakDays?: number;
   /** Action requires universal immortality streak after absolute sanctity. */
   minCoalitionUniversalImmortalityStreakDays?: number;
+  /** Action requires cosmic perpetuity streak after universal immortality. */
+  minCoalitionCosmicPerpetuityStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -163,7 +165,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_infinite_persistence_streak'; minDays: number }
   | { kind: 'min_coalition_primordial_continuity_streak'; minDays: number }
   | { kind: 'min_coalition_absolute_sanctity_streak'; minDays: number }
-  | { kind: 'min_coalition_universal_immortality_streak'; minDays: number };
+  | { kind: 'min_coalition_universal_immortality_streak'; minDays: number }
+  | { kind: 'min_coalition_cosmic_perpetuity_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -243,6 +246,8 @@ export interface StrategicGameplayState {
   coalitionAbsoluteSanctityStreakDays?: number;
   /** Days absolute sanctity held universal immortality eligibility. */
   coalitionUniversalImmortalityStreakDays?: number;
+  /** Days universal immortality held cosmic perpetuity eligibility. */
+  coalitionCosmicPerpetuityStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

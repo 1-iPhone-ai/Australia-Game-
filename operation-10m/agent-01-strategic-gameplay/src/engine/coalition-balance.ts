@@ -208,3 +208,13 @@ export function universalImmortalityRankingBonus(
   if (streak >= action.minCoalitionUniversalImmortalityStreakDays) return 16;
   return 2;
 }
+
+export function cosmicPerpetuityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionCosmicPerpetuityStreakDays === undefined) return 0;
+  const streak = state.coalitionCosmicPerpetuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionCosmicPerpetuityStreakDays) return 17;
+  return 2;
+}
