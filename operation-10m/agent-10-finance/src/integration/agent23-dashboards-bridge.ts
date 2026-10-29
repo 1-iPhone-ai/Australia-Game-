@@ -7,6 +7,10 @@ export interface Agent23DashboardsSnapshot {
   regionalHeatmapInflationAlert: boolean;
   mapLayerCostPressureScore: number;
   dashboardRefreshUrgency: 'routine' | 'elevated' | 'critical';
+  /** Round 19: severe regional inflation heatmap band. */
+  dashboardInflationHeatmapSevere?: boolean;
+  /** Round 19: map layer cost-of-living stress active. */
+  mapLayerCostOfLivingStressActive?: boolean;
 }
 
 export function mergeAgent23IntoMacroFinancialInputs(
@@ -30,12 +34,21 @@ export function mergeAgent23IntoMacroFinancialInputs(
   if (snapshot.regionalHeatmapInflationAlert && snapshot.dashboardRefreshUrgency === 'critical') {
     highInflationScenario = true;
   }
+  if (snapshot.dashboardInflationHeatmapSevere && snapshot.mapLayerCostOfLivingStressActive) {
+    highInflationScenario = true;
+  }
+
+  let householdInflationScenarioActive = base.householdInflationScenarioActive;
+  if (snapshot.mapLayerCostOfLivingStressActive) {
+    householdInflationScenarioActive = true;
+  }
 
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
     highInflationScenario,
+    householdInflationScenarioActive,
   };
 }
 

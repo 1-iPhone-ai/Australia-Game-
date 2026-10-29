@@ -30,11 +30,13 @@ import type { PublicUtilitiesGridTariffBand } from '../inflation/public-utilitie
 import type { UiInflationSalienceBand } from '../inflation/ui-inflation-salience-pass-through.js';
 import type { HousingMortgageEssentialBand } from '../inflation/housing-mortgage-essential-inflation.js';
 import type { MacroTransmissionMergeBand } from '../inflation/macro-transmission-merge-inflation.js';
+import type { DynamicEventsInflationSpilloverBand } from '../inflation/dynamic-events-inflation-spillover.js';
+import type { DashboardMapInflationOverlayBand } from '../inflation/dashboard-map-inflation-overlay.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r18';
+  schemaVersion: '10.14.agent10.r19';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -66,6 +68,8 @@ export interface Agent21InflationForecastBundle {
   terminalUiInflationSalience: UiInflationSalienceBand;
   terminalHousingMortgageEssential: HousingMortgageEssentialBand;
   terminalMacroTransmissionMerge: MacroTransmissionMergeBand;
+  terminalDynamicEventsInflationSpillover: DynamicEventsInflationSpilloverBand;
+  terminalDashboardMapInflationOverlay: DashboardMapInflationOverlayBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -94,7 +98,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r18',
+    schemaVersion: '10.14.agent10.r19',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -126,6 +130,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalUiInflationSalience: lastPoint?.uiInflationSalienceBand ?? 'muted',
     terminalHousingMortgageEssential: lastPoint?.housingMortgageEssentialBand ?? 'subdued',
     terminalMacroTransmissionMerge: lastPoint?.macroTransmissionMergeBand ?? 'coherent',
+    terminalDynamicEventsInflationSpillover: lastPoint?.dynamicEventsInflationSpilloverBand ?? 'muted',
+    terminalDashboardMapInflationOverlay: lastPoint?.dashboardMapInflationOverlayBand ?? 'routine',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,

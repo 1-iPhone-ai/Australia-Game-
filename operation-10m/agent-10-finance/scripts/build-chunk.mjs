@@ -63,6 +63,8 @@ const FILES = [
   'inflation/ui-inflation-salience-pass-through.ts',
   'inflation/housing-mortgage-essential-inflation.ts',
   'inflation/macro-transmission-merge-inflation.ts',
+  'inflation/dynamic-events-inflation-spillover.ts',
+  'inflation/dashboard-map-inflation-overlay.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -115,6 +117,7 @@ const FILES = [
   'react/FinancialServicesFarmgateCommandInflationPanel.tsx',
   'react/UiUtilitiesGridInflationPanel.tsx',
   'react/HousingMacroMergeInflationPanel.tsx',
+  'react/EventsDashboardInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

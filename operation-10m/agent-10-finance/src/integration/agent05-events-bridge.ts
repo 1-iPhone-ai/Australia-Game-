@@ -7,6 +7,10 @@ export interface Agent05EventsSnapshot {
   inflationShockEventActive: boolean;
   supplyDisruptionSeverity: 'none' | 'localized' | 'national';
   confidenceShockBand: 'calm' | 'uneasy' | 'severe';
+  /** Round 19: staged narrative event cost shock band. */
+  stagedEventCostShockBand?: 'none' | 'emerging' | 'active' | 'cascade';
+  /** Round 19: macro inflation spillover latch from event queue. */
+  macroEventInflationSpilloverActive?: boolean;
 }
 
 export function mergeAgent05IntoMacroFinancialInputs(
@@ -40,12 +44,22 @@ export function mergeAgent05IntoMacroFinancialInputs(
     publicStability = Math.max(0, publicStability - 3);
   }
 
+  if (snapshot.stagedEventCostShockBand === 'cascade') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
+  } else if (snapshot.stagedEventCostShockBand === 'active') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
-    highInflationScenario,
+    highInflationScenario:
+      highInflationScenario ||
+      snapshot.macroEventInflationSpilloverActive === true ||
+      snapshot.stagedEventCostShockBand === 'cascade',
     publicStability,
+    creditShockActive: base.creditShockActive || snapshot.stagedEventCostShockBand === 'cascade',
   };
 }
 

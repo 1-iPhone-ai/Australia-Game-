@@ -597,6 +597,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'housing', 'macro', 'round18'],
   },
+  {
+    id: 'dynamic_events_inflation_spillover_stack',
+    label: 'Dynamic events inflation spillover stack',
+    description: 'National supply disruption with cascade staged cost shock.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.26,
+      publicStability: 40,
+    },
+    tags: ['inflation', 'events', 'round19'],
+  },
+  {
+    id: 'dashboard_map_inflation_overlay_stress',
+    label: 'Dashboard map inflation overlay stress',
+    description: 'Critical dashboard refresh with regional heatmap alert.',
+    patch: {
+      householdInflationScenarioActive: true,
+      householdAffordability: 'severe_pressure',
+      inflationSettingMultiplier: 1.23,
+      publicStability: 38,
+    },
+    tags: ['inflation', 'dashboards', 'round19'],
+  },
+  {
+    id: 'events_dashboard_fusion_stress',
+    label: 'Events & dashboard fusion stress',
+    description: 'Aligned with Agent 05 spillover + Agent 23 map overlay severe bands.',
+    patch: {
+      inflationSettingMultiplier: 1.3,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      publicStability: 35,
+    },
+    tags: ['inflation', 'events', 'dashboards', 'round19'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

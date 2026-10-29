@@ -3314,6 +3314,165 @@ export function macroTransmissionMergeInflationScoreAdjustment(band: MacroTransm
 }
 
 
+// --- source: inflation/dynamic-events-inflation-spillover.ts ---
+
+export type DynamicEventsInflationSpilloverBand = 'muted' | 'building' | 'active' | 'cascade';
+
+export interface DynamicEventsInflationSpilloverAssessment {
+  spilloverBand: DynamicEventsInflationSpilloverBand;
+  eventIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Dynamic narrative events spilling into macro CPI metadata (Agent 05). */
+export function assessDynamicEventsInflationSpillover(input: {
+  inflationShockEventActive: boolean;
+  supplyDisruptionSeverity: 'none' | 'localized' | 'national';
+  confidenceShockBand: 'calm' | 'uneasy' | 'severe';
+  stagedEventCostShockBand: 'none' | 'emerging' | 'active' | 'cascade';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): DynamicEventsInflationSpilloverAssessment {
+  let pressure = 0;
+  if (input.inflationShockEventActive) {
+    pressure += 0.26;
+  }
+  if (input.supplyDisruptionSeverity === 'national') {
+    pressure += 0.24;
+  } else if (input.supplyDisruptionSeverity === 'localized') {
+    pressure += 0.11;
+  }
+  if (input.confidenceShockBand === 'severe') {
+    pressure += 0.2;
+  } else if (input.confidenceShockBand === 'uneasy') {
+    pressure += 0.09;
+  }
+  if (input.stagedEventCostShockBand === 'cascade') {
+    pressure += 0.22;
+  } else if (input.stagedEventCostShockBand === 'active') {
+    pressure += 0.14;
+  } else if (input.stagedEventCostShockBand === 'emerging') {
+    pressure += 0.07;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.06;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.004, 0, 1.05);
+  const eventIndex = finRound(100 + pressure * 19, 1);
+
+  let spilloverBand: DynamicEventsInflationSpilloverBand = 'muted';
+  if (pressure >= 0.58) spilloverBand = 'cascade';
+  else if (pressure >= 0.38) spilloverBand = 'active';
+  else if (pressure >= 0.19) spilloverBand = 'building';
+
+  const inflationScoreNudge =
+    spilloverBand === 'cascade'
+      ? 0.09
+      : spilloverBand === 'active'
+        ? 0.06
+        : spilloverBand === 'building'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    spilloverBand === 'cascade' || spilloverBand === 'active'
+      ? 'Dynamic events are spilling into CPI through staged cost shocks and supply disruption.'
+      : spilloverBand === 'building'
+        ? 'Event-driven inflation spillover building as confidence and supply flags tighten.'
+        : 'Dynamic events inflation spillover muted versus headline.';
+
+  return { spilloverBand, eventIndex, inflationScoreNudge, narrative };
+}
+
+export function dynamicEventsInflationSpilloverScoreAdjustment(band: DynamicEventsInflationSpilloverBand): number {
+  if (band === 'cascade') return 4;
+  if (band === 'active') return 3;
+  if (band === 'building') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/dashboard-map-inflation-overlay.ts ---
+
+export type DashboardMapInflationOverlayBand = 'routine' | 'highlighted' | 'severe' | 'map_critical';
+
+export interface DashboardMapInflationOverlayAssessment {
+  overlayBand: DashboardMapInflationOverlayBand;
+  presentationIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Regional dashboards and map layers elevating inflation presentation (Agent 23). */
+export function assessDashboardMapInflationOverlay(input: {
+  regionalHeatmapInflationAlert: boolean;
+  mapLayerCostPressureScore: number;
+  dashboardRefreshUrgency: 'routine' | 'elevated' | 'critical';
+  dashboardInflationHeatmapSevere: boolean;
+  mapLayerCostOfLivingStressActive: boolean;
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): DashboardMapInflationOverlayAssessment {
+  let pressure = 0;
+  if (input.regionalHeatmapInflationAlert) {
+    pressure += 0.2;
+  }
+  if (input.dashboardInflationHeatmapSevere) {
+    pressure += 0.24;
+  }
+  if (input.mapLayerCostOfLivingStressActive) {
+    pressure += 0.18;
+  }
+  pressure += finClamp(input.mapLayerCostPressureScore, 0, 1) * 0.22;
+
+  if (input.dashboardRefreshUrgency === 'critical') {
+    pressure += 0.16;
+  } else if (input.dashboardRefreshUrgency === 'elevated') {
+    pressure += 0.08;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.05;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0035, 0, 1.05);
+  const presentationIndex = finRound(100 + pressure * 15, 1);
+
+  let overlayBand: DashboardMapInflationOverlayBand = 'routine';
+  if (pressure >= 0.55) overlayBand = 'map_critical';
+  else if (pressure >= 0.36) overlayBand = 'severe';
+  else if (pressure >= 0.18) overlayBand = 'highlighted';
+
+  const inflationScoreNudge =
+    overlayBand === 'map_critical'
+      ? 0.082
+      : overlayBand === 'severe'
+        ? 0.054
+        : overlayBand === 'highlighted'
+          ? 0.025
+          : 0;
+
+  const narrative =
+    overlayBand === 'map_critical' || overlayBand === 'severe'
+      ? 'Dashboard and map overlays are amplifying perceived inflation pressure across regions.'
+      : overlayBand === 'highlighted'
+        ? 'Regional heatmaps highlighting cost-of-living stress on CPI presentation layers.'
+        : 'Dashboard map inflation overlay routine versus headline CPI.';
+
+  return { overlayBand, presentationIndex, inflationScoreNudge, narrative };
+}
+
+export function dashboardMapInflationOverlayScoreAdjustment(band: DashboardMapInflationOverlayBand): number {
+  if (band === 'map_critical') return 4;
+  if (band === 'severe') return 3;
+  if (band === 'highlighted') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -4148,6 +4307,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       publicStability: 36,
     },
     tags: ['inflation', 'housing', 'macro', 'round18'],
+  },
+  {
+    id: 'dynamic_events_inflation_spillover_stack',
+    label: 'Dynamic events inflation spillover stack',
+    description: 'National supply disruption with cascade staged cost shock.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.26,
+      publicStability: 40,
+    },
+    tags: ['inflation', 'events', 'round19'],
+  },
+  {
+    id: 'dashboard_map_inflation_overlay_stress',
+    label: 'Dashboard map inflation overlay stress',
+    description: 'Critical dashboard refresh with regional heatmap alert.',
+    patch: {
+      householdInflationScenarioActive: true,
+      householdAffordability: 'severe_pressure',
+      inflationSettingMultiplier: 1.23,
+      publicStability: 38,
+    },
+    tags: ['inflation', 'dashboards', 'round19'],
+  },
+  {
+    id: 'events_dashboard_fusion_stress',
+    label: 'Events & dashboard fusion stress',
+    description: 'Aligned with Agent 05 spillover + Agent 23 map overlay severe bands.',
+    patch: {
+      inflationSettingMultiplier: 1.3,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      publicStability: 35,
+    },
+    tags: ['inflation', 'events', 'dashboards', 'round19'],
   },
 ] as const;
 
@@ -5465,6 +5661,10 @@ export interface Agent05EventsSnapshot {
   inflationShockEventActive: boolean;
   supplyDisruptionSeverity: 'none' | 'localized' | 'national';
   confidenceShockBand: 'calm' | 'uneasy' | 'severe';
+  /** Round 19: staged narrative event cost shock band. */
+  stagedEventCostShockBand?: 'none' | 'emerging' | 'active' | 'cascade';
+  /** Round 19: macro inflation spillover latch from event queue. */
+  macroEventInflationSpilloverActive?: boolean;
 }
 
 export function mergeAgent05IntoMacroFinancialInputs(
@@ -5498,12 +5698,22 @@ export function mergeAgent05IntoMacroFinancialInputs(
     publicStability = Math.max(0, publicStability - 3);
   }
 
+  if (snapshot.stagedEventCostShockBand === 'cascade') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.07, 0.85, 1.45);
+  } else if (snapshot.stagedEventCostShockBand === 'active') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
-    highInflationScenario,
+    highInflationScenario:
+      highInflationScenario ||
+      snapshot.macroEventInflationSpilloverActive === true ||
+      snapshot.stagedEventCostShockBand === 'cascade',
     publicStability,
+    creditShockActive: base.creditShockActive || snapshot.stagedEventCostShockBand === 'cascade',
   };
 }
 
@@ -5978,6 +6188,10 @@ export interface Agent23DashboardsSnapshot {
   regionalHeatmapInflationAlert: boolean;
   mapLayerCostPressureScore: number;
   dashboardRefreshUrgency: 'routine' | 'elevated' | 'critical';
+  /** Round 19: severe regional inflation heatmap band. */
+  dashboardInflationHeatmapSevere?: boolean;
+  /** Round 19: map layer cost-of-living stress active. */
+  mapLayerCostOfLivingStressActive?: boolean;
 }
 
 export function mergeAgent23IntoMacroFinancialInputs(
@@ -6001,12 +6215,21 @@ export function mergeAgent23IntoMacroFinancialInputs(
   if (snapshot.regionalHeatmapInflationAlert && snapshot.dashboardRefreshUrgency === 'critical') {
     highInflationScenario = true;
   }
+  if (snapshot.dashboardInflationHeatmapSevere && snapshot.mapLayerCostOfLivingStressActive) {
+    highInflationScenario = true;
+  }
+
+  let householdInflationScenarioActive = base.householdInflationScenarioActive;
+  if (snapshot.mapLayerCostOfLivingStressActive) {
+    householdInflationScenarioActive = true;
+  }
 
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
     inflationSettingMultiplier,
     highInflationScenario,
+    householdInflationScenarioActive,
   };
 }
 
@@ -6096,6 +6319,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessMacroTransmissionMergeInflation,
   type MacroTransmissionMergeBand,
 } from '../inflation/macro-transmission-merge-inflation.js';
+  assessDynamicEventsInflationSpillover,
+  type DynamicEventsInflationSpilloverBand,
+} from '../inflation/dynamic-events-inflation-spillover.js';
+  assessDashboardMapInflationOverlay,
+  type DashboardMapInflationOverlayBand,
+} from '../inflation/dashboard-map-inflation-overlay.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -6132,6 +6361,8 @@ export interface InflationForecastPoint {
   uiInflationSalienceBand: UiInflationSalienceBand;
   housingMortgageEssentialBand: HousingMortgageEssentialBand;
   macroTransmissionMergeBand: MacroTransmissionMergeBand;
+  dynamicEventsInflationSpilloverBand: DynamicEventsInflationSpilloverBand;
+  dashboardMapInflationOverlayBand: DashboardMapInflationOverlayBand;
 }
 
 export interface InflationForecastPath {
@@ -6381,6 +6612,24 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const eventsSpillover = assessDynamicEventsInflationSpillover({
+      inflationShockEventActive: inputs.highInflationScenario,
+      supplyDisruptionSeverity: inputs.creditShockActive ? 'national' : inputs.fiscalPressure === 'critical' ? 'localized' : 'none',
+      confidenceShockBand: inputs.publicStability < 42 ? 'severe' : inputs.publicStability < 52 ? 'uneasy' : 'calm',
+      stagedEventCostShockBand: inputs.creditShockActive ? 'cascade' : inputs.highInflationScenario ? 'active' : 'none',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const dashboardOverlay = assessDashboardMapInflationOverlay({
+      regionalHeatmapInflationAlert: inputs.householdInflationScenarioActive,
+      mapLayerCostPressureScore: inputs.householdAffordability === 'severe_pressure' ? 0.72 : 0.38,
+      dashboardRefreshUrgency:
+        inputs.publicStability < 40 ? 'critical' : inputs.highInflationScenario ? 'elevated' : 'routine',
+      dashboardInflationHeatmapSevere: inputs.householdInflationScenarioActive && inputs.publicStability < 48,
+      mapLayerCostOfLivingStressActive: inputs.householdAffordability === 'severe_pressure',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -6417,6 +6666,8 @@ export function projectInflationForecastPath(
       uiInflationSalienceBand: uiSalience.salienceBand,
       housingMortgageEssentialBand: housingEssential.essentialBand,
       macroTransmissionMergeBand: macroMerge.mergeBand,
+      dynamicEventsInflationSpilloverBand: eventsSpillover.spilloverBand,
+      dashboardMapInflationOverlayBand: dashboardOverlay.overlayBand,
     });
   }
 
@@ -6522,7 +6773,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r18';
+  schemaVersion: '10.14.agent10.r19';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -6554,6 +6805,8 @@ export interface Agent21InflationForecastBundle {
   terminalUiInflationSalience: UiInflationSalienceBand;
   terminalHousingMortgageEssential: HousingMortgageEssentialBand;
   terminalMacroTransmissionMerge: MacroTransmissionMergeBand;
+  terminalDynamicEventsInflationSpillover: DynamicEventsInflationSpilloverBand;
+  terminalDashboardMapInflationOverlay: DashboardMapInflationOverlayBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -6582,7 +6835,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r18',
+    schemaVersion: '10.14.agent10.r19',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -6614,6 +6867,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalUiInflationSalience: lastPoint?.uiInflationSalienceBand ?? 'muted',
     terminalHousingMortgageEssential: lastPoint?.housingMortgageEssentialBand ?? 'subdued',
     terminalMacroTransmissionMerge: lastPoint?.macroTransmissionMergeBand ?? 'coherent',
+    terminalDynamicEventsInflationSpillover: lastPoint?.dynamicEventsInflationSpilloverBand ?? 'muted',
+    terminalDashboardMapInflationOverlay: lastPoint?.dashboardMapInflationOverlayBand ?? 'routine',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -6819,6 +7074,12 @@ export function effectiveTierLoanRate(
   assessMacroTransmissionMergeInflation,
   macroTransmissionMergeInflationScoreAdjustment,
 } from './inflation/macro-transmission-merge-inflation.js';
+  assessDynamicEventsInflationSpillover,
+  dynamicEventsInflationSpilloverScoreAdjustment,
+} from './inflation/dynamic-events-inflation-spillover.js';
+  assessDashboardMapInflationOverlay,
+  dashboardMapInflationOverlayScoreAdjustment,
+} from './inflation/dashboard-map-inflation-overlay.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -7223,7 +7484,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r18');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r19');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -7370,7 +7631,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r18' &&
+      bundle.schemaVersion === '10.14.agent10.r19' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -7462,7 +7723,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r18' &&
+      bundle.schemaVersion === '10.14.agent10.r19' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -7561,7 +7822,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r18' &&
+      bundle.schemaVersion === '10.14.agent10.r19' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -7659,7 +7920,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r18' &&
+      bundle.schemaVersion === '10.14.agent10.r19' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -7757,7 +8018,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r18' &&
+      bundle.schemaVersion === '10.14.agent10.r19' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -7847,7 +8108,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r18' &&
+      bundle.schemaVersion === '10.14.agent10.r19' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -7937,7 +8198,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r18' &&
+      bundle.schemaVersion === '10.14.agent10.r19' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -8027,7 +8288,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r18' &&
+      bundle.schemaVersion === '10.14.agent10.r19' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -8117,7 +8378,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r18' &&
+      bundle.schemaVersion === '10.14.agent10.r19' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -8209,7 +8470,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r16_10',
       'agent21 r16 fields',
-      bundle.schemaVersion === '10.14.agent10.r18' &&
+      bundle.schemaVersion === '10.14.agent10.r19' &&
         bundle.terminalFinancialServicesFee !== undefined &&
         bundle.terminalAgriculturalFarmgatePressure !== undefined,
     );
@@ -8305,7 +8566,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r17_10',
       'agent21 r17 fields',
-      bundle.schemaVersion === '10.14.agent10.r18' &&
+      bundle.schemaVersion === '10.14.agent10.r19' &&
         bundle.terminalPublicUtilitiesGridTariff !== undefined &&
         bundle.terminalUiInflationSalience !== undefined,
     );
@@ -8409,7 +8670,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r18_10',
       'agent21 r18 fields',
-      bundle.schemaVersion === '10.14.agent10.r18' &&
+      bundle.schemaVersion === '10.14.agent10.r19' &&
         bundle.terminalHousingMortgageEssential !== undefined &&
         bundle.terminalMacroTransmissionMerge !== undefined,
     );
@@ -8436,6 +8697,111 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'housing_macro_merge_fusion_stress');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.28;
+    })(),
+  );
+
+  // --- Round 19 scale wave ---
+  {
+    const spillover = assessDynamicEventsInflationSpillover({
+      inflationShockEventActive: true,
+      supplyDisruptionSeverity: 'national',
+      confidenceShockBand: 'severe',
+      stagedEventCostShockBand: 'cascade',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r19_01',
+      'events spillover active or cascade',
+      spillover.spilloverBand === 'active' || spillover.spilloverBand === 'cascade',
+    );
+    check('a10_r19_02', 'events spillover score adj', dynamicEventsInflationSpilloverScoreAdjustment(spillover.spilloverBand) >= 3);
+  }
+  {
+    const overlay = assessDashboardMapInflationOverlay({
+      regionalHeatmapInflationAlert: true,
+      mapLayerCostPressureScore: 0.75,
+      dashboardRefreshUrgency: 'critical',
+      dashboardInflationHeatmapSevere: true,
+      mapLayerCostOfLivingStressActive: true,
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r19_03',
+      'dashboard overlay severe or map critical',
+      overlay.overlayBand === 'severe' || overlay.overlayBand === 'map_critical',
+    );
+    check('a10_r19_04', 'dashboard overlay score adj', dashboardMapInflationOverlayScoreAdjustment(overlay.overlayBand) >= 3);
+  }
+  {
+    const merged05 = mergeAgent05IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 2,
+      inflationShockEventActive: true,
+      supplyDisruptionSeverity: 'national',
+      confidenceShockBand: 'severe',
+      stagedEventCostShockBand: 'cascade',
+      macroEventInflationSpilloverActive: true,
+    });
+    check('a10_r19_05', 'agent05 events spillover merge', merged05.highInflationScenario === true && merged05.creditShockActive === true);
+    check('a10_r19_06', 'agent05 bridge note', agent05EventsBridgeIntegrationNote().includes('Agent 05'));
+  }
+  {
+    const merged23 = mergeAgent23IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      regionalHeatmapInflationAlert: true,
+      mapLayerCostPressureScore: 0.7,
+      dashboardRefreshUrgency: 'critical',
+      dashboardInflationHeatmapSevere: true,
+      mapLayerCostOfLivingStressActive: true,
+    });
+    check('a10_r19_07', 'agent23 dashboard merge', merged23.highInflationScenario === true && merged23.householdInflationScenarioActive === true);
+    check('a10_r19_08', 'agent23 bridge note', agent23DashboardsBridgeIntegrationNote().includes('Agent 23'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r19_09',
+      'forecast events spillover and dashboard overlay fields',
+      path.points.every((p) => !!p.dynamicEventsInflationSpilloverBand && !!p.dashboardMapInflationOverlayBand),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r19_10',
+      'agent21 r19 fields',
+      bundle.schemaVersion === '10.14.agent10.r19' &&
+        bundle.terminalDynamicEventsInflationSpillover !== undefined &&
+        bundle.terminalDashboardMapInflationOverlay !== undefined,
+    );
+  }
+  check(
+    'a10_r19_11',
+    'round19 preset events spillover stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'dynamic_events_inflation_spillover_stack');
+      return inp?.creditShockActive === true && inp.highInflationScenario === true;
+    })(),
+  );
+  check(
+    'a10_r19_12',
+    'round19 preset dashboard overlay stress',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'dashboard_map_inflation_overlay_stress');
+      return inp?.householdInflationScenarioActive === true && inp.householdAffordability === 'severe_pressure';
+    })(),
+  );
+  check(
+    'a10_r19_13',
+    'round19 preset events dashboard fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'events_dashboard_fusion_stress');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.29;
     })(),
   );
 
@@ -9459,6 +9825,78 @@ export function HousingMacroMergeInflationPanel(props: HousingMacroMergeInflatio
       </p>
       <p data-testid="housing-macro-merge-note">{essential.narrative}</p>
       <p>{merge.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/EventsDashboardInflationPanel.tsx ---
+  assessDynamicEventsInflationSpillover,
+  dynamicEventsInflationSpilloverScoreAdjustment,
+} from '../inflation/dynamic-events-inflation-spillover.js';
+  assessDashboardMapInflationOverlay,
+  dashboardMapInflationOverlayScoreAdjustment,
+} from '../inflation/dashboard-map-inflation-overlay.js';
+
+export interface EventsDashboardInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent05?: Agent05EventsSnapshot | null;
+  agent23?: Agent23DashboardsSnapshot | null;
+}
+
+export function EventsDashboardInflationPanel(props: EventsDashboardInflationPanelProps) {
+  const events = props.agent05 ?? {
+    turn: props.inputs.turn,
+    inflationShockEventActive: props.inputs.highInflationScenario,
+    supplyDisruptionSeverity: props.inputs.creditShockActive ? ('national' as const) : ('localized' as const),
+    confidenceShockBand: props.inputs.publicStability < 42 ? ('severe' as const) : ('uneasy' as const),
+    stagedEventCostShockBand: props.inputs.fiscalPressure === 'critical' ? ('cascade' as const) : ('active' as const),
+    macroEventInflationSpilloverActive: props.inputs.highInflationScenario,
+  };
+
+  const dashboards = props.agent23 ?? {
+    turn: props.inputs.turn,
+    regionalHeatmapInflationAlert: props.inputs.householdInflationScenarioActive,
+    mapLayerCostPressureScore: props.inputs.householdAffordability === 'severe_pressure' ? 0.78 : 0.45,
+    dashboardRefreshUrgency:
+      props.inputs.publicStability < 40 ? ('critical' as const) : props.inputs.highInflationScenario ? ('elevated' as const) : ('routine' as const),
+    dashboardInflationHeatmapSevere: props.inputs.householdInflationScenarioActive && props.inputs.publicStability < 48,
+    mapLayerCostOfLivingStressActive: props.inputs.householdAffordability === 'severe_pressure',
+  };
+
+  const spillover = assessDynamicEventsInflationSpillover({
+    inflationShockEventActive: events.inflationShockEventActive,
+    supplyDisruptionSeverity: events.supplyDisruptionSeverity,
+    confidenceShockBand: events.confidenceShockBand,
+    stagedEventCostShockBand: events.stagedEventCostShockBand ?? 'none',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const overlay = assessDashboardMapInflationOverlay({
+    regionalHeatmapInflationAlert: dashboards.regionalHeatmapInflationAlert,
+    mapLayerCostPressureScore: dashboards.mapLayerCostPressureScore,
+    dashboardRefreshUrgency: dashboards.dashboardRefreshUrgency,
+    dashboardInflationHeatmapSevere: dashboards.dashboardInflationHeatmapSevere === true,
+    mapLayerCostOfLivingStressActive: dashboards.mapLayerCostOfLivingStressActive === true,
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-events-dashboard-inflation" data-testid="events-dashboard-inflation-panel">
+      <h4>Events spillover & dashboard map (round 19)</h4>
+      <p>
+        Events {spillover.spilloverBand} · index {spillover.eventIndex.toFixed(0)} · score adj{' '}
+        {dynamicEventsInflationSpilloverScoreAdjustment(spillover.spilloverBand)}
+      </p>
+      <p>
+        Map overlay {overlay.overlayBand} · index {overlay.presentationIndex.toFixed(0)} · score adj{' '}
+        {dashboardMapInflationOverlayScoreAdjustment(overlay.overlayBand)}
+      </p>
+      <p data-testid="events-dashboard-note">{spillover.narrative}</p>
+      <p>{overlay.narrative}</p>
     </div>
   );
 }

@@ -112,6 +112,14 @@ import {
   assessMacroTransmissionMergeInflation,
   type MacroTransmissionMergeBand,
 } from '../inflation/macro-transmission-merge-inflation.js';
+import {
+  assessDynamicEventsInflationSpillover,
+  type DynamicEventsInflationSpilloverBand,
+} from '../inflation/dynamic-events-inflation-spillover.js';
+import {
+  assessDashboardMapInflationOverlay,
+  type DashboardMapInflationOverlayBand,
+} from '../inflation/dashboard-map-inflation-overlay.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -148,6 +156,8 @@ export interface InflationForecastPoint {
   uiInflationSalienceBand: UiInflationSalienceBand;
   housingMortgageEssentialBand: HousingMortgageEssentialBand;
   macroTransmissionMergeBand: MacroTransmissionMergeBand;
+  dynamicEventsInflationSpilloverBand: DynamicEventsInflationSpilloverBand;
+  dashboardMapInflationOverlayBand: DashboardMapInflationOverlayBand;
 }
 
 export interface InflationForecastPath {
@@ -397,6 +407,24 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const eventsSpillover = assessDynamicEventsInflationSpillover({
+      inflationShockEventActive: inputs.highInflationScenario,
+      supplyDisruptionSeverity: inputs.creditShockActive ? 'national' : inputs.fiscalPressure === 'critical' ? 'localized' : 'none',
+      confidenceShockBand: inputs.publicStability < 42 ? 'severe' : inputs.publicStability < 52 ? 'uneasy' : 'calm',
+      stagedEventCostShockBand: inputs.creditShockActive ? 'cascade' : inputs.highInflationScenario ? 'active' : 'none',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const dashboardOverlay = assessDashboardMapInflationOverlay({
+      regionalHeatmapInflationAlert: inputs.householdInflationScenarioActive,
+      mapLayerCostPressureScore: inputs.householdAffordability === 'severe_pressure' ? 0.72 : 0.38,
+      dashboardRefreshUrgency:
+        inputs.publicStability < 40 ? 'critical' : inputs.highInflationScenario ? 'elevated' : 'routine',
+      dashboardInflationHeatmapSevere: inputs.householdInflationScenarioActive && inputs.publicStability < 48,
+      mapLayerCostOfLivingStressActive: inputs.householdAffordability === 'severe_pressure',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -433,6 +461,8 @@ export function projectInflationForecastPath(
       uiInflationSalienceBand: uiSalience.salienceBand,
       housingMortgageEssentialBand: housingEssential.essentialBand,
       macroTransmissionMergeBand: macroMerge.mergeBand,
+      dynamicEventsInflationSpilloverBand: eventsSpillover.spilloverBand,
+      dashboardMapInflationOverlayBand: dashboardOverlay.overlayBand,
     });
   }
 
