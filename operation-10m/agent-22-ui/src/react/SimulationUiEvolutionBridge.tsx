@@ -264,6 +264,18 @@ export function SimulationUiEvolutionBridge({
       {result.dedupLedgerFootprintDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-dedup-ledger-day">{result.dedupLedgerFootprintDayCoachCopy}</div>
       ) : null}
+      {result.flushedDeferredQueueDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-flushed-queue-day">{result.flushedDeferredQueueDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavProgressionHiddenDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-legacy-hidden-day">{result.legacyNavProgressionHiddenDayCoachCopy}</div>
+      ) : null}
+      {result.largeDayJumpDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-large-jump-day">{result.largeDayJumpDayCoachCopy}</div>
+      ) : null}
+      {result.onboardingHighlightRosterDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-onboarding-roster-day">{result.onboardingHighlightRosterDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

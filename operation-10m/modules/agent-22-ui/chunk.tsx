@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 196893107fb93ebb
+// content-sha256-prefix: c178211505cc763c
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -947,6 +947,10 @@ export interface DayAdvanceUiEvolutionResult {
   previewPanelUnlockHintDayCoachCopy: string | null;
   immediateCoachBatchDayCoachCopy: string | null;
   dedupLedgerFootprintDayCoachCopy: string | null;
+  flushedDeferredQueueDayCoachCopy: string | null;
+  legacyNavProgressionHiddenDayCoachCopy: string | null;
+  largeDayJumpDayCoachCopy: string | null;
+  onboardingHighlightRosterDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1577,6 +1581,28 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const flushedDeferredQueueDayCoach = buildFlushedDeferredQueueDayCoach({
+    flushedCount: flush.flushedAnnouncements.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const legacyNavProgressionHiddenDayCoach = buildLegacyNavProgressionHiddenDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const largeDayJumpDayCoach = buildLargeDayJumpDayCoach({
+    prior: priorSignals,
+    next: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const onboardingHighlightRosterDayCoach = buildOnboardingHighlightRosterDayCoach({
+    highlightedPanelIds: highlightIds,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1695,6 +1721,10 @@ export function tickEvolvingUiOnDayAdvance(
     previewPanelUnlockHintDayCoachCopy: previewPanelUnlockHintDayCoach.coachCopy,
     immediateCoachBatchDayCoachCopy: immediateCoachBatchDayCoach.coachCopy,
     dedupLedgerFootprintDayCoachCopy: dedupLedgerFootprintDayCoach.coachCopy,
+    flushedDeferredQueueDayCoachCopy: flushedDeferredQueueDayCoach.coachCopy,
+    legacyNavProgressionHiddenDayCoachCopy: legacyNavProgressionHiddenDayCoach.coachCopy,
+    largeDayJumpDayCoachCopy: largeDayJumpDayCoach.coachCopy,
+    onboardingHighlightRosterDayCoachCopy: onboardingHighlightRosterDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -6621,6 +6651,264 @@ export function buildDedupLedgerFootprintDayCoach(input: {
   const coachCopy =
     base && ledgerEntryCount >= 2 ? `Day ${input.nextGameDay}: ${base}` : null;
   return { ledgerEntryCount, coachCopy };
+}
+
+// --- source: engine/flushed-deferred-queue-day-coach.ts ---
+export interface FlushedDeferredQueueDayCoach {
+  flushedCount: number;
+  coachCopy: string | null;
+}
+
+export function buildFlushedDeferredQueueDayCoach(input: {
+  flushedCount: number;
+  nextGameDay: number;
+}): FlushedDeferredQueueDayCoach {
+  if (input.flushedCount <= 0) {
+    return { flushedCount: 0, coachCopy: null };
+  }
+  const noun = input.flushedCount === 1 ? 'line' : 'lines';
+  return {
+    flushedCount: input.flushedCount,
+    coachCopy: `Day ${input.nextGameDay}: Cleared ${input.flushedCount} deferred coach ${noun} from the pacing queue.`,
+  };
+}
+
+// --- source: engine/legacy-nav-progression-hidden-day-coach.ts ---
+export interface LegacyNavProgressionHiddenDayCoach {
+  hiddenTargetCount: number;
+  coachCopy: string | null;
+}
+
+export function buildLegacyNavProgressionHiddenDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  nextGameDay: number;
+}): LegacyNavProgressionHiddenDayCoach {
+  const entries = auditLegacyNavTargets(input.signals, input.policy);
+  const hidden = entries.filter(e => e.hasPatch && e.progressionWouldHide);
+  if (!hidden.length) {
+    return { hiddenTargetCount: 0, coachCopy: null };
+  }
+  const sample = hidden[0].target;
+  const extra = hidden.length > 1 ? ` (+${hidden.length - 1} more)` : '';
+  return {
+    hiddenTargetCount: hidden.length,
+    coachCopy: `Day ${input.nextGameDay}: Legacy nav "${sample}"${extra} resolves but panels stay hidden by progression.`,
+  };
+}
+
+// --- source: engine/large-day-jump-day-coach.ts ---
+export interface LargeDayJumpDayCoach {
+  dayDelta: number;
+  coachCopy: string | null;
+}
+
+export function buildLargeDayJumpDayCoach(input: {
+  prior: ProgressionSignalSnapshot;
+  next: ProgressionSignalSnapshot;
+  nextGameDay: number;
+  minDayDelta?: number;
+}): LargeDayJumpDayCoach {
+  const delta = computeProgressionSignalDelta(input.prior, input.next);
+  const min = input.minDayDelta ?? 3;
+  if (delta.interfaceLevelChanged || delta.dayDelta < min) {
+    return { dayDelta: delta.dayDelta, coachCopy: null };
+  }
+  return {
+    dayDelta: delta.dayDelta,
+    coachCopy: `Day ${input.nextGameDay}: Large time jump (+${delta.dayDelta} days) — review newly unlocked panels.`,
+  };
+}
+
+// --- source: engine/onboarding-highlight-roster-day-coach.ts ---
+export interface OnboardingHighlightRosterDayCoach {
+  highlightCount: number;
+  coachCopy: string | null;
+}
+
+export function buildOnboardingHighlightRosterDayCoach(input: {
+  highlightedPanelIds: string[];
+  nextGameDay: number;
+}): OnboardingHighlightRosterDayCoach {
+  const ids = input.highlightedPanelIds;
+  if (!ids.length) {
+    return { highlightCount: 0, coachCopy: null };
+  }
+  const labels = ids
+    .slice(0, 3)
+    .map(id => EVOLVING_UI_PANEL_BY_ID[id]?.label ?? id)
+    .join(', ');
+  const extra = ids.length > 3 ? ` (+${ids.length - 3} more)` : '';
+  return {
+    highlightCount: ids.length,
+    coachCopy: `Day ${input.nextGameDay}: Onboarding highlights ${labels}${extra}.`,
+  };
+}
+
+// --- source: engine/round33-self-tests.ts ---
+export function runAgent22Round33SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r33_flushed_queue',
+    'flushed deferred queue day coach',
+    (() => {
+      const coach = buildFlushedDeferredQueueDayCoach({ flushedCount: 2, nextGameDay: 5 });
+      return coach.flushedCount === 2 && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r33_legacy_hidden',
+    'legacy nav progression hidden day coach shape',
+    (() => {
+      const coach = buildLegacyNavProgressionHiddenDayCoach({
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 2,
+      });
+      return coach.hiddenTargetCount >= 0;
+    })()
+  );
+
+  check(
+    'r33_large_jump',
+    'large day jump day coach on big delta',
+    (() => {
+      const coach = buildLargeDayJumpDayCoach({
+        prior: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        next: { gameDay: 5, turnCount: 5, interfaceLevel: 'simple' },
+        nextGameDay: 5,
+      });
+      return coach.dayDelta === 4 && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r33_onboarding_roster',
+    'onboarding highlight roster day coach',
+    (() => {
+      const coach = buildOnboardingHighlightRosterDayCoach({
+        highlightedPanelIds: ['market_panel', 'map_panel'],
+        nextGameDay: 3,
+      });
+      return coach.highlightCount === 2 && Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r33_tick_flushed',
+    'tick exposes flushed deferred queue day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.flushedDeferredQueueDayCoachCopy === 'string' || r.flushedDeferredQueueDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r33_tick_legacy_hidden',
+    'tick exposes legacy nav progression hidden day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.legacyNavProgressionHiddenDayCoachCopy === 'string' || r.legacyNavProgressionHiddenDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r33_tick_large_jump',
+    'tick exposes large day jump day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 6, turnCount: 6, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.largeDayJumpDayCoachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r33_tick_onboarding_roster',
+    'tick exposes onboarding highlight roster day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.onboardingHighlightRosterDayCoachCopy === 'string' || r.onboardingHighlightRosterDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r33_flushed_empty',
+    'flushed deferred queue null when zero',
+    (() => {
+      const coach = buildFlushedDeferredQueueDayCoach({ flushedCount: 0, nextGameDay: 1 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r33_roster_empty',
+    'onboarding roster null when empty',
+    (() => {
+      const coach = buildOnboardingHighlightRosterDayCoach({ highlightedPanelIds: [], nextGameDay: 2 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r33_jump_skipped',
+    'large day jump null on small delta',
+    (() => {
+      const coach = buildLargeDayJumpDayCoach({
+        prior: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        next: { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        nextGameDay: 3,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r33_jump_interface_change',
+    'large day jump null when interface level changes',
+    (() => {
+      const coach = buildLargeDayJumpDayCoach({
+        prior: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        next: { gameDay: 8, turnCount: 8, interfaceLevel: 'guided' },
+        nextGameDay: 8,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round32-self-tests.ts ---
@@ -12792,6 +13080,18 @@ export function SimulationUiEvolutionBridge({
       {result.dedupLedgerFootprintDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-dedup-ledger-day">{result.dedupLedgerFootprintDayCoachCopy}</div>
       ) : null}
+      {result.flushedDeferredQueueDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-flushed-queue-day">{result.flushedDeferredQueueDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavProgressionHiddenDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-legacy-hidden-day">{result.legacyNavProgressionHiddenDayCoachCopy}</div>
+      ) : null}
+      {result.largeDayJumpDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-large-jump-day">{result.largeDayJumpDayCoachCopy}</div>
+      ) : null}
+      {result.onboardingHighlightRosterDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-onboarding-roster-day">{result.onboardingHighlightRosterDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -14842,7 +15142,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.32.0';
+export const AGENT_22_MODULE_VERSION = '1.33.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -14993,6 +15293,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round33 = runAgent22Round33SelfTests();
+  for (const r of round33.results) {
+    check(`agent22_round33_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round32 = runAgent22Round32SelfTests();

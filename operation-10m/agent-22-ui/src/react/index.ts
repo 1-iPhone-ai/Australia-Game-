@@ -105,3 +105,7 @@ export { ProgressionCoverageDeltaDayCoachStrip } from './ProgressionCoverageDelt
 export { PreviewPanelUnlockHintDayCoachStrip } from './PreviewPanelUnlockHintDayCoachStrip.js';
 export { ImmediateCoachBatchDayCoachStrip } from './ImmediateCoachBatchDayCoachStrip.js';
 export { DedupLedgerFootprintDayCoachStrip } from './DedupLedgerFootprintDayCoachStrip.js';
+export { FlushedDeferredQueueDayCoachStrip } from './FlushedDeferredQueueDayCoachStrip.js';
+export { LegacyNavProgressionHiddenDayCoachStrip } from './LegacyNavProgressionHiddenDayCoachStrip.js';
+export { LargeDayJumpDayCoachStrip } from './LargeDayJumpDayCoachStrip.js';
+export { OnboardingHighlightRosterDayCoachStrip } from './OnboardingHighlightRosterDayCoachStrip.js';
