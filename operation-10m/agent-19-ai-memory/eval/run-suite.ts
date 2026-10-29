@@ -113,6 +113,27 @@ import {
   matchExplainabilityGateOpen,
 } from '../match-explainability-gate.ts';
 import { auditTraceCompositeBridge, traceCompositeBridgeOk } from '../trace-composite-bridge.ts';
+import {
+  buildMatchGateRecoveryHints,
+  matchGateRecoveryNeeded,
+  AGENT19_MATCH_RECOVERY_HINT_CAP,
+} from '../match-gate-recovery-bridge.ts';
+import {
+  auditSessionTraceContinuityGate,
+  sessionTraceContinuityGateOpen,
+} from '../session-trace-continuity-gate.ts';
+import {
+  auditSessionHorizonAlignment,
+  sessionHorizonAlignmentOk,
+} from '../session-horizon-alignment-audit.ts';
+import {
+  auditExplainabilityExportGate,
+  explainabilityExportAllowed,
+} from '../explainability-export-gate.ts';
+import {
+  buildSessionTraceCompositeRollup,
+  sessionTraceCompositeAllPassed,
+} from '../session-trace-composite-rollup.ts';
 import type { MemoryEvalResult } from '../types.ts';
 
 type Case = [string, string, () => boolean | string];
@@ -1325,6 +1346,204 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           });
           const report = auditTraceCompositeBridge(pack, { decisionsBefore, decisionsAfter });
           return traceCompositeBridgeOk(report) && report.traceOk && report.compositeOk || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r10_gate_recovery',
+        'Match gate recovery hints when confidence gate fails',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = Array.from({ length: AGENT19_AI_MEMORY_EVENT_CAP + 1 }, (_, i) => ({
+            id: `e${i}`,
+            turn: i,
+            actionType: 'sell',
+            actorId: 'player',
+            targetId: null,
+            regionId: null,
+            summary: 's',
+            importance: 1,
+            valence: 0,
+            stableKey: `k${i}`,
+          }));
+          const decisionsBefore = [{ type: 'a', score: 5 }];
+          const decisionsAfter = [
+            {
+              type: 'a',
+              score: 10,
+              memoryInfluence: 5,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 't' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const gate = auditMatchExplainabilityGate([pack], {
+            memory: mem,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          const hints = buildMatchGateRecoveryHints(gate, {
+            memory: mem,
+            currentTurn: 1,
+            lastPack: pack,
+            lastDecisions: { before: decisionsBefore, after: decisionsAfter },
+          });
+          return (
+            matchGateRecoveryNeeded(gate) &&
+            hints.some(h => h.includes('Trim') || h.includes('bounds')) &&
+            hints.length <= AGENT19_MATCH_RECOVERY_HINT_CAP
+          ) || hints.join('|');
+        },
+      ],
+      [
+        'a19_r10_gate_recovery_open',
+        'Match gate recovery is minimal when gate open',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'a', score: 5 }];
+          const decisionsAfter = [
+            {
+              type: 'a',
+              score: 10,
+              memoryInfluence: 5,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 't' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const gate = auditMatchExplainabilityGate([pack], {
+            memory: mem,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          const hints = buildMatchGateRecoveryHints(gate, { memory: mem, currentTurn: 1 });
+          return !matchGateRecoveryNeeded(gate) && hints[0].includes('open') || hints.join('|');
+        },
+      ],
+      [
+        'a19_r10_session_trace_ok',
+        'Session trace continuity gate passes clean turns',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2 },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditSessionTraceContinuityGate([pack], [{ before: decisionsBefore, after: decisionsAfter }]);
+          return sessionTraceContinuityGateOpen(report) && report.failedTurns.length === 0 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r10_session_trace_fail',
+        'Session trace continuity gate fails when option dropped',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({
+            turn: 3,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditSessionTraceContinuityGate([pack], [{ before: decisionsBefore, after: decisionsAfter }]);
+          return !sessionTraceContinuityGateOpen(report) && report.failedTurns.includes(3) || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r10_session_horizon',
+        'Session horizon alignment flags inactive prior slices',
+        () => {
+          const decisionsAfter = [
+            {
+              type: 'x',
+              score: 8,
+              memoryInfluence: 2,
+              memoryInfluenceSlices: [{ horizon: 'long_term_prior', delta: 2, reason: 'prior' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'x', score: 6 }],
+            decisionsAfter,
+            persistentMemoryEnabled: false,
+          });
+          const report = auditSessionHorizonAlignment([pack], [{ after: decisionsAfter }]);
+          return !sessionHorizonAlignmentOk(report) && report.failedTurns.includes(1) || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r10_export_gate',
+        'Explainability export allowed when match gate open',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'a', score: 5 }];
+          const decisionsAfter = [
+            {
+              type: 'a',
+              score: 10,
+              memoryInfluence: 5,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 't' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditExplainabilityExportGate([pack], {
+            memory: mem,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return (
+            explainabilityExportAllowed(report) &&
+            report.exportPayload !== null &&
+            report.exportPayload.schema === 'agent19.explainability.v1'
+          ) || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r10_trace_composite_rollup',
+        'Session trace composite rollup counts passes',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'm' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 5,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const rollup = buildSessionTraceCompositeRollup([pack], [{ before: decisionsBefore, after: decisionsAfter }]);
+          return sessionTraceCompositeAllPassed(rollup) && rollup.passCount === 1 || JSON.stringify(rollup);
         },
       ],
     ]),
