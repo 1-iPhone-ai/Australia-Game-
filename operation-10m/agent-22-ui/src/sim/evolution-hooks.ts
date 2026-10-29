@@ -19,6 +19,8 @@ import {
   flushDeferredAnnouncementQueue,
   mergeAnnouncementPacingQueueIntoPersisted,
 } from '../engine/deferred-announcement-flush.js';
+import { buildCoachLiveRegionDeliveryPlan } from '../engine/coach-live-region-scheduler.js';
+import { onboardingHighlightedPanelIds } from '../engine/onboarding-persist-bridge.js';
 
 /** Persisted slice proposed for `gameSettings.evolvingUi` (assembly-owned). */
 export interface EvolvingUiPersistedState {
@@ -41,6 +43,8 @@ export interface EvolvingUiPersistedState {
   announcementPacingDeferredCount?: number;
   /** deferred coach copy awaiting flush on later ticks */
   announcementPacingQueue?: string[];
+  /** onboarding funnel dismiss keys persisted for host */
+  onboardingDismissedKeys?: string[];
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -49,6 +53,7 @@ export interface DayAdvanceUiEvolutionResult {
   coachAnnouncements: string[];
   deferredCoachAnnouncementCount: number;
   flushedDeferredAnnouncementCount: number;
+  coachLiveRegionMessageCount: number;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -156,6 +161,15 @@ export function tickEvolvingUiOnDayAdvance(
   );
 
   const immediateCoach = [...flush.flushedAnnouncements, ...pacing.immediateAnnouncements];
+  const liveRegionPlan = buildCoachLiveRegionDeliveryPlan(immediateCoach, DEFAULT_ACCESSIBILITY_SNAPSHOT);
+
+  const highlightIds = onboardingHighlightedPanelIds(nextSignals.gameDay, updatedPersistedWithPacing);
+  const updatedPersistedFinal: EvolvingUiPersistedState = {
+    ...updatedPersistedWithPacing,
+    rememberedPanelIds: [
+      ...new Set([...(updatedPersistedWithPacing.rememberedPanelIds ?? []), ...highlightIds]),
+    ],
+  };
 
   return {
     gameDay: nextSignals.gameDay,
@@ -163,7 +177,8 @@ export function tickEvolvingUiOnDayAdvance(
     coachAnnouncements: immediateCoach,
     deferredCoachAnnouncementCount: combinedQueue.length,
     flushedDeferredAnnouncementCount: flush.flushedAnnouncements.length,
-    updatedPersisted: updatedPersistedWithPacing,
+    coachLiveRegionMessageCount: liveRegionPlan.messages.length,
+    updatedPersisted: updatedPersistedFinal,
     visiblePanelCount,
   };
 }

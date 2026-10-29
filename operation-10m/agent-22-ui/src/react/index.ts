@@ -20,3 +20,6 @@ export { PacedAnnouncementStatusStrip } from './PacedAnnouncementStatusStrip.js'
 export { KeyboardShortcutConflictBanner } from './KeyboardShortcutConflictBanner.js';
 export { SessionResumeCoachStrip } from './SessionResumeCoachStrip.js';
 export { DeferredAnnouncementFlushBanner } from './DeferredAnnouncementFlushBanner.js';
+export { OnboardingFunnelCoachStrip } from './OnboardingFunnelCoachStrip.js';
+export { ResponsiveNavRailHintBanner } from './ResponsiveNavRailHintBanner.js';
+export { CoachLiveRegionDeliveryStrip } from './CoachLiveRegionDeliveryStrip.js';

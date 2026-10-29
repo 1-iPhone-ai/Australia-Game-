@@ -34,6 +34,11 @@ export function SimulationUiEvolutionBridge({
           Flushed {result.flushedDeferredAnnouncementCount} queued coach announcements
         </div>
       ) : null}
+      {result.coachLiveRegionMessageCount > 0 ? (
+        <div data-testid="sim-ui-evolution-live-region-count">
+          Scheduled {result.coachLiveRegionMessageCount} live-region coach messages
+        </div>
+      ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
         <div key={i}>{line}</div>
       ))}

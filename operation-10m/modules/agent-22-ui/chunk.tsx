@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: abc8bb9145ba52d1
+// content-sha256-prefix: fb9609c274caf4c0
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -857,6 +857,8 @@ export interface EvolvingUiPersistedState {
   announcementPacingDeferredCount?: number;
   /** deferred coach copy awaiting flush on later ticks */
   announcementPacingQueue?: string[];
+  /** onboarding funnel dismiss keys persisted for host */
+  onboardingDismissedKeys?: string[];
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -865,6 +867,7 @@ export interface DayAdvanceUiEvolutionResult {
   coachAnnouncements: string[];
   deferredCoachAnnouncementCount: number;
   flushedDeferredAnnouncementCount: number;
+  coachLiveRegionMessageCount: number;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -972,6 +975,15 @@ export function tickEvolvingUiOnDayAdvance(
   );
 
   const immediateCoach = [...flush.flushedAnnouncements, ...pacing.immediateAnnouncements];
+  const liveRegionPlan = buildCoachLiveRegionDeliveryPlan(immediateCoach, DEFAULT_ACCESSIBILITY_SNAPSHOT);
+
+  const highlightIds = onboardingHighlightedPanelIds(nextSignals.gameDay, updatedPersistedWithPacing);
+  const updatedPersistedFinal: EvolvingUiPersistedState = {
+    ...updatedPersistedWithPacing,
+    rememberedPanelIds: [
+      ...new Set([...(updatedPersistedWithPacing.rememberedPanelIds ?? []), ...highlightIds]),
+    ],
+  };
 
   return {
     gameDay: nextSignals.gameDay,
@@ -979,7 +991,8 @@ export function tickEvolvingUiOnDayAdvance(
     coachAnnouncements: immediateCoach,
     deferredCoachAnnouncementCount: combinedQueue.length,
     flushedDeferredAnnouncementCount: flush.flushedAnnouncements.length,
-    updatedPersisted: updatedPersistedWithPacing,
+    coachLiveRegionMessageCount: liveRegionPlan.messages.length,
+    updatedPersisted: updatedPersistedFinal,
     visiblePanelCount,
   };
 }
@@ -3088,6 +3101,192 @@ export function resolveAccessibleChromeShellProfile(input: {
   return { density, style, dataAttributes };
 }
 
+// --- source: engine/onboarding-persist-bridge.ts ---
+export function mergeOnboardingDismissalsIntoPersisted(
+  persisted: EvolvingUiPersistedState,
+  dismissedKeys: string[]
+): EvolvingUiPersistedState {
+  return {
+    ...persisted,
+    onboardingDismissedKeys: [...new Set([...(persisted.onboardingDismissedKeys ?? []), ...dismissedKeys])],
+  };
+}
+
+export function dismissOnboardingStepInPersisted(
+  persisted: EvolvingUiPersistedState,
+  stepId: string
+): EvolvingUiPersistedState {
+  const result = applyOnboardingDismissal(
+    stepId,
+    persisted.onboardingDismissedKeys ?? [],
+    persisted.rememberedPanelIds ?? []
+  );
+  return {
+    ...persisted,
+    onboardingDismissedKeys: result.dismissedKeys,
+    rememberedPanelIds: result.rememberedPanelIds,
+  };
+}
+
+export function listActiveOnboardingStepsForPersisted(
+  gameDay: number,
+  persisted: EvolvingUiPersistedState
+): OnboardingFunnelStep[] {
+  return listActiveOnboardingSteps(gameDay, persisted.onboardingDismissedKeys ?? []);
+}
+
+export function onboardingFunnelStatusCopy(steps: OnboardingFunnelStep[]): string | null {
+  if (!steps.length) return null;
+  if (steps.length === 1) return `Onboarding: ${steps[0].title}`;
+  return `Onboarding: ${steps.length} guided steps remain (${steps[0].title}…)`;
+}
+
+export function onboardingHighlightedPanelIds(
+  gameDay: number,
+  persisted: EvolvingUiPersistedState
+): string[] {
+  const active = listActiveOnboardingStepsForPersisted(gameDay, persisted);
+  return [...new Set(active.flatMap(s => s.unlocksPanelIds))];
+}
+
+// --- source: engine/responsive-nav-rail-plan.ts ---
+export interface NavRailVisibilityPlan {
+  visiblePanelIds: string[];
+  overflowCount: number;
+  overflowCopy: string | null;
+  hints: ResponsiveLayoutHints;
+}
+
+export function planNavRailVisibleItems(input: {
+  orderedPanelIds: string[];
+  viewportWidthPx: number;
+  layoutPreset?: V94LayoutPreset;
+  densityTier?: UiDensityTier;
+  sessionMemory?: SessionUiMemory;
+  pinnedPanelIds?: string[];
+}): NavRailVisibilityPlan {
+  const hints = deriveResponsiveLayoutHints({
+    viewportWidthPx: input.viewportWidthPx,
+    layoutPreset: input.layoutPreset,
+    densityTier: input.densityTier,
+  });
+
+  const mustInclude = new Set<string>(input.pinnedPanelIds ?? []);
+  if (input.sessionMemory?.lastNavTarget) {
+    for (const id of input.orderedPanelIds) {
+      const panel = EVOLVING_UI_PANEL_BY_ID[id];
+      if (panel?.navTarget === input.sessionMemory.lastNavTarget) mustInclude.add(id);
+    }
+  }
+  for (const id of input.sessionMemory?.recentPanelIds ?? []) {
+    mustInclude.add(id);
+  }
+
+  const cap = hints.maxVisibleRailItems;
+  const visible: string[] = [];
+  for (const id of input.orderedPanelIds) {
+    if (mustInclude.has(id) && !visible.includes(id)) visible.push(id);
+  }
+  for (const id of input.orderedPanelIds) {
+    if (visible.length >= cap) break;
+    if (!visible.includes(id)) visible.push(id);
+  }
+
+  const overflowCount = Math.max(0, input.orderedPanelIds.length - visible.length);
+  const overflowCopy =
+    overflowCount > 0
+      ? `${overflowCount} navigation destinations tucked into overflow for this viewport.`
+      : null;
+
+  return { visiblePanelIds: visible, overflowCount, overflowCopy, hints };
+}
+
+export function responsiveNavRailCoachCopy(plan: NavRailVisibilityPlan): string | null {
+  if (plan.overflowCount <= 0) return plan.hints.coachSummary;
+  return `${plan.hints.coachSummary} ${plan.overflowCopy ?? ''}`.trim();
+}
+
+// --- source: engine/coach-live-region-scheduler.ts ---
+export interface CoachLiveRegionDeliveryPlan {
+  messages: QueuedLiveRegionMessage[];
+  assertiveCount: number;
+  politeCount: number;
+}
+
+export function buildCoachLiveRegionDeliveryPlan(
+  coachLines: string[],
+  accessibility: AccessibilitySettingsSnapshot
+): CoachLiveRegionDeliveryPlan {
+  if (!accessibility.screenReaderAnnouncements || accessibility.announceVerbosity === 'off') {
+    return { messages: [], assertiveCount: 0, politeCount: 0 };
+  }
+
+  let queue: QueuedLiveRegionMessage[] = [];
+  coachLines.forEach((text, index) => {
+    const priority = index === 0 && accessibility.announceVerbosity === 'assertive' ? 'assertive' : 'polite';
+    queue = enqueueLiveRegionMessage(queue, {
+      id: `coach-lr-${index}`,
+      text,
+      politeness: priority === 'assertive' ? 'assertive' : 'polite',
+      priority,
+    });
+  });
+
+  const messages = coalesceDuplicateLiveRegionText(queue);
+  return {
+    messages,
+    assertiveCount: messages.filter(m => m.priority === 'assertive').length,
+    politeCount: messages.filter(m => m.priority === 'polite').length,
+  };
+}
+
+export function coachLiveRegionDeliveryCopy(plan: CoachLiveRegionDeliveryPlan): string | null {
+  if (!plan.messages.length) return null;
+  if (plan.assertiveCount > 0) {
+    return `${plan.messages.length} coach lines queued for screen reader (${plan.assertiveCount} priority).`;
+  }
+  return `${plan.messages.length} coach lines queued for screen reader delivery.`;
+}
+
+// --- source: engine/layout-onboarding-visibility.ts ---
+export interface LayoutOnboardingVisibilityHint {
+  panelId: string;
+  state: 'visible' | 'preview' | 'hidden';
+  onboardingHighlight: boolean;
+  layoutBlocked: boolean;
+}
+
+export function buildLayoutOnboardingVisibilityHints(input: {
+  panelIds: string[];
+  layoutPreset: V94LayoutPreset | undefined;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  persisted: EvolvingUiPersistedState;
+}): LayoutOnboardingVisibilityHint[] {
+  const highlights = new Set(onboardingHighlightedPanelIds(input.signals.gameDay, input.persisted));
+
+  return input.panelIds.map(panelId => {
+    const vis = resolveEvolvingPanelVisibilityWithLayout(
+      panelId,
+      input.layoutPreset,
+      input.signals,
+      input.policy
+    );
+    return {
+      panelId,
+      state: vis.state,
+      onboardingHighlight: highlights.has(panelId),
+      layoutBlocked: vis.reason.includes('layout_preset_tag_blocked'),
+    };
+  });
+}
+
+export function layoutOnboardingCoachCopy(hints: LayoutOnboardingVisibilityHint[]): string | null {
+  const blocked = hints.filter(h => h.onboardingHighlight && h.layoutBlocked);
+  if (!blocked.length) return null;
+  return `${blocked.length} onboarding panels preview-only under the current layout preset.`;
+}
+
 // --- source: engine/legacy-access.ts ---
 /** Mirrors V9.4 resolveIntentNavToUiPatch targets (standalone copy for module tests). */
 export function resolveIntentNavToUiPatch(target: string): Record<string, boolean | string> {
@@ -4494,6 +4693,175 @@ export function runAgent22Round10SelfTests(): {
   return { passed: results.length - failed, failed, results };
 }
 
+// --- source: engine/round11-self-tests.ts ---
+export function runAgent22Round11SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r11_onboarding_persist_merge',
+    'merge onboarding dismiss keys into persisted',
+    (() => {
+      const merged = mergeOnboardingDismissalsIntoPersisted(createDefaultEvolvingUiPersistedState(), ['onboarding_map']);
+      return Boolean(merged.onboardingDismissedKeys?.includes('onboarding_map'));
+    })()
+  );
+
+  check(
+    'r11_onboarding_dismiss_step',
+    'dismiss step updates remembered panels',
+    (() => {
+      const next = dismissOnboardingStepInPersisted(createDefaultEvolvingUiPersistedState(), 'funnel_welcome_map');
+      return Boolean(
+        next.onboardingDismissedKeys?.includes('onboarding_map') && next.rememberedPanelIds?.includes('nav_map')
+      );
+    })()
+  );
+
+  check(
+    'r11_onboarding_status_copy',
+    'funnel status copy mentions step title',
+    (() => {
+      const steps = listActiveOnboardingStepsForPersisted(2, createDefaultEvolvingUiPersistedState());
+      return Boolean(onboardingFunnelStatusCopy(steps)?.includes('Onboarding'));
+    })()
+  );
+
+  check(
+    'r11_onboarding_highlights_tick',
+    'day advance remembers onboarding highlight panels',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState()
+      );
+      const highlights = onboardingHighlightedPanelIds(2, createDefaultEvolvingUiPersistedState());
+      return highlights.length > 0 && (r.updatedPersisted.rememberedPanelIds?.length ?? 0) >= highlights.length;
+    })()
+  );
+
+  check(
+    'r11_nav_rail_overflow',
+    'narrow viewport caps visible nav items',
+    (() => {
+      const signals = { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' as const };
+      const ordered = sortPanelsForRail(
+        NAV_TARGET_PANELS.map(p => p.id),
+        signals,
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      );
+      const plan = planNavRailVisibleItems({
+        orderedPanelIds: ordered,
+        viewportWidthPx: 360,
+      });
+      return plan.visiblePanelIds.length <= plan.hints.maxVisibleRailItems && plan.overflowCount >= 0;
+    })()
+  );
+
+  check(
+    'r11_nav_rail_pins_recent',
+    'nav plan keeps recent session target visible',
+    (() => {
+      const signals = { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' as const };
+      const ordered = sortPanelsForRail(
+        NAV_TARGET_PANELS.map(p => p.id),
+        signals,
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      );
+      const memory = recordNavSelection(createDefaultSessionUiMemory(), 'map');
+      const plan = planNavRailVisibleItems({
+        orderedPanelIds: ordered,
+        viewportWidthPx: 400,
+        sessionMemory: memory,
+      });
+      const mapPanel = NAV_TARGET_PANELS.find(p => p.navTarget === 'map');
+      return mapPanel ? plan.visiblePanelIds.includes(mapPanel.id) : false;
+    })()
+  );
+
+  check(
+    'r11_coach_live_region_plan',
+    'coach lines become live region messages',
+    (() => {
+      const plan = buildCoachLiveRegionDeliveryPlan(['Panel unlocked'], DEFAULT_ACCESSIBILITY_SNAPSHOT);
+      return plan.messages.length === 1 && plan.politeCount === 1;
+    })()
+  );
+
+  check(
+    'r11_coach_live_region_copy',
+    'live region delivery copy mentions queue',
+    Boolean(coachLiveRegionDeliveryCopy(buildCoachLiveRegionDeliveryPlan(['a', 'b'], DEFAULT_ACCESSIBILITY_SNAPSHOT))?.includes('screen reader'))
+  );
+
+  check(
+    'r11_tick_live_region_count',
+    'day advance reports live region message count',
+    (() => {
+      const persisted = {
+        ...createDefaultEvolvingUiPersistedState(),
+        announcementPacingQueue: ['queued one', 'queued two', 'queued three'],
+      };
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'guided' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        persisted
+      );
+      return r.coachLiveRegionMessageCount >= 1;
+    })()
+  );
+
+  check(
+    'r11_layout_onboarding_hints',
+    'layout hints mark onboarding highlights',
+    (() => {
+      const hints = buildLayoutOnboardingVisibilityHints({
+        panelIds: ['nav_map', 'nav_market'],
+        layoutPreset: 'Assisted',
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        persisted: createDefaultEvolvingUiPersistedState(),
+      });
+      return hints.some(h => h.onboardingHighlight);
+    })()
+  );
+
+  check(
+    'r11_layout_onboarding_copy',
+    'layout onboarding copy references preview',
+    (() => {
+      const hints = buildLayoutOnboardingVisibilityHints({
+        panelIds: ['widget_guardian', 'ai_command'],
+        layoutPreset: 'Clean',
+        signals: { gameDay: 10, turnCount: 10, interfaceLevel: 'advanced' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        persisted: createDefaultEvolvingUiPersistedState(),
+      });
+      const copy = layoutOnboardingCoachCopy(hints);
+      return copy == null || copy.includes('preview');
+    })()
+  );
+
+  check(
+    'r11_live_region_off_when_sr_disabled',
+    'live region plan empty when SR off',
+    buildCoachLiveRegionDeliveryPlan(['x'], { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, screenReaderAnnouncements: false })
+      .messages.length === 0
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
 // --- source: a11y/aria-builders.ts ---
 const RING_CLASSES: Record<FocusRingStyle, string> = {
   emerald: 'focus-visible:ring-emerald-400',
@@ -4907,6 +5275,8 @@ export interface EvolvingNavRailProps {
   policy: EvolvingUiAccessPolicy;
   accessibility: AccessibilitySettingsSnapshot;
   selectedNavTarget?: string;
+  viewportWidthPx?: number;
+  sessionMemory?: SessionUiMemory;
   onNavigate: (navTarget: string, panelId: string) => void;
 }
 
@@ -4915,6 +5285,8 @@ export function EvolvingNavRail({
   policy,
   accessibility,
   selectedNavTarget,
+  viewportWidthPx,
+  sessionMemory,
   onNavigate,
 }: EvolvingNavRailProps): React.ReactElement {
   const focusClass = buildFocusRingClassName({
@@ -4926,9 +5298,18 @@ export function EvolvingNavRail({
     return sortPanelsForRail(ids, signals, policy);
   }, [signals, policy]);
 
+  const visibleIds = useMemo(() => {
+    if (viewportWidthPx == null) return ordered;
+    return planNavRailVisibleItems({
+      orderedPanelIds: ordered,
+      viewportWidthPx,
+      sessionMemory,
+    }).visiblePanelIds;
+  }, [ordered, viewportWidthPx, sessionMemory]);
+
   return (
     <nav aria-label="Primary game navigation" data-testid="evolving-nav-rail" className="flex flex-col gap-1">
-      {ordered.map(id => {
+      {visibleIds.map(id => {
         const panel = NAV_TARGET_PANELS.find(p => p.id === id);
         if (!panel?.navTarget) return null;
         const vis = resolveEvolvingPanelVisibility(id, signals, policy);
@@ -5140,6 +5521,11 @@ export function SimulationUiEvolutionBridge({
       {result.flushedDeferredAnnouncementCount > 0 ? (
         <div data-testid="sim-ui-evolution-flush-count">
           Flushed {result.flushedDeferredAnnouncementCount} queued coach announcements
+        </div>
+      ) : null}
+      {result.coachLiveRegionMessageCount > 0 ? (
+        <div data-testid="sim-ui-evolution-live-region-count">
+          Scheduled {result.coachLiveRegionMessageCount} live-region coach messages
         </div>
       ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
@@ -5878,8 +6264,106 @@ export function DeferredAnnouncementFlushBanner({
   );
 }
 
+// --- source: react/OnboardingFunnelCoachStrip.tsx ---
+export interface OnboardingFunnelCoachStripProps {
+  signals: ProgressionSignalSnapshot;
+  persisted: EvolvingUiPersistedState;
+  accessibility: AccessibilitySettingsSnapshot;
+  onDismissStep?: (stepId: string) => void;
+}
+
+export function OnboardingFunnelCoachStrip({
+  signals,
+  persisted,
+  accessibility,
+  onDismissStep,
+}: OnboardingFunnelCoachStripProps): React.ReactElement | null {
+  const steps = listActiveOnboardingStepsForPersisted(signals.gameDay, persisted);
+  const headline = onboardingFunnelStatusCopy(steps);
+  if (!headline) return null;
+
+  return (
+    <div
+      data-testid="onboarding-funnel-coach-strip"
+      role="complementary"
+      aria-label="Onboarding funnel"
+      className="text-xs border border-teal-500/30 rounded p-2 space-y-1"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      <p>{headline}</p>
+      {steps.slice(0, 2).map(step => (
+        <div key={step.id} data-testid={`onboarding-step-${step.id}`}>
+          <span>{step.coachMessage}</span>
+          {onDismissStep ? (
+            <button
+              type="button"
+              className="ml-2 underline"
+              data-testid={`onboarding-dismiss-${step.id}`}
+              onClick={() => onDismissStep(step.id)}
+            >
+              Got it
+            </button>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// --- source: react/ResponsiveNavRailHintBanner.tsx ---
+export interface ResponsiveNavRailHintBannerProps {
+  plan: NavRailVisibilityPlan;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function ResponsiveNavRailHintBanner({
+  plan,
+  accessibility,
+}: ResponsiveNavRailHintBannerProps): React.ReactElement | null {
+  const copy = responsiveNavRailCoachCopy(plan);
+  if (!copy) return null;
+
+  return (
+    <div
+      data-testid="responsive-nav-rail-hint-banner"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-slate-500/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {copy}
+    </div>
+  );
+}
+
+// --- source: react/CoachLiveRegionDeliveryStrip.tsx ---
+export interface CoachLiveRegionDeliveryStripProps {
+  plan: CoachLiveRegionDeliveryPlan;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function CoachLiveRegionDeliveryStrip({
+  plan,
+  accessibility,
+}: CoachLiveRegionDeliveryStripProps): React.ReactElement | null {
+  const copy = coachLiveRegionDeliveryCopy(plan);
+  if (!copy) return null;
+
+  return (
+    <div
+      data-testid="coach-live-region-delivery-strip"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-rose-500/25 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {copy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.10.0';
+export const AGENT_22_MODULE_VERSION = '1.11.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -5970,6 +6454,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round10 = runAgent22Round10SelfTests();
   for (const r of round10.results) {
     check(`agent22_round10_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round11 = runAgent22Round11SelfTests();
+  for (const r of round11.results) {
+    check(`agent22_round11_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

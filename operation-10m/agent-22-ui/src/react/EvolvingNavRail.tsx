@@ -1,6 +1,8 @@
 import React, { useMemo } from 'react';
 import { NAV_TARGET_PANELS } from '../registry/panel-definitions.js';
 import { resolveEvolvingPanelVisibility, sortPanelsForRail } from '../engine/resolve-panel-visibility.js';
+import { planNavRailVisibleItems } from '../engine/responsive-nav-rail-plan.js';
+import type { SessionUiMemory } from '../sim/session-ui-memory.js';
 import { buildNavRailItemAria, buildFocusRingClassName } from '../a11y/aria-builders.js';
 import type { EvolvingUiAccessPolicy } from '../types/access-policy.js';
 import type { AccessibilitySettingsSnapshot } from '../types/accessibility.js';
@@ -11,6 +13,8 @@ export interface EvolvingNavRailProps {
   policy: EvolvingUiAccessPolicy;
   accessibility: AccessibilitySettingsSnapshot;
   selectedNavTarget?: string;
+  viewportWidthPx?: number;
+  sessionMemory?: SessionUiMemory;
   onNavigate: (navTarget: string, panelId: string) => void;
 }
 
@@ -19,6 +23,8 @@ export function EvolvingNavRail({
   policy,
   accessibility,
   selectedNavTarget,
+  viewportWidthPx,
+  sessionMemory,
   onNavigate,
 }: EvolvingNavRailProps): React.ReactElement {
   const focusClass = buildFocusRingClassName({
@@ -30,9 +36,18 @@ export function EvolvingNavRail({
     return sortPanelsForRail(ids, signals, policy);
   }, [signals, policy]);
 
+  const visibleIds = useMemo(() => {
+    if (viewportWidthPx == null) return ordered;
+    return planNavRailVisibleItems({
+      orderedPanelIds: ordered,
+      viewportWidthPx,
+      sessionMemory,
+    }).visiblePanelIds;
+  }, [ordered, viewportWidthPx, sessionMemory]);
+
   return (
     <nav aria-label="Primary game navigation" data-testid="evolving-nav-rail" className="flex flex-col gap-1">
-      {ordered.map(id => {
+      {visibleIds.map(id => {
         const panel = NAV_TARGET_PANELS.find(p => p.id === id);
         if (!panel?.navTarget) return null;
         const vis = resolveEvolvingPanelVisibility(id, signals, policy);

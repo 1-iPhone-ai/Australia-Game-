@@ -55,6 +55,10 @@ const FILES = [
   'engine/session-resume-coach.ts',
   'engine/memory-weighted-quick-actions.ts',
   'engine/accessible-chrome-shell.ts',
+  'engine/onboarding-persist-bridge.ts',
+  'engine/responsive-nav-rail-plan.ts',
+  'engine/coach-live-region-scheduler.ts',
+  'engine/layout-onboarding-visibility.ts',
   'engine/legacy-access.ts',
   'engine/merge-with-v94-contextual-hiding.ts',
   'engine/progression-coach.ts',
@@ -67,6 +71,7 @@ const FILES = [
   'engine/round8-self-tests.ts',
   'engine/round9-self-tests.ts',
   'engine/round10-self-tests.ts',
+  'engine/round11-self-tests.ts',
   'a11y/aria-builders.ts',
   'a11y/focus-management.ts',
   'a11y/live-region-controller.ts',
@@ -95,6 +100,9 @@ const FILES = [
   'react/KeyboardShortcutConflictBanner.tsx',
   'react/SessionResumeCoachStrip.tsx',
   'react/DeferredAnnouncementFlushBanner.tsx',
+  'react/OnboardingFunnelCoachStrip.tsx',
+  'react/ResponsiveNavRailHintBanner.tsx',
+  'react/CoachLiveRegionDeliveryStrip.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -136,7 +144,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.10.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.11.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -229,6 +237,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round10_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round11 = runAgent22Round11SelfTests();
+  for (const r of round11.results) {
+    check(\`agent22_round11_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -255,7 +268,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.10.0',
+  moduleVersion: '1.11.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),
