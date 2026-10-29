@@ -224,6 +224,9 @@ export interface NationalLaborDemographicsState {
   participationVelocityCouplingBrief?: NationalParticipationVelocityCouplingBrief;
   skillsTightnessCoherenceOutlook?: NationalSkillsTightnessCoherenceOutlook;
   integratedLaborReadinessOutlook?: NationalIntegratedLaborReadinessOutlook;
+  hybridRemoteParticipationOutlook?: NationalHybridRemoteParticipationOutlook;
+  corridorCapacityStressBrief?: NationalCorridorCapacityStressBrief;
+  stewardInterventionPriorityBrief?: NationalStewardInterventionPriorityBrief;
 }
 
 export type MigrationShockKind =
@@ -665,6 +668,39 @@ export interface NationalIntegratedLaborReadinessOutlook {
   readinessIndex: number;
   band: IntegratedLaborReadinessBand;
   stabilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type HybridRemoteParticipationBand = 'constrained' | 'mixed' | 'enabled' | 'expansive';
+
+export interface NationalHybridRemoteParticipationOutlook {
+  turn: number;
+  remoteIndex: number;
+  band: HybridRemoteParticipationBand;
+  frictionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CorridorCapacityStressBand = 'relief' | 'balanced' | 'stressed' | 'overloaded';
+
+export interface NationalCorridorCapacityStressBrief {
+  turn: number;
+  stressIndex: number;
+  band: CorridorCapacityStressBand;
+  corridorMoveDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type StewardInterventionBand = 'observe' | 'nudge' | 'act' | 'urgent';
+
+export interface NationalStewardInterventionPriorityBrief {
+  turn: number;
+  priorityIndex: number;
+  band: StewardInterventionBand;
+  readinessDrag: number;
   summary: string;
   stewardNote: string;
 }

@@ -65,6 +65,9 @@ import { computeNationalCapacityParticipationAlignmentBrief } from './capacity-p
 import { computeNationalParticipationVelocityCouplingBrief } from './participation-velocity-coupling-brief';
 import { computeNationalSkillsTightnessCoherenceOutlook } from './skills-tightness-coherence-outlook';
 import { computeNationalIntegratedLaborReadinessOutlook } from './integrated-labor-readiness-outlook';
+import { computeNationalHybridRemoteParticipationOutlook } from './hybrid-remote-participation-outlook';
+import { computeNationalCorridorCapacityStressBrief } from './corridor-capacity-stress-brief';
+import { computeNationalStewardInterventionPriorityBrief } from './steward-intervention-priority-brief';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -523,6 +526,23 @@ export function computeNationalLaborDemographics(
     state.migrationShockParticipationBufferOutlook,
     state.laborResilienceScorecard
   );
+  state.hybridRemoteParticipationOutlook = computeNationalHybridRemoteParticipationOutlook(
+    state,
+    state.hybridParticipationFrictionOutlook
+  );
+  state.corridorCapacityStressBrief = computeNationalCorridorCapacityStressBrief(
+    state,
+    state.interregionalRebalancingPlan,
+    state.regionalLaborAbsorptionBrief,
+    state.laborRebalancingStressBrief,
+    state.laborMarketTightnessBrief
+  );
+  state.stewardInterventionPriorityBrief = computeNationalStewardInterventionPriorityBrief(
+    state,
+    state.integratedLaborReadinessOutlook,
+    state.laborMarketStabilityOutlook,
+    state.laborRebalancingStressBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -694,6 +714,27 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.integratedLaborReadinessOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.hybridRemoteParticipationOutlook?.band === 'constrained' ||
+      state.hybridRemoteParticipationOutlook?.band === 'mixed') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.hybridRemoteParticipationOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.corridorCapacityStressBrief?.band === 'stressed' ||
+      state.corridorCapacityStressBrief?.band === 'overloaded') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.corridorCapacityStressBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.stewardInterventionPriorityBrief?.band === 'act' ||
+      state.stewardInterventionPriorityBrief?.band === 'urgent') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.stewardInterventionPriorityBrief.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

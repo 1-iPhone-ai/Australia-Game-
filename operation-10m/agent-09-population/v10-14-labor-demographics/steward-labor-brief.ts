@@ -167,6 +167,24 @@ export function buildStewardLaborBrief(
   ) {
     hints.push(state.integratedLaborReadinessOutlook.stewardNote);
   }
+  if (
+    state.hybridRemoteParticipationOutlook?.band === 'constrained' ||
+    state.hybridRemoteParticipationOutlook?.band === 'mixed'
+  ) {
+    hints.push(state.hybridRemoteParticipationOutlook.stewardNote);
+  }
+  if (
+    state.corridorCapacityStressBrief?.band === 'stressed' ||
+    state.corridorCapacityStressBrief?.band === 'overloaded'
+  ) {
+    hints.push(state.corridorCapacityStressBrief.stewardNote);
+  }
+  if (
+    state.stewardInterventionPriorityBrief?.band === 'act' ||
+    state.stewardInterventionPriorityBrief?.band === 'urgent'
+  ) {
+    hints.push(state.stewardInterventionPriorityBrief.stewardNote);
+  }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
   }

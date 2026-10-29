@@ -42,7 +42,10 @@ export type LaborGiQueryTopic =
   | 'capacity_participation_alignment'
   | 'participation_velocity_coupling'
   | 'skills_tightness_coherence'
-  | 'integrated_labor_readiness';
+  | 'integrated_labor_readiness'
+  | 'hybrid_remote_participation'
+  | 'corridor_capacity_stress'
+  | 'steward_intervention_priority';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -80,6 +83,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   }
   if (/\b(skills tightness coherence|skill tightness alignment)/.test(q)) return 'skills_tightness_coherence';
   if (/\b(integrated labor readiness|labor readiness outlook)/.test(q)) return 'integrated_labor_readiness';
+  if (/\b(hybrid remote participation|remote work participation outlook)/.test(q)) return 'hybrid_remote_participation';
+  if (/\b(corridor capacity stress|corridor stress capacity)/.test(q)) return 'corridor_capacity_stress';
+  if (/\b(steward intervention priority|intervention priority steward)/.test(q)) return 'steward_intervention_priority';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -410,6 +416,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Readiness band ${state.integratedLaborReadinessOutlook?.band ?? 'unknown'}; stability drag ${Math.round(state.integratedLaborReadinessOutlook?.stabilityDrag ?? 0)}.`,
         inference: state.integratedLaborReadinessOutlook?.stewardNote || state.outlook,
         projection: 'Readiness blends stability, alignment, buffers, and resilience — steward guidance only.'
+      };
+    case 'hybrid_remote_participation':
+      return {
+        topic,
+        headline: state.hybridRemoteParticipationOutlook?.summary || 'Hybrid-remote participation unavailable.',
+        fact: `Remote band ${state.hybridRemoteParticipationOutlook?.band ?? 'unknown'}; friction drag ${Math.round(state.hybridRemoteParticipationOutlook?.frictionDrag ?? 0)}.`,
+        inference: state.hybridRemoteParticipationOutlook?.stewardNote || state.outlook,
+        projection: 'Remote outlook blends hybrid friction, flexibility, and mentorship — not literal remote headcounts.'
+      };
+    case 'corridor_capacity_stress':
+      return {
+        topic,
+        headline: state.corridorCapacityStressBrief?.summary || 'Corridor capacity stress unavailable.',
+        fact: `Stress band ${state.corridorCapacityStressBrief?.band ?? 'unknown'}; move drag ${Math.round(state.corridorCapacityStressBrief?.corridorMoveDrag ?? 0)}.`,
+        inference: state.corridorCapacityStressBrief?.stewardNote || state.outlook,
+        projection: 'Corridor stress blends moves, absorption, rebalancing, and tightness — not literal infrastructure counts.'
+      };
+    case 'steward_intervention_priority':
+      return {
+        topic,
+        headline: state.stewardInterventionPriorityBrief?.summary || 'Steward intervention priority unavailable.',
+        fact: `Priority band ${state.stewardInterventionPriorityBrief?.band ?? 'unknown'}; readiness drag ${Math.round(state.stewardInterventionPriorityBrief?.readinessDrag ?? 0)}.`,
+        inference: state.stewardInterventionPriorityBrief?.stewardNote || state.summary,
+        projection: 'Intervention priority synthesizes readiness, stability, and rebalancing stress for steward nudges.'
       };
     default:
       return {

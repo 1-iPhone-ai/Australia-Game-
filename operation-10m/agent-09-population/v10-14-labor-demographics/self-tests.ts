@@ -91,6 +91,15 @@ import {
 import { computeNationalParticipationVelocityCouplingBrief } from './participation-velocity-coupling-brief';
 import { computeNationalSkillsTightnessCoherenceOutlook } from './skills-tightness-coherence-outlook';
 import { computeNationalIntegratedLaborReadinessOutlook } from './integrated-labor-readiness-outlook';
+import {
+  WORKFORCE_MENTORSHIP_LEVERS,
+  lookupWorkforceMentorshipLever,
+  mentorshipEaseForRegion,
+  mentorshipLeversForIndustry
+} from './catalog/workforce-mentorship-levers';
+import { computeNationalHybridRemoteParticipationOutlook } from './hybrid-remote-participation-outlook';
+import { computeNationalCorridorCapacityStressBrief } from './corridor-capacity-stress-brief';
+import { computeNationalStewardInterventionPriorityBrief } from './steward-intervention-priority-brief';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -814,6 +823,65 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.laborResilienceScorecard
     ).stewardNote.length > 8,
     'readiness steward note'
+  );
+
+  check('R1401', WORKFORCE_MENTORSHIP_LEVERS.length >= 8, 'mentorship lever catalog');
+  check('R1402', Boolean(lookupWorkforceMentorshipLever('mentor_tech_nsw_vic')?.narrative), 'mentorship lever lookup');
+  check('R1403', mentorshipLeversForIndustry('technology').length >= 1, 'technology mentorship levers');
+  check('R1404', mentorshipEaseForRegion('NSW', 'technology') > 0, 'regional mentorship ease');
+  check('R1405', Boolean(r1.state.hybridRemoteParticipationOutlook?.band), 'hybrid remote on state');
+  check('R1406', (r1.state.hybridRemoteParticipationOutlook?.frictionDrag ?? 0) >= 0, 'hybrid remote friction drag');
+  check('R1407', Boolean(r1.state.corridorCapacityStressBrief?.band), 'corridor stress on state');
+  check('R1408', Boolean(r1.state.stewardInterventionPriorityBrief?.band), 'steward intervention on state');
+  check(
+    'R1409',
+    detectLaborDemographicsQuery('hybrid remote participation') === 'hybrid_remote_participation',
+    'GI hybrid remote detect'
+  );
+  check(
+    'R1410',
+    detectLaborDemographicsQuery('corridor capacity stress') === 'corridor_capacity_stress',
+    'GI corridor stress detect'
+  );
+  check(
+    'R1411',
+    detectLaborDemographicsQuery('steward intervention priority') === 'steward_intervention_priority',
+    'GI intervention detect'
+  );
+  check(
+    'R1412',
+    answerLaborDemographicsQuestion(r1.state, 'steward_intervention_priority').headline.length > 5,
+    'GI intervention answer'
+  );
+  const hybridRemoteOnly = computeNationalHybridRemoteParticipationOutlook(
+    r1.state,
+    r1.state.hybridParticipationFrictionOutlook
+  );
+  check('R1413', hybridRemoteOnly.summary.length > 10, 'hybrid remote standalone summary');
+  const corridorStressOnly = computeNationalCorridorCapacityStressBrief(
+    r1.state,
+    r1.state.interregionalRebalancingPlan,
+    r1.state.regionalLaborAbsorptionBrief,
+    r1.state.laborRebalancingStressBrief,
+    r1.state.laborMarketTightnessBrief
+  );
+  check('R1414', corridorStressOnly.band.length > 3, 'corridor stress band string');
+  const interventionOnly = computeNationalStewardInterventionPriorityBrief(
+    r1.state,
+    r1.state.integratedLaborReadinessOutlook,
+    r1.state.laborMarketStabilityOutlook,
+    r1.state.laborRebalancingStressBrief
+  );
+  check('R1415', interventionOnly.readinessDrag >= 0, 'intervention readiness drag');
+  check(
+    'R1416',
+    computeNationalStewardInterventionPriorityBrief(
+      rHhBad.state,
+      rHhBad.state.integratedLaborReadinessOutlook,
+      rHhBad.state.laborMarketStabilityOutlook,
+      rHhBad.state.laborRebalancingStressBrief
+    ).stewardNote.length > 8,
+    'intervention steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

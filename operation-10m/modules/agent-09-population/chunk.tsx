@@ -228,6 +228,9 @@ export interface NationalLaborDemographicsState {
   participationVelocityCouplingBrief?: NationalParticipationVelocityCouplingBrief;
   skillsTightnessCoherenceOutlook?: NationalSkillsTightnessCoherenceOutlook;
   integratedLaborReadinessOutlook?: NationalIntegratedLaborReadinessOutlook;
+  hybridRemoteParticipationOutlook?: NationalHybridRemoteParticipationOutlook;
+  corridorCapacityStressBrief?: NationalCorridorCapacityStressBrief;
+  stewardInterventionPriorityBrief?: NationalStewardInterventionPriorityBrief;
 }
 
 export type MigrationShockKind =
@@ -669,6 +672,39 @@ export interface NationalIntegratedLaborReadinessOutlook {
   readinessIndex: number;
   band: IntegratedLaborReadinessBand;
   stabilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type HybridRemoteParticipationBand = 'constrained' | 'mixed' | 'enabled' | 'expansive';
+
+export interface NationalHybridRemoteParticipationOutlook {
+  turn: number;
+  remoteIndex: number;
+  band: HybridRemoteParticipationBand;
+  frictionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CorridorCapacityStressBand = 'relief' | 'balanced' | 'stressed' | 'overloaded';
+
+export interface NationalCorridorCapacityStressBrief {
+  turn: number;
+  stressIndex: number;
+  band: CorridorCapacityStressBand;
+  corridorMoveDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type StewardInterventionBand = 'observe' | 'nudge' | 'act' | 'urgent';
+
+export interface NationalStewardInterventionPriorityBrief {
+  turn: number;
+  priorityIndex: number;
+  band: StewardInterventionBand;
+  readinessDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -1778,7 +1814,10 @@ export type LaborGiQueryTopic =
   | 'capacity_participation_alignment'
   | 'participation_velocity_coupling'
   | 'skills_tightness_coherence'
-  | 'integrated_labor_readiness';
+  | 'integrated_labor_readiness'
+  | 'hybrid_remote_participation'
+  | 'corridor_capacity_stress'
+  | 'steward_intervention_priority';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -1816,6 +1855,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   }
   if (/\b(skills tightness coherence|skill tightness alignment)/.test(q)) return 'skills_tightness_coherence';
   if (/\b(integrated labor readiness|labor readiness outlook)/.test(q)) return 'integrated_labor_readiness';
+  if (/\b(hybrid remote participation|remote work participation outlook)/.test(q)) return 'hybrid_remote_participation';
+  if (/\b(corridor capacity stress|corridor stress capacity)/.test(q)) return 'corridor_capacity_stress';
+  if (/\b(steward intervention priority|intervention priority steward)/.test(q)) return 'steward_intervention_priority';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -2146,6 +2188,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Readiness band ${state.integratedLaborReadinessOutlook?.band ?? 'unknown'}; stability drag ${Math.round(state.integratedLaborReadinessOutlook?.stabilityDrag ?? 0)}.`,
         inference: state.integratedLaborReadinessOutlook?.stewardNote || state.outlook,
         projection: 'Readiness blends stability, alignment, buffers, and resilience — steward guidance only.'
+      };
+    case 'hybrid_remote_participation':
+      return {
+        topic,
+        headline: state.hybridRemoteParticipationOutlook?.summary || 'Hybrid-remote participation unavailable.',
+        fact: `Remote band ${state.hybridRemoteParticipationOutlook?.band ?? 'unknown'}; friction drag ${Math.round(state.hybridRemoteParticipationOutlook?.frictionDrag ?? 0)}.`,
+        inference: state.hybridRemoteParticipationOutlook?.stewardNote || state.outlook,
+        projection: 'Remote outlook blends hybrid friction, flexibility, and mentorship — not literal remote headcounts.'
+      };
+    case 'corridor_capacity_stress':
+      return {
+        topic,
+        headline: state.corridorCapacityStressBrief?.summary || 'Corridor capacity stress unavailable.',
+        fact: `Stress band ${state.corridorCapacityStressBrief?.band ?? 'unknown'}; move drag ${Math.round(state.corridorCapacityStressBrief?.corridorMoveDrag ?? 0)}.`,
+        inference: state.corridorCapacityStressBrief?.stewardNote || state.outlook,
+        projection: 'Corridor stress blends moves, absorption, rebalancing, and tightness — not literal infrastructure counts.'
+      };
+    case 'steward_intervention_priority':
+      return {
+        topic,
+        headline: state.stewardInterventionPriorityBrief?.summary || 'Steward intervention priority unavailable.',
+        fact: `Priority band ${state.stewardInterventionPriorityBrief?.band ?? 'unknown'}; readiness drag ${Math.round(state.stewardInterventionPriorityBrief?.readinessDrag ?? 0)}.`,
+        inference: state.stewardInterventionPriorityBrief?.stewardNote || state.summary,
+        projection: 'Intervention priority synthesizes readiness, stability, and rebalancing stress for steward nudges.'
       };
     default:
       return {
@@ -2625,6 +2691,24 @@ export function buildStewardLaborBrief(
     state.integratedLaborReadinessOutlook?.band === 'caution'
   ) {
     hints.push(state.integratedLaborReadinessOutlook.stewardNote);
+  }
+  if (
+    state.hybridRemoteParticipationOutlook?.band === 'constrained' ||
+    state.hybridRemoteParticipationOutlook?.band === 'mixed'
+  ) {
+    hints.push(state.hybridRemoteParticipationOutlook.stewardNote);
+  }
+  if (
+    state.corridorCapacityStressBrief?.band === 'stressed' ||
+    state.corridorCapacityStressBrief?.band === 'overloaded'
+  ) {
+    hints.push(state.corridorCapacityStressBrief.stewardNote);
+  }
+  if (
+    state.stewardInterventionPriorityBrief?.band === 'act' ||
+    state.stewardInterventionPriorityBrief?.band === 'urgent'
+  ) {
+    hints.push(state.stewardInterventionPriorityBrief.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -4079,6 +4163,121 @@ export function advocacyEaseForRegion(
   );
   if (!matches.length) return 0;
   return matches.reduce((a, l) => a + l.advocacyStrength, 0) / matches.length;
+}
+
+
+// --- source: catalog/workforce-mentorship-levers.ts ---
+
+export type WorkforceMentorshipLeverKind =
+  | 'peer_mentor_lane'
+  | 'apprentice_sponsor'
+  | 'executive_shadow_band'
+  | 'cross_sector_rotation'
+  | 'frontier_coach_pack';
+
+export interface WorkforceMentorshipLever {
+  id: string;
+  kind: WorkforceMentorshipLeverKind;
+  targetIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  mentorshipStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const WORKFORCE_MENTORSHIP_LEVERS: WorkforceMentorshipLever[] = [
+  {
+    id: 'mentor_manufacturing_vic',
+    kind: 'apprentice_sponsor',
+    targetIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    mentorshipStrength: 0.7,
+    label: 'Manufacturing apprentice sponsor',
+    narrative: 'Sponsor lanes lift youth pipeline without literal mentor counts.'
+  },
+  {
+    id: 'mentor_health_nsw',
+    kind: 'executive_shadow_band',
+    targetIndustry: 'research',
+    hostRegions: ['NSW', 'ACT'],
+    mentorshipStrength: 0.73,
+    label: 'Capital health shadow band',
+    narrative: 'Shadow bands reinforce credential mobility in capital corridors.'
+  },
+  {
+    id: 'mentor_agri_tas',
+    kind: 'peer_mentor_lane',
+    targetIndustry: 'agriculture',
+    hostRegions: ['TAS', 'SA', 'VIC'],
+    mentorshipStrength: 0.62,
+    label: 'Regional agri peer mentor',
+    narrative: 'Peer mentors ease seasonal participation-velocity coupling.'
+  },
+  {
+    id: 'mentor_tourism_qld',
+    kind: 'cross_sector_rotation',
+    targetIndustry: 'tourism',
+    hostRegions: ['QLD', 'NSW'],
+    mentorshipStrength: 0.65,
+    label: 'Coastal tourism rotation band',
+    narrative: 'Rotation bands stabilize hybrid-remote participation outlooks.'
+  },
+  {
+    id: 'mentor_tech_nsw_vic',
+    kind: 'frontier_coach_pack',
+    targetIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    mentorshipStrength: 0.76,
+    label: 'Tech frontier coach pack',
+    narrative: 'Coach packs align skills coherence with onboarding levers.'
+  },
+  {
+    id: 'mentor_mining_wa',
+    kind: 'apprentice_sponsor',
+    targetIndustry: 'mining',
+    hostRegions: ['WA', 'QLD', 'NT'],
+    mentorshipStrength: 0.69,
+    label: 'Frontier mining sponsor lane',
+    narrative: 'Sponsor lanes offset corridor capacity stress in resource regions.'
+  },
+  {
+    id: 'mentor_energy_nt',
+    kind: 'peer_mentor_lane',
+    targetIndustry: 'energy',
+    hostRegions: ['NT', 'QLD'],
+    mentorshipStrength: 0.64,
+    label: 'Energy peer mentor corridor',
+    narrative: 'Peer mentors reinforce steward intervention priorities.'
+  },
+  {
+    id: 'mentor_trade_sa',
+    kind: 'cross_sector_rotation',
+    targetIndustry: 'trade',
+    hostRegions: ['SA', 'WA'],
+    mentorshipStrength: 0.61,
+    label: 'Trade logistics rotation pack',
+    narrative: 'Rotation packs smooth integrated readiness in logistics hubs.'
+  }
+];
+
+export function lookupWorkforceMentorshipLever(id: string): WorkforceMentorshipLever | undefined {
+  return WORKFORCE_MENTORSHIP_LEVERS.find(l => l.id === id);
+}
+
+export function mentorshipLeversForIndustry(industry: StrategicIndustryKind): WorkforceMentorshipLever[] {
+  return WORKFORCE_MENTORSHIP_LEVERS.filter(l => l.targetIndustry === industry);
+}
+
+export function mentorshipEaseForRegion(
+  regionId: string,
+  dominantIndustry: StrategicIndustryKind | null | undefined
+): number {
+  if (!dominantIndustry) return 0;
+  const matches = WORKFORCE_MENTORSHIP_LEVERS.filter(
+    l => l.targetIndustry === dominantIndustry && l.hostRegions.includes(regionId)
+  );
+  if (!matches.length) return 0;
+  return matches.reduce((a, l) => a + l.mentorshipStrength, 0) / matches.length;
 }
 
 
@@ -5996,6 +6195,220 @@ export function computeNationalIntegratedLaborReadinessOutlook(
 }
 
 
+// --- source: hybrid-remote-participation-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type HybridRemoteParticipationBand,
+  type NationalHybridParticipationFrictionOutlook,
+  type NationalHybridRemoteParticipationOutlook,
+  type NationalLaborDemographicsState
+} from './types';
+
+function hybridRemoteBand(index: number): HybridRemoteParticipationBand {
+  if (index <= 34) return 'constrained';
+  if (index <= 48) return 'mixed';
+  if (index <= 62) return 'enabled';
+  return 'expansive';
+}
+
+export function computeNationalHybridRemoteParticipationOutlook(
+  state: NationalLaborDemographicsState,
+  hybridFriction: NationalHybridParticipationFrictionOutlook | null | undefined
+): NationalHybridRemoteParticipationOutlook {
+  if (!state.enabled || !hybridFriction) {
+    return {
+      turn: state.turn,
+      remoteIndex: 50,
+      band: 'mixed',
+      frictionDrag: 0,
+      summary: 'Hybrid-remote participation idle — hybrid friction unavailable.',
+      stewardNote: 'Compute hybrid participation friction before remote outlook guidance.'
+    };
+  }
+
+  let flexibilityLift = 0;
+  let mentorshipLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    const industry = state.regions[regionId]?.dominantIndustry ?? null;
+    flexibilityLift += flexibilityEaseForRegion(regionId, industry);
+    mentorshipLift += mentorshipEaseForRegion(regionId, industry);
+  });
+  flexibilityLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+  mentorshipLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const frictionDrag =
+    hybridFriction.band === 'binding'
+      ? 18
+      : hybridFriction.band === 'elevated'
+        ? 12
+        : hybridFriction.frictionIndex * 0.2;
+  const careEase = hybridFriction.careReliefLift * 22;
+  const participationLift = (state.participationPressureBrief?.participationIndex ?? 50) * 0.22;
+
+  const remoteIndex = v1014laborClamp(
+    28 + participationLift + flexibilityLift * 18 + mentorshipLift * 14 + careEase - frictionDrag
+  );
+  const band = hybridRemoteBand(remoteIndex);
+
+  const stewardNote =
+    band === 'constrained' || band === 'mixed'
+      ? 'Mixed hybrid-remote participation — stack flexibility and mentorship before remote automation.'
+      : band === 'expansive'
+        ? 'Expansive remote band — guard corridor capacity stress in inbound hubs.'
+        : 'Enabled remote participation — monitor hybrid friction in caregiver-heavy regions.';
+
+  return {
+    turn: state.turn,
+    remoteIndex,
+    band,
+    frictionDrag,
+    summary: `Hybrid-remote participation ${band} (index ${Math.round(remoteIndex)}); friction drag ${Math.round(frictionDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: corridor-capacity-stress-brief.ts ---
+  CorridorCapacityStressBand,
+  InterregionalLaborRebalancingPlan,
+  NationalCorridorCapacityStressBrief,
+  NationalLaborDemographicsState,
+  NationalLaborMarketTightnessBrief,
+  NationalLaborRebalancingStressBrief,
+  NationalRegionalLaborAbsorptionBrief
+} from './types';
+
+function stressBand(index: number): CorridorCapacityStressBand {
+  if (index <= 32) return 'relief';
+  if (index <= 48) return 'balanced';
+  if (index <= 64) return 'stressed';
+  return 'overloaded';
+}
+
+export function computeNationalCorridorCapacityStressBrief(
+  state: NationalLaborDemographicsState,
+  plan: InterregionalLaborRebalancingPlan | null | undefined,
+  absorption: NationalRegionalLaborAbsorptionBrief | null | undefined,
+  rebalancingStress: NationalLaborRebalancingStressBrief | null | undefined,
+  tightness: NationalLaborMarketTightnessBrief | null | undefined
+): NationalCorridorCapacityStressBrief {
+  if (!state.enabled || !plan || !absorption || !rebalancingStress || !tightness) {
+    return {
+      turn: state.turn,
+      stressIndex: 50,
+      band: 'balanced',
+      corridorMoveDrag: 0,
+      summary: 'Corridor capacity stress idle — plan, absorption, stress, or tightness unavailable.',
+      stewardNote: 'Compute rebalancing plan and absorption before corridor stress guidance.'
+    };
+  }
+
+  const corridorMoveDrag = v1014laborClamp(plan.moves.length * 2.2 + rebalancingStress.highPriorityMoves * 5);
+  const absorptionDrag =
+    absorption.band === 'saturated'
+      ? 16
+      : absorption.band === 'constrained'
+        ? 10
+        : 0;
+  const tightnessDrag =
+    tightness.band === 'critical_shortage' ? 14 : tightness.band === 'tight' ? 8 : 0;
+  const stressLift = rebalancingStress.stressIndex * 0.18;
+
+  const stressIndex = v1014laborClamp(26 + corridorMoveDrag + absorptionDrag + tightnessDrag + stressLift * 0.35);
+  const band = stressBand(stressIndex);
+
+  const stewardNote =
+    band === 'overloaded' || band === 'stressed'
+      ? 'Stressed corridor capacity — pause high-priority moves until absorption headroom returns.'
+      : band === 'relief'
+        ? 'Corridor relief band — align mentorship levers before scaling remote participation.'
+        : 'Balanced corridor stress — monitor tightness in inbound shock regions.';
+
+  return {
+    turn: state.turn,
+    stressIndex,
+    band,
+    corridorMoveDrag,
+    summary: `Corridor capacity stress ${band} (index ${Math.round(stressIndex)}); move drag ${Math.round(corridorMoveDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: steward-intervention-priority-brief.ts ---
+  NationalIntegratedLaborReadinessOutlook,
+  NationalLaborDemographicsState,
+  NationalLaborMarketStabilityOutlook,
+  NationalLaborRebalancingStressBrief,
+  NationalStewardInterventionPriorityBrief,
+  StewardInterventionBand
+} from './types';
+
+function interventionBand(index: number): StewardInterventionBand {
+  if (index <= 34) return 'observe';
+  if (index <= 48) return 'nudge';
+  if (index <= 62) return 'act';
+  return 'urgent';
+}
+
+export function computeNationalStewardInterventionPriorityBrief(
+  state: NationalLaborDemographicsState,
+  readiness: NationalIntegratedLaborReadinessOutlook | null | undefined,
+  stability: NationalLaborMarketStabilityOutlook | null | undefined,
+  rebalancingStress: NationalLaborRebalancingStressBrief | null | undefined
+): NationalStewardInterventionPriorityBrief {
+  if (!state.enabled || !readiness || !stability || !rebalancingStress) {
+    return {
+      turn: state.turn,
+      priorityIndex: 50,
+      band: 'nudge',
+      readinessDrag: 0,
+      summary: 'Steward intervention priority idle — readiness, stability, or stress unavailable.',
+      stewardNote: 'Compute integrated readiness and stability before intervention priority guidance.'
+    };
+  }
+
+  const readinessDrag =
+    readiness.band === 'unprepared'
+      ? 18
+      : readiness.band === 'caution'
+        ? 12
+        : readiness.stabilityDrag * 0.4;
+  const stabilityDrag =
+    stability.band === 'volatile'
+      ? 16
+      : stability.band === 'fragile'
+        ? 10
+        : stability.stressDrag * 0.35;
+  const stressLift =
+    rebalancingStress.band === 'critical'
+      ? 20
+      : rebalancingStress.band === 'acute'
+        ? 14
+        : rebalancingStress.stressIndex * 0.22;
+  const readinessEase =
+    readiness.band === 'ready' || readiness.band === 'primed' ? readiness.readinessIndex * 0.2 : 0;
+
+  const priorityIndex = v1014laborClamp(24 + stressLift + stabilityDrag + readinessDrag - readinessEase);
+  const band = interventionBand(priorityIndex);
+
+  const stewardNote =
+    band === 'urgent' || band === 'act'
+      ? 'Elevated steward intervention — sequence coordination levers before auto workforce commits.'
+      : band === 'observe'
+        ? 'Observe band — maintain mentorship and advocacy while monitoring corridor stress.'
+        : 'Nudge band — align hybrid-remote outlook with participation equity gaps.';
+
+  return {
+    turn: state.turn,
+    priorityIndex,
+    band,
+    readinessDrag,
+    summary: `Steward intervention priority ${band} (index ${Math.round(priorityIndex)}); readiness drag ${Math.round(readinessDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -6625,6 +7038,23 @@ export function computeNationalLaborDemographics(
     state.migrationShockParticipationBufferOutlook,
     state.laborResilienceScorecard
   );
+  state.hybridRemoteParticipationOutlook = computeNationalHybridRemoteParticipationOutlook(
+    state,
+    state.hybridParticipationFrictionOutlook
+  );
+  state.corridorCapacityStressBrief = computeNationalCorridorCapacityStressBrief(
+    state,
+    state.interregionalRebalancingPlan,
+    state.regionalLaborAbsorptionBrief,
+    state.laborRebalancingStressBrief,
+    state.laborMarketTightnessBrief
+  );
+  state.stewardInterventionPriorityBrief = computeNationalStewardInterventionPriorityBrief(
+    state,
+    state.integratedLaborReadinessOutlook,
+    state.laborMarketStabilityOutlook,
+    state.laborRebalancingStressBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -6797,6 +7227,27 @@ export function computeNationalLaborDemographics(
   ) {
     state.evidence.push(state.integratedLaborReadinessOutlook.summary.slice(0, 120));
   }
+  if (
+    (state.hybridRemoteParticipationOutlook?.band === 'constrained' ||
+      state.hybridRemoteParticipationOutlook?.band === 'mixed') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.hybridRemoteParticipationOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.corridorCapacityStressBrief?.band === 'stressed' ||
+      state.corridorCapacityStressBrief?.band === 'overloaded') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.corridorCapacityStressBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.stewardInterventionPriorityBrief?.band === 'act' ||
+      state.stewardInterventionPriorityBrief?.band === 'urgent') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.stewardInterventionPriorityBrief.summary.slice(0, 120));
+  }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
   }
@@ -6860,6 +7311,11 @@ export function computeNationalLaborDemographics(
   advocacyLeversForIndustry,
   lookupWorkforceAdvocacyLever
 } from './catalog/workforce-advocacy-levers';
+  WORKFORCE_MENTORSHIP_LEVERS,
+  lookupWorkforceMentorshipLever,
+  mentorshipEaseForRegion,
+  mentorshipLeversForIndustry
+} from './catalog/workforce-mentorship-levers';
   STRATEGIC_INDUSTRIES,
   V1014_LABOR_CORE_REGIONS,
   V1014_LABOR_INDUSTRY_LABOR_WEIGHT,
@@ -7573,6 +8029,65 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.laborResilienceScorecard
     ).stewardNote.length > 8,
     'readiness steward note'
+  );
+
+  check('R1401', WORKFORCE_MENTORSHIP_LEVERS.length >= 8, 'mentorship lever catalog');
+  check('R1402', Boolean(lookupWorkforceMentorshipLever('mentor_tech_nsw_vic')?.narrative), 'mentorship lever lookup');
+  check('R1403', mentorshipLeversForIndustry('technology').length >= 1, 'technology mentorship levers');
+  check('R1404', mentorshipEaseForRegion('NSW', 'technology') > 0, 'regional mentorship ease');
+  check('R1405', Boolean(r1.state.hybridRemoteParticipationOutlook?.band), 'hybrid remote on state');
+  check('R1406', (r1.state.hybridRemoteParticipationOutlook?.frictionDrag ?? 0) >= 0, 'hybrid remote friction drag');
+  check('R1407', Boolean(r1.state.corridorCapacityStressBrief?.band), 'corridor stress on state');
+  check('R1408', Boolean(r1.state.stewardInterventionPriorityBrief?.band), 'steward intervention on state');
+  check(
+    'R1409',
+    detectLaborDemographicsQuery('hybrid remote participation') === 'hybrid_remote_participation',
+    'GI hybrid remote detect'
+  );
+  check(
+    'R1410',
+    detectLaborDemographicsQuery('corridor capacity stress') === 'corridor_capacity_stress',
+    'GI corridor stress detect'
+  );
+  check(
+    'R1411',
+    detectLaborDemographicsQuery('steward intervention priority') === 'steward_intervention_priority',
+    'GI intervention detect'
+  );
+  check(
+    'R1412',
+    answerLaborDemographicsQuestion(r1.state, 'steward_intervention_priority').headline.length > 5,
+    'GI intervention answer'
+  );
+  const hybridRemoteOnly = computeNationalHybridRemoteParticipationOutlook(
+    r1.state,
+    r1.state.hybridParticipationFrictionOutlook
+  );
+  check('R1413', hybridRemoteOnly.summary.length > 10, 'hybrid remote standalone summary');
+  const corridorStressOnly = computeNationalCorridorCapacityStressBrief(
+    r1.state,
+    r1.state.interregionalRebalancingPlan,
+    r1.state.regionalLaborAbsorptionBrief,
+    r1.state.laborRebalancingStressBrief,
+    r1.state.laborMarketTightnessBrief
+  );
+  check('R1414', corridorStressOnly.band.length > 3, 'corridor stress band string');
+  const interventionOnly = computeNationalStewardInterventionPriorityBrief(
+    r1.state,
+    r1.state.integratedLaborReadinessOutlook,
+    r1.state.laborMarketStabilityOutlook,
+    r1.state.laborRebalancingStressBrief
+  );
+  check('R1415', interventionOnly.readinessDrag >= 0, 'intervention readiness drag');
+  check(
+    'R1416',
+    computeNationalStewardInterventionPriorityBrief(
+      rHhBad.state,
+      rHhBad.state.integratedLaborReadinessOutlook,
+      rHhBad.state.laborMarketStabilityOutlook,
+      rHhBad.state.laborRebalancingStressBrief
+    ).stewardNote.length > 8,
+    'intervention steward note'
   );
 
   for (let i = 19; i <= 50; i++) {
