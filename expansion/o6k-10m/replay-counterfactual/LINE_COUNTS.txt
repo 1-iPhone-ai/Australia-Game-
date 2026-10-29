@@ -1,0 +1,17 @@
+    72  generated/adapters-crosswire.ts
+  6420  generated/archive-slice-catalog.generated.ts
+    66  generated/branch-isolation.ts
+  2576  generated/counterfactual-preset-catalog.generated.ts
+  9618  generated/diff-rule-catalog.generated.ts
+    18  generated/index.ts
+   493  generated/persistence-keys.ts
+    36  generated/primitives.ts
+   617  generated/self-test-fixtures.generated.ts
+   477  generated/self-tests.ts
+  6414  generated/slice-encoder-handlers.generated.ts
+   117  generated/snapshot-encoder.ts
+    44  generated/timeline-scrubber-engine.ts
+    77  generated/turn-diff-engine.ts
+   108  generated/types.ts
+————————————————————————————————————————
+ 27153  TOTAL
