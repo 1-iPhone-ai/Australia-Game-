@@ -13123,6 +13123,289 @@ export function acmeRecoveryOrchestratorWithinCap(report: AcmeRecoveryOrchestrat
 }
 
 
+// --- source: match-explainability-crest-bundle.ts ---
+  auditMatchExplainabilityCrestGate,
+  matchExplainabilityCrestAllowed,
+} from './match-explainability-crest-gate.ts';
+  buildMatchExplainabilityAcmeBundle,
+  matchExplainabilityAcmeReady,
+} from './match-explainability-acme-bundle.ts';
+  buildSessionAcmeExportBundle,
+  sessionAcmeExportShipped,
+} from './session-acme-export-bundle.ts';
+
+export const AGENT19_CREST_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityCrestBundle {
+  crestReady: boolean;
+  crestAllowed: boolean;
+  acmeReady: boolean;
+  acmeExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type CrestParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Crest bundle: crest gate and acme export must both be green. */
+export function buildMatchExplainabilityCrestBundle(
+  packs: TurnExplainabilityPack[],
+  params: CrestParams,
+): MatchExplainabilityCrestBundle {
+  const crest = auditMatchExplainabilityCrestGate(packs, params);
+  const acme = buildMatchExplainabilityAcmeBundle(packs, params);
+  const acmeExport = buildSessionAcmeExportBundle(packs, params);
+  const crestAllowed = matchExplainabilityCrestAllowed(crest);
+  const acmeReady = matchExplainabilityAcmeReady(acme);
+  const acmeExportShipped = sessionAcmeExportShipped(acmeExport);
+  const crestReady = crestAllowed && acmeReady && acmeExportShipped;
+  const narrativeLines = [
+    `Match explainability crest bundle: ${crestReady ? 'READY' : 'PENDING'} (gate ${crestAllowed ? 'ok' : 'fail'}, acme ${acmeReady ? 'ok' : 'fail'}).`,
+    ...crest.narrativeLines.slice(0, 2),
+    ...acme.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_CREST_NARRATIVE_CAP);
+  return {
+    crestReady,
+    crestAllowed,
+    acmeReady,
+    acmeExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityCrestReady(bundle: MatchExplainabilityCrestBundle): boolean {
+  return bundle.crestReady;
+}
+
+
+// --- source: session-crest-export-bundle.ts ---
+  buildSessionAcmeExportBundle,
+  type SessionAcmeExportBundle,
+} from './session-acme-export-bundle.ts';
+  buildMatchExplainabilityCrestBundle,
+  matchExplainabilityCrestReady,
+} from './match-explainability-crest-bundle.ts';
+
+export interface SessionCrestExportBundle extends SessionAcmeExportBundle {
+  crestReady: boolean;
+  crestSchema: string;
+}
+
+/** Crest export wraps acme export when crest bundle is ready. */
+export function buildSessionCrestExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionCrestExportBundle {
+  const base = buildSessionAcmeExportBundle(packs, params);
+  const crest = buildMatchExplainabilityCrestBundle(packs, params);
+  const crestReady = matchExplainabilityCrestReady(crest);
+  const exports = crestReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    crestReady,
+    crestSchema: 'agent19.crest.v1',
+    releaseReady: crestReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Crest export: ${crestReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionCrestExportShipped(bundle: SessionCrestExportBundle): boolean {
+  return bundle.crestReady && bundle.exports.length > 0 && bundle.crestSchema === 'agent19.crest.v1';
+}
+
+
+// --- source: acme-crest-bridge.ts ---
+  buildMatchExplainabilityCrestBundle,
+  matchExplainabilityCrestReady,
+} from './match-explainability-crest-bundle.ts';
+  buildMatchExplainabilityAcmeBundle,
+  matchExplainabilityAcmeReady,
+} from './match-explainability-acme-bundle.ts';
+
+export interface AcmeCrestBridgeReport {
+  aligned: boolean;
+  crestReady: boolean;
+  acmeReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Crest-ready should match acme-ready when acme export stack passes. */
+export function auditAcmeCrestBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): AcmeCrestBridgeReport {
+  const crest = buildMatchExplainabilityCrestBundle(packs, params);
+  const acme = buildMatchExplainabilityAcmeBundle(packs, params);
+  const crestReady = matchExplainabilityCrestReady(crest);
+  const acmeReady = matchExplainabilityAcmeReady(acme);
+  const aligned = crestReady === acmeReady;
+  const narrativeLines = [
+    `Acme/crest bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (crest ${crestReady ? 'ok' : 'fail'}, acme ${acmeReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, crestReady, acmeReady, narrativeLines };
+}
+
+export function acmeCrestBridgeHealthy(report: AcmeCrestBridgeReport): boolean {
+  return report.crestReady && report.acmeReady && report.aligned;
+}
+
+
+// --- source: match-explainability-vertex-gate.ts ---
+  buildMatchExplainabilityCrestBundle,
+  matchExplainabilityCrestReady,
+} from './match-explainability-crest-bundle.ts';
+  buildSessionCrestExportBundle,
+  sessionCrestExportShipped,
+} from './session-crest-export-bundle.ts';
+
+export interface MatchExplainabilityVertexGateReport {
+  vertexAllowed: boolean;
+  crestReady: boolean;
+  crestExportShipped: boolean;
+  acmeCrestHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Vertex gate: crest bundle + crest export + acme/crest bridge. */
+export function auditMatchExplainabilityVertexGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityVertexGateReport {
+  const crest = buildMatchExplainabilityCrestBundle(packs, params);
+  const crestExport = buildSessionCrestExportBundle(packs, params);
+  const bridge = auditAcmeCrestBridge(packs, params);
+  const crestReady = matchExplainabilityCrestReady(crest);
+  const crestExportShipped = sessionCrestExportShipped(crestExport);
+  const acmeCrestHealthy = acmeCrestBridgeHealthy(bridge);
+  const vertexAllowed = crestReady && crestExportShipped && acmeCrestHealthy;
+  const narrativeLines = [
+    `Match explainability vertex: ${vertexAllowed ? 'ALLOWED' : 'DENIED'} (crest ${crestReady ? 'ok' : 'fail'}, export ${crestExportShipped ? 'ok' : 'fail'}).`,
+    ...crest.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    vertexAllowed,
+    crestReady,
+    crestExportShipped,
+    acmeCrestHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityVertexAllowed(report: MatchExplainabilityVertexGateReport): boolean {
+  return report.vertexAllowed;
+}
+
+
+// --- source: crest-recovery-orchestrator.ts ---
+  auditMatchExplainabilityCrestGate,
+  matchExplainabilityCrestAllowed,
+} from './match-explainability-crest-gate.ts';
+
+export const AGENT19_CREST_RECOVERY_CAP = 10;
+
+export interface CrestRecoveryOrchestratorReport {
+  crestBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when crest gate blocks vertex rollout. */
+export function buildCrestRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): CrestRecoveryOrchestratorReport {
+  const crest = auditMatchExplainabilityCrestGate(packs, params);
+  const crestBlocked = !matchExplainabilityCrestAllowed(crest);
+  const steps: string[] = [];
+  if (crestBlocked) {
+    if (!crest.acmeReady) {
+      steps.push('Restore acme bundle: summit and acme export must pass.');
+    }
+    if (!crest.acmeExportShipped) {
+      steps.push('Emit session acme export before crest clearance.');
+    }
+    if (!crest.summitAcmeHealthy) {
+      steps.push('Reconcile summit/acme bridge before crest.');
+    }
+    steps.push(...buildAcmeRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const acme = buildMatchExplainabilityAcmeBundle(packs, params);
+    if (!acme.acmeReady) {
+      steps.push('Re-run acme readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Crest gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_CREST_RECOVERY_CAP);
+  return {
+    crestBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Crest recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function crestRecoveryOrchestratorWithinCap(report: CrestRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_CREST_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -13775,6 +14058,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityCrestGate,
   matchExplainabilityCrestAllowed,
 } from '../match-explainability-crest-gate.ts';
+  buildMatchExplainabilityCrestBundle,
+  matchExplainabilityCrestReady,
+} from '../match-explainability-crest-bundle.ts';
+  buildSessionCrestExportBundle,
+  sessionCrestExportShipped,
+} from '../session-crest-export-bundle.ts';
+  buildCrestRecoveryOrchestrator,
+  crestRecoveryOrchestratorWithinCap,
+} from '../crest-recovery-orchestrator.ts';
+  auditMatchExplainabilityVertexGate,
+  matchExplainabilityVertexAllowed,
+} from '../match-explainability-vertex-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -15559,7 +15854,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({
@@ -15609,7 +15904,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({
@@ -15717,7 +16012,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({
@@ -15751,7 +16046,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({
@@ -15803,7 +16098,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({
@@ -15862,7 +16157,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({
@@ -15896,7 +16191,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({
@@ -15925,7 +16220,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({
@@ -16010,7 +16305,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16056,7 +16351,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16079,7 +16374,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16102,7 +16397,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16142,7 +16437,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16188,7 +16483,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16211,7 +16506,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16234,7 +16529,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16274,7 +16569,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16320,7 +16615,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16343,7 +16638,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16366,7 +16661,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16406,7 +16701,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16452,7 +16747,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16475,7 +16770,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16498,7 +16793,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16538,7 +16833,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16584,7 +16879,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16607,7 +16902,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16630,7 +16925,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16670,7 +16965,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16716,7 +17011,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16739,7 +17034,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16762,7 +17057,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16802,7 +17097,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16848,7 +17143,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16871,7 +17166,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16894,7 +17189,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16934,7 +17229,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -16980,7 +17275,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17003,7 +17298,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17026,7 +17321,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17066,7 +17361,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17112,7 +17407,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17135,7 +17430,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17158,7 +17453,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17198,7 +17493,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17244,7 +17539,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17267,7 +17562,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17290,7 +17585,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17330,7 +17625,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17376,7 +17671,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17399,7 +17694,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17422,7 +17717,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17462,7 +17757,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17508,7 +17803,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17531,7 +17826,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17554,7 +17849,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17594,7 +17889,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17640,7 +17935,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17663,7 +17958,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17686,7 +17981,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17726,7 +18021,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17772,7 +18067,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17795,7 +18090,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17818,7 +18113,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17858,7 +18153,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17904,7 +18199,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17927,7 +18222,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17950,7 +18245,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -17990,7 +18285,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18036,7 +18331,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18059,7 +18354,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18082,7 +18377,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18122,7 +18417,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18168,7 +18463,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18191,7 +18486,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18214,7 +18509,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18254,7 +18549,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18300,7 +18595,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18323,7 +18618,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18346,7 +18641,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18386,7 +18681,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18432,7 +18727,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18455,7 +18750,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18478,7 +18773,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18518,7 +18813,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18564,7 +18859,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18587,7 +18882,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18610,7 +18905,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18650,7 +18945,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18696,7 +18991,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18719,7 +19014,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18742,7 +19037,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18782,7 +19077,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18828,7 +19123,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18851,7 +19146,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18874,7 +19169,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18914,7 +19209,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18960,7 +19255,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -18983,7 +19278,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19006,7 +19301,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19046,7 +19341,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19092,7 +19387,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19115,7 +19410,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19138,7 +19433,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19178,7 +19473,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19224,7 +19519,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19247,7 +19542,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19270,7 +19565,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19310,7 +19605,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19356,7 +19651,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19379,7 +19674,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19402,7 +19697,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19442,7 +19737,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19488,7 +19783,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19511,7 +19806,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19534,7 +19829,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19574,7 +19869,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19620,7 +19915,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19643,7 +19938,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19666,7 +19961,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19706,7 +20001,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19752,7 +20047,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19775,7 +20070,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19798,7 +20093,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19838,7 +20133,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19884,7 +20179,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19907,7 +20202,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19930,7 +20225,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -19970,7 +20265,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20016,7 +20311,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20039,7 +20334,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20062,7 +20357,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20102,7 +20397,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20148,7 +20443,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20171,7 +20466,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20194,7 +20489,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20234,7 +20529,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20280,7 +20575,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20303,7 +20598,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20326,7 +20621,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20366,7 +20661,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20412,7 +20707,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20435,7 +20730,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20458,7 +20753,7 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
           const mem = createEmptyAiActorMemory('ai');
           const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
           const decisionsAfter = [
-            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
             { type: 'hold', score: 3 },
           ];
           const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
@@ -20488,6 +20783,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityCrestAllowed(report) && !report.acmeReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r49_crest_ready',
+        'Crest bundle ready when crest gate and acme export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityCrestBundle([pack], params);
+          return matchExplainabilityCrestReady(bundle) && bundle.crestAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r49_crest_held',
+        'Crest bundle pending when crest gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 73, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityCrestBundle([pack], {
+            memory: null,
+            currentTurn: 73,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityCrestReady(bundle) && !bundle.crestAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r49_crest_recovery',
+        'Crest recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 28, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 28, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildCrestRecoveryOrchestrator([pack], params);
+          return report.crestBlocked && crestRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r49_acme_crest_bridge',
+        'Acme crest bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditAcmeCrestBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return acmeCrestBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r49_crest_export',
+        'Crest export shipped when crest ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionCrestExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionCrestExportShipped(bundle) && bundle.crestSchema === 'agent19.crest.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r49_vertex_gate_ok',
+        'Vertex gate allowed on healthy crest stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match' as const, delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityVertexGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityVertexAllowed(report) && report.crestExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r49_vertex_gate_block',
+        'Vertex gate denied when crest pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 74, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityVertexGate([pack], {
+            memory: null,
+            currentTurn: 74,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityVertexAllowed(report) && !report.crestReady || JSON.stringify(report);
         },
       ],
     ]),
