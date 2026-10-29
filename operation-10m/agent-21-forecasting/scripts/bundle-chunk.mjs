@@ -17,7 +17,9 @@ const SOURCE_FILES = [
   'operation-10m/agent-21-forecasting/forecast-evaluation-metrics.ts',
   'operation-10m/agent-21-forecasting/scenario-catalog.ts',
   'operation-10m/agent-21-forecasting/strategic-forecast-policy-lab.tsx',
-  'operation-10m/agent-21-forecasting/scenario-comparison-ui.tsx'
+  'operation-10m/agent-21-forecasting/forecast-lab-depth.ts',
+  'operation-10m/agent-21-forecasting/scenario-comparison-ui.tsx',
+  'operation-10m/agent-21-forecasting/forecast-depth-panel.tsx'
 ];
 
 function stripModuleImports(src) {
@@ -52,6 +54,9 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21ForecastEvaluationSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21ForecastLabDepthSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({

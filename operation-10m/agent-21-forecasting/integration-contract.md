@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `1.2.0`
+- `O10M_AGENT21_MODULE_VERSION` = `1.3.0`
 
 ## Assembly chunk
 
@@ -30,6 +30,9 @@
 | `evaluateAg21ForecastRun` / `compareAg21Scenarios` | Forecast evaluation metrics |
 | `Ag21ScenarioComparisonStrip` | Scenario comparison UI (`data-testid="ag21-scenario-comparison"`) |
 | `runAgent21ForecastingChunkSelfTests` | Bundled chunk smoke tests (Agent 25) |
+| `buildAg21MultiHorizonProjection` / `runAg21ScenarioBatchComparison` | Multi-horizon ladder + batch scenario review |
+| `summarizeAg21ForecastBundleDepth` / `runAg21CounterfactualStressLadder` | Bundle depth rollup + stress ladder |
+| `Ag21ForecastDepthPanel` | Depth dashboard (`data-testid="ag21-forecast-depth-panel"`) |
 
 ## Upstream dependencies (canonical only)
 

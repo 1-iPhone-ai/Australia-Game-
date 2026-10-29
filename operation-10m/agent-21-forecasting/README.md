@@ -24,6 +24,9 @@ Non-authoritative strategic forecasts and **counterfactual policy forks** for th
 
 ```bash
 npm run test:ag21
+npm run bundle:agent-21-chunk
 ```
+
+Assembly-ready output: `operation-10m/modules/agent-21-forecasting/chunk.tsx` (`OP10M_MODULE_BEGIN agent-21-forecasting`).
 
 Game-coupled self-tests (`runAg21StrategicForecastSelfTests`) execute inside canonical V9.4 after Agent 25 assembly.
