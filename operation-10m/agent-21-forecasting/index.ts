@@ -33,4 +33,8 @@ export * from './forecast-packet-validation';
 export * from './forecast-operator-escalation';
 export * from './forecast-lab-replay-seed';
 export * from './forecast-round8-console';
+export * from './forecast-replay-coherence';
+export * from './forecast-escalation-runbook';
+export * from './forecast-lab-integration-handoff';
+export * from './forecast-round9-console';
 export * from './strategic-forecast-policy-lab';

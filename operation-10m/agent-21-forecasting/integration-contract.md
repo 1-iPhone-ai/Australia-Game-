@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `2.0.0`
+- `O10M_AGENT21_MODULE_VERSION` = `2.1.0`
 
 ## Assembly chunk
 
@@ -55,6 +55,10 @@
 | `resolveAg21OperatorEscalation` | Round 8 operator escalation ladder |
 | `buildAg21LabReplaySeed` | Round 8 replay seed for history modules |
 | `Ag21ForecastRound8Console` | Round 8 UI (`data-testid="ag21-round8-console"`) |
+| `assessAg21ReplayCoherence` | Round 9 replay seed vs validation coherence |
+| `buildAg21EscalationRunbook` | Round 9 operator runbook steps from escalation tier |
+| `buildAg21LabIntegrationHandoff` | Round 9 assembly handoff bundle for Agent 24/25 |
+| `Ag21ForecastRound9Console` | Round 9 UI (`data-testid="ag21-round9-console"`) |
 
 ## Upstream dependencies (canonical only)
 

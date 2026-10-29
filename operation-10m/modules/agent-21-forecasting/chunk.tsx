@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '2.0.0';
+export const O10M_AGENT21_MODULE_VERSION = '2.1.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -3638,6 +3638,300 @@ export const Ag21ForecastRound8Console: React.FC<{ seed?: number }> = ({ seed = 
   );
 };
 
+// --- bundled from forecast-replay-coherence.ts ---
+/**
+ * Agent 21 — replay seed coherence vs validation + escalation (read-only round 9).
+ */
+
+
+export type Ag21ReplayCoherenceStatus = 'coherent' | 'partial' | 'broken';
+
+export interface Ag21ReplayCoherenceReport {
+  status: Ag21ReplayCoherenceStatus;
+  driftSignals: string[];
+  replaySeedId: string;
+  validationStatus: ReturnType<typeof validateAg21CrosslinkHandoff>['status'];
+  escalationTier: ReturnType<typeof resolveAg21OperatorEscalation>['tier'];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Check replay seed fields against fresh validation + escalation (round 9). */
+export function assessAg21ReplayCoherence(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21ReplayCoherenceReport {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.81),
+      actorDebt: baseCtx.actorDebt + 130
+    } satisfies Ag21ForecastContext);
+
+  const replay = buildAg21LabReplaySeed(baseCtx, candidate);
+  const validation = validateAg21CrosslinkHandoff(baseCtx, candidate);
+  const escalation = resolveAg21OperatorEscalation(baseCtx, candidate);
+
+  const driftSignals: string[] = [];
+  if (replay.validationStatus !== validation.status) {
+    driftSignals.push(`validation ${replay.validationStatus} vs live ${validation.status}`);
+  }
+  if (replay.escalationTier !== escalation.tier) {
+    driftSignals.push(`escalation ${replay.escalationTier} vs live ${escalation.tier}`);
+  }
+  if (!replay.fingerprint.includes(String(escalation.tier))) {
+    driftSignals.push('fingerprint missing escalation tier token');
+  }
+
+  let status: Ag21ReplayCoherenceStatus = 'coherent';
+  if (driftSignals.length >= 2) status = 'broken';
+  else if (driftSignals.length === 1) status = 'partial';
+
+  return {
+    status,
+    driftSignals,
+    replaySeedId: replay.seedId,
+    validationStatus: validation.status,
+    escalationTier: escalation.tier,
+    disclaimer: '(Non-authoritative forecast.) Replay coherence check for history wiring only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'coherent' ? 'low' : status === 'partial' ? 'moderate' : 'high',
+      [`coherence=${status}`, `drift=${driftSignals.length}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21ReplayCoherenceSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 14, seed: 61, actorCash: 940, actorDebt: 120, regionsControlled: 3 };
+  const report = assessAg21ReplayCoherence(ctx);
+
+  push('coherence_status', ['coherent', 'partial', 'broken'].includes(report.status), report.status);
+  push('coherence_seed', report.replaySeedId.startsWith('ag21_lab_seed_'), report.replaySeedId);
+  push('coherence_validation', ['aligned', 'drift', 'blocked'].includes(report.validationStatus), report.validationStatus);
+  push('coherence_non_auth', report.authoritative === false, report.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-escalation-runbook.ts ---
+/**
+ * Agent 21 — operator runbook steps from escalation tier (read-only round 9).
+ */
+
+
+export interface Ag21EscalationRunbookStep {
+  order: number;
+  action: string;
+  rationale: string;
+}
+
+export interface Ag21EscalationRunbook {
+  tier: ReturnType<typeof resolveAg21OperatorEscalation>['tier'];
+  stepCount: number;
+  steps: Ag21EscalationRunbookStep[];
+  coherenceStatus: ReturnType<typeof assessAg21ReplayCoherence>['status'];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21RunbookStepsForTier(
+  tier: Ag21EscalationRunbook['tier'],
+  coherence: Ag21EscalationRunbook['coherenceStatus']
+): Ag21EscalationRunbookStep[] {
+  const base: Ag21EscalationRunbookStep[] =
+    tier === 'incident'
+      ? [
+          { order: 1, action: 'Suppress dashboard surfacing', rationale: 'Validation blocked or telemetry critical.' },
+          { order: 2, action: 'Reconcile crosslink packet tags', rationale: 'Align decision/health tags with telemetry rollup.' },
+          { order: 3, action: 'Capture replay seed snapshot', rationale: 'Hand off to history modules after coherence check.' }
+        ]
+      : tier === 'review'
+        ? [
+            { order: 1, action: 'Schedule operator review', rationale: 'Drift or degraded telemetry requires human sign-off.' },
+            { order: 2, action: 'Cross-check playbook hints', rationale: 'Confirm high-priority hints against validation status.' }
+          ]
+        : tier === 'watch'
+          ? [{ order: 1, action: 'Monitor gates and convergence', rationale: 'Hold surface decision until stability improves.' }]
+          : [{ order: 1, action: 'Continue lab-only surfacing', rationale: 'No escalation; follow round 7 surface decision.' }];
+
+  if (coherence !== 'coherent') {
+    base.push({
+      order: base.length + 1,
+      action: 'Refresh replay coherence report',
+      rationale: `Replay coherence is ${coherence}; rebuild seed before history export.`
+    });
+  }
+
+  return base;
+}
+
+/** Build ordered operator runbook from escalation + replay coherence (round 9). */
+export function buildAg21EscalationRunbook(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21EscalationRunbook {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.79),
+      actorDebt: baseCtx.actorDebt + 150
+    } satisfies Ag21ForecastContext);
+
+  const escalation = resolveAg21OperatorEscalation(baseCtx, candidate);
+  const coherence = assessAg21ReplayCoherence(baseCtx, candidate);
+  const steps = ag21RunbookStepsForTier(escalation.tier, coherence.status);
+
+  return {
+    tier: escalation.tier,
+    stepCount: steps.length,
+    steps,
+    coherenceStatus: coherence.status,
+    disclaimer: '(Non-authoritative forecast.) Operator runbook for lab dashboards only.',
+    overallUncertainty: ag21LabelUncertainty(
+      escalation.tier === 'incident' || coherence.status === 'broken' ? 'high' : 'moderate',
+      [`tier=${escalation.tier}`, `coherence=${coherence.status}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21EscalationRunbookSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 9, seed: 44, actorCash: 760, actorDebt: 190, regionsControlled: 2 };
+  const runbook = buildAg21EscalationRunbook(ctx);
+
+  push('runbook_steps', runbook.stepCount === runbook.steps.length && runbook.stepCount >= 1, String(runbook.stepCount));
+  push('runbook_order', runbook.steps.every((s, i) => s.order === i + 1), runbook.steps.map(s => s.order).join(','));
+  push('runbook_tier', ['none', 'watch', 'review', 'incident'].includes(runbook.tier), runbook.tier);
+  push('runbook_non_auth', runbook.authoritative === false, runbook.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-lab-integration-handoff.ts ---
+/**
+ * Agent 21 — compact integration handoff for Agent 24/25 assembly (read-only round 9).
+ */
+
+
+export interface Ag21LabIntegrationHandoff {
+  handoffId: string;
+  moduleVersion: string;
+  validationStatus: ReturnType<typeof validateAg21CrosslinkHandoff>['status'];
+  replaySeedId: string;
+  coherenceStatus: ReturnType<typeof assessAg21ReplayCoherence>['status'];
+  runbookStepCount: number;
+  integrationTags: string[];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Package round 8–9 lab outputs for modular assembly wiring. */
+export function buildAg21LabIntegrationHandoff(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21LabIntegrationHandoff {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.84),
+      actorDebt: baseCtx.actorDebt + 100
+    } satisfies Ag21ForecastContext);
+
+  const validation = validateAg21CrosslinkHandoff(baseCtx, candidate);
+  const replay = buildAg21LabReplaySeed(baseCtx, candidate);
+  const coherence = assessAg21ReplayCoherence(baseCtx, candidate);
+  const runbook = buildAg21EscalationRunbook(baseCtx, candidate);
+
+  const handoffId = `ag21_handoff_${baseCtx.turn}_${baseCtx.seed}_${validation.status}`;
+
+  const integrationTags = [
+    `validation:${validation.status}`,
+    `coherence:${coherence.status}`,
+    `tier:${runbook.tier}`,
+    `replay:${replay.seedId}`,
+    `steps:${runbook.stepCount}`
+  ];
+
+  return {
+    handoffId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    validationStatus: validation.status,
+    replaySeedId: replay.seedId,
+    coherenceStatus: coherence.status,
+    runbookStepCount: runbook.stepCount,
+    integrationTags,
+    disclaimer: '(Non-authoritative forecast.) Integration handoff for Operation 10M assembly only.',
+    overallUncertainty: ag21LabelUncertainty(
+      validation.status === 'blocked' || coherence.status === 'broken' ? 'high' : 'moderate',
+      [`handoff=${handoffId}`, `tags=${integrationTags.length}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21LabIntegrationHandoffSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 22, seed: 3, actorCash: 1300, actorDebt: 55, regionsControlled: 5 };
+  const handoff = buildAg21LabIntegrationHandoff(ctx);
+
+  push('handoff_id', handoff.handoffId.startsWith('ag21_handoff_'), handoff.handoffId);
+  push('handoff_tags', handoff.integrationTags.length >= 5, String(handoff.integrationTags.length));
+  push('handoff_version', handoff.moduleVersion === O10M_AGENT21_MODULE_VERSION, handoff.moduleVersion);
+  push('handoff_non_auth', handoff.authoritative === false, handoff.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-round9-console.tsx ---
+/**
+ * Agent 21 — scale wave round 9 console (coherence + runbook + integration handoff).
+ */
+
+
+export const Ag21ForecastRound9Console: React.FC<{ seed?: number }> = ({ seed = 63 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 20 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.7), actorDebt: base.actorDebt + 280 }),
+    [base]
+  );
+
+  const coherence = useMemo(() => assessAg21ReplayCoherence(base, stressed), [base, stressed]);
+  const runbook = useMemo(() => buildAg21EscalationRunbook(base, stressed), [base, stressed]);
+  const handoff = useMemo(() => buildAg21LabIntegrationHandoff(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-violet-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round9-console">
+      <div className="font-bold text-violet-200">
+        🔬 Forecast Lab Round 9 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round9-coherence">
+        Coherence · {coherence.status} · drift {coherence.driftSignals.length}
+      </div>
+      <div data-testid="ag21-round9-runbook">
+        Runbook · {runbook.tier} · {runbook.stepCount} steps
+      </div>
+      <div data-testid="ag21-round9-handoff">
+        Handoff · {handoff.handoffId.slice(0, 32)}… · tags {handoff.integrationTags.length}
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -3717,6 +4011,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabReplaySeedSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21ReplayCoherenceSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21EscalationRunbookSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabIntegrationHandoffSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({
