@@ -134793,6 +134793,40 @@ export const O111_VISUAL_STYLESHEET = `
 `;
 
 export function runO111VisualDesignSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const toneKeys = Object.keys(UI_TONE) as UiTone[];
+  check('o111_a61_tone_border', 'UI_TONE_BORDER covers every UiTone with a non-empty border class', () => {
+    return toneKeys.every(k => typeof UI_TONE_BORDER[k] === 'string' && UI_TONE_BORDER[k].startsWith('border-')) || JSON.stringify(UI_TONE_BORDER);
+  });
+  check('o111_a61_context', 'buildO111VisualDesignContext resolves theme, motion, and focus from settings', () => {
+    const ctx = buildO111VisualDesignContext('dark', { accessibilitySettings: { reduceMotion: true, highContrastFocusRings: true } }, false);
+    return ctx.themeId === 'dark' && ctx.resolvedDark && ctx.motion === 'reduced' && ctx.focusStrong && ctx.theme.card.includes('bg-') && ctx.registryVersion === O111_VISUAL_REGISTRY_VERSION;
+  });
+  check('o111_a61_theme_semantics', 'Every GameTheme exposes core semantic surfaces for Division G', () => {
+    const themes: GameTheme[] = ['dark', 'light', 'retro', 'system'];
+    const missing: string[] = [];
+    themes.forEach(t => {
+      const ts = resolveThemeStyles(t, t === 'system');
+      O111_THEME_SEMANTIC_KEYS.forEach(k => { if (!(ts as any)[k]) missing.push(`${t}.${k}`); });
+    });
+    return missing.length === 0 || missing.join(', ');
+  });
+  check('o111_a61_offline_css', 'O111 visual stylesheet is self-contained (no remote assets)', () => {
+    const css = O111_VISUAL_STYLESHEET;
+    return !/url\(|https?:|@import/.test(css) && /--o111-tone-positive/.test(css) && /--o111-space-md/.test(css);
+  });
+  check('o111_a61_emphasis', 'Emphasis classes map only to existing v94 motion utilities', () => {
+    const vals = Object.values(O111_VISUAL_EMPHASIS);
+    return vals.every(v => v.startsWith('v94-')) && vals.includes('v94-ring');
+  });
+  return results;
+}
+
+
 // SECTION 20P-A62: DYNAMIC EVOLUTIONARY UI — MOMENT CLASS • ADAPTIVE PLAY EMPHASIS (O111 / AGENT 62)
 // ============================================================================
 // Presentation only. Maps canonical intent/cohesion signals to a PlayMomentKind and a ranked surface list,
@@ -135047,30 +135081,6 @@ export function runV62DynamicEvolutionaryUiSelfTests(): V9SelfTestResult[] {
     try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
     catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
   };
-  const toneKeys = Object.keys(UI_TONE) as UiTone[];
-  check('o111_a61_tone_border', 'UI_TONE_BORDER covers every UiTone with a non-empty border class', () => {
-    return toneKeys.every(k => typeof UI_TONE_BORDER[k] === 'string' && UI_TONE_BORDER[k].startsWith('border-')) || JSON.stringify(UI_TONE_BORDER);
-  });
-  check('o111_a61_context', 'buildO111VisualDesignContext resolves theme, motion, and focus from settings', () => {
-    const ctx = buildO111VisualDesignContext('dark', { accessibilitySettings: { reduceMotion: true, highContrastFocusRings: true } }, false);
-    return ctx.themeId === 'dark' && ctx.resolvedDark && ctx.motion === 'reduced' && ctx.focusStrong && ctx.theme.card.includes('bg-') && ctx.registryVersion === O111_VISUAL_REGISTRY_VERSION;
-  });
-  check('o111_a61_theme_semantics', 'Every GameTheme exposes core semantic surfaces for Division G', () => {
-    const themes: GameTheme[] = ['dark', 'light', 'retro', 'system'];
-    const missing: string[] = [];
-    themes.forEach(t => {
-      const ts = resolveThemeStyles(t, t === 'system');
-      O111_THEME_SEMANTIC_KEYS.forEach(k => { if (!(ts as any)[k]) missing.push(`${t}.${k}`); });
-    });
-    return missing.length === 0 || missing.join(', ');
-  });
-  check('o111_a61_offline_css', 'O111 visual stylesheet is self-contained (no remote assets)', () => {
-    const css = O111_VISUAL_STYLESHEET;
-    return !/url\(|https?:|@import/.test(css) && /--o111-tone-positive/.test(css) && /--o111-space-md/.test(css);
-  });
-  check('o111_a61_emphasis', 'Emphasis classes map only to existing v94 motion utilities', () => {
-    const vals = Object.values(O111_VISUAL_EMPHASIS);
-    return vals.every(v => v.startsWith('v94-')) && vals.includes('v94-ring');
   const J = (v: unknown) => JSON.stringify(v);
 
   check('v62_crisis_priority', 'Critical attention classifies as crisis with decision emphasis first', () => {
@@ -135121,7 +135131,6 @@ export function runV62DynamicEvolutionaryUiSelfTests(): V9SelfTestResult[] {
 
 
 
-// ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
 // Local-only diagnostics. No network, workers, telemetry or storage writes happen in this section; every
