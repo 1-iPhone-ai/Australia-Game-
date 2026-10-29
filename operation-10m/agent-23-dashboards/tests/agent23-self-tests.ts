@@ -158,6 +158,12 @@ import { nrDashBuildHubPulseAsymmetry } from '../core/hub-pulse-asymmetry.ts';
 import { nrDashBuildLrOnlySnippetHeadroom } from '../core/lr-only-snippet-headroom.ts';
 import { nrDashBuildMeaningfulDerivedOverlapGap } from '../core/meaningful-derived-overlap-gap.ts';
 import { nrDashBuildLinkSaturationShare } from '../core/link-saturation-share.ts';
+import { nrDashBuildYouOwnerMomentumGap } from '../core/you-owner-momentum-gap.ts';
+import { nrDashBuildModerateTierNeedsConcentration } from '../core/moderate-tier-needs-concentration.ts';
+import { nrDashBuildMapPulseSaturationShare } from '../core/map-pulse-saturation-share.ts';
+import { nrDashBuildMergedSnippetOverlapGap } from '../core/merged-snippet-overlap-gap.ts';
+import { nrDashBuildDependencyPulseAsymmetry } from '../core/dependency-pulse-asymmetry.ts';
+import { nrDashBuildBorderCorridorSaturationShare } from '../core/border-corridor-saturation-share.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1243,6 +1249,46 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     );
     const sat = nrDashBuildLinkSaturationShare(links, nodes)!;
     return sat.linkCount > 0 && sat.saturationShare > 0 && sat.saturationShare < 1;
+  });
+
+  check('a23_you_owner_momentum_gap', 'You-owner momentum gap is zero on uniform stable fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'you' })!;
+    const gap = nrDashBuildYouOwnerMomentumGap(snap)!;
+    return gap.ownedRegionCount === 1 && gap.momentumGap === 0;
+  });
+
+  check('a23_moderate_tier_needs_concentration', 'Moderate-tier needs concentration is uniform on fixture', () => {
+    const conc = nrDashBuildModerateTierNeedsConcentration(createAgent23LrFixture())!;
+    return conc.moderateOpenCount === 8 && conc.concentrationIndex === 0.125;
+  });
+
+  check('a23_map_pulse_saturation_share', 'Map pulse saturation share is below one on hotspot fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const sat = nrDashBuildMapPulseSaturationShare(nrDashBuildRegionMapNodes(snap))!;
+    return sat.regionCount === 8 && sat.saturationShare > 0 && sat.saturationShare < 1;
+  });
+
+  check('a23_merged_snippet_overlap_gap', 'Merged snippet overlap gap counts duplicate snippet turns', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    snap.historySnippets.push(snap.historySnippets[0]!);
+    const gap = nrDashBuildMergedSnippetOverlapGap(snap)!;
+    return gap.snippetCount === 3 && gap.uniqueTurnCount === 2 && gap.overlapGap === 1;
+  });
+
+  check('a23_dependency_pulse_asymmetry', 'Dependency pulse asymmetry is positive on dependency links', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    const links = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(createAgent23NsFixture(), AGENT23_REGION_MAP_LAYOUT)
+    );
+    const asym = nrDashBuildDependencyPulseAsymmetry(links, nodes)!;
+    return asym.linkCount === 3 && asym.maxEndpointDelta > 0.01;
+  });
+
+  check('a23_border_corridor_saturation_share', 'Border corridor saturation share is below one on fixture', () => {
+    const sat = nrDashBuildBorderCorridorSaturationShare(createAgent23NsFixture())!;
+    return sat.borderRegionCount === 8 && sat.saturationShare > 0 && sat.saturationShare < 1;
   });
 
   return results;

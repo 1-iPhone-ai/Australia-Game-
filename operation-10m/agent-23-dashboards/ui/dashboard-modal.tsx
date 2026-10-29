@@ -162,6 +162,12 @@ import { nrDashBuildHubPulseAsymmetry } from '../core/hub-pulse-asymmetry.ts';
 import { nrDashBuildLrOnlySnippetHeadroom } from '../core/lr-only-snippet-headroom.ts';
 import { nrDashBuildMeaningfulDerivedOverlapGap } from '../core/meaningful-derived-overlap-gap.ts';
 import { nrDashBuildLinkSaturationShare } from '../core/link-saturation-share.ts';
+import { nrDashBuildYouOwnerMomentumGap } from '../core/you-owner-momentum-gap.ts';
+import { nrDashBuildModerateTierNeedsConcentration } from '../core/moderate-tier-needs-concentration.ts';
+import { nrDashBuildMapPulseSaturationShare } from '../core/map-pulse-saturation-share.ts';
+import { nrDashBuildMergedSnippetOverlapGap } from '../core/merged-snippet-overlap-gap.ts';
+import { nrDashBuildDependencyPulseAsymmetry } from '../core/dependency-pulse-asymmetry.ts';
+import { nrDashBuildBorderCorridorSaturationShare } from '../core/border-corridor-saturation-share.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -616,6 +622,33 @@ export const NrDashOverviewTab: React.FC<{
       return rivalSkew ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-rival-owner-portfolio-skew">
           Rival owner portfolio skew {rivalSkew.portfolioSkew} · rival {rivalSkew.rivalShare} · you {rivalSkew.youShare}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const youMomGap = nrDashBuildYouOwnerMomentumGap(snap);
+      return youMomGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-you-owner-momentum-gap">
+          You-owner momentum gap {youMomGap.momentumGap} · owned μ {youMomGap.ownedMeanRank} · national μ{' '}
+          {youMomGap.nationalMeanRank}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const modConc = nrDashBuildModerateTierNeedsConcentration(lrView);
+      return modConc ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-moderate-tier-needs-concentration">
+          Moderate-tier needs concentration {modConc.concentrationIndex} · {modConc.moderateOpenCount} moderate across{' '}
+          {modConc.regionCount} regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const snippetOverlap = nrDashBuildMergedSnippetOverlapGap(snap);
+      return snippetOverlap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-merged-snippet-overlap-gap">
+          Merged snippet overlap gap {snippetOverlap.overlapGap} · {snippetOverlap.snippetCount} snippets ·{' '}
+          {snippetOverlap.uniqueTurnCount} unique turns
         </div>
       ) : null;
     })()}
@@ -1557,6 +1590,32 @@ export const NrDashMapTab: React.FC<{
         return pulseGap && pulseGap.asymmetryGap > 0 ? (
           <p className="text-[10px] opacity-75" data-testid="nr-dash-pulse-asymmetry-gap">
             Pulse asymmetry gap {pulseGap.asymmetryGap} · max {pulseGap.maxIntensity} vs μ {pulseGap.meanIntensity}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const mapSat = nrDashBuildMapPulseSaturationShare(baseNodes);
+        return mapSat && mapSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-map-pulse-saturation-share">
+            Map pulse saturation share {mapSat.saturationShare} · μ {mapSat.meanIntensity} · peak {mapSat.peakIntensity}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const depAsym = nrDashBuildDependencyPulseAsymmetry(stressedLinks, baseNodes);
+        return depAsym && depAsym.maxEndpointDelta > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-dependency-pulse-asymmetry">
+            Dependency pulse asymmetry μΔ {depAsym.meanEndpointDelta} · peak {depAsym.maxEndpointDelta} · {depAsym.linkCount}{' '}
+            deps
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const borderSat = nrDashBuildBorderCorridorSaturationShare(nsState);
+        return borderSat && borderSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-border-corridor-saturation-share">
+            Border corridor saturation share {borderSat.saturationShare} · μ {borderSat.meanStress} · peak{' '}
+            {borderSat.peakStress}
           </p>
         ) : null;
       })()}
