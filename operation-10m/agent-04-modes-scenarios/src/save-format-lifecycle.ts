@@ -39,6 +39,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'odysseySession',
   'pilgrimageSession',
   'caravanSession',
+  'voyageSession',
 ];
 
 function stableStringify(value: unknown): string {

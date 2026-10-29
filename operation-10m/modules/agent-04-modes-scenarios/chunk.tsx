@@ -365,6 +365,8 @@ export type O10mPilgrimageStage = 'setting_out' | 'midway' | 'sanctuary';
 
 export type O10mCaravanLeg = 'assembly' | 'crossing' | 'bazaar';
 
+export type O10mVoyageSegment = 'embark' | 'open_sea' | 'port_call';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -420,6 +422,17 @@ export interface O10mCaravanSession {
   legTag: O10mCaravanLeg;
 }
 
+/** Schema v13 — coastal voyage with chart accrual between segments. */
+export interface O10mVoyageSession {
+  voyageId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  chartScore: number;
+  segmentTag: O10mVoyageSegment;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -444,6 +457,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'voyage_step'
     | 'caravan_step'
     | 'pilgrimage_step'
     | 'odyssey_step'
@@ -487,6 +501,10 @@ export interface O10mCampaignPlan {
   caravanCursor: number | null;
   caravanLeg: O10mCaravanLeg | null;
   caravanCargo: number | null;
+  voyageId: string | null;
+  voyageCursor: number | null;
+  voyageSegment: O10mVoyageSegment | null;
+  voyageChart: number | null;
   reason: string;
 }
 
@@ -534,6 +552,8 @@ export interface O10mModesPersistedState {
   pilgrimageSession?: O10mPilgrimageSession | null;
   /** Schema v12 — active trade caravan (mutually exclusive with pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   caravanSession?: O10mCaravanSession | null;
+  /** Schema v13 — active coastal voyage (mutually exclusive with caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  voyageSession?: O10mVoyageSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -2245,6 +2265,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Caravan finales', 'Cargo ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_voyage_embark_pier',
+    title: 'Voyage Embark Pier',
+    description: 'Chart a coastal voyage with low-pressure segment pacing before open sea.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100441,
+    startingMoney: 2450,
+    startingRegions: ['TAS', 'VIC'],
+    badgeId: 'badge_o10m_voyage_embark_pier',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100441),
+      o10mVoyageEmbarkPier: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_vep_obj_day',
+        label: 'Embark Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Coastal voyages', 'Chart pacing', 'Segment embark'],
+  },
+  {
+    id: 'o10m_voyage_open_sea_passage',
+    title: 'Voyage Open Sea Passage',
+    description: 'Mid-voyage open sea with accrued chart bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100442,
+    startingMoney: 3000,
+    startingRegions: ['WA', 'SA'],
+    startingStanding: { WA: 46, SA: 44 },
+    badgeId: 'badge_o10m_voyage_open_sea_passage',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100442),
+      regionalStandingEnabled: true,
+      o10mVoyageOpenSeaPassage: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_vosp_obj_avg',
+        label: 'Open Sea Threshold',
+        description: 'Average standing of 52',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 52,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Voyage open sea', 'Chart carry', 'Segment transitions'],
+  },
+  {
+    id: 'o10m_voyage_port_call_finale',
+    title: 'Voyage Port Call Finale',
+    description: 'Finale voyage segment — net worth gate with full chart bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100443,
+    startingMoney: 3450,
+    startingRegions: ['QLD', 'NSW', 'NT'],
+    badgeId: 'badge_o10m_voyage_port_call_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100443),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mVoyagePortCallFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_vpcf_obj_net',
+        label: 'Port Call Net Worth',
+        description: 'Reach $15,800 net worth',
+        targetType: 'netWorth',
+        targetValue: 15800,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Voyage finales', 'Chart ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -3135,6 +3252,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_voyage_arc',
+    title: 'Voyage Arc',
+    description:
+      'Three-segment coastal voyage with chart accrual between legs — round-13 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_voyage_arc',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_voyage_embark_pier',
+        title: 'Embark Pier',
+        narrativeBridge: 'Plot charts before the open sea passage.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 230 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_voyage_open_sea_passage',
+        title: 'Open Sea Passage',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { WA: 6, SA: 5 },
+          forcedSettingsPatch: { o10mVoyageMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_voyage_port_call_finale',
+        title: 'Port Call Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainVoyageArcComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -3961,7 +4112,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 12;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 13;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -4072,6 +4223,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     odysseySession: null,
     pilgrimageSession: null,
     caravanSession: null,
+    voyageSession: null,
   };
 }
 
@@ -4103,6 +4255,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       odysseySession: merged.odysseySession ?? null,
       pilgrimageSession: merged.pilgrimageSession ?? null,
       caravanSession: merged.caravanSession ?? null,
+      voyageSession: merged.voyageSession ?? null,
     };
     return upgraded;
   }
@@ -4158,6 +4311,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     odysseySession: sanitizeOdysseySession(o.odysseySession),
     pilgrimageSession: sanitizePilgrimageSession(o.pilgrimageSession),
     caravanSession: sanitizeCaravanSession(o.caravanSession),
+    voyageSession: sanitizeVoyageSession(o.voyageSession),
   };
 }
 
@@ -4248,6 +4402,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Caravan session failed sanitization; planner will ignore it.');
   } else if (caravan && caravan.cursor >= caravan.scenarioIds.length) {
     warnings.push('Caravan cursor out of range; clamp on next sanitize.');
+  }
+
+  const voyage = sanitizeVoyageSession(state.voyageSession);
+  if (state.voyageSession && !voyage) {
+    warnings.push('Voyage session failed sanitization; planner will ignore it.');
+  } else if (voyage && voyage.cursor >= voyage.scenarioIds.length) {
+    warnings.push('Voyage cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -4365,6 +4526,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'odysseySession',
   'pilgrimageSession',
   'caravanSession',
+  'voyageSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -4875,6 +5037,7 @@ export function attachMarathonQueueToState(
     odysseySession: null,
     pilgrimageSession: null,
     caravanSession: null,
+    voyageSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -4992,6 +5155,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceVoyageSessionAfterRun(next, run);
   next = advanceCaravanSessionAfterRun(next, run);
   next = advancePilgrimageSessionAfterRun(next, run);
   next = advanceOdysseySessionAfterRun(next, run);
@@ -5132,6 +5296,7 @@ export function attachGauntletSessionToState(
     odysseySession: null,
     pilgrimageSession: null,
     caravanSession: null,
+    voyageSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -5366,6 +5531,7 @@ export function attachRelaySessionToState(
     odysseySession: null,
     pilgrimageSession: null,
     caravanSession: null,
+    voyageSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -5560,6 +5726,7 @@ export function attachCircuitSessionToState(
     odysseySession: null,
     pilgrimageSession: null,
     caravanSession: null,
+    voyageSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -5772,6 +5939,7 @@ export function attachExpeditionSessionToState(
     odysseySession: null,
     pilgrimageSession: null,
     caravanSession: null,
+    voyageSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -5982,6 +6150,7 @@ export function attachOdysseySessionToState(
     odysseySession: sanitized,
     pilgrimageSession: null,
     caravanSession: null,
+    voyageSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -6191,6 +6360,7 @@ export function attachPilgrimageSessionToState(
     ...state,
     pilgrimageSession: sanitized,
     caravanSession: null,
+    voyageSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -6401,6 +6571,7 @@ export function attachCaravanSessionToState(
   return {
     ...state,
     caravanSession: sanitized,
+    voyageSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -6494,6 +6665,212 @@ export function caravanSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-voyage.ts ---
+export const O10M_VOYAGE_SCENARIO_CAP = 6;
+export const O10M_VOYAGE_CHART_CAP = 620;
+export const O10M_VOYAGE_CHART_MONEY_CAP = 710;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_SEGMENTS = new Set<O10mVoyageSegment>(['embark', 'open_sea', 'port_call']);
+
+export function unlockTokenForVoyageId(voyageId: string): string | null {
+  if (!voyageId.startsWith('o10m_voyage_')) return null;
+  return `o10m_unlock_${voyageId.slice('o10m_voyage_'.length)}`;
+}
+
+export function voyageSegmentForCursor(cursor: number, scenarioCount: number): O10mVoyageSegment {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'port_call';
+  if (clamped >= Math.floor(total / 2)) return 'open_sea';
+  return 'embark';
+}
+
+export function voyageChartFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingBonus = Math.min(18, Math.floor(run.maxRegionalStanding / 5));
+  return Math.min(90, Math.max(13, Math.floor(run.playerNetWorth / 220) + standingBonus));
+}
+
+export function sanitizeVoyageSession(raw: unknown): O10mVoyageSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const voyageId =
+    typeof o.voyageId === 'string' && o.voyageId.startsWith('o10m_voyage_') ? o.voyageId : null;
+  if (!voyageId) return null;
+  const label = typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : voyageId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_VOYAGE_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const chartScore = Math.min(O10M_VOYAGE_CHART_CAP, Math.max(0, Math.floor(num(o.chartScore, 0))));
+  const segmentRaw = o.segmentTag;
+  const segmentTag =
+    typeof segmentRaw === 'string' && VALID_SEGMENTS.has(segmentRaw as O10mVoyageSegment)
+      ? (segmentRaw as O10mVoyageSegment)
+      : voyageSegmentForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    voyageId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    chartScore,
+    segmentTag,
+  };
+}
+
+export function createVoyageSession(params: {
+  voyageId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mVoyageSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.voyageId.startsWith('o10m_voyage_')) {
+    return { session: null, warnings: ['Voyage ids must start with o10m_voyage_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_VOYAGE_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return { session: null, warnings: [...warnings, 'Voyage requires at least one valid scenario.'] };
+  }
+  return {
+    session: {
+      voyageId: params.voyageId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      chartScore: 0,
+      segmentTag: voyageSegmentForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachVoyageSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mVoyageSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeVoyageSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    voyageSession: sanitized,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearVoyageSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, voyageSession: null };
+}
+
+export function getVoyageScenarioAtCursor(session: O10mVoyageSession | null | undefined): string | null {
+  const voyage = sanitizeVoyageSession(session);
+  if (!voyage || !voyage.active) return null;
+  return voyage.scenarioIds[voyage.cursor] ?? null;
+}
+
+export function buildVoyageScenarioStartOverrides(session: O10mVoyageSession | null | undefined): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const voyage = sanitizeVoyageSession(session);
+  if (!voyage) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(O10M_VOYAGE_CHART_MONEY_CAP, Math.floor(voyage.chartScore * 0.76));
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveVoyageId: voyage.voyageId,
+      o10mActiveVoyageStep: voyage.cursor,
+      o10mActiveVoyageSegment: voyage.segmentTag,
+      o10mVoyageChart: voyage.chartScore,
+    },
+  };
+}
+
+export function advanceVoyageSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeVoyageSession(state.voyageSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const chartScore = Math.min(O10M_VOYAGE_CHART_CAP, session.chartScore + voyageChartFromRun(run));
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      voyageSession: {
+        ...session,
+        cursor,
+        chartScore,
+        segmentTag: voyageSegmentForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForVoyageId(session.voyageId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    voyageSession: { ...session, active: false, chartScore, segmentTag: 'port_call' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function voyageSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  chart: number;
+  segment: O10mVoyageSegment | null;
+} {
+  const session = sanitizeVoyageSession(state.voyageSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    chart: session?.chartScore ?? 0,
+    segment: session?.active ? session.segmentTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -6524,9 +6901,31 @@ const emptyQueuePlan = {
   caravanCursor: null as number | null,
   caravanLeg: null as O10mCaravanLeg | null,
   caravanCargo: null as number | null,
+  voyageId: null as string | null,
+  voyageCursor: null as number | null,
+  voyageSegment: null as O10mVoyageSegment | null,
+  voyageChart: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const voyage = sanitizeVoyageSession(state.voyageSession);
+  const voyageScenario = getVoyageScenarioAtCursor(voyage);
+  if (voyage && voyage.active && voyageScenario) {
+    return {
+      kind: 'voyage_step',
+      scenarioId: voyageScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      voyageId: voyage.voyageId,
+      voyageCursor: voyage.cursor,
+      voyageSegment: voyage.segmentTag,
+      voyageChart: voyage.chartScore,
+      reason: `Voyage "${voyage.label}" ${voyage.segmentTag} segment ${voyage.cursor + 1}/${voyage.scenarioIds.length} (chart ${voyage.chartScore}).`,
+    };
+  }
+
   const caravan = sanitizeCaravanSession(state.caravanSession);
   const caravanScenario = getCaravanScenarioAtCursor(caravan);
   if (caravan && caravan.active && caravanScenario) {
@@ -6744,6 +7143,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   odysseyActive: boolean;
   pilgrimageActive: boolean;
   caravanActive: boolean;
+  voyageActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -6759,6 +7159,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const odyssey = odysseySessionSummary(state);
   const pilgrimage = pilgrimageSessionSummary(state);
   const caravan = caravanSessionSummary(state);
+  const voyage = voyageSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -6772,6 +7173,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     odysseyActive: odyssey.active,
     pilgrimageActive: pilgrimage.active,
     caravanActive: caravan.active,
+    voyageActive: voyage.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -6790,7 +7192,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 13, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 14, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -6882,16 +7284,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const caravanState = caravan ? attachCaravanSessionToState(createEmptyO10mModesPersistedState(), caravan) : null;
   push('agent04_chunk_20', caravanState !== null && planNextCampaignAction(caravanState!).kind === 'caravan_step');
 
+  const voyage = createVoyageSession({
+    voyageId: 'o10m_voyage_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_voyage_embark_pier'],
+  }).session;
+  const voyageState = voyage ? attachVoyageSessionToState(createEmptyO10mModesPersistedState(), voyage) : null;
+  push('agent04_chunk_21', voyageState !== null && planNextCampaignAction(voyageState!).kind === 'voyage_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v13',
+  schemaVersion: 'op10m-agent04-v14',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 12,
+  saveSchemaVersion: 13,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

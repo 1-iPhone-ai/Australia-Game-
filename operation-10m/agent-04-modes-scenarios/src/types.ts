@@ -361,6 +361,8 @@ export type O10mPilgrimageStage = 'setting_out' | 'midway' | 'sanctuary';
 
 export type O10mCaravanLeg = 'assembly' | 'crossing' | 'bazaar';
 
+export type O10mVoyageSegment = 'embark' | 'open_sea' | 'port_call';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -416,6 +418,17 @@ export interface O10mCaravanSession {
   legTag: O10mCaravanLeg;
 }
 
+/** Schema v13 — coastal voyage with chart accrual between segments. */
+export interface O10mVoyageSession {
+  voyageId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  chartScore: number;
+  segmentTag: O10mVoyageSegment;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -440,6 +453,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'voyage_step'
     | 'caravan_step'
     | 'pilgrimage_step'
     | 'odyssey_step'
@@ -483,6 +497,10 @@ export interface O10mCampaignPlan {
   caravanCursor: number | null;
   caravanLeg: O10mCaravanLeg | null;
   caravanCargo: number | null;
+  voyageId: string | null;
+  voyageCursor: number | null;
+  voyageSegment: O10mVoyageSegment | null;
+  voyageChart: number | null;
   reason: string;
 }
 
@@ -530,6 +548,8 @@ export interface O10mModesPersistedState {
   pilgrimageSession?: O10mPilgrimageSession | null;
   /** Schema v12 — active trade caravan (mutually exclusive with pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   caravanSession?: O10mCaravanSession | null;
+  /** Schema v13 — active coastal voyage (mutually exclusive with caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  voyageSession?: O10mVoyageSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

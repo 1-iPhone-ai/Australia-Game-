@@ -450,6 +450,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_voyage_arc',
+    title: 'Voyage Arc',
+    description:
+      'Three-segment coastal voyage with chart accrual between legs — round-13 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_voyage_arc',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_voyage_embark_pier',
+        title: 'Embark Pier',
+        narrativeBridge: 'Plot charts before the open sea passage.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 230 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_voyage_open_sea_passage',
+        title: 'Open Sea Passage',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { WA: 6, SA: 5 },
+          forcedSettingsPatch: { o10mVoyageMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_voyage_port_call_finale',
+        title: 'Port Call Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainVoyageArcComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

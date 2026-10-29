@@ -12,6 +12,7 @@ import { sanitizeExpeditionSession } from './save-format-expedition.js';
 import { sanitizeOdysseySession } from './save-format-odyssey.js';
 import { sanitizePilgrimageSession } from './save-format-pilgrimage.js';
 import { sanitizeCaravanSession } from './save-format-caravan.js';
+import { sanitizeVoyageSession } from './save-format-voyage.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -30,7 +31,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 12;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 13;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -141,6 +142,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     odysseySession: null,
     pilgrimageSession: null,
     caravanSession: null,
+    voyageSession: null,
   };
 }
 
@@ -172,6 +174,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       odysseySession: merged.odysseySession ?? null,
       pilgrimageSession: merged.pilgrimageSession ?? null,
       caravanSession: merged.caravanSession ?? null,
+      voyageSession: merged.voyageSession ?? null,
     };
     return upgraded;
   }
@@ -227,6 +230,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     odysseySession: sanitizeOdysseySession(o.odysseySession),
     pilgrimageSession: sanitizePilgrimageSession(o.pilgrimageSession),
     caravanSession: sanitizeCaravanSession(o.caravanSession),
+    voyageSession: sanitizeVoyageSession(o.voyageSession),
   };
 }
 
@@ -317,6 +321,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Caravan session failed sanitization; planner will ignore it.');
   } else if (caravan && caravan.cursor >= caravan.scenarioIds.length) {
     warnings.push('Caravan cursor out of range; clamp on next sanitize.');
+  }
+
+  const voyage = sanitizeVoyageSession(state.voyageSession);
+  if (state.voyageSession && !voyage) {
+    warnings.push('Voyage session failed sanitization; planner will ignore it.');
+  } else if (voyage && voyage.cursor >= voyage.scenarioIds.length) {
+    warnings.push('Voyage cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

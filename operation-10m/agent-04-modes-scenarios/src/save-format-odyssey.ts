@@ -120,6 +120,7 @@ export function attachOdysseySessionToState(
     odysseySession: sanitized,
     pilgrimageSession: null,
     caravanSession: null,
+    voyageSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
