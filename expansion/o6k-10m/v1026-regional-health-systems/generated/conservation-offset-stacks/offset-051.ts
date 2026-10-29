@@ -1,0 +1,31 @@
+import type { V1026RhsPrimaryCareAccessEdge } from '../../types/core.ts';
+
+/** Primary care access graph shard 051 (clinical/bed/primary-care corridor coupling). */
+export const V1026_RHS_PRIMARY_CARE_ACCESS_SHARD_051: readonly V1026RhsPrimaryCareAccessEdge[] = [
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.14, lagTurns: 8, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.146, lagTurns: 9, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.152, lagTurns: 10, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.158, lagTurns: 11, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.164, lagTurns: 8, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.17, lagTurns: 9, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.176, lagTurns: 10, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.182, lagTurns: 11, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.188, lagTurns: 8, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.194, lagTurns: 9, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.2, lagTurns: 10, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.206, lagTurns: 11, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.212, lagTurns: 8, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.218, lagTurns: 9, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.224, lagTurns: 10, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.23, lagTurns: 11, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.236, lagTurns: 8, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.14, lagTurns: 9, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.146, lagTurns: 10, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.152, lagTurns: 11, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.158, lagTurns: 8, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.164, lagTurns: 9, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.17, lagTurns: 10, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.176, lagTurns: 11, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.182, lagTurns: 8, nodeId: 'hospital_network_03' },
+  { fromChannel: 'habitat_connectivity', toChannel: 'fire_regime', weight: 0.188, lagTurns: 9, nodeId: 'hospital_network_03' },
+];

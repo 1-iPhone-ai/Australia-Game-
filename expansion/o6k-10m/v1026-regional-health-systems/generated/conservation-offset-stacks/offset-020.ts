@@ -1,0 +1,31 @@
+import type { V1026RhsPrimaryCareAccessEdge } from '../../types/core.ts';
+
+/** Primary care access graph shard 020 (clinical/bed/primary-care corridor coupling). */
+export const V1026_RHS_PRIMARY_CARE_ACCESS_SHARD_020: readonly V1026RhsPrimaryCareAccessEdge[] = [
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.266, lagTurns: 4, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.272, lagTurns: 5, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.278, lagTurns: 6, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.284, lagTurns: 7, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.29, lagTurns: 4, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.296, lagTurns: 5, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.302, lagTurns: 6, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.308, lagTurns: 7, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.314, lagTurns: 4, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.32, lagTurns: 5, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.326, lagTurns: 6, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.332, lagTurns: 7, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.236, lagTurns: 4, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.242, lagTurns: 5, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.248, lagTurns: 6, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.254, lagTurns: 7, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.26, lagTurns: 4, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.266, lagTurns: 5, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.272, lagTurns: 6, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.278, lagTurns: 7, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.284, lagTurns: 4, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.29, lagTurns: 5, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.296, lagTurns: 6, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.302, lagTurns: 7, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.308, lagTurns: 4, nodeId: 'hospital_network_20' },
+  { fromChannel: 'species_recovery', toChannel: 'invasive_pressure', weight: 0.314, lagTurns: 5, nodeId: 'hospital_network_20' },
+];

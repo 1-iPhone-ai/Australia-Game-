@@ -1,0 +1,31 @@
+import type { V1026RhsPrimaryCareAccessEdge } from '../../types/core.ts';
+
+/** Primary care access graph shard 017 (clinical/bed/primary-care corridor coupling). */
+export const V1026_RHS_PRIMARY_CARE_ACCESS_SHARD_017: readonly V1026RhsPrimaryCareAccessEdge[] = [
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.14, lagTurns: 10, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.146, lagTurns: 11, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.152, lagTurns: 12, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.158, lagTurns: 13, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.164, lagTurns: 10, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.17, lagTurns: 11, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.176, lagTurns: 12, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.182, lagTurns: 13, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.188, lagTurns: 10, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.194, lagTurns: 11, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.2, lagTurns: 12, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.206, lagTurns: 13, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.212, lagTurns: 10, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.218, lagTurns: 11, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.224, lagTurns: 12, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.23, lagTurns: 13, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.236, lagTurns: 10, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.14, lagTurns: 11, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.146, lagTurns: 12, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.152, lagTurns: 13, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.158, lagTurns: 10, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.164, lagTurns: 11, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.17, lagTurns: 12, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.176, lagTurns: 13, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.182, lagTurns: 10, nodeId: 'hospital_network_17' },
+  { fromChannel: 'mental_health', toChannel: 'emergency_care', weight: 0.188, lagTurns: 11, nodeId: 'hospital_network_17' },
+];

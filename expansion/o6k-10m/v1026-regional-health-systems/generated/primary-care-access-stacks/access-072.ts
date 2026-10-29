@@ -1,0 +1,31 @@
+import type { V1026RhsPrimaryCareAccessEdge } from '../../types/core.ts';
+
+/** Primary care access graph shard 072 (clinical/bed/primary-care corridor coupling). */
+export const V1026_RHS_PRIMARY_CARE_ACCESS_SHARD_072: readonly V1026RhsPrimaryCareAccessEdge[] = [
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.274, lagTurns: 2, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.28, lagTurns: 3, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.286, lagTurns: 4, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.292, lagTurns: 5, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.298, lagTurns: 2, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.304, lagTurns: 3, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.31, lagTurns: 4, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.316, lagTurns: 5, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.322, lagTurns: 2, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.328, lagTurns: 3, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.334, lagTurns: 4, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.34, lagTurns: 5, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.346, lagTurns: 2, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.352, lagTurns: 3, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.358, lagTurns: 4, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.364, lagTurns: 5, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.268, lagTurns: 2, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.274, lagTurns: 3, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.28, lagTurns: 4, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.286, lagTurns: 5, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.292, lagTurns: 2, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.298, lagTurns: 3, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.304, lagTurns: 4, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.31, lagTurns: 5, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.316, lagTurns: 2, nodeId: 'hospital_network_00' },
+  { fromChannel: 'hospital_network', toChannel: 'specialist_referral', weight: 0.322, lagTurns: 3, nodeId: 'hospital_network_00' },
+];
