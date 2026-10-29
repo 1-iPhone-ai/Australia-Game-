@@ -280,10 +280,16 @@ import {
   runAgent13GalacticSovereignNetZeroExportContinuityTurnScenario,
   V1014_GALACTIC_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_COSMIC_MESH_TURN_SCENARIOS,
 } from '../modules/galactic-sovereign-net-zero-export-continuity-cosmic-mesh-orchestration-ledger.ts';
+import {
+  runAgent13UniversalSovereignNetZeroExportContinuityScaleSelfTests,
+  runAgent13UniversalSovereignNetZeroExportContinuityTurnScenario,
+  V1014_UNIVERSAL_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_QUANTUM_MESH_TURN_SCENARIOS,
+} from '../modules/universal-sovereign-net-zero-export-continuity-quantum-mesh-orchestration-ledger.ts';
 import { runAgent13Agent25Wave56ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave56-projection-handoff-brief.ts';
 import { runAgent13Agent25Wave57ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave57-projection-handoff-brief.ts';
 import { runAgent13Agent25Wave58ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave58-projection-handoff-brief.ts';
 import { runAgent13Agent25Wave59ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave59-projection-handoff-brief.ts';
+import { runAgent13Agent25Wave60ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave60-projection-handoff-brief.ts';
 import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
@@ -750,6 +756,14 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
   ok(galacticTurn.passed);
   const wave59Handoff = runAgent13Agent25Wave59ProjectionHandoffBriefSelfTests();
   ok(wave59Handoff.failed === 0 && wave59Handoff.passed >= 4);
+  const universal = runAgent13UniversalSovereignNetZeroExportContinuityScaleSelfTests();
+  ok(universal.failed === 0 && universal.passed >= 4);
+  const universalTurn = runAgent13UniversalSovereignNetZeroExportContinuityTurnScenario(
+    V1014_UNIVERSAL_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_QUANTUM_MESH_TURN_SCENARIOS[0],
+  );
+  ok(universalTurn.passed);
+  const wave60Handoff = runAgent13Agent25Wave60ProjectionHandoffBriefSelfTests();
+  ok(wave60Handoff.failed === 0 && wave60Handoff.passed >= 4);
 
   return { passed, failed, total: passed + failed };
 }
