@@ -130866,6 +130866,8 @@ export interface ContentContext {
   capabilities?: ReturnType<typeof innovationContentSnapshot>;
   /** V10.7: themes of live national priorities (small bounded relevance bonus; never forces content). */
   nationalPriorityThemes?: ContentTheme[] | null;
+  /** O111-A58: derived national/regional environmental pressure (content + ranking; never authoritative for legality). */
+  environmental?: NationalEnvironmentalExposureView | null;
 }
 
 // ---- Requirements (structured, explainable) -----------------------------------------------------------
@@ -131511,8 +131513,9 @@ export function crisisStageEffect(stage: CrisisStage | undefined): { priced: any
   (stage?.stageEffects || []).forEach(e => {
     const [k, sub] = String(e.modifierKey).split(':');
     if (k === 'resourcePrice' && sub) { priced.resourcePrice = { ...(priced.resourcePrice || {}), [sub]: e.value }; }
-    else if (k === 'investmentYield') priced.investmentYieldMultiplier = e.value;
-    else if (k === 'travelCost') regional.travelCost = e.value;
+    else if (k === 'investmentYield' || k === 'investmentYieldMultiplier') priced.investmentYieldMultiplier = e.value;
+    else if (k === 'priceMultiplier') priced.resourcePriceMultiplier = e.value;
+    else if (k === 'travelCost' || k === 'travelCostMultiplier' || k === 'tradeCostMultiplier') regional.travelCost = e.value;
     else if (k === 'challengeBonus' && sub) regional.challengeBonus = { ...(regional.challengeBonus || {}), [sub]: e.value };
   });
   return { priced, regional };
@@ -131520,14 +131523,16 @@ export function crisisStageEffect(stage: CrisisStage | undefined): { priced: any
 /** Keep one modifier event per affected region for each active content crisis stage (prices counted once). */
 export function syncContentCrisisEvents(activeEvents: any[], chains: CrisisChain[]): any[] {
   const want: any[] = [];
-  (chains || []).filter(c => c && c.status === 'active' && String(c.id).startsWith('v93c_')).forEach(c => {
+  (chains || []).filter(c => c && c.status === 'active' && (String(c.id).startsWith('v93c_') || c.category === 'environmental')).forEach(c => {
     const stage = c.stages[c.currentStageIndex];
     if (!stage) return;
     const { priced, regional } = crisisStageEffect(stage);
+    const v93 = String(c.id).startsWith('v93c_');
     (c.affectedRegions || []).forEach((region, i) => {
       const effect = { ...regional, ...(i === 0 ? priced : {}) };
       if (!Object.keys(effect).length) return;
-      want.push({ id: `v93x_${c.id}_${region}`, name: stage.title, region, duration: stage.durationTurns, remainingDays: Math.max(1, stage.remainingTurns), effect, description: stage.description, v93: { templateId: c.id, kind: 'crisis', rarity: 'common', stageId: stage.id } });
+      const idPrefix = v93 ? 'v93x' : 'crx';
+      want.push({ id: `${idPrefix}_${c.id}_${region}`, name: stage.title, region, duration: stage.durationTurns, remainingDays: Math.max(1, stage.remainingTurns || stage.durationTurns || 1), effect, description: stage.description, v93: { templateId: c.id, kind: 'crisis', rarity: 'common', stageId: stage.id, legacy: !v93 } });
     });
   });
   const keep = (activeEvents || []).filter(e => !(e?.v93?.kind === 'crisis'));
@@ -131535,6 +131540,134 @@ export function syncContentCrisisEvents(activeEvents: any[], chains: CrisisChain
   const merged = want.map(w => { const p = prev.get(w.id); return p && p.v93?.stageId === w.v93.stageId ? { ...w, remainingDays: w.remainingDays } : w; });
   const same = merged.length === prev.size && merged.every(m => { const p: any = prev.get(m.id); return p && p.v93?.stageId === m.v93.stageId && p.remainingDays === m.remainingDays; });
   return same ? activeEvents : [...keep, ...merged];
+}
+
+// ============================================================================
+// SECTION 20O-A58: OPERATION 111 — NATIONAL ENVIRONMENTAL EXPOSURE (Agent 58)
+// Derives national/regional environmental pressure from canonical crises, seasons, sector mix,
+// and regional needs. Does not mutate match rules — feeds content context and crisis sync only.
+// ============================================================================
+
+export type EnvironmentalPressureBand = 'stable' | 'elevated' | 'stressed' | 'severe' | 'critical';
+export const ENV_PRESSURE_BAND_RANK: Record<EnvironmentalPressureBand, number> = { critical: 0, severe: 1, stressed: 2, elevated: 3, stable: 4 };
+export const ENV_PRESSURE_LABEL: Record<EnvironmentalPressureBand, string> = { stable: 'Stable', elevated: 'Elevated', stressed: 'Stressed', severe: 'Severe', critical: 'Critical' };
+
+export interface RegionalEnvironmentalExposure { regionId: string; score: number; band: EnvironmentalPressureBand; drivers: string[] }
+export interface NationalEnvironmentalExposureView {
+  schemaVersion: 'a58'; revision: number; turn: number; nationalScore: number; nationalBand: EnvironmentalPressureBand;
+  activeEnvironmentalCrises: number; waterStressScore: number; regions: Record<string, RegionalEnvironmentalExposure>; summary: string; inputHash: string;
+}
+export interface EnvironmentalExposureInputs {
+  turn: number; season: string;
+  crises: Array<{ id: string; category: string; status: string; stageIndex: number; affectedRegions: string[] }>;
+  regions: Record<string, { sectors?: Partial<Record<string, number>>; needs?: Array<{ category: string; severity: string }>; conditions?: string[] }>;
+  flags?: Record<string, string | number | boolean>;
+}
+
+const a58Clamp = (x: number, a = 0, b = 100) => Math.max(a, Math.min(b, Number.isFinite(x) ? x : 0));
+const a58Round = (x: number) => Math.round(x * 10) / 10;
+export const environmentalBandFromScore = (score: number): EnvironmentalPressureBand => (
+  score >= 85 ? 'critical' : score >= 68 ? 'severe' : score >= 48 ? 'stressed' : score >= 28 ? 'elevated' : 'stable'
+);
+
+export function environmentalExposureInputHash(i: EnvironmentalExposureInputs): string {
+  const c = (i.crises || []).filter(c => c.status === 'active' && c.category === 'environmental').map(c => `${c.id}:${c.stageIndex}:${(c.affectedRegions || []).join('+')}`).sort().join('|');
+  return `a58:${i.turn}:${i.season}:${c}`;
+}
+
+export function computeNationalEnvironmentalExposure(i: EnvironmentalExposureInputs): NationalEnvironmentalExposureView {
+  const regions: Record<string, RegionalEnvironmentalExposure> = {};
+  const codes = Object.keys(i.regions || {}).length ? Object.keys(i.regions) : [...CONTENT_CORE_REGIONS];
+  const activeEnv = (i.crises || []).filter(c => c.status === 'active' && c.category === 'environmental');
+  let waterStress = 0;
+  codes.forEach(code => {
+    const reg = i.regions?.[code] || {};
+    let score = 0;
+    const drivers: string[] = [];
+    activeEnv.forEach(c => {
+      if ((c.affectedRegions || []).includes(code)) { score += 22 + Math.min(12, (c.stageIndex || 0) * 4); drivers.push(`crisis:${c.id}`); }
+    });
+    const mining = Number(reg.sectors?.mining || 0);
+    if (mining >= 15) { score += 8; drivers.push('industrial footprint'); }
+    (reg.needs || []).forEach(n => {
+      if (n.category === 'water') {
+        const w = n.severity === 'high' ? 18 : n.severity === 'moderate' ? 10 : 5;
+        score += w; waterStress = Math.max(waterStress, w); drivers.push(`water (${n.severity})`);
+      }
+    });
+    if (i.season === 'Summer' && ['NSW', 'VIC', 'QLD', 'SA', 'WA'].includes(code)) { score += 6; drivers.push('fire season'); }
+    if (i.flags?.resource_stance === 'conservation') score = Math.max(0, score - 5);
+    score = a58Clamp(score);
+    regions[code] = { regionId: code, score, band: environmentalBandFromScore(score), drivers: drivers.slice(0, 5) };
+  });
+  const nationalScore = a58Clamp(codes.reduce((s, c) => s + (regions[c]?.score || 0), 0) / Math.max(1, codes.length) + activeEnv.length * 8);
+  const nationalBand = environmentalBandFromScore(nationalScore);
+  const summary = activeEnv.length
+    ? `${activeEnv.length} environmental crisis chain(s) active — national pressure ${ENV_PRESSURE_LABEL[nationalBand].toLowerCase()}.`
+    : nationalBand === 'stable'
+      ? 'No major environmental shocks; seasonal and sector pressures within normal bounds.'
+      : `Environmental pressure is ${ENV_PRESSURE_LABEL[nationalBand].toLowerCase()} without an active national crisis chain.`;
+  return { schemaVersion: 'a58', revision: 1, turn: i.turn, nationalScore: a58Round(nationalScore), nationalBand, activeEnvironmentalCrises: activeEnv.length, waterStressScore: a58Clamp(waterStress + (nationalBand === 'critical' ? 15 : 0)), regions, summary, inputHash: environmentalExposureInputHash(i) };
+}
+
+export function buildEnvironmentalExposureInputsFromContent(ctx: ContentContext): EnvironmentalExposureInputs {
+  return {
+    turn: ctx.day, season: ctx.season, crises: ctx.crises,
+    regions: Object.fromEntries(Object.entries(ctx.regions).map(([k, r]) => [k, { sectors: r.sectors, needs: r.needs, conditions: r.conditions }])),
+    flags: (ctx.campaignVars || {}) as Record<string, string | number | boolean>
+  };
+}
+
+/** Soft hints for content eligibility only — never changes canonical LR state. */
+export function applyEnvironmentalExposureHintsToContentRegions(ctx: ContentContext, view: NationalEnvironmentalExposureView): void {
+  Object.entries(view.regions).forEach(([code, exp]) => {
+    const r = ctx.regions[code];
+    if (!r) return;
+    if (exp.band === 'severe' || exp.band === 'critical') {
+      if (!r.conditions.includes('crisis_active')) r.conditions = [...r.conditions, 'crisis_active'];
+      if (!r.needs.some(n => n.category === 'water')) r.needs = [...r.needs, { category: 'water', severity: exp.band === 'critical' ? 'high' : 'moderate' }];
+    } else if (exp.band === 'stressed' && !r.needs.some(n => n.category === 'water')) {
+      r.needs = [...r.needs, { category: 'water', severity: 'moderate' }];
+    }
+  });
+}
+
+export function runO111Agent58EnvironmentalSystemsSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  check('a58_bands', 'Environmental bands are monotonic with score', () => {
+    const s = [10, 30, 50, 70, 90].map(environmentalBandFromScore);
+    return (s[0] === 'stable' && s[4] === 'critical' && ENV_PRESSURE_BAND_RANK[s[1]] < ENV_PRESSURE_BAND_RANK[s[0]]) || JSON.stringify(s);
+  });
+  check('a58_crisis_lift', 'Active environmental crises raise national band', () => {
+    const calm = computeNationalEnvironmentalExposure({ turn: 10, season: 'Winter', crises: [], regions: { NSW: { sectors: {} } } });
+    const hot = computeNationalEnvironmentalExposure({ turn: 10, season: 'Summer', crises: [{ id: 'c1', category: 'environmental', status: 'active', stageIndex: 2, affectedRegions: ['NSW', 'VIC'] }], regions: { NSW: { sectors: {} }, VIC: { sectors: {} } } });
+    return hot.nationalScore > calm.nationalScore && hot.activeEnvironmentalCrises === 1 || `${calm.nationalScore} vs ${hot.nationalScore}`;
+  });
+  check('a58_content_hints', 'Severe exposure adds water need hints on content regions', () => {
+    const ctx = contentNeutralContext(3, 12);
+    const view = computeNationalEnvironmentalExposure({ turn: 12, season: 'Summer', crises: [{ id: 'x', category: 'environmental', status: 'active', stageIndex: 3, affectedRegions: ['NSW'] }], regions: { NSW: { sectors: { mining: 20 } } } });
+    applyEnvironmentalExposureHintsToContentRegions(ctx, view);
+    return ctx.regions.NSW.needs.some(n => n.category === 'water') || JSON.stringify(ctx.regions.NSW);
+  });
+  check('a58_crisis_executor', 'Environmental legacy crisis stages sync to activeEvents modifiers', () => {
+    const legacy = PRESET_CRISIS_CHAINS.find(c => c.category === 'environmental');
+    if (!legacy) return 'no legacy environmental chain';
+    const chain = JSON.parse(JSON.stringify(legacy)) as CrisisChain;
+    chain.status = 'active'; chain.currentStageIndex = 0;
+    const stage = chain.stages[chain.currentStageIndex];
+    if (!stage?.stageEffects?.length) return 'stage has no effects to test';
+    const ev = syncContentCrisisEvents([], [chain]);
+    return ev.length > 0 && ev.some(e => e.effect && (e.effect.travelCost || e.effect.resourcePriceMultiplier || e.effect.resourcePrice)) || JSON.stringify(ev.slice(0, 1));
+  });
+  check('a58_hash_stable', 'Input hash stable for identical inputs', () => {
+    const i = { turn: 5, season: 'Autumn', crises: [{ id: 'a', category: 'environmental', status: 'active', stageIndex: 0, affectedRegions: ['QLD'] }], regions: {} };
+    return environmentalExposureInputHash(i) === environmentalExposureInputHash(i) || 'hash drift';
+  });
+  return results;
 }
 
 const OPP_FROM_WINDOW: Record<string, { type: ContentOpportunity['type']; nav: IntentNavTarget; title: (s: string) => string }> = {
@@ -132351,7 +132484,7 @@ export const CONTENT_EXECUTABLE = {
   objectiveTypes: ['deliver_resource', 'invest_capital', 'build_infrastructure', 'maintain_presence'],
   rewardKeys: ['money', 'regionalStandingBoost', 'devPoints'],
   eventEffectKeys: ['resourcePrice', 'travelCost', 'challengeBonus', 'investmentYieldMultiplier'],
-  crisisEffectKeys: ['resourcePrice', 'travelCost', 'challengeBonus', 'investmentYield'],
+  crisisEffectKeys: ['resourcePrice', 'travelCost', 'travelCostMultiplier', 'tradeCostMultiplier', 'challengeBonus', 'investmentYield', 'investmentYieldMultiplier', 'priceMultiplier'],
   infraBonusTypes: ['income_boost', 'standing_multiplier', 'trade_discount', 'travel_cost_reduction'],
   challengeTypes: ['physical', 'social', 'wildlife', 'educational']
 };
@@ -132806,7 +132939,7 @@ export function buildContentContext(i: ContentLiveInputs): ContentContext {
       }));
     });
   }
-  return {
+  const ctx: ContentContext = {
     day: i.day, totalDays: i.totalDays, seed: i.seed, season: i.season, regions, priceRatio,
     crises: (i.crisisChains || []).map(c => ({ id: c.id, category: c.category, status: c.status, stageIndex: c.currentStageIndex, affectedRegions: c.affectedRegions || [], v93: String(c.id).startsWith('v93c_') })),
     crisisEnabled: i.crisisEnabled, activeEventIds: (i.activeEvents || []).map(e => String(e?.id || '')),
@@ -132824,6 +132957,10 @@ export function buildContentContext(i: ContentLiveInputs): ContentContext {
     projects: i.projects || [],
     windows: (i.windows || []).filter(w => w.status === 'open' && (!w.observers || w.observers.includes(i.player.id) || w.observers.includes(i.playerKey))).map(w => ({ id: w.id, type: w.type, subject: w.subject, expiresTurn: w.expiresTurn, reason: w.reason }))
   };
+  const envInputs = buildEnvironmentalExposureInputsFromContent(ctx);
+  const environmental = computeNationalEnvironmentalExposure(envInputs);
+  applyEnvironmentalExposureHintsToContentRegions(ctx, environmental);
+  return { ...ctx, environmental };
 }
 
 /** Merge a day plan into the committed game state (reducer-safe, idempotent per id). */
@@ -136513,6 +136650,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'o111_a58', label: 'O111-A58 Environmental Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runO111Agent58EnvironmentalSystemsSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
