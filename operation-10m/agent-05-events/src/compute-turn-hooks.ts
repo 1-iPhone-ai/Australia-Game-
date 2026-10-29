@@ -24,6 +24,7 @@ import { evaluateComputeTurnAssemblyHandoffCoordination } from './compute-turn-a
 import { evaluateComputeTurnChunkAssemblySealCoordination } from './compute-turn-chunk-assembly-seal-coordinator.ts';
 import { evaluateComputeTurnModuleManifestAnchorCoordination } from './compute-turn-module-manifest-anchor-coordinator.ts';
 import { evaluateComputeTurnInlineAssemblyLockCoordination } from './compute-turn-inline-assembly-lock-coordinator.ts';
+import { evaluateComputeTurnPostCrisisSlotCommitCoordination } from './compute-turn-post-crisis-slot-commit-coordinator.ts';
 import type {
   Op10mChainDescriptor,
   Op10mComputeTurnStage,
@@ -234,6 +235,15 @@ export function executeOp10mNarrativeComputeTurnHook(
   simulation = lockPass.simulation;
   narrative = lockPass.narrative;
   log.push(...lockPass.log);
+
+  const slotCommitPass = evaluateComputeTurnPostCrisisSlotCommitCoordination(
+    simulation,
+    narrative,
+    params.day
+  );
+  simulation = slotCommitPass.simulation;
+  narrative = slotCommitPass.narrative;
+  log.push(...slotCommitPass.log);
 
   const postSettle = settleOp10mComputeTurnDriftAfterReconcile(simulation, narrative);
   simulation = postSettle.simulation;

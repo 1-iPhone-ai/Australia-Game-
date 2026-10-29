@@ -52,6 +52,10 @@ import {
   OP10M_AGENT25_SLOT_READY_FLAG,
   OP10M_INLINE_ASSEMBLY_LOCK_FLAG,
 } from './compute-turn-inline-assembly-lock-coordinator.ts';
+import {
+  OP10M_CHUNK_MANIFEST_SEALED_FLAG,
+  OP10M_POST_CRISIS_SLOT_COMMIT_FLAG,
+} from './compute-turn-post-crisis-slot-commit-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -332,6 +336,16 @@ export function evaluateRequirements(
       case 'agent25_slot_ready':
         if (!sim.flags[OP10M_AGENT25_SLOT_READY_FLAG]) {
           return { ok: false, reason: 'agent25 slot not ready' };
+        }
+        break;
+      case 'post_crisis_slot_commit':
+        if (!sim.flags[OP10M_POST_CRISIS_SLOT_COMMIT_FLAG]) {
+          return { ok: false, reason: 'post-crisis slot not committed' };
+        }
+        break;
+      case 'chunk_manifest_sealed':
+        if (!sim.flags[OP10M_CHUNK_MANIFEST_SEALED_FLAG]) {
+          return { ok: false, reason: 'chunk manifest not sealed' };
         }
         break;
       default:

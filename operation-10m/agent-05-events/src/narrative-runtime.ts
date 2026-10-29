@@ -93,6 +93,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       chunkInlineReadyPasses: 0,
       inlineAssemblyLocks: 0,
       agent25SlotReadyPasses: 0,
+      postCrisisSlotCommits: 0,
+      chunkManifestSealedPasses: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -172,6 +174,8 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.chunkInlineReadyPasses = Math.max(0, Number(t.chunkInlineReadyPasses) || 0);
     base.telemetry.inlineAssemblyLocks = Math.max(0, Number(t.inlineAssemblyLocks) || 0);
     base.telemetry.agent25SlotReadyPasses = Math.max(0, Number(t.agent25SlotReadyPasses) || 0);
+    base.telemetry.postCrisisSlotCommits = Math.max(0, Number(t.postCrisisSlotCommits) || 0);
+    base.telemetry.chunkManifestSealedPasses = Math.max(0, Number(t.chunkManifestSealedPasses) || 0);
   }
 
   if (r.turnCompute) {

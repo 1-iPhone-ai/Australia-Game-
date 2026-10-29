@@ -1,7 +1,7 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.13.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.14.0';
 export const OP10M_TURN_COMPUTE_DIGEST_FLAG = 'op10m_turn_compute_digest';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
@@ -305,6 +305,14 @@ export interface Op10mTriggerRequireAgent25SlotReady {
   k: 'agent25_slot_ready';
 }
 
+export interface Op10mTriggerRequirePostCrisisSlotCommit {
+  k: 'post_crisis_slot_commit';
+}
+
+export interface Op10mTriggerRequireChunkManifestSealed {
+  k: 'chunk_manifest_sealed';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -373,7 +381,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireModuleManifestAnchor
   | Op10mTriggerRequireChunkInlineReady
   | Op10mTriggerRequireInlineAssemblyLock
-  | Op10mTriggerRequireAgent25SlotReady;
+  | Op10mTriggerRequireAgent25SlotReady
+  | Op10mTriggerRequirePostCrisisSlotCommit
+  | Op10mTriggerRequireChunkManifestSealed;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -479,6 +489,8 @@ export interface Op10mNarrativeEngineState {
     chunkInlineReadyPasses: number;
     inlineAssemblyLocks: number;
     agent25SlotReadyPasses: number;
+    postCrisisSlotCommits: number;
+    chunkManifestSealedPasses: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;
