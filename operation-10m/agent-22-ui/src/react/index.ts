@@ -81,3 +81,7 @@ export { GuidedLearningPanelDayCoachStrip } from './GuidedLearningPanelDayCoachS
 export { CalmRecoveryStatusDayCoachStrip } from './CalmRecoveryStatusDayCoachStrip.js';
 export { PhaseShellAttentionDayCoachStrip } from './PhaseShellAttentionDayCoachStrip.js';
 export { ModalFocusTrapDayCoachStrip } from './ModalFocusTrapDayCoachStrip.js';
+export { ShowAllProgressiveSafetyDayCoachStrip } from './ShowAllProgressiveSafetyDayCoachStrip.js';
+export { LegacyNavAutoRememberDayCoachStrip } from './LegacyNavAutoRememberDayCoachStrip.js';
+export { FocusSessionPolicyDayCoachStrip } from './FocusSessionPolicyDayCoachStrip.js';
+export { CoachDismissalBackoffDayCoachStrip } from './CoachDismissalBackoffDayCoachStrip.js';

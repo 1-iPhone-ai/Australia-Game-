@@ -192,6 +192,18 @@ export function SimulationUiEvolutionBridge({
       {result.modalFocusTrapDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-modal-trap-day">{result.modalFocusTrapDayCoachCopy}</div>
       ) : null}
+      {result.showAllProgressiveSafetyDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-show-all-safety-day">{result.showAllProgressiveSafetyDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavAutoRememberDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-legacy-remember-day">{result.legacyNavAutoRememberDayCoachCopy}</div>
+      ) : null}
+      {result.focusSessionPolicyDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-focus-policy-day">{result.focusSessionPolicyDayCoachCopy}</div>
+      ) : null}
+      {result.coachDismissalBackoffDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-dismissal-backoff-day">{result.coachDismissalBackoffDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

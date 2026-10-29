@@ -85,6 +85,10 @@ import { buildGuidedLearningPanelDayCoach } from '../engine/guided-learning-pane
 import { buildCalmRecoveryStatusDayCoach } from '../engine/calm-recovery-status-day-coach.js';
 import { buildPhaseShellAttentionDayCoach } from '../engine/phase-shell-attention-day-coach.js';
 import { buildModalFocusTrapDayCoach } from '../engine/modal-focus-trap-day-coach.js';
+import { buildShowAllProgressiveSafetyDayCoach } from '../engine/show-all-progressive-safety-day-coach.js';
+import { buildLegacyNavAutoRememberDayCoach } from '../engine/legacy-nav-auto-remember-day-coach.js';
+import { buildFocusSessionPolicyDayCoach } from '../engine/focus-session-policy-day-coach.js';
+import { buildCoachDismissalBackoffDayCoach } from '../engine/coach-dismissal-backoff-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -178,6 +182,10 @@ export interface DayAdvanceUiEvolutionResult {
   calmRecoveryStatusDayCoachCopy: string | null;
   phaseShellAttentionDayCoachCopy: string | null;
   modalFocusTrapDayCoachCopy: string | null;
+  showAllProgressiveSafetyDayCoachCopy: string | null;
+  legacyNavAutoRememberDayCoachCopy: string | null;
+  focusSessionPolicyDayCoachCopy: string | null;
+  coachDismissalBackoffDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -623,6 +631,40 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const showAllProgressiveSafetyDayCoach =
+    context.phase != null
+      ? buildShowAllProgressiveSafetyDayCoach({
+          persisted: persistedAfterCalm,
+          phase: context.phase,
+          signals: nextSignals,
+          policy,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { overrideActive: false, riskyPhase: false, coachCopy: null };
+
+  const legacyNavAutoRememberDayCoach = buildLegacyNavAutoRememberDayCoach({
+    signals: nextSignals,
+    policy,
+    persisted: persistedAfterCalm,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const focusSessionPolicyDayCoach =
+    context.phase != null
+      ? buildFocusSessionPolicyDayCoach({
+          phase: context.phase,
+          signals: nextSignals,
+          policy,
+          focusSessionSnoozedUntilDay: persistedAfterCalm.focusSessionSnoozedUntilDay,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { focusSessionActive: false, coachCopy: null };
+
+  const coachDismissalBackoffDayCoach = buildCoachDismissalBackoffDayCoach({
+    persisted: persistedAfterCalm,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -717,6 +759,10 @@ export function tickEvolvingUiOnDayAdvance(
     calmRecoveryStatusDayCoachCopy: calmRecoveryStatusDayCoach.coachCopy,
     phaseShellAttentionDayCoachCopy,
     modalFocusTrapDayCoachCopy: modalFocusTrapDayCoach.coachCopy,
+    showAllProgressiveSafetyDayCoachCopy: showAllProgressiveSafetyDayCoach.coachCopy,
+    legacyNavAutoRememberDayCoachCopy: legacyNavAutoRememberDayCoach.coachCopy,
+    focusSessionPolicyDayCoachCopy: focusSessionPolicyDayCoach.coachCopy,
+    coachDismissalBackoffDayCoachCopy: coachDismissalBackoffDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

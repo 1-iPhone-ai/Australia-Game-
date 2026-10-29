@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: f4f58563a2b698fc
+// content-sha256-prefix: 055991b975806b25
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -923,6 +923,10 @@ export interface DayAdvanceUiEvolutionResult {
   calmRecoveryStatusDayCoachCopy: string | null;
   phaseShellAttentionDayCoachCopy: string | null;
   modalFocusTrapDayCoachCopy: string | null;
+  showAllProgressiveSafetyDayCoachCopy: string | null;
+  legacyNavAutoRememberDayCoachCopy: string | null;
+  focusSessionPolicyDayCoachCopy: string | null;
+  coachDismissalBackoffDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1368,6 +1372,40 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const showAllProgressiveSafetyDayCoach =
+    context.phase != null
+      ? buildShowAllProgressiveSafetyDayCoach({
+          persisted: persistedAfterCalm,
+          phase: context.phase,
+          signals: nextSignals,
+          policy,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { overrideActive: false, riskyPhase: false, coachCopy: null };
+
+  const legacyNavAutoRememberDayCoach = buildLegacyNavAutoRememberDayCoach({
+    signals: nextSignals,
+    policy,
+    persisted: persistedAfterCalm,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const focusSessionPolicyDayCoach =
+    context.phase != null
+      ? buildFocusSessionPolicyDayCoach({
+          phase: context.phase,
+          signals: nextSignals,
+          policy,
+          focusSessionSnoozedUntilDay: persistedAfterCalm.focusSessionSnoozedUntilDay,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { focusSessionActive: false, coachCopy: null };
+
+  const coachDismissalBackoffDayCoach = buildCoachDismissalBackoffDayCoach({
+    persisted: persistedAfterCalm,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1462,6 +1500,10 @@ export function tickEvolvingUiOnDayAdvance(
     calmRecoveryStatusDayCoachCopy: calmRecoveryStatusDayCoach.coachCopy,
     phaseShellAttentionDayCoachCopy,
     modalFocusTrapDayCoachCopy: modalFocusTrapDayCoach.coachCopy,
+    showAllProgressiveSafetyDayCoachCopy: showAllProgressiveSafetyDayCoach.coachCopy,
+    legacyNavAutoRememberDayCoachCopy: legacyNavAutoRememberDayCoach.coachCopy,
+    focusSessionPolicyDayCoachCopy: focusSessionPolicyDayCoach.coachCopy,
+    coachDismissalBackoffDayCoachCopy: coachDismissalBackoffDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -5776,6 +5818,298 @@ export function buildModalFocusTrapDayCoach(input: {
   const base = modalFocusTrapCoachCopy(input.openModalId ?? null);
   const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
   return { trapActive, coachCopy };
+}
+
+// --- source: engine/show-all-progressive-safety-day-coach.ts ---
+export interface ShowAllProgressiveSafetyDayCoach {
+  overrideActive: boolean;
+  riskyPhase: boolean;
+  coachCopy: string | null;
+}
+
+export function buildShowAllProgressiveSafetyDayCoach(input: {
+  persisted: EvolvingUiPersistedState;
+  phase: V94StandardizedGamePhase;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  nextGameDay: number;
+}): ShowAllProgressiveSafetyDayCoach {
+  const assessment = evaluateShowAllOverrideSafety({
+    persisted: input.persisted,
+    phase: input.phase,
+    signals: input.signals,
+    policy: input.policy,
+  });
+  const coachCopy = assessment.coachCopy ? `Day ${input.nextGameDay}: ${assessment.coachCopy}` : null;
+  return {
+    overrideActive: assessment.overrideActive,
+    riskyPhase: assessment.riskyPhase,
+    coachCopy,
+  };
+}
+
+// --- source: engine/legacy-nav-auto-remember-day-coach.ts ---
+export interface LegacyNavAutoRememberDayCoach {
+  pendingRememberCount: number;
+  coachCopy: string | null;
+}
+
+export function buildLegacyNavAutoRememberDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  persisted: EvolvingUiPersistedState;
+  nextGameDay: number;
+}): LegacyNavAutoRememberDayCoach {
+  const plan = buildLegacyNavAutoRememberPlan(input.signals, input.policy, input.persisted);
+  const coachCopy = plan.coachCopy ? `Day ${input.nextGameDay}: ${plan.coachCopy}` : null;
+  return {
+    pendingRememberCount: plan.panelIdsToRemember.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/focus-session-policy-day-coach.ts ---
+export interface FocusSessionPolicyDayCoach {
+  focusSessionActive: boolean;
+  coachCopy: string | null;
+}
+
+export function buildFocusSessionPolicyDayCoach(input: {
+  phase: V94StandardizedGamePhase;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  focusSessionSnoozedUntilDay?: number;
+  nextGameDay: number;
+}): FocusSessionPolicyDayCoach {
+  const ctx = {
+    phase: input.phase,
+    signals: input.signals,
+    policy: input.policy,
+    focusSessionSnoozedUntilDay: input.focusSessionSnoozedUntilDay,
+  };
+  const focusSessionActive = shouldActivateFocusSession(ctx);
+  const base = focusSessionCoachCopy(ctx);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return { focusSessionActive, coachCopy };
+}
+
+// --- source: engine/coach-dismissal-backoff-day-coach.ts ---
+export interface CoachDismissalBackoffDayCoach {
+  quietActive: boolean;
+  dismissalStreak: number;
+  coachCopy: string | null;
+}
+
+export function buildCoachDismissalBackoffDayCoach(input: {
+  persisted: EvolvingUiPersistedState;
+  nextGameDay: number;
+}): CoachDismissalBackoffDayCoach {
+  const quietActive = isCoachDismissalQuiet(input.persisted, input.nextGameDay);
+  const quietUntil = input.persisted.coachDismissalQuietUntilDay;
+  let coachCopy: string | null = null;
+  if (quietActive && quietUntil != null) {
+    const base = coachDismissalQuietCopy(quietUntil, input.nextGameDay);
+    coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  }
+  return {
+    quietActive,
+    dismissalStreak: input.persisted.coachDismissalStreak ?? 0,
+    coachCopy,
+  };
+}
+
+// --- source: engine/round27-self-tests.ts ---
+export function runAgent22Round27SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r27_show_all_safety',
+    'show-all progressive safety day coach when override on risky phase',
+    (() => {
+      const coach = buildShowAllProgressiveSafetyDayCoach({
+        persisted: { ...createDefaultEvolvingUiPersistedState(), showAllPanelsOverride: true },
+        phase: 'save_load',
+        signals: { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 3,
+      });
+      return coach.overrideActive && Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r27_legacy_remember',
+    'legacy nav auto remember day coach shape',
+    (() => {
+      const coach = buildLegacyNavAutoRememberDayCoach({
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        persisted: createDefaultEvolvingUiPersistedState(),
+        nextGameDay: 2,
+      });
+      return coach.pendingRememberCount >= 0 && (coach.coachCopy === null || coach.coachCopy.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r27_focus_policy',
+    'focus session policy day coach on early human_turn',
+    (() => {
+      const coach = buildFocusSessionPolicyDayCoach({
+        phase: 'human_turn',
+        signals: { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 3,
+      });
+      return (coach.coachCopy === null || coach.coachCopy.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r27_dismissal_backoff',
+    'coach dismissal backoff day coach when quiet',
+    (() => {
+      const coach = buildCoachDismissalBackoffDayCoach({
+        persisted: {
+          ...createDefaultEvolvingUiPersistedState(),
+          coachDismissalStreak: 2,
+          coachDismissalQuietUntilDay: 8,
+        },
+        nextGameDay: 5,
+      });
+      return coach.quietActive && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r27_dismissal_clear',
+    'coach dismissal backoff day coach null when not quiet',
+    (() => {
+      const coach = buildCoachDismissalBackoffDayCoach({
+        persisted: createDefaultEvolvingUiPersistedState(),
+        nextGameDay: 4,
+      });
+      return !coach.quietActive && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r27_tick_show_all_field',
+    'day advance exposes show-all progressive safety day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { ...DEFAULT_EVOLVING_UI_ACCESS_POLICY, showAllPanelsOverride: true },
+        { ...createDefaultEvolvingUiPersistedState(), showAllPanelsOverride: true },
+        { phase: 'save_load' }
+      );
+      return typeof r.showAllProgressiveSafetyDayCoachCopy === 'string' || r.showAllProgressiveSafetyDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r27_tick_legacy_remember_field',
+    'day advance exposes legacy auto remember day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'simple' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.legacyNavAutoRememberDayCoachCopy === 'string' || r.legacyNavAutoRememberDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r27_tick_focus_policy_field',
+    'day advance exposes focus session policy day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.focusSessionPolicyDayCoachCopy === 'string' || r.focusSessionPolicyDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r27_tick_dismissal_field',
+    'day advance exposes coach dismissal backoff day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 6, turnCount: 6, interfaceLevel: 'guided' },
+        { gameDay: 7, turnCount: 7, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        {
+          ...createDefaultEvolvingUiPersistedState(),
+          coachDismissalQuietUntilDay: 10,
+          coachDismissalStreak: 1,
+        },
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.coachDismissalBackoffDayCoachCopy?.includes('Day 7'));
+    })()
+  );
+
+  check(
+    'r27_tick_show_all_active',
+    'show-all safety day coach on save_load with override',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 8, turnCount: 8, interfaceLevel: 'guided' },
+        { gameDay: 9, turnCount: 9, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        { ...createDefaultEvolvingUiPersistedState(), showAllPanelsOverride: true },
+        { phase: 'save_load' }
+      );
+      return Boolean(r.showAllProgressiveSafetyDayCoachCopy?.includes('Day 9'));
+    })()
+  );
+
+  check(
+    'r27_focus_policy_active',
+    'focus session policy coach when session active',
+    (() => {
+      const coach = buildFocusSessionPolicyDayCoach({
+        phase: 'human_turn',
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 2,
+      });
+      return coach.focusSessionActive && Boolean(coach.coachCopy?.includes('Focus session'));
+    })()
+  );
+
+  check(
+    'r27_show_all_inactive',
+    'show-all progressive safety null without override',
+    (() => {
+      const coach = buildShowAllProgressiveSafetyDayCoach({
+        persisted: createDefaultEvolvingUiPersistedState(),
+        phase: 'human_turn',
+        signals: { gameDay: 5, turnCount: 5, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 5,
+      });
+      return !coach.overrideActive && coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round26-self-tests.ts ---
@@ -10778,6 +11112,18 @@ export function SimulationUiEvolutionBridge({
       {result.modalFocusTrapDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-modal-trap-day">{result.modalFocusTrapDayCoachCopy}</div>
       ) : null}
+      {result.showAllProgressiveSafetyDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-show-all-safety-day">{result.showAllProgressiveSafetyDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavAutoRememberDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-legacy-remember-day">{result.legacyNavAutoRememberDayCoachCopy}</div>
+      ) : null}
+      {result.focusSessionPolicyDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-focus-policy-day">{result.focusSessionPolicyDayCoachCopy}</div>
+      ) : null}
+      {result.coachDismissalBackoffDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-dismissal-backoff-day">{result.coachDismissalBackoffDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -12828,7 +13174,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.26.0';
+export const AGENT_22_MODULE_VERSION = '1.27.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -12979,6 +13325,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round27 = runAgent22Round27SelfTests();
+  for (const r of round27.results) {
+    check(`agent22_round27_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round26 = runAgent22Round26SelfTests();
