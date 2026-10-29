@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: 847115580c673b1a
+// content-sha256-prefix: 1ba9e403eee0ecca
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -271,6 +271,8 @@ export interface TurnStrategicBriefing {
   coalitionInstitutionalPermanenceStreakDays: number;
   generationalCoalitionContinuity: boolean;
   coalitionGenerationalContinuityStreakDays: number;
+  civilizationalCoalitionEndurance: boolean;
+  coalitionCivilizationalEnduranceStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;
@@ -355,6 +357,8 @@ export interface StrategicActionDefinition {
   minCoalitionInstitutionalPermanenceStreakDays?: number;
   /** Action requires generational continuity streak after institutional permanence. */
   minCoalitionGenerationalContinuityStreakDays?: number;
+  /** Action requires civilizational endurance streak after generational continuity. */
+  minCoalitionCivilizationalEnduranceStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -405,7 +409,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_stewardship_streak'; minDays: number }
   | { kind: 'min_coalition_anchored_governance_streak'; minDays: number }
   | { kind: 'min_coalition_institutional_permanence_streak'; minDays: number }
-  | { kind: 'min_coalition_generational_continuity_streak'; minDays: number };
+  | { kind: 'min_coalition_generational_continuity_streak'; minDays: number }
+  | { kind: 'min_coalition_civilizational_endurance_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -469,6 +474,8 @@ export interface StrategicGameplayState {
   coalitionInstitutionalPermanenceStreakDays?: number;
   /** Days institutional permanence held generational continuity eligibility. */
   coalitionGenerationalContinuityStreakDays?: number;
+  /** Days generational continuity held civilizational endurance eligibility. */
+  coalitionCivilizationalEnduranceStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
@@ -1058,6 +1065,16 @@ export function generationalContinuityRankingBonus(
   return 2;
 }
 
+export function civilizationalEnduranceRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionCivilizationalEnduranceStreakDays === undefined) return 0;
+  const streak = state.coalitionCivilizationalEnduranceStreakDays ?? 0;
+  if (streak >= action.minCoalitionCivilizationalEnduranceStreakDays) return 9;
+  return 2;
+}
+
 // --- src/engine/mandate-idle-drift.ts ---
 
 const IDLE_GRACE_DAYS = 3;
@@ -1631,6 +1648,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionInstitutionalPermanenceStreakDays: number;
   generationalCoalitionContinuity: boolean;
   coalitionGenerationalContinuityStreakDays: number;
+  civilizationalCoalitionEndurance: boolean;
+  coalitionCivilizationalEnduranceStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -1655,6 +1674,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionInstitutionalPermanenceStreakDays: state.coalitionInstitutionalPermanenceStreakDays ?? 0,
     generationalCoalitionContinuity: isGenerationalCoalitionContinuity(state),
     coalitionGenerationalContinuityStreakDays: state.coalitionGenerationalContinuityStreakDays ?? 0,
+    civilizationalCoalitionEndurance: isCivilizationalCoalitionEndurance(state),
+    coalitionCivilizationalEnduranceStreakDays: state.coalitionCivilizationalEnduranceStreakDays ?? 0,
   };
 }
 
@@ -1679,6 +1700,8 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionInstitutionalPermanenceStreakDays: raw?.coalitionInstitutionalPermanenceStreakDays ?? 0,
     generationalCoalitionContinuity: raw?.generationalCoalitionContinuity ?? false,
     coalitionGenerationalContinuityStreakDays: raw?.coalitionGenerationalContinuityStreakDays ?? 0,
+    civilizationalCoalitionEndurance: raw?.civilizationalCoalitionEndurance ?? false,
+    coalitionCivilizationalEnduranceStreakDays: raw?.coalitionCivilizationalEnduranceStreakDays ?? 0,
   };
 }
 
@@ -1975,6 +1998,318 @@ export function coalitionAnchoredGovernanceStreakIssues(
   ];
 }
 
+// --- src/engine/coalition-institutional-permanence.ts ---
+
+export const INSTITUTIONAL_COALITION_PERMANENCE_THRESHOLD = 4;
+const PERMANENCE_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isInstitutionalCoalitionPermanence(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionInstitutionalPermanenceStreakDays ?? 0) >=
+    INSTITUTIONAL_COALITION_PERMANENCE_THRESHOLD
+  );
+}
+
+function institutionalPermanenceEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const anchored = state.coalitionAnchoredGovernanceStreakDays ?? 0;
+  return (
+    isAnchoredCoalitionGovernance(state) ||
+    anchored >= ANCHORED_COALITION_GOVERNANCE_THRESHOLD
+  );
+}
+
+/** Institutional permanence streak after anchored governance is sustained. */
+export function advanceCoalitionInstitutionalPermanenceStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!institutionalPermanenceEligible(state)) {
+    if ((state.coalitionInstitutionalPermanenceStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionInstitutionalPermanenceStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionInstitutionalPermanenceStreakDays:
+      (state.coalitionInstitutionalPermanenceStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionInstitutionalPermanenceStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionInstitutionalPermanenceStreakDays: 0 };
+}
+
+export function applyInstitutionalPermanenceMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isInstitutionalCoalitionPermanence(state)) return state;
+
+  const bonusTotal = daysAdvanced * PERMANENCE_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-institutional-permanence-gates.ts ---
+
+export function coalitionInstitutionalPermanenceStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionInstitutionalPermanenceStreakDays === undefined) return [];
+
+  const streak = state.coalitionInstitutionalPermanenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionInstitutionalPermanenceStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_INSTITUTIONAL_PERMANENCE_STREAK_TOO_SHORT',
+      message: `Institutional permanence streak ${streak} below required ${action.minCoalitionInstitutionalPermanenceStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_institutional_permanence_streak',
+        minDays: action.minCoalitionInstitutionalPermanenceStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-generational-continuity.ts ---
+
+export const GENERATIONAL_COALITION_CONTINUITY_THRESHOLD = 4;
+const GENERATIONAL_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isGenerationalCoalitionContinuity(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionGenerationalContinuityStreakDays ?? 0) >=
+    GENERATIONAL_COALITION_CONTINUITY_THRESHOLD
+  );
+}
+
+function generationalContinuityEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const permanence = state.coalitionInstitutionalPermanenceStreakDays ?? 0;
+  return (
+    isInstitutionalCoalitionPermanence(state) ||
+    permanence >= INSTITUTIONAL_COALITION_PERMANENCE_THRESHOLD
+  );
+}
+
+/** Generational continuity streak after institutional permanence is sustained. */
+export function advanceCoalitionGenerationalContinuityStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!generationalContinuityEligible(state)) {
+    if ((state.coalitionGenerationalContinuityStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionGenerationalContinuityStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionGenerationalContinuityStreakDays:
+      (state.coalitionGenerationalContinuityStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionGenerationalContinuityStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionGenerationalContinuityStreakDays: 0 };
+}
+
+export function applyGenerationalContinuityMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isGenerationalCoalitionContinuity(state)) return state;
+
+  const bonusTotal = daysAdvanced * GENERATIONAL_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-generational-continuity-gates.ts ---
+
+export function coalitionGenerationalContinuityStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionGenerationalContinuityStreakDays === undefined) return [];
+
+  const streak = state.coalitionGenerationalContinuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionGenerationalContinuityStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_GENERATIONAL_CONTINUITY_STREAK_TOO_SHORT',
+      message: `Generational continuity streak ${streak} below required ${action.minCoalitionGenerationalContinuityStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_generational_continuity_streak',
+        minDays: action.minCoalitionGenerationalContinuityStreakDays,
+      },
+    },
+  ];
+}
+
+// --- src/engine/coalition-civilizational-endurance.ts ---
+
+export const CIVILIZATIONAL_COALITION_ENDURANCE_THRESHOLD = 4;
+const CIVILIZATIONAL_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isCivilizationalCoalitionEndurance(state: StrategicGameplayState): boolean {
+  return (
+    (state.coalitionCivilizationalEnduranceStreakDays ?? 0) >=
+    CIVILIZATIONAL_COALITION_ENDURANCE_THRESHOLD
+  );
+}
+
+function civilizationalEnduranceEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const generational = state.coalitionGenerationalContinuityStreakDays ?? 0;
+  return (
+    isGenerationalCoalitionContinuity(state) ||
+    generational >= GENERATIONAL_COALITION_CONTINUITY_THRESHOLD
+  );
+}
+
+/** Civilizational endurance streak after generational continuity is sustained. */
+export function advanceCoalitionCivilizationalEnduranceStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!civilizationalEnduranceEligible(state)) {
+    if ((state.coalitionCivilizationalEnduranceStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionCivilizationalEnduranceStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionCivilizationalEnduranceStreakDays:
+      (state.coalitionCivilizationalEnduranceStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionCivilizationalEnduranceStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionCivilizationalEnduranceStreakDays: 0 };
+}
+
+export function applyCivilizationalEnduranceMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isCivilizationalCoalitionEndurance(state)) return state;
+
+  const bonusTotal = daysAdvanced * CIVILIZATIONAL_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-civilizational-endurance-gates.ts ---
+
+export function coalitionCivilizationalEnduranceStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionCivilizationalEnduranceStreakDays === undefined) return [];
+
+  const streak = state.coalitionCivilizationalEnduranceStreakDays ?? 0;
+  if (streak >= action.minCoalitionCivilizationalEnduranceStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_CIVILIZATIONAL_ENDURANCE_STREAK_TOO_SHORT',
+      message: `Civilizational endurance streak ${streak} below required ${action.minCoalitionCivilizationalEnduranceStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_civilizational_endurance_streak',
+        minDays: action.minCoalitionCivilizationalEnduranceStreakDays,
+      },
+    },
+  ];
+}
+
 // --- src/engine/coalition-gates.ts ---
 
 export function coalitionBalanceIssues(
@@ -2131,6 +2466,11 @@ export interface StrategicGameplaySaveV13 extends Omit<StrategicGameplaySaveV12,
   coalitionGenerationalContinuityStreakDays: number;
 }
 
+export interface StrategicGameplaySaveV14 extends Omit<StrategicGameplaySaveV13, 'version'> {
+  version: 14;
+  coalitionCivilizationalEnduranceStreakDays: number;
+}
+
 export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV1
   | StrategicGameplaySaveV2
@@ -2144,13 +2484,14 @@ export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV10
   | StrategicGameplaySaveV11
   | StrategicGameplaySaveV12
-  | StrategicGameplaySaveV13;
+  | StrategicGameplaySaveV13
+  | StrategicGameplaySaveV14;
 
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV13 {
+): StrategicGameplaySaveV14 {
   return {
-    version: 13,
+    version: 14,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -2174,6 +2515,7 @@ export function serializeStrategicGameplayState(
     coalitionAnchoredGovernanceStreakDays: state.coalitionAnchoredGovernanceStreakDays ?? 0,
     coalitionInstitutionalPermanenceStreakDays: state.coalitionInstitutionalPermanenceStreakDays ?? 0,
     coalitionGenerationalContinuityStreakDays: state.coalitionGenerationalContinuityStreakDays ?? 0,
+    coalitionCivilizationalEnduranceStreakDays: state.coalitionCivilizationalEnduranceStreakDays ?? 0,
   };
 }
 
@@ -2203,6 +2545,7 @@ export function deserializeStrategicGameplayState(
       coalitionAnchoredGovernanceStreakDays: 0,
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
+      coalitionCivilizationalEnduranceStreakDays: 0,
     };
   }
   if (save.version === 2) {
@@ -2228,6 +2571,7 @@ export function deserializeStrategicGameplayState(
       coalitionAnchoredGovernanceStreakDays: 0,
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
+      coalitionCivilizationalEnduranceStreakDays: 0,
     };
   }
   if (save.version === 3) {
@@ -2253,6 +2597,7 @@ export function deserializeStrategicGameplayState(
       coalitionAnchoredGovernanceStreakDays: 0,
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
+      coalitionCivilizationalEnduranceStreakDays: 0,
     };
   }
   if (save.version === 4) {
@@ -2278,6 +2623,7 @@ export function deserializeStrategicGameplayState(
       coalitionAnchoredGovernanceStreakDays: 0,
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
+      coalitionCivilizationalEnduranceStreakDays: 0,
     };
   }
   if (save.version === 5) {
@@ -2303,6 +2649,7 @@ export function deserializeStrategicGameplayState(
       coalitionAnchoredGovernanceStreakDays: 0,
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
+      coalitionCivilizationalEnduranceStreakDays: 0,
     };
   }
   if (save.version === 6) {
@@ -2328,6 +2675,7 @@ export function deserializeStrategicGameplayState(
       coalitionAnchoredGovernanceStreakDays: 0,
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
+      coalitionCivilizationalEnduranceStreakDays: 0,
     };
   }
   if (save.version === 7) {
@@ -2353,6 +2701,7 @@ export function deserializeStrategicGameplayState(
       coalitionAnchoredGovernanceStreakDays: 0,
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
+      coalitionCivilizationalEnduranceStreakDays: 0,
     };
   }
   if (save.version === 8) {
@@ -2378,6 +2727,7 @@ export function deserializeStrategicGameplayState(
       coalitionAnchoredGovernanceStreakDays: 0,
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
+      coalitionCivilizationalEnduranceStreakDays: 0,
     };
   }
   if (save.version === 9) {
@@ -2403,6 +2753,7 @@ export function deserializeStrategicGameplayState(
       coalitionAnchoredGovernanceStreakDays: 0,
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
+      coalitionCivilizationalEnduranceStreakDays: 0,
     };
   }
   if (save.version === 10) {
@@ -2428,6 +2779,7 @@ export function deserializeStrategicGameplayState(
       coalitionAnchoredGovernanceStreakDays: 0,
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
+      coalitionCivilizationalEnduranceStreakDays: 0,
     };
   }
   if (save.version === 11) {
@@ -2453,6 +2805,7 @@ export function deserializeStrategicGameplayState(
       coalitionAnchoredGovernanceStreakDays: save.coalitionAnchoredGovernanceStreakDays,
       coalitionInstitutionalPermanenceStreakDays: 0,
       coalitionGenerationalContinuityStreakDays: 0,
+      coalitionCivilizationalEnduranceStreakDays: 0,
     };
   }
   if (save.version === 12) {
@@ -2478,9 +2831,36 @@ export function deserializeStrategicGameplayState(
       coalitionAnchoredGovernanceStreakDays: save.coalitionAnchoredGovernanceStreakDays,
       coalitionInstitutionalPermanenceStreakDays: save.coalitionInstitutionalPermanenceStreakDays,
       coalitionGenerationalContinuityStreakDays: 0,
+      coalitionCivilizationalEnduranceStreakDays: 0,
     };
   }
-  if (save.version !== 13) {
+  if (save.version === 13) {
+    return {
+      day: save.day,
+      completedActionIds: [...save.completedActionIds],
+      pendingDelayed: save.pendingDelayed.slice(),
+      journal: save.journal.slice(),
+      priorityMomentum: { ...save.priorityMomentum },
+      actionCooldowns: { ...save.actionCooldowns },
+      activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+      mandateProgress: { ...save.mandateProgress },
+      stakeholderSentiment: { ...save.stakeholderSentiment },
+      lastAlignedActionDay: save.lastAlignedActionDay,
+      coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
+      coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
+      coalitionVolatilityEvents: save.coalitionVolatilityEvents,
+      coalitionStabilizationStreakDays: save.coalitionStabilizationStreakDays,
+      coalitionLockInStreakDays: save.coalitionLockInStreakDays,
+      crossModuleSyncStreakDays: save.crossModuleSyncStreakDays,
+      integratedCoalitionMaturityStreakDays: save.integratedCoalitionMaturityStreakDays,
+      coalitionStewardshipStreakDays: save.coalitionStewardshipStreakDays,
+      coalitionAnchoredGovernanceStreakDays: save.coalitionAnchoredGovernanceStreakDays,
+      coalitionInstitutionalPermanenceStreakDays: save.coalitionInstitutionalPermanenceStreakDays,
+      coalitionGenerationalContinuityStreakDays: save.coalitionGenerationalContinuityStreakDays,
+      coalitionCivilizationalEnduranceStreakDays: 0,
+    };
+  }
+  if (save.version !== 14) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   return {
@@ -2505,6 +2885,7 @@ export function deserializeStrategicGameplayState(
     coalitionAnchoredGovernanceStreakDays: save.coalitionAnchoredGovernanceStreakDays,
     coalitionInstitutionalPermanenceStreakDays: save.coalitionInstitutionalPermanenceStreakDays,
     coalitionGenerationalContinuityStreakDays: save.coalitionGenerationalContinuityStreakDays,
+    coalitionCivilizationalEnduranceStreakDays: save.coalitionCivilizationalEnduranceStreakDays,
   };
 }
 
@@ -2857,6 +3238,7 @@ export function validateAction(
     issues.push(...coalitionAnchoredGovernanceStreakIssues(action, state));
     issues.push(...coalitionInstitutionalPermanenceStreakIssues(action, state));
     issues.push(...coalitionGenerationalContinuityStreakIssues(action, state));
+    issues.push(...coalitionCivilizationalEnduranceStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({
@@ -2975,7 +3357,8 @@ export function rankStrategicActions(
         stewardshipRankingBonus(state, action) +
         anchoredGovernanceRankingBonus(state, action) +
         institutionalPermanenceRankingBonus(state, action) +
-        generationalContinuityRankingBonus(state, action),
+        generationalContinuityRankingBonus(state, action) +
+        civilizationalEnduranceRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
@@ -3032,6 +3415,8 @@ export function buildTurnStrategicBriefing(
     coalitionInstitutionalPermanenceStreakDays: state.coalitionInstitutionalPermanenceStreakDays ?? 0,
     generationalCoalitionContinuity: isGenerationalCoalitionContinuity(state),
     coalitionGenerationalContinuityStreakDays: state.coalitionGenerationalContinuityStreakDays ?? 0,
+    civilizationalCoalitionEndurance: isCivilizationalCoalitionEndurance(state),
+    coalitionCivilizationalEnduranceStreakDays: state.coalitionCivilizationalEnduranceStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,
@@ -3192,6 +3577,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyInstitutionalPermanenceMandateBonus(next, daysAdvanced);
   next = advanceCoalitionGenerationalContinuityStreak(next, daysAdvanced);
   next = applyGenerationalContinuityMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionCivilizationalEnduranceStreak(next, daysAdvanced);
+  next = applyCivilizationalEnduranceMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
@@ -3222,6 +3609,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionAnchoredGovernanceStreakDays: 0,
     coalitionInstitutionalPermanenceStreakDays: 0,
     coalitionGenerationalContinuityStreakDays: 0,
+    coalitionCivilizationalEnduranceStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -3418,6 +3806,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_intergenerational_trust_endowment') {
     nextState = resetCoalitionGenerationalContinuityStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_civilizational_endurance_charter') {
+    nextState = resetCoalitionCivilizationalEnduranceStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_civilizational_heritage_covenant') {
+    nextState = resetCoalitionCivilizationalEnduranceStreak(nextState);
   }
 
   contracts.ui.pushToast({
@@ -4332,6 +4726,51 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
     },
     delayedTradeOffs: [],
   },
+  'sga_coalition_civilizational_endurance_charter': {
+    id: 'sga_coalition_civilizational_endurance_charter',
+    title: 'Civilizational Coalition Endurance Charter',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 24_000,
+    treasuryCost: 84_000,
+    minApproval: 58,
+    alignedPriorities: ['economic_diversification', 'water_security'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'civilizational_endurance', 'charter'],
+    repeatable: false,
+    minCoalitionBalanceIndex: 79,
+    maxCoalitionVolatilityEvents: 0,
+    minCoalitionGenerationalContinuityStreakDays: 4,
+    minCoalitionCivilizationalEnduranceStreakDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -24_000, treasuryDelta: -84_000, netWorthMultiplier: 1.009 },
+      government: { approvalDelta: 7, directiveSlotsDelta: 1, regulatoryBurdenDelta: -4 },
+      population: { publicStabilityDelta: 7, migrationDelta: 3 },
+    },
+    delayedTradeOffs: [],
+  },
+  'sga_coalition_civilizational_heritage_covenant': {
+    id: 'sga_coalition_civilizational_heritage_covenant',
+    title: 'Civilizational Coalition Heritage Covenant',
+    category: 'investment',
+    apCost: 1,
+    cashCost: 17_000,
+    treasuryCost: 62_000,
+    minApproval: 55,
+    alignedPriorities: ['technology_competitiveness', 'energy_resilience'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'civilizational', 'covenant'],
+    repeatable: true,
+    maxCoalitionVolatilityEvents: 0,
+    minCoalitionCivilizationalEnduranceStreakDays: 2,
+    cooldownDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -17_000, treasuryDelta: -62_000 },
+      government: { approvalDelta: 5 },
+      population: { publicStabilityDelta: 5, essentialAccessDelta: 3 },
+    },
+    delayedTradeOffs: [],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {
@@ -4868,7 +5307,7 @@ export function createMemoryStrategicContracts(
 
 export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
 
-export const AGENT_01_MODULE_VERSION = '2.5.0';
+export const AGENT_01_MODULE_VERSION = '2.6.0';
 
 
 
@@ -4890,7 +5329,7 @@ export function runOp10mAgent01StrategicGameplaySelfTests(): {
 
     name: 'strategic action catalog non-empty',
 
-    passed: listStrategicActions().length >= 32,
+    passed: listStrategicActions().length >= 34,
 
   });
 

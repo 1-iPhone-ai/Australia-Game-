@@ -128,3 +128,13 @@ export function generationalContinuityRankingBonus(
   if (streak >= action.minCoalitionGenerationalContinuityStreakDays) return 8;
   return 2;
 }
+
+export function civilizationalEnduranceRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionCivilizationalEnduranceStreakDays === undefined) return 0;
+  const streak = state.coalitionCivilizationalEnduranceStreakDays ?? 0;
+  if (streak >= action.minCoalitionCivilizationalEnduranceStreakDays) return 9;
+  return 2;
+}

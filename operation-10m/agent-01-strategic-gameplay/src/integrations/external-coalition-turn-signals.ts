@@ -10,6 +10,7 @@ import { isSustainedIntegratedCoalitionStewardship } from '../engine/coalition-s
 import { isAnchoredCoalitionGovernance } from '../engine/coalition-anchored-governance.ts';
 import { isInstitutionalCoalitionPermanence } from '../engine/coalition-institutional-permanence.ts';
 import { isGenerationalCoalitionContinuity } from '../engine/coalition-generational-continuity.ts';
+import { isCivilizationalCoalitionEndurance } from '../engine/coalition-civilizational-endurance.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -30,6 +31,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionInstitutionalPermanenceStreakDays: number;
   generationalCoalitionContinuity: boolean;
   coalitionGenerationalContinuityStreakDays: number;
+  civilizationalCoalitionEndurance: boolean;
+  coalitionCivilizationalEnduranceStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -54,6 +57,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionInstitutionalPermanenceStreakDays: state.coalitionInstitutionalPermanenceStreakDays ?? 0,
     generationalCoalitionContinuity: isGenerationalCoalitionContinuity(state),
     coalitionGenerationalContinuityStreakDays: state.coalitionGenerationalContinuityStreakDays ?? 0,
+    civilizationalCoalitionEndurance: isCivilizationalCoalitionEndurance(state),
+    coalitionCivilizationalEnduranceStreakDays: state.coalitionCivilizationalEnduranceStreakDays ?? 0,
   };
 }
 
@@ -78,5 +83,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionInstitutionalPermanenceStreakDays: raw?.coalitionInstitutionalPermanenceStreakDays ?? 0,
     generationalCoalitionContinuity: raw?.generationalCoalitionContinuity ?? false,
     coalitionGenerationalContinuityStreakDays: raw?.coalitionGenerationalContinuityStreakDays ?? 0,
+    civilizationalCoalitionEndurance: raw?.civilizationalCoalitionEndurance ?? false,
+    coalitionCivilizationalEnduranceStreakDays: raw?.coalitionCivilizationalEnduranceStreakDays ?? 0,
   };
 }

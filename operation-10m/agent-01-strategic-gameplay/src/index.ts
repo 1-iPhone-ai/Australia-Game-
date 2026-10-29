@@ -103,6 +103,7 @@ export {
   anchoredGovernanceRankingBonus,
   institutionalPermanenceRankingBonus,
   generationalContinuityRankingBonus,
+  civilizationalEnduranceRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -248,6 +249,16 @@ export {
   applyGenerationalContinuityMandateBonus,
 } from './engine/coalition-generational-continuity.ts';
 
+export { coalitionCivilizationalEnduranceStreakIssues } from './engine/coalition-civilizational-endurance-gates.ts';
+
+export {
+  CIVILIZATIONAL_COALITION_ENDURANCE_THRESHOLD,
+  advanceCoalitionCivilizationalEnduranceStreak,
+  resetCoalitionCivilizationalEnduranceStreak,
+  isCivilizationalCoalitionEndurance,
+  applyCivilizationalEnduranceMandateBonus,
+} from './engine/coalition-civilizational-endurance.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '2.5.0';
+export const AGENT_01_MODULE_VERSION = '2.6.0';

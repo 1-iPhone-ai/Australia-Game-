@@ -88,7 +88,7 @@ describe('scale wave round 6 — coalition crisis depth', () => {
       coalitionCrisisStreakDays: 3,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(13);
+    expect(save.version).toBe(14);
     expect(save.coalitionCrisisStreakDays).toBe(3);
   });
 });
