@@ -80773,14 +80773,23 @@ export function evaluateTurnCrisisChains(
     updatedChains.push(updatedChain);
   }
 
-  const updatedStability = updatePublicStability(
+  const stabilityWithCrisisMods = mergeCrisisStabilityModifiers(
     gameState.publicStabilityState || createDefaultPublicStabilityState(),
+    updatedChains,
+    currentTurn
+  );
+
+  const updatedStability = updatePublicStability(
+    stabilityWithCrisisMods,
     crisisState.activeNationalEvents || [],
     currentTurn
   );
 
+  const syncedEvents = syncNationalCrisisStageEvents(gameState.activeEvents || [], updatedChains);
+
   return {
     ...gameState,
+    activeEvents: syncedEvents,
     publicStabilityState: updatedStability,
     crisisChainState: {
       ...crisisState,
@@ -132252,6 +132261,141 @@ const expandCrisisResourcePriceForRegion = (resourcePrice: Record<string, number
   }
   return Object.keys(out).length ? out : undefined;
 };
+// SECTION 20F-A59 (O111 Agent 59): PRESET NATIONAL CRISIS STAGE EXECUTORS — map PRESET_CRISIS_CHAINS stageEffects into live mechanics.
+
+const PRESET_NATIONAL_CRISIS_ID_PREFIX = 'crisis_';
+const PRESET_CRISIS_STABILITY_MOD_PREFIX = 'o111_preset_crisis_stab_';
+
+export function isPresetNationalCrisisChain(chain: CrisisChain | null | undefined): boolean {
+  const id = String(chain?.id || '');
+  return id.startsWith(PRESET_NATIONAL_CRISIS_ID_PREFIX) && !id.startsWith('v93c_');
+}
+
+/** Fold active crisis-chain event modifiers (sabotage surcharges, investment lockout, fees). */
+export function foldNationalCrisisEventEconomyModifiers(activeEvents: any[] | undefined) {
+  let sabotageCostMultiplier = 1;
+  let transactionFeeMultiplier = 1;
+  let investmentLockout = false;
+  (activeEvents || []).forEach(ev => {
+    const eff = ev?.effect;
+    if (!eff) return;
+    if (typeof eff.sabotageCostMultiplier === 'number' && Number.isFinite(eff.sabotageCostMultiplier)) {
+      sabotageCostMultiplier *= eff.sabotageCostMultiplier;
+    }
+    if (typeof eff.transactionFeeMultiplier === 'number' && Number.isFinite(eff.transactionFeeMultiplier)) {
+      transactionFeeMultiplier *= eff.transactionFeeMultiplier;
+    }
+    if (eff.investmentLockout) investmentLockout = true;
+  });
+  return { sabotageCostMultiplier, transactionFeeMultiplier, investmentLockout };
+}
+
+/** Map legacy PRESET crisis stageEffects into the activeEvents effect shape canonical consumers read. */
+export function mergePresetCrisisStageEffects(stage: CrisisStage | undefined, chainRegions: string[]): Record<string, any> {
+  const effect: Record<string, any> = {};
+  const bumpResourcePrice = (res: string, mult: number) => {
+    effect.resourcePrice = effect.resourcePrice || {};
+    effect.resourcePrice[res] = (effect.resourcePrice[res] || 1) * mult;
+  };
+  (stage?.stageEffects || []).forEach(e => {
+    const regions = e.affectedRegions?.length ? e.affectedRegions : chainRegions;
+    const key = e.modifierKey;
+    const v = e.value;
+    if (key === 'priceMultiplier') {
+      regions.forEach(r => (REGIONAL_RESOURCES[r] || []).forEach(res => bumpResourcePrice(res, v)));
+    } else if (key === 'travelCostMultiplier' || key === 'tradeCostMultiplier') {
+      effect.travelCost = (effect.travelCost || 1) * v;
+    } else if (key === 'sabotageCostMultiplier') {
+      effect.sabotageCostMultiplier = (effect.sabotageCostMultiplier || 1) * v;
+    } else if (key === 'transactionFeeMultiplier') {
+      effect.transactionFeeMultiplier = (effect.transactionFeeMultiplier || 1) * v;
+    } else if (key === 'investmentLockout') {
+      effect.investmentLockout = true;
+      effect.investmentYieldMultiplier = 0;
+    } else if (key === 'interestRateIncrease') {
+      effect.interestRateIncrease = (effect.interestRateIncrease || 0) + v;
+    } else if (key === 'netWorthMultiplier') {
+      effect.netWorthMultiplier = (effect.netWorthMultiplier || 1) * v;
+    } else if (key === 'stabilityDeltaPerTurn') {
+      // Applied via publicStabilityState.modifiers (see mergeCrisisStabilityModifiers).
+    } else {
+      const [k, sub] = String(key).split(':');
+      if (k === 'resourcePrice' && sub) bumpResourcePrice(sub, v);
+      else if (k === 'travelCost') effect.travelCost = (effect.travelCost || 1) * v;
+      else if (k === 'investmentYield') effect.investmentYieldMultiplier = (effect.investmentYieldMultiplier || 1) * v;
+      else if (k === 'challengeBonus' && sub) {
+        effect.challengeBonus = effect.challengeBonus || {};
+        effect.challengeBonus[sub] = (effect.challengeBonus[sub] || 0) + v;
+      }
+    }
+  });
+  return effect;
+}
+
+export function mergeCrisisStabilityModifiers(
+  stability: PublicStabilityState,
+  chains: CrisisChain[],
+  turn: number
+): PublicStabilityState {
+  const baseMods = (stability.modifiers || []).filter(m => !String(m.id).startsWith(PRESET_CRISIS_STABILITY_MOD_PREFIX));
+  const fromChains: StabilityModifier[] = [];
+  (chains || []).filter(c => c && c.status === 'active' && isPresetNationalCrisisChain(c)).forEach(chain => {
+    const stage = chain.stages[chain.currentStageIndex];
+    if (!stage) return;
+    (stage.stageEffects || []).forEach(e => {
+      if (e.modifierKey !== 'stabilityDeltaPerTurn') return;
+      fromChains.push({
+        id: `${PRESET_CRISIS_STABILITY_MOD_PREFIX}${chain.id}_${stage.id}_${e.id}`,
+        source: chain.id,
+        description: e.description,
+        deltaPerTurn: e.value,
+        remainingTurns: Math.max(1, stage.remainingTurns),
+        isGlobal: true
+      });
+    });
+  });
+  return { ...stability, modifiers: [...baseMods, ...fromChains], lastUpdatedTurn: turn };
+}
+
+/** Keep one modifier event per affected region for each active PRESET crisis stage. */
+export function syncPresetCrisisEvents(activeEvents: any[], chains: CrisisChain[]): any[] {
+  const want: any[] = [];
+  (chains || []).filter(c => c && c.status === 'active' && isPresetNationalCrisisChain(c)).forEach(c => {
+    const stage = c.stages[c.currentStageIndex];
+    if (!stage) return;
+    const merged = mergePresetCrisisStageEffects(stage, c.affectedRegions || []);
+    (c.affectedRegions || ['NSW']).forEach((region, i) => {
+      const effect = { ...merged, ...(i > 0 && merged.resourcePrice ? { resourcePrice: undefined } : {}) };
+      if (!Object.keys(effect).filter(k => effect[k] !== undefined).length) return;
+      want.push({
+        id: `o111x_${c.id}_${region}`,
+        name: stage.title,
+        region,
+        duration: stage.durationTurns,
+        remainingDays: Math.max(1, stage.remainingTurns),
+        effect,
+        description: stage.description,
+        v93: { templateId: c.id, kind: 'crisis_chain', rarity: 'common', stageId: stage.id, preset: true }
+      });
+    });
+  });
+  const keep = (activeEvents || []).filter(e => !(e?.v93?.kind === 'crisis_chain' && e?.v93?.preset));
+  const prev = new Map((activeEvents || []).filter(e => e?.v93?.kind === 'crisis_chain' && e?.v93?.preset).map(e => [e.id, e]));
+  const merged = want.map(w => {
+    const p = prev.get(w.id);
+    return p && p.v93?.stageId === w.v93.stageId ? { ...w, remainingDays: w.remainingDays } : w;
+  });
+  const same = merged.length === prev.size && merged.every(m => {
+    const p: any = prev.get(m.id);
+    return p && p.v93?.stageId === m.v93.stageId && p.remainingDays === m.remainingDays;
+  });
+  return same ? activeEvents : [...keep, ...merged];
+}
+
+/** Content (v93c_) + PRESET (crisis_*) crisis stages → canonical activeEvents. */
+export function syncNationalCrisisStageEvents(activeEvents: any[], chains: CrisisChain[]): any[] {
+  return syncPresetCrisisEvents(syncContentCrisisEvents(activeEvents, chains), chains);
+}
 
 /** Executor for content crisis stage effects: the active stage becomes canonical activeEvents modifiers. */
 export function crisisStageEffect(stage: CrisisStage | undefined): { priced: any; regional: any; stability: StabilityModifier[] } {
@@ -133182,7 +133326,7 @@ export const CONTENT_EXECUTABLE = {
   objectiveTypes: ['deliver_resource', 'invest_capital', 'build_infrastructure', 'maintain_presence'],
   rewardKeys: ['money', 'regionalStandingBoost', 'devPoints'],
   eventEffectKeys: ['resourcePrice', 'travelCost', 'challengeBonus', 'investmentYieldMultiplier'],
-  crisisEffectKeys: ['resourcePrice', 'travelCost', 'challengeBonus', 'investmentYield'],
+  crisisEffectKeys: ['resourcePrice', 'travelCost', 'challengeBonus', 'investmentYield', 'priceMultiplier', 'travelCostMultiplier', 'tradeCostMultiplier', 'sabotageCostMultiplier', 'transactionFeeMultiplier', 'investmentLockout', 'interestRateIncrease', 'netWorthMultiplier', 'stabilityDeltaPerTurn'],
   infraBonusTypes: ['income_boost', 'standing_multiplier', 'trade_discount', 'travel_cost_reduction'],
   challengeTypes: ['physical', 'social', 'wildlife', 'educational']
 };
@@ -133673,7 +133817,7 @@ export function applyContentPlanToState(state: any, plan: ContentDayPlan): any {
   }
   let events: any[] = [...(state.activeEvents || [])];
   plan.newEvents.forEach(e => { if (!events.some(x => x.id === e.id)) events.push(e); });
-  events = syncContentCrisisEvents(events, chains);
+  events = syncNationalCrisisStageEvents(events, chains);
   out.activeEvents = events;
   const grid = state.infrastructureProjects?.infra_v93_national_grid;
   if (plan.state.flags.historic_infra && grid && grid.status === 'locked' && !grid.lockedReason) out.infrastructureProjects = { ...state.infrastructureProjects, infra_v93_national_grid: { ...grid, status: 'unlocked' } };
@@ -133904,6 +134048,41 @@ export const ContentReplayabilityInspector: React.FC<{ theme: any; st: MatchCont
 
 
 // ---- V9.3 self-tests ----------------------------------------------------------------------------------
+
+export function runO111NationalCrisisSelfTests(): V9SelfTestResult[] {
+  const out: V9SelfTestResult[] = [];
+  const check = (id: string, label: string, fn: () => boolean | string) => {
+    try {
+      const r = fn();
+      out.push({ id, label, pass: r === true, detail: r === true ? '' : String(r) });
+    } catch (e: any) {
+      out.push({ id, label, pass: false, detail: e?.message || String(e) });
+    }
+  };
+  check('o111_preset_crisis_events', 'PRESET crisis stageEffects become canonical activeEvents modifiers', () => {
+    const chain = JSON.parse(JSON.stringify(PRESET_CRISIS_CHAINS[0])) as CrisisChain;
+    chain.status = 'active';
+    chain.currentStageIndex = 0;
+    chain.activeStageId = chain.stages[0].id;
+    const ev = syncNationalCrisisStageEvents([], [chain]);
+    const vic = ev.find(e => e.region === 'VIC');
+    const wheat = vic?.effect?.resourcePrice?.Wheat;
+    return (vic && wheat === 1.5) || J({ ev: ev.map((e: any) => ({ id: e.id, effect: e.effect })) });
+  });
+  check('o111_preset_crisis_stability', 'PRESET stabilityDeltaPerTurn feeds public stability modifiers', () => {
+    const chain = JSON.parse(JSON.stringify(PRESET_CRISIS_CHAINS[0])) as CrisisChain;
+    chain.status = 'active';
+    chain.currentStageIndex = 2;
+    const stab = mergeCrisisStabilityModifiers(createDefaultPublicStabilityState(), [chain], 9);
+    const mod = stab.modifiers.find(m => m.id.includes('drought_stg_3'));
+    return (mod && mod.deltaPerTurn === -10) || J(stab.modifiers);
+  });
+  check('o111_preset_crisis_audit', 'Legacy PRESET stage effects are no longer flagged descriptive-only', () => {
+    const issues = auditLegacyContent().filter(i => i.id.startsWith('crisis_') && i.problem === 'effect_without_executor');
+    return issues.length === 0 || J(issues.slice(0, 3));
+  });
+  return out;
+}
 
 export function runV93ContentReplayabilitySelfTests(): V9SelfTestResult[] {
   const results: V9SelfTestResult[] = [];
@@ -138615,6 +138794,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'nav63', label: 'Intent Navigation (Agent 63)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runIntentNavigationSelfTests() },
   { id: 'v62', label: 'V9.4 Dynamic Evolutionary UI', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV62DynamicEvolutionaryUiSelfTests() },
   { id: 'o111_a64', label: 'O111 Agent 64 Strategic Dashboard', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111Agent64StrategicDashboardSelfTests() },
+  { id: 'o111_c59', label: 'O111 Agent 59 National Crisis', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runO111NationalCrisisSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -202106,6 +202286,9 @@ function dispatchGameSettingsChange(
     }
     const sabCost = Math.ceil(sabotage.cost * (typeof aggregateActiveEventEconomyModifiers === 'function' ? aggregateActiveEventEconomyModifiers(gameState.activeEvents, { national: true }).sabotageCost : 1));
     if (player.money < sabCost) {
+    const crisisEconomy = foldNationalCrisisEventEconomyModifiers(gameState.activeEvents);
+    const sabotageCost = Math.max(0, Math.round(sabotage.cost * crisisEconomy.sabotageCostMultiplier));
+    if (player.money < sabotageCost) {
       addNotification('Not enough money for sabotage.', 'error');
       return;
     }
@@ -202119,6 +202302,8 @@ function dispatchGameSettingsChange(
       if (drawGameplayRandom('Sabotage') > successChance) {
         dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabCost });
         commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotage.cost, success: false, turn: gameState.turnCounter, summary: `${player.name || 'Player'} attempted ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
+        dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotageCost });
+        commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotageCost, success: false, turn: gameState.turnCounter, summary: `${player.name || 'Player'} attempted ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
         addNotification(`Sabotage attempt failed! ${targetActor.name}'s regional standing resisted the attempt.`, 'warning', true);
         if (sabotageApCost > 0) {
           dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: sabotageApCost, actionId: 'sabotage' } });
@@ -202132,6 +202317,8 @@ function dispatchGameSettingsChange(
     }));
     dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabCost });
     commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabCost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} used ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
+    dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotageCost });
+    commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotageCost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} used ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
     addNotification(`Sabotage used: ${sabotage.name}.`, 'warning', true);
     addNotification(`🤖 ${targetActor.name} is affected by ${sabotage.name}.`, 'ai', false);
     if (sabotageApCost > 0) {
@@ -204856,6 +205043,10 @@ function dispatchGameSettingsChange(
     const actor = getActorState(actorId);
     const investment = REGIONAL_INVESTMENTS[regionCode];
     if (!actor || !investment || !gameSettings.investmentsEnabled) return false;
+    if (foldNationalCrisisEventEconomyModifiers(gameState.activeEvents).investmentLockout) {
+      if (actor.kind === 'human') addNotification('National crisis conditions have frozen new infrastructure investment.', 'warning', true);
+      return false;
+    }
     if (actor.kind === 'human' && dnPreActionRef.current?.({ actorId, actionType: 'invest', regionId: regionCode, amount: investment.cost }, () => investForActorRef.current?.(actorId, regionCode, options))) return false;
 
     let success = false;
@@ -217496,6 +217687,8 @@ function dispatchGameSettingsChange(
       activeEvents: syncContentCrisisEvents(state.activeEvents || [], state.crisisChainState?.activeCrisisChains || []),
       publicStabilityState: syncCrisisStabilityModifiers(state.publicStabilityState || createDefaultPublicStabilityState(), state.crisisChainState?.activeCrisisChains || [])
     }) });
+    const next = syncNationalCrisisStageEvents(gameState.activeEvents || [], chains);
+    if (next !== gameState.activeEvents) dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => ({ activeEvents: syncNationalCrisisStageEvents(state.activeEvents || [], state.crisisChainState?.activeCrisisChains || []) }) });
   }, [(gameState as any).crisisChainState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Competing infrastructure: funding one project closes its rival on the same site.
@@ -234128,6 +234321,7 @@ function dispatchGameSettingsChange(
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
             const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV62DynamicEvolutionaryUiSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
+            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runO111NationalCrisisSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
