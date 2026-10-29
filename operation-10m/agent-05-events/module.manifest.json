@@ -3,10 +3,10 @@
   "slot": "post-crisis-chains",
   "touchesSaveFormat": true,
   "proposedGameStateField": "agent05NarrativeState",
-  "contentSha256": "56571b745e13ef8171951f00d387b699923e955a8292afb36938d226fd6b92ce",
-  "contentSha256Prefix": "56571b745e13ef81",
+  "contentSha256": "c86cc06a7e9f343774fbd8c87fafc0c1eada4020804405f3970335ccc75d6437",
+  "contentSha256Prefix": "c86cc06a7e9f3437",
   "chunkPath": "operation-10m/agent-05-events/chunk.tsx",
-  "chunkLineCount": 2339458,
-  "chainCount": 19020,
+  "chunkLineCount": 2366333,
+  "chainCount": 19240,
   "regenerate": "npm run bundle:agent05"
 }
