@@ -30,6 +30,10 @@ const FIELD_LABELS: Partial<Record<keyof GuardianCoPilotMonitorSnapshot, string>
   guardianProtectionLevel: 'Guardian protection level',
   guardianAutomationLikelyBlocked: 'Guardian may block automation',
   guardianConfirmationLikelyRequired: 'Guardian confirmation likely',
+  guardianRiskScore: 'Guardian risk score',
+  guardianRiskBand: 'Guardian risk band',
+  copilotSpendingHeadroom: 'Co-Pilot spending headroom',
+  objectiveBehindSchedule: 'Objective behind schedule',
 };
 
 export function formatSnapshotValue(value: unknown): string | number | boolean | null {

@@ -68,6 +68,10 @@ export interface GuardianCoPilotMonitorSnapshot {
   guardianProtectionMaximum: boolean;
   guardianAutomationLikelyBlocked: boolean;
   guardianConfirmationLikelyRequired: boolean;
+  guardianRiskScore: number;
+  guardianRiskBand: 'low' | 'elevated' | 'critical';
+  copilotSpendingHeadroom: number;
+  objectiveBehindSchedule: boolean;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

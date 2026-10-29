@@ -147,6 +147,10 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     guardianProtectionMaximum: guardian.protectionLevel === 'maximum_protection',
     guardianAutomationLikelyBlocked: false,
     guardianConfirmationLikelyRequired: false,
+    guardianRiskScore: 0,
+    guardianRiskBand: 'low',
+    copilotSpendingHeadroom: 0,
+    objectiveBehindSchedule: false,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));

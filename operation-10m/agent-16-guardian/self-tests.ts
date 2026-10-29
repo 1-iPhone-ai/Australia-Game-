@@ -193,8 +193,22 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Scale wave brings monitor rule catalog to 46+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 46;
+  check(results, 'a16_expansion_count', 'Round 2 scale wave brings monitor catalog to 58+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 58;
+  });
+
+  check(results, 'a16_risk_score_enrich', 'Enriched snapshot exposes Guardian risk score band', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      guardianEnabled: true,
+      cash: 10,
+      minCashReserve: 500,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 2,
+    });
+    return snap.guardianRiskScore >= 40 && snap.guardianRiskBand !== 'low';
   });
 
   check(results, 'a16_depth_advice_lines', 'Guardian depth advice lines are non-executable strings', () => {

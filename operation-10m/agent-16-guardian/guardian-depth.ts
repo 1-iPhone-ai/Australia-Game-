@@ -108,12 +108,58 @@ export function buildGuardianDepthAdviceLines(snapshot: GuardianCoPilotMonitorSn
   return lines.slice(0, 4);
 }
 
+export function computeCopilotSpendingHeadroom(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  return Math.max(0, snapshot.cash - snapshot.minCashReserve);
+}
+
+export function computeObjectiveBehindSchedule(snapshot: GuardianCoPilotMonitorSnapshot): boolean {
+  if (!snapshot.objectiveActive || snapshot.objectiveProgressPct === null || snapshot.objectiveTurnsRemaining === null) {
+    return false;
+  }
+  if (snapshot.objectiveProgressPct >= 100) return false;
+  const turns = Math.max(1, snapshot.objectiveTurnsRemaining);
+  const paceRequired = (100 - snapshot.objectiveProgressPct) / turns;
+  return paceRequired > 22;
+}
+
+export function computeGuardianRiskScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  if (!snapshot.guardianEnabled) return 0;
+  let score = 0;
+  if (snapshot.cash < snapshot.minCashReserve) score += 25;
+  if (snapshot.debt > snapshot.cash) score += 20;
+  if (snapshot.maxSpendPerAction > snapshot.cash && snapshot.cash > 0) score += 15;
+  if (snapshot.guardianAutomationLikelyBlocked) score += 20;
+  if (snapshot.copilotAutonomousActive && snapshot.guardianRequiresConfirmation) score += 15;
+  if (snapshot.takeoverSessionActive && snapshot.takeoverSessionAgeTurns >= 3) score += 10;
+  if (snapshot.blockedContinueCount >= 1) score += 10;
+  if (snapshot.objectiveBehindSchedule) score += 15;
+  if (snapshot.rivalVictoryProgressPct !== null && snapshot.rivalVictoryProgressPct >= snapshot.victoryThresholdPct * 0.75) {
+    score += 15;
+  }
+  return Math.min(100, score);
+}
+
+export function classifyGuardianRiskBand(score: number): GuardianCoPilotMonitorSnapshot['guardianRiskBand'] {
+  if (score >= 70) return 'critical';
+  if (score >= 40) return 'elevated';
+  return 'low';
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
-  return {
+  const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
+  const merged: GuardianCoPilotMonitorSnapshot = {
     ...snapshot,
     guardianAutomationLikelyBlocked: posture.automationLikelyBlocked,
     guardianConfirmationLikelyRequired: posture.confirmationLikelyRequired,
+    objectiveBehindSchedule,
+    copilotSpendingHeadroom: computeCopilotSpendingHeadroom(snapshot),
+  };
+  const guardianRiskScore = computeGuardianRiskScore(merged);
+  return {
+    ...merged,
+    guardianRiskScore,
+    guardianRiskBand: classifyGuardianRiskBand(guardianRiskScore),
   };
 }
 
@@ -136,5 +182,33 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
   ok('gd_clear', () =>
     !guardianBlocksAutomation({ allowedToProceed: true, highestSeverity: 'none', confirmationRequired: false }, 'major_mistakes')
   );
+  ok('gd_risk_score_band', () => {
+    const snap = {
+      guardianEnabled: true,
+      cash: 10,
+      minCashReserve: 500,
+      debt: 0,
+      maxSpendPerAction: 2500,
+      guardianAutomationLikelyBlocked: true,
+      guardianRequiresConfirmation: true,
+      copilotAutonomousActive: true,
+      takeoverSessionActive: false,
+      takeoverSessionAgeTurns: 0,
+      blockedContinueCount: 0,
+      objectiveBehindSchedule: true,
+      rivalVictoryProgressPct: 70,
+      victoryThresholdPct: 80,
+    } as GuardianCoPilotMonitorSnapshot;
+    const score = computeGuardianRiskScore(snap);
+    return score >= 70 && classifyGuardianRiskBand(score) === 'critical';
+  });
+  ok('gd_objective_behind', () => {
+    const snap = {
+      objectiveActive: true,
+      objectiveProgressPct: 20,
+      objectiveTurnsRemaining: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeObjectiveBehindSchedule(snap);
+  });
   return out;
 }

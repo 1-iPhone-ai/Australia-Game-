@@ -67,6 +67,10 @@ export function createAdvisoryOpsFixtureSnapshot(
     guardianProtectionMaximum: false,
     guardianAutomationLikelyBlocked: false,
     guardianConfirmationLikelyRequired: false,
+    guardianRiskScore: 0,
+    guardianRiskBand: 'low',
+    copilotSpendingHeadroom: 950,
+    objectiveBehindSchedule: false,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {

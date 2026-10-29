@@ -2,6 +2,7 @@ import type { AdvisoryMonitorRule, AdvisoryOpsKind, AdvisorySeverity, GuardianCo
 import { COPILOT_MAX_BLOCKED_CONTINUES } from './policy.js';
 import { ADVISORY_MONITOR_RULES_EXPANSION } from './monitor-rules-expansion.js';
 import { ADVISORY_MONITOR_RULES_SCALE_WAVE } from './monitor-rules-scale-wave.js';
+import { ADVISORY_MONITOR_RULES_SCALE_WAVE_2 } from './monitor-rules-scale-wave-2.js';
 
 export type { AdvisoryMonitorRule };
 
@@ -231,6 +232,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   },
   ...ADVISORY_MONITOR_RULES_EXPANSION,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_2,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
