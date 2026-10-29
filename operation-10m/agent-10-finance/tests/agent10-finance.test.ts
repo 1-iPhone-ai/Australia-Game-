@@ -145,7 +145,6 @@ import { assessMetroCapacityRentInflationLatch } from '../src/inflation/metro-ca
 import { assessGridWholesaleTariffInflationSurge } from '../src/inflation/grid-wholesale-tariff-inflation-surge.js';
 import { assessGuardianCopilotInflationPressureLatch } from '../src/inflation/guardian-copilot-inflation-pressure-latch.js';
 import { assessTeamBriefingConsensusInflationUnmooring } from '../src/inflation/team-briefing-consensus-inflation-unmooring.js';
-import { mergeAgent16IntoMacroFinancialInputs } from '../src/integration/agent16-guardian-bridge.js';
 import { mergeAgent12IntoMacroFinancialInputs } from '../src/integration/agent12-transport-bridge.js';
 
 describe('Agent 10 glossary & boundaries', () => {
