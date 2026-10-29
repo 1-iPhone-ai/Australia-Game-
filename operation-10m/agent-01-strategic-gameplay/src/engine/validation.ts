@@ -72,6 +72,7 @@ import { coalitionMatriarchEternityStreakIssues } from './coalition-matriarch-et
 import { coalitionMatriarchInfinityStreakIssues } from './coalition-matriarch-infinity-gates.ts';
 import { coalitionMatriarchTranscendenceStreakIssues } from './coalition-matriarch-transcendence-gates.ts';
 import { coalitionMatriarchApotheosisStreakIssues } from './coalition-matriarch-apotheosis-gates.ts';
+import { coalitionMatriarchDeificationStreakIssues } from './coalition-matriarch-deification-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -367,6 +368,7 @@ export function validateAction(
     issues.push(...coalitionMatriarchInfinityStreakIssues(action, state));
     issues.push(...coalitionMatriarchTranscendenceStreakIssues(action, state));
     issues.push(...coalitionMatriarchApotheosisStreakIssues(action, state));
+    issues.push(...coalitionMatriarchDeificationStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

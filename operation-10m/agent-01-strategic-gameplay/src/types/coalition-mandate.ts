@@ -127,6 +127,8 @@ export interface TurnStrategicBriefing {
   coalitionMatriarchTranscendenceStreakDays: number;
   matriarchCoalitionApotheosis: boolean;
   coalitionMatriarchApotheosisStreakDays: number;
+  matriarchCoalitionDeification: boolean;
+  coalitionMatriarchDeificationStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;

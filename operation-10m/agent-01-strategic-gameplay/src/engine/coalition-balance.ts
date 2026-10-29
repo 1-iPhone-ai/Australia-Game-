@@ -501,3 +501,14 @@ export function matriarchApotheosisRankingBonus(
   if (streak >= action.minCoalitionMatriarchApotheosisStreakDays) return 45;
   return 2;
 }
+
+
+export function matriarchDeificationRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionMatriarchDeificationStreakDays === undefined) return 0;
+  const streak = state.coalitionMatriarchDeificationStreakDays ?? 0;
+  if (streak >= action.minCoalitionMatriarchDeificationStreakDays) return 46;
+  return 2;
+}

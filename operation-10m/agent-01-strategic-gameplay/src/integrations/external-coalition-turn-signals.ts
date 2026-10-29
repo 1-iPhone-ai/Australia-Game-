@@ -47,6 +47,7 @@ import { isMatriarchCoalitionEternity } from '../engine/coalition-matriarch-eter
 import { isMatriarchCoalitionInfinity } from '../engine/coalition-matriarch-infinity.ts';
 import { isMatriarchCoalitionTranscendence } from '../engine/coalition-matriarch-transcendence.ts';
 import { isMatriarchCoalitionApotheosis } from '../engine/coalition-matriarch-apotheosis.ts';
+import { isMatriarchCoalitionDeification } from '../engine/coalition-matriarch-deification.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -141,6 +142,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionMatriarchTranscendenceStreakDays: number;
   matriarchCoalitionApotheosis: boolean;
   coalitionMatriarchApotheosisStreakDays: number;
+  matriarchCoalitionDeification: boolean;
+  coalitionMatriarchDeificationStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -240,6 +243,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionMatriarchTranscendenceStreakDays: state.coalitionMatriarchTranscendenceStreakDays ?? 0,
     matriarchCoalitionApotheosis: isMatriarchCoalitionApotheosis(state),
     coalitionMatriarchApotheosisStreakDays: state.coalitionMatriarchApotheosisStreakDays ?? 0,
+    matriarchCoalitionDeification: isMatriarchCoalitionDeification(state),
+    coalitionMatriarchDeificationStreakDays: state.coalitionMatriarchDeificationStreakDays ?? 0,
   };
 }
 
@@ -339,5 +344,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionMatriarchTranscendenceStreakDays: raw?.coalitionMatriarchTranscendenceStreakDays ?? 0,
     matriarchCoalitionApotheosis: raw?.matriarchCoalitionApotheosis ?? false,
     coalitionMatriarchApotheosisStreakDays: raw?.coalitionMatriarchApotheosisStreakDays ?? 0,
+    matriarchCoalitionDeification: raw?.matriarchCoalitionDeification ?? false,
+    coalitionMatriarchDeificationStreakDays: raw?.coalitionMatriarchDeificationStreakDays ?? 0,
   };
 }

@@ -649,6 +649,15 @@ export {
   applyMatriarchApotheosisMandateBonus,
 } from './engine/coalition-matriarch-apotheosis.ts';
 
+export { coalitionMatriarchDeificationStreakIssues } from './engine/coalition-matriarch-deification-gates.ts';
+export {
+  MATRIARCH_COALITION_DEIFICATION_THRESHOLD,
+  advanceCoalitionMatriarchDeificationStreak,
+  applyMatriarchDeificationMandateBonus,
+  isMatriarchCoalitionDeification,
+  resetCoalitionMatriarchDeificationStreak,
+} from './engine/coalition-matriarch-deification.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '5.12.0';
+export const AGENT_01_MODULE_VERSION = '5.13.0';
