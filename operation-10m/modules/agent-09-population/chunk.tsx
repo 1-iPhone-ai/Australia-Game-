@@ -261,6 +261,10 @@ export interface NationalLaborDemographicsState {
   safetyCohesionOutlook?: NationalSafetyCohesionOutlook;
   subjectReleaseReadinessBrief?: NationalSubjectReleaseReadinessBrief;
   nationalWorkforceSteadfastIndex?: NationalWorkforceSteadfastIndex;
+  steadfastSchedulingCouplingBrief?: NationalSteadfastSchedulingCouplingBrief;
+  retentionAnchorOutlook?: NationalRetentionAnchorOutlook;
+  subjectSealReadinessBrief?: NationalSubjectSealReadinessBrief;
+  nationalWorkforceResolveIndex?: NationalWorkforceResolveIndex;
 }
 
 export type MigrationShockKind =
@@ -1065,6 +1069,50 @@ export interface NationalWorkforceSteadfastIndex {
   steadfastIndex: number;
   band: WorkforceSteadfastBand;
   releaseDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SteadfastSchedulingCouplingBand = 'decoupled' | 'strained' | 'rhythmic' | 'locked';
+
+export interface NationalSteadfastSchedulingCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SteadfastSchedulingCouplingBand;
+  steadfastDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type RetentionAnchorBand = 'drifting' | 'loose' | 'anchored' | 'moored';
+
+export interface NationalRetentionAnchorOutlook {
+  turn: number;
+  anchorIndex: number;
+  band: RetentionAnchorBand;
+  cohesionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectSealReadinessBand = 'open' | 'pending' | 'sealed' | 'locked';
+
+export interface NationalSubjectSealReadinessBrief {
+  turn: number;
+  sealIndex: number;
+  band: SubjectSealReadinessBand;
+  sealDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceResolveBand = 'fragile' | 'thin' | 'firm' | 'indomitable';
+
+export interface NationalWorkforceResolveIndex {
+  turn: number;
+  resolveIndex: number;
+  band: WorkforceResolveBand;
+  sealDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -2207,7 +2255,11 @@ export type LaborGiQueryTopic =
   | 'tenacity_care_coupling'
   | 'safety_cohesion'
   | 'subject_release_readiness'
-  | 'workforce_steadfast';
+  | 'workforce_steadfast'
+  | 'steadfast_scheduling_coupling'
+  | 'retention_anchor'
+  | 'subject_seal_readiness'
+  | 'workforce_resolve';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2280,6 +2332,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(safety cohesion|labor safety cohesion)/.test(q)) return 'safety_cohesion';
   if (/\b(subject release readiness|release readiness subject)/.test(q)) return 'subject_release_readiness';
   if (/\b(workforce steadfast|steadfast index labor)/.test(q)) return 'workforce_steadfast';
+  if (/\b(steadfast scheduling|steadfast-scheduling coupling)/.test(q)) return 'steadfast_scheduling_coupling';
+  if (/\b(retention anchor|labor retention anchor)/.test(q)) return 'retention_anchor';
+  if (/\b(subject seal readiness|seal readiness subject)/.test(q)) return 'subject_seal_readiness';
+  if (/\b(workforce resolve|resolve index labor)/.test(q)) return 'workforce_resolve';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -2874,6 +2930,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Steadfast band ${state.nationalWorkforceSteadfastIndex?.band ?? 'unknown'}; release drag ${Math.round(state.nationalWorkforceSteadfastIndex?.releaseDrag ?? 0)}.`,
         inference: state.nationalWorkforceSteadfastIndex?.stewardNote || state.summary,
         projection: 'Steadfast synthesizes care coupling, safety cohesion, and subject release readiness.'
+      };
+    case 'steadfast_scheduling_coupling':
+      return {
+        topic,
+        headline: state.steadfastSchedulingCouplingBrief?.summary || 'Steadfast-scheduling coupling unavailable.',
+        fact: `Coupling band ${state.steadfastSchedulingCouplingBrief?.band ?? 'unknown'}; steadfast drag ${Math.round(state.steadfastSchedulingCouplingBrief?.steadfastDrag ?? 0)}.`,
+        inference: state.steadfastSchedulingCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce steadfast with scheduling levers — bounded indices only.'
+      };
+    case 'retention_anchor':
+      return {
+        topic,
+        headline: state.retentionAnchorOutlook?.summary || 'Retention anchor unavailable.',
+        fact: `Anchor band ${state.retentionAnchorOutlook?.band ?? 'unknown'}; cohesion drag ${Math.round(state.retentionAnchorOutlook?.cohesionDrag ?? 0)}.`,
+        inference: state.retentionAnchorOutlook?.stewardNote || state.outlook,
+        projection: 'Anchor blends retention levers with safety cohesion — not literal headcount.'
+      };
+    case 'subject_seal_readiness':
+      return {
+        topic,
+        headline: state.subjectSealReadinessBrief?.summary || 'Subject seal readiness unavailable.',
+        fact: `Seal band ${state.subjectSealReadinessBrief?.band ?? 'unknown'}; seal drag ${Math.round(state.subjectSealReadinessBrief?.sealDrag ?? 0)}.`,
+        inference: state.subjectSealReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject seal readiness gates release against steadfast for O10-177 wave seal.'
+      };
+    case 'workforce_resolve':
+      return {
+        topic,
+        headline: state.nationalWorkforceResolveIndex?.summary || 'Workforce resolve unavailable.',
+        fact: `Resolve band ${state.nationalWorkforceResolveIndex?.band ?? 'unknown'}; seal drag ${Math.round(state.nationalWorkforceResolveIndex?.sealDrag ?? 0)}.`,
+        inference: state.nationalWorkforceResolveIndex?.stewardNote || state.summary,
+        projection: 'Resolve synthesizes scheduling coupling, retention anchor, and subject seal readiness.'
       };
     default:
       return {
@@ -3551,6 +3639,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceSteadfastIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceSteadfastIndex.stewardNote);
+  }
+  if (
+    state.steadfastSchedulingCouplingBrief?.band === 'decoupled' ||
+    state.steadfastSchedulingCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.steadfastSchedulingCouplingBrief.stewardNote);
+  }
+  if (
+    state.retentionAnchorOutlook?.band === 'drifting' ||
+    state.retentionAnchorOutlook?.band === 'loose'
+  ) {
+    hints.push(state.retentionAnchorOutlook.stewardNote);
+  }
+  if (
+    state.subjectSealReadinessBrief?.band === 'open' ||
+    state.subjectSealReadinessBrief?.band === 'pending'
+  ) {
+    hints.push(state.subjectSealReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceResolveIndex?.band === 'fragile' ||
+    state.nationalWorkforceResolveIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceResolveIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -9520,6 +9632,278 @@ export function computeNationalWorkforceSteadfastIndex(
 }
 
 
+// --- source: steadfast-scheduling-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalSteadfastSchedulingCouplingBrief,
+  type NationalWorkforceSteadfastIndex,
+  type SteadfastSchedulingCouplingBand
+} from './types';
+
+function couplingBand(index: number): SteadfastSchedulingCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'rhythmic';
+  return 'locked';
+}
+
+export function computeNationalSteadfastSchedulingCouplingBrief(
+  state: NationalLaborDemographicsState,
+  steadfast: NationalWorkforceSteadfastIndex | null | undefined
+): NationalSteadfastSchedulingCouplingBrief {
+  if (!state.enabled || !steadfast) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      steadfastDrag: 0,
+      summary: 'Steadfast-scheduling coupling idle — workforce steadfast unavailable.',
+      stewardNote: 'Compute workforce steadfast before scheduling coupling guidance.'
+    };
+  }
+
+  let schedulingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    schedulingLift += schedulingEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  schedulingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const steadfastDrag = v1014laborClamp(
+    steadfast.releaseDrag * 0.48 +
+      (steadfast.band === 'fragile' || steadfast.band === 'thin' ? 11 : 3)
+  );
+  const steadfastLift =
+    steadfast.band === 'steady' || steadfast.band === 'anchored'
+      ? steadfast.steadfastIndex * 0.24
+      : steadfast.steadfastIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + schedulingLift * 21 + steadfastLift - steadfastDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained steadfast-scheduling link — ease scheduling levers before round-23 seal commits.'
+      : band === 'locked'
+        ? 'Locked coupling — guard retention spikes that drain scheduling buffers.'
+        : 'Rhythmic coupling — pair scheduling packs with subject seal readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    steadfastDrag,
+    summary: `Steadfast-scheduling coupling ${band} (index ${Math.round(couplingIndex)}); steadfast drag ${Math.round(steadfastDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: retention-anchor-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalRetentionAnchorOutlook,
+  type NationalSafetyCohesionOutlook,
+  type RetentionAnchorBand
+} from './types';
+
+function anchorBand(index: number): RetentionAnchorBand {
+  if (index <= 34) return 'drifting';
+  if (index <= 48) return 'loose';
+  if (index <= 62) return 'anchored';
+  return 'moored';
+}
+
+export function computeNationalRetentionAnchorOutlook(
+  state: NationalLaborDemographicsState,
+  safetyCohesion: NationalSafetyCohesionOutlook | null | undefined
+): NationalRetentionAnchorOutlook {
+  if (!state.enabled || !safetyCohesion) {
+    return {
+      turn: state.turn,
+      anchorIndex: 50,
+      band: 'loose',
+      cohesionDrag: 0,
+      summary: 'Retention anchor idle — safety cohesion unavailable.',
+      stewardNote: 'Compute safety cohesion before retention anchor guidance.'
+    };
+  }
+
+  let retentionLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    retentionLift += retentionPullForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  retentionLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const cohesionDrag = v1014laborClamp(
+    safetyCohesion.resilienceDrag * 0.46 +
+      (safetyCohesion.band === 'exposed' || safetyCohesion.band === 'uneven' ? 10 : 3)
+  );
+  const safetyLift =
+    safetyCohesion.band === 'guarded' || safetyCohesion.band === 'shielded'
+      ? safetyCohesion.cohesionIndex * 0.2
+      : safetyCohesion.cohesionIndex * 0.1;
+
+  const anchorIndex = v1014laborClamp(24 + retentionLift * 22 + safetyLift - cohesionDrag);
+  const band = anchorBand(anchorIndex);
+
+  const stewardNote =
+    band === 'drifting' || band === 'loose'
+      ? 'Loose retention anchor — deploy retention levers before subject seal assembly.'
+      : band === 'moored'
+        ? 'Moored anchor band — verify steadfast-scheduling coupling before auto workforce pushes.'
+        : 'Anchored retention — align anchor with seasonal participation swing checks.';
+
+  return {
+    turn: state.turn,
+    anchorIndex,
+    band,
+    cohesionDrag,
+    summary: `National retention anchor ${band} (index ${Math.round(anchorIndex)}); cohesion drag ${Math.round(cohesionDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-seal-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectReleaseReadinessBrief,
+  type NationalSubjectSealReadinessBrief,
+  type NationalWorkforceSteadfastIndex,
+  type SubjectSealReadinessBand
+} from './types';
+
+function sealBand(index: number): SubjectSealReadinessBand {
+  if (index <= 34) return 'open';
+  if (index <= 48) return 'pending';
+  if (index <= 62) return 'sealed';
+  return 'locked';
+}
+
+/** Round-23 subject seal readiness — release × steadfast gate for wave seal. */
+export function computeNationalSubjectSealReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectRelease: NationalSubjectReleaseReadinessBrief | null | undefined,
+  steadfast: NationalWorkforceSteadfastIndex | null | undefined
+): NationalSubjectSealReadinessBrief {
+  if (!state.enabled || !subjectRelease || !steadfast) {
+    return {
+      turn: state.turn,
+      sealIndex: 50,
+      band: 'pending',
+      sealDrag: 0,
+      summary: 'Subject seal readiness idle — subject release or steadfast unavailable.',
+      stewardNote: 'Compute subject release readiness and workforce steadfast before seal guidance.'
+    };
+  }
+
+  const sealDrag = v1014laborClamp(
+    subjectRelease.releaseDrag * 0.38 +
+      steadfast.releaseDrag * 0.38 +
+      (subjectRelease.band === 'held' || steadfast.band === 'fragile' ? 12 : 3)
+  );
+  const releaseLift =
+    subjectRelease.band === 'release_ready' || subjectRelease.band === 'cleared'
+      ? subjectRelease.releaseIndex * 0.27
+      : subjectRelease.releaseIndex * 0.14;
+  const steadfastLift =
+    steadfast.band === 'steady' || steadfast.band === 'anchored'
+      ? steadfast.steadfastIndex * 0.25
+      : steadfast.steadfastIndex * 0.12;
+
+  const sealIndex = v1014laborClamp(20 + releaseLift + steadfastLift - sealDrag);
+  const band = sealBand(sealIndex);
+
+  const stewardNote =
+    band === 'open' || band === 'pending'
+      ? 'Pending subject seal — hold O10-177 scale seal until steadfast-scheduling syncs.'
+      : band === 'locked'
+        ? 'Locked seal band — still monitor retention anchor during corridor peaks.'
+        : 'Sealed band — pair with workforce resolve index each assembly tranche.';
+
+  return {
+    turn: state.turn,
+    sealIndex,
+    band,
+    sealDrag,
+    summary: `Subject seal readiness ${band} (index ${Math.round(sealIndex)}); seal drag ${Math.round(sealDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-resolve-index.ts ---
+  type NationalLaborDemographicsState,
+  type NationalRetentionAnchorOutlook,
+  type NationalSteadfastSchedulingCouplingBrief,
+  type NationalSubjectSealReadinessBrief,
+  type NationalWorkforceResolveIndex,
+  type WorkforceResolveBand
+} from './types';
+
+function resolveBand(index: number): WorkforceResolveBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'firm';
+  return 'indomitable';
+}
+
+export function computeNationalWorkforceResolveIndex(
+  state: NationalLaborDemographicsState,
+  schedulingCoupling: NationalSteadfastSchedulingCouplingBrief | null | undefined,
+  retentionAnchor: NationalRetentionAnchorOutlook | null | undefined,
+  subjectSeal: NationalSubjectSealReadinessBrief | null | undefined
+): NationalWorkforceResolveIndex {
+  if (!state.enabled || !schedulingCoupling || !retentionAnchor || !subjectSeal) {
+    return {
+      turn: state.turn,
+      resolveIndex: 50,
+      band: 'thin',
+      sealDrag: 0,
+      summary: 'Workforce resolve idle — scheduling coupling, retention anchor, or subject seal unavailable.',
+      stewardNote: 'Compute round-23 depth stack before resolve guidance.'
+    };
+  }
+
+  const sealDrag = v1014laborClamp(
+    subjectSeal.sealDrag * 0.35 +
+      schedulingCoupling.steadfastDrag * 0.3 +
+      retentionAnchor.cohesionDrag * 0.25 +
+      (subjectSeal.band === 'open' || schedulingCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const schedulingLift =
+    schedulingCoupling.band === 'rhythmic' || schedulingCoupling.band === 'locked'
+      ? schedulingCoupling.couplingIndex * 0.2
+      : schedulingCoupling.couplingIndex * 0.1;
+  const anchorLift =
+    retentionAnchor.band === 'anchored' || retentionAnchor.band === 'moored'
+      ? retentionAnchor.anchorIndex * 0.18
+      : retentionAnchor.anchorIndex * 0.09;
+  const sealLift =
+    subjectSeal.band === 'sealed' || subjectSeal.band === 'locked'
+      ? subjectSeal.sealIndex * 0.22
+      : subjectSeal.sealIndex * 0.11;
+
+  const resolveIndex = v1014laborClamp(18 + schedulingLift + anchorLift + sealLift - sealDrag);
+  const band = resolveBand(resolveIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce resolve — sequence steadfast-scheduling, retention anchor, and subject seal before post-b23e1449 tranche.'
+      : band === 'indomitable'
+        ? 'Indomitable resolve — avoid corridor overload that breaks subject seal bands.'
+        : 'Firm resolve — refresh subject seal checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    resolveIndex,
+    band,
+    sealDrag,
+    summary: `National workforce resolve ${band} (index ${Math.round(resolveIndex)}); seal drag ${Math.round(sealDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -10313,6 +10697,22 @@ export function computeNationalLaborDemographics(
     state.safetyCohesionOutlook,
     state.subjectReleaseReadinessBrief
   );
+  state.steadfastSchedulingCouplingBrief = computeNationalSteadfastSchedulingCouplingBrief(
+    state,
+    state.nationalWorkforceSteadfastIndex
+  );
+  state.retentionAnchorOutlook = computeNationalRetentionAnchorOutlook(state, state.safetyCohesionOutlook);
+  state.subjectSealReadinessBrief = computeNationalSubjectSealReadinessBrief(
+    state,
+    state.subjectReleaseReadinessBrief,
+    state.nationalWorkforceSteadfastIndex
+  );
+  state.nationalWorkforceResolveIndex = computeNationalWorkforceResolveIndex(
+    state,
+    state.steadfastSchedulingCouplingBrief,
+    state.retentionAnchorOutlook,
+    state.subjectSealReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -10715,6 +11115,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceSteadfastIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.steadfastSchedulingCouplingBrief?.band === 'decoupled' ||
+      state.steadfastSchedulingCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.steadfastSchedulingCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.retentionAnchorOutlook?.band === 'drifting' ||
+      state.retentionAnchorOutlook?.band === 'loose') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.retentionAnchorOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectSealReadinessBrief?.band === 'open' ||
+      state.subjectSealReadinessBrief?.band === 'pending') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectSealReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceResolveIndex?.band === 'fragile' ||
+      state.nationalWorkforceResolveIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceResolveIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -12028,6 +12456,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'steadfast steward note'
   );
   check('R2216', careReliefForRegion('NSW', 'technology') > 0, 'care relief for region');
+
+  check('R2301', Boolean(r1.state.steadfastSchedulingCouplingBrief?.band), 'steadfast scheduling on state');
+  check(
+    'R2302',
+    (r1.state.steadfastSchedulingCouplingBrief?.steadfastDrag ?? 0) >= 0,
+    'steadfast scheduling drag'
+  );
+  check('R2303', Boolean(r1.state.retentionAnchorOutlook?.band), 'retention anchor on state');
+  check('R2304', (r1.state.retentionAnchorOutlook?.cohesionDrag ?? 0) >= 0, 'retention cohesion drag');
+  check('R2305', Boolean(r1.state.subjectSealReadinessBrief?.band), 'subject seal on state');
+  check('R2306', Boolean(r1.state.nationalWorkforceResolveIndex?.band), 'workforce resolve on state');
+  check(
+    'R2307',
+    detectLaborDemographicsQuery('steadfast scheduling coupling') === 'steadfast_scheduling_coupling',
+    'GI steadfast scheduling detect'
+  );
+  check('R2308', detectLaborDemographicsQuery('retention anchor') === 'retention_anchor', 'GI retention anchor detect');
+  check(
+    'R2309',
+    detectLaborDemographicsQuery('subject seal readiness') === 'subject_seal_readiness',
+    'GI subject seal detect'
+  );
+  check(
+    'R2310',
+    detectLaborDemographicsQuery('workforce resolve') === 'workforce_resolve',
+    'GI workforce resolve detect'
+  );
+  check(
+    'R2311',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_resolve').headline.length > 5,
+    'GI workforce resolve answer'
+  );
+  const schedulingCouplingOnly = computeNationalSteadfastSchedulingCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSteadfastIndex
+  );
+  check('R2312', schedulingCouplingOnly.summary.length > 10, 'scheduling coupling standalone summary');
+  const anchorOnly = computeNationalRetentionAnchorOutlook(r1.state, r1.state.safetyCohesionOutlook);
+  check('R2313', anchorOnly.band.length > 3, 'retention anchor band string');
+  const sealOnly = computeNationalSubjectSealReadinessBrief(
+    r1.state,
+    r1.state.subjectReleaseReadinessBrief,
+    r1.state.nationalWorkforceSteadfastIndex
+  );
+  check('R2314', sealOnly.sealDrag >= 0, 'subject seal drag');
+  check(
+    'R2315',
+    computeNationalWorkforceResolveIndex(
+      rHhBad.state,
+      rHhBad.state.steadfastSchedulingCouplingBrief,
+      rHhBad.state.retentionAnchorOutlook,
+      rHhBad.state.subjectSealReadinessBrief
+    ).stewardNote.length > 8,
+    'resolve steward note'
+  );
+  check('R2316', schedulingEaseForRegion('NSW', 'technology') > 0, 'scheduling ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

@@ -257,6 +257,10 @@ export interface NationalLaborDemographicsState {
   safetyCohesionOutlook?: NationalSafetyCohesionOutlook;
   subjectReleaseReadinessBrief?: NationalSubjectReleaseReadinessBrief;
   nationalWorkforceSteadfastIndex?: NationalWorkforceSteadfastIndex;
+  steadfastSchedulingCouplingBrief?: NationalSteadfastSchedulingCouplingBrief;
+  retentionAnchorOutlook?: NationalRetentionAnchorOutlook;
+  subjectSealReadinessBrief?: NationalSubjectSealReadinessBrief;
+  nationalWorkforceResolveIndex?: NationalWorkforceResolveIndex;
 }
 
 export type MigrationShockKind =
@@ -1061,6 +1065,50 @@ export interface NationalWorkforceSteadfastIndex {
   steadfastIndex: number;
   band: WorkforceSteadfastBand;
   releaseDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SteadfastSchedulingCouplingBand = 'decoupled' | 'strained' | 'rhythmic' | 'locked';
+
+export interface NationalSteadfastSchedulingCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SteadfastSchedulingCouplingBand;
+  steadfastDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type RetentionAnchorBand = 'drifting' | 'loose' | 'anchored' | 'moored';
+
+export interface NationalRetentionAnchorOutlook {
+  turn: number;
+  anchorIndex: number;
+  band: RetentionAnchorBand;
+  cohesionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectSealReadinessBand = 'open' | 'pending' | 'sealed' | 'locked';
+
+export interface NationalSubjectSealReadinessBrief {
+  turn: number;
+  sealIndex: number;
+  band: SubjectSealReadinessBand;
+  sealDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceResolveBand = 'fragile' | 'thin' | 'firm' | 'indomitable';
+
+export interface NationalWorkforceResolveIndex {
+  turn: number;
+  resolveIndex: number;
+  band: WorkforceResolveBand;
+  sealDrag: number;
   summary: string;
   stewardNote: string;
 }

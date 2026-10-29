@@ -75,7 +75,11 @@ export type LaborGiQueryTopic =
   | 'tenacity_care_coupling'
   | 'safety_cohesion'
   | 'subject_release_readiness'
-  | 'workforce_steadfast';
+  | 'workforce_steadfast'
+  | 'steadfast_scheduling_coupling'
+  | 'retention_anchor'
+  | 'subject_seal_readiness'
+  | 'workforce_resolve';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -148,6 +152,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(safety cohesion|labor safety cohesion)/.test(q)) return 'safety_cohesion';
   if (/\b(subject release readiness|release readiness subject)/.test(q)) return 'subject_release_readiness';
   if (/\b(workforce steadfast|steadfast index labor)/.test(q)) return 'workforce_steadfast';
+  if (/\b(steadfast scheduling|steadfast-scheduling coupling)/.test(q)) return 'steadfast_scheduling_coupling';
+  if (/\b(retention anchor|labor retention anchor)/.test(q)) return 'retention_anchor';
+  if (/\b(subject seal readiness|seal readiness subject)/.test(q)) return 'subject_seal_readiness';
+  if (/\b(workforce resolve|resolve index labor)/.test(q)) return 'workforce_resolve';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -742,6 +750,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Steadfast band ${state.nationalWorkforceSteadfastIndex?.band ?? 'unknown'}; release drag ${Math.round(state.nationalWorkforceSteadfastIndex?.releaseDrag ?? 0)}.`,
         inference: state.nationalWorkforceSteadfastIndex?.stewardNote || state.summary,
         projection: 'Steadfast synthesizes care coupling, safety cohesion, and subject release readiness.'
+      };
+    case 'steadfast_scheduling_coupling':
+      return {
+        topic,
+        headline: state.steadfastSchedulingCouplingBrief?.summary || 'Steadfast-scheduling coupling unavailable.',
+        fact: `Coupling band ${state.steadfastSchedulingCouplingBrief?.band ?? 'unknown'}; steadfast drag ${Math.round(state.steadfastSchedulingCouplingBrief?.steadfastDrag ?? 0)}.`,
+        inference: state.steadfastSchedulingCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce steadfast with scheduling levers — bounded indices only.'
+      };
+    case 'retention_anchor':
+      return {
+        topic,
+        headline: state.retentionAnchorOutlook?.summary || 'Retention anchor unavailable.',
+        fact: `Anchor band ${state.retentionAnchorOutlook?.band ?? 'unknown'}; cohesion drag ${Math.round(state.retentionAnchorOutlook?.cohesionDrag ?? 0)}.`,
+        inference: state.retentionAnchorOutlook?.stewardNote || state.outlook,
+        projection: 'Anchor blends retention levers with safety cohesion — not literal headcount.'
+      };
+    case 'subject_seal_readiness':
+      return {
+        topic,
+        headline: state.subjectSealReadinessBrief?.summary || 'Subject seal readiness unavailable.',
+        fact: `Seal band ${state.subjectSealReadinessBrief?.band ?? 'unknown'}; seal drag ${Math.round(state.subjectSealReadinessBrief?.sealDrag ?? 0)}.`,
+        inference: state.subjectSealReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject seal readiness gates release against steadfast for O10-177 wave seal.'
+      };
+    case 'workforce_resolve':
+      return {
+        topic,
+        headline: state.nationalWorkforceResolveIndex?.summary || 'Workforce resolve unavailable.',
+        fact: `Resolve band ${state.nationalWorkforceResolveIndex?.band ?? 'unknown'}; seal drag ${Math.round(state.nationalWorkforceResolveIndex?.sealDrag ?? 0)}.`,
+        inference: state.nationalWorkforceResolveIndex?.stewardNote || state.summary,
+        projection: 'Resolve synthesizes scheduling coupling, retention anchor, and subject seal readiness.'
       };
     default:
       return {

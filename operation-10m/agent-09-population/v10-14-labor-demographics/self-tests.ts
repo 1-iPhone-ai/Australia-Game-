@@ -142,6 +142,10 @@ import { computeNationalTenacityCareCouplingBrief } from './tenacity-care-coupli
 import { computeNationalSafetyCohesionOutlook } from './safety-cohesion-outlook';
 import { computeNationalSubjectReleaseReadinessBrief } from './subject-release-readiness-brief';
 import { computeNationalWorkforceSteadfastIndex } from './national-workforce-steadfast-index';
+import { computeNationalSteadfastSchedulingCouplingBrief } from './steadfast-scheduling-coupling-brief';
+import { computeNationalRetentionAnchorOutlook } from './retention-anchor-outlook';
+import { computeNationalSubjectSealReadinessBrief } from './subject-seal-readiness-brief';
+import { computeNationalWorkforceResolveIndex } from './national-workforce-resolve-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1386,6 +1390,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'steadfast steward note'
   );
   check('R2216', careReliefForRegion('NSW', 'technology') > 0, 'care relief for region');
+
+  check('R2301', Boolean(r1.state.steadfastSchedulingCouplingBrief?.band), 'steadfast scheduling on state');
+  check(
+    'R2302',
+    (r1.state.steadfastSchedulingCouplingBrief?.steadfastDrag ?? 0) >= 0,
+    'steadfast scheduling drag'
+  );
+  check('R2303', Boolean(r1.state.retentionAnchorOutlook?.band), 'retention anchor on state');
+  check('R2304', (r1.state.retentionAnchorOutlook?.cohesionDrag ?? 0) >= 0, 'retention cohesion drag');
+  check('R2305', Boolean(r1.state.subjectSealReadinessBrief?.band), 'subject seal on state');
+  check('R2306', Boolean(r1.state.nationalWorkforceResolveIndex?.band), 'workforce resolve on state');
+  check(
+    'R2307',
+    detectLaborDemographicsQuery('steadfast scheduling coupling') === 'steadfast_scheduling_coupling',
+    'GI steadfast scheduling detect'
+  );
+  check('R2308', detectLaborDemographicsQuery('retention anchor') === 'retention_anchor', 'GI retention anchor detect');
+  check(
+    'R2309',
+    detectLaborDemographicsQuery('subject seal readiness') === 'subject_seal_readiness',
+    'GI subject seal detect'
+  );
+  check(
+    'R2310',
+    detectLaborDemographicsQuery('workforce resolve') === 'workforce_resolve',
+    'GI workforce resolve detect'
+  );
+  check(
+    'R2311',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_resolve').headline.length > 5,
+    'GI workforce resolve answer'
+  );
+  const schedulingCouplingOnly = computeNationalSteadfastSchedulingCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSteadfastIndex
+  );
+  check('R2312', schedulingCouplingOnly.summary.length > 10, 'scheduling coupling standalone summary');
+  const anchorOnly = computeNationalRetentionAnchorOutlook(r1.state, r1.state.safetyCohesionOutlook);
+  check('R2313', anchorOnly.band.length > 3, 'retention anchor band string');
+  const sealOnly = computeNationalSubjectSealReadinessBrief(
+    r1.state,
+    r1.state.subjectReleaseReadinessBrief,
+    r1.state.nationalWorkforceSteadfastIndex
+  );
+  check('R2314', sealOnly.sealDrag >= 0, 'subject seal drag');
+  check(
+    'R2315',
+    computeNationalWorkforceResolveIndex(
+      rHhBad.state,
+      rHhBad.state.steadfastSchedulingCouplingBrief,
+      rHhBad.state.retentionAnchorOutlook,
+      rHhBad.state.subjectSealReadinessBrief
+    ).stewardNote.length > 8,
+    'resolve steward note'
+  );
+  check('R2316', schedulingEaseForRegion('NSW', 'technology') > 0, 'scheduling ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
