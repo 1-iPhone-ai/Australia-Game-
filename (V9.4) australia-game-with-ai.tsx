@@ -133347,6 +133347,287 @@ export function runV93ContentReplayabilitySelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
+// SECTION 20P-A75: O111 SANDBOX CUSTOMIZATION PROFILES (AGENT 75)
+// ============================================================================
+// Exportable sandbox bundles: experience preset + balance-lab knobs + whitelisted gameplay toggles.
+// Does not mutate canonical match rules unless the player applies the profile through settings UI.
+// No new save-schema fields — profiles travel as JSON import/export only.
+
+export const O111_SANDBOX_PROFILE_KIND = 'o111_sandbox_customization_v1' as const;
+export const O111_SANDBOX_PROFILE_SCHEMA_VERSION = 1;
+
+export interface O111SandboxCustomizationProfile {
+  kind: typeof O111_SANDBOX_PROFILE_KIND;
+  schemaVersion: number;
+  label: string;
+  experiencePresetId: string;
+  balanceSandbox: BalanceSandboxConfig;
+  settingOverrides: Partial<GameSettingsState>;
+  scenarioCustomSettings?: Partial<GameSettingsState> & Record<string, unknown>;
+  notes?: string;
+}
+
+/** Settings keys safe to round-trip in sandbox profile JSON (no credentials / replay secrets). */
+export const O111_SANDBOX_SAFE_SETTING_KEYS: (keyof GameSettingsState)[] = [
+  'balanceLabEnabled',
+  'balanceLabSandboxMode',
+  'balanceLabAutoStressTracking',
+  'customScenarioBuilderEnabled',
+  'scenarioModeEnabled',
+  'scenarioEngineV73Enabled',
+  'nationalSystemsEnabled',
+  'dynamicCrisesEnabled',
+  'nationalEventsEnabled',
+  'achievementsEnabled',
+  'fogOfWarEnabled',
+  'aiRivalryEnabled',
+  'megaprojectsEnabled',
+  'industriesEnabled',
+  'householdsEnabled',
+];
+
+export const O111_SANDBOX_STARTER_PROFILES: O111SandboxCustomizationProfile[] = [
+  {
+    kind: O111_SANDBOX_PROFILE_KIND,
+    schemaVersion: O111_SANDBOX_PROFILE_SCHEMA_VERSION,
+    label: 'Chaotic Sandbox Starter',
+    experiencePresetId: 'chaotic_sandbox',
+    balanceSandbox: {
+      baselineId: 'chaotic_sandbox',
+      rewardMultiplier: 1.35,
+      penaltyMultiplier: 0.85,
+      catchupBonusMultiplier: 1.6,
+      loanInterestMultiplier: 0.9,
+    },
+    settingOverrides: {
+      balanceLabEnabled: true,
+      balanceLabSandboxMode: true,
+      customScenarioBuilderEnabled: true,
+      scenarioModeEnabled: true,
+    },
+    notes: 'Wild experimentation preset — balance lab sandbox isolates live authority.',
+  },
+  {
+    kind: O111_SANDBOX_PROFILE_KIND,
+    schemaVersion: O111_SANDBOX_PROFILE_SCHEMA_VERSION,
+    label: 'Relaxed Sandbox Lab',
+    experiencePresetId: 'relaxed_adventure',
+    balanceSandbox: {
+      baselineId: 'relaxed_adventure',
+      rewardMultiplier: 1.1,
+      penaltyMultiplier: 0.95,
+      catchupBonusMultiplier: 1.2,
+      loanInterestMultiplier: 1,
+    },
+    settingOverrides: {
+      balanceLabEnabled: true,
+      balanceLabSandboxMode: false,
+      customScenarioBuilderEnabled: true,
+    },
+  },
+];
+
+export function createDefaultO111BalanceSandboxConfig(baselineId = 'default'): BalanceSandboxConfig {
+  return {
+    baselineId,
+    rewardMultiplier: 1,
+    penaltyMultiplier: 1,
+    catchupBonusMultiplier: 1,
+    loanInterestMultiplier: 1,
+  };
+}
+
+export function resolveO111SandboxExperiencePreset(presetId: string): SmartSettingsPreset | undefined {
+  return SMART_SETTINGS_PRESETS.find(p => p.id === presetId);
+}
+
+export function pickO111SandboxSafeSettingOverrides(settings: GameSettingsState): Partial<GameSettingsState> {
+  const out: Partial<GameSettingsState> = {};
+  for (const key of O111_SANDBOX_SAFE_SETTING_KEYS) {
+    if (settings && Object.prototype.hasOwnProperty.call(settings, key)) {
+      (out as Record<string, unknown>)[key] = (settings as Record<string, unknown>)[key];
+    }
+  }
+  return out;
+}
+
+export function normalizeO111BalanceSandboxConfig(raw: Partial<BalanceSandboxConfig> | undefined, fallbackId: string): BalanceSandboxConfig {
+  const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+  const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? clamp(v, 0.25, 3) : d);
+  return {
+    baselineId: typeof raw?.baselineId === 'string' && raw.baselineId.trim() ? raw.baselineId : fallbackId,
+    rewardMultiplier: num(raw?.rewardMultiplier, 1),
+    penaltyMultiplier: num(raw?.penaltyMultiplier, 1),
+    catchupBonusMultiplier: num(raw?.catchupBonusMultiplier, 1),
+    loanInterestMultiplier: num(raw?.loanInterestMultiplier, 1),
+  };
+}
+
+export function captureO111SandboxProfile(input: {
+  label?: string;
+  settings: GameSettingsState;
+  balanceSandbox: BalanceSandboxConfig;
+  draftCustomSettings?: Partial<GameSettingsState> & Record<string, unknown>;
+}): O111SandboxCustomizationProfile {
+  const presetId = input.settings.smartSettingsProfile?.activePresetId || 'custom';
+  return {
+    kind: O111_SANDBOX_PROFILE_KIND,
+    schemaVersion: O111_SANDBOX_PROFILE_SCHEMA_VERSION,
+    label: input.label || `Sandbox profile (${presetId})`,
+    experiencePresetId: presetId,
+    balanceSandbox: normalizeO111BalanceSandboxConfig(input.balanceSandbox, presetId),
+    settingOverrides: pickO111SandboxSafeSettingOverrides(input.settings),
+    scenarioCustomSettings: input.draftCustomSettings ? { ...input.draftCustomSettings } : undefined,
+  };
+}
+
+export function validateO111SandboxProfileExport(raw: unknown): {
+  ok: boolean;
+  profile?: O111SandboxCustomizationProfile;
+  errors: string[];
+} {
+  const errors: string[] = [];
+  if (!raw || typeof raw !== 'object') {
+    return { ok: false, errors: ['Profile must be a JSON object.'] };
+  }
+  const o = raw as Record<string, unknown>;
+  if (o.kind !== O111_SANDBOX_PROFILE_KIND) {
+    errors.push(`Unsupported kind (expected ${O111_SANDBOX_PROFILE_KIND}).`);
+  }
+  if (o.schemaVersion !== O111_SANDBOX_PROFILE_SCHEMA_VERSION) {
+    errors.push(`Unsupported schemaVersion (expected ${O111_SANDBOX_PROFILE_SCHEMA_VERSION}).`);
+  }
+  if (typeof o.label !== 'string' || !o.label.trim()) {
+    errors.push('label must be a non-empty string.');
+  }
+  const presetId = typeof o.experiencePresetId === 'string' ? o.experiencePresetId : '';
+  if (!presetId) {
+    errors.push('experiencePresetId is required.');
+  } else if (!resolveO111SandboxExperiencePreset(presetId) && presetId !== 'custom') {
+    errors.push(`Unknown experiencePresetId: ${presetId}`);
+  }
+  if (errors.length) {
+    return { ok: false, errors };
+  }
+  const overridesRaw = (o.settingOverrides && typeof o.settingOverrides === 'object') ? o.settingOverrides as Record<string, unknown> : {};
+  const settingOverrides: Partial<GameSettingsState> = {};
+  for (const key of O111_SANDBOX_SAFE_SETTING_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(overridesRaw, key)) {
+      (settingOverrides as Record<string, unknown>)[key] = overridesRaw[key];
+    }
+  }
+  const scenarioRaw = o.scenarioCustomSettings;
+  const profile: O111SandboxCustomizationProfile = {
+    kind: O111_SANDBOX_PROFILE_KIND,
+    schemaVersion: O111_SANDBOX_PROFILE_SCHEMA_VERSION,
+    label: String(o.label).trim(),
+    experiencePresetId: presetId,
+    balanceSandbox: normalizeO111BalanceSandboxConfig(o.balanceSandbox as Partial<BalanceSandboxConfig>, presetId),
+    settingOverrides,
+    scenarioCustomSettings: scenarioRaw && typeof scenarioRaw === 'object' ? { ...(scenarioRaw as Record<string, unknown>) } : undefined,
+    notes: typeof o.notes === 'string' ? o.notes : undefined,
+  };
+  return { ok: true, profile, errors: [] };
+}
+
+export function mergeO111SandboxIntoScenarioDraft(
+  draft: Partial<CustomScenarioConfig>,
+  profile: O111SandboxCustomizationProfile
+): Partial<CustomScenarioConfig> {
+  const extra = profile.scenarioCustomSettings || profile.settingOverrides;
+  if (!extra || typeof extra !== 'object') {
+    return draft;
+  }
+  return {
+    ...draft,
+    customSettings: { ...(draft.customSettings || {}), ...extra },
+  };
+}
+
+export function applyO111SandboxProfile(
+  baseSettings: GameSettingsState,
+  profile: O111SandboxCustomizationProfile,
+  isLiveMatch = false
+): {
+  settings: GameSettingsState;
+  balanceSandbox: BalanceSandboxConfig;
+  plan: SmartSettingsPlan | null;
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+  let settings = { ...baseSettings };
+  let plan: SmartSettingsPlan | null = null;
+  const preset = resolveO111SandboxExperiencePreset(profile.experiencePresetId);
+  if (preset) {
+    plan = generateSmartSettingsPlan(preset.profile, settings, isLiveMatch);
+    const applied = applySmartSettingsPlan(plan, settings, isLiveMatch);
+    settings = applied.updatedSettings;
+  } else if (profile.experiencePresetId === 'custom') {
+    warnings.push('Profile uses custom experience preset — only whitelisted overrides applied.');
+  } else {
+    warnings.push(`Experience preset ${profile.experiencePresetId} not found — overrides only.`);
+  }
+  for (const key of O111_SANDBOX_SAFE_SETTING_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(profile.settingOverrides, key)) {
+      (settings as Record<string, unknown>)[key] = (profile.settingOverrides as Record<string, unknown>)[key];
+    }
+  }
+  return {
+    settings,
+    balanceSandbox: normalizeO111BalanceSandboxConfig(profile.balanceSandbox, profile.experiencePresetId),
+    plan,
+    warnings,
+  };
+}
+
+export function runO111SandboxCustomizationSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  check('o111_a75_validate', 'Starter chaotic profile validates', () => {
+    const p = O111_SANDBOX_STARTER_PROFILES[0];
+    const v = validateO111SandboxProfileExport(p);
+    return v.ok && v.profile?.experiencePresetId === 'chaotic_sandbox' || JSON.stringify(v.errors);
+  });
+  check('o111_a75_capture', 'Capture round-trips safe setting keys', () => {
+    const settings = createDefaultGameSettings();
+    settings.balanceLabSandboxMode = true;
+    settings.customScenarioBuilderEnabled = true;
+    const captured = captureO111SandboxProfile({
+      settings,
+      balanceSandbox: createDefaultO111BalanceSandboxConfig('test'),
+    });
+    return captured.settingOverrides.balanceLabSandboxMode === true
+      && captured.settingOverrides.customScenarioBuilderEnabled === true
+      || JSON.stringify(captured);
+  });
+  check('o111_a75_apply', 'Apply preset merges smart plan + overrides', () => {
+    const base = createDefaultGameSettings();
+    const applied = applyO111SandboxProfile(base, O111_SANDBOX_STARTER_PROFILES[0], false);
+    return applied.settings.balanceLabSandboxMode === true
+      && applied.settings.smartSettingsProfile?.activePresetId === 'chaotic_sandbox'
+      && applied.balanceSandbox.catchupBonusMultiplier > 1
+      || JSON.stringify({ s: applied.settings.balanceLabSandboxMode, p: applied.settings.smartSettingsProfile });
+  });
+  check('o111_a75_scenario_merge', 'Scenario draft inherits customSettings from profile', () => {
+    const merged = mergeO111SandboxIntoScenarioDraft({ title: 'Test' }, O111_SANDBOX_STARTER_PROFILES[0]);
+    return Boolean(merged.customSettings?.balanceLabSandboxMode) || JSON.stringify(merged.customSettings);
+  });
+  check('o111_a75_reject', 'Invalid export rejected', () => {
+    const v = validateO111SandboxProfileExport({ kind: 'wrong', schemaVersion: 99 });
+    return !v.ok && v.errors.length > 0 || 'expected errors';
+  });
+  return results;
+}
+
+
+// ============================================================================
 // SECTION 20P: V9.4 GAME FEEL & POLISH — RESPONSIVE • SATISFYING • CLEAR • ALIVE • POLISHED
 // ============================================================================
 // Presentation only. One motion language (tokens + a bounded set of CSS classes), a bounded UI feedback
@@ -136512,6 +136793,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
+  { id: 'o111_a75', label: 'O111 Agent 75 Sandbox Customization', tier: 'quick', section: 'System Regression', severity: 'MINOR', run: () => runO111SandboxCustomizationSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
@@ -240190,6 +240472,46 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
       }
     };
 
+    const handleExportSandboxProfile = () => {
+      const profile = captureO111SandboxProfile({
+        label: draft.title ? `${draft.title} sandbox` : undefined,
+        settings: gameSettings,
+        balanceSandbox: balanceSandboxConfig,
+        draftCustomSettings: draft.customSettings,
+      });
+      const ok = triggerJsonFileDownload(`o111-sandbox-${Date.now()}.json`, profile);
+      addNotification(ok ? 'Sandbox profile exported.' : 'Export blocked in this environment.', ok ? 'success' : 'warning', false);
+    };
+
+    const handleImportSandboxProfileFile = async (file: File) => {
+      try {
+        const rawText = await file.text();
+        const parsed = JSON.parse(rawText);
+        const v = validateO111SandboxProfileExport(parsed);
+        if (!v.ok || !v.profile) {
+          addNotification(`Invalid sandbox profile: ${v.errors.join(' ')}`, 'error', true);
+          return;
+        }
+        const isLiveMatch = Boolean(gameState.gameStarted && !gameState.gameOver);
+        const applied = applyO111SandboxProfile(gameSettings, v.profile, isLiveMatch);
+        setGameSettings(applied.settings);
+        setBalanceSandboxConfig(applied.balanceSandbox);
+        const mergedDraft = mergeO111SandboxIntoScenarioDraft(draft, v.profile);
+        dispatchGameState({
+          type: 'SET_CUSTOM_SCENARIO_BUILDER',
+          payload: (prev: CustomScenarioBuilderState) => ({
+            ...prev,
+            draftConfig: { ...prev.draftConfig, ...mergedDraft },
+            isDirty: true,
+          }),
+        });
+        const warn = applied.warnings.length ? ` (${applied.warnings.join('; ')})` : '';
+        addNotification(`Sandbox profile applied: ${v.profile.label}${warn}`, 'success', true);
+      } catch (e) {
+        addNotification(`Import failed: ${e instanceof Error ? e.message : String(e)}`, 'error', true);
+      }
+    };
+
     return (
       <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto" style={{ zIndex: globalUISurfaceManager.getZIndex("scenario_builder_modal") }} onClick={() => updateUiState({ showScenarioBuilderModal: false })}>
         <div className={`${themeStyles.card} ${themeStyles.border} border rounded-xl max-w-4xl w-full max-h-[calc(100dvh-2rem)] flex flex-col p-6 overflow-hidden`} onClick={(e) => e.stopPropagation()}>
@@ -240424,6 +240746,36 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
             {activeTab === 'presets' && (
               <div className="space-y-4">
                 <h4 className="font-bold text-sm">Preset Scenario Library</h4>
+                <div className="p-3 bg-purple-900/20 border border-purple-700/40 rounded-lg space-y-2">
+                  <div className="text-xs font-bold text-purple-200">O111 Sandbox customization starters</div>
+                  <div className="flex flex-wrap gap-2">
+                    {O111_SANDBOX_STARTER_PROFILES.map(starter => (
+                      <button
+                        key={starter.label}
+                        type="button"
+                        onClick={() => {
+                          const isLiveMatch = Boolean(gameState.gameStarted && !gameState.gameOver);
+                          const applied = applyO111SandboxProfile(gameSettings, starter, isLiveMatch);
+                          setGameSettings(applied.settings);
+                          setBalanceSandboxConfig(applied.balanceSandbox);
+                          const mergedDraft = mergeO111SandboxIntoScenarioDraft(draft, starter);
+                          dispatchGameState({
+                            type: 'SET_CUSTOM_SCENARIO_BUILDER',
+                            payload: (prev: CustomScenarioBuilderState) => ({
+                              ...prev,
+                              draftConfig: { ...prev.draftConfig, ...mergedDraft },
+                              isDirty: true,
+                            }),
+                          });
+                          addNotification(`Applied sandbox starter: ${starter.label}`, 'success', false);
+                        }}
+                        className="px-2 py-1 text-[11px] rounded bg-purple-700 hover:bg-purple-600 text-white font-semibold"
+                      >
+                        {starter.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="space-y-2">
                   {PRESET_CUSTOM_SCENARIOS.map(scen => (
                     <div key={scen.id} className="p-3 bg-gray-800 border border-gray-700 rounded-lg flex justify-between items-center">
@@ -240473,7 +240825,32 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
             >
               Close
             </button>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 items-center justify-end">
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                id="o111-sandbox-profile-import"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleImportSandboxProfileFile(file);
+                  e.target.value = '';
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleExportSandboxProfile}
+                className="px-3 py-2 bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold rounded"
+              >
+                ⬇ Export Sandbox Profile
+              </button>
+              <button
+                type="button"
+                onClick={() => document.getElementById('o111-sandbox-profile-import')?.click()}
+                className="px-3 py-2 bg-purple-900 hover:bg-purple-800 text-white text-xs font-bold rounded"
+              >
+                ⬆ Import Sandbox Profile
+              </button>
               <button
                 type="button"
                 onClick={handleSave}
