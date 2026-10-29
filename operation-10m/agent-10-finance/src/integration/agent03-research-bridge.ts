@@ -7,6 +7,10 @@ export interface Agent03ResearchSnapshot {
   productivityGainBand: 'flat' | 'moderate' | 'strong';
   supplySideReliefActive: boolean;
   innovationInflationOffsetScore: number;
+  /** Round 26: tech-tree inflation latch feeding supply-side CPI metadata. */
+  techTreeInflationLatch?: boolean;
+  /** Round 26: supply-side inflation offset band. */
+  supplySideOffsetBand?: 'weak' | 'building' | 'strong';
 }
 
 export function mergeAgent03IntoMacroFinancialInputs(
@@ -22,6 +26,12 @@ export function mergeAgent03IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier - 0.03, 0.85, 1.45);
   } else if (snapshot.productivityGainBand === 'flat' && !snapshot.supplySideReliefActive) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.techTreeInflationLatch && snapshot.supplySideOffsetBand === 'weak') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.supplySideOffsetBand === 'strong' && snapshot.supplySideReliefActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier - 0.04, 0.85, 1.45);
   }
 
   return {

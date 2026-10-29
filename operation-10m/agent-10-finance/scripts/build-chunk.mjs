@@ -77,6 +77,8 @@ const FILES = [
   'inflation/ai-memory-inflation-recall-inflation.ts',
   'inflation/calendar-season-inflation-carryover.ts',
   'inflation/automation-autopilot-inflation-drift.ts',
+  'inflation/research-productivity-inflation-offset.ts',
+  'inflation/scenario-sandbox-inflation-bias.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -136,6 +138,7 @@ const FILES = [
   'react/GuardianTeamInflationPanel.tsx',
   'react/StrategicMemoryInflationPanel.tsx',
   'react/TurnsAutomationInflationPanel.tsx',
+  'react/ResearchModesInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

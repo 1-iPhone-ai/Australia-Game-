@@ -4447,6 +4447,165 @@ export function automationAutopilotInflationDriftScoreAdjustment(band: Automatio
 }
 
 
+// --- source: inflation/research-productivity-inflation-offset.ts ---
+
+export type ResearchProductivityInflationOffsetBand = 'strong_relief' | 'moderate_relief' | 'neutral' | 'offset_failing';
+
+export interface ResearchProductivityInflationOffsetAssessment {
+  offsetBand: ResearchProductivityInflationOffsetBand;
+  productivityIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Research productivity and supply-side inflation offset (Agent 03). */
+export function assessResearchProductivityInflationOffset(input: {
+  productivityGainBand: 'flat' | 'moderate' | 'strong';
+  supplySideReliefActive: boolean;
+  innovationInflationOffsetScore: number;
+  techTreeInflationLatch: boolean;
+  supplySideOffsetBand: 'weak' | 'building' | 'strong';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): ResearchProductivityInflationOffsetAssessment {
+  let relief = 0;
+  if (input.productivityGainBand === 'strong' && input.supplySideReliefActive) {
+    relief += 0.28;
+  } else if (input.productivityGainBand === 'moderate') {
+    relief += 0.14;
+  } else if (input.productivityGainBand === 'flat') {
+    relief -= 0.12;
+  }
+  relief += finClamp(input.innovationInflationOffsetScore, 0, 1) * 0.22;
+  if (input.techTreeInflationLatch && input.supplySideOffsetBand === 'strong') {
+    relief += 0.16;
+  } else if (input.supplySideOffsetBand === 'building') {
+    relief += 0.08;
+  } else if (input.supplySideOffsetBand === 'weak') {
+    relief -= 0.1;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    relief -= 0.06;
+  }
+
+  relief = finClamp(relief + input.turn * 0.0025, -0.35, 0.85);
+  const productivityIndex = finRound(100 + relief * 18, 1);
+
+  let offsetBand: ResearchProductivityInflationOffsetBand = 'neutral';
+  if (relief >= 0.42) offsetBand = 'strong_relief';
+  else if (relief >= 0.2) offsetBand = 'moderate_relief';
+  else if (relief <= -0.08) offsetBand = 'offset_failing';
+
+  const inflationScoreNudge =
+    offsetBand === 'offset_failing'
+      ? 0.062
+      : offsetBand === 'neutral'
+        ? 0.018
+        : offsetBand === 'moderate_relief'
+          ? -0.022
+          : -0.048;
+
+  const narrative =
+    offsetBand === 'strong_relief' || offsetBand === 'moderate_relief'
+      ? 'Research productivity offset is easing CPI through supply-side relief.'
+      : offsetBand === 'offset_failing'
+        ? 'Flat productivity and weak offset band failing to contain inflation.'
+        : 'Innovation inflation offset neutral versus headline CPI.';
+
+  return { offsetBand, productivityIndex, inflationScoreNudge, narrative };
+}
+
+export function researchProductivityInflationOffsetScoreAdjustment(
+  band: ResearchProductivityInflationOffsetBand,
+): number {
+  if (band === 'offset_failing') return 3;
+  if (band === 'neutral') return 1;
+  if (band === 'moderate_relief') return -1;
+  return -2;
+}
+
+
+// --- source: inflation/scenario-sandbox-inflation-bias.ts ---
+
+export type ScenarioSandboxInflationBiasBand = 'disinflationary' | 'neutral' | 'inflationary' | 'extreme_stress';
+
+export interface ScenarioSandboxInflationBiasAssessment {
+  biasBand: ScenarioSandboxInflationBiasBand;
+  scenarioIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Scenario modes and sandbox stress inflation bias (Agent 04). */
+export function assessScenarioSandboxInflationBias(input: {
+  scenarioInflationBias: 'disinflationary' | 'neutral' | 'inflationary' | 'extreme';
+  sandboxStressModeActive: boolean;
+  difficultyCostMultiplier: number;
+  difficultyInflationCascade: boolean;
+  sandboxStressInflationBand: 'routine' | 'stressed' | 'extreme';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): ScenarioSandboxInflationBiasAssessment {
+  let pressure = 0;
+  if (input.scenarioInflationBias === 'extreme') {
+    pressure += 0.32;
+  } else if (input.scenarioInflationBias === 'inflationary') {
+    pressure += 0.18;
+  } else if (input.scenarioInflationBias === 'disinflationary') {
+    pressure -= 0.12;
+  }
+  if (input.sandboxStressModeActive) {
+    pressure += finClamp(input.difficultyCostMultiplier - 1, 0, 0.35) * 0.55;
+  }
+  if (input.difficultyInflationCascade) {
+    pressure += 0.14;
+  }
+  if (input.sandboxStressInflationBand === 'extreme') {
+    pressure += 0.2;
+  } else if (input.sandboxStressInflationBand === 'stressed') {
+    pressure += 0.1;
+  }
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.05;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.0038, -0.2, 1.05);
+  const scenarioIndex = finRound(100 + pressure * 17, 1);
+
+  let biasBand: ScenarioSandboxInflationBiasBand = 'neutral';
+  if (pressure >= 0.52) biasBand = 'extreme_stress';
+  else if (pressure >= 0.28) biasBand = 'inflationary';
+  else if (pressure <= -0.06) biasBand = 'disinflationary';
+
+  const inflationScoreNudge =
+    biasBand === 'extreme_stress'
+      ? 0.088
+      : biasBand === 'inflationary'
+        ? 0.052
+        : biasBand === 'disinflationary'
+          ? -0.028
+          : 0;
+
+  const narrative =
+    biasBand === 'extreme_stress' || biasBand === 'inflationary'
+      ? 'Scenario sandbox stress is biasing CPI metadata toward higher inflation.'
+      : biasBand === 'disinflationary'
+        ? 'Disinflationary scenario bias offsetting headline pressure.'
+        : 'Scenario inflation bias neutral versus headline CPI.';
+
+  return { biasBand, scenarioIndex, inflationScoreNudge, narrative };
+}
+
+export function scenarioSandboxInflationBiasScoreAdjustment(band: ScenarioSandboxInflationBiasBand): number {
+  if (band === 'extreme_stress') return 4;
+  if (band === 'inflationary') return 3;
+  if (band === 'disinflationary') return -1;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -5543,6 +5702,45 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       publicStability: 32,
     },
     tags: ['inflation', 'turns', 'automation', 'round25'],
+  },
+  {
+    id: 'research_productivity_offset_stack',
+    label: 'Research productivity offset stack',
+    description: 'Strong supply-side relief with tech-tree latch and building offset band.',
+    patch: {
+      highInflationScenario: false,
+      creditShockActive: false,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 0.94,
+    },
+    tags: ['inflation', 'research', 'round26'],
+  },
+  {
+    id: 'scenario_sandbox_bias_stress',
+    label: 'Scenario sandbox bias stress',
+    description: 'Extreme scenario bias with sandbox stress and difficulty cascade.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.31,
+      publicStability: 36,
+    },
+    tags: ['inflation', 'modes', 'round26'],
+  },
+  {
+    id: 'research_modes_fusion_stress',
+    label: 'Research & modes fusion stress',
+    description: 'Weak research offset colliding with extreme sandbox inflation bias.',
+    patch: {
+      inflationSettingMultiplier: 1.37,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      publicStability: 34,
+    },
+    tags: ['inflation', 'research', 'modes', 'round26'],
   },
 ] as const;
 
@@ -6892,6 +7090,10 @@ export interface Agent03ResearchSnapshot {
   productivityGainBand: 'flat' | 'moderate' | 'strong';
   supplySideReliefActive: boolean;
   innovationInflationOffsetScore: number;
+  /** Round 26: tech-tree inflation latch feeding supply-side CPI metadata. */
+  techTreeInflationLatch?: boolean;
+  /** Round 26: supply-side inflation offset band. */
+  supplySideOffsetBand?: 'weak' | 'building' | 'strong';
 }
 
 export function mergeAgent03IntoMacroFinancialInputs(
@@ -6907,6 +7109,12 @@ export function mergeAgent03IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier - 0.03, 0.85, 1.45);
   } else if (snapshot.productivityGainBand === 'flat' && !snapshot.supplySideReliefActive) {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.techTreeInflationLatch && snapshot.supplySideOffsetBand === 'weak') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.supplySideOffsetBand === 'strong' && snapshot.supplySideReliefActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier - 0.04, 0.85, 1.45);
   }
 
   return {
@@ -6998,6 +7206,10 @@ export interface Agent04ModesSnapshot {
   scenarioInflationBias: 'disinflationary' | 'neutral' | 'inflationary' | 'extreme';
   sandboxStressModeActive: boolean;
   difficultyCostMultiplier: number;
+  /** Round 26: difficulty setting inflation cascade active. */
+  difficultyInflationCascade?: boolean;
+  /** Round 26: sandbox stress inflation band. */
+  sandboxStressInflationBand?: 'routine' | 'stressed' | 'extreme';
 }
 
 export function mergeAgent04IntoMacroFinancialInputs(
@@ -7024,6 +7236,12 @@ export function mergeAgent04IntoMacroFinancialInputs(
   let highInflationScenario = base.highInflationScenario;
   if (snapshot.scenarioInflationBias === 'extreme') {
     highInflationScenario = true;
+  }
+  if (snapshot.difficultyInflationCascade && snapshot.sandboxStressInflationBand === 'extreme') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.sandboxStressInflationBand === 'stressed' && snapshot.sandboxStressModeActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {
@@ -7680,6 +7898,12 @@ export function agent23DashboardsBridgeIntegrationNote(): string {
   assessAutomationAutopilotInflationDrift,
   type AutomationAutopilotInflationDriftBand,
 } from '../inflation/automation-autopilot-inflation-drift.js';
+  assessResearchProductivityInflationOffset,
+  type ResearchProductivityInflationOffsetBand,
+} from '../inflation/research-productivity-inflation-offset.js';
+  assessScenarioSandboxInflationBias,
+  type ScenarioSandboxInflationBiasBand,
+} from '../inflation/scenario-sandbox-inflation-bias.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -7730,6 +7954,8 @@ export interface InflationForecastPoint {
   aiMemoryInflationRecallBand: AiMemoryInflationRecallBand;
   calendarSeasonInflationCarryoverBand: CalendarSeasonInflationCarryoverBand;
   automationAutopilotInflationDriftBand: AutomationAutopilotInflationDriftBand;
+  researchProductivityInflationOffsetBand: ResearchProductivityInflationOffsetBand;
+  scenarioSandboxInflationBiasBand: ScenarioSandboxInflationBiasBand;
 }
 
 export interface InflationForecastPath {
@@ -8128,6 +8354,25 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const researchOffset = assessResearchProductivityInflationOffset({
+      productivityGainBand: inputs.highInflationScenario ? 'flat' : inputs.creditShockActive ? 'moderate' : 'strong',
+      supplySideReliefActive: !inputs.creditShockActive || inputs.householdInflationScenarioActive,
+      innovationInflationOffsetScore: inputs.highInflationScenario ? 0.38 : 0.62,
+      techTreeInflationLatch: inputs.creditShockActive,
+      supplySideOffsetBand:
+        inputs.fiscalPressure === 'critical' ? 'weak' : inputs.householdInflationScenarioActive ? 'building' : 'strong',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const scenarioBias = assessScenarioSandboxInflationBias({
+      scenarioInflationBias: inputs.highInflationScenario ? 'extreme' : inputs.creditShockActive ? 'inflationary' : 'neutral',
+      sandboxStressModeActive: inputs.creditShockActive || inputs.fiscalPressure === 'critical',
+      difficultyCostMultiplier: inputs.fiscalPressure === 'critical' ? 1.2 : 1.05,
+      difficultyInflationCascade: inputs.householdInflationScenarioActive,
+      sandboxStressInflationBand: inputs.publicStability < 40 ? 'extreme' : inputs.publicStability < 50 ? 'stressed' : 'routine',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -8178,6 +8423,8 @@ export function projectInflationForecastPath(
       aiMemoryInflationRecallBand: memoryRecall.recallBand,
       calendarSeasonInflationCarryoverBand: calendarCarryover.carryoverBand,
       automationAutopilotInflationDriftBand: automationDrift.driftBand,
+      researchProductivityInflationOffsetBand: researchOffset.offsetBand,
+      scenarioSandboxInflationBiasBand: scenarioBias.biasBand,
     });
   }
 
@@ -8283,7 +8530,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r25';
+  schemaVersion: '10.14.agent10.r26';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -8329,6 +8576,8 @@ export interface Agent21InflationForecastBundle {
   terminalAiMemoryInflationRecall: AiMemoryInflationRecallBand;
   terminalCalendarSeasonInflationCarryover: CalendarSeasonInflationCarryoverBand;
   terminalAutomationAutopilotInflationDrift: AutomationAutopilotInflationDriftBand;
+  terminalResearchProductivityInflationOffset: ResearchProductivityInflationOffsetBand;
+  terminalScenarioSandboxInflationBias: ScenarioSandboxInflationBiasBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -8357,7 +8606,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r25',
+    schemaVersion: '10.14.agent10.r26',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -8403,6 +8652,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalAiMemoryInflationRecall: lastPoint?.aiMemoryInflationRecallBand ?? 'anchored',
     terminalCalendarSeasonInflationCarryover: lastPoint?.calendarSeasonInflationCarryoverBand ?? 'off_season',
     terminalAutomationAutopilotInflationDrift: lastPoint?.automationAutopilotInflationDriftBand ?? 'neutral',
+    terminalResearchProductivityInflationOffset: lastPoint?.researchProductivityInflationOffsetBand ?? 'neutral',
+    terminalScenarioSandboxInflationBias: lastPoint?.scenarioSandboxInflationBiasBand ?? 'neutral',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -8650,6 +8901,12 @@ export function effectiveTierLoanRate(
   assessAutomationAutopilotInflationDrift,
   automationAutopilotInflationDriftScoreAdjustment,
 } from './inflation/automation-autopilot-inflation-drift.js';
+  assessResearchProductivityInflationOffset,
+  researchProductivityInflationOffsetScoreAdjustment,
+} from './inflation/research-productivity-inflation-offset.js';
+  assessScenarioSandboxInflationBias,
+  scenarioSandboxInflationBiasScoreAdjustment,
+} from './inflation/scenario-sandbox-inflation-bias.js';
   mergeAgent22IntoMacroFinancialInputs,
   agent22UiBridgeIntegrationNote,
 } from './integration/agent22-ui-bridge.js';
@@ -9054,7 +9311,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r25');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r26');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -9201,7 +9458,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -9293,7 +9550,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -9392,7 +9649,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -9490,7 +9747,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -9588,7 +9845,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -9678,7 +9935,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -9768,7 +10025,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -9858,7 +10115,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r14_10',
       'agent21 r14 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalWaterUtilitiesPressure !== undefined &&
         bundle.terminalDomesticTravelPressure !== undefined,
     );
@@ -9948,7 +10205,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r15_10',
       'agent21 r15 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalConstructionMaterialsPressure !== undefined &&
         bundle.terminalRetailTradeMargin !== undefined,
     );
@@ -10040,7 +10297,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r16_10',
       'agent21 r16 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalFinancialServicesFee !== undefined &&
         bundle.terminalAgriculturalFarmgatePressure !== undefined,
     );
@@ -10136,7 +10393,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r17_10',
       'agent21 r17 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalPublicUtilitiesGridTariff !== undefined &&
         bundle.terminalUiInflationSalience !== undefined,
     );
@@ -10240,7 +10497,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r18_10',
       'agent21 r18 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalHousingMortgageEssential !== undefined &&
         bundle.terminalMacroTransmissionMerge !== undefined,
     );
@@ -10345,7 +10602,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r19_10',
       'agent21 r19 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalDynamicEventsInflationSpillover !== undefined &&
         bundle.terminalDashboardMapInflationOverlay !== undefined,
     );
@@ -10450,7 +10707,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r20_10',
       'agent21 r20 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalPublicFinanceDebtService !== undefined &&
         bundle.terminalPopulationLaborWage !== undefined,
     );
@@ -10560,7 +10817,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r21_10',
       'agent21 r21 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalWholesaleEnergyTransition !== undefined &&
         bundle.terminalUrbanRentDispersion !== undefined,
     );
@@ -10662,7 +10919,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r22_10',
       'agent21 r22 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalCorporatePricingPassThrough !== undefined &&
         bundle.terminalTradeExchangeImport !== undefined,
     );
@@ -10768,7 +11025,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r23_10',
       'agent21 r23 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalGuardianInflationIntervention !== undefined &&
         bundle.terminalTeamIntelligenceConsensus !== undefined,
     );
@@ -10874,7 +11131,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r24_10',
       'agent21 r24 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalStrategicGeopoliticalPremium !== undefined &&
         bundle.terminalAiMemoryInflationRecall !== undefined,
     );
@@ -10980,7 +11237,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r25_10',
       'agent21 r25 fields',
-      bundle.schemaVersion === '10.14.agent10.r25' &&
+      bundle.schemaVersion === '10.14.agent10.r26' &&
         bundle.terminalCalendarSeasonInflationCarryover !== undefined &&
         bundle.terminalAutomationAutopilotInflationDrift !== undefined,
     );
@@ -11007,6 +11264,122 @@ export function runAgent10FinanceSelfTests(): {
     (() => {
       const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'turns_automation_fusion_stress');
       return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.35;
+    })(),
+  );
+
+  // --- Round 26 scale wave ---
+  {
+    const offset = assessResearchProductivityInflationOffset({
+      productivityGainBand: 'strong',
+      supplySideReliefActive: true,
+      innovationInflationOffsetScore: 0.72,
+      techTreeInflationLatch: true,
+      supplySideOffsetBand: 'strong',
+      inflationBand: 'elevated',
+      turn: 2,
+    });
+    check(
+      'a10_r26_01',
+      'research strong or moderate relief',
+      offset.offsetBand === 'strong_relief' || offset.offsetBand === 'moderate_relief',
+    );
+    check(
+      'a10_r26_02',
+      'research score adj relief',
+      researchProductivityInflationOffsetScoreAdjustment(offset.offsetBand) <= 0,
+    );
+  }
+  {
+    const bias = assessScenarioSandboxInflationBias({
+      scenarioInflationBias: 'extreme',
+      sandboxStressModeActive: true,
+      difficultyCostMultiplier: 1.22,
+      difficultyInflationCascade: true,
+      sandboxStressInflationBand: 'extreme',
+      inflationBand: 'high',
+      turn: 2,
+    });
+    check(
+      'a10_r26_03',
+      'scenario extreme or inflationary',
+      bias.biasBand === 'extreme_stress' || bias.biasBand === 'inflationary',
+    );
+    check('a10_r26_04', 'scenario score adj', scenarioSandboxInflationBiasScoreAdjustment(bias.biasBand) >= 3);
+  }
+  {
+    const merged03 = mergeAgent03IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      productivityGainBand: 'flat',
+      supplySideReliefActive: false,
+      innovationInflationOffsetScore: 0.2,
+      techTreeInflationLatch: true,
+      supplySideOffsetBand: 'weak',
+    });
+    check(
+      'a10_r26_05',
+      'agent03 latch weak merge',
+      (merged03.inflationSettingMultiplier ?? 1) > (makeDefaultMacroFinancialTestInputs().inflationSettingMultiplier ?? 1),
+    );
+    check('a10_r26_06', 'agent03 bridge note', agent03ResearchBridgeIntegrationNote().includes('Agent 03'));
+  }
+  {
+    const merged04 = mergeAgent04IntoMacroFinancialInputs(makeDefaultMacroFinancialTestInputs(), {
+      turn: 1,
+      scenarioInflationBias: 'inflationary',
+      sandboxStressModeActive: true,
+      difficultyCostMultiplier: 1.15,
+      difficultyInflationCascade: true,
+      sandboxStressInflationBand: 'extreme',
+    });
+    check('a10_r26_07', 'agent04 cascade merge', merged04.highInflationScenario === true);
+    check('a10_r26_08', 'agent04 bridge note', agent04ModesBridgeIntegrationNote().includes('Agent 04'));
+  }
+  {
+    const path = projectInflationForecastPath(4);
+    check(
+      'a10_r26_09',
+      'forecast research offset and scenario bias fields',
+      path.points.every(
+        (p) => !!p.researchProductivityInflationOffsetBand && !!p.scenarioSandboxInflationBiasBand,
+      ),
+    );
+    const bundle = buildAgent21InflationForecastBundle({
+      path,
+      regime: null,
+      shock: classifyInflationShockDrivers('elevated', makeDefaultMacroFinancialTestInputs(), null),
+      fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
+      targetBreach: assessInflationTargetBreach(65),
+    });
+    check(
+      'a10_r26_10',
+      'agent21 r26 fields',
+      bundle.schemaVersion === '10.14.agent10.r26' &&
+        bundle.terminalResearchProductivityInflationOffset !== undefined &&
+        bundle.terminalScenarioSandboxInflationBias !== undefined,
+    );
+  }
+  check(
+    'a10_r26_11',
+    'round26 preset research offset stack',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'research_productivity_offset_stack');
+      return inp?.householdInflationScenarioActive === true && (inp.inflationSettingMultiplier ?? 1) < 1;
+    })(),
+  );
+  check(
+    'a10_r26_12',
+    'round26 preset sandbox bias stress',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'scenario_sandbox_bias_stress');
+      return inp?.highInflationScenario === true && inp.creditShockActive === true;
+    })(),
+  );
+  check(
+    'a10_r26_13',
+    'round26 preset research modes fusion',
+    (() => {
+      const inp = applyMacroFinancialScenarioPreset(makeDefaultMacroFinancialTestInputs(), 'research_modes_fusion_stress');
+      return inp?.highInflationScenario === true && (inp.inflationSettingMultiplier ?? 1) > 1.36;
     })(),
   );
 
@@ -12556,6 +12929,78 @@ export function TurnsAutomationInflationPanel(props: TurnsAutomationInflationPan
       </p>
       <p data-testid="turns-automation-note">{calendar.narrative}</p>
       <p>{drift.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/ResearchModesInflationPanel.tsx ---
+  assessResearchProductivityInflationOffset,
+  researchProductivityInflationOffsetScoreAdjustment,
+} from '../inflation/research-productivity-inflation-offset.js';
+  assessScenarioSandboxInflationBias,
+  scenarioSandboxInflationBiasScoreAdjustment,
+} from '../inflation/scenario-sandbox-inflation-bias.js';
+
+export interface ResearchModesInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent03?: Agent03ResearchSnapshot | null;
+  agent04?: Agent04ModesSnapshot | null;
+}
+
+export function ResearchModesInflationPanel(props: ResearchModesInflationPanelProps) {
+  const research = props.agent03 ?? {
+    turn: props.inputs.turn,
+    productivityGainBand: props.inputs.highInflationScenario ? ('flat' as const) : ('moderate' as const),
+    supplySideReliefActive: !props.inputs.creditShockActive,
+    innovationInflationOffsetScore: props.inputs.householdInflationScenarioActive ? 0.35 : 0.58,
+    techTreeInflationLatch: props.inputs.creditShockActive,
+    supplySideOffsetBand: props.inputs.fiscalPressure === 'critical' ? ('weak' as const) : ('building' as const),
+  };
+
+  const modes = props.agent04 ?? {
+    turn: props.inputs.turn,
+    scenarioInflationBias: props.inputs.highInflationScenario ? ('extreme' as const) : ('inflationary' as const),
+    sandboxStressModeActive: props.inputs.creditShockActive,
+    difficultyCostMultiplier: props.inputs.fiscalPressure === 'critical' ? 1.22 : 1.08,
+    difficultyInflationCascade: props.inputs.householdInflationScenarioActive,
+    sandboxStressInflationBand: props.inputs.publicStability < 42 ? ('extreme' as const) : ('stressed' as const),
+  };
+
+  const offset = assessResearchProductivityInflationOffset({
+    productivityGainBand: research.productivityGainBand,
+    supplySideReliefActive: research.supplySideReliefActive,
+    innovationInflationOffsetScore: research.innovationInflationOffsetScore,
+    techTreeInflationLatch: research.techTreeInflationLatch === true,
+    supplySideOffsetBand: research.supplySideOffsetBand ?? 'building',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const bias = assessScenarioSandboxInflationBias({
+    scenarioInflationBias: modes.scenarioInflationBias,
+    sandboxStressModeActive: modes.sandboxStressModeActive,
+    difficultyCostMultiplier: modes.difficultyCostMultiplier,
+    difficultyInflationCascade: modes.difficultyInflationCascade === true,
+    sandboxStressInflationBand: modes.sandboxStressInflationBand ?? 'routine',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-research-modes-inflation" data-testid="research-modes-inflation-panel">
+      <h4>Research offset & scenario bias (round 26)</h4>
+      <p>
+        Productivity {offset.offsetBand} · index {offset.productivityIndex.toFixed(0)} · score adj{' '}
+        {researchProductivityInflationOffsetScoreAdjustment(offset.offsetBand)}
+      </p>
+      <p>
+        Scenario {bias.biasBand} · index {bias.scenarioIndex.toFixed(0)} · score adj{' '}
+        {scenarioSandboxInflationBiasScoreAdjustment(bias.biasBand)}
+      </p>
+      <p data-testid="research-modes-note">{offset.narrative}</p>
+      <p>{bias.narrative}</p>
     </div>
   );
 }

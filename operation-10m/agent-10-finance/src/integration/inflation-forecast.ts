@@ -168,6 +168,14 @@ import {
   assessAutomationAutopilotInflationDrift,
   type AutomationAutopilotInflationDriftBand,
 } from '../inflation/automation-autopilot-inflation-drift.js';
+import {
+  assessResearchProductivityInflationOffset,
+  type ResearchProductivityInflationOffsetBand,
+} from '../inflation/research-productivity-inflation-offset.js';
+import {
+  assessScenarioSandboxInflationBias,
+  type ScenarioSandboxInflationBiasBand,
+} from '../inflation/scenario-sandbox-inflation-bias.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -218,6 +226,8 @@ export interface InflationForecastPoint {
   aiMemoryInflationRecallBand: AiMemoryInflationRecallBand;
   calendarSeasonInflationCarryoverBand: CalendarSeasonInflationCarryoverBand;
   automationAutopilotInflationDriftBand: AutomationAutopilotInflationDriftBand;
+  researchProductivityInflationOffsetBand: ResearchProductivityInflationOffsetBand;
+  scenarioSandboxInflationBiasBand: ScenarioSandboxInflationBiasBand;
 }
 
 export interface InflationForecastPath {
@@ -616,6 +626,25 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const researchOffset = assessResearchProductivityInflationOffset({
+      productivityGainBand: inputs.highInflationScenario ? 'flat' : inputs.creditShockActive ? 'moderate' : 'strong',
+      supplySideReliefActive: !inputs.creditShockActive || inputs.householdInflationScenarioActive,
+      innovationInflationOffsetScore: inputs.highInflationScenario ? 0.38 : 0.62,
+      techTreeInflationLatch: inputs.creditShockActive,
+      supplySideOffsetBand:
+        inputs.fiscalPressure === 'critical' ? 'weak' : inputs.householdInflationScenarioActive ? 'building' : 'strong',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const scenarioBias = assessScenarioSandboxInflationBias({
+      scenarioInflationBias: inputs.highInflationScenario ? 'extreme' : inputs.creditShockActive ? 'inflationary' : 'neutral',
+      sandboxStressModeActive: inputs.creditShockActive || inputs.fiscalPressure === 'critical',
+      difficultyCostMultiplier: inputs.fiscalPressure === 'critical' ? 1.2 : 1.05,
+      difficultyInflationCascade: inputs.householdInflationScenarioActive,
+      sandboxStressInflationBand: inputs.publicStability < 40 ? 'extreme' : inputs.publicStability < 50 ? 'stressed' : 'routine',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -666,6 +695,8 @@ export function projectInflationForecastPath(
       aiMemoryInflationRecallBand: memoryRecall.recallBand,
       calendarSeasonInflationCarryoverBand: calendarCarryover.carryoverBand,
       automationAutopilotInflationDriftBand: automationDrift.driftBand,
+      researchProductivityInflationOffsetBand: researchOffset.offsetBand,
+      scenarioSandboxInflationBiasBand: scenarioBias.biasBand,
     });
   }
 

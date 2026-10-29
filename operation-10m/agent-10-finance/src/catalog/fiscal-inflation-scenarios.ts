@@ -859,6 +859,45 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'turns', 'automation', 'round25'],
   },
+  {
+    id: 'research_productivity_offset_stack',
+    label: 'Research productivity offset stack',
+    description: 'Strong supply-side relief with tech-tree latch and building offset band.',
+    patch: {
+      highInflationScenario: false,
+      creditShockActive: false,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 0.94,
+    },
+    tags: ['inflation', 'research', 'round26'],
+  },
+  {
+    id: 'scenario_sandbox_bias_stress',
+    label: 'Scenario sandbox bias stress',
+    description: 'Extreme scenario bias with sandbox stress and difficulty cascade.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      fiscalPressure: 'critical',
+      inflationSettingMultiplier: 1.31,
+      publicStability: 36,
+    },
+    tags: ['inflation', 'modes', 'round26'],
+  },
+  {
+    id: 'research_modes_fusion_stress',
+    label: 'Research & modes fusion stress',
+    description: 'Weak research offset colliding with extreme sandbox inflation bias.',
+    patch: {
+      inflationSettingMultiplier: 1.37,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      publicStability: 34,
+    },
+    tags: ['inflation', 'research', 'modes', 'round26'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

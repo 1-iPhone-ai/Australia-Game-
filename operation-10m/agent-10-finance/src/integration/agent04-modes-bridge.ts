@@ -7,6 +7,10 @@ export interface Agent04ModesSnapshot {
   scenarioInflationBias: 'disinflationary' | 'neutral' | 'inflationary' | 'extreme';
   sandboxStressModeActive: boolean;
   difficultyCostMultiplier: number;
+  /** Round 26: difficulty setting inflation cascade active. */
+  difficultyInflationCascade?: boolean;
+  /** Round 26: sandbox stress inflation band. */
+  sandboxStressInflationBand?: 'routine' | 'stressed' | 'extreme';
 }
 
 export function mergeAgent04IntoMacroFinancialInputs(
@@ -33,6 +37,12 @@ export function mergeAgent04IntoMacroFinancialInputs(
   let highInflationScenario = base.highInflationScenario;
   if (snapshot.scenarioInflationBias === 'extreme') {
     highInflationScenario = true;
+  }
+  if (snapshot.difficultyInflationCascade && snapshot.sandboxStressInflationBand === 'extreme') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.sandboxStressInflationBand === 'stressed' && snapshot.sandboxStressModeActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
   return {
