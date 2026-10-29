@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 77);
+  assert.ok(r.passed >= 79);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -1585,5 +1585,49 @@ test('round 34: blocked arc recharge weakens continuity vs recharged baseline', 
   assert.ok(
     recharged.state.forwardArcRechargeContinuity.score >=
       blocked.state.forwardArcRechargeContinuity.score - 0.14,
+  );
+});
+
+test('round 35: priming continuity and next arc open prep gate on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.renewalArcPrimingContinuitySmoothing = 0.62;
+  persisted.bilateralNextArcOpenPrepGateSmoothing = 0.6;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 87,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 118 } } },
+    persisted,
+  });
+  assert.ok(r.state.renewalArcPrimingContinuity);
+  assert.ok(['settled', 'holding', 'unsettled', 'void'].includes(r.state.renewalArcPrimingContinuity.band));
+  assert.ok(r.state.bilateralNextArcOpenPrepGate);
+  assert.ok(['prepped', 'staging', 'deferred', 'blocked'].includes(r.state.bilateralNextArcOpenPrepGate.band));
+  assert.ok(r.persisted.renewalArcPrimingContinuitySmoothing != null);
+  assert.ok(r.persisted.bilateralNextArcOpenPrepGateSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Renewal arc priming continuity/i.test(n)));
+  assert.ok(notes.some(n => /Bilateral next arc open prep gate/i.test(n)));
+});
+
+test('round 35: blocked priming gate weakens continuity vs primed baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralRenewalArcPrimingGateSmoothing = 0.95;
+  persisted.forwardArcRechargeContinuitySmoothing = 0.92;
+  const primed = advanceGlobalTradeEconomyTurn({
+    turn: 88,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 100 } } },
+    persisted: { ...persisted },
+  });
+  persisted.bilateralRenewalArcPrimingGateSmoothing = 0.17;
+  persisted.forwardArcRechargeContinuitySmoothing = 0.15;
+  const blocked = advanceGlobalTradeEconomyTurn({
+    turn: 88,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 250 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    primed.state.renewalArcPrimingContinuity.score >= blocked.state.renewalArcPrimingContinuity.score - 0.14,
   );
 });

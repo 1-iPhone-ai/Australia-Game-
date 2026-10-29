@@ -214,6 +214,8 @@ export interface GTELPersisted {
   bilateralRenewalArcPrimingGateSmoothing?: number;
   renewalArcPrimingContinuitySmoothing?: number;
   bilateralNextArcOpenPrepGateSmoothing?: number;
+  nextArcOpenPrepContinuitySmoothing?: number;
+  bilateralPreparedArcOpeningHandoffSmoothing?: number;
 }
 
 export interface GTELState {
@@ -297,6 +299,8 @@ export interface GTELState {
   bilateralRenewalArcPrimingGate: GTELBilateralRenewalArcPrimingGateSnapshot;
   renewalArcPrimingContinuity: GTELRenewalArcPrimingContinuitySnapshot;
   bilateralNextArcOpenPrepGate: GTELBilateralNextArcOpenPrepGateSnapshot;
+  nextArcOpenPrepContinuity: GTELNextArcOpenPrepContinuitySnapshot;
+  bilateralPreparedArcOpeningHandoff: GTELBilateralPreparedArcOpeningHandoffSnapshot;
   inputHash: string;
 }
 
@@ -1121,6 +1125,26 @@ export interface GTELBilateralNextArcOpenPrepGateSnapshot {
   band: GTELBilateralNextArcOpenPrepGateBand;
   continuityFeed: number;
   cyclePrimingLift: number;
+  summary: string;
+}
+
+export type GTELNextArcOpenPrepContinuityBand = 'ready' | 'aligned' | 'drifting' | 'cleared';
+
+export interface GTELNextArcOpenPrepContinuitySnapshot {
+  score: number;
+  band: GTELNextArcOpenPrepContinuityBand;
+  prepGateSupport: number;
+  primingAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralPreparedArcOpeningHandoffBand = 'handed_off' | 'coupling' | 'queued' | 'withheld';
+
+export interface GTELBilateralPreparedArcOpeningHandoffSnapshot {
+  score: number;
+  band: GTELBilateralPreparedArcOpeningHandoffBand;
+  prepContinuityFeed: number;
+  arcOpeningLift: number;
   summary: string;
 }
 

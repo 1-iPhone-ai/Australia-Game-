@@ -310,6 +310,16 @@ import {
   bilateralNextArcOpenPrepGateExportScale,
 } from './bilateral-next-arc-open-prep-gate.ts';
 import {
+  computeNextArcOpenPrepContinuitySnapshot,
+  createEmptyNextArcOpenPrepContinuitySnapshot,
+  nextArcOpenPrepContinuityExportScale,
+} from './next-arc-open-prep-continuity.ts';
+import {
+  computeBilateralPreparedArcOpeningHandoffSnapshot,
+  createEmptyBilateralPreparedArcOpeningHandoffSnapshot,
+  bilateralPreparedArcOpeningHandoffExportScale,
+} from './bilateral-prepared-arc-opening-handoff.ts';
+import {
   computeBilateralTradeWindowContinuitySnapshot,
   createEmptyBilateralTradeWindowContinuitySnapshot,
 } from './bilateral-trade-window-continuity.ts';
@@ -2107,6 +2117,58 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralRenewalArcPrimingGateExportScale(primed) >= bilateralRenewalArcPrimingGateExportScale(blocked),
       'expected renewal priming scale lift',
+    );
+  });
+
+  ok('renewal arc priming continuity improves when priming gate is primed', () => {
+    const gate = {
+      ...createEmptyBilateralRenewalArcPrimingGateSnapshot(),
+      score: 0.95,
+      band: 'primed' as const,
+    };
+    const recharge = {
+      ...createEmptyForwardArcRechargeContinuitySnapshot(),
+      score: 0.93,
+      band: 'held' as const,
+    };
+    const settled = computeRenewalArcPrimingContinuitySnapshot({
+      bilateralRenewalArcPrimingGate: gate,
+      forwardArcRechargeContinuity: recharge,
+      persisted: { ...createEmptyGTELPersisted(), renewalArcPrimingContinuitySmoothing: 0.94 },
+    }).snapshot;
+    const voided = computeRenewalArcPrimingContinuitySnapshot({
+      bilateralRenewalArcPrimingGate: { ...gate, score: 0.1, band: 'blocked' },
+      forwardArcRechargeContinuity: { ...recharge, score: 0.08, band: 'lost' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(settled.score > voided.score, 'expected settled priming continuity');
+    gtelAssert(
+      renewalArcPrimingContinuityExportScale(settled) >= renewalArcPrimingContinuityExportScale(voided),
+      'expected priming continuity scale lift',
+    );
+  });
+
+  ok('bilateral next arc open prep gate improves when continuity is settled', () => {
+    const continuity = {
+      ...createEmptyRenewalArcPrimingContinuitySnapshot(),
+      score: 0.96,
+      band: 'settled' as const,
+    };
+    const ack = { ...createEmptyAcknowledgedCyclePrimingSnapshot(), score: 0.92, band: 'primed' as const };
+    const prepped = computeBilateralNextArcOpenPrepGateSnapshot({
+      renewalArcPrimingContinuity: continuity,
+      acknowledgedCyclePriming: ack,
+      persisted: { ...createEmptyGTELPersisted(), bilateralNextArcOpenPrepGateSmoothing: 0.96 },
+    }).snapshot;
+    const blocked = computeBilateralNextArcOpenPrepGateSnapshot({
+      renewalArcPrimingContinuity: { ...continuity, score: 0.11, band: 'void' },
+      acknowledgedCyclePriming: { ...ack, score: 0.08, band: 'empty' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(prepped.score > blocked.score, 'expected arc prep when settled');
+    gtelAssert(
+      bilateralNextArcOpenPrepGateExportScale(prepped) >= bilateralNextArcOpenPrepGateExportScale(blocked),
+      'expected arc prep scale lift',
     );
   });
 

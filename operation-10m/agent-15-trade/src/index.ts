@@ -77,5 +77,7 @@ export * from './forward-arc-recharge-continuity.ts';
 export * from './bilateral-renewal-arc-priming-gate.ts';
 export * from './renewal-arc-priming-continuity.ts';
 export * from './bilateral-next-arc-open-prep-gate.ts';
+export * from './next-arc-open-prep-continuity.ts';
+export * from './bilateral-prepared-arc-opening-handoff.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';
