@@ -1521,6 +1521,174 @@ export function buildTurnPackGiClaims(params: {
 }
 
 
+// --- source: slice-attribution-audit.ts ---
+
+export const AGENT19_SLICE_ATTRIBUTION_TOLERANCE = 0.05;
+
+export interface TurnSliceAttributionReport {
+  auditOk: boolean;
+  sliceMismatchCount: number;
+  findings: MemoryInfluenceAuditFinding[];
+  narrativeLines: string[];
+}
+
+/** Turn-level explainability check that influence slices reconcile to memoryInfluence per decision. */
+export function auditTurnSliceAttribution(
+  before: MemoryInfluenceDecisionLike[],
+  after: MemoryInfluenceDecisionLike[],
+): TurnSliceAttributionReport {
+  const findings = auditMemoryInfluenceDecisions(before, after);
+  const sliceMismatchCount = findings.filter(f => f.code === 'slice_sum_mismatch').length;
+  const auditOk = auditFindingsOk(findings) && sliceMismatchCount === 0;
+  const narrativeLines = [
+    sliceMismatchCount
+      ? `Slice attribution audit: ${sliceMismatchCount} decision(s) have slice sums outside ±${AGENT19_SLICE_ATTRIBUTION_TOLERANCE}.`
+      : 'Slice attribution audit: influenced decisions reconcile slices to memoryInfluence.',
+  ];
+  findings
+    .filter(f => f.code === 'slice_sum_mismatch')
+    .forEach(f => narrativeLines.push(`[warn] ${f.message}`));
+  return { auditOk, sliceMismatchCount, findings, narrativeLines };
+}
+
+export function turnSliceAttributionOk(report: TurnSliceAttributionReport): boolean {
+  return report.auditOk;
+}
+
+
+// --- source: gi-redaction-consistency-audit.ts ---
+
+const REDACTED_LEAK_PATTERNS = [/aggressionPreference/i, /expansionPreference/i, /economicPreference/i, /strategic profile/i];
+
+/** Ensures Ask-the-Game claims do not expose rival-only inspection fields when view is redacted. */
+export function auditGiRedactionConsistency(params: {
+  claims: Array<{ text: string }>;
+  inspection: AiMemoryInspectionView | null | undefined;
+}): MemoryInfluenceAuditFinding[] {
+  if (!params.inspection?.isRedacted) return [];
+  const findings: MemoryInfluenceAuditFinding[] = [];
+  params.claims.forEach((c, i) => {
+    if (REDACTED_LEAK_PATTERNS.some(p => p.test(c.text))) {
+      findings.push({
+        code: 'gi_redaction_leak',
+        severity: 'fail',
+        message: `Claim ${i} may expose redacted rival data.`,
+      });
+    }
+  });
+  return findings;
+}
+
+export function auditTurnPackGiRedaction(
+  pack: TurnExplainabilityPack,
+  inspection: AiMemoryInspectionView,
+): MemoryInfluenceAuditFinding[] {
+  const claims = buildTurnPackGiClaims({
+    pack,
+    horizon: pack.horizonAfter,
+    inspection,
+  });
+  return auditGiRedactionConsistency({ claims, inspection });
+}
+
+export function giRedactionConsistencyOk(findings: MemoryInfluenceAuditFinding[]): boolean {
+  return !findings.some(f => f.severity === 'fail');
+}
+
+
+// --- source: multi-turn-drift-rollup.ts ---
+
+export interface MultiTurnDriftRollup {
+  pairCount: number;
+  spikeCount: number;
+  horizonShiftCount: number;
+  findings: MemoryInfluenceAuditFinding[];
+  narrativeLines: string[];
+}
+
+/** Walk consecutive turn packs and aggregate influence drift warnings for session briefs. */
+export function buildMultiTurnDriftRollup(packs: TurnExplainabilityPack[]): MultiTurnDriftRollup {
+  const findings: MemoryInfluenceAuditFinding[] = [];
+  for (let i = 1; i < packs.length; i++) {
+    auditInfluenceDriftBetweenTurns(packs[i - 1], packs[i]).forEach(f => findings.push(f));
+  }
+  const spikeCount = findings.filter(f => f.code === 'influence_spike').length;
+  const horizonShiftCount = findings.filter(f => f.code === 'dominant_horizon_shift').length;
+  const narrativeLines =
+    packs.length >= 2
+      ? [`Multi-turn drift scan across ${packs.length - 1} consecutive pair(s).`, ...summarizeInfluenceDrift(findings).slice(1)]
+      : summarizeInfluenceDrift(findings);
+  return {
+    pairCount: Math.max(0, packs.length - 1),
+    spikeCount,
+    horizonShiftCount,
+    findings,
+    narrativeLines,
+  };
+}
+
+
+// --- source: integrity-recovery-hints.ts ---
+
+export const AGENT19_RECOVERY_HINT_CAP = 6;
+
+/** Player-facing hints when integrity audits fail — keeps explainability honest without vetoing play. */
+export function buildIntegrityRecoveryHints(report: ExplainabilityIntegrityReport): string[] {
+  const hints: string[] = [];
+  if (!report.boundsOk) {
+    hints.push('Trim committed events or opponent beliefs to documented caps before showing detailed explainability.');
+  }
+  if (!report.retentionOk) {
+    hints.push('Resolve duplicate stableKey events — retention flags may confuse timeline narratives.');
+  }
+  if (!report.stalenessOk) {
+    hints.push('Refresh relationship snapshots or disclose staleness in Ask-the-Game claims.');
+  }
+  report.findings
+    .filter(f => f.severity === 'fail')
+    .slice(0, 3)
+    .forEach(f => hints.push(`Address ${f.code}: ${f.message}`));
+  if (!hints.length) {
+    hints.push('Integrity checks passed — turn packs and GI claims can use full detail.');
+  }
+  return hints.slice(0, AGENT19_RECOVERY_HINT_CAP);
+}
+
+
+// --- source: adaptive-plan-influence-bridge.ts ---
+
+export const AGENT19_DIRECTIVE_BRIDGE_MAG_THRESHOLD = 5;
+
+/** Links team_directive influence slices to adaptive counter-plan narratives for the same turn. */
+export function buildAdaptivePlanInfluenceBridge(
+  memory: AiActorMemory | null | undefined,
+  pack: TurnExplainabilityPack,
+): string[] {
+  const directiveMag = Math.abs(pack.influenceSummary.byHorizon.team_directive?.totalDelta ?? 0);
+  const lines = explainAdaptivePlan(memory);
+  if (directiveMag >= AGENT19_DIRECTIVE_BRIDGE_MAG_THRESHOLD && memory?.adaptivePlan) {
+    lines.push(
+      `Team-directive slices contributed ${directiveMag.toFixed(2)} |Δ| this turn — cross-check adaptive plan (${memory.adaptivePlan.status}).`,
+    );
+  } else if (directiveMag >= AGENT19_DIRECTIVE_BRIDGE_MAG_THRESHOLD) {
+    lines.push(
+      `Team-directive influence ${directiveMag.toFixed(2)} |Δ| without an adaptive plan — cite team directives only.`,
+    );
+  }
+  return lines;
+}
+
+export function adaptivePlanInfluenceAligned(
+  memory: AiActorMemory | null | undefined,
+  pack: TurnExplainabilityPack,
+): boolean {
+  const directiveMag = Math.abs(pack.influenceSummary.byHorizon.team_directive?.totalDelta ?? 0);
+  if (directiveMag < AGENT19_DIRECTIVE_BRIDGE_MAG_THRESHOLD) return true;
+  if (!memory?.adaptivePlan) return true;
+  return memory.adaptivePlan.status !== 'abandoned' || directiveMag < 15;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -1651,6 +1819,14 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditInfluenceDriftBetweenTurns,
   AGENT19_INFLUENCE_DRIFT_SPIKE_THRESHOLD,
 } from '../influence-drift-audit.ts';
+  auditGiRedactionConsistency,
+  auditTurnPackGiRedaction,
+  giRedactionConsistencyOk,
+} from '../gi-redaction-consistency-audit.ts';
+  adaptivePlanInfluenceAligned,
+  buildAdaptivePlanInfluenceBridge,
+  AGENT19_DIRECTIVE_BRIDGE_MAG_THRESHOLD,
+} from '../adaptive-plan-influence-bridge.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -2372,6 +2548,158 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             claims.some(c => c.id === 'turn_counterfactual') &&
             claims.some(c => c.id === 'mem_rule_based')
           ) || claims.map(c => c.id).join(',');
+        },
+      ],
+      [
+        'a19_r7_slice_attribution_ok',
+        'Turn slice attribution passes when slices sum to influence',
+        () => {
+          const report = auditTurnSliceAttribution(
+            [{ type: 'a', score: 5 }],
+            [
+              {
+                type: 'a',
+                score: 10,
+                memoryInfluence: 5,
+                memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 'trust' }],
+              },
+            ],
+          );
+          return turnSliceAttributionOk(report) && report.sliceMismatchCount === 0 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r7_slice_attribution_fail',
+        'Slice attribution flags mismatched slice sums',
+        () => {
+          const report = auditTurnSliceAttribution(
+            [{ type: 'a', score: 5 }],
+            [
+              {
+                type: 'a',
+                score: 10,
+                memoryInfluence: 5,
+                memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust' }],
+              },
+            ],
+          );
+          return !turnSliceAttributionOk(report) && report.sliceMismatchCount === 1 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r7_gi_redaction_ok',
+        'Turn pack GI claims stay consistent under redacted inspection',
+        () => {
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [{ type: 'a', score: 2, memoryInfluence: 1 }],
+          });
+          const inspection = getFilteredAiMemoryInspectionView(createEmptyAiActorMemory('ai'), {
+            viewerTeamId: 'team_player',
+            ownerTeamId: 'team_opponent',
+          });
+          const findings = auditTurnPackGiRedaction(pack, inspection);
+          return giRedactionConsistencyOk(findings) && inspection.isRedacted || JSON.stringify(findings);
+        },
+      ],
+      [
+        'a19_r7_gi_redaction_leak',
+        'GI redaction audit fails when claims mention private profiles',
+        () => {
+          const findings = auditGiRedactionConsistency({
+            claims: [{ text: 'Rival strategic profile aggressionPreference is 0.9' }],
+            inspection: getFilteredAiMemoryInspectionView(createEmptyAiActorMemory('ai'), {
+              viewerTeamId: 'a',
+              ownerTeamId: 'b',
+            }),
+          });
+          return findings.some(f => f.code === 'gi_redaction_leak') || JSON.stringify(findings);
+        },
+      ],
+      [
+        'a19_r7_multi_drift_rollup',
+        'Multi-turn drift rollup counts spikes across turn packs',
+        () => {
+          const low = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [{ type: 'a', score: 2, memoryInfluence: 1 }],
+          });
+          const high = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore: [{ type: 'a', score: 1 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 30,
+                memoryInfluence: 25,
+                memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 25, reason: 'plan' }],
+              },
+            ],
+          });
+          const rollup = buildMultiTurnDriftRollup([low, high]);
+          return rollup.pairCount === 1 && rollup.spikeCount >= 1 || JSON.stringify(rollup);
+        },
+      ],
+      [
+        'a19_r7_recovery_hints',
+        'Integrity recovery hints cap and mention bounds when failing',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = Array.from({ length: AGENT19_AI_MEMORY_EVENT_CAP + 2 }, (_, i) => ({
+            id: `e${i}`,
+            turn: i,
+            actionType: 'sell',
+            actorId: 'player',
+            targetId: null,
+            regionId: null,
+            summary: 's',
+            importance: 1,
+            valence: 0,
+            stableKey: `k${i}`,
+          }));
+          const integrity = auditExplainabilityIntegrity(mem, 1);
+          const hints = buildIntegrityRecoveryHints(integrity);
+          return (
+            !integrity.boundsOk &&
+            hints.some(h => h.includes('caps')) &&
+            hints.length <= AGENT19_RECOVERY_HINT_CAP
+          ) || JSON.stringify({ integrity, hints });
+        },
+      ],
+      [
+        'a19_r7_adaptive_bridge',
+        'Adaptive plan bridge cites team_directive magnitude',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.adaptivePlan = { objectiveId: 'counter_expand', status: 'active', revisionReason: null };
+          const pack = buildTurnExplainabilityPack({
+            turn: 3,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore: [{ type: 'a', score: 5 }],
+            decisionsAfter: [
+              {
+                type: 'a',
+                score: 35,
+                memoryInfluence: 25,
+                memoryInfluenceSlices: [{ horizon: 'team_directive', delta: 25, reason: 'plan' }],
+              },
+            ],
+          });
+          const lines = buildAdaptivePlanInfluenceBridge(mem, pack);
+          return (
+            adaptivePlanInfluenceAligned(mem, pack) &&
+            lines.some(l => l.includes('Team-directive')) &&
+            AGENT19_DIRECTIVE_BRIDGE_MAG_THRESHOLD >= 5
+          ) || lines.join('|');
         },
       ],
     ]),
