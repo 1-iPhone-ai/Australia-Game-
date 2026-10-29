@@ -71,6 +71,8 @@ import type {
   ResearchScaleWaveSealHandoffIntegrationSnapshot,
   ResearchScaleWaveSealHandoffIntegrationSealBandEvent,
   ResearchScaleWaveSealHandoffIntegrationSealSnapshot,
+  ResearchScaleWaveSealHandoffIntegrationSealContinuityBandEvent,
+  ResearchScaleWaveSealHandoffIntegrationSealContinuitySnapshot,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { appendUnlockEvents, rebuildUnlockEventLogFromNodes, emptyUnlockEventLog } from './unlock-event-log.ts';
@@ -306,6 +308,15 @@ import {
   computeSealHandoffIntegrationSealSnapshot,
   mergeSealHandoffIntegrationSealSnapshots,
 } from './scale-wave-seal-handoff-integration-seal-snapshot.ts';
+import {
+  appendSealHandoffIntegrationSealContinuityBandEvents,
+  emptySealHandoffIntegrationSealContinuityBandLog,
+  RESEARCH_SEAL_HANDOFF_INTEGRATION_SEAL_CONTINUITY_BAND_LOG_CAP,
+} from './scale-wave-seal-handoff-integration-seal-continuity-band-log.ts';
+import {
+  computeSealHandoffIntegrationSealContinuitySnapshot,
+  mergeSealHandoffIntegrationSealContinuitySnapshots,
+} from './scale-wave-seal-handoff-integration-seal-continuity-snapshot.ts';
 import { INSTITUTION_UPGRADE_TIER_RANK } from './institution-upgrades.ts';
 
 export type { ResearchProgressSchemaVersion, ResearchBranchEmphasisState, ResearchProgramEmphasis } from './types.ts';
@@ -436,6 +447,8 @@ export interface ResearchProgressPersistedCore {
   sealHandoffIntegrationSnapshot: ResearchScaleWaveSealHandoffIntegrationSnapshot | null;
   sealHandoffIntegrationSealBandLog: ResearchScaleWaveSealHandoffIntegrationSealBandEvent[];
   sealHandoffIntegrationSealSnapshot: ResearchScaleWaveSealHandoffIntegrationSealSnapshot | null;
+  sealHandoffIntegrationSealContinuityBandLog: ResearchScaleWaveSealHandoffIntegrationSealContinuityBandEvent[];
+  sealHandoffIntegrationSealContinuitySnapshot: ResearchScaleWaveSealHandoffIntegrationSealContinuitySnapshot | null;
 }
 
 export type { ResearchSaveMigrationEntry } from './types.ts';
@@ -471,6 +484,7 @@ const LEGACY_V28 = 'op10m-agent03-v28' as const;
 const LEGACY_V29 = 'op10m-agent03-v29' as const;
 const LEGACY_V30 = 'op10m-agent03-v30' as const;
 const LEGACY_V31 = 'op10m-agent03-v31' as const;
+const LEGACY_V34 = 'op10m-agent03-v34' as const;
 const LEGACY_V33 = 'op10m-agent03-v33' as const;
 const LEGACY_V32 = 'op10m-agent03-v32' as const;
 
@@ -514,6 +528,7 @@ export const RESEARCH_SAVE_DERIVED_KEYS = [
   'scaleWaveSealHandoffIntegrationOutlook',
   'scaleWaveSealHandoffIntegrationSealOutlook',
   'scaleWaveSealHandoffIntegrationSealContinuityOutlook',
+  'scaleWaveSealHandoffIntegrationSealContinuityHandoffOutlook',
 ] as const;
 
 function finalizeCoreForPersist(
@@ -595,6 +610,8 @@ function finalizeCoreForPersist(
     sealHandoffIntegrationSnapshot: partial.sealHandoffIntegrationSnapshot ?? null,
     sealHandoffIntegrationSealBandLog: partial.sealHandoffIntegrationSealBandLog ?? emptySealHandoffIntegrationSealBandLog(),
     sealHandoffIntegrationSealSnapshot: partial.sealHandoffIntegrationSealSnapshot ?? null,
+    sealHandoffIntegrationSealContinuityBandLog: partial.sealHandoffIntegrationSealContinuityBandLog ?? emptySealHandoffIntegrationSealContinuityBandLog(),
+    sealHandoffIntegrationSealContinuitySnapshot: partial.sealHandoffIntegrationSealContinuitySnapshot ?? null,
   };
   return { ...draft, coreFingerprint: computePersistedCoreFingerprint(draft) };
 }
@@ -682,6 +699,8 @@ export function computePersistedCoreFingerprint(
     sealHandoffIntegrationSnapshot: core.sealHandoffIntegrationSnapshot,
     sealHandoffIntegrationSealBandLog: core.sealHandoffIntegrationSealBandLog,
     sealHandoffIntegrationSealSnapshot: core.sealHandoffIntegrationSealSnapshot,
+    sealHandoffIntegrationSealContinuityBandLog: core.sealHandoffIntegrationSealContinuityBandLog,
+    sealHandoffIntegrationSealContinuitySnapshot: core.sealHandoffIntegrationSealContinuitySnapshot,
   });
   for (let i = 0; i < payload.length; i++) {
     h ^= payload.charCodeAt(i);
@@ -753,6 +772,8 @@ function upgradeToCurrentCore(
     sealHandoffIntegrationSnapshot?: ResearchScaleWaveSealHandoffIntegrationSnapshot | null;
     sealHandoffIntegrationSealBandLog?: ResearchScaleWaveSealHandoffIntegrationSealBandEvent[];
     sealHandoffIntegrationSealSnapshot?: ResearchScaleWaveSealHandoffIntegrationSealSnapshot | null;
+    sealHandoffIntegrationSealContinuityBandLog?: ResearchScaleWaveSealHandoffIntegrationSealContinuityBandEvent[];
+    sealHandoffIntegrationSealContinuitySnapshot?: ResearchScaleWaveSealHandoffIntegrationSealContinuitySnapshot | null;
     unlockEventLog?: ResearchUnlockEvent[];
     lastReconciledAtTurn?: number;
   },
@@ -835,6 +856,8 @@ function upgradeToCurrentCore(
     sealHandoffIntegrationSnapshot: base.sealHandoffIntegrationSnapshot ?? null,
     sealHandoffIntegrationSealBandLog: base.sealHandoffIntegrationSealBandLog ?? emptySealHandoffIntegrationSealBandLog(),
     sealHandoffIntegrationSealSnapshot: base.sealHandoffIntegrationSealSnapshot ?? null,
+    sealHandoffIntegrationSealContinuityBandLog: base.sealHandoffIntegrationSealContinuityBandLog ?? emptySealHandoffIntegrationSealContinuityBandLog(),
+    sealHandoffIntegrationSealContinuitySnapshot: base.sealHandoffIntegrationSealContinuitySnapshot ?? null,
     unlockEventLog: base.unlockEventLog ?? rebuildUnlockEventLogFromNodes(base.unlockedNodes ?? []),
     lastReconciledAtTurn: base.lastReconciledAtTurn ?? base.turn,
   });
@@ -921,6 +944,8 @@ function emptyCore(turn = 0): ResearchProgressPersistedCore {
     sealHandoffIntegrationSnapshot: null,
     sealHandoffIntegrationSealBandLog: emptySealHandoffIntegrationSealBandLog(),
     sealHandoffIntegrationSealSnapshot: null,
+    sealHandoffIntegrationSealContinuityBandLog: emptySealHandoffIntegrationSealContinuityBandLog(),
+    sealHandoffIntegrationSealContinuitySnapshot: null,
   });
 }
 
@@ -2132,6 +2157,46 @@ function sanitizeSealHandoffIntegrationSealSnapshot(raw: unknown, turn: number):
   };
 }
 
+function sanitizeSealHandoffIntegrationSealContinuityBandLog(raw: unknown): ResearchScaleWaveSealHandoffIntegrationSealContinuityBandEvent[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ResearchScaleWaveSealHandoffIntegrationSealContinuityBandEvent[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as ResearchScaleWaveSealHandoffIntegrationSealContinuityBandEvent;
+    if (typeof o.seq !== 'number' || typeof o.turn !== 'number') continue;
+    out.push({
+      seq: o.seq,
+      turn: o.turn,
+      band: (Number(o.band) || 0) as ResearchScaleWaveSealHandoffIntegrationSealContinuityBandEvent['band'],
+      sealHandoffIntegrationSealContinuityScore: Number(o.sealHandoffIntegrationSealContinuityScore) || 0,
+      horizonTurns: Number(o.horizonTurns) || 0,
+      waveOrdinal: Number(o.waveOrdinal) || 0,
+      phase: o.phase === 'de-escalation' ? 'de-escalation' : 'escalation',
+    });
+  }
+  return out.sort((a, b) => a.seq - b.seq).slice(-RESEARCH_SEAL_HANDOFF_INTEGRATION_SEAL_CONTINUITY_BAND_LOG_CAP);
+}
+
+function sanitizeSealHandoffIntegrationSealContinuitySnapshot(
+  raw: unknown,
+  turn: number
+): ResearchScaleWaveSealHandoffIntegrationSealContinuitySnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as ResearchScaleWaveSealHandoffIntegrationSealContinuitySnapshot;
+  if (typeof o.digest !== 'string') return null;
+  return {
+    capturedAtTurn: Number(o.capturedAtTurn) || turn,
+    sealHandoffIntegrationSealContinuityScore: Number(o.sealHandoffIntegrationSealContinuityScore) || 0,
+    horizonTurns: Number(o.horizonTurns) || 0,
+    waveOrdinal: Number(o.waveOrdinal) || 0,
+    continuityMomentum: Number(o.continuityMomentum) || 0,
+    projectedFunctionalHint: Number(o.projectedFunctionalHint) || 0,
+    dryRunEligible: Boolean(o.dryRunEligible),
+    peakBand: (Number(o.peakBand) || 0) as ResearchScaleWaveSealHandoffIntegrationSealContinuitySnapshot['peakBand'],
+    digest: o.digest,
+  };
+}
+
 export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersistedCore | null {
   if (raw == null) return null;
   if (typeof raw !== 'object') return null;
@@ -2282,6 +2347,10 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
         ? sanitizeSealHandoffIntegrationSealBandLog(o.sealHandoffIntegrationSealBandLog)
         : emptySealHandoffIntegrationSealBandLog(),
       sealHandoffIntegrationSealSnapshot: sanitizeSealHandoffIntegrationSealSnapshot(o.sealHandoffIntegrationSealSnapshot, turn),
+      sealHandoffIntegrationSealContinuityBandLog: sanitizeSealHandoffIntegrationSealContinuityBandLog(o.sealHandoffIntegrationSealContinuityBandLog).length
+        ? sanitizeSealHandoffIntegrationSealContinuityBandLog(o.sealHandoffIntegrationSealContinuityBandLog)
+        : emptySealHandoffIntegrationSealContinuityBandLog(),
+      sealHandoffIntegrationSealContinuitySnapshot: sanitizeSealHandoffIntegrationSealContinuitySnapshot(o.sealHandoffIntegrationSealContinuitySnapshot, turn),
     });
     if (typeof o.coreFingerprint === 'string' && o.coreFingerprint !== draft.coreFingerprint) {
       return draft;
@@ -2391,6 +2460,175 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
         dryRunHandoffSnapshot: null,
       },
       LEGACY_V17
+    );
+  }
+
+  if (ver === LEGACY_V34) {
+    const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
+    const upgrades = sanitizeInstitutionUpgrades(o.institutionUpgrades);
+    const turn = Number(o.turn) || 0;
+    const branchEmphasis = sanitizeBranchEmphasis(o.branchEmphasis);
+    const emphasisRevision = Number(o.emphasisRevision) || 0;
+    const institutionTierSnapshot =
+      sanitizeInstitutionTierSnapshot(o.institutionTierSnapshot, turn) ??
+      snapshotFromUpgrades(upgrades, turn);
+    const readinessBranchSnapshot = sanitizeReadinessBranchSnapshot(o.readinessBranchSnapshot, turn);
+    const integrationRiskSnapshot = sanitizeIntegrationRiskSnapshot(o.integrationRiskSnapshot, turn);
+    const scaleWaveSnapshot = sanitizeScaleWaveSnapshot(o.scaleWaveSnapshot, turn);
+    const synergySnapshot = sanitizeSynergySnapshot(o.synergySnapshot, turn);
+    const commercializationSnapshot = sanitizeCommercializationSnapshot(o.commercializationSnapshot, turn);
+    const diffusionIntegrationSnapshot = sanitizeDiffusionIntegrationSnapshot(o.diffusionIntegrationSnapshot, turn);
+    const portfolioBalanceSnapshot = sanitizePortfolioBalanceSnapshot(o.portfolioBalanceSnapshot, turn);
+    const diffusionForecastSnapshot = sanitizeDiffusionForecastSnapshot(o.diffusionForecastSnapshot, turn);
+    const horizonConvergenceSnapshot = sanitizeHorizonConvergenceSnapshot(o.horizonConvergenceSnapshot, turn);
+    const researchExecutionSnapshot = sanitizeResearchExecutionSnapshot(o.researchExecutionSnapshot, turn);
+    const strategicDeliverySnapshot = sanitizeStrategicDeliverySnapshot(o.strategicDeliverySnapshot, turn);
+    const scaleWaveMaturitySnapshot = sanitizeScaleWaveMaturitySnapshot(o.scaleWaveMaturitySnapshot, turn);
+    const nationalIntegrationSnapshot = sanitizeNationalIntegrationSnapshot(o.nationalIntegrationSnapshot, turn);
+    const scaleWaveProjectionSnapshot = sanitizeScaleWaveProjectionSnapshot(o.scaleWaveProjectionSnapshot, turn);
+    const trancheProjectionSnapshot = sanitizeTrancheProjectionSnapshot(o.trancheProjectionSnapshot, turn);
+    const integrationGateSnapshot = sanitizeIntegrationGateSnapshot(o.integrationGateSnapshot, turn);
+    return upgradeToCurrentCore(
+      {
+        schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+        revision: Number(o.revision) || 0,
+        turn,
+        unlockedNodes: nodes,
+        institutionUpgrades: upgrades,
+        leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
+        unlockSeq: Number(o.unlockSeq) || computeUnlockSeq(nodes),
+        branchEmphasis,
+        emphasisRevision,
+        migrationLog: Array.isArray(o.migrationLog) ? (o.migrationLog as ResearchSaveMigrationEntry[]) : [],
+        saveKind: (o.saveKind as ResearchSaveKind) || 'manual',
+        updatedAtTurn: Number(o.updatedAtTurn) || turn,
+        sessionId: typeof o.sessionId === 'string' ? o.sessionId : `o10m_r03_${turn}`,
+        persistRevision: Number(o.persistRevision) || 0,
+        unlockEventLog: sanitizeUnlockEventLog(o.unlockEventLog).length
+          ? sanitizeUnlockEventLog(o.unlockEventLog)
+          : rebuildUnlockEventLogFromNodes(nodes),
+        lastReconciledAtTurn: Number(o.lastReconciledAtTurn) || turn,
+        emphasisChangeLog: sanitizeEmphasisChangeLog(o.emphasisChangeLog).length
+          ? sanitizeEmphasisChangeLog(o.emphasisChangeLog)
+          : rebuildEmphasisChangeLogFromBranchEmphasis(branchEmphasis, emphasisRevision, turn),
+        institutionTierSnapshot,
+        readinessMilestoneLog: sanitizeReadinessMilestoneLog(o.readinessMilestoneLog).length
+          ? sanitizeReadinessMilestoneLog(o.readinessMilestoneLog)
+          : rebuildReadinessMilestoneLogFromSnapshot(readinessBranchSnapshot, turn),
+        readinessBranchSnapshot,
+        integrationRiskLog: sanitizeIntegrationRiskLog(o.integrationRiskLog).length
+          ? sanitizeIntegrationRiskLog(o.integrationRiskLog)
+          : emptyIntegrationRiskLog(),
+        integrationRiskSnapshot,
+        scaleWaveSnapshot,
+        synergyThresholdLog: sanitizeSynergyThresholdLog(o.synergyThresholdLog).length
+          ? sanitizeSynergyThresholdLog(o.synergyThresholdLog)
+          : emptySynergyThresholdLog(),
+        synergySnapshot,
+        commercializationMilestoneLog: sanitizeCommercializationMilestoneLog(o.commercializationMilestoneLog).length
+          ? sanitizeCommercializationMilestoneLog(o.commercializationMilestoneLog)
+          : emptyCommercializationMilestoneLog(),
+        commercializationSnapshot,
+        diffusionIntegrationLog: sanitizeDiffusionIntegrationLog(o.diffusionIntegrationLog).length
+          ? sanitizeDiffusionIntegrationLog(o.diffusionIntegrationLog)
+          : emptyDiffusionIntegrationLog(),
+        diffusionIntegrationSnapshot,
+        portfolioBalanceLog: sanitizePortfolioBalanceLog(o.portfolioBalanceLog).length
+          ? sanitizePortfolioBalanceLog(o.portfolioBalanceLog)
+          : emptyPortfolioBalanceLog(),
+        portfolioBalanceSnapshot,
+        diffusionForecastBandLog: sanitizeDiffusionForecastBandLog(o.diffusionForecastBandLog).length
+          ? sanitizeDiffusionForecastBandLog(o.diffusionForecastBandLog)
+          : emptyDiffusionForecastBandLog(),
+        diffusionForecastSnapshot,
+        horizonConvergenceBandLog: sanitizeHorizonConvergenceBandLog(o.horizonConvergenceBandLog).length
+          ? sanitizeHorizonConvergenceBandLog(o.horizonConvergenceBandLog)
+          : emptyHorizonConvergenceBandLog(),
+        horizonConvergenceSnapshot,
+        researchExecutionBandLog: sanitizeResearchExecutionBandLog(o.researchExecutionBandLog).length
+          ? sanitizeResearchExecutionBandLog(o.researchExecutionBandLog)
+          : emptyResearchExecutionBandLog(),
+        researchExecutionSnapshot,
+        strategicDeliveryBandLog: sanitizeStrategicDeliveryBandLog(o.strategicDeliveryBandLog).length
+          ? sanitizeStrategicDeliveryBandLog(o.strategicDeliveryBandLog)
+          : emptyStrategicDeliveryBandLog(),
+        strategicDeliverySnapshot,
+        scaleWaveMaturityBandLog: sanitizeScaleWaveMaturityBandLog(o.scaleWaveMaturityBandLog).length
+          ? sanitizeScaleWaveMaturityBandLog(o.scaleWaveMaturityBandLog)
+          : emptyScaleWaveMaturityBandLog(),
+        scaleWaveMaturitySnapshot,
+        nationalIntegrationBandLog: sanitizeNationalIntegrationBandLog(o.nationalIntegrationBandLog).length
+          ? sanitizeNationalIntegrationBandLog(o.nationalIntegrationBandLog)
+          : emptyNationalIntegrationBandLog(),
+        nationalIntegrationSnapshot,
+        scaleWaveProjectionBandLog: sanitizeScaleWaveProjectionBandLog(o.scaleWaveProjectionBandLog).length
+          ? sanitizeScaleWaveProjectionBandLog(o.scaleWaveProjectionBandLog)
+          : emptyScaleWaveProjectionBandLog(),
+        scaleWaveProjectionSnapshot,
+        trancheProjectionBandLog: sanitizeTrancheProjectionBandLog(o.trancheProjectionBandLog).length
+          ? sanitizeTrancheProjectionBandLog(o.trancheProjectionBandLog)
+          : emptyTrancheProjectionBandLog(),
+        trancheProjectionSnapshot,
+        integrationGateBandLog: sanitizeIntegrationGateBandLog(o.integrationGateBandLog).length
+          ? sanitizeIntegrationGateBandLog(o.integrationGateBandLog)
+          : emptyIntegrationGateBandLog(),
+        integrationGateSnapshot,
+        dryRunHandoffBandLog: sanitizeDryRunHandoffBandLog(o.dryRunHandoffBandLog).length
+          ? sanitizeDryRunHandoffBandLog(o.dryRunHandoffBandLog)
+          : emptyDryRunHandoffBandLog(),
+        dryRunHandoffSnapshot: sanitizeDryRunHandoffSnapshot(o.dryRunHandoffSnapshot, turn),
+        mergedIntegrationBaselineBandLog: sanitizeMergedIntegrationBaselineBandLog(o.mergedIntegrationBaselineBandLog).length
+          ? sanitizeMergedIntegrationBaselineBandLog(o.mergedIntegrationBaselineBandLog)
+          : emptyMergedIntegrationBaselineBandLog(),
+        mergedIntegrationBaselineSnapshot: sanitizeMergedIntegrationBaselineSnapshot(o.mergedIntegrationBaselineSnapshot, turn),
+        postIntegrationDryRunBandLog: sanitizePostIntegrationDryRunBandLog(o.postIntegrationDryRunBandLog).length
+          ? sanitizePostIntegrationDryRunBandLog(o.postIntegrationDryRunBandLog)
+          : emptyPostIntegrationDryRunBandLog(),
+        postIntegrationDryRunSnapshot: sanitizePostIntegrationDryRunSnapshot(o.postIntegrationDryRunSnapshot, turn),
+        integrationSealBandLog: sanitizeIntegrationSealBandLog(o.integrationSealBandLog).length
+          ? sanitizeIntegrationSealBandLog(o.integrationSealBandLog)
+          : emptyIntegrationSealBandLog(),
+        integrationSealSnapshot: sanitizeIntegrationSealSnapshot(o.integrationSealSnapshot, turn),
+        postSealHandoffBandLog: sanitizePostSealHandoffBandLog(o.postSealHandoffBandLog).length
+          ? sanitizePostSealHandoffBandLog(o.postSealHandoffBandLog)
+          : emptyPostSealHandoffBandLog(),
+        postSealHandoffSnapshot: sanitizePostSealHandoffSnapshot(o.postSealHandoffSnapshot, turn),
+        integrationContinuityBandLog: sanitizeIntegrationContinuityBandLog(o.integrationContinuityBandLog).length
+          ? sanitizeIntegrationContinuityBandLog(o.integrationContinuityBandLog)
+          : emptyIntegrationContinuityBandLog(),
+        integrationContinuitySnapshot: sanitizeIntegrationContinuitySnapshot(o.integrationContinuitySnapshot, turn),
+        continuityHandoffBandLog: sanitizeContinuityHandoffBandLog(o.continuityHandoffBandLog).length
+          ? sanitizeContinuityHandoffBandLog(o.continuityHandoffBandLog)
+          : emptyContinuityHandoffBandLog(),
+        continuityHandoffSnapshot: sanitizeContinuityHandoffSnapshot(o.continuityHandoffSnapshot, turn),
+        handoffIntegrationBandLog: sanitizeHandoffIntegrationBandLog(o.handoffIntegrationBandLog).length
+          ? sanitizeHandoffIntegrationBandLog(o.handoffIntegrationBandLog)
+          : emptyHandoffIntegrationBandLog(),
+        handoffIntegrationSnapshot: sanitizeHandoffIntegrationSnapshot(o.handoffIntegrationSnapshot, turn),
+        handoffIntegrationSealBandLog: sanitizeHandoffIntegrationSealBandLog(o.handoffIntegrationSealBandLog).length
+          ? sanitizeHandoffIntegrationSealBandLog(o.handoffIntegrationSealBandLog)
+          : emptyHandoffIntegrationSealBandLog(),
+        handoffIntegrationSealSnapshot: sanitizeHandoffIntegrationSealSnapshot(o.handoffIntegrationSealSnapshot, turn),
+        integrationSealHandoffBandLog: sanitizeIntegrationSealHandoffBandLog(o.integrationSealHandoffBandLog).length
+          ? sanitizeIntegrationSealHandoffBandLog(o.integrationSealHandoffBandLog)
+          : emptyIntegrationSealHandoffBandLog(),
+        integrationSealHandoffSnapshot: sanitizeIntegrationSealHandoffSnapshot(o.integrationSealHandoffSnapshot, turn),
+        sealHandoffContinuityBandLog: sanitizeSealHandoffContinuityBandLog(o.sealHandoffContinuityBandLog).length
+          ? sanitizeSealHandoffContinuityBandLog(o.sealHandoffContinuityBandLog)
+          : emptySealHandoffContinuityBandLog(),
+        sealHandoffContinuitySnapshot: sanitizeSealHandoffContinuitySnapshot(o.sealHandoffContinuitySnapshot, turn),
+        sealHandoffIntegrationBandLog: sanitizeSealHandoffIntegrationBandLog(o.sealHandoffIntegrationBandLog).length
+          ? sanitizeSealHandoffIntegrationBandLog(o.sealHandoffIntegrationBandLog)
+          : emptySealHandoffIntegrationBandLog(),
+        sealHandoffIntegrationSnapshot: sanitizeSealHandoffIntegrationSnapshot(o.sealHandoffIntegrationSnapshot, turn),
+        sealHandoffIntegrationSealBandLog: sanitizeSealHandoffIntegrationSealBandLog(o.sealHandoffIntegrationSealBandLog).length
+          ? sanitizeSealHandoffIntegrationSealBandLog(o.sealHandoffIntegrationSealBandLog)
+          : emptySealHandoffIntegrationSealBandLog(),
+        sealHandoffIntegrationSealSnapshot: sanitizeSealHandoffIntegrationSealSnapshot(o.sealHandoffIntegrationSealSnapshot, turn),
+        sealHandoffIntegrationSealContinuityBandLog: emptySealHandoffIntegrationSealContinuityBandLog(),
+        sealHandoffIntegrationSealContinuitySnapshot: null,
+      },
+      LEGACY_V34
     );
   }
 
@@ -5532,6 +5770,8 @@ export function extractPersistedCore(state: ResearchProgressState): ResearchProg
     sealHandoffIntegrationSnapshot: state.sealHandoffIntegrationSnapshot ?? null,
     sealHandoffIntegrationSealBandLog: state.sealHandoffIntegrationSealBandLog ?? emptySealHandoffIntegrationSealBandLog(),
     sealHandoffIntegrationSealSnapshot: state.sealHandoffIntegrationSealSnapshot ?? null,
+    sealHandoffIntegrationSealContinuityBandLog: state.sealHandoffIntegrationSealContinuityBandLog ?? emptySealHandoffIntegrationSealContinuityBandLog(),
+    sealHandoffIntegrationSealContinuitySnapshot: state.sealHandoffIntegrationSealContinuitySnapshot ?? null,
   });
 }
 
@@ -5621,6 +5861,8 @@ export function hydrateResearchProgressCore(core: ResearchProgressPersistedCore 
     sealHandoffIntegrationSnapshot: core.sealHandoffIntegrationSnapshot,
     sealHandoffIntegrationSealBandLog: core.sealHandoffIntegrationSealBandLog,
     sealHandoffIntegrationSealSnapshot: core.sealHandoffIntegrationSealSnapshot,
+    sealHandoffIntegrationSealContinuityBandLog: core.sealHandoffIntegrationSealContinuityBandLog,
+    sealHandoffIntegrationSealContinuitySnapshot: core.sealHandoffIntegrationSealContinuitySnapshot,
     diffusion: V94_REGION_CODES.map(regionId => ({
       regionId,
       score: 0,
@@ -6156,6 +6398,27 @@ export function mergeComputedResearchState(
     scaleWaveSealHandoffIntegrationSealOutlook,
     computed.turn
   );
+  const scaleWaveSealHandoffIntegrationSealContinuityOutlook =
+    computed.scaleWaveSealHandoffIntegrationSealContinuityOutlook ??
+    ({
+      active: false,
+      baseTurn: computed.turn,
+      horizonTurns: 6,
+      waveOrdinal: 34,
+      sealHandoffIntegrationSealContinuityScore: 0,
+      continuityMomentum: 0,
+      integrationBaselineShaHint: '2187b54',
+      priorBaselineHints: [],
+      projectedFunctionalHint: 1_886_428,
+      dryRunEligible: false,
+      ticketHint: null,
+    } as const);
+  const sealHandoffIntegrationSealContinuityBandLog = appendSealHandoffIntegrationSealContinuityBandEvents(
+    core.sealHandoffIntegrationSealContinuityBandLog ?? emptySealHandoffIntegrationSealContinuityBandLog(),
+    core.sealHandoffIntegrationSealContinuitySnapshot ?? null,
+    scaleWaveSealHandoffIntegrationSealContinuityOutlook,
+    computed.turn
+  );
   return {
     ...computed,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
@@ -6275,6 +6538,11 @@ export function mergeComputedResearchState(
     sealHandoffIntegrationSealBandLog,
     sealHandoffIntegrationSealSnapshot: computeSealHandoffIntegrationSealSnapshot(
       scaleWaveSealHandoffIntegrationSealOutlook,
+      computed.turn
+    ),
+    sealHandoffIntegrationSealContinuityBandLog,
+    sealHandoffIntegrationSealContinuitySnapshot: computeSealHandoffIntegrationSealContinuitySnapshot(
+      scaleWaveSealHandoffIntegrationSealContinuityOutlook,
       computed.turn
     ),
   };
