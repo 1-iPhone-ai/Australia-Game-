@@ -359,6 +359,14 @@ export const NR_DASH_MOM_RANK: Record<LRMomentumBand, number> = {
   booming: 5,
 };
 
+export const NS_COND_RANK: Record<NationalNetworkCondition, number> = {
+  surplus: 0,
+  healthy: 1,
+  strained: 2,
+  bottlenecked: 3,
+  critical: 4,
+};
+
 // --- bundled from core/util.ts ---
 export function nrDashClamp01(x: number): number {
   if (!Number.isFinite(x)) return 0;
@@ -864,6 +872,155 @@ export function nrDashTopTrendMovers(rows: NrDashRegionalRow[], limit = 3): NrDa
     .slice(0, limit);
 }
 
+// --- bundled from core/constraint-profile.ts ---
+export interface NrDashConstraintCount {
+  network: NationalNetworkKind;
+  label: string;
+  regionCount: number;
+}
+
+/** Count regions whose primaryConstraint matches each network (NS authoritative). */
+export function nrDashBuildConstraintProfile(ns: NationalSystemsState | null): NrDashConstraintCount[] {
+  if (!ns) return [];
+  const counts: Record<NationalNetworkKind, number> = {
+    freight: 0,
+    energy: 0,
+    water: 0,
+    trade: 0,
+    digital: 0,
+  };
+  Object.values(ns.regions).forEach(r => {
+    if (r.primaryConstraint) counts[r.primaryConstraint] += 1;
+  });
+  return NATIONAL_NETWORKS.map(network => ({
+    network,
+    label: NATIONAL_NETWORK_LABEL[network],
+    regionCount: counts[network],
+  })).filter(x => x.regionCount > 0);
+}
+
+// --- bundled from core/resilience-spread.ts ---
+export interface NrDashResilienceSpread {
+  min: number;
+  max: number;
+  mean: number;
+  sampleSize: number;
+  weakestRegionId: string | null;
+  strongestRegionId: string | null;
+}
+
+export function nrDashBuildResilienceSpread(snap: NrDashAuthSnapshot): NrDashResilienceSpread | null {
+  const vals = snap.regions
+    .filter(r => r.resilience != null && Number.isFinite(r.resilience))
+    .map(r => ({ id: r.regionId, v: r.resilience as number }));
+  if (!vals.length) return null;
+  const numbers = vals.map(x => x.v);
+  const min = Math.min(...numbers);
+  const max = Math.max(...numbers);
+  const mean = Math.round((numbers.reduce((a, b) => a + b, 0) / numbers.length) * 10) / 10;
+  const weakest = vals.find(x => x.v === min);
+  const strongest = vals.find(x => x.v === max);
+  return {
+    min,
+    max,
+    mean,
+    sampleSize: vals.length,
+    weakestRegionId: weakest?.id ?? null,
+    strongestRegionId: strongest?.id ?? null,
+  };
+}
+
+// --- bundled from core/dependency-profile.ts ---
+export interface NrDashDependencyImportanceCount {
+  importance: NationalDependency['importance'];
+  count: number;
+}
+
+export function nrDashBuildDependencyProfile(ns: NationalSystemsState | null): NrDashDependencyImportanceCount[] {
+  if (!ns?.dependencies.length) return [];
+  const counts: Record<NationalDependency['importance'], number> = {
+    low: 0,
+    moderate: 0,
+    high: 0,
+    critical: 0,
+  };
+  ns.dependencies.forEach(d => {
+    counts[d.importance] = (counts[d.importance] || 0) + 1;
+  });
+  return (['critical', 'high', 'moderate', 'low'] as const)
+    .map(importance => ({ importance, count: counts[importance] }))
+    .filter(x => x.count > 0);
+}
+
+// --- bundled from core/heat-summary.ts ---
+export interface NrDashHeatRowSummary {
+  regionId: string;
+  worstCondition: NationalNetworkCondition;
+  worstLabel: string;
+  strainedNetworks: number;
+}
+
+const condRank = (c: NationalNetworkCondition) => NS_COND_RANK[c];
+
+/** Per-region worst network condition from heat matrix cells (NS only). */
+export function nrDashBuildHeatRowSummaries(ns: NationalSystemsState | null): NrDashHeatRowSummary[] {
+  if (!ns) return [];
+  const { cells, rows } = nrDashBuildHeatCells(ns);
+  return rows.map(regionId => {
+    const rowCells = cells.filter(c => c.row === regionId);
+    let worst: NationalNetworkCondition = 'healthy';
+    let strained = 0;
+    rowCells.forEach(c => {
+      if (condRank(c.tone) >= condRank('strained')) strained += 1;
+      if (condRank(c.tone) > condRank(worst)) worst = c.tone;
+    });
+    return {
+      regionId,
+      worstCondition: worst,
+      worstLabel: NATIONAL_CONDITION_LABEL[worst],
+      strainedNetworks: strained,
+    };
+  });
+}
+
+// --- bundled from core/parity-gap.ts ---
+export interface NrDashParityGapRow {
+  regionId: string;
+  name: string;
+  momentumRank: number;
+  resilience: number | null;
+  /** resilience minus normalized momentum rank (0..100 scale), when resilience present. */
+  gapScore: number | null;
+}
+
+function momRank(band: string): number {
+  return NR_DASH_MOM_RANK[band as LRMomentumBand] ?? 2;
+}
+
+/** Compare LR momentum band rank to NS resilience score (both from snapshot row). */
+export function nrDashBuildParityGapRows(snap: NrDashAuthSnapshot): NrDashParityGapRow[] {
+  return snap.regions.map(r => {
+    const momentumRank = momRank(r.momentumBand);
+    const normalizedMom = (momentumRank / 5) * 100;
+    const gapScore =
+      r.resilience != null ? Math.round((r.resilience - normalizedMom) * 10) / 10 : null;
+    return {
+      regionId: r.regionId,
+      name: r.name,
+      momentumRank,
+      resilience: r.resilience,
+      gapScore,
+    };
+  });
+}
+
+export function nrDashTopParityOutliers(snap: NrDashAuthSnapshot, limit = 3): NrDashParityGapRow[] {
+  return nrDashBuildParityGapRows(snap)
+    .filter(r => r.gapScore != null)
+    .sort((a, b) => Math.abs(b.gapScore!) - Math.abs(a.gapScore!))
+    .slice(0, limit);
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -934,6 +1091,7 @@ export function createAgent23NsFixture(): NationalSystemsState {
     dependencies: [
       { id: 'dep1', consumerRegionId: 'SA', providerRegionId: 'NSW', network: 'energy', importance: 'high' },
       { id: 'dep2', consumerRegionId: 'TAS', providerRegionId: 'VIC', network: 'freight', importance: 'moderate' },
+      { id: 'dep3', consumerRegionId: 'NT', providerRegionId: 'QLD', network: 'water', importance: 'critical' },
     ],
     national,
     history: [{ turn: 5, summary: 'Freight corridor strained in NSW' }],
@@ -1136,6 +1294,80 @@ export const NrDashMapLegend: React.FC = () => (
   </div>
 );
 
+// --- bundled from ui/network-depth-panel.tsx ---
+export const NrDashNetworkDepthPanel: React.FC<{
+  constraints: NrDashConstraintCount[];
+  dependencies: NrDashDependencyImportanceCount[];
+  heatRows: NrDashHeatRowSummary[];
+}> = ({ constraints, dependencies, heatRows }) => (
+  <div className="grid md:grid-cols-2 gap-3 text-xs" data-testid="nr-dash-network-depth">
+    {constraints.length > 0 && (
+      <div className="rounded border border-slate-600/50 p-2">
+        <div className="font-semibold mb-1">Primary constraints (regions)</div>
+        <ul className="list-disc list-inside">
+          {constraints.map(c => (
+            <li key={c.network}>
+              {c.label}: {c.regionCount}
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+    {dependencies.length > 0 && (
+      <div className="rounded border border-slate-600/50 p-2">
+        <div className="font-semibold mb-1">Dependency importance</div>
+        <ul className="list-disc list-inside">
+          {dependencies.map(d => (
+            <li key={d.importance}>
+              {d.importance}: {d.count}
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+    {heatRows.length > 0 && (
+      <div className="rounded border border-slate-600/50 p-2 md:col-span-2">
+        <div className="font-semibold mb-1">Regional worst network condition</div>
+        <div className="flex flex-wrap gap-1">
+          {heatRows.map(h => (
+            <span key={h.regionId} className="px-1 py-0.5 rounded bg-slate-800/70">
+              {h.regionId} {h.worstLabel}
+              {h.strainedNetworks > 0 ? ` (${h.strainedNetworks} strained+)` : ''}
+            </span>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+// --- bundled from ui/regions-depth-strip.tsx ---
+export const NrDashRegionsDepthStrip: React.FC<{
+  spread: NrDashResilienceSpread | null;
+  outliers: NrDashParityGapRow[];
+}> = ({ spread, outliers }) => (
+  <div className="text-xs space-y-2 mb-3" data-testid="nr-dash-regions-depth">
+    {spread && (
+      <div className="rounded border border-slate-600/50 p-2">
+        Resilience spread: {spread.min}–{spread.max} (μ {spread.mean}, n={spread.sampleSize}) · weak{' '}
+        {spread.weakestRegionId ?? '—'} · strong {spread.strongestRegionId ?? '—'}
+      </div>
+    )}
+    {outliers.length > 0 && (
+      <div className="rounded border border-slate-600/50 p-2">
+        <div className="font-semibold mb-1">Momentum vs resilience gap (|gap| leaders)</div>
+        <ul className="list-disc list-inside">
+          {outliers.map(o => (
+            <li key={o.regionId}>
+              {o.name}: gap {o.gapScore} (mom rank {o.momentumRank}, res {o.resilience})
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+  </div>
+);
+
 // --- bundled from ui/region-position-map.tsx ---
 export interface RegionPositionMapProps {
   nodes: RegionMapNode[];
@@ -1292,6 +1524,10 @@ export const NrDashRegionsTab: React.FC<{
 }> = ({ snap, focusRegionId, onFocusRegion }) => (
   <div className="space-y-2" data-testid="nr-dash-tab-regions">
     <NrDashProvenanceStrip items={snap.provenance.filter(p => p.source === 'living_regions')} />
+    <NrDashRegionsDepthStrip
+      spread={nrDashBuildResilienceSpread(snap)}
+      outliers={nrDashTopParityOutliers(snap, 3)}
+    />
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
@@ -1352,6 +1588,11 @@ export const NrDashNetworksTab: React.FC<{
   const bottlenecks = nrDashBuildBottleneckRollup(ns);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
+      <NrDashNetworkDepthPanel
+        constraints={nrDashBuildConstraintProfile(ns)}
+        dependencies={nrDashBuildDependencyProfile(ns)}
+        heatRows={nrDashBuildHeatRowSummaries(ns)}
+      />
       <div className="flex flex-wrap gap-2">
         {NATIONAL_NETWORKS.map(n => (
           <button
@@ -1608,7 +1849,7 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_dep_links', 'Dependency links from NS state', () => {
     const ns = createAgent23NsFixture();
     const deps = nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT);
-    return deps.length === 2 && deps.every(d => d.kind === 'dependency');
+    return deps.length === 3 && deps.every(d => d.kind === 'dependency');
   });
 
   check('a23_map_link_geom', 'Link endpoints resolve for SA→NSW dependency', () => {
@@ -1675,7 +1916,7 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
 
   check('a23_merged_counts', 'Merged snapshot counts bottlenecks and deps from NS', () => {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), { NSW: 'you' })!;
-    return snap.bottleneckCount === 1 && snap.dependencyCount === 2 && snap.regions.find(r => r.regionId === 'NSW')?.owner === 'you';
+    return snap.bottleneckCount === 1 && snap.dependencyCount === 3 && snap.regions.find(r => r.regionId === 'NSW')?.owner === 'you';
   });
 
   for (const code of COMM_REGION_CODES) {
@@ -1739,6 +1980,33 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   });
 
   check('a23_neighbors_nsw', 'NSW neighbor list includes QLD', () => nrDashNeighborRegionIds('NSW').includes('QLD'));
+
+  check('a23_constraint_profile', 'Constraint profile counts primary freight regions', () => {
+    const profile = nrDashBuildConstraintProfile(createAgent23NsFixture());
+    return profile.some(p => p.network === 'freight' && p.regionCount === 8);
+  });
+
+  check('a23_resilience_spread', 'Resilience spread uses snapshot resilience fields', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const spread = nrDashBuildResilienceSpread(snap)!;
+    return spread.sampleSize === 8 && spread.max >= spread.min;
+  });
+
+  check('a23_dep_profile', 'Dependency profile lists high and critical', () => {
+    const prof = nrDashBuildDependencyProfile(createAgent23NsFixture());
+    return prof.some(p => p.importance === 'high') && prof.some(p => p.importance === 'critical');
+  });
+
+  check('a23_heat_summary', 'Heat row summary marks NSW bottlenecked worst', () => {
+    const rows = nrDashBuildHeatRowSummaries(createAgent23NsFixture());
+    const nsw = rows.find(r => r.regionId === 'NSW');
+    return Boolean(nsw && nsw.worstCondition === 'bottlenecked');
+  });
+
+  check('a23_parity_gap', 'Parity gap rows align to region count', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    return nrDashBuildParityGapRows(snap).length === 8 && nrDashTopParityOutliers(snap, 2).length <= 2;
+  });
 
   return results;
 }

@@ -4,6 +4,11 @@ import { nrDashBuildConditionCatalog } from '../core/condition-catalog.ts';
 import { nrDashBuildMomentumDivergence } from '../core/momentum-divergence.ts';
 import { nrDashApplyMapFocus, nrDashLinksTouchingRegion, nrDashNeighborRegionIds } from '../core/map-focus.ts';
 import { nrDashBuildTrendDeltas, nrDashTopTrendMovers } from '../core/trend-delta.ts';
+import { nrDashBuildConstraintProfile } from '../core/constraint-profile.ts';
+import { nrDashBuildDependencyProfile } from '../core/dependency-profile.ts';
+import { nrDashBuildHeatRowSummaries } from '../core/heat-summary.ts';
+import { nrDashBuildParityGapRows, nrDashTopParityOutliers } from '../core/parity-gap.ts';
+import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
 import { nrDashBuildHeatCells } from '../core/heat-matrix.ts';
@@ -78,7 +83,7 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_dep_links', 'Dependency links from NS state', () => {
     const ns = createAgent23NsFixture();
     const deps = nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT);
-    return deps.length === 2 && deps.every(d => d.kind === 'dependency');
+    return deps.length === 3 && deps.every(d => d.kind === 'dependency');
   });
 
   check('a23_map_link_geom', 'Link endpoints resolve for SA→NSW dependency', () => {
@@ -145,7 +150,7 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
 
   check('a23_merged_counts', 'Merged snapshot counts bottlenecks and deps from NS', () => {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), { NSW: 'you' })!;
-    return snap.bottleneckCount === 1 && snap.dependencyCount === 2 && snap.regions.find(r => r.regionId === 'NSW')?.owner === 'you';
+    return snap.bottleneckCount === 1 && snap.dependencyCount === 3 && snap.regions.find(r => r.regionId === 'NSW')?.owner === 'you';
   });
 
   for (const code of COMM_REGION_CODES) {
@@ -209,6 +214,33 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   });
 
   check('a23_neighbors_nsw', 'NSW neighbor list includes QLD', () => nrDashNeighborRegionIds('NSW').includes('QLD'));
+
+  check('a23_constraint_profile', 'Constraint profile counts primary freight regions', () => {
+    const profile = nrDashBuildConstraintProfile(createAgent23NsFixture());
+    return profile.some(p => p.network === 'freight' && p.regionCount === 8);
+  });
+
+  check('a23_resilience_spread', 'Resilience spread uses snapshot resilience fields', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const spread = nrDashBuildResilienceSpread(snap)!;
+    return spread.sampleSize === 8 && spread.max >= spread.min;
+  });
+
+  check('a23_dep_profile', 'Dependency profile lists high and critical', () => {
+    const prof = nrDashBuildDependencyProfile(createAgent23NsFixture());
+    return prof.some(p => p.importance === 'high') && prof.some(p => p.importance === 'critical');
+  });
+
+  check('a23_heat_summary', 'Heat row summary marks NSW bottlenecked worst', () => {
+    const rows = nrDashBuildHeatRowSummaries(createAgent23NsFixture());
+    const nsw = rows.find(r => r.regionId === 'NSW');
+    return Boolean(nsw && nsw.worstCondition === 'bottlenecked');
+  });
+
+  check('a23_parity_gap', 'Parity gap rows align to region count', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    return nrDashBuildParityGapRows(snap).length === 8 && nrDashTopParityOutliers(snap, 2).length <= 2;
+  });
 
   return results;
 }

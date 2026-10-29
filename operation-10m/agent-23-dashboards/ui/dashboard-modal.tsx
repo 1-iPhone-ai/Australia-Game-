@@ -14,6 +14,11 @@ import {
 } from '../core/map-links.ts';
 import { nrDashBuildRegionMapNodes } from '../core/region-map-model.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
+import { nrDashBuildConstraintProfile } from '../core/constraint-profile.ts';
+import { nrDashBuildDependencyProfile } from '../core/dependency-profile.ts';
+import { nrDashBuildHeatRowSummaries } from '../core/heat-summary.ts';
+import { nrDashTopParityOutliers } from '../core/parity-gap.ts';
+import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -35,6 +40,8 @@ import type {
 import { NrDashBarChart, NrDashHeatMatrix, NrDashSparkline } from './charts.tsx';
 import { NrDashCompareInsightsPanel } from './compare-insights.tsx';
 import { NrDashMapLegend } from './map-legend.tsx';
+import { NrDashNetworkDepthPanel } from './network-depth-panel.tsx';
+import { NrDashRegionsDepthStrip } from './regions-depth-strip.tsx';
 import { RegionPositionMap } from './region-position-map.tsx';
 
 const NrDashProvenanceStrip: React.FC<{ items: NrDashProvenance[] }> = ({ items }) => (
@@ -105,6 +112,10 @@ export const NrDashRegionsTab: React.FC<{
 }> = ({ snap, focusRegionId, onFocusRegion }) => (
   <div className="space-y-2" data-testid="nr-dash-tab-regions">
     <NrDashProvenanceStrip items={snap.provenance.filter(p => p.source === 'living_regions')} />
+    <NrDashRegionsDepthStrip
+      spread={nrDashBuildResilienceSpread(snap)}
+      outliers={nrDashTopParityOutliers(snap, 3)}
+    />
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
@@ -165,6 +176,11 @@ export const NrDashNetworksTab: React.FC<{
   const bottlenecks = nrDashBuildBottleneckRollup(ns);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
+      <NrDashNetworkDepthPanel
+        constraints={nrDashBuildConstraintProfile(ns)}
+        dependencies={nrDashBuildDependencyProfile(ns)}
+        heatRows={nrDashBuildHeatRowSummaries(ns)}
+      />
       <div className="flex flex-wrap gap-2">
         {NATIONAL_NETWORKS.map(n => (
           <button

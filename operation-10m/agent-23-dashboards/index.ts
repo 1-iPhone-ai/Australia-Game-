@@ -12,9 +12,16 @@ export * from './core/condition-catalog.ts';
 export * from './core/momentum-divergence.ts';
 export * from './core/map-focus.ts';
 export * from './core/trend-delta.ts';
+export * from './core/constraint-profile.ts';
+export * from './core/resilience-spread.ts';
+export * from './core/dependency-profile.ts';
+export * from './core/heat-summary.ts';
+export * from './core/parity-gap.ts';
 export * from './ui/charts.tsx';
 export * from './ui/compare-insights.tsx';
 export * from './ui/map-legend.tsx';
+export * from './ui/network-depth-panel.tsx';
+export * from './ui/regions-depth-strip.tsx';
 export * from './ui/region-position-map.tsx';
 export * from './ui/dashboard-modal.tsx';
 export {

@@ -127,3 +127,11 @@ export const NR_DASH_MOM_RANK: Record<LRMomentumBand, number> = {
   rapid_growth: 4,
   booming: 5,
 };
+
+export const NS_COND_RANK: Record<NationalNetworkCondition, number> = {
+  surplus: 0,
+  healthy: 1,
+  strained: 2,
+  bottlenecked: 3,
+  critical: 4,
+};

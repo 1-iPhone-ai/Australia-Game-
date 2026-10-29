@@ -77,6 +77,7 @@ export function createAgent23NsFixture(): NationalSystemsState {
     dependencies: [
       { id: 'dep1', consumerRegionId: 'SA', providerRegionId: 'NSW', network: 'energy', importance: 'high' },
       { id: 'dep2', consumerRegionId: 'TAS', providerRegionId: 'VIC', network: 'freight', importance: 'moderate' },
+      { id: 'dep3', consumerRegionId: 'NT', providerRegionId: 'QLD', network: 'water', importance: 'critical' },
     ],
     national,
     history: [{ turn: 5, summary: 'Freight corridor strained in NSW' }],
