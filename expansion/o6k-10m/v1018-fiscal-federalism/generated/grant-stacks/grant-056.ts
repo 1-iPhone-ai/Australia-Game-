@@ -1,0 +1,31 @@
+import type { V1018FfedGrantStackEdge } from '../../types/core.ts';
+
+/** Grant stack graph shard 056 (state–federal transfer cross-system coupling). */
+export const V1018_FFED_GRANT_STACK_SHARD_056: readonly V1018FfedGrantStackEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.757, lagTurns: 3, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.764, lagTurns: 4, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.771, lagTurns: 5, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.778, lagTurns: 3, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.785, lagTurns: 4, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.792, lagTurns: 5, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.799, lagTurns: 3, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.806, lagTurns: 4, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.813, lagTurns: 5, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.82, lagTurns: 3, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.827, lagTurns: 4, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.834, lagTurns: 5, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.841, lagTurns: 3, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.848, lagTurns: 4, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.75, lagTurns: 5, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.757, lagTurns: 3, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.764, lagTurns: 4, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.771, lagTurns: 5, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.778, lagTurns: 3, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.785, lagTurns: 4, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.792, lagTurns: 5, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.799, lagTurns: 3, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.806, lagTurns: 4, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.813, lagTurns: 5, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.82, lagTurns: 3, nodeId: 'audit_08' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.827, lagTurns: 4, nodeId: 'audit_08' },
+];

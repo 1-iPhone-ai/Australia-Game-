@@ -19,6 +19,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     ai_fidelity_paths,
     workforce_migration_paths,
     national_resilience_paths,
+    fiscal_federalism_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -33,6 +34,7 @@ SCENARIO_MARKER = "export function runV1014ScenarioV2SelfTests"
 AI_FIDELITY_MARKER = "export function runV1014AiFidelityTurn"
 WORKFORCE_MARKER = "export function runV1014WorkforceMigrationTurn"
 NRES_MARKER = "export function runV1016NresTurn"
+FFED_MARKER = "export function runV1018FfedTurn"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -82,6 +84,13 @@ NRES_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20BH: V10.16 NATIONAL RESILIENCE — SUPPLY SHOCK & CONTINUITY (O6K-33)\n"
     "// Renumbered from shard 20BG (canonical 20BG = T6 mega cross-domain depth, push #9)\n"
+    "// ============================================================================\n"
+)
+
+FFED_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BJ: V10.18 FISCAL FEDERALISM — TRANSFERS, GRANT STACKS & AUDIT TRAILS (O6K-37)\n"
+    "// Renumbered from shard 20BI (canonical 20BI = T6 mega2 lattice, push #11)\n"
     "// ============================================================================\n"
 )
 
@@ -896,6 +905,134 @@ def push_nres(text: str) -> str:
     return text
 
 
+FFED_HELPERS = """
+function V1018_FFED_readPersistedFromGameState(gs: any): V1018FfedPersisted | null {
+  const raw = (gs?.save?.meta?.v1018 as any)?.fiscal_federalism;
+  return raw ? sanitizeV1018FfedPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1018_FFED_applyToGameState(gs: any, out: V1018FfedTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1018 = { ...(meta.v1018 || {}) };
+  v1018.fiscal_federalism = out.persisted;
+  meta.v1018 = v1018;
+  save.meta = meta;
+  return { ...gs, save, v1018FiscalFederalism: out.state };
+}
+
+export function buildV1018FfedTurnInputFromGameState(gs: any, turn: number): V1018FfedTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 8180;
+  const inp = buildV1018FfedTurnInputFromGameStateStub(turn, seed);
+  const supply = gs?.v1014SupplyChain ?? null;
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const workforce = gs?.v1014WorkforceV2 ?? gs?.v1014Workforce ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      regionalStockDays: supply?.regionalStockDays ?? inp.supply20bb.regionalStockDays,
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      nationalReadiness: Number(workforce?.nationalResilienceScore ?? workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+    },
+    persisted: null,
+  };
+}
+"""
+
+FFED_DAY_HOOK = """
+      if (typeof runV1018FfedTurn === 'function') {
+        try {
+          const ffedIn = buildV1018FfedTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          ffedIn.persisted = V1018_FFED_readPersistedFromGameState(mergedGameState);
+          const ffedOut = runV1018FfedTurn(ffedIn);
+          mergedGameState = V1018_FFED_applyToGameState(mergedGameState, ffedOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_ffed_day_hook(text: str) -> str:
+    marker = "runV1018FfedTurn(ffedIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:28000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip ffed day hook (present)")
+        return text
+    mega2_tail = """      if (typeof runV1017T6Mega2DepthTurn === 'function') {
+        try {
+          const m2In = buildV1017T6Mega2DepthTurnInputFromGameState(
+            mergedGameState,
+            passCtx.turnCounter,
+            settings?.t6Mega2DepthEnabled !== false,
+          );
+          m2In.persisted = V1017_T6MEGA2_readPersistedFromGameState(mergedGameState);
+          const m2Out = runV1017T6Mega2DepthTurn(m2In);
+          mergedGameState = V1017_T6MEGA2_applyToGameState(mergedGameState, m2Out);
+        } catch (_) { /* isolated */ }
+      }"""
+    if mega2_tail not in text:
+        raise SystemExit("T6 mega2 day hook anchor missing for ffed hook")
+    return text.replace(mega2_tail, mega2_tail + FFED_DAY_HOOK, 1)
+
+
+def wire_ffed_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1017T6Mega2DepthPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1018FfedPersisted === 'function') {\n"
+        "    const ffedRaw = (migrated.gameState as any)?.save?.meta?.v1018?.fiscal_federalism;\n"
+        "    if (ffedRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1018 = { ...(meta.v1018 || {}) };\n"
+        "      v1018.fiscal_federalism = sanitizeV1018FfedPersisted(ffedRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1018 = v1018;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1018.fiscal_federalism = sanitizeV1018FfedPersisted" in text:
+        print("skip ffed §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("T6 mega2 §6 anchor missing for ffed migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_ffed(text: str) -> str:
+    block = FFED_SECTION + bundle_local_files(fiscal_federalism_paths()) + FFED_HELPERS
+    text = insert_before(text, block, FFED_MARKER, "T6 push #12 v1018-fiscal-federalism (PR #342)")
+    text = wire_ffed_day_hook(text)
+    text = wire_ffed_migration(text)
+    lab = """  { id: 'v1018_fiscal_federalism', label: 'V10.18 Fiscal federalism (20BJ transfers & grant stacks)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1018FfedSelfTestsForLab() },
+"""
+    anchor_lab = "  { id: 'v1017_t6_mega2_depth',"
+    if "{ id: 'v1018_fiscal_federalism'" not in text:
+        if anchor_lab in text:
+            text = text.replace(anchor_lab, lab + anchor_lab, 1)
+        else:
+            text = wire_lab(text, lab, "v1018_fiscal_federalism")
+        print("registered LAB v1018_fiscal_federalism")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -910,7 +1047,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -931,6 +1068,8 @@ def main() -> None:
         text = push_workforce(text)
     elif args.push == 10:
         text = push_nres(text)
+    elif args.push == 12:
+        text = push_ffed(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

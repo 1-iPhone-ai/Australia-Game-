@@ -128,6 +128,47 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
         src = re.sub(r"(?<![\w.])check\(", "v1016NresSelfTestCheck(", src)
         src = re.sub(r"function baseInput\(", "function v1016NresBaseInput(", src)
         src = re.sub(r"(?<![\w.])baseInput\(", "v1016NresBaseInput(", src)
+    if "v1018-fiscal-federalism" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BI", "SECTION 20BJ")
+    if "fiscal-federalism/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1018FfedClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1018FfedClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1018_FFED_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1018_FFED_MIG_REGIONS", src)
+    if "fiscal-federalism-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1018FfedPersisted, sanitizeV1018FfedPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1018_FFED_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1018_FFED_ORCH_REGIONS.forEach", src)
+    if "fiscal-federalism-utils.ts" in name:
+        src = re.sub(
+            r"export function V1018_FFED_grantStackGraphHash",
+            "export function V1018_FFED_utilGrantStackGraphHash",
+            src,
+        )
+    if "v1018-fiscal-federalism/grant-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"return nresPgHashCore\(edges\)",
+            "return V1018_FFED_utilGrantStackGraphHash(edges)",
+            src,
+        )
+    if "run-v1018-ffed-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1018FfedSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1018FfedSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1018FfedBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1018FfedBaseInput(", src)
+        src = src.replace(
+            "  runV1018FfedTurn,\n  createEmptyV1018FfedPersisted,\n  v1018FfedInputHash,\n  sanitizeV1018FfedPersisted,\n} from '../engine/fiscal-federalism-orchestrator';",
+            "  runV1018FfedTurn,\n  v1018FfedInputHash,\n} from '../engine/fiscal-federalism-orchestrator';\nimport {\n  createEmptyV1018FfedPersisted,\n  sanitizeV1018FfedPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1018FfedPersisted,\n  v1018FfedInputHash,\n  sanitizeV1018FfedPersisted,\n} from '../engine/fiscal-federalism-orchestrator';",
+            "  v1018FfedInputHash,\n} from '../engine/fiscal-federalism-orchestrator';\nimport {\n  createEmptyV1018FfedPersisted,\n  sanitizeV1018FfedPersisted,\n} from '../persistence/migrations';",
+        )
         src = src.replace(
             "  sanitizeV1016NresPersisted,\n} from '../engine/national-resilience-orchestrator';",
             "} from '../engine/national-resilience-orchestrator';\nimport {\n  createEmptyV1016NresPersisted,\n  sanitizeV1016NresPersisted,\n} from '../persistence/migrations';",
@@ -389,6 +430,49 @@ def national_resilience_paths() -> list[str]:
             return (10, s)
         if "/self-tests/" in s:
             return (11, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def fiscal_federalism_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1018-fiscal-federalism"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/grant-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/transfer-scenarios/" in s:
+            return (3, s)
+        if "/generated/grant-stacks/" in s:
+            return (4, s)
+        if "transfer-registry" in s or "grant-stack-bundle" in s:
+            return (5, s)
+        if "/audit-trails/" in s:
+            return (6, s)
+        if "fiscal-federalism-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "fiscal-federalism-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
         return (50, s)
 
     files = sorted(

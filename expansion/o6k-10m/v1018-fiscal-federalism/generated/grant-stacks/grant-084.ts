@@ -1,0 +1,31 @@
+import type { V1018FfedGrantStackEdge } from '../../types/core.ts';
+
+/** Grant stack graph shard 084 (state–federal transfer cross-system coupling). */
+export const V1018_FFED_GRANT_STACK_SHARD_084: readonly V1018FfedGrantStackEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.463, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.47, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.477, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.484, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.491, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.498, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.4, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.407, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.414, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.421, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.428, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.435, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.442, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.449, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.456, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.463, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.47, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.477, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.484, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.491, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.498, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.4, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.407, lagTurns: 8, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.414, lagTurns: 9, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.421, lagTurns: 7, nodeId: 'audit_12' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.428, lagTurns: 8, nodeId: 'audit_12' },
+];
