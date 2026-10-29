@@ -37,6 +37,15 @@ import {
 import { computeNationalUnderemploymentPressureBrief } from './underemployment-pressure-brief';
 import { computeNationalWageCompetitivenessIndex } from './wage-competitiveness-index';
 import { computeNationalWorkforceTransitionFrictionOutlook } from './workforce-transition-friction-outlook';
+import {
+  WORKFORCE_CARE_LEVERS,
+  careLeversForIndustry,
+  careReliefForRegion,
+  lookupWorkforceCareLever
+} from './catalog/workforce-care-levers';
+import { computeNationalYouthEntryPipelineOutlook } from './youth-entry-pipeline-outlook';
+import { computeNationalLaborMarketTightnessBrief } from './labor-market-tightness-brief';
+import { computeNationalHybridParticipationFrictionOutlook } from './hybrid-participation-friction-outlook';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -463,6 +472,48 @@ export function runV1014LaborDemographicsSelfTests(): {
       r1.state.laborSupplyElasticityBrief
     ).stewardNote.length > 8,
     'transition friction steward note'
+  );
+
+  check('R801', WORKFORCE_CARE_LEVERS.length >= 8, 'care lever catalog');
+  check('R802', Boolean(lookupWorkforceCareLever('care_tech_nsw_vic')?.narrative), 'care lever lookup');
+  check('R803', careLeversForIndustry('technology').length >= 1, 'technology care levers');
+  check('R804', careReliefForRegion('NSW', 'technology') > 0, 'regional care relief');
+  check('R805', Boolean(r1.state.youthEntryPipelineOutlook?.band), 'youth pipeline on state');
+  check('R806', (r1.state.youthEntryPipelineOutlook?.dependencyHeadwind ?? 0) >= 0, 'dependency headwind');
+  check('R807', Boolean(r1.state.laborMarketTightnessBrief?.band), 'labor tightness on state');
+  check('R808', Boolean(r1.state.hybridParticipationFrictionOutlook?.band), 'hybrid friction on state');
+  check('R809', detectLaborDemographicsQuery('youth entry pipeline') === 'youth_pipeline', 'GI youth pipeline detect');
+  check('R810', detectLaborDemographicsQuery('labor market tightness') === 'labor_tightness', 'GI tightness detect');
+  check('R811', detectLaborDemographicsQuery('hybrid participation friction') === 'hybrid_participation', 'GI hybrid detect');
+  check('R812', answerLaborDemographicsQuestion(r1.state, 'youth_pipeline').headline.length > 5, 'GI youth answer');
+  const youthOnly = computeNationalYouthEntryPipelineOutlook(
+    r1.state,
+    r1.state.dependencyRatioSnapshot,
+    r1.state.participationPressureBrief
+  );
+  check('R813', youthOnly.summary.length > 10, 'youth pipeline standalone summary');
+  const tightOnly = computeNationalLaborMarketTightnessBrief(
+    r1.state,
+    r1.state.integratedLaborBrief!,
+    r1.state.workforceCapacityBridge,
+    r1.state.underemploymentPressureBrief
+  );
+  check('R814', tightOnly.band.length > 3, 'tightness band string');
+  const hybridOnly = computeNationalHybridParticipationFrictionOutlook(
+    r1.state,
+    r1.state.workforceTransitionFrictionOutlook,
+    r1.state.talentMobilityOutlook
+  );
+  check('R815', hybridOnly.careReliefLift >= 0, 'hybrid care relief lift');
+  check(
+    'R816',
+    computeNationalLaborMarketTightnessBrief(
+      rHhBad.state,
+      rHhBad.state.integratedLaborBrief!,
+      rHhBad.state.workforceCapacityBridge,
+      rHhBad.state.underemploymentPressureBrief
+    ).stewardNote.length > 8,
+    'tightness steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

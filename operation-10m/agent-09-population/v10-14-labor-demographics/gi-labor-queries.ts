@@ -24,7 +24,10 @@ export type LaborGiQueryTopic =
   | 'talent_mobility'
   | 'underemployment'
   | 'wage_competitiveness'
-  | 'transition_friction';
+  | 'transition_friction'
+  | 'youth_pipeline'
+  | 'labor_tightness'
+  | 'hybrid_participation';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -36,14 +39,17 @@ export interface LaborGiAnswer {
 
 export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | null {
   const q = raw.toLowerCase();
+  if (/\b(youth pipeline|youth entry|apprentice pipeline)/.test(q)) return 'youth_pipeline';
+  if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
+  if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
   if (/\b(household budget|affordability|cost of living)/.test(q)) return 'household_budget';
   if (/\b(wage compet|cost burden|competitiveness)/.test(q)) return 'wage_competitiveness';
   if (/\b(wage|pay pressure|salary pressure)/.test(q)) return 'wage_pressure';
   if (/\b(migrat|inflow|outflow|relocate)/.test(q)) return 'migration_flow';
-  if (/\b(employment link|jobs.*output|labor market tight)/.test(q)) return 'employment_linkage';
+  if (/\b(employment link|jobs.*output)/.test(q)) return 'employment_linkage';
   if (/\b(dependency ratio|aging dependency|aged pressure)/.test(q)) return 'dependency_ratio';
-  if (/\b(demograph|aging|youth)/.test(q)) return 'demographics';
+  if (/\b(demograph|aging)/.test(q)) return 'demographics';
   if (/\b(workforce capacity|capacity gap|labor shortage)/.test(q)) return 'workforce_capacity';
   if (/\b(labor resilience|resilience score)/.test(q)) return 'labor_resilience';
   if (/\b(participation|labor force participation)/.test(q)) return 'participation_outlook';
@@ -215,6 +221,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Friction band ${state.workforceTransitionFrictionOutlook?.band ?? 'unknown'}; automation drag ${Math.round(state.workforceTransitionFrictionOutlook?.automationDrag ?? 0)}.`,
         inference: state.workforceTransitionFrictionOutlook?.stewardNote || state.outlook,
         projection: 'Friction blends velocity, elasticity, and automation — not literal retraining counts.'
+      };
+    case 'youth_pipeline':
+      return {
+        topic,
+        headline: state.youthEntryPipelineOutlook?.summary || 'Youth entry pipeline unavailable.',
+        fact: `Pipeline band ${state.youthEntryPipelineOutlook?.band ?? 'unknown'}; dependency headwind ${Math.round(state.youthEntryPipelineOutlook?.dependencyHeadwind ?? 0)}.`,
+        inference: state.youthEntryPipelineOutlook?.stewardNote || state.summary,
+        projection: 'Youth pipeline blends dependency, participation, and upskilling — bounded indices only.'
+      };
+    case 'labor_tightness':
+      return {
+        topic,
+        headline: state.laborMarketTightnessBrief?.summary || 'Labor market tightness unavailable.',
+        fact: `Tightness band ${state.laborMarketTightnessBrief?.band ?? 'unknown'}; capacity drag ${Math.round(state.laborMarketTightnessBrief?.capacityGapDrag ?? 0)}.`,
+        inference: state.laborMarketTightnessBrief?.stewardNote || state.outlook,
+        projection: 'Tightness blends capacity gaps, wage pressure, and underemployment slack — not literal vacancy counts.'
+      };
+    case 'hybrid_participation':
+      return {
+        topic,
+        headline: state.hybridParticipationFrictionOutlook?.summary || 'Hybrid participation friction unavailable.',
+        fact: `Hybrid band ${state.hybridParticipationFrictionOutlook?.band ?? 'unknown'}; care relief ${Math.round((state.hybridParticipationFrictionOutlook?.careReliefLift ?? 0) * 100)}%.`,
+        inference: state.hybridParticipationFrictionOutlook?.stewardNote || state.outlook,
+        projection: 'Hybrid friction blends transition, mobility, and care levers — not literal remote-work counts.'
       };
     default:
       return {

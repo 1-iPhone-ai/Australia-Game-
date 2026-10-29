@@ -210,6 +210,9 @@ export interface NationalLaborDemographicsState {
   underemploymentPressureBrief?: NationalUnderemploymentPressureBrief;
   wageCompetitivenessIndex?: NationalWageCompetitivenessIndex;
   workforceTransitionFrictionOutlook?: NationalWorkforceTransitionFrictionOutlook;
+  youthEntryPipelineOutlook?: NationalYouthEntryPipelineOutlook;
+  laborMarketTightnessBrief?: NationalLaborMarketTightnessBrief;
+  hybridParticipationFrictionOutlook?: NationalHybridParticipationFrictionOutlook;
 }
 
 export type MigrationShockKind =
@@ -453,6 +456,39 @@ export interface NationalWorkforceTransitionFrictionOutlook {
   frictionIndex: number;
   band: TransitionFrictionBand;
   automationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type YouthPipelineBand = 'constricted' | 'narrow' | 'healthy' | 'expansionary';
+
+export interface NationalYouthEntryPipelineOutlook {
+  turn: number;
+  pipelineIndex: number;
+  band: YouthPipelineBand;
+  dependencyHeadwind: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type TightnessBand = 'slack' | 'balanced' | 'tight' | 'critical_shortage';
+
+export interface NationalLaborMarketTightnessBrief {
+  turn: number;
+  tightnessIndex: number;
+  band: TightnessBand;
+  capacityGapDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type HybridParticipationFrictionBand = 'low' | 'moderate' | 'elevated' | 'binding';
+
+export interface NationalHybridParticipationFrictionOutlook {
+  turn: number;
+  frictionIndex: number;
+  band: HybridParticipationFrictionBand;
+  careReliefLift: number;
   summary: string;
   stewardNote: string;
 }
@@ -1544,7 +1580,10 @@ export type LaborGiQueryTopic =
   | 'talent_mobility'
   | 'underemployment'
   | 'wage_competitiveness'
-  | 'transition_friction';
+  | 'transition_friction'
+  | 'youth_pipeline'
+  | 'labor_tightness'
+  | 'hybrid_participation';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -1556,14 +1595,17 @@ export interface LaborGiAnswer {
 
 export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | null {
   const q = raw.toLowerCase();
+  if (/\b(youth pipeline|youth entry|apprentice pipeline)/.test(q)) return 'youth_pipeline';
+  if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
+  if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
   if (/\b(household budget|affordability|cost of living)/.test(q)) return 'household_budget';
   if (/\b(wage compet|cost burden|competitiveness)/.test(q)) return 'wage_competitiveness';
   if (/\b(wage|pay pressure|salary pressure)/.test(q)) return 'wage_pressure';
   if (/\b(migrat|inflow|outflow|relocate)/.test(q)) return 'migration_flow';
-  if (/\b(employment link|jobs.*output|labor market tight)/.test(q)) return 'employment_linkage';
+  if (/\b(employment link|jobs.*output)/.test(q)) return 'employment_linkage';
   if (/\b(dependency ratio|aging dependency|aged pressure)/.test(q)) return 'dependency_ratio';
-  if (/\b(demograph|aging|youth)/.test(q)) return 'demographics';
+  if (/\b(demograph|aging)/.test(q)) return 'demographics';
   if (/\b(workforce capacity|capacity gap|labor shortage)/.test(q)) return 'workforce_capacity';
   if (/\b(labor resilience|resilience score)/.test(q)) return 'labor_resilience';
   if (/\b(participation|labor force participation)/.test(q)) return 'participation_outlook';
@@ -1572,7 +1614,6 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(supply elasticity|inelastic labor|labor supply response)/.test(q)) return 'supply_elasticity';
   if (/\b(talent mobility|mobile talent|talent flow)/.test(q)) return 'talent_mobility';
   if (/\b(underemploy|hidden slack|labor slack)/.test(q)) return 'underemployment';
-  if (/\b(wage compet|cost burden|competitiveness)/.test(q)) return 'wage_competitiveness';
   if (/\b(transition friction|sticky transition|workforce transition)/.test(q)) return 'transition_friction';
   if (/\b(labor demo|workforce structure|v10\.14)/.test(q)) return 'national_summary';
   return null;
@@ -1736,6 +1777,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Friction band ${state.workforceTransitionFrictionOutlook?.band ?? 'unknown'}; automation drag ${Math.round(state.workforceTransitionFrictionOutlook?.automationDrag ?? 0)}.`,
         inference: state.workforceTransitionFrictionOutlook?.stewardNote || state.outlook,
         projection: 'Friction blends velocity, elasticity, and automation — not literal retraining counts.'
+      };
+    case 'youth_pipeline':
+      return {
+        topic,
+        headline: state.youthEntryPipelineOutlook?.summary || 'Youth entry pipeline unavailable.',
+        fact: `Pipeline band ${state.youthEntryPipelineOutlook?.band ?? 'unknown'}; dependency headwind ${Math.round(state.youthEntryPipelineOutlook?.dependencyHeadwind ?? 0)}.`,
+        inference: state.youthEntryPipelineOutlook?.stewardNote || state.summary,
+        projection: 'Youth pipeline blends dependency, participation, and upskilling — bounded indices only.'
+      };
+    case 'labor_tightness':
+      return {
+        topic,
+        headline: state.laborMarketTightnessBrief?.summary || 'Labor market tightness unavailable.',
+        fact: `Tightness band ${state.laborMarketTightnessBrief?.band ?? 'unknown'}; capacity drag ${Math.round(state.laborMarketTightnessBrief?.capacityGapDrag ?? 0)}.`,
+        inference: state.laborMarketTightnessBrief?.stewardNote || state.outlook,
+        projection: 'Tightness blends capacity gaps, wage pressure, and underemployment slack — not literal vacancy counts.'
+      };
+    case 'hybrid_participation':
+      return {
+        topic,
+        headline: state.hybridParticipationFrictionOutlook?.summary || 'Hybrid participation friction unavailable.',
+        fact: `Hybrid band ${state.hybridParticipationFrictionOutlook?.band ?? 'unknown'}; care relief ${Math.round((state.hybridParticipationFrictionOutlook?.careReliefLift ?? 0) * 100)}%.`,
+        inference: state.hybridParticipationFrictionOutlook?.stewardNote || state.outlook,
+        projection: 'Hybrid friction blends transition, mobility, and care levers — not literal remote-work counts.'
       };
     default:
       return {
@@ -2113,6 +2178,21 @@ export function buildStewardLaborBrief(
     state.workforceTransitionFrictionOutlook?.band === 'sticky'
   ) {
     hints.push(state.workforceTransitionFrictionOutlook.stewardNote);
+  }
+  if (state.youthEntryPipelineOutlook?.band === 'constricted' || state.youthEntryPipelineOutlook?.band === 'narrow') {
+    hints.push(state.youthEntryPipelineOutlook.stewardNote);
+  }
+  if (
+    state.laborMarketTightnessBrief?.band === 'critical_shortage' ||
+    state.laborMarketTightnessBrief?.band === 'tight'
+  ) {
+    hints.push(state.laborMarketTightnessBrief.stewardNote);
+  }
+  if (
+    state.hybridParticipationFrictionOutlook?.band === 'binding' ||
+    state.hybridParticipationFrictionOutlook?.band === 'elevated'
+  ) {
+    hints.push(state.hybridParticipationFrictionOutlook.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -2880,6 +2960,121 @@ export function inclusionEaseForRegion(
 }
 
 
+// --- source: catalog/workforce-care-levers.ts ---
+
+export type WorkforceCareLeverKind =
+  | 'childcare_subsidy'
+  | 'after_school_care'
+  | 'elder_care_respite'
+  | 'shift_flex_pack'
+  | 'commute_relief';
+
+export interface WorkforceCareLever {
+  id: string;
+  kind: WorkforceCareLeverKind;
+  targetIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  careReliefStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const WORKFORCE_CARE_LEVERS: WorkforceCareLever[] = [
+  {
+    id: 'care_health_nsw',
+    kind: 'shift_flex_pack',
+    targetIndustry: 'research',
+    hostRegions: ['NSW', 'ACT'],
+    careReliefStrength: 0.74,
+    label: 'Capital health shift-flex pack',
+    narrative: 'Shift-flex packs ease caregiver participation drag in capital research bands.'
+  },
+  {
+    id: 'care_manufacturing_vic',
+    kind: 'after_school_care',
+    targetIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    careReliefStrength: 0.68,
+    label: 'Manufacturing after-school relief',
+    narrative: 'After-school relief indices lift manufacturing participation without micro childcare sim.'
+  },
+  {
+    id: 'care_agri_tas',
+    kind: 'commute_relief',
+    targetIndustry: 'agriculture',
+    hostRegions: ['TAS', 'SA', 'VIC'],
+    careReliefStrength: 0.59,
+    label: 'Regional agri commute relief',
+    narrative: 'Commute relief eases seasonal caregiver friction in regional agri corridors.'
+  },
+  {
+    id: 'care_tourism_qld',
+    kind: 'childcare_subsidy',
+    targetIndustry: 'tourism',
+    hostRegions: ['QLD', 'NSW'],
+    careReliefStrength: 0.63,
+    label: 'Coastal tourism childcare subsidy',
+    narrative: 'Subsidy indices stabilize service-sector participation in coastal hubs.'
+  },
+  {
+    id: 'care_tech_nsw_vic',
+    kind: 'elder_care_respite',
+    targetIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    careReliefStrength: 0.71,
+    label: 'Tech elder-care respite band',
+    narrative: 'Respite bands reduce hybrid-participation friction for dual-care households.'
+  },
+  {
+    id: 'care_mining_wa',
+    kind: 'shift_flex_pack',
+    targetIndustry: 'mining',
+    hostRegions: ['WA', 'QLD', 'NT'],
+    careReliefStrength: 0.66,
+    label: 'Frontier mining roster flex',
+    narrative: 'Roster flex packs offset caregiver drag in frontier resource regions.'
+  },
+  {
+    id: 'care_energy_nt',
+    kind: 'after_school_care',
+    targetIndustry: 'energy',
+    hostRegions: ['NT', 'QLD'],
+    careReliefStrength: 0.62,
+    label: 'Energy transition care pack',
+    narrative: 'Care packs align transition participation with automation shift bands.'
+  },
+  {
+    id: 'care_trade_sa',
+    kind: 'commute_relief',
+    targetIndustry: 'trade',
+    hostRegions: ['SA', 'WA'],
+    careReliefStrength: 0.57,
+    label: 'Trade logistics commute relief',
+    narrative: 'Logistics commute relief stabilizes participation under wage pressure.'
+  }
+];
+
+export function lookupWorkforceCareLever(id: string): WorkforceCareLever | undefined {
+  return WORKFORCE_CARE_LEVERS.find(l => l.id === id);
+}
+
+export function careLeversForIndustry(industry: StrategicIndustryKind): WorkforceCareLever[] {
+  return WORKFORCE_CARE_LEVERS.filter(l => l.targetIndustry === industry);
+}
+
+export function careReliefForRegion(
+  regionId: string,
+  dominantIndustry: StrategicIndustryKind | null | undefined
+): number {
+  if (!dominantIndustry) return 0;
+  const matches = WORKFORCE_CARE_LEVERS.filter(
+    l => l.targetIndustry === dominantIndustry && l.hostRegions.includes(regionId)
+  );
+  if (!matches.length) return 0;
+  return matches.reduce((a, l) => a + l.careReliefStrength, 0) / matches.length;
+}
+
+
 // --- source: dependency-ratio-snapshot.ts ---
   V1014_LABOR_CORE_REGIONS,
   type DependencyRatioBand,
@@ -3533,6 +3728,198 @@ export function computeNationalWorkforceTransitionFrictionOutlook(
 }
 
 
+// --- source: youth-entry-pipeline-outlook.ts ---
+
+function youthPipelineBand(index: number): YouthPipelineBand {
+  if (index <= 34) return 'constricted';
+  if (index <= 48) return 'narrow';
+  if (index <= 62) return 'healthy';
+  return 'expansionary';
+}
+
+export function computeNationalYouthEntryPipelineOutlook(
+  state: NationalLaborDemographicsState,
+  dependency: NationalDependencyRatioSnapshot | null | undefined,
+  participation: NationalParticipationPressureBrief | null | undefined
+): NationalYouthEntryPipelineOutlook {
+  if (!state.enabled || !dependency || !participation) {
+    return {
+      turn: state.turn,
+      pipelineIndex: 50,
+      band: 'narrow',
+      dependencyHeadwind: 0,
+      summary: 'Youth entry pipeline idle — dependency or participation unavailable.',
+      stewardNote: 'Compute dependency and participation before youth pipeline guidance.'
+    };
+  }
+
+  const dependencyHeadwind = v1014laborClamp(dependency.nationalRatioIndex * 0.55);
+  const participationLift = participation.participationIndex * 0.32;
+  const linkageLift = state.employmentLinkageScore * 0.22;
+
+  let upskillingEase = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    upskillingEase += upskillingUpliftForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  upskillingEase /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const participationDrag =
+    participation.band === 'shrinking' ? 14 : participation.band === 'constrained' ? 8 : 0;
+
+  const pipelineIndex = v1014laborClamp(
+    30 + participationLift + linkageLift + upskillingEase * 18 - dependencyHeadwind - participationDrag
+  );
+  const band = youthPipelineBand(pipelineIndex);
+
+  const stewardNote =
+    band === 'constricted' || band === 'narrow'
+      ? 'Narrow youth pipeline — pair upskilling with caregiver care levers before automation stacks.'
+      : band === 'expansionary'
+        ? 'Expansionary youth pipeline — avoid wage surges that erase participation cushions.'
+        : 'Healthy youth pipeline — monitor dependency headwinds in aging regions.';
+
+  return {
+    turn: state.turn,
+    pipelineIndex,
+    band,
+    dependencyHeadwind,
+    summary: `Youth entry pipeline ${band} (index ${Math.round(pipelineIndex)}); dependency headwind ${Math.round(dependencyHeadwind)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: labor-market-tightness-brief.ts ---
+  IntegratedLaborMarketBrief,
+  NationalLaborDemographicsState,
+  NationalLaborMarketTightnessBrief,
+  NationalUnderemploymentPressureBrief,
+  NationalWorkforceCapacityBridge,
+  TightnessBand
+} from './types';
+
+function tightnessBand(index: number): TightnessBand {
+  if (index <= 32) return 'slack';
+  if (index <= 48) return 'balanced';
+  if (index <= 64) return 'tight';
+  return 'critical_shortage';
+}
+
+export function computeNationalLaborMarketTightnessBrief(
+  state: NationalLaborDemographicsState,
+  brief: IntegratedLaborMarketBrief | null | undefined,
+  capacity: NationalWorkforceCapacityBridge | null | undefined,
+  underemployment: NationalUnderemploymentPressureBrief | null | undefined
+): NationalLaborMarketTightnessBrief {
+  if (!state.enabled || !brief || !capacity) {
+    return {
+      turn: state.turn,
+      tightnessIndex: 50,
+      band: 'balanced',
+      capacityGapDrag: 0,
+      summary: 'Labor market tightness idle — integrated brief or capacity bridge unavailable.',
+      stewardNote: 'Enable labor demographics before tightness guidance.'
+    };
+  }
+
+  const capacityGapDrag =
+    capacity.nationalBand === 'critical_gap'
+      ? 22
+      : capacity.nationalBand === 'tight'
+        ? 14
+        : capacity.nationalBand === 'balanced'
+          ? 4
+          : 0;
+  const pressureLift = brief.compositePressureIndex * 0.35 + state.wagePressureScore * 0.25;
+  const slackEase =
+    underemployment?.band === 'slack' || underemployment?.band === 'mixed'
+      ? (underemployment?.underemploymentIndex ?? 50) * 0.18
+      : 0;
+
+  const tightnessIndex = v1014laborClamp(28 + capacityGapDrag + pressureLift - slackEase);
+  const band = tightnessBand(tightnessIndex);
+
+  const stewardNote =
+    band === 'critical_shortage' || band === 'tight'
+      ? 'Tight labor market — sequence upskilling and corridor moves before wage surges.'
+      : band === 'slack'
+        ? 'Slack tightness — monitor hidden underemployment before cutting inclusion levers.'
+        : 'Balanced tightness — align capacity bridge with participation bands.';
+
+  return {
+    turn: state.turn,
+    tightnessIndex,
+    band,
+    capacityGapDrag,
+    summary: `Labor market tightness ${band.replace('_', ' ')} (index ${Math.round(tightnessIndex)}); capacity drag ${Math.round(capacityGapDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: hybrid-participation-friction-outlook.ts ---
+
+function hybridFrictionBand(index: number): HybridParticipationFrictionBand {
+  if (index <= 34) return 'low';
+  if (index <= 50) return 'moderate';
+  if (index <= 64) return 'elevated';
+  return 'binding';
+}
+
+export function computeNationalHybridParticipationFrictionOutlook(
+  state: NationalLaborDemographicsState,
+  transition: NationalWorkforceTransitionFrictionOutlook | null | undefined,
+  mobility: NationalTalentMobilityOutlook | null | undefined
+): NationalHybridParticipationFrictionOutlook {
+  if (!state.enabled || !transition || !mobility) {
+    return {
+      turn: state.turn,
+      frictionIndex: 50,
+      band: 'moderate',
+      careReliefLift: 0,
+      summary: 'Hybrid participation friction idle — transition or mobility unavailable.',
+      stewardNote: 'Compute transition friction and talent mobility before hybrid guidance.'
+    };
+  }
+
+  let careReliefLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    careReliefLift += careReliefForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  careReliefLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const transitionDrag =
+    transition.band === 'bottleneck' ? 18 : transition.band === 'sticky' ? 12 : transition.frictionIndex * 0.22;
+  const mobilityDrag = mobility.band === 'hyper_mobile' ? 10 : mobility.band === 'fluid' ? 6 : 0;
+  const householdDrag =
+    state.participationPressureBrief?.band === 'constrained' ||
+    state.participationPressureBrief?.band === 'shrinking'
+      ? 8
+      : 0;
+
+  const frictionIndex = v1014laborClamp(
+    24 + transitionDrag + mobilityDrag + householdDrag - careReliefLift * 20
+  );
+  const band = hybridFrictionBand(frictionIndex);
+
+  const stewardNote =
+    band === 'binding' || band === 'elevated'
+      ? 'Elevated hybrid friction — deploy care levers before remote-work automation expansions.'
+      : band === 'low'
+        ? 'Low hybrid friction — maintain care relief while scaling corridor mobility.'
+        : 'Moderate hybrid friction — watch volatile mobility regions.';
+
+  return {
+    turn: state.turn,
+    frictionIndex,
+    band,
+    careReliefLift,
+    summary: `Hybrid participation friction ${band} (index ${Math.round(frictionIndex)}); care relief ${Math.round(careReliefLift * 100)}%.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -4066,6 +4453,22 @@ export function computeNationalLaborDemographics(
     state.laborMarketVelocityIndex,
     state.laborSupplyElasticityBrief
   );
+  state.youthEntryPipelineOutlook = computeNationalYouthEntryPipelineOutlook(
+    state,
+    dependencySnapshot,
+    state.participationPressureBrief
+  );
+  state.laborMarketTightnessBrief = computeNationalLaborMarketTightnessBrief(
+    state,
+    integratedBrief,
+    capacityBridge,
+    state.underemploymentPressureBrief
+  );
+  state.hybridParticipationFrictionOutlook = computeNationalHybridParticipationFrictionOutlook(
+    state,
+    state.workforceTransitionFrictionOutlook,
+    state.talentMobilityOutlook
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -4112,6 +4515,27 @@ export function computeNationalLaborDemographics(
   ) {
     state.evidence.push(state.workforceTransitionFrictionOutlook.summary.slice(0, 120));
   }
+  if (
+    (state.youthEntryPipelineOutlook?.band === 'constricted' ||
+      state.youthEntryPipelineOutlook?.band === 'narrow') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.youthEntryPipelineOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.laborMarketTightnessBrief?.band === 'critical_shortage' ||
+      state.laborMarketTightnessBrief?.band === 'tight') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.laborMarketTightnessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.hybridParticipationFrictionOutlook?.band === 'binding' ||
+      state.hybridParticipationFrictionOutlook?.band === 'elevated') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.hybridParticipationFrictionOutlook.summary.slice(0, 120));
+  }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
   }
@@ -4145,6 +4569,11 @@ export function computeNationalLaborDemographics(
   inclusionLeversForIndustry,
   lookupWorkforceInclusionLever
 } from './catalog/workforce-inclusion-levers';
+  WORKFORCE_CARE_LEVERS,
+  careLeversForIndustry,
+  careReliefForRegion,
+  lookupWorkforceCareLever
+} from './catalog/workforce-care-levers';
   STRATEGIC_INDUSTRIES,
   V1014_LABOR_CORE_REGIONS,
   V1014_LABOR_INDUSTRY_LABOR_WEIGHT,
@@ -4561,6 +4990,48 @@ export function runV1014LaborDemographicsSelfTests(): {
       r1.state.laborSupplyElasticityBrief
     ).stewardNote.length > 8,
     'transition friction steward note'
+  );
+
+  check('R801', WORKFORCE_CARE_LEVERS.length >= 8, 'care lever catalog');
+  check('R802', Boolean(lookupWorkforceCareLever('care_tech_nsw_vic')?.narrative), 'care lever lookup');
+  check('R803', careLeversForIndustry('technology').length >= 1, 'technology care levers');
+  check('R804', careReliefForRegion('NSW', 'technology') > 0, 'regional care relief');
+  check('R805', Boolean(r1.state.youthEntryPipelineOutlook?.band), 'youth pipeline on state');
+  check('R806', (r1.state.youthEntryPipelineOutlook?.dependencyHeadwind ?? 0) >= 0, 'dependency headwind');
+  check('R807', Boolean(r1.state.laborMarketTightnessBrief?.band), 'labor tightness on state');
+  check('R808', Boolean(r1.state.hybridParticipationFrictionOutlook?.band), 'hybrid friction on state');
+  check('R809', detectLaborDemographicsQuery('youth entry pipeline') === 'youth_pipeline', 'GI youth pipeline detect');
+  check('R810', detectLaborDemographicsQuery('labor market tightness') === 'labor_tightness', 'GI tightness detect');
+  check('R811', detectLaborDemographicsQuery('hybrid participation friction') === 'hybrid_participation', 'GI hybrid detect');
+  check('R812', answerLaborDemographicsQuestion(r1.state, 'youth_pipeline').headline.length > 5, 'GI youth answer');
+  const youthOnly = computeNationalYouthEntryPipelineOutlook(
+    r1.state,
+    r1.state.dependencyRatioSnapshot,
+    r1.state.participationPressureBrief
+  );
+  check('R813', youthOnly.summary.length > 10, 'youth pipeline standalone summary');
+  const tightOnly = computeNationalLaborMarketTightnessBrief(
+    r1.state,
+    r1.state.integratedLaborBrief!,
+    r1.state.workforceCapacityBridge,
+    r1.state.underemploymentPressureBrief
+  );
+  check('R814', tightOnly.band.length > 3, 'tightness band string');
+  const hybridOnly = computeNationalHybridParticipationFrictionOutlook(
+    r1.state,
+    r1.state.workforceTransitionFrictionOutlook,
+    r1.state.talentMobilityOutlook
+  );
+  check('R815', hybridOnly.careReliefLift >= 0, 'hybrid care relief lift');
+  check(
+    'R816',
+    computeNationalLaborMarketTightnessBrief(
+      rHhBad.state,
+      rHhBad.state.integratedLaborBrief!,
+      rHhBad.state.workforceCapacityBridge,
+      rHhBad.state.underemploymentPressureBrief
+    ).stewardNote.length > 8,
+    'tightness steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

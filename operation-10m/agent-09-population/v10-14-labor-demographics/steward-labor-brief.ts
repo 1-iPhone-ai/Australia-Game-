@@ -65,6 +65,21 @@ export function buildStewardLaborBrief(
   ) {
     hints.push(state.workforceTransitionFrictionOutlook.stewardNote);
   }
+  if (state.youthEntryPipelineOutlook?.band === 'constricted' || state.youthEntryPipelineOutlook?.band === 'narrow') {
+    hints.push(state.youthEntryPipelineOutlook.stewardNote);
+  }
+  if (
+    state.laborMarketTightnessBrief?.band === 'critical_shortage' ||
+    state.laborMarketTightnessBrief?.band === 'tight'
+  ) {
+    hints.push(state.laborMarketTightnessBrief.stewardNote);
+  }
+  if (
+    state.hybridParticipationFrictionOutlook?.band === 'binding' ||
+    state.hybridParticipationFrictionOutlook?.band === 'elevated'
+  ) {
+    hints.push(state.hybridParticipationFrictionOutlook.stewardNote);
+  }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
   }

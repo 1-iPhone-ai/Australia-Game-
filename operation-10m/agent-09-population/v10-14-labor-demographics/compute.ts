@@ -47,6 +47,9 @@ import { computeNationalTalentMobilityOutlook } from './talent-mobility-outlook'
 import { computeNationalUnderemploymentPressureBrief } from './underemployment-pressure-brief';
 import { computeNationalWageCompetitivenessIndex } from './wage-competitiveness-index';
 import { computeNationalWorkforceTransitionFrictionOutlook } from './workforce-transition-friction-outlook';
+import { computeNationalYouthEntryPipelineOutlook } from './youth-entry-pipeline-outlook';
+import { computeNationalLaborMarketTightnessBrief } from './labor-market-tightness-brief';
+import { computeNationalHybridParticipationFrictionOutlook } from './hybrid-participation-friction-outlook';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -409,6 +412,22 @@ export function computeNationalLaborDemographics(
     state.laborMarketVelocityIndex,
     state.laborSupplyElasticityBrief
   );
+  state.youthEntryPipelineOutlook = computeNationalYouthEntryPipelineOutlook(
+    state,
+    dependencySnapshot,
+    state.participationPressureBrief
+  );
+  state.laborMarketTightnessBrief = computeNationalLaborMarketTightnessBrief(
+    state,
+    integratedBrief,
+    capacityBridge,
+    state.underemploymentPressureBrief
+  );
+  state.hybridParticipationFrictionOutlook = computeNationalHybridParticipationFrictionOutlook(
+    state,
+    state.workforceTransitionFrictionOutlook,
+    state.talentMobilityOutlook
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -454,6 +473,27 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.workforceTransitionFrictionOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.youthEntryPipelineOutlook?.band === 'constricted' ||
+      state.youthEntryPipelineOutlook?.band === 'narrow') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.youthEntryPipelineOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.laborMarketTightnessBrief?.band === 'critical_shortage' ||
+      state.laborMarketTightnessBrief?.band === 'tight') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.laborMarketTightnessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.hybridParticipationFrictionOutlook?.band === 'binding' ||
+      state.hybridParticipationFrictionOutlook?.band === 'elevated') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.hybridParticipationFrictionOutlook.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

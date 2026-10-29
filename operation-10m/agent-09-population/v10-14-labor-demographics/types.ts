@@ -206,6 +206,9 @@ export interface NationalLaborDemographicsState {
   underemploymentPressureBrief?: NationalUnderemploymentPressureBrief;
   wageCompetitivenessIndex?: NationalWageCompetitivenessIndex;
   workforceTransitionFrictionOutlook?: NationalWorkforceTransitionFrictionOutlook;
+  youthEntryPipelineOutlook?: NationalYouthEntryPipelineOutlook;
+  laborMarketTightnessBrief?: NationalLaborMarketTightnessBrief;
+  hybridParticipationFrictionOutlook?: NationalHybridParticipationFrictionOutlook;
 }
 
 export type MigrationShockKind =
@@ -449,6 +452,39 @@ export interface NationalWorkforceTransitionFrictionOutlook {
   frictionIndex: number;
   band: TransitionFrictionBand;
   automationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type YouthPipelineBand = 'constricted' | 'narrow' | 'healthy' | 'expansionary';
+
+export interface NationalYouthEntryPipelineOutlook {
+  turn: number;
+  pipelineIndex: number;
+  band: YouthPipelineBand;
+  dependencyHeadwind: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type TightnessBand = 'slack' | 'balanced' | 'tight' | 'critical_shortage';
+
+export interface NationalLaborMarketTightnessBrief {
+  turn: number;
+  tightnessIndex: number;
+  band: TightnessBand;
+  capacityGapDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type HybridParticipationFrictionBand = 'low' | 'moderate' | 'elevated' | 'binding';
+
+export interface NationalHybridParticipationFrictionOutlook {
+  turn: number;
+  frictionIndex: number;
+  band: HybridParticipationFrictionBand;
+  careReliefLift: number;
   summary: string;
   stewardNote: string;
 }
