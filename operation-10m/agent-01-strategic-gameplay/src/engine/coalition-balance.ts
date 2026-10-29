@@ -358,3 +358,13 @@ export function imperialPerpetuityRankingBonus(
   if (streak >= action.minCoalitionImperialPerpetuityStreakDays) return 31;
   return 2;
 }
+
+export function custodialEternityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionCustodialEternityStreakDays === undefined) return 0;
+  const streak = state.coalitionCustodialEternityStreakDays ?? 0;
+  if (streak >= action.minCoalitionCustodialEternityStreakDays) return 32;
+  return 2;
+}

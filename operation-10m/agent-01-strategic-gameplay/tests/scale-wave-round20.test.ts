@@ -120,7 +120,7 @@ describe('scale wave round 20 — infinite coalition persistence', () => {
       coalitionInfinitePersistenceStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(36);
+    expect(save.version).toBe(37);
     expect(save.coalitionInfinitePersistenceStreakDays).toBe(5);
   });
 });

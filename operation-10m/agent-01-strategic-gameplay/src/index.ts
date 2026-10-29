@@ -126,6 +126,7 @@ export {
   paragonInfinityRankingBonus,
   paramountAscendancyRankingBonus,
   imperialPerpetuityRankingBonus,
+  custodialEternityRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -501,6 +502,16 @@ export {
   applyImperialPerpetuityMandateBonus,
 } from './engine/coalition-imperial-perpetuity.ts';
 
+export { coalitionCustodialEternityStreakIssues } from './engine/coalition-custodial-eternity-gates.ts';
+
+export {
+  CUSTODIAL_COALITION_ETERNITY_THRESHOLD,
+  advanceCoalitionCustodialEternityStreak,
+  resetCoalitionCustodialEternityStreak,
+  isCustodialCoalitionEternity,
+  applyCustodialEternityMandateBonus,
+} from './engine/coalition-custodial-eternity.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '4.8.0';
+export const AGENT_01_MODULE_VERSION = '4.9.0';

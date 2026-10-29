@@ -99,6 +99,8 @@ export interface TurnStrategicBriefing {
   coalitionParamountAscendancyStreakDays: number;
   imperialCoalitionPerpetuity: boolean;
   coalitionImperialPerpetuityStreakDays: number;
+  custodialCoalitionEternity: boolean;
+  coalitionCustodialEternityStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;

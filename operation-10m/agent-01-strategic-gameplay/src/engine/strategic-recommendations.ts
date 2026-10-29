@@ -45,6 +45,7 @@ import {
   paragonInfinityRankingBonus,
   paramountAscendancyRankingBonus,
   imperialPerpetuityRankingBonus,
+  custodialEternityRankingBonus,
 } from './coalition-balance.ts';
 import { scoreNationalPriorityAlignment, validateAction } from './validation.ts';
 
@@ -107,7 +108,8 @@ export function rankStrategicActions(
         zenithPerpetuityRankingBonus(state, action) +
         paragonInfinityRankingBonus(state, action) +
         paramountAscendancyRankingBonus(state, action) +
-        imperialPerpetuityRankingBonus(state, action),
+        imperialPerpetuityRankingBonus(state, action) +
+        custodialEternityRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });

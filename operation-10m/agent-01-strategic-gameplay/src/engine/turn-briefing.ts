@@ -40,6 +40,7 @@ import { isZenithCoalitionPerpetuity } from './coalition-zenith-perpetuity.ts';
 import { isParagonCoalitionInfinity } from './coalition-paragon-infinity.ts';
 import { isParamountCoalitionAscendancy } from './coalition-paramount-ascendancy.ts';
 import { isImperialCoalitionPerpetuity } from './coalition-imperial-perpetuity.ts';
+import { isCustodialCoalitionEternity } from './coalition-custodial-eternity.ts';
 import { listStakeholderWarnings } from './stakeholder-coalition.ts';
 import { rankStrategicActions } from './strategic-recommendations.ts';
 import { listStrategicActions } from '../catalog/strategic-action-catalog.ts';
@@ -134,6 +135,8 @@ export function buildTurnStrategicBriefing(
     coalitionParamountAscendancyStreakDays: state.coalitionParamountAscendancyStreakDays ?? 0,
     imperialCoalitionPerpetuity: isImperialCoalitionPerpetuity(state),
     coalitionImperialPerpetuityStreakDays: state.coalitionImperialPerpetuityStreakDays ?? 0,
+    custodialCoalitionEternity: isCustodialCoalitionEternity(state),
+    coalitionCustodialEternityStreakDays: state.coalitionCustodialEternityStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,
