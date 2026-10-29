@@ -137,7 +137,10 @@ const SOURCE_FILES = [
   'operation-10m/agent-21-forecasting/forecast-round34-console.tsx',
   'operation-10m/agent-21-forecasting/forecast-wave35-projection-sync.ts',
   'operation-10m/agent-21-forecasting/forecast-integration-wave35-origin-handoff.ts',
-  'operation-10m/agent-21-forecasting/forecast-round35-console.tsx'
+  'operation-10m/agent-21-forecasting/forecast-round35-console.tsx',
+  'operation-10m/agent-21-forecasting/forecast-wave36-projection-sync.ts',
+  'operation-10m/agent-21-forecasting/forecast-integration-wave36-origin-handoff.ts',
+  'operation-10m/agent-21-forecasting/forecast-round36-console.tsx'
 ];
 
 function stripModuleImports(src) {
@@ -427,6 +430,12 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21IntegrationWave35OriginHandoffSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21Wave36ProjectionSyncSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21IntegrationWave36OriginHandoffSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({

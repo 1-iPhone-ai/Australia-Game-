@@ -97,5 +97,5 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '2.27.0';
+export const O10M_AGENT21_MODULE_VERSION = '2.28.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
