@@ -1610,6 +1610,52 @@ export function evaluateMacroConsistencyGates(
       summary: 'Wide transmission envelope after wave 46 UI/dashboard export layers — spillover spread is elevated.'
     });
   }
+  const wave47Replay: any =
+    inputs.replayWave47Export ??
+    inputs.historyReplay?.wave47Export ??
+    inputs.replay?.wave47Export;
+  const round47Ready = Boolean(
+    wave47Replay?.round47Ready ?? wave47Replay?.payload?.round47Ready ?? wave47Replay?.exportReady
+  );
+  if (
+    wave47Replay &&
+    !round47Ready &&
+    (state.replaySpilloverSummary != null || state.replayWave47ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'replay_wave47_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'History replay wave 47 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave47Health: any =
+    inputs.integrationHealthWave47Export ??
+    inputs.integrationHealth?.wave47Export ??
+    inputs.assembly?.integrationHealthWave47Export;
+  const health47Ready = Boolean(
+    wave47Health?.healthReady ?? wave47Health?.round47Ready ?? wave47Health?.payload?.healthReady
+  );
+  if (
+    wave47Health &&
+    !health47Ready &&
+    (state.integrationHealthSpilloverSummary != null || state.integrationHealthWave47ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'integration_health_wave47_export_blocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Integration health wave 47 export not ready coincides with strained integration health spillover.'
+    });
+  }
+  if (state.transmissionPersistence?.band === 'cohesive') {
+    gates.push({
+      id: 'transmission_persistence_cohesive_wave47',
+      triggered: true,
+      severity: 'info',
+      summary: 'Cohesive transmission persistence after wave 47 replay/integration export layers.'
+    });
+  }
   if (state.transmissionPersistence?.band === 'cohesive') {
     gates.push({
       id: 'transmission_persistence_cohesive',

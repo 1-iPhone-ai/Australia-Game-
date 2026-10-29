@@ -288,6 +288,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Wave 46 UI & dashboard export stress',
     shockIds: ['stimulus_bounce', 'global_slowdown'],
     description: 'Blocked UI wave 46 export with unclear dashboard wave 46 export (harness overlay).'
+  },
+  {
+    id: 'wave47_replay_integration_stress',
+    label: 'Wave 47 replay & integration stress',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'Blocked replay wave 47 export with unready integration health wave 47 export (harness overlay).'
   }
 ];
 
