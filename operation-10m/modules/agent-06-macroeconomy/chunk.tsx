@@ -90,6 +90,11 @@ export interface NationalMacroEconomyState {
   fiscalSpilloverSummary: string | null;
   regionalDivergence: RegionalDivergenceSnapshot;
   outlookProjection: MacroOutlookProjection;
+  householdSpilloverSummary: string | null;
+  industrySpilloverSummary: string | null;
+  consistencyGates: MacroConsistencyGate[];
+  debrief: MacroDebriefSnapshot;
+  derivedSignals: Array<{ id: string; kind: string; text: string }>;
   evidence: MacroEconomyEvidence[];
   outlook: {
     phase: BusinessCyclePhase;
@@ -115,6 +120,18 @@ export interface MacroOutlookProjection {
   projectedProductivityBand: MacroProductivityBand;
   projectedOutputIndex: number;
   confidence: number;
+}
+
+export interface MacroConsistencyGate {
+  id: string;
+  triggered: boolean;
+  severity: 'info' | 'warn';
+  summary: string;
+}
+
+export interface MacroDebriefSnapshot {
+  headline: string;
+  bullets: string[];
 }
 
 export interface MacroEconomyPersisted {
@@ -1304,6 +1321,107 @@ export function applyMacroFiscalSpillover(
 }
 
 
+// --- source: bridge-v1013-households.ts ---
+
+export interface MacroHouseholdSpillover {
+  cycleNudge: number;
+  investmentNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.13 household / domestic demand spillover (never mutates household state). */
+export function readMacroHouseholdSpilloverFromV1013(inputs: MacroEconomyInputs): MacroHouseholdSpillover {
+  const hh: any = inputs.households;
+  if (!hh) return { cycleNudge: 0, investmentNudge: 0, summary: null };
+  const demand = String(hh.domesticDemand?.level ?? hh.domesticDemand?.band ?? hh.demandBand ?? 'stable');
+  const affordability = String(hh.affordability?.band ?? hh.livingStandards?.band ?? 'moderate');
+  let cycleNudge = 0;
+  let investmentNudge = 0;
+  let summary: string | null = null;
+  if (demand === 'surging' || demand === 'very_strong') {
+    cycleNudge += 3;
+    investmentNudge += 2;
+    summary = 'Strong domestic demand supports macro cycle momentum (interpretation).';
+  }
+  if (demand === 'contracting' || demand === 'soft') {
+    cycleNudge -= 3;
+    investmentNudge -= 2;
+    summary = 'Soft domestic demand weighs on macro cycle read.';
+  }
+  if (affordability === 'severe_pressure' || affordability === 'strained') {
+    cycleNudge -= 2;
+    summary = (summary ? summary + ' ' : '') + 'Household affordability strain caps investment interpretation.';
+  }
+  return {
+    cycleNudge: v1014macroClamp(cycleNudge, -6, 6),
+    investmentNudge: v1014macroClamp(investmentNudge, -6, 6),
+    summary
+  };
+}
+
+export function applyMacroHouseholdSpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroHouseholdSpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore,
+    investmentScore: scores.investmentScore + spillover.investmentNudge,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
+// --- source: bridge-v101-industries.ts ---
+
+export interface MacroIndustrySpillover {
+  productivityNudge: number;
+  cycleNudge: number;
+  summary: string | null;
+}
+
+/** Read-only V10.1 industries / supply utilization spillover. */
+export function readMacroIndustrySpilloverFromV101(inputs: MacroEconomyInputs): MacroIndustrySpillover {
+  const ind: any = inputs.industries;
+  if (!ind) return { productivityNudge: 0, cycleNudge: 0, summary: null };
+  const utilization = Number(ind.nationalUtilization ?? ind.utilizationIndex ?? ind.supplyPressure ?? 55);
+  const constrained = Boolean(ind.supplyConstrained ?? ind.hasCriticalConstraint);
+  let productivityNudge = 0;
+  let cycleNudge = 0;
+  let summary: string | null = null;
+  if (utilization > 72) {
+    productivityNudge += 2;
+    cycleNudge += 1;
+    summary = 'Tight industrial utilization lifts productivity interpretation.';
+  }
+  if (utilization < 42) {
+    productivityNudge -= 2;
+    cycleNudge -= 2;
+    summary = 'Slack industrial utilization signals macro slack.';
+  }
+  if (constrained) {
+    productivityNudge -= 3;
+    cycleNudge -= 1;
+    summary = (summary ? summary + ' ' : '') + 'Critical supply constraint weighs on macro productivity.';
+  }
+  return {
+    productivityNudge: v1014macroClamp(productivityNudge, -6, 6),
+    cycleNudge: v1014macroClamp(cycleNudge, -6, 4),
+    summary
+  };
+}
+
+export function applyMacroIndustrySpillover(
+  scores: { productivityScore: number; investmentScore: number; cycleScore: number },
+  spillover: MacroIndustrySpillover
+): typeof scores {
+  return {
+    productivityScore: scores.productivityScore + spillover.productivityNudge,
+    investmentScore: scores.investmentScore,
+    cycleScore: scores.cycleScore + spillover.cycleNudge
+  };
+}
+
+
 // --- source: cycle-memory.ts ---
 
 export function appendMacroCycleTransitionMemory(
@@ -1487,6 +1605,98 @@ export function macroEconomyActionAlignment(
 }
 
 
+// --- source: consistency-gates.ts ---
+
+export function evaluateMacroConsistencyGates(
+  state: NationalMacroEconomyState,
+  inputs: MacroEconomyInputs
+): MacroConsistencyGate[] {
+  const gates: MacroConsistencyGate[] = [];
+  if (!state.accounting.identityOk) {
+    gates.push({
+      id: 'accounting_identity',
+      triggered: true,
+      severity: 'warn',
+      summary: `Regional share accounting residual ${state.accounting.identityResidual.toFixed(6)}`
+    });
+  }
+  const pf: any = inputs.publicFinance;
+  const hh: any = inputs.households;
+  const fiscalPressure = String(pf?.pressure ?? pf?.fiscalPosition?.pressure ?? '');
+  const demand = String(hh?.domesticDemand?.level ?? hh?.domesticDemand?.band ?? '');
+  if (fiscalPressure === 'critical' && (demand === 'strong' || demand === 'surging' || demand === 'very_strong')) {
+    gates.push({
+      id: 'fiscal_household_tension',
+      triggered: true,
+      severity: 'info',
+      summary: 'Critical fiscal capacity coexists with strong household demand — interpret macro signals carefully.'
+    });
+  }
+  if (state.investmentClimate === 'frozen' && state.utilizationBand === 'tight') {
+    gates.push({
+      id: 'investment_utilization_mismatch',
+      triggered: true,
+      severity: 'info',
+      summary: 'Frozen investment climate despite tight utilization — binding constraint may be financial, not capacity.'
+    });
+  }
+  if (state.regionalDivergence.band === 'wide_spread' && state.cyclePhase === 'expansion') {
+    gates.push({
+      id: 'regional_divergence_expansion',
+      triggered: true,
+      severity: 'info',
+      summary: 'National expansion masks wide regional productivity dispersion.'
+    });
+  }
+  return gates;
+}
+
+
+// --- source: macro-debrief.ts ---
+
+export function composeMacroEconomyDebrief(state: NationalMacroEconomyState): MacroDebriefSnapshot {
+  const bullets: string[] = [
+    `Cycle ${BUSINESS_CYCLE_LABEL[state.cyclePhase]} · productivity ${V1014_MACRO_PRODUCTIVITY_LABEL[state.productivityBand]} · investment ${V1014_MACRO_INVESTMENT_LABEL[state.investmentClimate]}`,
+    `Gross output index ${state.accounting.grossOutputIndex.toFixed(1)} · identity ${state.accounting.identityOk ? 'OK' : 'DRIFT'}`,
+    `Leading region ${state.regionalDivergence.leadingRegionId} · divergence ${state.regionalDivergence.band}`
+  ];
+  if (state.activeCyclicalShockIds.length) {
+    bullets.push(`Active shocks: ${state.activeCyclicalShockIds.join(', ')}`);
+  }
+  if (state.fiscalSpilloverSummary) bullets.push(state.fiscalSpilloverSummary);
+  if (state.householdSpilloverSummary) bullets.push(state.householdSpilloverSummary);
+  if (state.industrySpilloverSummary) bullets.push(state.industrySpilloverSummary);
+  const triggered = state.consistencyGates.filter(g => g.triggered);
+  if (triggered.length) bullets.push(`Consistency notes: ${triggered.map(g => g.id).join(', ')}`);
+  return {
+    headline: `Macro T${state.turn}: ${BUSINESS_CYCLE_LABEL[state.cyclePhase]} / ${V1014_MACRO_INVESTMENT_LABEL[state.investmentClimate]}`,
+    bullets: bullets.slice(0, 8)
+  };
+}
+
+export function buildMacroDerivedSignals(
+  state: NationalMacroEconomyState,
+  previousPhase: string | null | undefined
+): Array<{ id: string; kind: string; text: string }> {
+  const out: Array<{ id: string; kind: string; text: string }> = [];
+  if (previousPhase && previousPhase !== state.cyclePhase) {
+    out.push({
+      id: `macro:cycle:${state.turn}:${state.cyclePhase}`,
+      kind: 'cycle_phase_change',
+      text: `National cycle shifted to ${BUSINESS_CYCLE_LABEL[state.cyclePhase]}.`
+    });
+  }
+  for (const gate of state.consistencyGates.filter(g => g.triggered && g.severity === 'warn')) {
+    out.push({
+      id: `macro:gate:${gate.id}:t${state.turn}`,
+      kind: 'consistency_gate',
+      text: gate.summary
+    });
+  }
+  return out.slice(0, 6);
+}
+
+
 // --- source: gi-queries.ts ---
 
 export type MacroGiTopic =
@@ -1603,8 +1813,12 @@ export function computeNationalMacroEconomy(
     pushEv
   );
   const fiscalSpillover = readMacroFiscalSpilloverFromV1012(inputs);
+  const householdSpillover = readMacroHouseholdSpilloverFromV1013(inputs);
+  const industrySpillover = readMacroIndustrySpilloverFromV101(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withFiscal, pushEv);
+  const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
+  const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withIndustry, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -1672,6 +1886,8 @@ export function computeNationalMacroEconomy(
     sectorOutputMix,
     activeCyclicalShockIds: activeShockIds,
     fiscalSpilloverSummary: fiscalSpillover.summary,
+    householdSpilloverSummary: householdSpillover.summary,
+    industrySpilloverSummary: industrySpillover.summary,
     regionalDivergence,
     outlookProjection: {
       horizonTurns: 3,
@@ -1681,15 +1897,28 @@ export function computeNationalMacroEconomy(
       projectedOutputIndex: accounting.grossOutputIndex,
       confidence: 0.9
     },
+    consistencyGates: [],
+    debrief: { headline: '', bullets: [] },
+    derivedSignals: [],
     evidence: evList.slice(0, V1014_MACRO_LIMITS.maxEvidence),
     outlook: { phase: cyclePhase, productivity: productivityBand, investment: investmentClimate }
   };
 
   const outlookProjection = projectMacroEconomyOutlook(partialStateForOutlook, inputs, 3);
 
-  const state: NationalMacroEconomyState = {
+  const stateBase: NationalMacroEconomyState = {
     ...partialStateForOutlook,
     outlookProjection
+  };
+  const consistencyGates = evaluateMacroConsistencyGates(stateBase, inputs);
+  const debrief = composeMacroEconomyDebrief({ ...stateBase, consistencyGates });
+  const derivedSignals = buildMacroDerivedSignals(stateBase, persisted.cycleHysteresis);
+
+  const state: NationalMacroEconomyState = {
+    ...stateBase,
+    consistencyGates,
+    debrief,
+    derivedSignals
   };
 
   return { state, persisted: nextPersisted };
@@ -2177,6 +2406,89 @@ export function runAgent06Round2SelfTests(): {
 }
 
 
+// --- source: round3-self-tests.ts ---
+
+export function runAgent06Round3SelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: MacroSelfTestResult[];
+} {
+  const results: MacroSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const hh = readMacroHouseholdSpilloverFromV1013(
+    makeDefaultV1014_MACRO_TestInputs({
+      households: { domesticDemand: { band: 'surging' }, affordability: { band: 'moderate' } }
+    })
+  );
+  record('R3-01', 'Household surging demand nudges cycle up', hh.cycleNudge > 0, String(hh.cycleNudge));
+
+  const ind = readMacroIndustrySpilloverFromV101(
+    makeDefaultV1014_MACRO_TestInputs({ industries: { nationalUtilization: 80, supplyConstrained: true } })
+  );
+  record('R3-02', 'Tight constrained industry lowers productivity read', ind.productivityNudge < 0, String(ind.productivityNudge));
+
+  const base = computeNationalMacroEconomy(makeDefaultV1014_MACRO_TestInputs(), null, null);
+  record('R3-03', 'Debrief headline present', base.state.debrief.headline.length > 5, base.state.debrief.headline.slice(0, 30));
+
+  record('R3-04', 'Debrief bullets bounded', base.state.debrief.bullets.length >= 2 && base.state.debrief.bullets.length <= 8, String(base.state.debrief.bullets.length));
+
+  const tension = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({
+      publicFinance: { pressure: 'critical', fiscalHeadroom: -3 },
+      households: { domesticDemand: { level: 'strong' } }
+    }),
+    null,
+    null
+  );
+  record(
+    'R3-05',
+    'Fiscal/household tension gate fires',
+    tension.state.consistencyGates.some(g => g.id === 'fiscal_household_tension'),
+    tension.state.consistencyGates.map(g => g.id).join(',')
+  );
+
+  const gates = evaluateMacroConsistencyGates(tension.state, makeDefaultV1014_MACRO_TestInputs({
+    publicFinance: { pressure: 'critical' },
+    households: { domesticDemand: { level: 'strong' } }
+  }));
+  record('R3-06', 'Gate evaluator is pure', gates.some(g => g.triggered), String(gates.length));
+
+  const debrief = composeMacroEconomyDebrief({ ...tension.state, consistencyGates: gates });
+  record('R3-07', 'Debrief mentions consistency when gates fire', debrief.bullets.some(b => b.includes('Consistency') || b.includes('fiscal')), 'ok');
+
+  const signals = buildMacroDerivedSignals({ ...tension.state, cyclePhase: 'slowdown' }, 'expansion');
+  record('R3-08', 'Derived signals on phase change', signals.some(s => s.kind === 'cycle_phase_change'), String(signals.length));
+
+  const industryRun = computeNationalMacroEconomy(
+    makeDefaultV1014_MACRO_TestInputs({ industries: { nationalUtilization: 35 } }),
+    null,
+    null
+  );
+  record(
+    'R3-09',
+    'Industry spillover summary on state',
+    industryRun.state.industrySpilloverSummary != null || industryRun.state.productivityIndex <= base.state.productivityIndex + 1,
+    String(industryRun.state.industrySpilloverSummary)
+  );
+
+  let p = null;
+  let prev = null;
+  for (let t = 1; t <= 20; t++) {
+    const r = computeNationalMacroEconomy(makeDefaultV1014_MACRO_TestInputs({ turn: t }), p, prev);
+    p = r.persisted;
+    prev = r.state;
+  }
+  record('R3-10', '20-turn macro sim stays valid', prev!.accounting.identityOk, String(prev!.revision));
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
 // --- source: self-tests.ts ---
 
 export function runV1014_MACRO_MacroEconomySelfTests(): {
@@ -2275,6 +2587,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const round2 = runAgent06Round2SelfTests();
   for (const r of round2.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round3 = runAgent06Round3SelfTests();
+  for (const r of round3.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 

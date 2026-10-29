@@ -33,11 +33,15 @@ const FILES = [
   'persisted.ts',
   'inputs.ts',
   'bridge-v1012-fiscal.ts',
+  'bridge-v1013-households.ts',
+  'bridge-v101-industries.ts',
   'cycle-memory.ts',
   'sector-decomposition.ts',
   'regional-divergence.ts',
   'outlook-projection.ts',
   'action-alignment.ts',
+  'consistency-gates.ts',
+  'macro-debrief.ts',
   'gi-queries.ts',
   'compute.ts',
   'integration.ts',
@@ -45,6 +49,7 @@ const FILES = [
   'accounting/regional-reconciliation.ts',
   'depth-self-tests.ts',
   'round2-self-tests.ts',
+  'round3-self-tests.ts',
   'self-tests.ts',
   'react/MacroEconomyInspectorLab.tsx'
 ];

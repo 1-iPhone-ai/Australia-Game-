@@ -1,5 +1,9 @@
 import { buildNationalAccountingLedger } from './accounting/ledger.ts';
 import { applyMacroFiscalSpillover, readMacroFiscalSpilloverFromV1012 } from './bridge-v1012-fiscal.ts';
+import { applyMacroHouseholdSpillover, readMacroHouseholdSpilloverFromV1013 } from './bridge-v1013-households.ts';
+import { applyMacroIndustrySpillover, readMacroIndustrySpilloverFromV101 } from './bridge-v101-industries.ts';
+import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
+import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -64,8 +68,12 @@ export function computeNationalMacroEconomy(
     pushEv
   );
   const fiscalSpillover = readMacroFiscalSpilloverFromV1012(inputs);
+  const householdSpillover = readMacroHouseholdSpilloverFromV1013(inputs);
+  const industrySpillover = readMacroIndustrySpilloverFromV101(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withFiscal, pushEv);
+  const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
+  const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withIndustry, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -133,6 +141,8 @@ export function computeNationalMacroEconomy(
     sectorOutputMix,
     activeCyclicalShockIds: activeShockIds,
     fiscalSpilloverSummary: fiscalSpillover.summary,
+    householdSpilloverSummary: householdSpillover.summary,
+    industrySpilloverSummary: industrySpillover.summary,
     regionalDivergence,
     outlookProjection: {
       horizonTurns: 3,
@@ -142,15 +152,28 @@ export function computeNationalMacroEconomy(
       projectedOutputIndex: accounting.grossOutputIndex,
       confidence: 0.9
     },
+    consistencyGates: [],
+    debrief: { headline: '', bullets: [] },
+    derivedSignals: [],
     evidence: evList.slice(0, V1014_MACRO_LIMITS.maxEvidence),
     outlook: { phase: cyclePhase, productivity: productivityBand, investment: investmentClimate }
   };
 
   const outlookProjection = projectMacroEconomyOutlook(partialStateForOutlook, inputs, 3);
 
-  const state: NationalMacroEconomyState = {
+  const stateBase: NationalMacroEconomyState = {
     ...partialStateForOutlook,
     outlookProjection
+  };
+  const consistencyGates = evaluateMacroConsistencyGates(stateBase, inputs);
+  const debrief = composeMacroEconomyDebrief({ ...stateBase, consistencyGates });
+  const derivedSignals = buildMacroDerivedSignals(stateBase, persisted.cycleHysteresis);
+
+  const state: NationalMacroEconomyState = {
+    ...stateBase,
+    consistencyGates,
+    debrief,
+    derivedSignals
   };
 
   return { state, persisted: nextPersisted };

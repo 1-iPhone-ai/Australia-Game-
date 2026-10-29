@@ -86,6 +86,11 @@ export interface NationalMacroEconomyState {
   fiscalSpilloverSummary: string | null;
   regionalDivergence: RegionalDivergenceSnapshot;
   outlookProjection: MacroOutlookProjection;
+  householdSpilloverSummary: string | null;
+  industrySpilloverSummary: string | null;
+  consistencyGates: MacroConsistencyGate[];
+  debrief: MacroDebriefSnapshot;
+  derivedSignals: Array<{ id: string; kind: string; text: string }>;
   evidence: MacroEconomyEvidence[];
   outlook: {
     phase: BusinessCyclePhase;
@@ -111,6 +116,18 @@ export interface MacroOutlookProjection {
   projectedProductivityBand: MacroProductivityBand;
   projectedOutputIndex: number;
   confidence: number;
+}
+
+export interface MacroConsistencyGate {
+  id: string;
+  triggered: boolean;
+  severity: 'info' | 'warn';
+  summary: string;
+}
+
+export interface MacroDebriefSnapshot {
+  headline: string;
+  bullets: string[];
 }
 
 export interface MacroEconomyPersisted {
