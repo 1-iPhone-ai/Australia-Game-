@@ -105,6 +105,8 @@ export interface NationalMacroEconomyState {
   populationSpilloverSummary: string | null;
   modesSpilloverSummary: string | null;
   guardianSpilloverSummary: string | null;
+  citiesSpilloverSummary: string | null;
+  forecastingSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;
@@ -112,6 +114,7 @@ export interface NationalMacroEconomyState {
   transmissionAsymmetry: MacroTransmissionAsymmetrySnapshot;
   transmissionVolatility: MacroTransmissionVolatilitySnapshot;
   transmissionResilience: MacroTransmissionResilienceSnapshot;
+  transmissionCoverage: MacroTransmissionCoverageSnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -244,6 +247,15 @@ export interface MacroTransmissionResilienceSnapshot {
   summary: string;
 }
 
+export type MacroTransmissionCoverageBand = 'sparse' | 'narrow' | 'moderate' | 'broad';
+
+export interface MacroTransmissionCoverageSnapshot {
+  coverageIndex: number;
+  band: MacroTransmissionCoverageBand;
+  activeLayerCount: number;
+  summary: string;
+}
+
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';
 
 export interface MacroStressIndexSnapshot {
@@ -323,6 +335,12 @@ export interface MacroEconomyInputs {
   guardianCopilot?: any;
   guardian?: any;
   coPilotWarnings?: any;
+  citiesRegions?: any;
+  urbanRegions?: any;
+  metropolitanSystems?: any;
+  forecastingLab?: any;
+  macroForecasts?: any;
+  nationalForecasts?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */

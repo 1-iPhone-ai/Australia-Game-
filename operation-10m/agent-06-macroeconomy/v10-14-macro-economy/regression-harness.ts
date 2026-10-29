@@ -29,6 +29,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeTurnsTransportStress?: boolean;
   includeResearchPopulationStress?: boolean;
   includeModesGuardianStress?: boolean;
+  includeCitiesForecastingStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -40,6 +41,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeTurnsTransportStress = Boolean(options?.includeTurnsTransportStress);
   const includeResearchPopulationStress = Boolean(options?.includeResearchPopulationStress);
   const includeModesGuardianStress = Boolean(options?.includeModesGuardianStress);
+  const includeCitiesForecastingStress = Boolean(options?.includeCitiesForecastingStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -147,6 +149,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             openWarningCount: t % 6 === 0 ? 4 : 1,
             guidanceConfidence: { band: t % 9 === 0 ? 'low' : 'high' }
           }
+        : undefined,
+      citiesRegions: includeCitiesForecastingStress
+        ? {
+            urbanizationBand: t % 6 === 0 ? 'declining' : 'rapid',
+            housingPressure: { band: t % 7 === 0 ? 'severe' : 'balanced' },
+            hubStrength: { band: t % 5 === 0 ? 'weak' : 'strong' }
+          }
+        : undefined,
+      forecastingLab: includeCitiesForecastingStress
+        ? {
+            outlookBand: t % 6 === 0 ? 'recession' : 'expansion',
+            confidenceBand: t % 8 === 0 ? 'low' : 'high',
+            dispersionBand: t % 5 === 0 ? 'wide' : 'tight'
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -207,8 +223,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionCoherence.coherenceIndex)
     });
     checks.push({
-      id: 'twenty_transmission_layers',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
+      id: 'twenty_two_transmission_layers',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 22,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -219,8 +235,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionConcentration.concentrationIndex)
     });
     checks.push({
-      id: 'twenty_transmission_layers_events',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
+      id: 'twenty_two_transmission_layers_events',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 22,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -231,8 +247,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionAsymmetry.asymmetryIndex)
     });
     checks.push({
-      id: 'twenty_transmission_layers_turns',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
+      id: 'twenty_two_transmission_layers_turns',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 22,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -243,8 +259,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionVolatility.volatilityIndex)
     });
     checks.push({
-      id: 'twenty_transmission_layers_research',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
+      id: 'twenty_two_transmission_layers_research',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 22,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -255,8 +271,20 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionResilience.resilienceIndex)
     });
     checks.push({
-      id: 'twenty_transmission_layers_modes',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 20,
+      id: 'twenty_two_transmission_layers_modes',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 22,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeCitiesForecastingStress && prev) {
+    checks.push({
+      id: 'transmission_coverage_finite',
+      passed: Number.isFinite(prev.transmissionCoverage.coverageIndex),
+      detail: String(prev.transmissionCoverage.coverageIndex)
+    });
+    checks.push({
+      id: 'twenty_two_transmission_layers_cities',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 22,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }

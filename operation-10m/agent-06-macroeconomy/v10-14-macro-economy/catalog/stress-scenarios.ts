@@ -84,6 +84,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Modes & guardian stress',
     shockIds: ['housing_correction', 'global_slowdown'],
     description: 'Extreme scenario difficulty with elevated guardian alerts (harness overlay).'
+  },
+  {
+    id: 'cities_forecasting_stress',
+    label: 'Cities & forecasting stress',
+    shockIds: ['global_slowdown', 'housing_correction'],
+    description: 'Metro pressure with downside forecast dispersion (harness overlay).'
   }
 ];
 

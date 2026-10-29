@@ -364,5 +364,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Critical guardian alerts with fragile transmission resilience — macro read highly brittle.'
     });
   }
+  const ct: any = inputs.citiesRegions ?? inputs.urbanRegions ?? inputs.metropolitanSystems;
+  const urban = String(ct?.urbanizationBand ?? ct?.urbanGrowth?.band ?? '');
+  if (
+    (urban === 'declining' || urban === 'stagnant') &&
+    state.regionalDivergence?.band === 'wide_spread'
+  ) {
+    gates.push({
+      id: 'cities_regional_divergence',
+      triggered: true,
+      severity: 'info',
+      summary: 'Weak urban momentum with wide regional divergence — metro-regional macro tension elevated.'
+    });
+  }
+  const fc: any = inputs.forecastingLab ?? inputs.macroForecasts ?? inputs.nationalForecasts;
+  const outlook = String(fc?.outlookBand ?? fc?.consensusOutlook?.band ?? '');
+  if (
+    (outlook === 'downside' || outlook === 'recession' || outlook === 'contraction') &&
+    (state.cyclePhase === 'expansion' || state.cyclePhase === 'peak')
+  ) {
+    gates.push({
+      id: 'forecast_cycle_divergence',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Downside forecast consensus conflicts with headline expansion phase — interpret macro signals carefully.'
+    });
+  }
+  if (state.transmissionCoverage?.band === 'sparse' || state.transmissionCoverage?.band === 'narrow') {
+    gates.push({
+      id: 'transmission_coverage_gap',
+      triggered: true,
+      severity: 'info',
+      summary: 'Few transmission layers materially active — composite macro read may omit cross-system forces.'
+    });
+  }
   return gates;
 }

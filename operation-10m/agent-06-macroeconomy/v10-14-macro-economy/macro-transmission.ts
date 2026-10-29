@@ -18,6 +18,8 @@ import type { MacroResearchSpillover } from './bridge-v103-research.ts';
 import type { MacroPopulationSpillover } from './bridge-v109-population.ts';
 import type { MacroModesSpillover } from './bridge-v1006-modes.ts';
 import type { MacroGuardianSpillover } from './bridge-v1016-guardian.ts';
+import type { MacroCitiesSpillover } from './bridge-v1011-cities.ts';
+import type { MacroForecastingSpillover } from './bridge-v1021-forecasting.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -44,6 +46,8 @@ export function buildMacroTransmissionReport(params: {
   population?: MacroPopulationSpillover;
   modes?: MacroModesSpillover;
   guardian?: MacroGuardianSpillover;
+  cities?: MacroCitiesSpillover;
+  forecasting?: MacroForecastingSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -55,6 +59,8 @@ export function buildMacroTransmissionReport(params: {
   const population = params.population ?? ZERO_SPILLOVER;
   const modes = params.modes ?? ZERO_SPILLOVER;
   const guardian = params.guardian ?? ZERO_SPILLOVER;
+  const cities = params.cities ?? ZERO_SPILLOVER;
+  const forecasting = params.forecasting ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -187,6 +193,22 @@ export function buildMacroTransmissionReport(params: {
       guardian.investmentNudge,
       guardian.productivityNudge,
       guardian.summary
+    ),
+    layer(
+      'v10.11_cities',
+      'Cities & metro regions',
+      cities.cycleNudge,
+      cities.investmentNudge,
+      cities.productivityNudge,
+      cities.summary
+    ),
+    layer(
+      'v10.21_forecasting',
+      'Forecasting lab',
+      forecasting.cycleNudge,
+      forecasting.investmentNudge,
+      forecasting.productivityNudge,
+      forecasting.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
