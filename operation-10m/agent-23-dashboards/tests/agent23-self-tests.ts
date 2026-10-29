@@ -164,6 +164,12 @@ import { nrDashBuildMapPulseSaturationShare } from '../core/map-pulse-saturation
 import { nrDashBuildMergedSnippetOverlapGap } from '../core/merged-snippet-overlap-gap.ts';
 import { nrDashBuildDependencyPulseAsymmetry } from '../core/dependency-pulse-asymmetry.ts';
 import { nrDashBuildBorderCorridorSaturationShare } from '../core/border-corridor-saturation-share.ts';
+import { nrDashBuildRivalOwnerMomentumGap } from '../core/rival-owner-momentum-gap.ts';
+import { nrDashBuildLowTierNeedsConcentration } from '../core/low-tier-needs-concentration.ts';
+import { nrDashBuildAdjacencyPulseAsymmetry } from '../core/adjacency-pulse-asymmetry.ts';
+import { nrDashBuildSnippetTurnSpan } from '../core/snippet-turn-span.ts';
+import { nrDashBuildHubCorridorSaturationShare } from '../core/hub-corridor-saturation-share.ts';
+import { nrDashBuildNationalDerivedOverlapGap } from '../core/national-derived-overlap-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1289,6 +1295,49 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_border_corridor_saturation_share', 'Border corridor saturation share is below one on fixture', () => {
     const sat = nrDashBuildBorderCorridorSaturationShare(createAgent23NsFixture())!;
     return sat.borderRegionCount === 8 && sat.saturationShare > 0 && sat.saturationShare < 1;
+  });
+
+  check('a23_rival_owner_momentum_gap', 'Rival-owner momentum gap is zero on uniform stable fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'rival' })!;
+    const gap = nrDashBuildRivalOwnerMomentumGap(snap)!;
+    return gap.rivalRegionCount === 1 && gap.momentumGap === 0;
+  });
+
+  check('a23_low_tier_needs_concentration', 'Low-tier needs concentration splits two-region fixture', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs.push({ category: 'water', status: 'open', severity: 'low' });
+    lr.state.regions.VIC!.needs.push({ category: 'trade', status: 'open', severity: 'low' });
+    const conc = nrDashBuildLowTierNeedsConcentration(lr)!;
+    return conc.lowOpenCount === 2 && conc.concentrationIndex === 0.5;
+  });
+
+  check('a23_adjacency_pulse_asymmetry', 'Adjacency pulse asymmetry is positive on land links', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    const links = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(createAgent23NsFixture(), AGENT23_REGION_MAP_LAYOUT)
+    );
+    const asym = nrDashBuildAdjacencyPulseAsymmetry(links, nodes)!;
+    return asym.linkCount > 0 && asym.maxEndpointDelta > 0.01;
+  });
+
+  check('a23_snippet_turn_span', 'Snippet turn span covers merged LR and NS snippets', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const span = nrDashBuildSnippetTurnSpan(snap)!;
+    return span.snippetCount === 2 && span.turnSpread === 1 && span.minTurn === 4;
+  });
+
+  check('a23_hub_corridor_saturation_share', 'Hub corridor saturation share is below one on fixture', () => {
+    const sat = nrDashBuildHubCorridorSaturationShare(createAgent23NsFixture())!;
+    return sat.touchingLinkCount > 0 && sat.saturationShare > 0 && sat.saturationShare <= 1;
+  });
+
+  check('a23_national_derived_overlap_gap', 'National derived overlap gap counts same-turn NS and LR entries', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 5, text: 'National echo', significance: 'major' });
+    const gap = nrDashBuildNationalDerivedOverlapGap(lr, createAgent23NsFixture())!;
+    return gap.nationalTurn === 5 && gap.nsEntryCount === 1 && gap.derivedEntryCount === 1 && gap.overlapGap === 1;
   });
 
   return results;

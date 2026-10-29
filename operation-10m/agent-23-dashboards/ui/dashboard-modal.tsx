@@ -168,6 +168,12 @@ import { nrDashBuildMapPulseSaturationShare } from '../core/map-pulse-saturation
 import { nrDashBuildMergedSnippetOverlapGap } from '../core/merged-snippet-overlap-gap.ts';
 import { nrDashBuildDependencyPulseAsymmetry } from '../core/dependency-pulse-asymmetry.ts';
 import { nrDashBuildBorderCorridorSaturationShare } from '../core/border-corridor-saturation-share.ts';
+import { nrDashBuildRivalOwnerMomentumGap } from '../core/rival-owner-momentum-gap.ts';
+import { nrDashBuildLowTierNeedsConcentration } from '../core/low-tier-needs-concentration.ts';
+import { nrDashBuildAdjacencyPulseAsymmetry } from '../core/adjacency-pulse-asymmetry.ts';
+import { nrDashBuildSnippetTurnSpan } from '../core/snippet-turn-span.ts';
+import { nrDashBuildHubCorridorSaturationShare } from '../core/hub-corridor-saturation-share.ts';
+import { nrDashBuildNationalDerivedOverlapGap } from '../core/national-derived-overlap-gap.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -635,6 +641,24 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const rivalMomGap = nrDashBuildRivalOwnerMomentumGap(snap);
+      return rivalMomGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-rival-owner-momentum-gap">
+          Rival-owner momentum gap {rivalMomGap.momentumGap} · rival μ {rivalMomGap.rivalMeanRank} · national μ{' '}
+          {rivalMomGap.nationalMeanRank}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const lowConc = nrDashBuildLowTierNeedsConcentration(lrView);
+      return lowConc ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-low-tier-needs-concentration">
+          Low-tier needs concentration {lowConc.concentrationIndex} · {lowConc.lowOpenCount} low across {lowConc.regionCount}{' '}
+          regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const modConc = nrDashBuildModerateTierNeedsConcentration(lrView);
       return modConc ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-moderate-tier-needs-concentration">
@@ -649,6 +673,24 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-merged-snippet-overlap-gap">
           Merged snippet overlap gap {snippetOverlap.overlapGap} · {snippetOverlap.snippetCount} snippets ·{' '}
           {snippetOverlap.uniqueTurnCount} unique turns
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const snippetTurnSpan = nrDashBuildSnippetTurnSpan(snap);
+      return snippetTurnSpan && snippetTurnSpan.turnSpread > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-snippet-turn-span">
+          Snippet turn span {snippetTurnSpan.turnSpread} · R{snippetTurnSpan.minTurn}–R{snippetTurnSpan.maxTurn} ·{' '}
+          {snippetTurnSpan.snippetCount} snippets
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const nationalDerivedGap = nrDashBuildNationalDerivedOverlapGap(lrView, nsState);
+      return nationalDerivedGap && nationalDerivedGap.overlapGap > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-derived-overlap-gap">
+          National derived overlap gap {nationalDerivedGap.overlapGap} · R{nationalDerivedGap.nationalTurn} · NS{' '}
+          {nationalDerivedGap.nsEntryCount} · LR {nationalDerivedGap.derivedEntryCount}
         </div>
       ) : null;
     })()}
@@ -1616,6 +1658,24 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-border-corridor-saturation-share">
             Border corridor saturation share {borderSat.saturationShare} · μ {borderSat.meanStress} · peak{' '}
             {borderSat.peakStress}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const hubCorridorSat = nrDashBuildHubCorridorSaturationShare(nsState);
+        return hubCorridorSat && hubCorridorSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-corridor-saturation-share">
+            Hub corridor saturation share {hubCorridorSat.saturationShare} · hub {hubCorridorSat.hubRegionId ?? '—'} · μ{' '}
+            {hubCorridorSat.meanLinkStress} · peak {hubCorridorSat.peakLinkStress}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const adjAsym = nrDashBuildAdjacencyPulseAsymmetry(stressedLinks, baseNodes);
+        return adjAsym && adjAsym.maxEndpointDelta > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-adjacency-pulse-asymmetry">
+            Adjacency pulse asymmetry μΔ {adjAsym.meanEndpointDelta} · peak {adjAsym.maxEndpointDelta} · {adjAsym.linkCount}{' '}
+            links
           </p>
         ) : null;
       })()}
