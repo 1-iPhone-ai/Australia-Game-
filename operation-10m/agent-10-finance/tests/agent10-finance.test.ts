@@ -33,6 +33,9 @@ import {
 import { runAgent10FinanceSelfTests } from '../src/self-tests.js';
 import { evaluatePolicyTransmissionChannels } from '../src/transmission/channels.js';
 import { runFinancialShockSequence } from '../src/shocks/scenario-runner.js';
+import { stepResourceMarketPriceDeterministic } from '../src/prices/market-dynamics.js';
+import { simulateMacroFinancialTurns } from '../src/integration/regression-harness.js';
+import { assessInvestmentClimateLink } from '../src/investment/climate-link.js';
 
 describe('Agent 10 glossary & boundaries', () => {
   it('defines coherent finance terms', () => {
@@ -178,8 +181,8 @@ describe('National macro-financial compute (V10.14 parity)', () => {
 describe('Agent 10 scale-wave extensions', () => {
   it('runAgent10FinanceSelfTests all pass', () => {
     const r = runAgent10FinanceSelfTests();
-    assert.equal(r.allPassed, true, r.results.filter((x) => !x.passed).map((x) => x.name).join('; '));
-    assert.ok(r.total >= 50);
+    assert.equal(r.allPassed, true, r.results.filter((x) => !x.passed).map((x) => `${x.id}:${x.name}`).join('; '));
+    assert.ok(r.total >= 60);
   });
 
   it('transmission channels activate under fiscal critical', () => {
@@ -191,5 +194,27 @@ describe('Agent 10 scale-wave extensions', () => {
     const seq = runFinancialShockSequence({ inflation: 40, credit: 50, stability: 55 }, ['shock_credit_tightening']);
     assert.ok(seq.scores.credit < 50);
     assert.equal(seq.creditShockActive, true);
+  });
+
+  it('round-3 market dynamics mean-revert', () => {
+    const step = stepResourceMarketPriceDeterministic({
+      resource: 'Wool',
+      basePrice: 100,
+      currentPrice: 140,
+      trend: 'stable',
+      randCentered: 0,
+    });
+    assert.ok(step.nextPrice < 140);
+  });
+
+  it('round-3 multi-turn simulation', () => {
+    const sim = simulateMacroFinancialTurns(6);
+    assert.equal(sim.rows.length, 6);
+    assert.ok(sim.finalState.revision >= 6);
+  });
+
+  it('round-3 investment climate defer under stress', () => {
+    const a = assessInvestmentClimateLink('crisis_defensive', 'restricted', 'high');
+    assert.equal(a.deferMegaproject, true);
   });
 });

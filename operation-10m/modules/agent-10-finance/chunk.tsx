@@ -551,6 +551,65 @@ export function applyResourcePricePressure(basePrice: number, pressureFraction: 
 }
 
 
+// --- source: prices/market-dynamics.ts ---
+export type ResourceMarketTrend = 'stable' | 'rising' | 'falling' | 'volatile';
+
+export interface DeterministicMarketStepInput {
+  resource: string;
+  basePrice: number;
+  currentPrice: number;
+  trend: ResourceMarketTrend;
+  /** Deterministic driver in [-1, 1] — stand-in for seeded gameplay RNG in canonical market update. */
+  randCentered: number;
+  pressureFraction?: number;
+}
+
+export interface DeterministicMarketStepResult {
+  nextPrice: number;
+  meanReversionComponent: number;
+  trendDelta: number;
+  pressureComponent: number;
+}
+
+const TREND_BIAS: Record<ResourceMarketTrend, number> = {
+  stable: 0,
+  rising: 0.5,
+  falling: -0.5,
+  volatile: 0,
+};
+
+const TREND_VARIANCE: Record<ResourceMarketTrend, number> = {
+  stable: 0.5,
+  rising: 1,
+  falling: 1,
+  volatile: 1.5,
+};
+
+/** Deterministic subset of V9.4 computeDailyMarketUpdate price step (commodity layer only). */
+export function stepResourceMarketPriceDeterministic(input: DeterministicMarketStepInput): DeterministicMarketStepResult {
+  const { basePrice, currentPrice, trend, randCentered } = input;
+  const meanReversionComponent = 0.12 * (basePrice - currentPrice);
+  const baseVariance = 0.15 * basePrice;
+  const bias = TREND_BIAS[trend];
+  const varianceScale = TREND_VARIANCE[trend];
+  const centered = Math.max(-1, Math.min(1, randCentered));
+  const trendDelta = (centered + bias) * baseVariance * varianceScale;
+  const p = Math.max(-0.06, Math.min(0.06, Number(input.pressureFraction) || 0));
+  const pressureComponent = p * basePrice;
+  const nextPrice = Math.max(1, Math.round(currentPrice + meanReversionComponent + trendDelta + pressureComponent));
+  return { nextPrice, meanReversionComponent, trendDelta, pressureComponent };
+}
+
+export function cycleMarketTrendDeterministic(day: number, previous: ResourceMarketTrend | '', randUnit: number): ResourceMarketTrend {
+  if (previous && (day - 1) % 3 !== 0) return previous as ResourceMarketTrend;
+  const r = Math.max(0, Math.min(1, randUnit));
+  if (r < 0.4) return 'stable';
+  if (r < 0.65) return 'rising';
+  if (r < 0.9) return 'falling';
+  return 'volatile';
+}
+
+
 // --- source: shocks/catalog.ts ---
 
 export const FINANCIAL_SHOCK_CATALOG: readonly FinancialShockDefinition[] = [
@@ -753,6 +812,53 @@ export function refinanceTimingSignal(
 }
 
 
+// --- source: investment/climate-link.ts ---
+
+export type InvestmentClimateBand =
+  | 'crisis_defensive'
+  | 'cautious'
+  | 'selective'
+  | 'expansionary'
+  | 'transformative';
+
+export interface InvestmentClimateLinkAssessment {
+  climate: InvestmentClimateBand;
+  credit: CreditConditionsBand;
+  inflation: InflationConditionsBand;
+  readinessScore: number;
+  deferMegaproject: boolean;
+  rationale: string;
+}
+
+const CLIMATE_BASE: Record<InvestmentClimateBand, number> = {
+  crisis_defensive: 25,
+  cautious: 40,
+  selective: 55,
+  expansionary: 72,
+  transformative: 85,
+};
+
+export function assessInvestmentClimateLink(
+  climate: InvestmentClimateBand,
+  credit: CreditConditionsBand,
+  inflation: InflationConditionsBand,
+): InvestmentClimateLinkAssessment {
+  let score = CLIMATE_BASE[climate];
+  if (credit === 'accommodative') score += 8;
+  if (credit === 'tight' || credit === 'restricted') score -= 10;
+  if (credit === 'frozen') score -= 18;
+  if (inflation === 'high' || inflation === 'scenario_runaway') score -= 12;
+  if (inflation === 'disinflation') score += 4;
+  score = finClamp(score, 0, 100);
+  const deferMegaproject =
+    score < 45 || credit === 'frozen' || inflation === 'scenario_runaway' || climate === 'crisis_defensive';
+  let rationale = 'Investment climate aligns with macro credit and inflation bands.';
+  if (deferMegaproject) rationale = 'Defer discretionary megaproject capex until stability and credit normalize.';
+  else if (score >= 70) rationale = 'Expansionary window — megaproject readiness elevated (metadata only).';
+  return { climate, credit, inflation, readinessScore: score, deferMegaproject, rationale };
+}
+
+
 // --- source: transmission/channels.ts ---
 
 export interface TransmissionChannelHit {
@@ -824,6 +930,76 @@ export function sumActiveTransmissionWeight(hits: TransmissionChannelHit[], targ
   return hits
     .filter((h) => h.active && h.targetDomain === targetDomain)
     .reduce((s, h) => s + h.weight, 0);
+}
+
+
+// --- source: persistence/validate-state.ts ---
+
+export interface MacroFinancialValidationIssue {
+  code: string;
+  severity: 'warning' | 'error';
+  message: string;
+}
+
+export function validateNationalMacroFinancialState(state: NationalMacroFinancialState | null | undefined): MacroFinancialValidationIssue[] {
+  const issues: MacroFinancialValidationIssue[] = [];
+  if (!state) {
+    issues.push({ code: 'missing_state', severity: 'error', message: 'State is null' });
+    return issues;
+  }
+  if (state.schemaVersion.length < 3) {
+    issues.push({ code: 'schema', severity: 'error', message: 'Invalid schemaVersion' });
+  }
+  const m = state.modifiers;
+  if (m.costOfLivingMultiplier < V1014_FINSTAB_LIMITS.minCostMultiplier - 1e-6) {
+    issues.push({ code: 'cost_mult_low', severity: 'error', message: 'costOfLivingMultiplier below min' });
+  }
+  if (m.costOfLivingMultiplier > V1014_FINSTAB_LIMITS.maxCostMultiplier + 1e-6) {
+    issues.push({ code: 'cost_mult_high', severity: 'error', message: 'costOfLivingMultiplier above max' });
+  }
+  if (m.creditSpreadMultiplier < V1014_FINSTAB_LIMITS.minCreditSpreadMultiplier - 1e-6) {
+    issues.push({ code: 'spread_low', severity: 'error', message: 'creditSpreadMultiplier below min' });
+  }
+  if (m.creditSpreadMultiplier > V1014_FINSTAB_LIMITS.maxCreditSpreadMultiplier + 1e-6) {
+    issues.push({ code: 'spread_high', severity: 'error', message: 'creditSpreadMultiplier above max' });
+  }
+  if (m.loanAffordabilityIndex < 0 || m.loanAffordabilityIndex > 100) {
+    issues.push({ code: 'affordability_range', severity: 'error', message: 'loanAffordabilityIndex out of 0-100' });
+  }
+  if (state.evidence.length > V1014_FINSTAB_LIMITS.maxEvidence) {
+    issues.push({ code: 'evidence_cap', severity: 'error', message: 'evidence exceeds maxEvidence' });
+  }
+  if (state.pressures.length > V1014_FINSTAB_LIMITS.maxPressures) {
+    issues.push({ code: 'pressure_cap', severity: 'error', message: 'pressures exceeds maxPressures' });
+  }
+  if (!state.summary.trim()) {
+    issues.push({ code: 'summary_empty', severity: 'warning', message: 'summary is empty' });
+  }
+  return issues;
+}
+
+export function dedupeMacroFinancialEvidence(evidence: MacroFinancialEvidence[]): MacroFinancialEvidence[] {
+  const seen = new Set<string>();
+  const out: MacroFinancialEvidence[] = [];
+  for (const e of evidence) {
+    const key = `${e.sourceSystem}:${e.sourceId}:${e.factor}:${e.contribution}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
+}
+
+export function auditModifierIntegrity(state: NationalMacroFinancialState): boolean {
+  const m = state.modifiers;
+  return (
+    finClamp(m.costOfLivingMultiplier, V1014_FINSTAB_LIMITS.minCostMultiplier, V1014_FINSTAB_LIMITS.maxCostMultiplier) ===
+      m.costOfLivingMultiplier &&
+    finClamp(m.creditSpreadMultiplier, V1014_FINSTAB_LIMITS.minCreditSpreadMultiplier, V1014_FINSTAB_LIMITS.maxCreditSpreadMultiplier) ===
+      m.creditSpreadMultiplier &&
+    m.investmentRiskPremium >= 0 &&
+    m.investmentRiskPremium <= 0.35
+  );
 }
 
 
@@ -1449,6 +1625,58 @@ export function macroFinancialWorldRoots(
 }
 
 
+// --- source: integration/regression-harness.ts ---
+
+export interface MacroFinancialTurnSimulationRow {
+  turn: number;
+  inflation: NationalMacroFinancialState['inflation'];
+  credit: NationalMacroFinancialState['credit'];
+  stability: NationalMacroFinancialState['stability'];
+  costMult: number;
+  spreadMult: number;
+  eventCount: number;
+}
+
+export interface MacroFinancialTurnSimulationResult {
+  rows: MacroFinancialTurnSimulationRow[];
+  finalPersisted: MacroFinancialPersisted;
+  finalState: NationalMacroFinancialState;
+}
+
+/** Multi-turn deterministic harness for regression / Agent 25 smoke (no wallet mutation). */
+export function simulateMacroFinancialTurns(
+  turnCount: number,
+  mutate?: (turn: number, base: ReturnType<typeof makeDefaultMacroFinancialTestInputs>) => ReturnType<typeof makeDefaultMacroFinancialTestInputs>,
+): MacroFinancialTurnSimulationResult {
+  const rows: MacroFinancialTurnSimulationRow[] = [];
+  let persisted: MacroFinancialPersisted | null = null;
+  let prev: NationalMacroFinancialState | null = null;
+  for (let t = 1; t <= turnCount; t++) {
+    let inputs = makeDefaultMacroFinancialTestInputs({ turn: t });
+    if (mutate) inputs = mutate(t, inputs);
+    const r = computeNationalMacroFinancialConditions(inputs, persisted, prev);
+    persisted = r.persisted;
+    prev = r.state;
+    rows.push({
+      turn: t,
+      inflation: r.state.inflation,
+      credit: r.state.credit,
+      stability: r.state.stability,
+      costMult: r.state.modifiers.costOfLivingMultiplier,
+      spreadMult: r.state.modifiers.creditSpreadMultiplier,
+      eventCount: r.events.length,
+    });
+  }
+  return { rows, finalPersisted: persisted!, finalState: prev! };
+}
+
+export function detectSimulationStressSpiral(rows: MacroFinancialTurnSimulationRow[]): boolean {
+  if (rows.length < 3) return false;
+  const spreads = rows.map((r) => r.spreadMult);
+  return spreads[spreads.length - 1] > spreads[0] + 0.08;
+}
+
+
 // --- source: self-tests.ts ---
   computeNationalMacroFinancialConditions,
   createInitialMacroFinancialPersisted,
@@ -1465,6 +1693,10 @@ export function macroFinancialWorldRoots(
   macroFinancialWorldRoots,
   answerMacroFinancialQuestion,
 } from './integration/query-co-pilot.js';
+  validateNationalMacroFinancialState,
+  auditModifierIntegrity,
+  dedupeMacroFinancialEvidence,
+} from './persistence/validate-state.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -1660,6 +1892,53 @@ export function runAgent10FinanceSelfTests(): {
     );
   }
 
+  // --- Round 3 scale wave ---
+  {
+    const step = stepResourceMarketPriceDeterministic({
+      resource: 'Gold',
+      basePrice: 150,
+      currentPrice: 180,
+      trend: 'falling',
+      randCentered: 0,
+    });
+    check('a10_r3_01', 'market step mean reversion', step.nextPrice < 180);
+  }
+  check(
+    'a10_r3_02',
+    'trend cycle deterministic',
+    cycleMarketTrendDeterministic(4, 'stable', 0.5) === 'stable' || cycleMarketTrendDeterministic(4, '', 0.5) === 'rising',
+  );
+  {
+    const link = assessInvestmentClimateLink('expansionary', 'accommodative', 'anchored');
+    check('a10_r3_03', 'investment link ready', link.readinessScore >= 70 && !link.deferMegaproject);
+  }
+  {
+    const link = assessInvestmentClimateLink('crisis_defensive', 'frozen', 'scenario_runaway');
+    check('a10_r3_04', 'investment link defer', link.deferMegaproject);
+  }
+  {
+    const st = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state;
+    check('a10_r3_05', 'validate clean state', validateNationalMacroFinancialState(st).every((i) => i.severity !== 'error'));
+    check('a10_r3_06', 'audit modifiers', auditModifierIntegrity(st));
+  }
+  {
+    const sim = simulateMacroFinancialTurns(12, (turn, base) =>
+      turn >= 8 ? { ...base, creditShockActive: true, fiscalPressure: 'critical' } : base,
+    );
+    check('a10_r3_07', 'simulation rows', sim.rows.length === 12);
+    check('a10_r3_08', 'stress spiral detect', detectSimulationStressSpiral(sim.rows));
+  }
+  {
+    const st = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state;
+    const duped = dedupeMacroFinancialEvidence([...st.evidence, ...st.evidence]);
+    check('a10_r3_09', 'evidence dedupe', duped.length <= st.evidence.length);
+  }
+  check(
+    'a10_r3_10',
+    'regional spread NSW',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.regionalSpreads.some((r) => r.regionId === 'NSW'),
+  );
+
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;
   return { passed, failed, total: results.length, allPassed: failed === 0, results };
@@ -1710,6 +1989,35 @@ export function FinanceConditionsLab(props: FinanceConditionsLabProps) {
           </ul>
         </section>
       )}
+    </div>
+  );
+}
+
+
+// --- source: react/FinanceTransmissionPanel.tsx ---
+
+export interface FinanceTransmissionPanelProps {
+  inputs: MacroFinancialSystemInputs;
+  title?: string;
+}
+
+export function FinanceTransmissionPanel(props: FinanceTransmissionPanelProps) {
+  const { inputs, title = 'Policy transmission' } = props;
+  const hits = evaluatePolicyTransmissionChannels(inputs);
+  const active = hits.filter((h) => h.active);
+  return (
+    <div className="op10m-finance-transmission" data-testid="finance-transmission-panel">
+      <h4>{title}</h4>
+      <p>
+        {active.length} / {hits.length} channels active
+      </p>
+      <ul>
+        {active.slice(0, 8).map((h) => (
+          <li key={h.id}>
+            {h.sourceDomain} → {h.targetDomain} (w={h.weight.toFixed(2)}): {h.activationReason}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -21,6 +21,14 @@ import { applyMacroCostOfLivingToEconomyLayer, compareInflationBands } from './i
 import { quoteAdvancedLoanPricing, refinanceTimingSignal } from './credit/loan-pricing.js';
 import { runFinancialShockSequence } from './shocks/scenario-runner.js';
 import { referencePolicyRate } from './rates/reference-rate.js';
+import { stepResourceMarketPriceDeterministic, cycleMarketTrendDeterministic } from './prices/market-dynamics.js';
+import { assessInvestmentClimateLink } from './investment/climate-link.js';
+import {
+  validateNationalMacroFinancialState,
+  auditModifierIntegrity,
+  dedupeMacroFinancialEvidence,
+} from './persistence/validate-state.js';
+import { simulateMacroFinancialTurns, detectSimulationStressSpiral } from './integration/regression-harness.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -215,6 +223,53 @@ export function runAgent10FinanceSelfTests(): {
       r.state.revision >= 1 && r.state.turn === turn,
     );
   }
+
+  // --- Round 3 scale wave ---
+  {
+    const step = stepResourceMarketPriceDeterministic({
+      resource: 'Gold',
+      basePrice: 150,
+      currentPrice: 180,
+      trend: 'falling',
+      randCentered: 0,
+    });
+    check('a10_r3_01', 'market step mean reversion', step.nextPrice < 180);
+  }
+  check(
+    'a10_r3_02',
+    'trend cycle deterministic',
+    cycleMarketTrendDeterministic(4, 'stable', 0.5) === 'stable' || cycleMarketTrendDeterministic(4, '', 0.5) === 'rising',
+  );
+  {
+    const link = assessInvestmentClimateLink('expansionary', 'accommodative', 'anchored');
+    check('a10_r3_03', 'investment link ready', link.readinessScore >= 70 && !link.deferMegaproject);
+  }
+  {
+    const link = assessInvestmentClimateLink('crisis_defensive', 'frozen', 'scenario_runaway');
+    check('a10_r3_04', 'investment link defer', link.deferMegaproject);
+  }
+  {
+    const st = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state;
+    check('a10_r3_05', 'validate clean state', validateNationalMacroFinancialState(st).every((i) => i.severity !== 'error'));
+    check('a10_r3_06', 'audit modifiers', auditModifierIntegrity(st));
+  }
+  {
+    const sim = simulateMacroFinancialTurns(12, (turn, base) =>
+      turn >= 8 ? { ...base, creditShockActive: true, fiscalPressure: 'critical' } : base,
+    );
+    check('a10_r3_07', 'simulation rows', sim.rows.length === 12);
+    check('a10_r3_08', 'stress spiral detect', detectSimulationStressSpiral(sim.rows));
+  }
+  {
+    const st = computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state;
+    const duped = dedupeMacroFinancialEvidence([...st.evidence, ...st.evidence]);
+    check('a10_r3_09', 'evidence dedupe', duped.length <= st.evidence.length);
+  }
+  check(
+    'a10_r3_10',
+    'regional spread NSW',
+    computeNationalMacroFinancialConditions(makeDefaultMacroFinancialTestInputs(), null, null).state.regionalSpreads.some((r) => r.regionId === 'NSW'),
+  );
 
   const passed = results.filter((r) => r.passed).length;
   const failed = results.length - passed;

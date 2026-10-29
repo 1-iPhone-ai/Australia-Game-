@@ -22,15 +22,20 @@ const FILES = [
   'credit/actor-leverage.ts',
   'rates/reference-rate.ts',
   'prices/boundary.ts',
+  'prices/market-dynamics.ts',
   'shocks/catalog.ts',
   'shocks/scenario-runner.ts',
   'inflation/pass-through.ts',
   'credit/loan-pricing.ts',
+  'investment/climate-link.ts',
   'transmission/channels.ts',
+  'persistence/validate-state.ts',
   'compute/national-macro-financial.ts',
   'integration/query-co-pilot.ts',
+  'integration/regression-harness.ts',
   'self-tests.ts',
   'react/FinanceConditionsLab.tsx',
+  'react/FinanceTransmissionPanel.tsx',
 ];
 
 function stripModulePreamble(source) {
