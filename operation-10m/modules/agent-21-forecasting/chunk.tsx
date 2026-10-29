@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '1.7.0';
+export const O10M_AGENT21_MODULE_VERSION = '1.8.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -2363,6 +2363,299 @@ export function runAg21SurfacingScorecardSelfChecks(): { id: string; passed: boo
   return out;
 }
 
+// --- bundled from forecast-ensemble-convergence.ts ---
+/**
+ * Agent 21 — ensemble vs trajectory fusion convergence (read-only round 6).
+ */
+
+
+export interface Ag21EnsembleConvergenceReport {
+  baselineFingerprint: string;
+  ensembleDispersion: number;
+  fusionScore: number;
+  convergenceGap: number;
+  convergenceTone: 'aligned' | 'drifting' | 'divergent';
+  scenarioSampleCount: number;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritativeMutationDetected: boolean;
+}
+
+const AG21_DEFAULT_FUSION_SCENARIOS = ['ag21_sc_003', 'ag21_sc_009', 'ag21_sc_014', 'ag21_sc_027'];
+
+function ag21ToneFromGap(gap: number): Ag21EnsembleConvergenceReport['convergenceTone'] {
+  if (gap <= 0.28) return 'aligned';
+  if (gap <= 0.52) return 'drifting';
+  return 'divergent';
+}
+
+function ag21BandFromGap(gap: number): Ag21UncertaintyBand {
+  if (gap > 0.55) return 'high';
+  if (gap > 0.32) return 'moderate';
+  return 'low';
+}
+
+/** Compare ensemble dispersion against scenario fusion alignment (lab-only). */
+export function measureAg21EnsembleConvergence(
+  ctx: Ag21ForecastContext,
+  scenarioIds: string[] = AG21_DEFAULT_FUSION_SCENARIOS
+): Ag21EnsembleConvergenceReport {
+  const subject: Ag21ForecastContext = { ...ctx, nationalPriorityMomentum: ctx.nationalPriorityMomentum ?? 'stable' };
+  const baselineFingerprint = ag21FingerprintSnapshot(subject);
+
+  const iso = ag21VerifyIsolatedExperiment(subject, copy => {
+    const ensemble = buildAg21EnsembleProjection(copy);
+    const fusion = fuseAg21ScenarioTrajectories(copy, scenarioIds);
+    const normalizedDispersion = Math.min(1, ensemble.dispersion);
+    const convergenceGap = Math.abs(normalizedDispersion - (1 - fusion.fusionScore));
+    return {
+      ensembleDispersion: ensemble.dispersion,
+      fusionScore: fusion.fusionScore,
+      convergenceGap,
+      scenarioSampleCount: scenarioIds.length
+    };
+  });
+
+  const payload = iso.result as {
+    ensembleDispersion: number;
+    fusionScore: number;
+    convergenceGap: number;
+    scenarioSampleCount: number;
+  };
+
+  return {
+    baselineFingerprint,
+    ensembleDispersion: payload.ensembleDispersion,
+    fusionScore: payload.fusionScore,
+    convergenceGap: payload.convergenceGap,
+    convergenceTone: ag21ToneFromGap(payload.convergenceGap),
+    scenarioSampleCount: payload.scenarioSampleCount,
+    overallUncertainty: ag21LabelUncertainty(ag21BandFromGap(payload.convergenceGap), [
+      `gap=${payload.convergenceGap.toFixed(2)}`
+    ]),
+    authoritativeMutationDetected: baselineFingerprint !== ag21FingerprintSnapshot(subject)
+  };
+}
+
+export function runAg21EnsembleConvergenceSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 9, seed: 33, actorCash: 880, actorDebt: 95, regionsControlled: 2 };
+  const report = measureAg21EnsembleConvergence(ctx);
+
+  push('conv_gap_range', report.convergenceGap >= 0 && report.convergenceGap <= 1.5, String(report.convergenceGap));
+  push('conv_tone', ['aligned', 'drifting', 'divergent'].includes(report.convergenceTone), report.convergenceTone);
+  push('conv_fusion', report.fusionScore >= 0 && report.fusionScore <= 1, String(report.fusionScore));
+  push('conv_samples', report.scenarioSampleCount === AG21_DEFAULT_FUSION_SCENARIOS.length, String(report.scenarioSampleCount));
+
+  return out;
+}
+
+// --- bundled from forecast-player-brief.ts ---
+/**
+ * Agent 21 — player-facing forecast brief assembler (scorecard stack, read-only).
+ */
+
+
+export interface Ag21PlayerForecastBrief {
+  headline: string;
+  bullets: string[];
+  readinessScore: number;
+  surfacingTier: ReturnType<typeof buildAg21SurfacingScorecard>['tier'];
+  convergenceTone: ReturnType<typeof measureAg21EnsembleConvergence>['convergenceTone'];
+  topLever: string | null;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Assemble a non-authoritative player brief from round 5–6 lab signals. */
+export function assembleAg21PlayerForecastBrief(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21PlayerForecastBrief {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.8),
+      actorDebt: baseCtx.actorDebt + 120
+    } satisfies Ag21ForecastContext);
+
+  const scorecard = buildAg21SurfacingScorecard(baseCtx, candidate);
+  const volatility = measureAg21HorizonVolatility(baseCtx);
+  const attribution = buildAg21LeverAttributionReport(baseCtx);
+  const convergence = measureAg21EnsembleConvergence(baseCtx);
+
+  const bullets = [
+    `Readiness ${scorecard.readinessScore}/100 (${scorecard.tier}) · guidance ${scorecard.playerGuidance}.`,
+    `Horizon stability ${volatility.stabilityTone}; volatility index ${volatility.compositeVolatility.toFixed(2)}.`,
+    `Top sensitivity lever ${attribution.topLever ?? 'none'}; convergence ${convergence.convergenceTone}.`
+  ];
+
+  const headline = `Forecast brief · ${scorecard.playerGuidance.replace(/_/g, ' ')} · ${convergence.convergenceTone} ensemble/fusion.`;
+
+  return {
+    headline,
+    bullets,
+    readinessScore: scorecard.readinessScore,
+    surfacingTier: scorecard.tier,
+    convergenceTone: convergence.convergenceTone,
+    topLever: attribution.topLever,
+    overallUncertainty: ag21LabelUncertainty(scorecard.overallUncertainty.band, [
+      ...scorecard.overallUncertainty.factors,
+      `convergence=${convergence.convergenceTone}`
+    ]),
+    authoritative: false
+  };
+}
+
+export function runAg21PlayerBriefSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 11, seed: 26, actorCash: 990, actorDebt: 70, regionsControlled: 3 };
+  const brief = assembleAg21PlayerForecastBrief(ctx);
+
+  push('brief_bullets', brief.bullets.length === 3, String(brief.bullets.length));
+  push('brief_headline', brief.headline.includes('Forecast brief'), brief.headline);
+  push('brief_readiness', brief.readinessScore >= 0 && brief.readinessScore <= 100, String(brief.readinessScore));
+  push('brief_non_auth', brief.authoritative === false, brief.headline);
+
+  return out;
+}
+
+// --- bundled from forecast-lab-playbook.ts ---
+/**
+ * Agent 21 — lab operator playbook hints (regret + gates + brief, read-only).
+ */
+
+
+export interface Ag21LabPlaybookHint {
+  id: string;
+  priority: 'high' | 'medium' | 'low';
+  action: string;
+  rationale: string;
+}
+
+export interface Ag21LabPlaybook {
+  hints: Ag21LabPlaybookHint[];
+  lowestRegretBranchId: string | null;
+  gatePassRatio: number;
+  briefHeadline: string;
+  operatorMode: 'investigate' | 'monitor' | 'surface';
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21OperatorMode(
+  gatePassRatio: number,
+  readinessScore: number
+): Ag21LabPlaybook['operatorMode'] {
+  if (gatePassRatio >= 0.66 && readinessScore >= 60) return 'surface';
+  if (gatePassRatio >= 0.33 || readinessScore >= 45) return 'monitor';
+  return 'investigate';
+}
+
+function ag21BandFromMode(mode: Ag21LabPlaybook['operatorMode']): Ag21UncertaintyBand {
+  if (mode === 'surface') return 'low';
+  if (mode === 'monitor') return 'moderate';
+  return 'high';
+}
+
+/** Build operator playbook hints from regret, gates, and assembled brief. */
+export function buildAg21LabPlaybook(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21LabPlaybook {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.78),
+      actorDebt: baseCtx.actorDebt + 160
+    } satisfies Ag21ForecastContext);
+
+  const gates = evaluateAg21ReliabilityGates(baseCtx, candidate);
+  const regret = rankAg21PolicyRegret(baseCtx);
+  const brief = assembleAg21PlayerForecastBrief(baseCtx, candidate);
+
+  const gatePassRatio = gates.passCount / Math.max(1, gates.gates.length);
+  const hints: Ag21LabPlaybookHint[] = [];
+
+  if (gatePassRatio < 0.66) {
+    hints.push({
+      id: 'recheck_gates',
+      priority: 'high',
+      action: 'Re-run reliability gates after adjusting stress context.',
+      rationale: `Only ${gates.passCount}/${gates.gates.length} gates passed.`
+    });
+  }
+
+  if (regret.rows.length >= 2) {
+    const spread = Math.abs(regret.rows[regret.rows.length - 1].regretScore - regret.rows[0].regretScore);
+    if (spread > 0.35) {
+      hints.push({
+        id: 'compare_regret',
+        priority: 'medium',
+        action: `Compare branch ${regret.lowestRegretBranchId ?? 'baseline'} against highest-regret path.`,
+        rationale: `Regret spread ${spread.toFixed(2)} exceeds comfort band.`
+      });
+    }
+  }
+
+  if (brief.convergenceTone === 'divergent') {
+    hints.push({
+      id: 'fusion_reconcile',
+      priority: 'high',
+      action: 'Reconcile ensemble dispersion with scenario fusion before surfacing.',
+      rationale: 'Ensemble/fusion convergence is divergent.'
+    });
+  } else if (brief.surfacingTier === 'green') {
+    hints.push({
+      id: 'surface_brief',
+      priority: 'low',
+      action: 'Brief may surface with standard non-authoritative disclaimer.',
+      rationale: brief.headline
+    });
+  }
+
+  if (!hints.length) {
+    hints.push({
+      id: 'hold_monitor',
+      priority: 'medium',
+      action: 'Continue monitoring; no urgent lab intervention required.',
+      rationale: `Operator mode ${ag21OperatorMode(gatePassRatio, brief.readinessScore)}.`
+    });
+  }
+
+  const operatorMode = ag21OperatorMode(gatePassRatio, brief.readinessScore);
+
+  return {
+    hints,
+    lowestRegretBranchId: regret.lowestRegretBranchId,
+    gatePassRatio,
+    briefHeadline: brief.headline,
+    operatorMode,
+    overallUncertainty: ag21LabelUncertainty(ag21BandFromMode(operatorMode), [`mode=${operatorMode}`]),
+    authoritative: false
+  };
+}
+
+export function runAg21LabPlaybookSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 8, seed: 52, actorCash: 810, actorDebt: 140, regionsControlled: 2 };
+  const playbook = buildAg21LabPlaybook(ctx);
+
+  push('playbook_hints', playbook.hints.length >= 1, String(playbook.hints.length));
+  push('playbook_mode', ['investigate', 'monitor', 'surface'].includes(playbook.operatorMode), playbook.operatorMode);
+  push('playbook_ratio', playbook.gatePassRatio >= 0 && playbook.gatePassRatio <= 1, String(playbook.gatePassRatio));
+  push('playbook_non_auth', playbook.authoritative === false, playbook.briefHeadline);
+
+  return out;
+}
+
 // --- bundled from scenario-comparison-ui.tsx ---
 /**
  * Agent 21 — scenario comparison UI fragment (non-authoritative lab review).
@@ -2717,6 +3010,41 @@ export const Ag21ForecastRound5Console: React.FC<{ seed?: number }> = ({ seed = 
   );
 };
 
+// --- bundled from forecast-round6-console.tsx ---
+/**
+ * Agent 21 — scale wave round 6 console (convergence + brief + playbook).
+ */
+
+
+export const Ag21ForecastRound6Console: React.FC<{ seed?: number }> = ({ seed = 43 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 16 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.76), actorDebt: base.actorDebt + 210 }),
+    [base]
+  );
+
+  const convergence = useMemo(() => measureAg21EnsembleConvergence(base), [base]);
+  const brief = useMemo(() => assembleAg21PlayerForecastBrief(base, stressed), [base, stressed]);
+  const playbook = useMemo(() => buildAg21LabPlaybook(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-sky-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round6-console">
+      <div className="font-bold text-sky-200">
+        🔬 Forecast Lab Round 6 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round6-convergence">
+        Convergence · {convergence.convergenceTone} · gap {convergence.convergenceGap.toFixed(2)}
+      </div>
+      <div data-testid="ag21-round6-brief">
+        Brief · {brief.readinessScore}/100 · tier {brief.surfacingTier}
+      </div>
+      <div data-testid="ag21-round6-playbook">
+        Playbook · mode {playbook.operatorMode} · hints {playbook.hints.length}
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -2769,6 +3097,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21SurfacingScorecardSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21EnsembleConvergenceSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21PlayerBriefSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabPlaybookSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({

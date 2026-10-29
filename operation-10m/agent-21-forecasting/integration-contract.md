@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `1.7.0`
+- `O10M_AGENT21_MODULE_VERSION` = `1.8.0`
 
 ## Assembly chunk
 
@@ -45,6 +45,9 @@
 | `measureAg21HorizonVolatility` / `buildAg21LeverAttributionReport` | Round 5 horizon volatility + lever attribution |
 | `buildAg21SurfacingScorecard` | Round 5 composite surfacing scorecard |
 | `Ag21ForecastRound5Console` | Round 5 UI (`data-testid="ag21-round5-console"`) |
+| `measureAg21EnsembleConvergence` / `assembleAg21PlayerForecastBrief` | Round 6 convergence + player brief |
+| `buildAg21LabPlaybook` | Round 6 operator playbook hints |
+| `Ag21ForecastRound6Console` | Round 6 UI (`data-testid="ag21-round6-console"`) |
 
 ## Upstream dependencies (canonical only)
 
