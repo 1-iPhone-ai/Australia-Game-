@@ -1,14 +1,14 @@
-import { readMacroIntegrationHealthWave52ExportSpilloverFromV1027 } from './bridge-v1027-integration-health-wave-round53-export.ts';
-import { readMacroReplayWave52ExportSpilloverFromV1026 } from './bridge-v1026-replay-wave-round53-export.ts';
+import { readMacroIntegrationHealthWave52ExportSpilloverFromV1027 } from './bridge-v1028-integration-health-wave-round53-export.ts';
+import { readMacroReplayWave52ExportSpilloverFromV1026 } from './bridge-v1027-replay-wave-round53-export.ts';
 import { computeNationalMacroEconomy } from './compute.ts';
 import { buildMacroTransmissionPersistenceSnapshot } from './macro-transmission-persistence.ts';
 import { makeDefaultV1014_MACRO_TestInputs } from './inputs.ts';
 import { runMacroEconomyRegressionHarness } from './regression-harness.ts';
 import { compareMacroEconomyScenarios } from './scenario-compare.ts';
-import { rankMacroScenarioWave52Integration } from './scenario-wave52-integration-rank.ts';
+import { rankMacroScenarioWave53Integration } from './scenario-wave53-integration-rank.ts';
 import type { MacroSelfTestResult } from './types.ts';
 
-export function runAgent06Round52SelfTests(): {
+export function runAgent06Round53SelfTests(): {
   passed: number;
   total: number;
   allPassed: boolean;
@@ -24,59 +24,59 @@ export function runAgent06Round52SelfTests(): {
       replayWave52Export: {
         round53Ready: false,
         o10TaskId: 'O10-237',
-        waveRound: 48,
+        waveRound: 52,
         integrityBand: 'corrupt',
         projectedLocHint: 1_800_000
       }
     })
   );
-  record('R52-01', 'Wave 52 replay export not ready drags cycle', replay.cycleNudge <= -2, String(replay.cycleNudge));
+  record('R53-01', 'Wave 53 replay export not ready drags cycle', replay.cycleNudge <= -2, String(replay.cycleNudge));
 
   const health = readMacroIntegrationHealthWave52ExportSpilloverFromV1027(
     makeDefaultV1014_MACRO_TestInputs({
       integrationHealthWave52Export: {
         healthReady: false,
         slotBand: 'red',
-        baselineSha: 'a32b2b15',
+        baselineSha: '51039c5e',
         projectedFunctionalLoc: 1_800_000
       }
     })
   );
-  record('R52-02', 'Wave 52 integration health export not ready drags investment', health.investmentNudge <= -2, String(health.investmentNudge));
+  record('R53-02', 'Wave 53 integration health export not ready drags investment', health.investmentNudge <= -2, String(health.investmentNudge));
 
   const integrated = computeNationalMacroEconomy(
     makeDefaultV1014_MACRO_TestInputs({
       replayWave52Export: {
         round53Ready: true,
         o10TaskId: 'O10-237',
-        waveRound: 51,
+        waveRound: 52,
         integrityBand: 'sound',
-        projectedLocHint: 2_887_600
+        projectedLocHint: 2_979_928
       },
       integrationHealthWave52Export: {
         healthReady: true,
         slotBand: 'latched',
-        baselineSha: 'a32b2b15',
-        projectedFunctionalLoc: 2_887_600
+        baselineSha: '51039c5e',
+        projectedFunctionalLoc: 2_979_928
       }
     }),
     null,
     null
   );
   record(
-    'R52-03',
-    'State exposes wave 51 replay export summary',
+    'R53-03',
+    'State exposes wave 52 replay export summary',
     integrated.state.replayWave52ExportSpilloverSummary != null,
     'ok'
   );
   record(
-    'R52-04',
-    'Transmission includes integration health wave 51 export layer',
+    'R53-04',
+    'Transmission includes integration health wave 52 export layer',
     integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.25_integration_health_wave52_export'),
     'ok'
   );
   record(
-    'R52-05',
+    'R53-05',
     'Hundred transmission layers',
     integrated.state.transmissionReport.layers.length === 100,
     String(integrated.state.transmissionReport.layers.length)
@@ -84,14 +84,14 @@ export function runAgent06Round52SelfTests(): {
 
   const persistence = buildMacroTransmissionPersistenceSnapshot(integrated.state.transmissionReport);
   record(
-    'R52-06',
+    'R53-06',
     'Transmission persistence finite',
     Number.isFinite(persistence.persistenceIndex),
     String(persistence.persistenceIndex)
   );
   record(
-    'R52-07',
-    'Transmission includes replay wave 51 export layer',
+    'R53-07',
+    'Transmission includes replay wave 52 export layer',
     integrated.state.transmissionReport.layers.some(l => l.systemId === 'v10.24_replay_wave52_export'),
     'ok'
   );
@@ -102,22 +102,22 @@ export function runAgent06Round52SelfTests(): {
       {
         id: 'replay_shock',
         overlay: {
-          replayWave52Export: { round53Ready: false, o10TaskId: 'O10-237', waveRound: 51, integrityBand: 'corrupt' }
+          replayWave52Export: { round53Ready: false, o10TaskId: 'O10-237', waveRound: 52, integrityBand: 'corrupt' }
         }
       },
       {
         id: 'health_shock',
-        overlay: { integrationHealthWave52Export: { healthReady: false, slotBand: 'red', baselineSha: 'a32b2b15' } }
+        overlay: { integrationHealthWave52Export: { healthReady: false, slotBand: 'red', baselineSha: '51039c5e' } }
       }
     ],
     null,
     null
   );
-  const integration = rankMacroScenarioWave52Integration(compare);
-  record('R52-08', 'Wave 52 integration rank preserves row count', integration.length === 2, String(integration.length));
+  const integration = rankMacroScenarioWave53Integration(compare);
+  record('R53-08', 'Wave 53 integration rank preserves row count', integration.length === 2, String(integration.length));
   record(
-    'R52-09',
-    'Wave 52 integration ranks scenarios',
+    'R53-09',
+    'Wave 53 integration ranks scenarios',
     integration[0].integrationPriority >= 0,
     integration.map(r => r.scenarioId).join('>')
   );
@@ -128,8 +128,8 @@ export function runAgent06Round52SelfTests(): {
     includeWave52ReplayIntegrationStress: true
   });
   record(
-    'R52-10',
-    'Wave 52 replay/integration regression harness',
+    'R53-10',
+    'Wave 53 replay/integration regression harness',
     harness.allPassed,
     harness.checks.filter(c => !c.passed).map(c => c.id).join(',') || 'ok'
   );

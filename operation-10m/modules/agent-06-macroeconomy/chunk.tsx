@@ -24286,6 +24286,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
     check(r.id, r.name, r.passed, r.detail);
   }
 
+  const round53 = runAgent06Round53SelfTests();
+  for (const r of round53.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
   const passed = results.filter(r => r.passed).length;
   return { passed, failed: results.length - passed, total: results.length, results };
 }
