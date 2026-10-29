@@ -244,6 +244,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     absolutionStrainIndex: 0,
     absolutionIntegrityScore: 100,
     governanceGritScore: 100,
+    amnestyStrainIndex: 0,
+    amnestyIntegrityScore: 100,
+    governanceResolveScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));

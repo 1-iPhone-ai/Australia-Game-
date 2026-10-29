@@ -165,6 +165,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   absolutionStrainIndex: number;
   absolutionIntegrityScore: number;
   governanceGritScore: number;
+  amnestyStrainIndex: number;
+  amnestyIntegrityScore: number;
+  governanceResolveScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

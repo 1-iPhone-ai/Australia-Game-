@@ -169,6 +169,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   absolutionStrainIndex: number;
   absolutionIntegrityScore: number;
   governanceGritScore: number;
+  amnestyStrainIndex: number;
+  amnestyIntegrityScore: number;
+  governanceResolveScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -2315,6 +2318,62 @@ export function buildGuardianDepthAbsolutionReport(snapshot: GuardianCoPilotMoni
   return lines.slice(0, 3);
 }
 
+export function computeAmnestyStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceGritScore < 50) load += Math.min(25, 50 - snapshot.governanceGritScore);
+  if (snapshot.governanceGritScore < 35) load += 10;
+  if (snapshot.absolutionIntegrityScore < 45) load += 20;
+  if (snapshot.absolutionIntegrityScore < 35) load += 10;
+  if (snapshot.absolutionStrainIndex >= 55) load += 20;
+  if (snapshot.absolutionStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeAmnestyIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.amnestyStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.amnestyStrainIndex * 0.35));
+  if (snapshot.absolutionIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.absolutionIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceGritScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceResolveScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.amnestyStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.amnestyStrainIndex * 0.32));
+  if (snapshot.amnestyIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.amnestyIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceGritScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthAmnestyReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.amnestyStrainIndex >= 55) {
+    lines.push(
+      `Amnesty strain ${snapshot.amnestyStrainIndex} — stacked amnesty review may exceed operator amnesty capacity`
+    );
+  }
+  if (snapshot.amnestyIntegrityScore < 45) {
+    lines.push(
+      `Amnesty integrity ${snapshot.amnestyIntegrityScore} — align Co-Pilot amnesties with Guardian amnesty posture`
+    );
+  }
+  if (snapshot.governanceResolveScore < 40) {
+    lines.push(
+      `Governance resolve ${snapshot.governanceResolveScore} — little resolve to sustain amnesty oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -2663,9 +2722,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withAbsolutionStrain: GuardianCoPilotMonitorSnapshot = { ...withMettle, absolutionStrainIndex };
   const absolutionIntegrityScore = computeAbsolutionIntegrityScore(withAbsolutionStrain);
   const withAbsolution: GuardianCoPilotMonitorSnapshot = { ...withAbsolutionStrain, absolutionIntegrityScore };
-  return {
+  const withGrit: GuardianCoPilotMonitorSnapshot = {
     ...withAbsolution,
     governanceGritScore: computeGovernanceGritScore(withAbsolution),
+    amnestyStrainIndex: 0,
+    amnestyIntegrityScore: 100,
+    governanceResolveScore: 100,
+  };
+  const amnestyStrainIndex = computeAmnestyStrainIndex(withGrit);
+  const withAmnestyStrain: GuardianCoPilotMonitorSnapshot = { ...withGrit, amnestyStrainIndex };
+  const amnestyIntegrityScore = computeAmnestyIntegrityScore(withAmnestyStrain);
+  const withAmnesty: GuardianCoPilotMonitorSnapshot = { ...withAmnestyStrain, amnestyIntegrityScore };
+  return {
+    ...withAmnesty,
+    governanceResolveScore: computeGovernanceResolveScore(withAmnesty),
   };
 }
 
@@ -3770,6 +3840,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceGritScore(snap) < 35;
+  });
+  ok('gd_amnesty_strain', () => {
+    const snap = {
+      governanceGritScore: 30,
+      absolutionIntegrityScore: 32,
+      absolutionStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAmnestyStrainIndex(snap) >= 70;
+  });
+  ok('gd_amnesty_integrity', () => {
+    const snap = {
+      amnestyStrainIndex: 72,
+      absolutionIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceGritScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAmnestyIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_resolve', () => {
+    const snap = {
+      amnestyStrainIndex: 78,
+      amnestyIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceGritScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceResolveScore(snap) < 35;
   });
   return out;
 }
@@ -8337,6 +8441,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_33: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_33_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_33.length;
 
 
+// --- source: monitor-rules-scale-wave-34.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_34: AdvisoryMonitorRule[] = [
+  {
+    id: 'amnesty_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Amnesty Strain High',
+    detailTemplate: 'Amnesty strain is in the high band — reduce overlapping warn-only amnesty review demands',
+    evidenceFields: ['amnestyStrainIndex', 'governanceGritScore', 'amnestyIntegrityScore'],
+    evaluate: s => s.amnestyStrainIndex >= 70,
+  },
+  {
+    id: 'amnesty_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Amnesty Strain Elevated',
+    detailTemplate: 'Amnesty strain is elevated — expect slower amnesty review across turns',
+    evidenceFields: ['amnestyStrainIndex', 'absolutionStrainIndex'],
+    evaluate: s => s.amnestyStrainIndex >= 45 && s.amnestyStrainIndex < 70,
+  },
+  {
+    id: 'amnesty_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Amnesty Integrity Low',
+    detailTemplate: 'Amnesty integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['amnestyIntegrityScore', 'amnestyStrainIndex', 'absolutionIntegrityScore'],
+    evaluate: s => s.amnestyIntegrityScore < 35,
+  },
+  {
+    id: 'amnesty_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Amnesty While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate amnesty integrity',
+    evidenceFields: ['amnestyIntegrityScore', 'copilotAutonomousActive', 'amnestyStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.amnestyIntegrityScore >= 35 && s.amnestyIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_resolve_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Resolve Low',
+    detailTemplate: 'Little governance resolve remains for warn-only amnesty oversight across turns',
+    evidenceFields: ['governanceResolveScore', 'amnestyStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceResolveScore < 35,
+  },
+  {
+    id: 'governance_resolve_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Resolve While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance resolve',
+    evidenceFields: ['governanceResolveScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceResolveScore >= 35 && s.governanceResolveScore < 55,
+  },
+  {
+    id: 'amnesty_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Amnesty Envelope Pressured',
+    detailTemplate: 'Amnesty strain and low amnesty integrity align in the pressured envelope band',
+    evidenceFields: ['amnestyStrainIndex', 'amnestyIntegrityScore', 'governanceResolveScore'],
+    evaluate: s => s.amnestyStrainIndex >= 55 && s.amnestyIntegrityScore < 50,
+  },
+  {
+    id: 'rival_amnesty_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Amnesty Strain',
+    detailTemplate: 'Rival victory progress plus elevated amnesty strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'amnestyStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.amnestyStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_amnesty_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Amnesty Strain',
+    detailTemplate: 'Pending team plan while amnesty strain is elevated',
+    evidenceFields: ['teamPlanPending', 'amnestyStrainIndex', 'governanceResolveScore'],
+    evaluate: s => s.teamPlanPending && s.amnestyStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_amnesty_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Amnesty Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance resolve',
+    evidenceFields: ['guardianRiskBand', 'governanceResolveScore', 'amnestyStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceResolveScore < 40,
+  },
+  {
+    id: 'copilot_amnesty_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Amnesty Strain',
+    detailTemplate: 'Autonomous Co-Pilot while amnesty strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'amnestyStrainIndex', 'amnestyIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.amnestyStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_resolve',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Resolve',
+    detailTemplate: 'Expiring contracts while governance resolve is low',
+    evidenceFields: ['expiringContractCount', 'governanceResolveScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceResolveScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_34_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_34.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -8599,6 +8836,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_31,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_32,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_33,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_34,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -9014,6 +9252,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     absolutionStrainIndex: 0,
     absolutionIntegrityScore: 100,
     governanceGritScore: 100,
+    amnestyStrainIndex: 0,
+    amnestyIntegrityScore: 100,
+    governanceResolveScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -11518,6 +11759,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['absolution_envelope_pressured', 'guardian_absolution_envelope_critical'],
     notes: 'Pressured absolution envelope with critical Guardian band',
   },
+  {
+    id: 'sc_amnesty_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2260,
+      maxSpendPerAction: 10580,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['amnesty_strain_high', 'amnesty_integrity_low'],
+    notes: 'High amnesty strain with critical amnesty integrity',
+  },
+  {
+    id: 'sc_governance_resolve_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1380,
+      maxSpendPerAction: 8080,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_resolve_low', 'contracts_governance_resolve'],
+    notes: 'Low governance resolve with expiring contracts',
+  },
+  {
+    id: 'sc_amnesty_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 1300,
+      maxSpendPerAction: 8280,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['amnesty_envelope_pressured', 'guardian_amnesty_envelope_critical'],
+    notes: 'Pressured amnesty envelope with critical Guardian band',
+  },
 ];
 
 
@@ -11693,8 +12002,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 33 scale wave brings monitor catalog to 430+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 430;
+  check(results, 'a16_expansion_count', 'Round 34 scale wave brings monitor catalog to 442+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 442;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -12904,6 +13213,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthAbsolutionReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round34_metrics', 'Round 34 amnesty envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.amnestyStrainIndex >= 40 &&
+      snap.amnestyIntegrityScore <= 100 &&
+      snap.governanceResolveScore <= 100
+    );
+  });
+
+  check(results, 'a16_amnesty_report', 'Guardian depth amnesty report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthAmnestyReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

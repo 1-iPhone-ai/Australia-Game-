@@ -56,6 +56,7 @@ const FILES = [
   'monitor-rules-scale-wave-31.ts',
   'monitor-rules-scale-wave-32.ts',
   'monitor-rules-scale-wave-33.ts',
+  'monitor-rules-scale-wave-34.ts',
   'monitor-rules.ts',
   'objective-context.ts',
   'snapshot.ts',
