@@ -1,0 +1,31 @@
+import type { V1029CresAdaptationBufferEdge } from '../../types/core.ts';
+
+/** Adaptation buffer graph shard 050 (storm_surge/king_tide/erosion corridor coupling). */
+export const V1029_CRES_ADAPTATION_BUFFER_SHARD_050: readonly V1029CresAdaptationBufferEdge[] = [
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.676, lagTurns: 7, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.682, lagTurns: 8, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.688, lagTurns: 9, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.694, lagTurns: 10, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.7, lagTurns: 7, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.706, lagTurns: 8, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.712, lagTurns: 9, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.718, lagTurns: 10, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.724, lagTurns: 7, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.73, lagTurns: 8, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.736, lagTurns: 9, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.742, lagTurns: 10, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.748, lagTurns: 7, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.652, lagTurns: 8, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.658, lagTurns: 9, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.664, lagTurns: 10, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.67, lagTurns: 7, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.676, lagTurns: 8, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.682, lagTurns: 9, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.688, lagTurns: 10, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.694, lagTurns: 7, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.7, lagTurns: 8, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.706, lagTurns: 9, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.712, lagTurns: 10, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.718, lagTurns: 7, nodeId: 'littoral_zone_02' },
+  { fromChannel: 'emergency_care', toChannel: 'telehealth', weight: 0.724, lagTurns: 8, nodeId: 'littoral_zone_02' },
+];
