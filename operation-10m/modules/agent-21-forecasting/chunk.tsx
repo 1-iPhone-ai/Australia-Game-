@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '2.3.0';
+export const O10M_AGENT21_MODULE_VERSION = '2.4.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -4524,6 +4524,281 @@ export const Ag21ForecastRound11Console: React.FC<{ seed?: number }> = ({ seed =
   );
 };
 
+// --- bundled from forecast-closeout-attestation.ts ---
+/**
+ * Agent 21 — closeout attestation from export clearance (read-only round 12).
+ */
+
+
+export type Ag21CloseoutAttestationVerdict = 'accepted' | 'qualified' | 'rejected';
+
+export interface Ag21CloseoutAttestation {
+  attestationId: string;
+  verdict: Ag21CloseoutAttestationVerdict;
+  closeoutId: string;
+  exportLevel: ReturnType<typeof buildAg21ExportClearance>['level'];
+  verificationStatus: ReturnType<typeof verifyAg21StagingIntegrity>['status'];
+  rationale: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Attest lab cycle closeout against export + verification gates (round 12). */
+export function attestAg21LabCloseout(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21CloseoutAttestation {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.72),
+      actorDebt: baseCtx.actorDebt + 225
+    } satisfies Ag21ForecastContext);
+
+  const closeout = summarizeAg21LabCycleCloseout(baseCtx, candidate);
+  const clearance = buildAg21ExportClearance(baseCtx, candidate);
+  const verification = verifyAg21StagingIntegrity(baseCtx, candidate);
+
+  let verdict: Ag21CloseoutAttestationVerdict = 'accepted';
+  if (clearance.level === 'denied' || verification.status === 'failed') verdict = 'rejected';
+  else if (clearance.level === 'conditional' || verification.status === 'warning') verdict = 'qualified';
+
+  const rationale =
+    verdict === 'accepted'
+      ? 'Closeout aligns with cleared export and verified staging.'
+      : verdict === 'qualified'
+        ? 'Closeout recorded with conditional export or staging warnings.'
+        : 'Closeout rejected — resolve export denial or staging failure first.';
+
+  const attestationId = `ag21_attest_${baseCtx.turn}_${baseCtx.seed}_${verdict}`;
+
+  return {
+    attestationId,
+    verdict,
+    closeoutId: closeout.closeoutId,
+    exportLevel: clearance.level,
+    verificationStatus: verification.status,
+    rationale,
+    disclaimer: '(Non-authoritative forecast.) Closeout attestation for operator logs only.',
+    overallUncertainty: ag21LabelUncertainty(
+      verdict === 'accepted' ? 'low' : verdict === 'qualified' ? 'moderate' : 'high',
+      [`verdict=${verdict}`, `export=${clearance.level}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21CloseoutAttestationSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 15, seed: 64, actorCash: 920, actorDebt: 115, regionsControlled: 3 };
+  const attestation = attestAg21LabCloseout(ctx);
+
+  push('attest_id', attestation.attestationId.startsWith('ag21_attest_'), attestation.attestationId);
+  push('attest_verdict', ['accepted', 'qualified', 'rejected'].includes(attestation.verdict), attestation.verdict);
+  push('attest_closeout', attestation.closeoutId.startsWith('ag21_closeout_'), attestation.closeoutId);
+  push('attest_non_auth', attestation.authoritative === false, attestation.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-export-manifest.ts ---
+/**
+ * Agent 21 — export manifest for history module wiring (read-only round 12).
+ */
+
+
+export interface Ag21ExportManifestEntry {
+  key: string;
+  value: string;
+}
+
+export interface Ag21ExportManifest {
+  manifestId: string;
+  moduleVersion: string;
+  attestationVerdict: ReturnType<typeof attestAg21LabCloseout>['verdict'];
+  exportLevel: ReturnType<typeof buildAg21ExportClearance>['level'];
+  entries: Ag21ExportManifestEntry[];
+  mayPublish: boolean;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Build structured export manifest when clearance allows history publish (round 12). */
+export function buildAg21ExportManifest(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21ExportManifest {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.71),
+      actorDebt: baseCtx.actorDebt + 235
+    } satisfies Ag21ForecastContext);
+
+  const attestation = attestAg21LabCloseout(baseCtx, candidate);
+  const clearance = buildAg21ExportClearance(baseCtx, candidate);
+  const replay = buildAg21LabReplaySeed(baseCtx, candidate);
+
+  const entries: Ag21ExportManifestEntry[] = [
+    { key: 'replaySeed', value: replay.seedId },
+    { key: 'replayFingerprint', value: replay.fingerprint },
+    { key: 'attestation', value: attestation.attestationId },
+    { key: 'closeout', value: attestation.closeoutId },
+    { key: 'clearance', value: clearance.level }
+  ];
+
+  const mayPublish = clearance.level === 'cleared' && attestation.verdict === 'accepted';
+  const manifestId = `ag21_manifest_${baseCtx.turn}_${baseCtx.seed}_${clearance.level}`;
+
+  return {
+    manifestId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    attestationVerdict: attestation.verdict,
+    exportLevel: clearance.level,
+    entries,
+    mayPublish,
+    disclaimer: '(Non-authoritative forecast.) Export manifest for Agent 24 history wiring only.',
+    overallUncertainty: ag21LabelUncertainty(
+      mayPublish ? 'low' : clearance.level === 'denied' ? 'high' : 'moderate',
+      [`manifest=${manifestId}`, `publish=${mayPublish}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21ExportManifestSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 20, seed: 12, actorCash: 1050, actorDebt: 80, regionsControlled: 4 };
+  const manifest = buildAg21ExportManifest(ctx);
+
+  push('manifest_id', manifest.manifestId.startsWith('ag21_manifest_'), manifest.manifestId);
+  push('manifest_entries', manifest.entries.length === 5, String(manifest.entries.length));
+  push('manifest_version', manifest.moduleVersion === O10M_AGENT21_MODULE_VERSION, manifest.moduleVersion);
+  push('manifest_non_auth', manifest.authoritative === false, manifest.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-lab-archive-seal.ts ---
+/**
+ * Agent 21 — archive seal tying manifest to attestation (read-only round 12).
+ */
+
+
+export type Ag21ArchiveSealStatus = 'open' | 'sealed' | 'void';
+
+export interface Ag21LabArchiveSeal {
+  sealId: string;
+  status: Ag21ArchiveSealStatus;
+  manifestId: string;
+  manifestMayPublish: boolean;
+  attestationVerdict: ReturnType<typeof attestAg21LabCloseout>['verdict'];
+  sealDigest: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21SealDigest(manifestId: string, attestationId: string, verdict: string): string {
+  return `ag21_seal_${manifestId.split('_').slice(-2).join('_')}_${verdict}_${attestationId.split('_').pop()}`;
+}
+
+/** Seal lab archive when manifest and attestation agree (round 12). */
+export function sealAg21LabArchiveRecord(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21LabArchiveSeal {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.7),
+      actorDebt: baseCtx.actorDebt + 245
+    } satisfies Ag21ForecastContext);
+
+  const manifest = buildAg21ExportManifest(baseCtx, candidate);
+  const attestation = attestAg21LabCloseout(baseCtx, candidate);
+
+  let status: Ag21ArchiveSealStatus = 'open';
+  if (attestation.verdict === 'rejected' || manifest.exportLevel === 'denied') status = 'void';
+  else if (manifest.mayPublish && attestation.verdict === 'accepted') status = 'sealed';
+
+  const sealId = `ag21_archive_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+
+  return {
+    sealId,
+    status,
+    manifestId: manifest.manifestId,
+    manifestMayPublish: manifest.mayPublish,
+    attestationVerdict: attestation.verdict,
+    sealDigest: ag21SealDigest(manifest.manifestId, attestation.attestationId, attestation.verdict),
+    disclaimer: '(Non-authoritative forecast.) Archive seal for modular checkpoint logs only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'sealed' ? 'low' : status === 'void' ? 'high' : 'moderate',
+      [`seal=${sealId}`, `status=${status}`, `v=${O10M_AGENT21_MODULE_VERSION}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21LabArchiveSealSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 28, seed: 5, actorCash: 1500, actorDebt: 40, regionsControlled: 5 };
+  const seal = sealAg21LabArchiveRecord(ctx);
+
+  push('seal_id', seal.sealId.startsWith('ag21_archive_'), seal.sealId);
+  push('seal_status', ['open', 'sealed', 'void'].includes(seal.status), seal.status);
+  push('seal_digest', seal.sealDigest.startsWith('ag21_seal_'), seal.sealDigest.slice(0, 24));
+  push('seal_non_auth', seal.authoritative === false, seal.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-round12-console.tsx ---
+/**
+ * Agent 21 — scale wave round 12 console (attestation + manifest + archive seal).
+ */
+
+
+export const Ag21ForecastRound12Console: React.FC<{ seed?: number }> = ({ seed = 88 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 25 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.62), actorDebt: base.actorDebt + 360 }),
+    [base]
+  );
+
+  const attestation = useMemo(() => attestAg21LabCloseout(base, stressed), [base, stressed]);
+  const manifest = useMemo(() => buildAg21ExportManifest(base, stressed), [base, stressed]);
+  const seal = useMemo(() => sealAg21LabArchiveRecord(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-amber-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round12-console">
+      <div className="font-bold text-amber-200">
+        🔬 Forecast Lab Round 12 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round12-attestation">
+        Attest · {attestation.verdict} · {attestation.attestationId.slice(0, 26)}…
+      </div>
+      <div data-testid="ag21-round12-manifest">
+        Manifest · publish {manifest.mayPublish ? 'yes' : 'no'} · {manifest.entries.length} entries
+      </div>
+      <div data-testid="ag21-round12-seal">
+        Archive · {seal.status} · {seal.sealDigest.slice(0, 28)}…
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -4630,6 +4905,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabCycleCloseoutSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21CloseoutAttestationSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21ExportManifestSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabArchiveSealSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({

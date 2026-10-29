@@ -59,7 +59,11 @@ const SOURCE_FILES = [
   'operation-10m/agent-21-forecasting/forecast-staging-verification.ts',
   'operation-10m/agent-21-forecasting/forecast-export-clearance.ts',
   'operation-10m/agent-21-forecasting/forecast-lab-cycle-closeout.ts',
-  'operation-10m/agent-21-forecasting/forecast-round11-console.tsx'
+  'operation-10m/agent-21-forecasting/forecast-round11-console.tsx',
+  'operation-10m/agent-21-forecasting/forecast-closeout-attestation.ts',
+  'operation-10m/agent-21-forecasting/forecast-export-manifest.ts',
+  'operation-10m/agent-21-forecasting/forecast-lab-archive-seal.ts',
+  'operation-10m/agent-21-forecasting/forecast-round12-console.tsx'
 ];
 
 function stripModuleImports(src) {
@@ -187,6 +191,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabCycleCloseoutSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21CloseoutAttestationSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21ExportManifestSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabArchiveSealSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({
