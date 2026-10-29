@@ -150,6 +150,7 @@ export function attachRelaySessionToState(
     appealSession: null,
     clemencySession: null,
     pardonSession: null,
+    amnestySession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };

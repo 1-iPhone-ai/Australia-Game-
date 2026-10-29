@@ -147,6 +147,7 @@ export function attachGauntletSessionToState(
     appealSession: null,
     clemencySession: null,
     pardonSession: null,
+    amnestySession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,

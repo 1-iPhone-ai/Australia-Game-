@@ -92,6 +92,11 @@ import {
   sanitizePardonSession,
 } from './save-format-pardon.js';
 import {
+  getAmnestyScenarioAtCursor,
+  amnestySessionSummary,
+  sanitizeAmnestySession,
+} from './save-format-amnesty.js';
+import {
   getSiegeScenarioAtCursor,
   siegeSessionSummary,
   sanitizeSiegeSession,
@@ -119,6 +124,7 @@ import type {
   O10mAppealPhase,
   O10mClemencyPhase,
   O10mPardonPhase,
+  O10mAmnestyPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -201,9 +207,31 @@ const emptyQueuePlan = {
   pardonCursor: null as number | null,
   pardonPhase: null as O10mPardonPhase | null,
   pardonGrace: null as number | null,
+  amnestyId: null as string | null,
+  amnestyCursor: null as number | null,
+  amnestyPhase: null as O10mAmnestyPhase | null,
+  amnestyAbsolution: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const amnesty = sanitizeAmnestySession(state.amnestySession);
+  const amnestyScenario = getAmnestyScenarioAtCursor(amnesty);
+  if (amnesty && amnesty.active && amnestyScenario) {
+    return {
+      kind: 'amnesty_step',
+      scenarioId: amnestyScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      amnestyId: amnesty.amnestyId,
+      amnestyCursor: amnesty.cursor,
+      amnestyPhase: amnesty.phaseTag,
+      amnestyAbsolution: amnesty.absolutionScore,
+      reason: `Amnesty "${amnesty.label}" ${amnesty.phaseTag} phase ${amnesty.cursor + 1}/${amnesty.scenarioIds.length} (absolution ${amnesty.absolutionScore}).`,
+    };
+  }
+
   const pardon = sanitizePardonSession(state.pardonSession);
   const pardonScenario = getPardonScenarioAtCursor(pardon);
   if (pardon && pardon.active && pardonScenario) {
@@ -649,6 +677,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   appealActive: boolean;
   clemencyActive: boolean;
   pardonActive: boolean;
+  amnestyActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -676,6 +705,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const appeal = appealSessionSummary(state);
   const clemency = clemencySessionSummary(state);
   const pardon = pardonSessionSummary(state);
+  const amnesty = amnestySessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -701,6 +731,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     appealActive: appeal.active,
     clemencyActive: clemency.active,
     pardonActive: pardon.active,
+    amnestyActive: amnesty.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

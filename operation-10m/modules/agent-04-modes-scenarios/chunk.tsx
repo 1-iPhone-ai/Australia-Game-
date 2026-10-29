@@ -379,6 +379,8 @@ export type O10mTribunalPhase = 'docket' | 'hearing' | 'seal';
 export type O10mIndictmentPhase = 'charge' | 'arraign' | 'bind';
 export type O10mAppealPhase = 'petition' | 'review' | 'grant';
 export type O10mClemencyPhase = 'plea' | 'review' | 'clemency';
+export type O10mPardonPhase = 'brief' | 'review' | 'pardon';
+export type O10mAmnestyPhase = 'warrant' | 'review' | 'amnesty';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -556,6 +558,28 @@ export interface O10mClemencySession {
   phaseTag: O10mClemencyPhase;
 }
 
+/** Schema v24 — pardon arc with grace accrual between phases. */
+export interface O10mPardonSession {
+  pardonId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  graceScore: number;
+  phaseTag: O10mPardonPhase;
+}
+
+/** Schema v25 — amnesty arc with absolution accrual between phases. */
+export interface O10mAmnestySession {
+  amnestyId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  absolutionScore: number;
+  phaseTag: O10mAmnestyPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -580,6 +604,8 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'amnesty_step'
+    | 'pardon_step'
     | 'clemency_step'
     | 'appeal_step'
     | 'indictment_step'
@@ -678,6 +704,14 @@ export interface O10mCampaignPlan {
   clemencyCursor: number | null;
   clemencyPhase: O10mClemencyPhase | null;
   clemencyMercy: number | null;
+  pardonId: string | null;
+  pardonCursor: number | null;
+  pardonPhase: O10mPardonPhase | null;
+  pardonGrace: number | null;
+  amnestyId: string | null;
+  amnestyCursor: number | null;
+  amnestyPhase: O10mAmnestyPhase | null;
+  amnestyAbsolution: number | null;
   reason: string;
 }
 
@@ -747,6 +781,10 @@ export interface O10mModesPersistedState {
   appealSession?: O10mAppealSession | null;
   /** Schema v23 — active clemency arc (mutually exclusive with appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   clemencySession?: O10mClemencySession | null;
+  /** Schema v24 — active pardon arc (mutually exclusive with clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  pardonSession?: O10mPardonSession | null;
+  /** Schema v25 — active amnesty arc (mutually exclusive with pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  amnestySession?: O10mAmnestySession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -3525,6 +3563,200 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Clemency finales', 'Mercy ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_pardon_brief_docket',
+    title: 'Pardon Brief Docket',
+    description: 'Open a pardon arc with low-pressure grace pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100481,
+    startingMoney: 3000,
+    startingRegions: ['ACT', 'NT'],
+    badgeId: 'badge_o10m_pardon_brief_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100481),
+      o10mPardonBriefDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_pbd_obj_day',
+        label: 'Brief Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Pardon arcs', 'Grace pacing', 'Brief phase'],
+  },
+  {
+    id: 'o10m_pardon_review_chamber',
+    title: 'Pardon Review Chamber',
+    description: 'Mid-pardon review with accrued grace bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100482,
+    startingMoney: 3550,
+    startingRegions: ['QLD', 'WA'],
+    startingStanding: { QLD: 57, WA: 55 },
+    badgeId: 'badge_o10m_pardon_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100482),
+      regionalStandingEnabled: true,
+      o10mPardonReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_prc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 63',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 63,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Grace carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_pardon_grace_finale',
+    title: 'Pardon Grace Finale',
+    description: 'Finale pardon stage — net worth gate with full grace bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100483,
+    startingMoney: 4000,
+    startingRegions: ['NSW', 'VIC', 'SA'],
+    badgeId: 'badge_o10m_pardon_grace_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100483),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mPardonGraceFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_pgf_obj_net',
+        label: 'Grace Net Worth',
+        description: 'Reach $18,000 net worth',
+        targetType: 'netWorth',
+        targetValue: 18000,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Pardon finales', 'Grace ledger', 'Unlock tokens'],
+  },
+  {
+    id: 'o10m_amnesty_warrant_docket',
+    title: 'Amnesty Warrant Docket',
+    description: 'Open an amnesty arc with low-pressure absolution pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100484,
+    startingMoney: 3050,
+    startingRegions: ['ACT', 'SA'],
+    badgeId: 'badge_o10m_amnesty_warrant_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100484),
+      o10mAmnestyWarrantDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_awd_obj_day',
+        label: 'Warrant Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Amnesty arcs', 'Absolution pacing', 'Warrant phase'],
+  },
+  {
+    id: 'o10m_amnesty_review_chamber',
+    title: 'Amnesty Review Chamber',
+    description: 'Mid-amnesty review with accrued absolution bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100485,
+    startingMoney: 3600,
+    startingRegions: ['NSW', 'NT'],
+    startingStanding: { NSW: 58, NT: 56 },
+    badgeId: 'badge_o10m_amnesty_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100485),
+      regionalStandingEnabled: true,
+      o10mAmnestyReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_arc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 64',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 64,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Absolution carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_amnesty_absolution_finale',
+    title: 'Amnesty Absolution Finale',
+    description: 'Finale amnesty stage — net worth gate with full absolution bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100486,
+    startingMoney: 4050,
+    startingRegions: ['VIC', 'QLD', 'WA'],
+    badgeId: 'badge_o10m_amnesty_absolution_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100486),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mAmnestyAbsolutionFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_aaf_obj_net',
+        label: 'Absolution Net Worth',
+        description: 'Reach $18,200 net worth',
+        targetType: 'netWorth',
+        targetValue: 18200,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Amnesty finales', 'Absolution ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -4789,6 +5021,74 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_pardon_route',
+    title: 'Pardon Route',
+    description:
+      'Three-phase pardon arc with grace accrual between legs — round-24 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_pardon_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_pardon_brief_docket',
+        title: 'Brief Docket',
+        narrativeBridge: 'File brief before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 340 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_pardon_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NT: 6, QLD: 5 },
+          forcedSettingsPatch: { o10mPardonMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_pardon_grace_finale',
+        title: 'Grace Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainPardonRouteComplete: true } },
+      },
+    ],
+  },
+  {
+    id: 'o10m_chain_amnesty_route',
+    title: 'Amnesty Route',
+    description:
+      'Three-phase amnesty arc with absolution accrual between legs — round-25 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_amnesty_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_amnesty_warrant_docket',
+        title: 'Warrant Docket',
+        narrativeBridge: 'File warrant before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 350 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_amnesty_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { SA: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mAmnestyMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_amnesty_absolution_finale',
+        title: 'Absolution Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainAmnestyRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -5615,7 +5915,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 23;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 25;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -5737,6 +6037,8 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
   };
 }
 
@@ -5779,6 +6081,8 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       indictmentSession: merged.indictmentSession ?? null,
       appealSession: merged.appealSession ?? null,
       clemencySession: merged.clemencySession ?? null,
+      pardonSession: merged.pardonSession ?? null,
+      amnestySession: merged.amnestySession ?? null,
     };
     return upgraded;
   }
@@ -5845,6 +6149,8 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     indictmentSession: sanitizeIndictmentSession(o.indictmentSession),
     appealSession: sanitizeAppealSession(o.appealSession),
     clemencySession: sanitizeClemencySession(o.clemencySession),
+    pardonSession: sanitizePardonSession(o.pardonSession),
+    amnestySession: sanitizeAmnestySession(o.amnestySession),
   };
 }
 
@@ -6014,6 +6320,20 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Clemency cursor out of range; clamp on next sanitize.');
   }
 
+  const pardon = sanitizePardonSession(state.pardonSession);
+  if (state.pardonSession && !pardon) {
+    warnings.push('Pardon session failed sanitization; planner will ignore it.');
+  } else if (pardon && pardon.cursor >= pardon.scenarioIds.length) {
+    warnings.push('Pardon cursor out of range; clamp on next sanitize.');
+  }
+
+  const amnesty = sanitizeAmnestySession(state.amnestySession);
+  if (state.amnestySession && !amnesty) {
+    warnings.push('Amnesty session failed sanitization; planner will ignore it.');
+  } else if (amnesty && amnesty.cursor >= amnesty.scenarioIds.length) {
+    warnings.push('Amnesty cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -6140,6 +6460,8 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'indictmentSession',
   'appealSession',
   'clemencySession',
+  'pardonSession',
+  'amnestySession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -6661,6 +6983,8 @@ export function attachMarathonQueueToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -6778,6 +7102,8 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceAmnestySessionAfterRun(next, run);
+  next = advancePardonSessionAfterRun(next, run);
   next = advanceClemencySessionAfterRun(next, run);
   next = advanceAppealSessionAfterRun(next, run);
   next = advanceIndictmentSessionAfterRun(next, run);
@@ -6940,6 +7266,8 @@ export function attachGauntletSessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -7185,6 +7513,8 @@ export function attachRelaySessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -7390,6 +7720,8 @@ export function attachCircuitSessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -7613,6 +7945,8 @@ export function attachExpeditionSessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -7834,6 +8168,8 @@ export function attachOdysseySessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -8054,6 +8390,8 @@ export function attachPilgrimageSessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -8275,6 +8613,8 @@ export function attachCaravanSessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -8490,6 +8830,8 @@ export function attachVoyageSessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -8705,6 +9047,8 @@ export function attachSiegeSessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -8920,6 +9264,8 @@ export function attachConvoySessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -9135,6 +9481,8 @@ export function attachEscortSessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -9359,6 +9707,8 @@ export function attachExtractionSessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -9591,6 +9941,8 @@ export function attachSubjectSessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -9823,6 +10175,8 @@ export function attachWitnessSessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -10055,6 +10409,8 @@ export function attachTribunalSessionToState(
     indictmentSession: null,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -10287,6 +10643,8 @@ export function attachIndictmentSessionToState(
     indictmentSession: sanitized,
     appealSession: null,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -10519,6 +10877,8 @@ export function attachAppealSessionToState(
     ...state,
     appealSession: sanitized,
     clemencySession: null,
+    pardonSession: null,
+    amnestySession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -10751,6 +11111,8 @@ export function attachClemencySessionToState(
   return {
     ...state,
     clemencySession: sanitized,
+    pardonSession: null,
+    amnestySession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -10865,6 +11227,476 @@ export function clemencySessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-pardon.ts ---
+export const O10M_PARDON_SCENARIO_CAP = 6;
+export const O10M_PARDON_GRACE_SCORE_CAP = 820;
+export const O10M_PARDON_GRACE_SCORE_MONEY_CAP = 900;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mPardonPhase>(['brief', 'review', 'pardon']);
+
+export function unlockTokenForPardonId(pardonId: string): string | null {
+  if (!pardonId.startsWith('o10m_pardon_')) return null;
+  return `o10m_unlock_${pardonId.slice('o10m_pardon_'.length)}`;
+}
+
+export function pardonPhaseForCursor(cursor: number, scenarioCount: number): O10mPardonPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'pardon';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'brief';
+}
+
+export function pardonGraceScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(110, Math.max(18, Math.floor(run.playerNetWorth / 172) + standingSlice));
+}
+
+export function sanitizePardonSession(raw: unknown): O10mPardonSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const pardonId =
+    typeof o.pardonId === 'string' && o.pardonId.startsWith('o10m_pardon_') ? o.pardonId : null;
+  if (!pardonId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : pardonId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_PARDON_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const graceScore = Math.min(
+    O10M_PARDON_GRACE_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.graceScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mPardonPhase)
+      ? (phaseRaw as O10mPardonPhase)
+      : pardonPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    pardonId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    graceScore,
+    phaseTag,
+  };
+}
+
+export function createPardonSession(params: {
+  pardonId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mPardonSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.pardonId.startsWith('o10m_pardon_')) {
+    return { session: null, warnings: ['Pardon ids must start with o10m_pardon_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_PARDON_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Pardon arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      pardonId: params.pardonId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      graceScore: 0,
+      phaseTag: pardonPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachPardonSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mPardonSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizePardonSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    pardonSession: sanitized,
+    amnestySession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearPardonSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, pardonSession: null };
+}
+
+export function getPardonScenarioAtCursor(
+  session: O10mPardonSession | null | undefined,
+): string | null {
+  const pardon = sanitizePardonSession(session);
+  if (!pardon || !pardon.active) return null;
+  return pardon.scenarioIds[pardon.cursor] ?? null;
+}
+
+export function buildPardonScenarioStartOverrides(
+  session: O10mPardonSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const pardon = sanitizePardonSession(session);
+  if (!pardon) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_PARDON_GRACE_SCORE_MONEY_CAP,
+    Math.floor(pardon.graceScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActivePardonId: pardon.pardonId,
+      o10mActivePardonStep: pardon.cursor,
+      o10mActivePardonPhase: pardon.phaseTag,
+      o10mPardonGraceScore: pardon.graceScore,
+    },
+  };
+}
+
+export function advancePardonSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizePardonSession(state.pardonSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const graceScore = Math.min(
+    O10M_PARDON_GRACE_SCORE_CAP,
+    session.graceScore + pardonGraceScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      pardonSession: {
+        ...session,
+        cursor,
+        graceScore,
+        phaseTag: pardonPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForPardonId(session.pardonId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    pardonSession: { ...session, active: false, graceScore, phaseTag: 'pardon' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function pardonSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  graceScore: number;
+  phase: O10mPardonPhase | null;
+} {
+  const session = sanitizePardonSession(state.pardonSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    graceScore: session?.graceScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
+// --- bundled from src/save-format-amnesty.ts ---
+export const O10M_AMNESTY_SCENARIO_CAP = 6;
+export const O10M_AMNESTY_ABSOLUTION_SCORE_CAP = 840;
+export const O10M_AMNESTY_ABSOLUTION_SCORE_MONEY_CAP = 920;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mAmnestyPhase>(['warrant', 'review', 'amnesty']);
+
+export function unlockTokenForAmnestyId(amnestyId: string): string | null {
+  if (!amnestyId.startsWith('o10m_amnesty_')) return null;
+  return `o10m_unlock_${amnestyId.slice('o10m_amnesty_'.length)}`;
+}
+
+export function amnestyPhaseForCursor(cursor: number, scenarioCount: number): O10mAmnestyPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'amnesty';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'warrant';
+}
+
+export function amnestyAbsolutionScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(112, Math.max(19, Math.floor(run.playerNetWorth / 170) + standingSlice));
+}
+
+export function sanitizeAmnestySession(raw: unknown): O10mAmnestySession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const amnestyId =
+    typeof o.amnestyId === 'string' && o.amnestyId.startsWith('o10m_amnesty_') ? o.amnestyId : null;
+  if (!amnestyId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : amnestyId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_AMNESTY_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const absolutionScore = Math.min(
+    O10M_AMNESTY_ABSOLUTION_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.absolutionScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mAmnestyPhase)
+      ? (phaseRaw as O10mAmnestyPhase)
+      : amnestyPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    amnestyId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    absolutionScore,
+    phaseTag,
+  };
+}
+
+export function createAmnestySession(params: {
+  amnestyId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mAmnestySession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.amnestyId.startsWith('o10m_amnesty_')) {
+    return { session: null, warnings: ['Amnesty ids must start with o10m_amnesty_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_AMNESTY_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Amnesty arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      amnestyId: params.amnestyId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      absolutionScore: 0,
+      phaseTag: amnestyPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachAmnestySessionToState(
+  state: O10mModesPersistedState,
+  session: O10mAmnestySession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeAmnestySession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    amnestySession: sanitized,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearAmnestySession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, amnestySession: null };
+}
+
+export function getAmnestyScenarioAtCursor(
+  session: O10mAmnestySession | null | undefined,
+): string | null {
+  const amnesty = sanitizeAmnestySession(session);
+  if (!amnesty || !amnesty.active) return null;
+  return amnesty.scenarioIds[amnesty.cursor] ?? null;
+}
+
+export function buildAmnestyScenarioStartOverrides(
+  session: O10mAmnestySession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const amnesty = sanitizeAmnestySession(session);
+  if (!amnesty) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_AMNESTY_ABSOLUTION_SCORE_MONEY_CAP,
+    Math.floor(amnesty.absolutionScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveAmnestyId: amnesty.amnestyId,
+      o10mActiveAmnestyStep: amnesty.cursor,
+      o10mActiveAmnestyPhase: amnesty.phaseTag,
+      o10mAmnestyAbsolutionScore: amnesty.absolutionScore,
+    },
+  };
+}
+
+export function advanceAmnestySessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeAmnestySession(state.amnestySession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const absolutionScore = Math.min(
+    O10M_AMNESTY_ABSOLUTION_SCORE_CAP,
+    session.absolutionScore + amnestyAbsolutionScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      amnestySession: {
+        ...session,
+        cursor,
+        absolutionScore,
+        phaseTag: amnestyPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForAmnestyId(session.amnestyId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    amnestySession: { ...session, active: false, absolutionScore, phaseTag: 'amnesty' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function amnestySessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  absolutionScore: number;
+  phase: O10mAmnestyPhase | null;
+} {
+  const session = sanitizeAmnestySession(state.amnestySession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    absolutionScore: session?.absolutionScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -10939,9 +11771,53 @@ const emptyQueuePlan = {
   clemencyCursor: null as number | null,
   clemencyPhase: null as O10mClemencyPhase | null,
   clemencyMercy: null as number | null,
+  pardonId: null as string | null,
+  pardonCursor: null as number | null,
+  pardonPhase: null as O10mPardonPhase | null,
+  pardonGrace: null as number | null,
+  amnestyId: null as string | null,
+  amnestyCursor: null as number | null,
+  amnestyPhase: null as O10mAmnestyPhase | null,
+  amnestyAbsolution: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const amnesty = sanitizeAmnestySession(state.amnestySession);
+  const amnestyScenario = getAmnestyScenarioAtCursor(amnesty);
+  if (amnesty && amnesty.active && amnestyScenario) {
+    return {
+      kind: 'amnesty_step',
+      scenarioId: amnestyScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      amnestyId: amnesty.amnestyId,
+      amnestyCursor: amnesty.cursor,
+      amnestyPhase: amnesty.phaseTag,
+      amnestyAbsolution: amnesty.absolutionScore,
+      reason: `Amnesty "${amnesty.label}" ${amnesty.phaseTag} phase ${amnesty.cursor + 1}/${amnesty.scenarioIds.length} (absolution ${amnesty.absolutionScore}).`,
+    };
+  }
+
+  const pardon = sanitizePardonSession(state.pardonSession);
+  const pardonScenario = getPardonScenarioAtCursor(pardon);
+  if (pardon && pardon.active && pardonScenario) {
+    return {
+      kind: 'pardon_step',
+      scenarioId: pardonScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      pardonId: pardon.pardonId,
+      pardonCursor: pardon.cursor,
+      pardonPhase: pardon.phaseTag,
+      pardonGrace: pardon.graceScore,
+      reason: `Pardon "${pardon.label}" ${pardon.phaseTag} phase ${pardon.cursor + 1}/${pardon.scenarioIds.length} (grace ${pardon.graceScore}).`,
+    };
+  }
+
   const clemency = sanitizeClemencySession(state.clemencySession);
   const clemencyScenario = getClemencyScenarioAtCursor(clemency);
   if (clemency && clemency.active && clemencyScenario) {
@@ -11368,6 +12244,8 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   indictmentActive: boolean;
   appealActive: boolean;
   clemencyActive: boolean;
+  pardonActive: boolean;
+  amnestyActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -11394,6 +12272,8 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const indictment = indictmentSessionSummary(state);
   const appeal = appealSessionSummary(state);
   const clemency = clemencySessionSummary(state);
+  const pardon = pardonSessionSummary(state);
+  const amnesty = amnestySessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -11418,6 +12298,8 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     indictmentActive: indictment.active,
     appealActive: appeal.active,
     clemencyActive: clemency.active,
+    pardonActive: pardon.active,
+    amnestyActive: amnesty.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -11436,7 +12318,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 24, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 26, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -11616,16 +12498,32 @@ export function runAgent04ModesScenariosSelfTests(): {
   const clemencyState = clemency ? attachClemencySessionToState(createEmptyO10mModesPersistedState(), clemency) : null;
   push('agent04_chunk_31', clemencyState !== null && planNextCampaignAction(clemencyState!).kind === 'clemency_step');
 
+  const pardon = createPardonSession({
+    pardonId: 'o10m_pardon_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_pardon_brief_docket'],
+  }).session;
+  const pardonState = pardon ? attachPardonSessionToState(createEmptyO10mModesPersistedState(), pardon) : null;
+  push('agent04_chunk_32', pardonState !== null && planNextCampaignAction(pardonState!).kind === 'pardon_step');
+
+  const amnesty = createAmnestySession({
+    amnestyId: 'o10m_amnesty_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_amnesty_warrant_docket'],
+  }).session;
+  const amnestyState = amnesty ? attachAmnestySessionToState(createEmptyO10mModesPersistedState(), amnesty) : null;
+  push('agent04_chunk_33', amnestyState !== null && planNextCampaignAction(amnestyState!).kind === 'amnesty_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v24',
+  schemaVersion: 'op10m-agent04-v26',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 23,
+  saveSchemaVersion: 25,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

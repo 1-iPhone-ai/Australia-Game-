@@ -24,6 +24,7 @@ import { sanitizeIndictmentSession } from './save-format-indictment.js';
 import { sanitizeAppealSession } from './save-format-appeal.js';
 import { sanitizeClemencySession } from './save-format-clemency.js';
 import { sanitizePardonSession } from './save-format-pardon.js';
+import { sanitizeAmnestySession } from './save-format-amnesty.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -42,7 +43,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 24;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 25;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -165,6 +166,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     appealSession: null,
     clemencySession: null,
     pardonSession: null,
+    amnestySession: null,
   };
 }
 
@@ -208,6 +210,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       appealSession: merged.appealSession ?? null,
       clemencySession: merged.clemencySession ?? null,
       pardonSession: merged.pardonSession ?? null,
+      amnestySession: merged.amnestySession ?? null,
     };
     return upgraded;
   }
@@ -275,6 +278,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     appealSession: sanitizeAppealSession(o.appealSession),
     clemencySession: sanitizeClemencySession(o.clemencySession),
     pardonSession: sanitizePardonSession(o.pardonSession),
+    amnestySession: sanitizeAmnestySession(o.amnestySession),
   };
 }
 
@@ -449,6 +453,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Pardon session failed sanitization; planner will ignore it.');
   } else if (pardon && pardon.cursor >= pardon.scenarioIds.length) {
     warnings.push('Pardon cursor out of range; clamp on next sanitize.');
+  }
+
+  const amnesty = sanitizeAmnestySession(state.amnestySession);
+  if (state.amnestySession && !amnesty) {
+    warnings.push('Amnesty session failed sanitization; planner will ignore it.');
+  } else if (amnesty && amnesty.cursor >= amnesty.scenarioIds.length) {
+    warnings.push('Amnesty cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

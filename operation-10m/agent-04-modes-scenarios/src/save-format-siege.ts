@@ -128,6 +128,7 @@ export function attachSiegeSessionToState(
     appealSession: null,
     clemencySession: null,
     pardonSession: null,
+    amnestySession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
