@@ -1,10 +1,26 @@
-import { buildAiMemoryHorizonSnapshot } from '../horizon.ts';
+import { buildAiMemoryHorizonSnapshot, createEmptyAiActorMemory } from '../horizon.ts';
 import {
   auditFindingsOk,
   auditMemoryInfluenceDecisions,
   AGENT19_MAX_SINGLE_DECISION_INFLUENCE,
 } from '../influence-audit.ts';
-import { buildMemoryExplainabilityBrief, summarizeSlicesByHorizon } from '../explainability.ts';
+import {
+  buildMemoryExplainabilityBrief,
+  formatHorizonBadge,
+  rankInfluenceSlicesByMagnitude,
+  summarizeSlicesByHorizon,
+} from '../explainability.ts';
+import { computeNegotiationThresholdShift, formatNegotiationExplainability } from '../negotiation-explainability.ts';
+import {
+  buildInspectionExplainabilityNarrative,
+  getFilteredAiMemoryInspectionView,
+} from '../inspection-explainability.ts';
+import { auditActorMemoryBounds, memoryBoundsOk, AGENT19_AI_MEMORY_EVENT_CAP } from '../memory-bounds-audit.ts';
+import {
+  buildAgent19DecisionTraceReport,
+  compareHorizonSnapshots,
+  labelMemoryHorizon,
+} from '../decision-trace.ts';
 import type { MemoryEvalResult } from '../types.ts';
 
 type Case = [string, string, () => boolean | string];
@@ -82,6 +98,143 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
         'a19_cap_constant',
         'Documented influence cap is positive',
         () => AGENT19_MAX_SINGLE_DECISION_INFLUENCE >= 40 || String(AGENT19_MAX_SINGLE_DECISION_INFLUENCE),
+      ],
+      [
+        'a19_negotiation_bounded',
+        'Negotiation shift stays within ±0.2',
+        () => {
+          const lo = computeNegotiationThresholdShift({ trust: 10, grievance: 50 }, {});
+          const hi = computeNegotiationThresholdShift({ trust: 90, gratitude: 40 }, { dealAffordable: true, thirdPartyThreat: 50 });
+          return lo.shift > 0 && hi.shift < 0 && Math.abs(lo.shift) <= 0.2 && Math.abs(hi.shift) <= 0.2 || JSON.stringify({ lo, hi });
+        },
+      ],
+      [
+        'a19_negotiation_copy',
+        'Negotiation explainability mentions bounded threshold',
+        () => {
+          const lines = formatNegotiationExplainability({ actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 }, {});
+          return lines.some(l => l.includes('±0.2')) || lines.join('|');
+        },
+      ],
+      [
+        'a19_inspection_redaction',
+        'Inspection narrative notes redaction for rivals',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.opponentModels.player = {
+            actorId: 'player',
+            totalOpportunities: 3,
+            beliefs: { aggressive: { key: 'aggressive', value: 0.6, confidence: 0.4, observations: 2, opportunityCount: 3, source: 'match' } },
+            regionalInterest: {},
+            predictedObjectives: [],
+          };
+          const view = getFilteredAiMemoryInspectionView(mem, {
+            viewerTeamId: 'team_player',
+            ownerTeamId: 'team_opponent',
+            persistentMemoryEnabled: false,
+          });
+          const lines = buildInspectionExplainabilityNarrative(view);
+          return view.isRedacted && view.strategicProfiles.length === 0 && lines.some(l => l.includes('hidden')) || JSON.stringify({ view, lines });
+        },
+      ],
+      [
+        'a19_bounds_ok',
+        'Empty actor memory passes bounds audit',
+        () => memoryBoundsOk(createEmptyAiActorMemory('ai')) || JSON.stringify(auditActorMemoryBounds(createEmptyAiActorMemory('ai'))),
+      ],
+      [
+        'a19_bounds_fail',
+        'Oversized event list fails bounds audit',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = Array.from({ length: AGENT19_AI_MEMORY_EVENT_CAP + 1 }, (_, i) => ({
+            id: `e${i}`,
+            turn: i,
+            actionType: 'sell',
+            actorId: 'player',
+            targetId: null,
+            regionId: null,
+            summary: 's',
+            importance: 1,
+            valence: 0,
+            stableKey: `k${i}`,
+          }));
+          return !memoryBoundsOk(mem) || 'accepted oversize events';
+        },
+      ],
+      [
+        'a19_decision_trace',
+        'Decision trace report merges horizon and slices',
+        () => {
+          const snap = buildAiMemoryHorizonSnapshot(null);
+          const report = buildAgent19DecisionTraceReport({
+            before: { type: 'sabotage', score: 10 },
+            after: {
+              type: 'sabotage',
+              score: 14,
+              memoryInfluence: 4,
+              memoryInfluenceSlices: [
+                { horizon: 'short_term_match', delta: 4, reason: 'rivalry' },
+                { horizon: 'team_directive', delta: 0, reason: '' },
+              ].filter(s => s.delta),
+            },
+            horizonSnapshot: snap,
+          });
+          return report.memoryInfluence === 4 && report.narrativeLines.length >= 2 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_horizon_compare',
+        'Horizon diff detects event count change',
+        () => {
+          const a = buildAiMemoryHorizonSnapshot(null);
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = [
+            {
+              id: 'e1',
+              turn: 1,
+              actionType: 'sell',
+              actorId: 'player',
+              targetId: null,
+              regionId: null,
+              summary: 's',
+              importance: 1,
+              valence: 0,
+              stableKey: 'k1',
+            },
+            {
+              id: 'e2',
+              turn: 2,
+              actionType: 'sell',
+              actorId: 'player',
+              targetId: null,
+              regionId: null,
+              summary: 's2',
+              importance: 1,
+              valence: 0,
+              stableKey: 'k2',
+            },
+          ];
+          const b = buildAiMemoryHorizonSnapshot(mem);
+          const lines = compareHorizonSnapshots(a, b);
+          return lines.some(l => l.includes('Match events')) || lines.join('|');
+        },
+      ],
+      [
+        'a19_horizon_labels',
+        'Horizon labels are human readable',
+        () => labelMemoryHorizon('long_term_prior').includes('Earlier') || labelMemoryHorizon('long_term_prior'),
+      ],
+      [
+        'a19_slice_rank',
+        'Influence slices rank by magnitude',
+        () => {
+          const ranked = rankInfluenceSlicesByMagnitude([
+            { horizon: 'short_term_match', delta: 1, reason: 'a' },
+            { horizon: 'team_directive', delta: 25, reason: 'b' },
+          ]);
+          return ranked[0].delta === 25 && formatHorizonBadge('team_directive') === 'Team directive' || JSON.stringify(ranked);
+        },
       ],
     ]),
   };

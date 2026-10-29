@@ -74,6 +74,29 @@ export interface AiMemoryHorizonSnapshot {
   explainabilityDisclaimer: string;
 }
 
+export interface AiMemoryInspectionView {
+  ownerActorId: string;
+  isRedacted: boolean;
+  eventCount: number;
+  influenceSummary: string | null;
+  horizonSnapshot: AiMemoryHorizonSnapshot;
+  recentEvents: AiMemoryEvent[];
+  relationships: AiRelationship[];
+  majorGrievances?: AiMemoryEvent[];
+  majorGratitude?: AiMemoryEvent[];
+  strategicProfiles: Array<{
+    actorId: string;
+    aggressionPreference: number;
+    expansionPreference: number;
+    economicPreference: number;
+    cooperationPreference: number;
+    confidence: number;
+    observationCount: number;
+  }>;
+  opponentModels?: AiOpponentModel[];
+  adaptivePlan: AiActorMemory['adaptivePlan'];
+}
+
 export interface MemoryInfluenceDecisionLike {
   type?: string;
   score?: number;

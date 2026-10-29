@@ -1,4 +1,4 @@
-import type { AiMemoryHorizonSnapshot, AiMemoryInfluenceSlice } from './types.ts';
+import type { AiMemoryHorizonSnapshot, AiMemoryInfluenceSlice, AiMemoryHorizon } from './types.ts';
 
 export function describeHorizonForPlayer(snapshot: AiMemoryHorizonSnapshot): string {
   const parts: string[] = [snapshot.qualityNote];
@@ -39,4 +39,24 @@ export function summarizeSlicesByHorizon(
     out[s.horizon] = bucket;
   });
   return out;
+}
+
+export function formatHorizonBadge(horizon: AiMemoryHorizon): string {
+  switch (horizon) {
+    case 'short_term_match':
+      return 'Match memory';
+    case 'long_term_prior':
+      return 'Cross-match prior';
+    case 'team_directive':
+      return 'Team directive';
+    default:
+      return horizon;
+  }
+}
+
+export function rankInfluenceSlicesByMagnitude(slices: AiMemoryInfluenceSlice[], limit = 5): AiMemoryInfluenceSlice[] {
+  return slices
+    .slice()
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.horizon.localeCompare(b.horizon))
+    .slice(0, limit);
 }

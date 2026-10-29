@@ -78,6 +78,29 @@ export interface AiMemoryHorizonSnapshot {
   explainabilityDisclaimer: string;
 }
 
+export interface AiMemoryInspectionView {
+  ownerActorId: string;
+  isRedacted: boolean;
+  eventCount: number;
+  influenceSummary: string | null;
+  horizonSnapshot: AiMemoryHorizonSnapshot;
+  recentEvents: AiMemoryEvent[];
+  relationships: AiRelationship[];
+  majorGrievances?: AiMemoryEvent[];
+  majorGratitude?: AiMemoryEvent[];
+  strategicProfiles: Array<{
+    actorId: string;
+    aggressionPreference: number;
+    expansionPreference: number;
+    economicPreference: number;
+    cooperationPreference: number;
+    confidence: number;
+    observationCount: number;
+  }>;
+  opponentModels?: AiOpponentModel[];
+  adaptivePlan: AiActorMemory['adaptivePlan'];
+}
+
 export interface MemoryInfluenceDecisionLike {
   type?: string;
   score?: number;
@@ -196,6 +219,327 @@ export function summarizeSlicesByHorizon(
   return out;
 }
 
+export function formatHorizonBadge(horizon: AiMemoryHorizon): string {
+  switch (horizon) {
+    case 'short_term_match':
+      return 'Match memory';
+    case 'long_term_prior':
+      return 'Cross-match prior';
+    case 'team_directive':
+      return 'Team directive';
+    default:
+      return horizon;
+  }
+}
+
+export function rankInfluenceSlicesByMagnitude(slices: AiMemoryInfluenceSlice[], limit = 5): AiMemoryInfluenceSlice[] {
+  return slices
+    .slice()
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.horizon.localeCompare(b.horizon))
+    .slice(0, limit);
+}
+
+
+// --- source: negotiation-explainability.ts ---
+
+const memNum = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
+/** Negotiation: trust/gratitude lower the acceptance bar, grievance raises it; a shared threat helps. */
+export function computeNegotiationThresholdShift(
+  rel: Partial<AiRelationship> | null | undefined,
+  ctx: { dealAffordable?: boolean; thirdPartyThreat?: number },
+): { shift: number; reasons: string[] } {
+  const reasons: string[] = [];
+  let shift = 0;
+  if (rel) {
+    const trust = memNum(rel.trust, 50);
+    const grievance = memNum(rel.grievance);
+    const gratitude = memNum(rel.gratitude);
+    if (trust > 60) {
+      shift -= (trust - 60) / 400;
+      reasons.push('trusts this counterpart');
+    }
+    if (trust < 40) {
+      shift += (40 - trust) / 400;
+      reasons.push('distrusts this counterpart');
+    }
+    if (grievance > 10) {
+      shift += Math.min(0.1, grievance / 300);
+      reasons.push('holds a grievance');
+    }
+    if (gratitude > 10) {
+      shift -= Math.min(0.08, gratitude / 400);
+      reasons.push('is grateful for past help');
+    }
+  }
+  if (memNum(ctx.thirdPartyThreat) > 40 && ctx.dealAffordable) {
+    shift -= 0.04;
+    reasons.push('a common threat makes a deal attractive');
+  }
+  return {
+    shift: Math.max(-0.2, Math.min(0.2, Math.round(shift * 1000) / 1000)),
+    reasons,
+  };
+}
+
+export function formatNegotiationExplainability(
+  rel: Partial<AiRelationship> | null | undefined,
+  ctx: { dealAffordable?: boolean; thirdPartyThreat?: number; counterpartLabel?: string },
+): string[] {
+  const { shift, reasons } = computeNegotiationThresholdShift(rel, ctx);
+  const who = ctx.counterpartLabel || rel?.actorId || 'this counterpart';
+  const lines = [
+    `Memory adjusts the deal acceptance threshold by ${shift >= 0 ? '+' : ''}${shift.toFixed(3)} for ${who}.`,
+  ];
+  if (reasons.length) {
+    lines.push(`Factors: ${reasons.join('; ')}.`);
+  } else {
+    lines.push('No relationship memory is shifting negotiation yet.');
+  }
+  lines.push('Negotiation memory is bounded (±0.2) and never blocks legal offers.');
+  return lines;
+}
+
+
+// --- source: inspection-explainability.ts ---
+  AiActorMemory,
+  AiMemoryEvent,
+  AiMemoryHorizonSnapshot,
+  AiMemoryInspectionView,
+  AiOpponentModel,
+  AiRelationship,
+} from './types.ts';
+
+/** Inspection respects authority: rivals' private beliefs stay hidden without Full Inspection. */
+export function getFilteredAiMemoryInspectionView(
+  memory: AiActorMemory | null | undefined,
+  opts: {
+    viewerId?: string;
+    viewerTeamId?: string | null;
+    ownerTeamId?: string | null;
+    teammateIds?: string[];
+    fullInspection?: boolean;
+    persistentMemoryEnabled?: boolean;
+  },
+): AiMemoryInspectionView {
+  const m = memory || createEmptyAiActorMemory('');
+  const ally =
+    Boolean(opts.fullInspection) ||
+    Boolean(opts.viewerTeamId && opts.ownerTeamId && opts.viewerTeamId === opts.ownerTeamId);
+  const redacted = !ally;
+  const rels = Object.values(m.relationships).sort((a, b) => a.actorId.localeCompare(b.actorId));
+  const profiles = Object.values(m.opponentModels).map(om => ({
+    actorId: om.actorId,
+    aggressionPreference: om.beliefs.aggressive?.value ?? 0,
+    expansionPreference: om.beliefs.expansion?.value ?? 0,
+    economicPreference: om.beliefs.economic?.value ?? 0,
+    cooperationPreference: om.beliefs.cooperative?.value ?? 0,
+    confidence: Math.max(0, ...Object.values(om.beliefs).map(b => b.confidence)),
+    observationCount: om.totalOpportunities,
+  }));
+  const strongest = rels.slice().sort((a, b) => b.rivalry + b.grievance - (a.rivalry + a.grievance))[0];
+  const horizonSnapshot = buildAiMemoryHorizonSnapshot(m, { persistentMemoryEnabled: opts.persistentMemoryEnabled });
+  return {
+    ownerActorId: m.ownerActorId,
+    isRedacted: redacted,
+    eventCount: m.events.length,
+    horizonSnapshot,
+    influenceSummary:
+      strongest && strongest.rivalry + strongest.grievance > 10
+        ? `Most wary of ${strongest.actorId} (rivalry ${strongest.rivalry}, grievance ${strongest.grievance}).`
+        : m.events.length
+          ? 'Memory is shaping choices only lightly so far.'
+          : null,
+    recentEvents: (redacted ? m.events.filter(e => Math.abs(e.valence) >= 0.3) : m.events).slice(-8).reverse(),
+    relationships: redacted
+      ? rels.filter(r => (opts.teammateIds || []).includes(r.actorId) || r.actorId === opts.viewerId)
+      : rels,
+    majorGrievances: m.events.filter(e => e.valence <= -0.6).slice(-4).reverse(),
+    majorGratitude: m.events.filter(e => e.valence >= 0.6).slice(-4).reverse(),
+    strategicProfiles: redacted ? [] : profiles,
+    opponentModels: redacted ? [] : Object.values(m.opponentModels),
+    adaptivePlan: redacted ? null : m.adaptivePlan,
+  };
+}
+
+export function describeRelationshipForInspection(rel: AiRelationship): string {
+  const tone =
+    rel.grievance > rel.gratitude + 15
+      ? 'wary'
+      : rel.gratitude > rel.grievance + 15
+        ? 'warm'
+        : 'mixed';
+  return `${rel.actorId}: trust ${rel.trust.toFixed(0)}, rivalry ${rel.rivalry.toFixed(0)}, grievance ${rel.grievance.toFixed(0)}, gratitude ${rel.gratitude.toFixed(0)} (${tone}).`;
+}
+
+export function buildInspectionExplainabilityNarrative(view: AiMemoryInspectionView): string[] {
+  const lines: string[] = [];
+  lines.push(describeHorizonLine(view.horizonSnapshot));
+  if (view.isRedacted) {
+    lines.push('Rival private beliefs are hidden — only high-signal events and safe relationship rows are shown.');
+  }
+  if (view.influenceSummary) lines.push(view.influenceSummary);
+  view.relationships.slice(0, 6).forEach(r => lines.push(describeRelationshipForInspection(r)));
+  if (view.majorGrievances?.length) {
+    lines.push(`Notable grievances (${view.majorGrievances.length}): ${view.majorGrievances.map(e => e.summary).slice(0, 2).join('; ')}`);
+  }
+  if (view.majorGratitude?.length) {
+    lines.push(`Notable gratitude (${view.majorGratitude.length}): ${view.majorGratitude.map(e => e.summary).slice(0, 2).join('; ')}`);
+  }
+  if (!view.isRedacted && view.strategicProfiles.length) {
+    const top = view.strategicProfiles[0];
+    lines.push(
+      `Learned tendency toward ${top.actorId}: aggression ${(top.aggressionPreference * 100).toFixed(0)}%, expansion ${(top.expansionPreference * 100).toFixed(0)}% (${top.observationCount} observations).`,
+    );
+  }
+  if (view.adaptivePlan && !view.isRedacted) {
+    lines.push(`Adaptive plan: ${view.adaptivePlan.objectiveId.replace(/_/g, ' ')} (${view.adaptivePlan.status}).`);
+  }
+  lines.push(view.horizonSnapshot.explainabilityDisclaimer);
+  return lines;
+}
+
+function describeHorizonLine(snapshot: AiMemoryHorizonSnapshot): string {
+  if (snapshot.longTermPriorActive) {
+    return `Memory mixes ${snapshot.shortTermEventCount} match event(s) with ${snapshot.longTermPriorBeliefCount} cross-match prior belief(s).`;
+  }
+  return snapshot.qualityNote;
+}
+
+export function summarizeRecentEventsForAskTheGame(events: AiMemoryEvent[], limit = 4): string[] {
+  return events.slice(0, limit).map(e => `Turn ${e.turn}: ${e.summary} (${e.valence >= 0 ? 'helpful' : e.valence <= 0 ? 'hostile' : 'neutral'} signal).`);
+}
+
+
+// --- source: memory-bounds-audit.ts ---
+
+/** Match V9.4 bounded event history cap. */
+export const AGENT19_AI_MEMORY_EVENT_CAP = 60;
+export const AGENT19_MAX_RELATIONSHIP_ACTORS = 12;
+export const AGENT19_MAX_OPPONENT_MODELS = 12;
+export const AGENT19_MAX_SEEN_KEYS = AGENT19_AI_MEMORY_EVENT_CAP * 2;
+
+export function auditActorMemoryBounds(memory: AiActorMemory | null | undefined): MemoryInfluenceAuditFinding[] {
+  const findings: MemoryInfluenceAuditFinding[] = [];
+  if (!memory) return findings;
+  if (memory.events.length > AGENT19_AI_MEMORY_EVENT_CAP) {
+    findings.push({
+      code: 'events_over_cap',
+      severity: 'fail',
+      message: `${memory.events.length} events exceeds cap ${AGENT19_AI_MEMORY_EVENT_CAP}.`,
+    });
+  }
+  if (Object.keys(memory.relationships || {}).length > AGENT19_MAX_RELATIONSHIP_ACTORS) {
+    findings.push({
+      code: 'relationships_over_cap',
+      severity: 'fail',
+      message: 'Too many relationship tracks stored.',
+    });
+  }
+  if (Object.keys(memory.opponentModels || {}).length > AGENT19_MAX_OPPONENT_MODELS) {
+    findings.push({
+      code: 'opponent_models_over_cap',
+      severity: 'fail',
+      message: 'Too many opponent models stored.',
+    });
+  }
+  if ((memory.seenKeys || []).length > AGENT19_MAX_SEEN_KEYS) {
+    findings.push({
+      code: 'seen_keys_over_cap',
+      severity: 'fail',
+      message: 'seenKeys exceeds bounded idempotency window.',
+    });
+  }
+  memory.events.forEach((e, i) => {
+    if (!e.stableKey?.trim()) {
+      findings.push({ code: 'event_missing_stable_key', severity: 'warn', message: `Event ${i} missing stableKey.` });
+    }
+    if (Math.abs(e.valence) > 1.01) {
+      findings.push({ code: 'event_valence_out_of_range', severity: 'warn', message: `Event ${i} valence ${e.valence} outside [-1,1].` });
+    }
+  });
+  return findings;
+}
+
+export function memoryBoundsOk(memory: AiActorMemory | null | undefined): boolean {
+  return !auditActorMemoryBounds(memory).some(f => f.severity === 'fail');
+}
+
+
+// --- source: decision-trace.ts ---
+  AiMemoryHorizonSnapshot,
+  AiMemoryInfluenceSlice,
+  MemoryInfluenceDecisionLike,
+} from './types.ts';
+
+export interface Agent19DecisionTraceReport {
+  decisionType: string;
+  baseScore: number;
+  adjustedScore: number;
+  memoryInfluence: number;
+  horizonSnapshot: AiMemoryHorizonSnapshot;
+  narrativeLines: string[];
+  sliceSummaryByHorizon: Record<string, { totalDelta: number; count: number }>;
+}
+
+export const AGENT19_HORIZON_LABELS: Record<string, string> = {
+  short_term_match: 'This match',
+  long_term_prior: 'Earlier matches (saved prior)',
+  team_directive: 'Team plan directive',
+};
+
+export function labelMemoryHorizon(horizon: AiMemoryInfluenceSlice['horizon']): string {
+  return AGENT19_HORIZON_LABELS[horizon] || horizon;
+}
+
+export function buildAgent19DecisionTraceReport(params: {
+  before: MemoryInfluenceDecisionLike;
+  after: MemoryInfluenceDecisionLike;
+  horizonSnapshot: AiMemoryHorizonSnapshot;
+}): Agent19DecisionTraceReport {
+  const baseScore = params.before.score ?? 0;
+  const adjustedScore = params.after.score ?? 0;
+  const memoryInfluence = params.after.memoryInfluence ?? 0;
+  const slices = params.after.memoryInfluenceSlices || [];
+  const sliceSummaryByHorizon: Record<string, { totalDelta: number; count: number }> = {};
+  slices.forEach(s => {
+    const b = sliceSummaryByHorizon[s.horizon] || { totalDelta: 0, count: 0 };
+    b.totalDelta = Math.round((b.totalDelta + s.delta) * 100) / 100;
+    b.count += 1;
+    sliceSummaryByHorizon[s.horizon] = b;
+  });
+  const narrativeLines = [
+    `Decision "${params.after.type || params.before.type || 'unknown'}": base score ${baseScore}, after memory ${adjustedScore} (${memoryInfluence >= 0 ? '+' : ''}${memoryInfluence.toFixed(2)}).`,
+    ...buildMemoryExplainabilityBrief(params.horizonSnapshot, slices),
+  ];
+  return {
+    decisionType: String(params.after.type || params.before.type || 'unknown'),
+    baseScore,
+    adjustedScore,
+    memoryInfluence,
+    horizonSnapshot: params.horizonSnapshot,
+    narrativeLines,
+    sliceSummaryByHorizon,
+  };
+}
+
+export function compareHorizonSnapshots(before: AiMemoryHorizonSnapshot, after: AiMemoryHorizonSnapshot): string[] {
+  const lines: string[] = [];
+  if (before.shortTermEventCount !== after.shortTermEventCount) {
+    lines.push(`Match events: ${before.shortTermEventCount} → ${after.shortTermEventCount}.`);
+  }
+  if (before.longTermPriorBeliefCount !== after.longTermPriorBeliefCount) {
+    lines.push(`Cross-match priors: ${before.longTermPriorBeliefCount} → ${after.longTermPriorBeliefCount}.`);
+  }
+  if (before.longTermPriorActive !== after.longTermPriorActive) {
+    lines.push(
+      `Cross-match prior influence: ${before.longTermPriorActive ? 'active' : 'idle'} → ${after.longTermPriorActive ? 'active' : 'idle'}.`,
+    );
+  }
+  if (!lines.length) lines.push('Horizon snapshot unchanged.');
+  return lines;
+}
+
 
 // --- source: influence-audit.ts ---
 
@@ -291,6 +635,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMemoryInfluenceDecisions,
   AGENT19_MAX_SINGLE_DECISION_INFLUENCE,
 } from '../influence-audit.ts';
+  buildMemoryExplainabilityBrief,
+  formatHorizonBadge,
+  rankInfluenceSlicesByMagnitude,
+  summarizeSlicesByHorizon,
+} from '../explainability.ts';
+  buildInspectionExplainabilityNarrative,
+  getFilteredAiMemoryInspectionView,
+} from '../inspection-explainability.ts';
+  buildAgent19DecisionTraceReport,
+  compareHorizonSnapshots,
+  labelMemoryHorizon,
+} from '../decision-trace.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -367,6 +723,143 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
         'a19_cap_constant',
         'Documented influence cap is positive',
         () => AGENT19_MAX_SINGLE_DECISION_INFLUENCE >= 40 || String(AGENT19_MAX_SINGLE_DECISION_INFLUENCE),
+      ],
+      [
+        'a19_negotiation_bounded',
+        'Negotiation shift stays within ±0.2',
+        () => {
+          const lo = computeNegotiationThresholdShift({ trust: 10, grievance: 50 }, {});
+          const hi = computeNegotiationThresholdShift({ trust: 90, gratitude: 40 }, { dealAffordable: true, thirdPartyThreat: 50 });
+          return lo.shift > 0 && hi.shift < 0 && Math.abs(lo.shift) <= 0.2 && Math.abs(hi.shift) <= 0.2 || JSON.stringify({ lo, hi });
+        },
+      ],
+      [
+        'a19_negotiation_copy',
+        'Negotiation explainability mentions bounded threshold',
+        () => {
+          const lines = formatNegotiationExplainability({ actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 }, {});
+          return lines.some(l => l.includes('±0.2')) || lines.join('|');
+        },
+      ],
+      [
+        'a19_inspection_redaction',
+        'Inspection narrative notes redaction for rivals',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.opponentModels.player = {
+            actorId: 'player',
+            totalOpportunities: 3,
+            beliefs: { aggressive: { key: 'aggressive', value: 0.6, confidence: 0.4, observations: 2, opportunityCount: 3, source: 'match' } },
+            regionalInterest: {},
+            predictedObjectives: [],
+          };
+          const view = getFilteredAiMemoryInspectionView(mem, {
+            viewerTeamId: 'team_player',
+            ownerTeamId: 'team_opponent',
+            persistentMemoryEnabled: false,
+          });
+          const lines = buildInspectionExplainabilityNarrative(view);
+          return view.isRedacted && view.strategicProfiles.length === 0 && lines.some(l => l.includes('hidden')) || JSON.stringify({ view, lines });
+        },
+      ],
+      [
+        'a19_bounds_ok',
+        'Empty actor memory passes bounds audit',
+        () => memoryBoundsOk(createEmptyAiActorMemory('ai')) || JSON.stringify(auditActorMemoryBounds(createEmptyAiActorMemory('ai'))),
+      ],
+      [
+        'a19_bounds_fail',
+        'Oversized event list fails bounds audit',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = Array.from({ length: AGENT19_AI_MEMORY_EVENT_CAP + 1 }, (_, i) => ({
+            id: `e${i}`,
+            turn: i,
+            actionType: 'sell',
+            actorId: 'player',
+            targetId: null,
+            regionId: null,
+            summary: 's',
+            importance: 1,
+            valence: 0,
+            stableKey: `k${i}`,
+          }));
+          return !memoryBoundsOk(mem) || 'accepted oversize events';
+        },
+      ],
+      [
+        'a19_decision_trace',
+        'Decision trace report merges horizon and slices',
+        () => {
+          const snap = buildAiMemoryHorizonSnapshot(null);
+          const report = buildAgent19DecisionTraceReport({
+            before: { type: 'sabotage', score: 10 },
+            after: {
+              type: 'sabotage',
+              score: 14,
+              memoryInfluence: 4,
+              memoryInfluenceSlices: [
+                { horizon: 'short_term_match', delta: 4, reason: 'rivalry' },
+                { horizon: 'team_directive', delta: 0, reason: '' },
+              ].filter(s => s.delta),
+            },
+            horizonSnapshot: snap,
+          });
+          return report.memoryInfluence === 4 && report.narrativeLines.length >= 2 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_horizon_compare',
+        'Horizon diff detects event count change',
+        () => {
+          const a = buildAiMemoryHorizonSnapshot(null);
+          const mem = createEmptyAiActorMemory('ai');
+          mem.events = [
+            {
+              id: 'e1',
+              turn: 1,
+              actionType: 'sell',
+              actorId: 'player',
+              targetId: null,
+              regionId: null,
+              summary: 's',
+              importance: 1,
+              valence: 0,
+              stableKey: 'k1',
+            },
+            {
+              id: 'e2',
+              turn: 2,
+              actionType: 'sell',
+              actorId: 'player',
+              targetId: null,
+              regionId: null,
+              summary: 's2',
+              importance: 1,
+              valence: 0,
+              stableKey: 'k2',
+            },
+          ];
+          const b = buildAiMemoryHorizonSnapshot(mem);
+          const lines = compareHorizonSnapshots(a, b);
+          return lines.some(l => l.includes('Match events')) || lines.join('|');
+        },
+      ],
+      [
+        'a19_horizon_labels',
+        'Horizon labels are human readable',
+        () => labelMemoryHorizon('long_term_prior').includes('Earlier') || labelMemoryHorizon('long_term_prior'),
+      ],
+      [
+        'a19_slice_rank',
+        'Influence slices rank by magnitude',
+        () => {
+          const ranked = rankInfluenceSlicesByMagnitude([
+            { horizon: 'short_term_match', delta: 1, reason: 'a' },
+            { horizon: 'team_directive', delta: 25, reason: 'b' },
+          ]);
+          return ranked[0].delta === 25 && formatHorizonBadge('team_directive') === 'Team directive' || JSON.stringify(ranked);
+        },
       ],
     ]),
   };
@@ -461,12 +954,31 @@ export function runAgent19ChunkSelfTests(): { results: MemoryEvalResult[]; passe
 export interface MemoryExplainabilityLabProps {
   snapshot: AiMemoryHorizonSnapshot;
   title?: string;
+  ownerActorId?: string;
+  viewerTeamId?: string | null;
+  ownerTeamId?: string | null;
+  fullInspection?: boolean;
   onRunSelfTests?: () => void;
 }
 
 /** LAB stub for Agent 25 wiring — shows horizon + explainability brief lines. */
 export function MemoryExplainabilityLab(props: MemoryExplainabilityLabProps) {
   const lines = buildMemoryExplainabilityBrief(props.snapshot);
+  const inspectionLines =
+    props.ownerActorId != null
+      ? buildInspectionExplainabilityNarrative(
+          getFilteredAiMemoryInspectionView(
+            { ownerActorId: props.ownerActorId, events: [], relationships: {}, opponentModels: {}, adaptivePlan: null, seenKeys: [], lastDecayTurn: 0 },
+            {
+              viewerTeamId: props.viewerTeamId,
+              ownerTeamId: props.ownerTeamId,
+              fullInspection: props.fullInspection,
+              persistentMemoryEnabled: false,
+            },
+          ),
+        )
+      : [];
+  const allLines = inspectionLines.length > 1 ? [...lines, ...inspectionLines.slice(0, 4)] : lines;
   return (
     <div style={{ padding: 12, fontSize: 12, color: '#e2e8f0' }} data-testid="agent-19-memory-explainability-lab">
       <strong style={{ color: '#a78bfa' }}>
@@ -474,7 +986,7 @@ export function MemoryExplainabilityLab(props: MemoryExplainabilityLabProps) {
       </strong>
       <div style={{ marginTop: 8, opacity: 0.9 }}>{props.snapshot.qualityNote}</div>
       <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-        {lines.map((line, i) => (
+        {allLines.map((line, i) => (
           <li key={i} style={{ marginBottom: 4 }}>
             {line}
           </li>
