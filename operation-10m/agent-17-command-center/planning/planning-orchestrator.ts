@@ -73,6 +73,8 @@ import { buildAgent17RealmIndex } from './realm-index.ts';
 import { buildAgent17SuccessionAccord } from './succession-accord.ts';
 import { buildAgent17CanonIndex } from './canon-index.ts';
 import { buildAgent17LegitimacyAccord } from './legitimacy-accord.ts';
+import { buildAgent17CharterIndex } from './charter-index.ts';
+import { buildAgent17SanctionAccord } from './sanction-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -427,6 +429,16 @@ export function buildAgent17PlanningDepthSnapshot(
     successionAccord,
     realmIndex,
   });
+  const charterIndex = buildAgent17CharterIndex({
+    legitimacyAccord,
+    canonIndex,
+    successionAccord,
+  });
+  const sanctionAccord = buildAgent17SanctionAccord({
+    charterIndex,
+    legitimacyAccord,
+    canonIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -482,6 +494,8 @@ export function buildAgent17PlanningDepthSnapshot(
     successionAccord,
     canonIndex,
     legitimacyAccord,
+    charterIndex,
+    sanctionAccord,
   };
 }
 

@@ -5,7 +5,7 @@ Baseline **`b9e129bd`** · **1,645,538** projected · push-first · no V9.4 · n
 Round 27 parent: **`9f4a7ae9`**.
 
 | Subject | `feat(op10m): O10-187 scale wave round 28 canon depth` |
-| SHA | **PLACEHOLDER** |
+| SHA | **`8cff5d67`** (`8cff5d673e25b56e79054c9e31dc4d6a5a1c0251`) |
 
 Canon depth · **773/773** tests · **99** goals · chunk **28848** lines.
 

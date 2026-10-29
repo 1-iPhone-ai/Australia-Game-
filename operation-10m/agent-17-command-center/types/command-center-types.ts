@@ -233,6 +233,8 @@ export interface Agent17PlanningDepthSnapshot {
   successionAccord: Agent17SuccessionAccordSnapshot;
   canonIndex: Agent17CanonIndexSnapshot;
   legitimacyAccord: Agent17LegitimacyAccordSnapshot;
+  charterIndex: Agent17CharterIndexSnapshot;
+  sanctionAccord: Agent17SanctionAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1075,6 +1077,40 @@ export interface Agent17LegitimacyAccordSnapshot {
   canonBand: Agent17CanonIndexSnapshot['band'];
   successionBand: Agent17SuccessionAccordSnapshot['band'];
   legitimacySettled: boolean;
+  headline: string;
+}
+
+export interface Agent17CharterArticle {
+  id: string;
+  label: string;
+  enacted: boolean;
+  weight: number;
+}
+
+export interface Agent17CharterIndexSnapshot {
+  charterScore: number;
+  band: 'enacted' | 'pending' | 'repealed';
+  articles: Agent17CharterArticle[];
+  legitimacyBand: Agent17LegitimacyAccordSnapshot['band'];
+  canonBand: Agent17CanonIndexSnapshot['band'];
+  charterEnacted: boolean;
+  headline: string;
+}
+
+export interface Agent17SanctionMeasure {
+  id: string;
+  label: string;
+  binding: boolean;
+  weight: number;
+}
+
+export interface Agent17SanctionAccordSnapshot {
+  sanctionScore: number;
+  band: 'binding' | 'suspended' | 'lifted';
+  measures: Agent17SanctionMeasure[];
+  charterBand: Agent17CharterIndexSnapshot['band'];
+  legitimacyBand: Agent17LegitimacyAccordSnapshot['band'];
+  sanctionBinding: boolean;
   headline: string;
 }
 

@@ -695,6 +695,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Revoked canon or void succession yields legitimacyAccordBlocksCanon.',
     severity: 'major',
   },
+  {
+    id: 'G17-100',
+    title: 'Charter index on planning depth',
+    category: 'telemetry',
+    acceptance: 'charterIndex reports charterScore 0–100 with enacted/pending/repealed band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-101',
+    title: 'Sanction accord measures complete',
+    category: 'telemetry',
+    acceptance: 'sanctionAccord exposes ≥5 measures and sanctionScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-102',
+    title: 'Repealed charter lifts sanction accord',
+    category: 'integration',
+    acceptance: 'Repealed charter or forfeit legitimacy yields sanctionAccordBlocksCharter.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

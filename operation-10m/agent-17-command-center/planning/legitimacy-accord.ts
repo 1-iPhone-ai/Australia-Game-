@@ -100,3 +100,7 @@ export function buildAgent17LegitimacyAccord(
 export function legitimacyAccordBlocksCanon(snapshot: Agent17LegitimacyAccordSnapshot): boolean {
   return snapshot.band === 'forfeit' || !snapshot.legitimacySettled;
 }
+
+export function legitimacyAccordBlocksCharter(snapshot: Agent17LegitimacyAccordSnapshot): boolean {
+  return snapshot.band === 'forfeit' || !snapshot.legitimacySettled;
+}
