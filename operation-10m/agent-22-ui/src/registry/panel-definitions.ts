@@ -1,0 +1,377 @@
+import type { EvolvingPanelDefinition, ProgressionTier } from '../types/progression.js';
+
+const core = (
+  partial: Omit<EvolvingPanelDefinition, 'progressionTier' | 'unlock'>
+): EvolvingPanelDefinition => ({
+  ...partial,
+  progressionTier: 0,
+  unlock: {},
+});
+
+const tiered = (
+  tier: ProgressionTier,
+  unlock: EvolvingPanelDefinition['unlock'],
+  partial: Omit<EvolvingPanelDefinition, 'progressionTier' | 'unlock'>
+): EvolvingPanelDefinition => ({
+  ...partial,
+  progressionTier: tier,
+  unlock,
+});
+
+/** Intent nav targets from V9.4 `IntentNavTarget` with progression metadata. */
+export const NAV_TARGET_PANELS: EvolvingPanelDefinition[] = [
+  core({
+    id: 'nav_map',
+    label: 'Map',
+    description: 'Regional map, travel planning, and territory overview.',
+    category: 'core',
+    kind: 'nav_target',
+    navTarget: 'map',
+    legacyUiPatchKeys: ['showMap'],
+    essential: true,
+    railOrder: 10,
+    tags: ['navigation', 'core'],
+  }),
+  core({
+    id: 'nav_travel',
+    label: 'Travel',
+    description: 'Move between regions and manage routes.',
+    category: 'core',
+    kind: 'nav_target',
+    navTarget: 'travel',
+    legacyUiPatchKeys: ['showTravelModal', 'showMap'],
+    essential: true,
+    railOrder: 20,
+  }),
+  core({
+    id: 'nav_challenges',
+    label: 'Challenges',
+    description: 'Regional challenges and standing actions.',
+    category: 'regional',
+    kind: 'nav_target',
+    navTarget: 'challenges',
+    legacyUiPatchKeys: ['showChallenges'],
+    railOrder: 30,
+  }),
+  tiered(1, { minDay: 1 }, {
+    id: 'nav_workshop',
+    label: 'Workshop',
+    description: 'Crafting, recipes, and production chains.',
+    category: 'economy',
+    kind: 'nav_target',
+    navTarget: 'workshop',
+    legacyUiPatchKeys: ['showWorkshop'],
+    railOrder: 40,
+    tags: ['crafting'],
+  }),
+  tiered(1, { minDay: 1 }, {
+    id: 'nav_market',
+    label: 'Market',
+    description: 'Buy and sell goods on the market.',
+    category: 'economy',
+    kind: 'nav_target',
+    navTarget: 'market',
+    legacyUiPatchKeys: ['showMarket'],
+    railOrder: 50,
+  }),
+  tiered(1, { minDay: 2 }, {
+    id: 'nav_resource_market',
+    label: 'Resource Exchange',
+    description: 'Bulk resource trading and spot prices.',
+    category: 'economy',
+    kind: 'nav_target',
+    navTarget: 'resource_market',
+    legacyUiPatchKeys: ['showResourceMarket'],
+    railOrder: 55,
+  }),
+  tiered(1, { minDay: 2 }, {
+    id: 'nav_shop',
+    label: 'Shop',
+    description: 'Equipment and consumable purchases.',
+    category: 'economy',
+    kind: 'nav_target',
+    navTarget: 'shop',
+    legacyUiPatchKeys: ['showShop'],
+    railOrder: 60,
+  }),
+  tiered(2, { minDay: 3, minInterfaceLevel: 'guided' }, {
+    id: 'nav_contracts',
+    label: 'Contracts',
+    description: 'Regional contracts and obligations.',
+    category: 'regional',
+    kind: 'nav_target',
+    navTarget: 'contracts',
+    legacyUiPatchKeys: ['showRegionalContractsModal'],
+    railOrder: 70,
+  }),
+  tiered(2, { minDay: 4, requiredConceptIds: ['capital_allocation'] }, {
+    id: 'nav_investments',
+    label: 'Investments',
+    description: 'Portfolio, stocks, and long-horizon bets.',
+    category: 'strategic',
+    kind: 'nav_target',
+    navTarget: 'investments',
+    legacyUiPatchKeys: ['showInvestments'],
+    railOrder: 80,
+  }),
+  tiered(2, { minDay: 5 }, {
+    id: 'nav_loans',
+    label: 'Loans & Credit',
+    description: 'Advanced lending, collateral, and credit lines.',
+    category: 'economy',
+    kind: 'nav_target',
+    navTarget: 'loans',
+    legacyUiPatchKeys: ['showAdvancedLoans'],
+    railOrder: 85,
+    tags: ['finance'],
+  }),
+  tiered(2, { minDay: 6 }, {
+    id: 'nav_infrastructure',
+    label: 'Infrastructure',
+    description: 'Build projects and regional infrastructure.',
+    category: 'regional',
+    kind: 'nav_target',
+    navTarget: 'infrastructure',
+    legacyUiPatchKeys: ['showInfrastructureProjectsModal'],
+    railOrder: 90,
+  }),
+  tiered(3, { minDay: 8, minInterfaceLevel: 'advanced' }, {
+    id: 'nav_expeditions',
+    label: 'Expeditions',
+    description: 'Relics, expeditions, and high-risk ventures.',
+    category: 'strategic',
+    kind: 'nav_target',
+    navTarget: 'expeditions',
+    legacyUiPatchKeys: ['showExpeditionsRelicsModal'],
+    railOrder: 100,
+  }),
+  tiered(3, { minDay: 10 }, {
+    id: 'nav_diplomacy',
+    label: 'Diplomacy',
+    description: 'Rival relationships and diplomatic actions.',
+    category: 'social',
+    kind: 'nav_target',
+    navTarget: 'diplomacy',
+    legacyUiPatchKeys: ['showAiRivalryModal'],
+    railOrder: 110,
+  }),
+  tiered(3, { minDay: 12, minInterfaceLevel: 'advanced' }, {
+    id: 'nav_sabotage',
+    label: 'Covert Operations',
+    description: 'Sabotage and asymmetric rival actions.',
+    category: 'strategic',
+    kind: 'nav_target',
+    navTarget: 'sabotage',
+    legacyUiPatchKeys: ['showSabotage'],
+    railOrder: 115,
+  }),
+  tiered(2, { minDay: 3 }, {
+    id: 'nav_progress',
+    label: 'Progress',
+    description: 'Objectives, milestones, and scenario progress.',
+    category: 'core',
+    kind: 'nav_target',
+    navTarget: 'progress',
+    legacyUiPatchKeys: ['showProgress'],
+    railOrder: 35,
+  }),
+  tiered(2, { minDay: 4 }, {
+    id: 'nav_ledger',
+    label: 'Activity Ledger',
+    description: 'Auditable log of actions and state changes.',
+    category: 'diagnostics',
+    kind: 'nav_target',
+    navTarget: 'ledger',
+    legacyUiPatchKeys: ['showGameActivityLedgerDashboard'],
+    railOrder: 120,
+  }),
+  core({
+    id: 'nav_help',
+    label: 'Help',
+    description: 'Mechanics directory and contextual help.',
+    category: 'core',
+    kind: 'nav_target',
+    navTarget: 'help',
+    legacyUiPatchKeys: ['showHelp'],
+    essential: true,
+    railOrder: 5,
+  }),
+  core({
+    id: 'nav_settings',
+    label: 'Settings',
+    description: 'Game settings, accessibility, and interface presets.',
+    category: 'core',
+    kind: 'nav_target',
+    navTarget: 'settings',
+    legacyUiPatchKeys: ['showSettings'],
+    essential: true,
+    railOrder: 200,
+  }),
+  tiered(4, { minInterfaceLevel: 'expert' }, {
+    id: 'nav_automation',
+    label: 'Automation',
+    description: 'Auto mode and adaptive match manager.',
+    category: 'automation',
+    kind: 'nav_target',
+    navTarget: 'automation',
+    legacyUiPatchKeys: ['showSettings', 'settingsActiveTab'],
+    railOrder: 130,
+  }),
+  tiered(4, { minInterfaceLevel: 'expert' }, {
+    id: 'nav_diagnostics',
+    label: 'Diagnostics',
+    description: 'Replay diagnostics and developer tooling.',
+    category: 'diagnostics',
+    kind: 'nav_target',
+    navTarget: 'diagnostics',
+    legacyUiPatchKeys: ['showSettings', 'showAutoModeDiagnosticsDrawer'],
+    railOrder: 140,
+  }),
+  tiered(4, { minInterfaceLevel: 'advanced' }, {
+    id: 'nav_replay',
+    label: 'Replay',
+    description: 'Replay viewer and match reconstruction.',
+    category: 'diagnostics',
+    kind: 'nav_target',
+    navTarget: 'replay',
+    legacyUiPatchKeys: ['showReplayViewer'],
+    railOrder: 135,
+  }),
+  tiered(3, { minInterfaceLevel: 'advanced' }, {
+    id: 'nav_governance',
+    label: 'Governance',
+    description: 'Oversight, voting, and team governance.',
+    category: 'social',
+    kind: 'nav_target',
+    navTarget: 'governance',
+    legacyUiPatchKeys: ['showSettings'],
+    railOrder: 125,
+  }),
+  tiered(2, { minDay: 2 }, {
+    id: 'nav_ask_game',
+    label: 'Ask Game AI',
+    description: 'Natural-language questions about visible state.',
+    category: 'automation',
+    kind: 'nav_target',
+    navTarget: 'ask_game',
+    legacyUiPatchKeys: ['showAskGameAi'],
+    railOrder: 15,
+  }),
+];
+
+/** Floating widgets aligned with V9.4 contextual hiding ids. */
+export const FLOATING_WIDGET_PANELS: EvolvingPanelDefinition[] = [
+  tiered(1, { minDay: 1 }, {
+    id: 'widget_quick_actions',
+    label: 'Quick Actions',
+    description: 'Compact action launcher dock.',
+    category: 'core',
+    kind: 'floating_widget',
+    widgetId: 'quick_actions',
+    railOrder: 10,
+  }),
+  tiered(1, { minDay: 1 }, {
+    id: 'widget_ask_game',
+    label: 'Ask Game (Floating)',
+    description: 'Floating entry to Ask Game AI.',
+    category: 'automation',
+    kind: 'floating_widget',
+    widgetId: 'ask_game_floating_button',
+    legacyUiPatchKeys: ['showAskGameAi'],
+    railOrder: 20,
+  }),
+  tiered(2, { minDay: 3, minInterfaceLevel: 'guided' }, {
+    id: 'widget_guardian',
+    label: 'Guardian',
+    description: 'Guardian AI safety controls.',
+    category: 'automation',
+    kind: 'floating_widget',
+    widgetId: 'guardian_floating_button',
+    railOrder: 30,
+  }),
+  tiered(3, { minDay: 6, minInterfaceLevel: 'advanced' }, {
+    id: 'widget_strategy_planner',
+    label: 'Strategy Planner',
+    description: 'Multi-step strategy plan widget.',
+    category: 'strategic',
+    kind: 'floating_widget',
+    widgetId: 'strategy_planner_widget',
+    railOrder: 40,
+  }),
+  tiered(3, { minDay: 7, minInterfaceLevel: 'advanced' }, {
+    id: 'widget_ai_command',
+    label: 'AI Command Center',
+    description: 'Command center widget for AI teams.',
+    category: 'automation',
+    kind: 'floating_widget',
+    widgetId: 'ai_command_center_widget',
+    railOrder: 50,
+  }),
+  tiered(5, { minInterfaceLevel: 'expert' }, {
+    id: 'widget_dev_diagnostics',
+    label: 'Developer Diagnostics',
+    description: 'Dev-only diagnostics widget.',
+    category: 'diagnostics',
+    kind: 'floating_widget',
+    widgetId: 'developer_diagnostics_widget',
+    railOrder: 60,
+  }),
+];
+
+export const SETTINGS_TAB_PANELS: EvolvingPanelDefinition[] = [
+  core({
+    id: 'settings_tab_interface',
+    label: 'Interface',
+    description: 'Layout presets, launcher, and evolving UI.',
+    category: 'core',
+    kind: 'settings_tab',
+    essential: true,
+    railOrder: 1,
+  }),
+  tiered(1, {}, {
+    id: 'settings_tab_accessibility',
+    label: 'Accessibility',
+    description: 'Focus, motion, screen reader, and text scale.',
+    category: 'core',
+    kind: 'settings_tab',
+    railOrder: 2,
+  }),
+  tiered(3, { minInterfaceLevel: 'advanced' }, {
+    id: 'settings_tab_automation',
+    label: 'Automation',
+    description: 'Auto mode and co-pilot settings.',
+    category: 'automation',
+    kind: 'settings_tab',
+    railOrder: 10,
+  }),
+  tiered(4, { minInterfaceLevel: 'expert' }, {
+    id: 'settings_tab_replay_diag',
+    label: 'Replay & Diagnostics',
+    description: 'Replay tooling and regression hooks.',
+    category: 'diagnostics',
+    kind: 'settings_tab',
+    railOrder: 20,
+  }),
+];
+
+export const EVOLVING_UI_PANEL_REGISTRY: EvolvingPanelDefinition[] = [
+  ...NAV_TARGET_PANELS,
+  ...FLOATING_WIDGET_PANELS,
+  ...SETTINGS_TAB_PANELS,
+];
+
+export const EVOLVING_UI_PANEL_BY_ID: Record<string, EvolvingPanelDefinition> = Object.fromEntries(
+  EVOLVING_UI_PANEL_REGISTRY.map(p => [p.id, p])
+);
+
+export function listPanelsByCategory(category: EvolvingPanelDefinition['category']): EvolvingPanelDefinition[] {
+  return EVOLVING_UI_PANEL_REGISTRY.filter(p => p.category === category);
+}
+
+export function listPanelsForNavTarget(navTarget: string): EvolvingPanelDefinition[] {
+  return EVOLVING_UI_PANEL_REGISTRY.filter(p => p.navTarget === navTarget);
+}
+
+export function listPanelsForWidget(widgetId: string): EvolvingPanelDefinition[] {
+  return EVOLVING_UI_PANEL_REGISTRY.filter(p => p.widgetId === widgetId);
+}
