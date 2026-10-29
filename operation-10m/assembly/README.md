@@ -22,6 +22,7 @@ node scripts/measure-loc.mjs --write-audit operation-10m/assembly/audits/loc-bas
 node operation-10m/assembly/assemble.mjs --dry-run
 node operation-10m/assembly/sync-manifest.mjs --remote-op10m
 node operation-10m/assembly/tranche-dry-run.mjs --tranche operation-10m/assembly/tranches/tranche-01-op10m-registry.json
+node operation-10m/assembly/tests/cross-system-smoke.mjs
 ```
 
 Only Agent 25 promotes `--out` assembly to canonical on `op10m/agent-25-integration`.
