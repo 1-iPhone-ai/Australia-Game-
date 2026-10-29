@@ -162,6 +162,24 @@ import {
   stepTurnsWithBudgetOrchestratedAdvance,
   type BatchAdvanceWithOrchestratedGate,
 } from './batch-advance-orchestrated-step.js';
+import {
+  summarizeBatchOrchestratedAdvanceReport,
+  type BatchOrchestratedAdvanceSummary,
+} from './batch-orchestrated-advance-summary.js';
+import {
+  compareBatchOrchestratedReports,
+  type BatchOrchestratedReportCompareResult,
+} from './batch-orchestrated-report-compare.js';
+import {
+  gateStabilizationCalmStreak,
+  type StabilizationCalmStreakGateResult,
+} from './stabilization-calm-streak-gate.js';
+import {
+  stepTurnsWithBudgetOrchestratedAuditedAdvance,
+  computeBatchOrchestratedAuditDigest,
+  type BatchAdvanceWithOrchestratedAudit,
+  type BatchOrchestratedAuditedReport,
+} from './batch-advance-orchestrated-audited-step.js';
 import { computeBatchStabilizationAlignmentScore } from './batch-stabilization-alignment-score.js';
 import {
   gateBatchAdvancePostStabilization,
@@ -562,6 +580,43 @@ export class TurnTimeEngine {
 
   computeBatchOrchestratedAdvanceDigest(report: BatchOrchestratedAdvanceReport): string {
     return computeBatchOrchestratedAdvanceDigest(report);
+  }
+
+  summarizeBatchOrchestratedAdvanceReport(
+    report: BatchOrchestratedAdvanceReport,
+    orchestratedDigest: string,
+  ): BatchOrchestratedAdvanceSummary {
+    return summarizeBatchOrchestratedAdvanceReport(report, orchestratedDigest);
+  }
+
+  compareBatchOrchestratedReports(
+    baseline: BatchOrchestratedAdvanceReport,
+    candidate: BatchOrchestratedAdvanceReport,
+  ): BatchOrchestratedReportCompareResult {
+    return compareBatchOrchestratedReports(baseline, candidate);
+  }
+
+  gateStabilizationCalmStreak(
+    batch: BatchAdvanceResult,
+    capture: BatchStabilizationQueueCapture,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): StabilizationCalmStreakGateResult {
+    return gateStabilizationCalmStreak(batch, capture, stabilizationByTurn);
+  }
+
+  stepTurnsWithBudgetOrchestratedAuditedAdvance(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof stepTurnsWithBudgetOrchestratedAuditedAdvance>[3],
+  ): BatchAdvanceWithOrchestratedAudit {
+    return stepTurnsWithBudgetOrchestratedAuditedAdvance(this, maxSteps, budget, input);
+  }
+
+  computeBatchOrchestratedAuditDigest(
+    report: BatchOrchestratedAuditedReport,
+    summary: BatchOrchestratedAdvanceSummary,
+  ): string {
+    return computeBatchOrchestratedAuditDigest(report, summary);
   }
 
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {

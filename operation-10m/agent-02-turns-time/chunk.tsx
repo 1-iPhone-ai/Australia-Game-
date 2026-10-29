@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: 0022373bee292353
+// content-sha256-prefix: b84881b3b87c9c1a
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -2118,6 +2118,43 @@ export class TurnTimeEngine {
     return computeBatchOrchestratedAdvanceDigest(report);
   }
 
+  summarizeBatchOrchestratedAdvanceReport(
+    report: BatchOrchestratedAdvanceReport,
+    orchestratedDigest: string,
+  ): BatchOrchestratedAdvanceSummary {
+    return summarizeBatchOrchestratedAdvanceReport(report, orchestratedDigest);
+  }
+
+  compareBatchOrchestratedReports(
+    baseline: BatchOrchestratedAdvanceReport,
+    candidate: BatchOrchestratedAdvanceReport,
+  ): BatchOrchestratedReportCompareResult {
+    return compareBatchOrchestratedReports(baseline, candidate);
+  }
+
+  gateStabilizationCalmStreak(
+    batch: BatchAdvanceResult,
+    capture: BatchStabilizationQueueCapture,
+    stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+  ): StabilizationCalmStreakGateResult {
+    return gateStabilizationCalmStreak(batch, capture, stabilizationByTurn);
+  }
+
+  stepTurnsWithBudgetOrchestratedAuditedAdvance(
+    maxSteps: number,
+    budget: TurnAdvanceBudgetState,
+    input?: Parameters<typeof stepTurnsWithBudgetOrchestratedAuditedAdvance>[3],
+  ): BatchAdvanceWithOrchestratedAudit {
+    return stepTurnsWithBudgetOrchestratedAuditedAdvance(this, maxSteps, budget, input);
+  }
+
+  computeBatchOrchestratedAuditDigest(
+    report: BatchOrchestratedAuditedReport,
+    summary: BatchOrchestratedAdvanceSummary,
+  ): string {
+    return computeBatchOrchestratedAuditDigest(report, summary);
+  }
+
   buildTurnPipelineReport(before?: TurnTimeSnapshot): Agent02TurnPipelineReport {
     return buildAgent02TurnPipelineReport(this.snapshot(), before);
   }
@@ -3776,6 +3813,173 @@ export function stepTurnsWithBudgetOrchestratedAdvance(
   };
 }
 
+// --- src/batch-orchestrated-advance-summary.ts ---
+
+export interface BatchOrchestratedAdvanceSummary {
+  ok: boolean;
+  completedSteps: number;
+  alignmentRatio: number;
+  preGateOk: boolean | null;
+  reboundTurns: readonly number[];
+  compositeDigest: string | null;
+  orchestratedDigest: string;
+}
+
+export function summarizeBatchOrchestratedAdvanceReport(
+  report: BatchOrchestratedAdvanceReport,
+  orchestratedDigest: string,
+): BatchOrchestratedAdvanceSummary {
+  return {
+    ok: report.ok,
+    completedSteps: report.batch.completed,
+    alignmentRatio: report.alignment.ratio,
+    preGateOk: report.preGate?.ok ?? null,
+    reboundTurns: report.rebound?.reboundTurns ?? [],
+    compositeDigest: report.readiness.compositeDigest ?? null,
+    orchestratedDigest,
+  };
+}
+
+// --- src/batch-orchestrated-report-compare.ts ---
+
+export interface BatchOrchestratedReportCompareResult {
+  ok: boolean;
+  completedDelta: number;
+  alignmentDelta: number;
+  readinessChanged: boolean;
+  reboundChanged: boolean;
+}
+
+export function compareBatchOrchestratedReports(
+  baseline: BatchOrchestratedAdvanceReport,
+  candidate: BatchOrchestratedAdvanceReport,
+): BatchOrchestratedReportCompareResult {
+  const completedDelta = candidate.batch.completed - baseline.batch.completed;
+  const alignmentDelta = candidate.alignment.ratio - baseline.alignment.ratio;
+  const baselineRebound = (baseline.rebound?.reboundTurns ?? []).join(',');
+  const candidateRebound = (candidate.rebound?.reboundTurns ?? []).join(',');
+  return {
+    ok:
+      baseline.ok === candidate.ok &&
+      baseline.readiness.digest === candidate.readiness.digest &&
+      baselineRebound === candidateRebound,
+    completedDelta,
+    alignmentDelta,
+    readinessChanged: baseline.readiness.digest !== candidate.readiness.digest,
+    reboundChanged: baselineRebound !== candidateRebound,
+  };
+}
+
+// --- src/stabilization-calm-streak-gate.ts ---
+
+export interface StabilizationCalmStreakViolation {
+  priorTurn: number;
+  turnIndex: number;
+  code: 'sustained_calm_over_rebound';
+}
+
+export interface StabilizationCalmStreakGateResult {
+  calmStreakLength: number;
+  violations: StabilizationCalmStreakViolation[];
+  ok: boolean;
+}
+
+/**
+ * Round 13: consecutive Agent 05 calm flags cannot span a queue rebound between stepped turns.
+ */
+export function gateStabilizationCalmStreak(
+  batch: BatchAdvanceResult,
+  capture: BatchStabilizationQueueCapture,
+  stabilizationByTurn: Readonly<Record<number, ExternalStabilizationTurnSignals>>,
+): StabilizationCalmStreakGateResult {
+  const steppedTurns: number[] = [];
+  for (const step of batch.steps) {
+    if (step.blockedByPause) continue;
+    steppedTurns.push(step.clockBefore.turnIndex);
+  }
+
+  const violations: StabilizationCalmStreakViolation[] = [];
+  let calmStreakLength = 0;
+
+  for (let i = 0; i < steppedTurns.length; i += 1) {
+    const turn = steppedTurns[i]!;
+    const calm = normalizeExternalStabilizationSignals(stabilizationByTurn[turn]).postQueueCalm;
+    if (calm) calmStreakLength += 1;
+    else calmStreakLength = 0;
+
+    if (i === 0) continue;
+    const priorTurn = steppedTurns[i - 1]!;
+    const priorCalm = normalizeExternalStabilizationSignals(stabilizationByTurn[priorTurn]).postQueueCalm;
+    if (!priorCalm || !calm) continue;
+
+    const afterPrior = capture.queueAfterByTurn[priorTurn];
+    const beforeTurn = capture.queueBeforeByTurn[turn];
+    if (!afterPrior || !beforeTurn) continue;
+
+    if (countAgent02QueueDepth(beforeTurn) > countAgent02QueueDepth(afterPrior)) {
+      violations.push({ priorTurn, turnIndex: turn, code: 'sustained_calm_over_rebound' });
+    }
+  }
+
+  return { calmStreakLength, violations, ok: violations.length === 0 };
+}
+
+// --- src/batch-advance-orchestrated-audited-step.ts ---
+
+export interface BatchOrchestratedAuditedReport extends BatchOrchestratedAdvanceReport {
+  calmStreak?: StabilizationCalmStreakGateResult;
+}
+
+export interface BatchAdvanceWithOrchestratedAudit extends BatchAdvanceWithOrchestratedGate {
+  report: BatchOrchestratedAuditedReport;
+  summary: BatchOrchestratedAdvanceSummary;
+  auditDigest: string;
+}
+
+export function computeBatchOrchestratedAuditDigest(
+  report: BatchOrchestratedAuditedReport,
+  summary: BatchOrchestratedAdvanceSummary,
+): string {
+  return fnv1a64Hex(
+    JSON.stringify({
+      ok: report.ok && (report.calmStreak?.ok ?? true),
+      summary: summary.orchestratedDigest,
+      calmStreak: report.calmStreak?.calmStreakLength ?? 0,
+      violations: report.calmStreak?.violations.length ?? 0,
+    }),
+  );
+}
+
+/**
+ * Round 13: orchestrated advance + calm-streak gate + Agent 25-friendly summary.
+ */
+export function stepTurnsWithBudgetOrchestratedAuditedAdvance(
+  engine: TurnTimeEngine,
+  maxSteps: number,
+  budget: TurnAdvanceBudgetState,
+  input?: BatchAdvanceOrchestratedInput,
+): BatchAdvanceWithOrchestratedAudit {
+  const run = stepTurnsWithBudgetOrchestratedAdvance(engine, maxSteps, budget, input);
+  const calmStreak =
+    input?.stabilizationByTurn !== undefined
+      ? gateStabilizationCalmStreak(run.report.batch, run.report.capture, input.stabilizationByTurn)
+      : undefined;
+  const calmOk = calmStreak?.ok ?? true;
+  const report: BatchOrchestratedAuditedReport = {
+    ...run.report,
+    calmStreak,
+    ok: run.report.ok && calmOk,
+  };
+  const summary = summarizeBatchOrchestratedAdvanceReport(report, run.orchestratedDigest);
+  const auditDigest = computeBatchOrchestratedAuditDigest(report, summary);
+  return {
+    report,
+    orchestratedDigest: run.orchestratedDigest,
+    summary: { ...summary, ok: report.ok },
+    auditDigest,
+  };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -3926,7 +4130,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '2.2.0';
+export const AGENT_02_MODULE_VERSION = '2.3.0';
 
 
 
@@ -4359,6 +4563,70 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
         },
 
       }).report.ok,
+
+  });
+
+  const audited = new TurnTimeEngine();
+
+  audited.registerObligation({ id: 'aud', dueTurn: 2, kind: 'k' });
+
+  const auditedRun = stepTurnsWithBudgetOrchestratedAuditedAdvance(audited, 1, createTurnAdvanceBudget(2), {
+
+    stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } },
+
+  });
+
+  results.push({
+
+    id: 'agent02_orchestrated_audited',
+
+    name: 'orchestrated audited advance ok with summary',
+
+    passed: auditedRun.report.ok && auditedRun.auditDigest.length === 16,
+
+  });
+
+  results.push({
+
+    id: 'agent02_calm_streak_gate',
+
+    name: 'calm streak gate rejects sustained calm over rebound',
+
+    passed:
+
+      !gateStabilizationCalmStreak(
+
+        new TurnTimeEngine().stepTurnsWithBudgetStabilizationCapture(2, createTurnAdvanceBudget(3)).batch,
+
+        {
+
+          queueBeforeByTurn: {
+
+            1: { pendingEventDueCount: 0, pendingObligationDueCount: 0 },
+
+            2: { pendingEventDueCount: 0, pendingObligationDueCount: 1 },
+
+          },
+
+          queueAfterByTurn: {
+
+            1: { pendingEventDueCount: 0, pendingObligationDueCount: 0 },
+
+            2: { pendingEventDueCount: 0, pendingObligationDueCount: 0 },
+
+          },
+
+        },
+
+        {
+
+          1: { postQueueCalm: true, pendingStabilizationWave: false },
+
+          2: { postQueueCalm: true, pendingStabilizationWave: false },
+
+        },
+
+      ).ok,
 
   });
 

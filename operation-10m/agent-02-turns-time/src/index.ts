@@ -53,4 +53,8 @@ export * from './batch-stabilization-alignment-score.js';
 export * from './batch-advance-post-stabilization-gate.js';
 export * from './batch-orchestrated-advance-report.js';
 export * from './batch-advance-orchestrated-step.js';
+export * from './batch-orchestrated-advance-summary.js';
+export * from './batch-orchestrated-report-compare.js';
+export * from './stabilization-calm-streak-gate.js';
+export * from './batch-advance-orchestrated-audited-step.js';
 export * from './engine.js';
