@@ -20,8 +20,25 @@ export {
 
 export type { Agent08CapacityAdjustment, Agent08TaxLaborInputs } from './tax-labor-capacity-linkage';
 
+export {
+  AGENT08_SUPPLY_DEPTH_SCHEMA_VERSION,
+  applySupplyChainDepthEvidence,
+  computeNationalSupplyDepthSummary,
+  deriveFirmSupplyChainProfile,
+  deriveFirmSupplyChainProfiles,
+  runAgent08SupplyChainSelfTests,
+} from './supply-chain-firm-depth';
+
+export type {
+  FirmSupplyChainProfile,
+  FirmSupplyDepthBand,
+  NationalSupplyDepthSummary,
+  RegionalSupplyDepthSummary,
+} from './supply-chain-firm-depth';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
+import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -36,5 +53,10 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
-  return [...core.slice(0, 5), ...taxLabor];
+  const supply = runAgent08SupplyChainSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
+  return [...core.slice(0, 5), ...taxLabor, ...supply];
 }

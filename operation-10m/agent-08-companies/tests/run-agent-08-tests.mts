@@ -1,4 +1,4 @@
-import { runAgent08ModuleSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
+import { runAgent08ModuleSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
 
 function main() {
   const tax = runAgent08TaxLaborSelfTests();
@@ -8,6 +8,14 @@ function main() {
     process.exit(1);
   }
   console.log(`Agent 08 tax/labor: ${tax.length} passed`);
+
+  const supply = runAgent08SupplyChainSelfTests();
+  const failedSupply = supply.filter(t => !t.passed);
+  if (failedSupply.length) {
+    console.error('Agent 08 supply chain tests failed:', failedSupply);
+    process.exit(1);
+  }
+  console.log(`Agent 08 supply chain: ${supply.length} passed`);
 
   const moduleTests = runAgent08ModuleSelfTests();
   const failed = moduleTests.filter(t => !t.passed);

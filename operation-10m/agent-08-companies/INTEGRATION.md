@@ -18,6 +18,8 @@ Recommended placement: adjacent to existing V10.14 private sector block (SECTION
 | `buildPrivateSectorInputs` | Build inputs from Living Regions, V10.1, V10.8, V10.0, V10.10 workforce |
 | `computeNationalPrivateSector` | Derive national + regional private ecosystems each turn |
 | `applyTaxLaborCapacityOverlay` | Optional overlay after fiscal (V10.12) + labor snapshots |
+| `computeNationalSupplyDepthSummary` | Firm-level supply depth + capacity stress aggregation |
+| `applySupplyChainDepthEvidence` | Bounded evidence tags on company rows |
 | `privateSectorWorldRoots` | World Reaction roots from derived private-sector events |
 | `runAgent08ModuleSelfTests` | Lab / release self-test registry |
 
