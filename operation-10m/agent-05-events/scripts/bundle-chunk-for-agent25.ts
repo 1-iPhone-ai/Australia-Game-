@@ -118,6 +118,7 @@ const SOURCE_FILES = [
   'generated/chain-catalog-tranche48.ts',
   'generated/chain-catalog-tranche49.ts',
   'generated/chain-catalog-tranche50.ts',
+  'generated/chain-catalog-tranche51.ts',
   'src/chain-catalog-aggregate.ts',
   'generated/regional-hook-catalog.ts',
 ] as const;
@@ -201,8 +202,15 @@ function bundleSources(): string {
     `      OP10M_AGENT05_CHAIN_CATALOG_TRANCHE3.length === 360 &&`,
     `      OP10M_AGENT05_CHAIN_CATALOG.some((c) => c.chainId.startsWith('op10m_t3_')),`,
     `  });`,
-    `  results.push({`,
-    `    id: 'agent05_tranche50_scale_wave_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready_lattice',
+  `  results.push({`,
+  `    id: 'agent05_tranche51_scale_wave_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready_commit_lattice',`,
+  `    name: 'tranche51 scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-wave-ready-commit-lattice chains present',`,
+  `    passed:`,
+  `      OP10M_AGENT05_CHAIN_CATALOG_TRANCHE51.length === 320 &&`,
+  `      OP10M_AGENT05_CHAIN_CATALOG.some((c) => c.chainId.startsWith('op10m_t51_')),`,
+  `  });`,
+  `  results.push({`,
+  `    id: 'agent05_tranche50_scale_wave_full_chunks_handoff_closure_finalize_seal_sync_latch_wave_ready_lattice',
     name: 'tranche50 scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-wave-ready-lattice chains present',
     passed:
       OP10M_AGENT05_CHAIN_CATALOG_TRANCHE50.length === 320 &&
@@ -620,7 +628,7 @@ const manifest = {
   contentSha256Prefix: contentSha256.slice(0, 16),
   chunkPath: `operation-10m/${moduleId}/chunk.tsx`,
   chunkLineCount: lineCount,
-  chainCount: 16200,
+  chainCount: 16520,
   regenerate: 'npm run bundle:agent05',
 };
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');

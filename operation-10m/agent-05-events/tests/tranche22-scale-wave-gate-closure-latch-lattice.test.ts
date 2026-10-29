@@ -18,12 +18,12 @@ describe('Tranche 22 scale-wave-gate-closure-latch lattice catalog', () => {
   it('adds 320 scale-wave-gate-closure-latch lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE22_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche22Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 16200);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 16520);
   });
 
   it('uses op10m_t22 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 16200);
+    assert.equal(ids.size, 16520);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE22) {
       assert.match(c.chainId, /^op10m_t22_/);
     }
