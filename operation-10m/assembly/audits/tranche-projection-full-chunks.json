@@ -1,16 +1,16 @@
 {
   "projectionId": "tranche-projection-full-chunks",
-  "dryRunAt": "2026-10-29T06:06:03.610Z",
+  "dryRunAt": "2026-10-29T06:11:33.090Z",
   "canonicalBaseCommit": "bc1adf3",
   "baselineAuditedFunctional": 389566,
-  "projectedAuditedFunctional": 548824,
-  "deltaAuditedFunctional": 159258,
+  "projectedAuditedFunctional": 549452,
+  "deltaAuditedFunctional": 159886,
   "baselinePhysicalLines": 419353,
-  "projectedPhysicalLines": 583710,
-  "branchHeadCount": 28,
-  "branchesScannedExcludingIntegration": 27,
-  "assemblyReadyRemote": 23,
-  "modulesInManifest": 24,
+  "projectedPhysicalLines": 584429,
+  "branchHeadCount": 29,
+  "branchesScannedExcludingIntegration": 28,
+  "assemblyReadyRemote": 24,
+  "modulesInManifest": 25,
   "integrationOrder": [
     "agent-01-strategic-gameplay",
     "agent-02-turns-time",
@@ -25,6 +25,7 @@
     "agent-11-cities",
     "agent-12-infrastructure",
     "agent-13-energy",
+    "agent-14-housing",
     "agent-15-trade",
     "agent-16-guardian",
     "agent-17-command-center",
@@ -124,6 +125,11 @@
       "moduleId": "agent-13-energy",
       "slot": "pre-final-export",
       "contentSha256": "bcbe9089db3088f71a1941b146e0e144e872d11d15afaf5096553157ce22beb7"
+    },
+    {
+      "moduleId": "agent-14-housing",
+      "slot": "pre-final-export",
+      "contentSha256": "cab5b0dbd1974a08cdc0c2612bbab7d019e9d06045754cadae4d89321166f34b"
     },
     {
       "moduleId": "agent-15-trade",

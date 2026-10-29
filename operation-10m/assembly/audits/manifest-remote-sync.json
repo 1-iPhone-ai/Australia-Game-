@@ -1,12 +1,12 @@
 {
-  "scannedAt": "2026-10-29T06:05:58.790Z",
+  "scannedAt": "2026-10-29T06:11:27.783Z",
   "canonicalBase": "origin/australia-game-upgrade",
   "baselineCommit": "bc1adf3",
-  "originOp10mHeadCount": 28,
-  "branchHeadCount": 27,
-  "branchCount": 27,
-  "assemblyReadyCount": 23,
-  "pendingAgent14": true,
+  "originOp10mHeadCount": 29,
+  "branchHeadCount": 28,
+  "branchCount": 28,
+  "assemblyReadyCount": 24,
+  "pendingAgent14": false,
   "rows": [
     {
       "branch": "origin/op10m/agent-01-strategic-gameplay",
@@ -156,6 +156,16 @@
       "markerModuleId": "agent-13-energy",
       "assemblyReady": true,
       "contentSha256": "bcbe9089db3088f71a1941b146e0e144e872d11d15afaf5096553157ce22beb7",
+      "defaultSlot": "pre-final-export"
+    },
+    {
+      "branch": "origin/op10m/agent-14-housing",
+      "branchSlug": "agent-14-housing",
+      "moduleId": "agent-14-housing",
+      "chunkPath": "operation-10m/modules/agent-14-housing/chunk.tsx",
+      "markerModuleId": "agent-14-housing",
+      "assemblyReady": true,
+      "contentSha256": "cab5b0dbd1974a08cdc0c2612bbab7d019e9d06045754cadae4d89321166f34b",
       "defaultSlot": "pre-final-export"
     },
     {

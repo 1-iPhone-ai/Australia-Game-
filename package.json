@@ -12,7 +12,9 @@
     "op10m:sync-manifest": "node operation-10m/assembly/sync-manifest.mjs",
     "op10m:dry-run-bundle": "node operation-10m/assembly/dry-run-bundle.mjs",
     "op10m:promote-tranche": "node operation-10m/assembly/promote-tranche.mjs",
-    "op10m:tranche-dry-run": "node operation-10m/assembly/tranche-dry-run.mjs --tranche operation-10m/assembly/tranches/tranche-01-op10m-registry.json"
+    "op10m:tranche-dry-run": "node operation-10m/assembly/tranche-dry-run.mjs --tranche operation-10m/assembly/tranches/tranche-01-op10m-registry.json",
+    "op10m:full-chunks-dry-run": "node operation-10m/assembly/full-chunks-dry-run.mjs",
+    "op10m:scale-path": "node operation-10m/assembly/scale-path-gate.mjs --write-audit"
   },
   "dependencies": {
     "react": "19.3.1",
