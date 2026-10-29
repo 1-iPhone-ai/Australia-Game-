@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | Module base (round 44 docs tip) | **`a40e1d4`** | `docs(op10m): O10-219 · wave 44 · round 44 handoff` |
 | Gate feat (origin, push-first) | **`2f0b7e0`** | `feat(op10m): O10-221 · wave 45 · round 45` |
-| Origin tip | **`a54b258`** | `docs(op10m): O10-221 · wave 45 · round 45 handoff gate pins` |
+| Origin tip | **`016a07d`** | `docs(op10m): O10-221 · wave 45 · round 45 handoff gate pins` |
 
 Gate subject scan: **O10-221 · wave 45 · round 45** (feat pushed before docs; **424/424** post-push).
 
