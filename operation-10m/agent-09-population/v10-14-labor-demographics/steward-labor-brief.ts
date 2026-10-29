@@ -26,6 +26,12 @@ export function buildStewardLaborBrief(
   if ((state.activeMigrationShocks?.length ?? 0) >= 2) {
     hints.push('Multiple migration shocks — avoid stacking auto commits in shocked regions.');
   }
+  if (state.interregionalRebalancingPlan.moves.some(m => m.priority === 'high')) {
+    hints.push('High-priority interregional rebalancing — review corridor moves before auto workforce commits.');
+  }
+  if (state.laborResilienceScorecard?.band === 'fragile') {
+    hints.push(state.laborResilienceScorecard.stewardNote);
+  }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
   }

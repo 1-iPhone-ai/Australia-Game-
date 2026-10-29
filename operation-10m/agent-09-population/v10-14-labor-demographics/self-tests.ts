@@ -6,6 +6,10 @@ import { REGION_LABOR_BASELINES, lookupRegionalLaborBaseline } from './catalog/r
 import { answerLaborDemographicsQuestion, detectLaborDemographicsQuery } from './gi-labor-queries';
 import { applyRegionalMigrationSpillovers, spilloverNeighborList } from './regional-migration-spillovers';
 import { computeRegionalWageMigrationCoupling } from './wage-migration-coupling';
+import { computeNationalWorkforceCapacityBridge } from './workforce-capacity-bridge';
+import { computeLaborResilienceScorecard } from './labor-resilience-scorecard';
+import { computeInterregionalLaborRebalancingPlan } from './interregional-labor-rebalancing';
+import { SKILLED_LABOR_PATHWAYS, lookupSkilledLaborPathway, pathwaysForIndustry } from './catalog/skilled-labor-pathways';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -298,6 +302,37 @@ export function runV1014LaborDemographicsSelfTests(): {
   check('R310', (r1.state.integratedLaborBrief?.topStrainRegions.length ?? 0) >= 1, 'strain regions listed');
   check('R311', runLaborStressScenario('ld_sc_housing_affordability_crunch', baseInp)?.delta.wagePressureScore !== undefined, 'housing scenario');
   check('R312', validateLaborDemographicsState({ ...r1.state, population: 1 } as any).valid === false, 'forbidden key still blocked');
+
+  check('R401', SKILLED_LABOR_PATHWAYS.length >= 8, 'skilled pathway catalog');
+  check('R402', Boolean(lookupSkilledLaborPathway('path_tech_nsw_vic')?.narrative), 'pathway lookup');
+  check('R403', pathwaysForIndustry('mining').length >= 1, 'mining pathways');
+  check('R404', Boolean(r1.state.workforceCapacityBridge?.nationalBand), 'capacity bridge on state');
+  check('R405', Object.keys(r1.state.workforceCapacityBridge?.regions ?? {}).length === 8, 'regional capacity gaps');
+  check(
+    'R406',
+    (rBoom.state.workforceCapacityBridge?.nationalGapIndex ?? 0) >= (r1.state.workforceCapacityBridge?.nationalGapIndex ?? 0) - 3,
+    'boom raises capacity gap'
+  );
+  check('R407', Boolean(r1.state.laborResilienceScorecard?.compositeScore), 'resilience scorecard');
+  check('R408', (r1.state.laborResilienceScorecard?.dimensions.length ?? 0) === 4, 'four resilience dimensions');
+  check(
+    'R409',
+    (rHhBad.state.laborResilienceScorecard?.compositeScore ?? 100) <= (rHh.state.laborResilienceScorecard?.compositeScore ?? 0) + 5,
+    'household strain lowers resilience'
+  );
+  check('R410', Boolean(r1.state.interregionalRebalancingPlan?.summary), 'rebalancing plan summary');
+  check('R411', detectLaborDemographicsQuery('workforce capacity gap') === 'workforce_capacity', 'GI capacity detect');
+  check('R412', detectLaborDemographicsQuery('labor resilience score') === 'labor_resilience', 'GI resilience detect');
+  check('R413', answerLaborDemographicsQuestion(r1.state, 'workforce_capacity').headline.length > 5, 'GI capacity answer');
+  const bridgeOnly = computeNationalWorkforceCapacityBridge(r1.state.turn, r1.state.regions, r1.state.industryLinks);
+  check('R414', bridgeOnly.dominantShortageIndustry != null, 'bridge dominant industry');
+  const plan = computeInterregionalLaborRebalancingPlan(r1.state, r1.state.integratedLaborBrief!, bridgeOnly);
+  check('R415', plan.moves.every(m => m.expectedRelief >= 0), 'rebalancing relief bounded');
+  check(
+    'R416',
+    computeLaborResilienceScorecard(r1.state, r1.state.integratedLaborBrief!, natBudget, bridgeOnly).band.length > 3,
+    'resilience band string'
+  );
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

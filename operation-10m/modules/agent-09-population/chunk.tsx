@@ -198,6 +198,9 @@ export interface NationalLaborDemographicsState {
   activeMigrationShocks?: LaborMigrationShockView[];
   integratedLaborBrief?: IntegratedLaborMarketBrief;
   laborAuditTip?: LaborTurnAuditEntry;
+  workforceCapacityBridge?: NationalWorkforceCapacityBridge;
+  laborResilienceScorecard?: LaborResilienceScorecard;
+  interregionalRebalancingPlan?: InterregionalLaborRebalancingPlan;
 }
 
 export type MigrationShockKind =
@@ -265,6 +268,60 @@ export interface LaborTurnAuditEntry {
   shockCount: number;
   compositePressureIndex: number;
   bandLine: string;
+}
+
+export type WorkforceCapacityBand = 'surplus' | 'balanced' | 'tight' | 'critical_gap';
+
+export interface RegionalWorkforceCapacityGap {
+  regionId: string;
+  demandIndex: number;
+  supplyIndex: number;
+  gapIndex: number;
+  band: WorkforceCapacityBand;
+  skilledPathwayBoost: number;
+  narrative: string;
+}
+
+export interface NationalWorkforceCapacityBridge {
+  turn: number;
+  nationalGapIndex: number;
+  nationalBand: WorkforceCapacityBand;
+  regions: Record<string, RegionalWorkforceCapacityGap>;
+  dominantShortageIndustry: StrategicIndustryKind | null;
+  summary: string;
+}
+
+export type LaborResilienceBand = 'fragile' | 'watchful' | 'steady' | 'robust';
+
+export interface LaborResilienceDimension {
+  id: 'shock_buffer' | 'budget_cushion' | 'automation_headroom' | 'capacity_margin';
+  score: number;
+  band: LaborResilienceBand;
+  label: string;
+}
+
+export interface LaborResilienceScorecard {
+  turn: number;
+  compositeScore: number;
+  band: LaborResilienceBand;
+  dimensions: LaborResilienceDimension[];
+  headline: string;
+  stewardNote: string;
+}
+
+export interface LaborRebalancingMove {
+  id: string;
+  fromRegionId: string;
+  toRegionId: string;
+  priority: 'high' | 'medium' | 'low';
+  rationale: string;
+  expectedRelief: number;
+}
+
+export interface InterregionalLaborRebalancingPlan {
+  turn: number;
+  moves: LaborRebalancingMove[];
+  summary: string;
 }
 
 export interface LaborDemographicsPersisted {
@@ -1343,7 +1400,9 @@ export type LaborGiQueryTopic =
   | 'employment_linkage'
   | 'demographics'
   | 'migration_shocks'
-  | 'household_budget';
+  | 'household_budget'
+  | 'workforce_capacity'
+  | 'labor_resilience';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -1361,6 +1420,8 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(migrat|inflow|outflow|relocate)/.test(q)) return 'migration_flow';
   if (/\b(employment link|jobs.*output|labor market tight)/.test(q)) return 'employment_linkage';
   if (/\b(demograph|aging|youth)/.test(q)) return 'demographics';
+  if (/\b(workforce capacity|capacity gap|labor shortage)/.test(q)) return 'workforce_capacity';
+  if (/\b(labor resilience|resilience score)/.test(q)) return 'labor_resilience';
   if (/\b(labor demo|workforce structure|v10\.14)/.test(q)) return 'national_summary';
   return null;
 }
@@ -1430,6 +1491,24 @@ export function answerLaborDemographicsQuestion(
         fact: state.householdBudgetSummary || 'Household budget detail not attached.',
         inference: 'Budget pressure adjusts wages and migration attractiveness without currency fields.',
         projection: 'Severe affordability increases outflow shock risk.'
+      };
+    case 'workforce_capacity':
+      return {
+        topic,
+        headline: state.workforceCapacityBridge?.summary || 'Workforce capacity bridge unavailable.',
+        fact: `National gap band ${state.workforceCapacityBridge?.nationalBand ?? 'unknown'}; dominant industry ${state.workforceCapacityBridge?.dominantShortageIndustry ?? 'n/a'}.`,
+        inference: state.workforceCapacityBridge?.regions.NSW?.narrative || state.summary,
+        projection: 'Demand vs supply indices use output linkage — not literal headcount.'
+      };
+    case 'labor_resilience':
+      return {
+        topic,
+        headline: state.laborResilienceScorecard?.headline || 'Labor resilience scorecard unavailable.',
+        fact:
+          state.laborResilienceScorecard?.dimensions.map(d => `${d.label}: ${Math.round(d.score)}`).join('; ') ||
+          'No resilience dimensions.',
+        inference: state.laborResilienceScorecard?.stewardNote || state.outlook,
+        projection: 'Resilience blends shocks, budget, automation, and capacity margin.'
       };
     default:
       return {
@@ -1769,6 +1848,12 @@ export function buildStewardLaborBrief(
   if ((state.activeMigrationShocks?.length ?? 0) >= 2) {
     hints.push('Multiple migration shocks — avoid stacking auto commits in shocked regions.');
   }
+  if (state.interregionalRebalancingPlan.moves.some(m => m.priority === 'high')) {
+    hints.push('High-priority interregional rebalancing — review corridor moves before auto workforce commits.');
+  }
+  if (state.laborResilienceScorecard?.band === 'fragile') {
+    hints.push(state.laborResilienceScorecard.stewardNote);
+  }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
   }
@@ -1840,6 +1925,353 @@ export function summarizeCorridorExposure(state: NationalLaborDemographicsState 
     .slice(0, 3)
     .map(c => c.label);
   return hot.length ? `Active corridor pull: ${hot.join('; ')}` : 'Corridor pull balanced nationally.';
+}
+
+
+// --- source: catalog/skilled-labor-pathways.ts ---
+
+export type SkilledLaborPathwayKind =
+  | 'resource_technical'
+  | 'metro_digital'
+  | 'health_education'
+  | 'regional_agri'
+  | 'frontier_energy';
+
+export interface SkilledLaborPathway {
+  id: string;
+  kind: SkilledLaborPathwayKind;
+  primaryIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  pullStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const SKILLED_LABOR_PATHWAYS: SkilledLaborPathway[] = [
+  {
+    id: 'path_mining_wa_qld',
+    kind: 'resource_technical',
+    primaryIndustry: 'mining',
+    hostRegions: ['WA', 'QLD'],
+    pullStrength: 0.82,
+    label: 'Resource technical rotation',
+    narrative: 'Fly-in workforce and skilled trades follow supercycle output without census migration counts.'
+  },
+  {
+    id: 'path_tech_nsw_vic',
+    kind: 'metro_digital',
+    primaryIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    pullStrength: 0.88,
+    label: 'Metro digital talent lanes',
+    narrative: 'Technology output concentration raises skilled inflow pressure in capital corridors.'
+  },
+  {
+    id: 'path_research_act_nsw',
+    kind: 'health_education',
+    primaryIndustry: 'research',
+    hostRegions: ['ACT', 'NSW'],
+    pullStrength: 0.64,
+    label: 'Research–policy talent loop',
+    narrative: 'Research output and policy adjacency attract specialized labor in bounded attractiveness indices.'
+  },
+  {
+    id: 'path_agri_sa_tas',
+    kind: 'regional_agri',
+    primaryIndustry: 'agriculture',
+    hostRegions: ['SA', 'TAS'],
+    pullStrength: 0.52,
+    label: 'Regional agri seasonal depth',
+    narrative: 'Agriculture linkage supports seasonal labor depth scores — not literal headcount.'
+  },
+  {
+    id: 'path_energy_nt_qld',
+    kind: 'frontier_energy',
+    primaryIndustry: 'energy',
+    hostRegions: ['NT', 'QLD'],
+    pullStrength: 0.71,
+    label: 'Frontier energy crews',
+    narrative: 'Energy frontier regions gain skilled pull when output and corridor strength align.'
+  },
+  {
+    id: 'path_manufact_vic_sa',
+    kind: 'resource_technical',
+    primaryIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    pullStrength: 0.58,
+    label: 'Manufacturing supply-chain labor',
+    narrative: 'Manufacturing hubs exchange skilled labor through interstate supply-chain coupling.'
+  },
+  {
+    id: 'path_tourism_qld_tas',
+    kind: 'regional_agri',
+    primaryIndustry: 'tourism',
+    hostRegions: ['QLD', 'TAS'],
+    pullStrength: 0.49,
+    label: 'Tourism seasonal pathways',
+    narrative: 'Tourism peaks raise short-horizon skilled service labor pull in host regions.'
+  },
+  {
+    id: 'path_trade_nsw',
+    kind: 'metro_digital',
+    primaryIndustry: 'trade',
+    hostRegions: ['NSW'],
+    pullStrength: 0.55,
+    label: 'Gateway trade logistics',
+    narrative: 'Trade gateway output supports logistics-skilled labor attractiveness in NSW.'
+  }
+];
+
+export function pathwaysForIndustry(industry: StrategicIndustryKind): SkilledLaborPathway[] {
+  return SKILLED_LABOR_PATHWAYS.filter(p => p.primaryIndustry === industry);
+}
+
+export function lookupSkilledLaborPathway(id: string): SkilledLaborPathway | undefined {
+  return SKILLED_LABOR_PATHWAYS.find(p => p.id === id);
+}
+
+export function skilledPathwayPullForRegion(regionId: string, dominantIndustry: StrategicIndustryKind | null): number {
+  if (!dominantIndustry) return 0;
+  const matches = SKILLED_LABOR_PATHWAYS.filter(
+    p => p.primaryIndustry === dominantIndustry && p.hostRegions.includes(regionId)
+  );
+  if (!matches.length) return 0;
+  return matches.reduce((a, p) => a + p.pullStrength, 0) / matches.length;
+}
+
+
+// --- source: workforce-capacity-bridge.ts ---
+  STRATEGIC_INDUSTRIES,
+  V1014_LABOR_CORE_REGIONS,
+  V1014_LABOR_INDUSTRY_LABOR_WEIGHT,
+  type LaborDemographicsIndustryLink,
+  type LaborDemographicsRegionSnapshot,
+  type NationalWorkforceCapacityBridge,
+  type RegionalWorkforceCapacityGap,
+  type StrategicIndustryKind,
+  type WorkforceCapacityBand
+} from './types';
+
+function capacityBand(gap: number): WorkforceCapacityBand {
+  if (gap <= 18) return 'surplus';
+  if (gap <= 38) return 'balanced';
+  if (gap <= 58) return 'tight';
+  return 'critical_gap';
+}
+
+function regionalDemandIndex(
+  region: LaborDemographicsRegionSnapshot,
+  industryLinks: LaborDemographicsIndustryLink[]
+): number {
+  const outputPull = region.industryOutputIndex * 0.55;
+  const linkPull =
+    industryLinks.find(l => l.industry === region.dominantIndustry)?.linkageScore ?? region.employmentLinkageScore;
+  const weight =
+    region.dominantIndustry != null ? V1014_LABOR_INDUSTRY_LABOR_WEIGHT[region.dominantIndustry] : 0.7;
+  return v1014laborClamp(outputPull * 0.4 + linkPull * 0.35 + weight * 35);
+}
+
+function regionalSupplyIndex(region: LaborDemographicsRegionSnapshot): number {
+  return v1014laborClamp(
+    region.employmentLinkageScore * 0.4 +
+      region.householdEmploymentFit * 0.25 +
+      (100 - region.workforceStrainIndex) * 0.35
+  );
+}
+
+export function computeNationalWorkforceCapacityBridge(
+  turn: number,
+  regions: Record<string, LaborDemographicsRegionSnapshot>,
+  industryLinks: LaborDemographicsIndustryLink[]
+): NationalWorkforceCapacityBridge {
+  const regionalGaps: Record<string, RegionalWorkforceCapacityGap> = {};
+  const gapSamples: number[] = [];
+  let maxGap = -1;
+  let dominantShortageIndustry: StrategicIndustryKind | null = null;
+
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    const r = regions[regionId];
+    if (!r) return;
+    const demandIndex = regionalDemandIndex(r, industryLinks);
+    const supplyIndex = regionalSupplyIndex(r);
+    const pathwayBoost = skilledPathwayPullForRegion(regionId, r.dominantIndustry) * 12;
+    const gapIndex = v1014laborClamp(demandIndex - supplyIndex + pathwayBoost * 0.15);
+    const band = capacityBand(gapIndex);
+    gapSamples.push(gapIndex);
+    if (gapIndex > maxGap && r.dominantIndustry) {
+      maxGap = gapIndex;
+      dominantShortageIndustry = r.dominantIndustry;
+    }
+    regionalGaps[regionId] = {
+      regionId,
+      demandIndex,
+      supplyIndex,
+      gapIndex,
+      band,
+      skilledPathwayBoost: pathwayBoost,
+      narrative: `${regionId}: demand ${Math.round(demandIndex)} vs supply ${Math.round(supplyIndex)} (${band.replace('_', ' ')}).`
+    };
+  });
+
+  const nationalGapIndex = v1014laborClamp(
+    gapSamples.reduce((a, b) => a + b, 0) / Math.max(1, gapSamples.length)
+  );
+  const nationalBand = capacityBand(nationalGapIndex);
+
+  const topIndustry =
+    dominantShortageIndustry ??
+    industryLinks[0]?.industry ??
+    (STRATEGIC_INDUSTRIES[0] as StrategicIndustryKind);
+
+  return {
+    turn,
+    nationalGapIndex,
+    nationalBand,
+    regions: regionalGaps,
+    dominantShortageIndustry: topIndustry,
+    summary: `Workforce capacity ${nationalBand.replace('_', ' ')} nationally (gap index ${Math.round(nationalGapIndex)}); ${topIndustry} leads demand pressure.`
+  };
+}
+
+
+// --- source: labor-resilience-scorecard.ts ---
+  IntegratedLaborMarketBrief,
+  LaborResilienceBand,
+  LaborResilienceDimension,
+  LaborResilienceScorecard,
+  NationalHouseholdBudgetDetail,
+  NationalLaborDemographicsState,
+  NationalWorkforceCapacityBridge
+} from './types';
+
+function resilienceBand(score: number): LaborResilienceBand {
+  if (score < 38) return 'fragile';
+  if (score < 52) return 'watchful';
+  if (score < 68) return 'steady';
+  return 'robust';
+}
+
+function dimBand(score: number): LaborResilienceBand {
+  return resilienceBand(score);
+}
+
+export function computeLaborResilienceScorecard(
+  state: NationalLaborDemographicsState,
+  brief: IntegratedLaborMarketBrief | null | undefined,
+  householdBudget: NationalHouseholdBudgetDetail | null | undefined,
+  capacityBridge: NationalWorkforceCapacityBridge | null | undefined
+): LaborResilienceScorecard {
+  const shockCount = state.activeMigrationShocks?.length ?? 0;
+  const shockBuffer = v1014laborClamp(72 - shockCount * 9 - (brief?.compositePressureIndex ?? 50) * 0.12);
+  const budgetCushion = v1014laborClamp(100 - (householdBudget?.nationalBudgetPressureScore ?? 50));
+  const automationHeadroom = v1014laborClamp(
+    100 - (state.regions.NSW?.automationPressureIndex ?? 50) * 0.45 - (state.automationFeedbackSummary ? 8 : 0)
+  );
+  const capacityMargin = v1014laborClamp(100 - (capacityBridge?.nationalGapIndex ?? 40));
+
+  const dimensions: LaborResilienceDimension[] = [
+    {
+      id: 'shock_buffer',
+      score: shockBuffer,
+      band: dimBand(shockBuffer),
+      label: 'Migration shock buffer'
+    },
+    {
+      id: 'budget_cushion',
+      score: budgetCushion,
+      band: dimBand(budgetCushion),
+      label: 'Household budget cushion'
+    },
+    {
+      id: 'automation_headroom',
+      score: automationHeadroom,
+      band: dimBand(automationHeadroom),
+      label: 'Automation transition headroom'
+    },
+    {
+      id: 'capacity_margin',
+      score: capacityMargin,
+      band: dimBand(capacityMargin),
+      label: 'Workforce capacity margin'
+    }
+  ];
+
+  const compositeScore = v1014laborClamp(
+    dimensions.reduce((a, d) => a + d.score, 0) / dimensions.length
+  );
+  const band = resilienceBand(compositeScore);
+  const headline = `Labor resilience ${band} (${Math.round(compositeScore)}) — ${dimensions.sort((a, b) => a.score - b.score)[0]?.label.toLowerCase() ?? 'mixed'} weakest.`;
+  const stewardNote =
+    band === 'fragile'
+      ? 'Resilience fragile — defer stacked automation and ease household strain before migration shocks.'
+      : band === 'watchful'
+        ? 'Resilience watchful — monitor strain hubs and corridor pull before major workforce shifts.'
+        : 'Resilience adequate for bounded labor band movement.';
+
+  return {
+    turn: state.turn,
+    compositeScore,
+    band,
+    dimensions,
+    headline,
+    stewardNote
+  };
+}
+
+
+// --- source: interregional-labor-rebalancing.ts ---
+  IntegratedLaborMarketBrief,
+  InterregionalLaborRebalancingPlan,
+  LaborRebalancingMove,
+  NationalLaborDemographicsState,
+  NationalWorkforceCapacityBridge
+} from './types';
+
+function movePriority(relief: number): LaborRebalancingMove['priority'] {
+  if (relief >= 12) return 'high';
+  if (relief >= 6) return 'medium';
+  return 'low';
+}
+
+export function computeInterregionalLaborRebalancingPlan(
+  state: NationalLaborDemographicsState,
+  brief: IntegratedLaborMarketBrief | null | undefined,
+  capacityBridge: NationalWorkforceCapacityBridge | null | undefined
+): InterregionalLaborRebalancingPlan {
+  if (!state.enabled || !brief) {
+    return { turn: state.turn, moves: [], summary: 'Rebalancing idle — labor layer off.' };
+  }
+
+  const strainSet = new Set(brief.topStrainRegions);
+  const opportunitySet = new Set(brief.topOpportunityRegions);
+  const moves: LaborRebalancingMove[] = [];
+
+  REGIONAL_MIGRATION_CORRIDORS.forEach(c => {
+    const fromStrain = strainSet.has(c.fromRegionId);
+    const toOpportunity = opportunitySet.has(c.toRegionId);
+    const fromGap = capacityBridge?.regions[c.fromRegionId]?.gapIndex ?? 50;
+    const toGap = capacityBridge?.regions[c.toRegionId]?.gapIndex ?? 50;
+    if (!fromStrain && fromGap < 45) return;
+    if (!toOpportunity && toGap > 55) return;
+    const relief = (fromGap - toGap) * 0.2 * c.strength;
+    if (relief < 2.5) return;
+    moves.push({
+      id: `rebal_${c.id}`,
+      fromRegionId: c.fromRegionId,
+      toRegionId: c.toRegionId,
+      priority: movePriority(relief),
+      rationale: `${c.label}: ease ${c.fromRegionId} strain toward ${c.toRegionId} opportunity (${c.industryTheme}).`,
+      expectedRelief: Math.round(relief * 10) / 10
+    });
+  });
+
+  moves.sort((a, b) => b.expectedRelief - a.expectedRelief);
+  const top = moves.slice(0, 5);
+  const summary = top.length
+    ? `Rebalancing plan: ${top.map(m => `${m.fromRegionId}→${m.toRegionId} (${m.priority})`).join('; ')}.`
+    : 'No interregional rebalancing moves recommended this turn.';
+
+  return { turn: state.turn, moves: top, summary };
 }
 
 
@@ -2328,6 +2760,26 @@ export function computeNationalLaborDemographics(
   const integratedBrief = computeIntegratedLaborMarketBrief(state, householdBudget);
   state.integratedLaborBrief = integratedBrief;
   state.laborAuditTip = buildLaborTurnAuditEntry(state, integratedBrief);
+
+  const capacityBridge = computeNationalWorkforceCapacityBridge(turn, regions, industryLinks);
+  state.workforceCapacityBridge = capacityBridge;
+  state.laborResilienceScorecard = computeLaborResilienceScorecard(
+    state,
+    integratedBrief,
+    householdBudget,
+    capacityBridge
+  );
+  state.interregionalRebalancingPlan = computeInterregionalLaborRebalancingPlan(
+    state,
+    integratedBrief,
+    capacityBridge
+  );
+  if (capacityBridge.summary) {
+    state.evidence.push(capacityBridge.summary.slice(0, 120));
+  }
+  if (state.laborResilienceScorecard.stewardNote && state.evidence.length < V1014_LABOR_LIMITS.maxEvidence) {
+    state.evidence.push(state.laborResilienceScorecard.stewardNote.slice(0, 120));
+  }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
   }
@@ -2628,6 +3080,37 @@ export function runV1014LaborDemographicsSelfTests(): {
   check('R310', (r1.state.integratedLaborBrief?.topStrainRegions.length ?? 0) >= 1, 'strain regions listed');
   check('R311', runLaborStressScenario('ld_sc_housing_affordability_crunch', baseInp)?.delta.wagePressureScore !== undefined, 'housing scenario');
   check('R312', validateLaborDemographicsState({ ...r1.state, population: 1 } as any).valid === false, 'forbidden key still blocked');
+
+  check('R401', SKILLED_LABOR_PATHWAYS.length >= 8, 'skilled pathway catalog');
+  check('R402', Boolean(lookupSkilledLaborPathway('path_tech_nsw_vic')?.narrative), 'pathway lookup');
+  check('R403', pathwaysForIndustry('mining').length >= 1, 'mining pathways');
+  check('R404', Boolean(r1.state.workforceCapacityBridge?.nationalBand), 'capacity bridge on state');
+  check('R405', Object.keys(r1.state.workforceCapacityBridge?.regions ?? {}).length === 8, 'regional capacity gaps');
+  check(
+    'R406',
+    (rBoom.state.workforceCapacityBridge?.nationalGapIndex ?? 0) >= (r1.state.workforceCapacityBridge?.nationalGapIndex ?? 0) - 3,
+    'boom raises capacity gap'
+  );
+  check('R407', Boolean(r1.state.laborResilienceScorecard?.compositeScore), 'resilience scorecard');
+  check('R408', (r1.state.laborResilienceScorecard?.dimensions.length ?? 0) === 4, 'four resilience dimensions');
+  check(
+    'R409',
+    (rHhBad.state.laborResilienceScorecard?.compositeScore ?? 100) <= (rHh.state.laborResilienceScorecard?.compositeScore ?? 0) + 5,
+    'household strain lowers resilience'
+  );
+  check('R410', Boolean(r1.state.interregionalRebalancingPlan?.summary), 'rebalancing plan summary');
+  check('R411', detectLaborDemographicsQuery('workforce capacity gap') === 'workforce_capacity', 'GI capacity detect');
+  check('R412', detectLaborDemographicsQuery('labor resilience score') === 'labor_resilience', 'GI resilience detect');
+  check('R413', answerLaborDemographicsQuestion(r1.state, 'workforce_capacity').headline.length > 5, 'GI capacity answer');
+  const bridgeOnly = computeNationalWorkforceCapacityBridge(r1.state.turn, r1.state.regions, r1.state.industryLinks);
+  check('R414', bridgeOnly.dominantShortageIndustry != null, 'bridge dominant industry');
+  const plan = computeInterregionalLaborRebalancingPlan(r1.state, r1.state.integratedLaborBrief!, bridgeOnly);
+  check('R415', plan.moves.every(m => m.expectedRelief >= 0), 'rebalancing relief bounded');
+  check(
+    'R416',
+    computeLaborResilienceScorecard(r1.state, r1.state.integratedLaborBrief!, natBudget, bridgeOnly).band.length > 3,
+    'resilience band string'
+  );
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

@@ -194,6 +194,9 @@ export interface NationalLaborDemographicsState {
   activeMigrationShocks?: LaborMigrationShockView[];
   integratedLaborBrief?: IntegratedLaborMarketBrief;
   laborAuditTip?: LaborTurnAuditEntry;
+  workforceCapacityBridge?: NationalWorkforceCapacityBridge;
+  laborResilienceScorecard?: LaborResilienceScorecard;
+  interregionalRebalancingPlan?: InterregionalLaborRebalancingPlan;
 }
 
 export type MigrationShockKind =
@@ -261,6 +264,60 @@ export interface LaborTurnAuditEntry {
   shockCount: number;
   compositePressureIndex: number;
   bandLine: string;
+}
+
+export type WorkforceCapacityBand = 'surplus' | 'balanced' | 'tight' | 'critical_gap';
+
+export interface RegionalWorkforceCapacityGap {
+  regionId: string;
+  demandIndex: number;
+  supplyIndex: number;
+  gapIndex: number;
+  band: WorkforceCapacityBand;
+  skilledPathwayBoost: number;
+  narrative: string;
+}
+
+export interface NationalWorkforceCapacityBridge {
+  turn: number;
+  nationalGapIndex: number;
+  nationalBand: WorkforceCapacityBand;
+  regions: Record<string, RegionalWorkforceCapacityGap>;
+  dominantShortageIndustry: StrategicIndustryKind | null;
+  summary: string;
+}
+
+export type LaborResilienceBand = 'fragile' | 'watchful' | 'steady' | 'robust';
+
+export interface LaborResilienceDimension {
+  id: 'shock_buffer' | 'budget_cushion' | 'automation_headroom' | 'capacity_margin';
+  score: number;
+  band: LaborResilienceBand;
+  label: string;
+}
+
+export interface LaborResilienceScorecard {
+  turn: number;
+  compositeScore: number;
+  band: LaborResilienceBand;
+  dimensions: LaborResilienceDimension[];
+  headline: string;
+  stewardNote: string;
+}
+
+export interface LaborRebalancingMove {
+  id: string;
+  fromRegionId: string;
+  toRegionId: string;
+  priority: 'high' | 'medium' | 'low';
+  rationale: string;
+  expectedRelief: number;
+}
+
+export interface InterregionalLaborRebalancingPlan {
+  turn: number;
+  moves: LaborRebalancingMove[];
+  summary: string;
 }
 
 export interface LaborDemographicsPersisted {

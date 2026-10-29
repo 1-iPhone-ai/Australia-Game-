@@ -13,7 +13,9 @@ export type LaborGiQueryTopic =
   | 'employment_linkage'
   | 'demographics'
   | 'migration_shocks'
-  | 'household_budget';
+  | 'household_budget'
+  | 'workforce_capacity'
+  | 'labor_resilience';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -31,6 +33,8 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(migrat|inflow|outflow|relocate)/.test(q)) return 'migration_flow';
   if (/\b(employment link|jobs.*output|labor market tight)/.test(q)) return 'employment_linkage';
   if (/\b(demograph|aging|youth)/.test(q)) return 'demographics';
+  if (/\b(workforce capacity|capacity gap|labor shortage)/.test(q)) return 'workforce_capacity';
+  if (/\b(labor resilience|resilience score)/.test(q)) return 'labor_resilience';
   if (/\b(labor demo|workforce structure|v10\.14)/.test(q)) return 'national_summary';
   return null;
 }
@@ -100,6 +104,24 @@ export function answerLaborDemographicsQuestion(
         fact: state.householdBudgetSummary || 'Household budget detail not attached.',
         inference: 'Budget pressure adjusts wages and migration attractiveness without currency fields.',
         projection: 'Severe affordability increases outflow shock risk.'
+      };
+    case 'workforce_capacity':
+      return {
+        topic,
+        headline: state.workforceCapacityBridge?.summary || 'Workforce capacity bridge unavailable.',
+        fact: `National gap band ${state.workforceCapacityBridge?.nationalBand ?? 'unknown'}; dominant industry ${state.workforceCapacityBridge?.dominantShortageIndustry ?? 'n/a'}.`,
+        inference: state.workforceCapacityBridge?.regions.NSW?.narrative || state.summary,
+        projection: 'Demand vs supply indices use output linkage — not literal headcount.'
+      };
+    case 'labor_resilience':
+      return {
+        topic,
+        headline: state.laborResilienceScorecard?.headline || 'Labor resilience scorecard unavailable.',
+        fact:
+          state.laborResilienceScorecard?.dimensions.map(d => `${d.label}: ${Math.round(d.score)}`).join('; ') ||
+          'No resilience dimensions.',
+        inference: state.laborResilienceScorecard?.stewardNote || state.outlook,
+        projection: 'Resilience blends shocks, budget, automation, and capacity margin.'
       };
     default:
       return {
