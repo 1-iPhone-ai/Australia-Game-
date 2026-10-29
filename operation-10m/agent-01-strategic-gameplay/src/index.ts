@@ -114,6 +114,7 @@ export {
   cosmicPerpetuityRankingBonus,
   galacticInfinityRankingBonus,
   stellarTranscendenceRankingBonus,
+  quantumOmnipresenceRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -369,6 +370,16 @@ export {
   applyStellarTranscendenceMandateBonus,
 } from './engine/coalition-stellar-transcendence.ts';
 
+export { coalitionQuantumOmnipresenceStreakIssues } from './engine/coalition-quantum-omnipresence-gates.ts';
+
+export {
+  QUANTUM_COALITION_OMNIPRESENCE_THRESHOLD,
+  advanceCoalitionQuantumOmnipresenceStreak,
+  resetCoalitionQuantumOmnipresenceStreak,
+  isQuantumCoalitionOmnipresence,
+  applyQuantumOmnipresenceMandateBonus,
+} from './engine/coalition-quantum-omnipresence.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '3.6.0';
+export const AGENT_01_MODULE_VERSION = '3.7.0';

@@ -33,6 +33,7 @@ import {
   cosmicPerpetuityRankingBonus,
   galacticInfinityRankingBonus,
   stellarTranscendenceRankingBonus,
+  quantumOmnipresenceRankingBonus,
 } from './coalition-balance.ts';
 import { scoreNationalPriorityAlignment, validateAction } from './validation.ts';
 
@@ -83,7 +84,8 @@ export function rankStrategicActions(
         universalImmortalityRankingBonus(state, action) +
         cosmicPerpetuityRankingBonus(state, action) +
         galacticInfinityRankingBonus(state, action) +
-        stellarTranscendenceRankingBonus(state, action),
+        stellarTranscendenceRankingBonus(state, action) +
+        quantumOmnipresenceRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });

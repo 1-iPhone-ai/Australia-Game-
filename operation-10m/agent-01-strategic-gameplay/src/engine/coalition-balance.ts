@@ -238,3 +238,13 @@ export function stellarTranscendenceRankingBonus(
   if (streak >= action.minCoalitionStellarTranscendenceStreakDays) return 19;
   return 2;
 }
+
+export function quantumOmnipresenceRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionQuantumOmnipresenceStreakDays === undefined) return 0;
+  const streak = state.coalitionQuantumOmnipresenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionQuantumOmnipresenceStreakDays) return 20;
+  return 2;
+}

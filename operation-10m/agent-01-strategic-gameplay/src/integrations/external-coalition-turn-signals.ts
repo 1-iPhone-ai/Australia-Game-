@@ -21,6 +21,7 @@ import { isUniversalCoalitionImmortality } from '../engine/coalition-universal-i
 import { isCosmicCoalitionPerpetuity } from '../engine/coalition-cosmic-perpetuity.ts';
 import { isGalacticCoalitionInfinity } from '../engine/coalition-galactic-infinity.ts';
 import { isStellarCoalitionTranscendence } from '../engine/coalition-stellar-transcendence.ts';
+import { isQuantumCoalitionOmnipresence } from '../engine/coalition-quantum-omnipresence.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -63,6 +64,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionGalacticInfinityStreakDays: number;
   stellarCoalitionTranscendence: boolean;
   coalitionStellarTranscendenceStreakDays: number;
+  quantumCoalitionOmnipresence: boolean;
+  coalitionQuantumOmnipresenceStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -109,6 +112,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionGalacticInfinityStreakDays: state.coalitionGalacticInfinityStreakDays ?? 0,
     stellarCoalitionTranscendence: isStellarCoalitionTranscendence(state),
     coalitionStellarTranscendenceStreakDays: state.coalitionStellarTranscendenceStreakDays ?? 0,
+    quantumCoalitionOmnipresence: isQuantumCoalitionOmnipresence(state),
+    coalitionQuantumOmnipresenceStreakDays: state.coalitionQuantumOmnipresenceStreakDays ?? 0,
   };
 }
 
@@ -155,5 +160,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionGalacticInfinityStreakDays: raw?.coalitionGalacticInfinityStreakDays ?? 0,
     stellarCoalitionTranscendence: raw?.stellarCoalitionTranscendence ?? false,
     coalitionStellarTranscendenceStreakDays: raw?.coalitionStellarTranscendenceStreakDays ?? 0,
+    quantumCoalitionOmnipresence: raw?.quantumCoalitionOmnipresence ?? false,
+    coalitionQuantumOmnipresenceStreakDays: raw?.coalitionQuantumOmnipresenceStreakDays ?? 0,
   };
 }
