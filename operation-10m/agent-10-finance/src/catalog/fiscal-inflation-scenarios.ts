@@ -1539,6 +1539,47 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'memory', 'automation', 'round42'],
   },
+  {
+    id: 'ui_shell_attention_latch_stack',
+    label: 'UI shell attention latch stack',
+    description: 'Critical player salience under shell attention latch.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      creditShockActive: true,
+      inflationSettingMultiplier: 1.47,
+      publicStability: 32,
+    },
+    tags: ['inflation', 'ui', 'round43'],
+  },
+  {
+    id: 'dashboard_regional_overlay_surge_stress',
+    label: 'Dashboard regional overlay surge stress',
+    description: 'Regional overlay surge under heatmap latch.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.44,
+      publicStability: 28,
+    },
+    tags: ['inflation', 'dashboard', 'round43'],
+  },
+  {
+    id: 'ui_dashboard_wave43_fusion_stress',
+    label: 'UI & dashboard wave 43 fusion stress',
+    description: 'Attention crisis latch colliding with heatmap overlay surge.',
+    patch: {
+      inflationSettingMultiplier: 1.54,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 18,
+    },
+    tags: ['inflation', 'ui', 'dashboard', 'round43'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

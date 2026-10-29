@@ -19,6 +19,10 @@ export interface Agent22UiSnapshot {
   wave35SalienceEscalationLatch?: boolean;
   /** Round 35: shell expectations escalation band. */
   shellExpectationsEscalationBand?: 'muted' | 'building' | 'critical';
+  /** Round 43: shell attention inflation latch. */
+  wave43ShellAttentionLatch?: boolean;
+  /** Round 43: player salience pressure band. */
+  playerSaliencePressureBand?: 'muted' | 'elevated' | 'critical';
 }
 
 export function mergeAgent22IntoMacroFinancialInputs(
@@ -61,6 +65,13 @@ export function mergeAgent22IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.shellExpectationsEscalationBand === 'building' && snapshot.inflationDashboardStressHighlight) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave43ShellAttentionLatch && snapshot.playerSaliencePressureBand === 'critical') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.playerSaliencePressureBand === 'elevated' && snapshot.playerAttentionOnCostOfLiving === 'high') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 

@@ -111,6 +111,8 @@ const FILES = [
   'inflation/team-briefing-consensus-inflation-unmooring.ts',
   'inflation/memory-realm-inflation-persistence-latch.ts',
   'inflation/automation-synthesis-inflation-cascade-surge.ts',
+  'inflation/ui-shell-inflation-attention-latch.ts',
+  'inflation/dashboard-regional-inflation-overlay-surge.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -187,6 +189,7 @@ const FILES = [
   'react/CitiesEnergyWaveInflationPanel.tsx',
   'react/GuardianTeamWaveInflationPanel.tsx',
   'react/MemoryAutomationWaveInflationPanel.tsx',
+  'react/UiDashboardWaveInflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

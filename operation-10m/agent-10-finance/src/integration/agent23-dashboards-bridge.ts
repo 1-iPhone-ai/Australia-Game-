@@ -15,6 +15,10 @@ export interface Agent23DashboardsSnapshot {
   regionalInflationOverlayLatch?: boolean;
   /** Round 35: heatmap overlay cascade band. */
   heatmapOverlayCascadeBand?: 'routine' | 'widening' | 'critical';
+  /** Round 43: heatmap overlay inflation latch. */
+  wave43HeatmapOverlayLatch?: boolean;
+  /** Round 43: regional overlay surge band. */
+  regionalOverlaySurgeBand?: 'routine' | 'widening' | 'surge';
 }
 
 export function mergeAgent23IntoMacroFinancialInputs(
@@ -51,6 +55,13 @@ export function mergeAgent23IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.heatmapOverlayCascadeBand === 'widening' && snapshot.regionalHeatmapInflationAlert) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave43HeatmapOverlayLatch && snapshot.regionalOverlaySurgeBand === 'surge') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.regionalOverlaySurgeBand === 'widening' && snapshot.dashboardRefreshUrgency === 'critical') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
