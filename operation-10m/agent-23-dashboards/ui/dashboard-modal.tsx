@@ -41,6 +41,12 @@ import { nrDashBuildBottleneckConcentration } from '../core/bottleneck-concentra
 import { nrDashBuildUtilAlignmentDrift } from '../core/util-alignment-drift.ts';
 import { nrDashBuildTrendAcceleration } from '../core/trend-acceleration.ts';
 import { nrDashBuildHubCorridorLoad } from '../core/hub-corridor-load.ts';
+import { nrDashBuildOpenNeedsConcentration } from '../core/open-needs-concentration.ts';
+import { nrDashBuildCriticalCellDensity } from '../core/critical-cell-density.ts';
+import { nrDashTopEconomyMomentumDrift, nrDashBuildEconomyMomentumDrift } from '../core/economy-momentum-drift.ts';
+import { nrDashBuildMomentumHistoryVolatility } from '../core/momentum-history-volatility.ts';
+import { nrDashBuildDependencyInboundConcentration } from '../core/dependency-inbound-concentration.ts';
+import { nrDashBuildPeripheralCorridorGap } from '../core/peripheral-corridor-gap.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -76,6 +82,8 @@ import { NrDashBorderStressStrip } from './border-stress-strip.tsx';
 import { NrDashOwnedMomentumSkewCard } from './owned-momentum-skew-card.tsx';
 import { NrDashDependencyAsymmetryStrip } from './dependency-asymmetry-strip.tsx';
 import { NrDashUtilAlignmentStrip } from './util-alignment-strip.tsx';
+import { NrDashOpenNeedsConcentrationCard } from './open-needs-concentration-card.tsx';
+import { NrDashEconomyMomentumDriftStrip } from './economy-momentum-drift-strip.tsx';
 import { RegionPositionMap } from './region-position-map.tsx';
 
 const NrDashProvenanceStrip: React.FC<{ items: NrDashProvenance[] }> = ({ items }) => (
@@ -101,6 +109,7 @@ export const NrDashOverviewTab: React.FC<{
       conditionBuckets={nrDashBuildConditionCatalog(nsState)}
     />
     <NrDashNeedsImbalanceCard imbalance={nrDashBuildNeedsImbalance(snap)} />
+    <NrDashOpenNeedsConcentrationCard conc={nrDashBuildOpenNeedsConcentration(snap)} />
     <NrDashRiskExposureCard exposure={nrDashBuildRiskExposure(snap)} />
     <NrDashOwnerStressGapCard gap={nrDashBuildOwnerStressGap(snap)} />
     <NrDashOwnedMomentumSkewCard skew={nrDashBuildOwnedMomentumSkew(snap)} />
@@ -157,6 +166,19 @@ export const NrDashRegionsTab: React.FC<{
     />
     <NrDashPeripheralIsolationStrip rows={nrDashTopPeripheralRegions(nsState, 3)} />
     <NrDashDependencyAsymmetryStrip rows={nrDashTopDependencyAsymmetry(nsState, 3)} />
+    {(() => {
+      const inboundConc = nrDashBuildDependencyInboundConcentration(nsState);
+      return inboundConc ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-inbound-concentration">
+          Dependency inbound concentration {inboundConc.concentrationIndex} · top consumer {inboundConc.topConsumerId ?? '—'} (
+          {Math.round(inboundConc.topConsumerShare * 100)}%)
+        </div>
+      ) : null;
+    })()}
+    <NrDashEconomyMomentumDriftStrip
+      meanAbsDrift={nrDashBuildEconomyMomentumDrift(snap)?.meanAbsDrift ?? 0}
+      rows={nrDashTopEconomyMomentumDrift(snap, 3)}
+    />
     {nrDashTopTensionOutliers(snap, 3).length > 0 && (
       <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-tension-outliers">
         <div className="font-semibold mb-1">Momentum ↔ resilience tension</div>
@@ -238,6 +260,7 @@ export const NrDashNetworksTab: React.FC<{
   const strainDiv = nrDashBuildStrainDiversity(ns);
   const bottleneckConc = nrDashBuildBottleneckConcentration(ns);
   const utilDrift = nrDashBuildUtilAlignmentDrift(ns);
+  const criticalDensity = nrDashBuildCriticalCellDensity(ns);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
       <NrDashUtilAlignmentStrip drift={utilDrift} />
@@ -247,6 +270,12 @@ export const NrDashNetworksTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-strain-diversity">
           Strain diversity index {strainDiv.diversityIndex} · dominant {strainDiv.dominantCondition ?? '—'} · μ weight{' '}
           {strainDiv.meanWeight}
+        </div>
+      )}
+      {criticalDensity && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-critical-cell-density">
+          Critical+ cell density {criticalDensity.density} · {criticalDensity.criticalPlusCount}/{criticalDensity.cellCount}
+          {criticalDensity.worstRegionId ? ` · worst ${criticalDensity.worstRegionId}` : ''}
         </div>
       )}
       {bottleneckConc && (
@@ -309,6 +338,7 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
   const movers = nrDashTopTrendMovers(snap.regions, 5);
   const coherence = nrDashBuildTrendCoherence(snap);
   const acceleration = nrDashBuildTrendAcceleration(snap);
+  const historyVol = nrDashBuildMomentumHistoryVolatility(snap);
   return (
     <div data-testid="nr-dash-tab-trends">
       <NrDashProvenanceStrip items={snap.provenance} />
@@ -318,6 +348,15 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
           <div>
             score {coherence.coherenceScore} · σ {coherence.stdDev}
             {coherence.divergentRegionId ? ` · outlier ${coherence.divergentRegionId}` : ''}
+          </div>
+        </div>
+      )}
+      {historyVol && (
+        <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-history-volatility">
+          <div className="font-semibold mb-1">Momentum history volatility</div>
+          <div>
+            μ range {historyVol.meanVolatility} · max {historyVol.maxVolatility}
+            {historyVol.outlierRegionId ? ` · outlier ${historyVol.outlierRegionId}` : ''}
           </div>
         </div>
       )}
@@ -384,6 +423,7 @@ export const NrDashMapTab: React.FC<{
   const hubRows = useMemo(() => nrDashTopMapHubs(nsState, 3), [nsState]);
   const primaryHub = useMemo(() => nrDashPrimaryMapHub(nsState), [nsState]);
   const hubLoad = useMemo(() => nrDashBuildHubCorridorLoad(nsState), [nsState]);
+  const peripheralGap = useMemo(() => nrDashBuildPeripheralCorridorGap(nsState), [nsState]);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
@@ -391,6 +431,12 @@ export const NrDashMapTab: React.FC<{
       <NrDashCorridorStressStrip corridors={nrDashTopCorridorStress(nsState, 4)} />
       <NrDashBorderStressStrip rows={nrDashTopBorderStress(nsState, 3)} />
       <NrDashMapHubStrip hubs={hubRows} primaryHubId={primaryHub} />
+      {peripheralGap && peripheralGap.peripheralLinkCount > 0 && (
+        <p className="text-[10px] opacity-75" data-testid="nr-dash-peripheral-corridor-gap">
+          Hub vs peripheral corridor gap: hub μ {Math.round(peripheralGap.hubMeanStress * 100)}% · rim μ{' '}
+          {Math.round(peripheralGap.peripheralMeanStress * 100)}% · Δ {Math.round(peripheralGap.gap * 100)}%
+        </p>
+      )}
       {hubLoad && hubLoad.touchingLinkCount > 0 && (
         <p className="text-[10px] opacity-75" data-testid="nr-dash-map-hub-load">
           Hub {hubLoad.hubRegionId} corridor load: μ stress {Math.round(hubLoad.meanLinkStress * 100)}% · peak{' '}

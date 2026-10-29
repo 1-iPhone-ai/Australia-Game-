@@ -37,6 +37,12 @@ import { nrDashBuildOwnedMomentumSkew } from '../core/owned-momentum-skew.ts';
 import { nrDashBuildUtilAlignmentDrift } from '../core/util-alignment-drift.ts';
 import { nrDashBuildTrendAcceleration } from '../core/trend-acceleration.ts';
 import { nrDashBuildHubCorridorLoad } from '../core/hub-corridor-load.ts';
+import { nrDashBuildOpenNeedsConcentration } from '../core/open-needs-concentration.ts';
+import { nrDashBuildCriticalCellDensity } from '../core/critical-cell-density.ts';
+import { nrDashBuildEconomyMomentumDrift, nrDashTopEconomyMomentumDrift } from '../core/economy-momentum-drift.ts';
+import { nrDashBuildMomentumHistoryVolatility } from '../core/momentum-history-volatility.ts';
+import { nrDashBuildDependencyInboundConcentration } from '../core/dependency-inbound-concentration.ts';
+import { nrDashBuildPeripheralCorridorGap } from '../core/peripheral-corridor-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -419,6 +425,39 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_hub_load', 'Hub corridor load aggregates touching link stress', () => {
     const load = nrDashBuildHubCorridorLoad(createAgent23NsFixture())!;
     return load.hubRegionId != null && load.touchingLinkCount >= 1 && load.peakLinkStress >= 0;
+  });
+
+  check('a23_open_needs_conc', 'Open needs concentration is uniform on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const conc = nrDashBuildOpenNeedsConcentration(snap)!;
+    return conc.totalOpenNeeds === 8 && conc.concentrationIndex === 0.125;
+  });
+
+  check('a23_critical_density', 'Critical cell density counts VIC energy cell', () => {
+    const density = nrDashBuildCriticalCellDensity(createAgent23NsFixture())!;
+    return density.cellCount === 40 && density.criticalPlusCount === 1 && density.worstRegionId === 'VIC';
+  });
+
+  check('a23_econ_mom_drift', 'Economy momentum drift spans eight regions', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const drift = nrDashBuildEconomyMomentumDrift(snap)!;
+    return drift.rows.length === 8 && nrDashTopEconomyMomentumDrift(snap, 2).length === 2;
+  });
+
+  check('a23_history_vol', 'Momentum history volatility finds ACT outlier', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const vol = nrDashBuildMomentumHistoryVolatility(snap)!;
+    return vol.sampleSize === 8 && vol.maxVolatility >= vol.meanVolatility && vol.outlierRegionId === 'ACT';
+  });
+
+  check('a23_dep_inbound_conc', 'Dependency inbound concentration peaks on NT fixture', () => {
+    const conc = nrDashBuildDependencyInboundConcentration(createAgent23NsFixture())!;
+    return conc.edgeCount === 3 && conc.topConsumerId === 'NT' && conc.concentrationIndex > 0;
+  });
+
+  check('a23_peripheral_gap', 'Peripheral corridor gap compares hub vs rim stress', () => {
+    const gap = nrDashBuildPeripheralCorridorGap(createAgent23NsFixture())!;
+    return gap.hubRegionId != null && gap.peripheralLinkCount >= 1;
   });
 
   return results;
