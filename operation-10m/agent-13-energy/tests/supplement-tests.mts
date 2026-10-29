@@ -95,6 +95,11 @@ import {
   V1014_CURTAILMENT_FLEX_TURN_SCENARIOS,
 } from '../modules/curtailment-recovery-flex-load-ledger.ts';
 import {
+  runAgent13PrecinctEmbeddedScaleSelfTests,
+  runAgent13PrecinctEmbeddedTurnScenario,
+  V1014_PRECINCT_EMBEDDED_TURN_SCENARIOS,
+} from '../modules/precinct-zero-carbon-embedded-network-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -316,6 +321,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const cfTurn = runAgent13CurtailmentFlexTurnScenario(V1014_CURTAILMENT_FLEX_TURN_SCENARIOS[0]);
   ok(cfTurn.passed);
+
+  const precinctEmbedded = runAgent13PrecinctEmbeddedScaleSelfTests();
+  ok(precinctEmbedded.failed === 0 && precinctEmbedded.passed >= 7);
+
+  const peTurn = runAgent13PrecinctEmbeddedTurnScenario(V1014_PRECINCT_EMBEDDED_TURN_SCENARIOS[0]);
+  ok(peTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

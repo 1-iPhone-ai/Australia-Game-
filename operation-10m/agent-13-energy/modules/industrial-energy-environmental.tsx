@@ -163,6 +163,13 @@ import {
   type V1014RegionalFlexibleLoadOrchestrationLedger,
 } from './curtailment-recovery-flex-load-ledger';
 import {
+  advanceRegionalEmbeddedNetworkOrchestration,
+  computeRegionalZeroCarbonPrecinctLedger,
+  scoreAgent13PrecinctEmbeddedGIAlignment,
+  type V1014RegionalEmbeddedNetworkLedger,
+  type V1014RegionalZeroCarbonPrecinctLedger,
+} from './precinct-zero-carbon-embedded-network-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25703,6 +25710,10 @@ export interface V1014RegionalEnergyProfile {
   curtailmentRecoveryRelief: number;
   flexibleLoadOrchestrationBand: string;
   flexibleLoadRelief: number;
+  zeroCarbonPrecinctBand: string;
+  zeroCarbonPrecinctRelief: number;
+  embeddedNetworkBand: string;
+  embeddedNetworkRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25781,6 +25792,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalSecondLifeStorageLedgers: Record<string, V1014RegionalSecondLifeStorageLedger>;
   regionalCurtailmentRecoveryLedgers: Record<string, V1014RegionalCurtailmentRecoveryLedger>;
   regionalFlexibleLoadOrchestrationLedgers: Record<string, V1014RegionalFlexibleLoadOrchestrationLedger>;
+  regionalZeroCarbonPrecinctLedgers: Record<string, V1014RegionalZeroCarbonPrecinctLedger>;
+  regionalEmbeddedNetworkLedgers: Record<string, V1014RegionalEmbeddedNetworkLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25830,6 +25843,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalSecondLifeMemory: Record<string, { reuseIndex: number }>;
   regionalCurtailmentMemory: Record<string, { spillBalance: number; recoveryIndex: number }>;
   regionalFlexLoadMemory: Record<string, { flexIndex: number }>;
+  regionalZeroCarbonPrecinctMemory: Record<string, { decarbBalance: number; precinctIndex: number }>;
+  regionalEmbeddedNetworkMemory: Record<string, { networkIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25891,6 +25906,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalSecondLifeMemory: {},
     regionalCurtailmentMemory: {},
     regionalFlexLoadMemory: {},
+    regionalZeroCarbonPrecinctMemory: {},
+    regionalEmbeddedNetworkMemory: {},
     history: [],
   };
 }
@@ -25984,6 +26001,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     regionalCurtailmentMemory:
       typeof raw.regionalCurtailmentMemory === 'object' && raw.regionalCurtailmentMemory ? raw.regionalCurtailmentMemory : {},
     regionalFlexLoadMemory: typeof raw.regionalFlexLoadMemory === 'object' && raw.regionalFlexLoadMemory ? raw.regionalFlexLoadMemory : {},
+    regionalZeroCarbonPrecinctMemory:
+      typeof raw.regionalZeroCarbonPrecinctMemory === 'object' && raw.regionalZeroCarbonPrecinctMemory
+        ? raw.regionalZeroCarbonPrecinctMemory
+        : {},
+    regionalEmbeddedNetworkMemory:
+      typeof raw.regionalEmbeddedNetworkMemory === 'object' && raw.regionalEmbeddedNetworkMemory
+        ? raw.regionalEmbeddedNetworkMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26132,6 +26157,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalSecondLifeStorageLedgers: {},
       regionalCurtailmentRecoveryLedgers: {},
       regionalFlexibleLoadOrchestrationLedgers: {},
+      regionalZeroCarbonPrecinctLedgers: {},
+      regionalEmbeddedNetworkLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26184,6 +26211,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const secondLifeStorageLedgers: Record<string, V1014RegionalSecondLifeStorageLedger> = {};
   const curtailmentRecoveryLedgers: Record<string, V1014RegionalCurtailmentRecoveryLedger> = {};
   const flexibleLoadOrchestrationLedgers: Record<string, V1014RegionalFlexibleLoadOrchestrationLedger> = {};
+  const zeroCarbonPrecinctLedgers: Record<string, V1014RegionalZeroCarbonPrecinctLedger> = {};
+  const embeddedNetworkLedgers: Record<string, V1014RegionalEmbeddedNetworkLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26265,6 +26294,12 @@ export function computeIndustrialEnergyEnvironmentalState(
     ...persisted.regionalCurtailmentMemory,
   };
   const nextFlexLoadMemory: Record<string, { flexIndex: number }> = { ...persisted.regionalFlexLoadMemory };
+  const nextZeroCarbonPrecinctMemory: Record<string, { decarbBalance: number; precinctIndex: number }> = {
+    ...persisted.regionalZeroCarbonPrecinctMemory,
+  };
+  const nextEmbeddedNetworkMemory: Record<string, { networkIndex: number }> = {
+    ...persisted.regionalEmbeddedNetworkMemory,
+  };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -26763,6 +26798,29 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextFlexLoadMemory[regionId] = flexLoadStep.next;
     flexibleLoadOrchestrationLedgers[regionId] = flexLoadStep.ledger;
 
+    const zeroCarbonPrecinctStep = computeRegionalZeroCarbonPrecinctLedger({
+      regionId,
+      communityMicrogridRelief: microgridStep.ledger.communityMicrogridRelief,
+      districtHeatRelief: districtHeatStep.ledger.districtHeatRelief,
+      flexibleLoadRelief: flexLoadStep.ledger.flexibleLoadRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextZeroCarbonPrecinctMemory[regionId] || null,
+    });
+    nextZeroCarbonPrecinctMemory[regionId] = zeroCarbonPrecinctStep.next;
+    zeroCarbonPrecinctLedgers[regionId] = zeroCarbonPrecinctStep.ledger;
+
+    const embeddedNetworkStep = advanceRegionalEmbeddedNetworkOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      precinctBand: zeroCarbonPrecinctStep.ledger.band,
+      curtailmentRecoveryRelief: curtailmentStep.ledger.curtailmentRecoveryRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextEmbeddedNetworkMemory[regionId] || null,
+    });
+    nextEmbeddedNetworkMemory[regionId] = embeddedNetworkStep.next;
+    embeddedNetworkLedgers[regionId] = embeddedNetworkStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26810,6 +26868,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= secondLifeStep.ledger.secondLifeStorageRelief;
     pressure -= curtailmentStep.ledger.curtailmentRecoveryRelief;
     pressure -= flexLoadStep.ledger.flexibleLoadRelief;
+    pressure -= zeroCarbonPrecinctStep.ledger.zeroCarbonPrecinctRelief;
+    pressure -= embeddedNetworkStep.ledger.embeddedNetworkRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26882,6 +26942,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       secondLifeStep.ledger.summary,
       curtailmentStep.ledger.summary,
       flexLoadStep.ledger.summary,
+      zeroCarbonPrecinctStep.ledger.summary,
+      embeddedNetworkStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -27042,6 +27104,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       curtailmentRecoveryRelief: curtailmentStep.ledger.curtailmentRecoveryRelief,
       flexibleLoadOrchestrationBand: flexLoadStep.ledger.band,
       flexibleLoadRelief: flexLoadStep.ledger.flexibleLoadRelief,
+      zeroCarbonPrecinctBand: zeroCarbonPrecinctStep.ledger.band,
+      zeroCarbonPrecinctRelief: zeroCarbonPrecinctStep.ledger.zeroCarbonPrecinctRelief,
+      embeddedNetworkBand: embeddedNetworkStep.ledger.band,
+      embeddedNetworkRelief: embeddedNetworkStep.ledger.embeddedNetworkRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -27149,6 +27215,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalSecondLifeStorageLedgers: secondLifeStorageLedgers,
     regionalCurtailmentRecoveryLedgers: curtailmentRecoveryLedgers,
     regionalFlexibleLoadOrchestrationLedgers: flexibleLoadOrchestrationLedgers,
+    regionalZeroCarbonPrecinctLedgers: zeroCarbonPrecinctLedgers,
+    regionalEmbeddedNetworkLedgers: embeddedNetworkLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -27198,6 +27266,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalSecondLifeMemory: nextSecondLifeMemory,
     regionalCurtailmentMemory: nextCurtailmentMemory,
     regionalFlexLoadMemory: nextFlexLoadMemory,
+    regionalZeroCarbonPrecinctMemory: nextZeroCarbonPrecinctMemory,
+    regionalEmbeddedNetworkMemory: nextEmbeddedNetworkMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -27967,6 +28037,44 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     flexBand: rr22.state.regions.QLD?.flexibleLoadOrchestrationBand,
   });
   check('CURTAILMENT FLEX GI alignment', giCf.relevanceDelta > 0.5, giCf.reason || '');
+
+  const peInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'suburban_islanded_resilience_cluster',
+      'renewable_district_heating',
+      'industrial_demand_orchestration_hub',
+      'rez_spill_soak_recovery_loop',
+      'all_electric_precinct_master_plan',
+      'campus_decarbonisation_orchestration',
+      'embedded_solar_storage_mesh',
+      'precinct_demand_aggregation_layer',
+      'private_wire_embedded_network',
+      'thermal_network_precinct_tie',
+    ],
+  };
+  const rr23 = computeIndustrialEnergyEnvironmentalState(peInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check(
+    'ZERO CARBON precinct ledger tracked',
+    !!rr23.state.regionalZeroCarbonPrecinctLedgers.NSW?.band,
+    rr23.state.regionalZeroCarbonPrecinctLedgers.NSW?.band || '',
+  );
+  check(
+    'EMBEDDED network relief',
+    (rr23.state.regions.NSW?.embeddedNetworkRelief || 0) > 0,
+    String(rr23.state.regions.NSW?.embeddedNetworkRelief),
+  );
+  check(
+    'ZERO CARBON memory persisted',
+    !!rr23.persisted.regionalZeroCarbonPrecinctMemory.NSW,
+    String(rr23.persisted.regionalZeroCarbonPrecinctMemory.NSW?.precinctIndex),
+  );
+  const giPe = scoreAgent13PrecinctEmbeddedGIAlignment({
+    actionText: 'All electric precinct with embedded solar storage mesh',
+    precinctBand: rr23.state.regions.NSW?.zeroCarbonPrecinctBand,
+    embeddedBand: rr23.state.regions.NSW?.embeddedNetworkBand,
+  });
+  check('PRECINCT EMBEDDED GI alignment', giPe.relevanceDelta > 0.5, giPe.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
