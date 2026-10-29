@@ -44,6 +44,9 @@ import { computeNationalLaborMarketVelocityIndex } from './labor-market-velocity
 import { computeNationalSkillMismatchIndex } from './skill-mismatch-index';
 import { computeNationalLaborSupplyElasticityBrief } from './labor-supply-elasticity-brief';
 import { computeNationalTalentMobilityOutlook } from './talent-mobility-outlook';
+import { computeNationalUnderemploymentPressureBrief } from './underemployment-pressure-brief';
+import { computeNationalWageCompetitivenessIndex } from './wage-competitiveness-index';
+import { computeNationalWorkforceTransitionFrictionOutlook } from './workforce-transition-friction-outlook';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -391,6 +394,21 @@ export function computeNationalLaborDemographics(
     state.laborMarketVelocityIndex,
     capacityBridge
   );
+  state.underemploymentPressureBrief = computeNationalUnderemploymentPressureBrief(
+    state,
+    integratedBrief,
+    state.participationPressureBrief
+  );
+  state.wageCompetitivenessIndex = computeNationalWageCompetitivenessIndex(
+    state,
+    integratedBrief,
+    state.skillMismatchIndex
+  );
+  state.workforceTransitionFrictionOutlook = computeNationalWorkforceTransitionFrictionOutlook(
+    state,
+    state.laborMarketVelocityIndex,
+    state.laborSupplyElasticityBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -415,6 +433,27 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.talentMobilityOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.underemploymentPressureBrief?.band === 'severe_underuse' ||
+      state.underemploymentPressureBrief?.band === 'tight_hidden') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.underemploymentPressureBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.wageCompetitivenessIndex?.band === 'cost_burden' ||
+      state.wageCompetitivenessIndex?.band === 'stretched') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.wageCompetitivenessIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.workforceTransitionFrictionOutlook?.band === 'bottleneck' ||
+      state.workforceTransitionFrictionOutlook?.band === 'sticky') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.workforceTransitionFrictionOutlook.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

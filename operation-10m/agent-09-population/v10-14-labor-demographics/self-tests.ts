@@ -28,6 +28,15 @@ import {
 import { computeNationalSkillMismatchIndex } from './skill-mismatch-index';
 import { computeNationalLaborSupplyElasticityBrief } from './labor-supply-elasticity-brief';
 import { computeNationalTalentMobilityOutlook } from './talent-mobility-outlook';
+import {
+  WORKFORCE_INCLUSION_LEVERS,
+  inclusionEaseForRegion,
+  inclusionLeversForIndustry,
+  lookupWorkforceInclusionLever
+} from './catalog/workforce-inclusion-levers';
+import { computeNationalUnderemploymentPressureBrief } from './underemployment-pressure-brief';
+import { computeNationalWageCompetitivenessIndex } from './wage-competitiveness-index';
+import { computeNationalWorkforceTransitionFrictionOutlook } from './workforce-transition-friction-outlook';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -414,6 +423,46 @@ export function runV1014LaborDemographicsSelfTests(): {
       r1.state.participationPressureBrief
     ).stewardNote.length > 8,
     'elasticity steward note'
+  );
+
+  check('R701', WORKFORCE_INCLUSION_LEVERS.length >= 8, 'inclusion lever catalog');
+  check('R702', Boolean(lookupWorkforceInclusionLever('incl_tech_nsw_vic')?.narrative), 'inclusion lever lookup');
+  check('R703', inclusionLeversForIndustry('manufacturing').length >= 1, 'manufacturing inclusion levers');
+  check('R704', inclusionEaseForRegion('VIC', 'manufacturing') > 0, 'regional inclusion ease');
+  check('R705', Boolean(r1.state.underemploymentPressureBrief?.band), 'underemployment brief on state');
+  check('R706', (r1.state.underemploymentPressureBrief?.linkageParticipationGap ?? 0) >= 0, 'linkage participation gap');
+  check('R707', Boolean(r1.state.wageCompetitivenessIndex?.band), 'wage competitiveness on state');
+  check(
+    'R708',
+    (rHhBad.state.wageCompetitivenessIndex?.competitivenessIndex ?? 100) <=
+      (rHh.state.wageCompetitivenessIndex?.competitivenessIndex ?? 0) + 12,
+    'household strain lowers competitiveness'
+  );
+  check('R709', Boolean(r1.state.workforceTransitionFrictionOutlook?.band), 'transition friction on state');
+  check('R710', detectLaborDemographicsQuery('underemployment hidden slack') === 'underemployment', 'GI underemployment detect');
+  check('R711', detectLaborDemographicsQuery('wage competitiveness burden') === 'wage_competitiveness', 'GI competitiveness detect');
+  check('R712', detectLaborDemographicsQuery('transition friction sticky') === 'transition_friction', 'GI friction detect');
+  check('R713', answerLaborDemographicsQuestion(r1.state, 'underemployment').headline.length > 5, 'GI underemployment answer');
+  const underOnly = computeNationalUnderemploymentPressureBrief(
+    r1.state,
+    r1.state.integratedLaborBrief!,
+    r1.state.participationPressureBrief
+  );
+  check('R714', underOnly.summary.length > 10, 'underemployment standalone summary');
+  const compOnly = computeNationalWageCompetitivenessIndex(
+    r1.state,
+    r1.state.integratedLaborBrief!,
+    r1.state.skillMismatchIndex
+  );
+  check('R715', compOnly.band.length > 3, 'competitiveness band string');
+  check(
+    'R716',
+    computeNationalWorkforceTransitionFrictionOutlook(
+      r1.state,
+      r1.state.laborMarketVelocityIndex,
+      r1.state.laborSupplyElasticityBrief
+    ).stewardNote.length > 8,
+    'transition friction steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

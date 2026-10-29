@@ -50,6 +50,21 @@ export function buildStewardLaborBrief(
   if (state.talentMobilityOutlook?.band === 'hyper_mobile') {
     hints.push(state.talentMobilityOutlook.stewardNote);
   }
+  if (
+    state.underemploymentPressureBrief?.band === 'severe_underuse' ||
+    state.underemploymentPressureBrief?.band === 'tight_hidden'
+  ) {
+    hints.push(state.underemploymentPressureBrief.stewardNote);
+  }
+  if (state.wageCompetitivenessIndex?.band === 'cost_burden' || state.wageCompetitivenessIndex?.band === 'stretched') {
+    hints.push(state.wageCompetitivenessIndex.stewardNote);
+  }
+  if (
+    state.workforceTransitionFrictionOutlook?.band === 'bottleneck' ||
+    state.workforceTransitionFrictionOutlook?.band === 'sticky'
+  ) {
+    hints.push(state.workforceTransitionFrictionOutlook.stewardNote);
+  }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
   }

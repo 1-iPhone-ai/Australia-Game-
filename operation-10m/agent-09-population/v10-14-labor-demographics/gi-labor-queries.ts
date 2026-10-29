@@ -21,7 +21,10 @@ export type LaborGiQueryTopic =
   | 'labor_velocity'
   | 'skill_mismatch'
   | 'supply_elasticity'
-  | 'talent_mobility';
+  | 'talent_mobility'
+  | 'underemployment'
+  | 'wage_competitiveness'
+  | 'transition_friction';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -35,6 +38,7 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   const q = raw.toLowerCase();
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
   if (/\b(household budget|affordability|cost of living)/.test(q)) return 'household_budget';
+  if (/\b(wage compet|cost burden|competitiveness)/.test(q)) return 'wage_competitiveness';
   if (/\b(wage|pay pressure|salary pressure)/.test(q)) return 'wage_pressure';
   if (/\b(migrat|inflow|outflow|relocate)/.test(q)) return 'migration_flow';
   if (/\b(employment link|jobs.*output|labor market tight)/.test(q)) return 'employment_linkage';
@@ -47,6 +51,8 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(skill mismatch|skills gap|misaligned skills)/.test(q)) return 'skill_mismatch';
   if (/\b(supply elasticity|inelastic labor|labor supply response)/.test(q)) return 'supply_elasticity';
   if (/\b(talent mobility|mobile talent|talent flow)/.test(q)) return 'talent_mobility';
+  if (/\b(underemploy|hidden slack|labor slack)/.test(q)) return 'underemployment';
+  if (/\b(transition friction|sticky transition|workforce transition)/.test(q)) return 'transition_friction';
   if (/\b(labor demo|workforce structure|v10\.14)/.test(q)) return 'national_summary';
   return null;
 }
@@ -185,6 +191,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Mobility band ${state.talentMobilityOutlook?.band ?? 'unknown'}; corridor ${state.talentMobilityOutlook?.corridorHighlight ?? 'n/a'}.`,
         inference: state.talentMobilityOutlook?.stewardNote || state.outlook,
         projection: 'Mobility blends velocity, retention, and pathways — not literal relocation counts.'
+      };
+    case 'underemployment':
+      return {
+        topic,
+        headline: state.underemploymentPressureBrief?.summary || 'Underemployment outlook unavailable.',
+        fact: `Underemployment band ${state.underemploymentPressureBrief?.band ?? 'unknown'}; gap ${Math.round(state.underemploymentPressureBrief?.linkageParticipationGap ?? 0)}.`,
+        inference: state.underemploymentPressureBrief?.stewardNote || state.summary,
+        projection: 'Underemployment indices proxy linkage-participation slack — not literal U6 rates.'
+      };
+    case 'wage_competitiveness':
+      return {
+        topic,
+        headline: state.wageCompetitivenessIndex?.summary || 'Wage competitiveness unavailable.',
+        fact: `Competitiveness band ${state.wageCompetitivenessIndex?.band ?? 'unknown'}; index ${Math.round(state.wageCompetitivenessIndex?.competitivenessIndex ?? 50)}.`,
+        inference: state.wageCompetitivenessIndex?.stewardNote || state.outlook,
+        projection: 'Competitiveness blends wage pressure, mismatch, and capacity — bounded indices only.'
+      };
+    case 'transition_friction':
+      return {
+        topic,
+        headline: state.workforceTransitionFrictionOutlook?.summary || 'Transition friction unavailable.',
+        fact: `Friction band ${state.workforceTransitionFrictionOutlook?.band ?? 'unknown'}; automation drag ${Math.round(state.workforceTransitionFrictionOutlook?.automationDrag ?? 0)}.`,
+        inference: state.workforceTransitionFrictionOutlook?.stewardNote || state.outlook,
+        projection: 'Friction blends velocity, elasticity, and automation — not literal retraining counts.'
       };
     default:
       return {

@@ -203,6 +203,9 @@ export interface NationalLaborDemographicsState {
   skillMismatchIndex?: NationalSkillMismatchIndex;
   laborSupplyElasticityBrief?: NationalLaborSupplyElasticityBrief;
   talentMobilityOutlook?: NationalTalentMobilityOutlook;
+  underemploymentPressureBrief?: NationalUnderemploymentPressureBrief;
+  wageCompetitivenessIndex?: NationalWageCompetitivenessIndex;
+  workforceTransitionFrictionOutlook?: NationalWorkforceTransitionFrictionOutlook;
 }
 
 export type MigrationShockKind =
@@ -413,6 +416,39 @@ export interface NationalTalentMobilityOutlook {
   band: TalentMobilityBand;
   anchorRegion: string | null;
   corridorHighlight: string | null;
+  summary: string;
+  stewardNote: string;
+}
+
+export type UnderemploymentPressureBand = 'slack' | 'mixed' | 'tight_hidden' | 'severe_underuse';
+
+export interface NationalUnderemploymentPressureBrief {
+  turn: number;
+  underemploymentIndex: number;
+  band: UnderemploymentPressureBand;
+  linkageParticipationGap: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WageCompetitivenessBand = 'premium' | 'balanced' | 'stretched' | 'cost_burden';
+
+export interface NationalWageCompetitivenessIndex {
+  turn: number;
+  competitivenessIndex: number;
+  band: WageCompetitivenessBand;
+  wagePressureDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type TransitionFrictionBand = 'smooth' | 'moderate' | 'sticky' | 'bottleneck';
+
+export interface NationalWorkforceTransitionFrictionOutlook {
+  turn: number;
+  frictionIndex: number;
+  band: TransitionFrictionBand;
+  automationDrag: number;
   summary: string;
   stewardNote: string;
 }
