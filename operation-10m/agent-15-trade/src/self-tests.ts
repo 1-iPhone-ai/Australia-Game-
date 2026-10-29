@@ -399,6 +399,16 @@ import {
   createEmptyBilateralHandedWaveCyclePrimingGateSnapshot,
   bilateralHandedWaveCyclePrimingGateExportScale,
 } from './bilateral-handed-wave-cycle-priming-gate.ts';
+import {
+  computeHandedWaveCyclePrimingContinuitySnapshot,
+  createEmptyHandedWaveCyclePrimingContinuitySnapshot,
+  handedWaveCyclePrimingContinuityExportScale,
+} from './handed-wave-cycle-priming-continuity.ts';
+import {
+  computeBilateralPrimedHandoffArcOpeningGateSnapshot,
+  createEmptyBilateralPrimedHandoffArcOpeningGateSnapshot,
+  bilateralPrimedHandoffArcOpeningGateExportScale,
+} from './bilateral-primed-handoff-arc-opening-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -2693,6 +2703,55 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralHandedWaveCyclePrimingGateExportScale(primed) >=
         bilateralHandedWaveCyclePrimingGateExportScale(blocked),
       'expected handed cycle priming scale lift',
+    );
+  });
+
+  ok('handed wave cycle priming continuity improves when priming gate is primed', () => {
+    const gate = {
+      ...createEmptyBilateralHandedWaveCyclePrimingGateSnapshot(),
+      score: 0.95,
+      band: 'primed' as const,
+    };
+    const handoff = { ...createEmptyClearedWaveHandoffContinuitySnapshot(), score: 0.93, band: 'secured' as const };
+    const settled = computeHandedWaveCyclePrimingContinuitySnapshot({
+      bilateralHandedWaveCyclePrimingGate: gate,
+      clearedWaveHandoffContinuity: handoff,
+      persisted: { ...createEmptyGTELPersisted(), handedWaveCyclePrimingContinuitySmoothing: 0.98 },
+    }).snapshot;
+    const voided = computeHandedWaveCyclePrimingContinuitySnapshot({
+      bilateralHandedWaveCyclePrimingGate: { ...gate, score: 0.1, band: 'blocked' },
+      clearedWaveHandoffContinuity: { ...handoff, score: 0.08, band: 'broken' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(settled.score > voided.score, 'expected settled cycle priming continuity');
+    gtelAssert(
+      handedWaveCyclePrimingContinuityExportScale(settled) >= handedWaveCyclePrimingContinuityExportScale(voided),
+      'expected cycle priming continuity scale lift',
+    );
+  });
+
+  ok('bilateral primed handoff arc opening gate improves when priming continuity is settled', () => {
+    const continuity = {
+      ...createEmptyHandedWaveCyclePrimingContinuitySnapshot(),
+      score: 0.96,
+      band: 'settled' as const,
+    };
+    const arc = { ...createEmptyBilateralCommitmentArcOpeningSnapshot(), score: 0.91, band: 'opened' as const };
+    const opened = computeBilateralPrimedHandoffArcOpeningGateSnapshot({
+      handedWaveCyclePrimingContinuity: continuity,
+      bilateralCommitmentArcOpening: arc,
+      persisted: { ...createEmptyGTELPersisted(), bilateralPrimedHandoffArcOpeningGateSmoothing: 0.99 },
+    }).snapshot;
+    const sealed = computeBilateralPrimedHandoffArcOpeningGateSnapshot({
+      handedWaveCyclePrimingContinuity: { ...continuity, score: 0.11, band: 'void' },
+      bilateralCommitmentArcOpening: { ...arc, score: 0.08, band: 'sealed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(opened.score > sealed.score, 'expected arc opening when settled');
+    gtelAssert(
+      bilateralPrimedHandoffArcOpeningGateExportScale(opened) >=
+        bilateralPrimedHandoffArcOpeningGateExportScale(sealed),
+      'expected primed handoff arc opening scale lift',
     );
   });
 

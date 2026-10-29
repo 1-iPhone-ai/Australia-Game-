@@ -599,6 +599,20 @@ import {
   bilateralHandedWaveCyclePrimingGateWorldEvent,
 } from './bilateral-handed-wave-cycle-priming-gate.ts';
 import {
+  computeHandedWaveCyclePrimingContinuitySnapshot,
+  handedWaveCyclePrimingContinuityDomesticStress,
+  handedWaveCyclePrimingContinuityExportScale,
+  handedWaveCyclePrimingContinuityGiNotes,
+  handedWaveCyclePrimingContinuityWorldEvent,
+} from './handed-wave-cycle-priming-continuity.ts';
+import {
+  computeBilateralPrimedHandoffArcOpeningGateSnapshot,
+  bilateralPrimedHandoffArcOpeningGateDomesticStressRelief,
+  bilateralPrimedHandoffArcOpeningGateExportScale,
+  bilateralPrimedHandoffArcOpeningGateGiNotes,
+  bilateralPrimedHandoffArcOpeningGateWorldEvent,
+} from './bilateral-primed-handoff-arc-opening-gate.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -1697,6 +1711,32 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   );
   if (handedWaveCyclePrimingEvent) worldEvents.push(handedWaveCyclePrimingEvent);
 
+  const handedWaveCyclePrimingContinuityStep = computeHandedWaveCyclePrimingContinuitySnapshot({
+    bilateralHandedWaveCyclePrimingGate,
+    clearedWaveHandoffContinuity,
+    persisted,
+  });
+  persisted = handedWaveCyclePrimingContinuityStep.persisted;
+  const handedWaveCyclePrimingContinuity = handedWaveCyclePrimingContinuityStep.snapshot;
+  const handedWaveCyclePrimingContinuityEvent = handedWaveCyclePrimingContinuityWorldEvent(
+    handedWaveCyclePrimingContinuity,
+    turn,
+  );
+  if (handedWaveCyclePrimingContinuityEvent) worldEvents.push(handedWaveCyclePrimingContinuityEvent);
+
+  const primedHandoffArcOpeningStep = computeBilateralPrimedHandoffArcOpeningGateSnapshot({
+    handedWaveCyclePrimingContinuity,
+    bilateralCommitmentArcOpening,
+    persisted,
+  });
+  persisted = primedHandoffArcOpeningStep.persisted;
+  const bilateralPrimedHandoffArcOpeningGate = primedHandoffArcOpeningStep.snapshot;
+  const primedHandoffArcOpeningEvent = bilateralPrimedHandoffArcOpeningGateWorldEvent(
+    bilateralPrimedHandoffArcOpeningGate,
+    turn,
+  );
+  if (primedHandoffArcOpeningEvent) worldEvents.push(primedHandoffArcOpeningEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -1774,6 +1814,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralClearedWaveHandoffGateExportScale(bilateralClearedWaveHandoffGate) *
         clearedWaveHandoffContinuityExportScale(clearedWaveHandoffContinuity) *
         bilateralHandedWaveCyclePrimingGateExportScale(bilateralHandedWaveCyclePrimingGate) *
+        handedWaveCyclePrimingContinuityExportScale(handedWaveCyclePrimingContinuity) *
+        bilateralPrimedHandoffArcOpeningGateExportScale(bilateralPrimedHandoffArcOpeningGate) *
         10,
     ) / 10;
 
@@ -1865,6 +1907,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       bilateralSustainedWaveThroughputGateDomesticStressRelief(bilateralSustainedWaveThroughputGate) +
       bilateralClearedWaveHandoffGateDomesticStressRelief(bilateralClearedWaveHandoffGate) +
       bilateralHandedWaveCyclePrimingGateDomesticStressRelief(bilateralHandedWaveCyclePrimingGate) +
+      bilateralPrimedHandoffArcOpeningGateDomesticStressRelief(bilateralPrimedHandoffArcOpeningGate) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -1902,7 +1945,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       primedWaveLaunchContinuityDomesticStress(primedWaveLaunchContinuity) +
       launchedWaveSustainContinuityDomesticStress(launchedWaveSustainContinuity) +
       sustainedWaveThroughputContinuityDomesticStress(sustainedWaveThroughputContinuity) +
-      clearedWaveHandoffContinuityDomesticStress(clearedWaveHandoffContinuity),
+      clearedWaveHandoffContinuityDomesticStress(clearedWaveHandoffContinuity) +
+      handedWaveCyclePrimingContinuityDomesticStress(handedWaveCyclePrimingContinuity),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -2001,6 +2045,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.bilateralClearedWaveHandoffGateSmoothing,
     persisted.clearedWaveHandoffContinuitySmoothing,
     persisted.bilateralHandedWaveCyclePrimingGateSmoothing,
+    persisted.handedWaveCyclePrimingContinuitySmoothing,
+    persisted.bilateralPrimedHandoffArcOpeningGateSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -2131,6 +2177,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     bilateralClearedWaveHandoffGate,
     clearedWaveHandoffContinuity,
     bilateralHandedWaveCyclePrimingGate,
+    handedWaveCyclePrimingContinuity,
+    bilateralPrimedHandoffArcOpeningGate,
     inputHash,
   };
 
@@ -2240,6 +2288,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...bilateralClearedWaveHandoffGateGiNotes(state.bilateralClearedWaveHandoffGate));
   lines.push(...clearedWaveHandoffContinuityGiNotes(state.clearedWaveHandoffContinuity));
   lines.push(...bilateralHandedWaveCyclePrimingGateGiNotes(state.bilateralHandedWaveCyclePrimingGate));
+  lines.push(...handedWaveCyclePrimingContinuityGiNotes(state.handedWaveCyclePrimingContinuity));
+  lines.push(...bilateralPrimedHandoffArcOpeningGateGiNotes(state.bilateralPrimedHandoffArcOpeningGate));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
