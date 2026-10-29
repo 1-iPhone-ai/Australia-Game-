@@ -24,6 +24,13 @@ import {
   autoOpenDisputesFromSanctions,
   countOpenTradeDisputes,
 } from './trade-disputes.ts';
+import { advanceTradeComplianceRecord, complianceReviewNotes, deriveCompliancePartnerPenalty } from './trade-compliance.ts';
+import {
+  applyLogisticsToCommodityQuotes,
+  computeLogisticsStress,
+  logisticsWorldEvent,
+} from './export-logistics.ts';
+import { computeTradeBalanceSnapshot, tradeBalanceGiNotes } from './trade-balance.ts';
 import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
@@ -59,6 +66,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   persisted = autoTradePolicyAdjustments(persisted, turn);
   const disputeStep = advanceTradeDisputes(persisted, turn, preSanctions.activeTiers);
   persisted = disputeStep.persisted;
+  persisted = advanceTradeComplianceRecord(persisted, input.diplomacyState, turn);
 
   const names = input.actorNames || {};
   const dip = deriveDiplomaticTradeModifiers(input.diplomacyState, turn, names);
@@ -67,6 +75,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const sanctions = deriveSanctionModifiers(persisted);
   const trust = deriveTrustAccessModifiers(persisted);
   const policy = deriveTradePolicyModifiers(persisted);
+  const compliancePenalty = deriveCompliancePartnerPenalty(persisted.tradeCompliance);
 
   const partnerDeltas = mergePartnerDeltas(
     mergePartnerDeltas(
@@ -83,7 +92,15 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     policy.commodityDeltas,
   );
 
-  const notes = [...dip.notes, ...agr.notes, ...shock.notes, ...sanctions.notes, ...trust.notes, ...policy.notes];
+  const notes = [
+    ...dip.notes,
+    ...agr.notes,
+    ...shock.notes,
+    ...sanctions.notes,
+    ...trust.notes,
+    ...policy.notes,
+    ...complianceReviewNotes(persisted.tradeCompliance),
+  ];
   const net = gtelNetworkModifier(input.nationalSystems);
   const worldEvents: GTELTurnResult['worldEvents'] = [];
 
@@ -110,7 +127,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const partners: GTELPartnerMarket[] = GTEL_PARTNER_DEFS.map(def => {
     const prevBand = persisted.partnerAccess[def.id] || 'normal';
     const prevScore = GTEL_ACCESS_RANK[prevBand] / 4;
-    const delta = gtelNum(partnerDeltas[def.id], 0);
+    const delta = gtelNum(partnerDeltas[def.id], 0) + (def.id !== 'domestic_premium' ? compliancePenalty : 0);
     const embKey = `embargo_${def.id}`;
     const cooldown = gtelNum(persisted.embargoCooldowns[embKey], 0);
     let penalty = cooldown > 0 ? -0.15 : 0;
@@ -135,7 +152,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     });
   }
 
-  const commodities = GTEL_COMMODITIES.map(commodity => {
+  let commodities = GTEL_COMMODITIES.map(commodity => {
     const baseIndex = GTEL_BASE_COMMODITY_INDEX[commodity];
     const prevSmooth = gtelNum(persisted.commoditySmoothing[commodity], baseIndex);
     let partnerModifier = 0;
@@ -172,6 +189,24 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       trend,
       evidence,
     };
+  });
+
+  const openDisputes = countOpenTradeDisputes(persisted);
+  const logistics = computeLogisticsStress({
+    nationalSystems: input.nationalSystems,
+    partners,
+    exportThroughput: net.throughput,
+    openDisputeCount: openDisputes,
+  });
+  commodities = applyLogisticsToCommodityQuotes(commodities, logistics);
+  const logisticsEvent = logisticsWorldEvent(logistics, turn);
+  if (logisticsEvent) worldEvents.push(logisticsEvent);
+
+  const tradeBalance = computeTradeBalanceSnapshot({
+    commodities,
+    partners,
+    logistics,
+    exportThroughput: net.throughput,
   });
 
   const exportLedPressure = gtelClamp(
@@ -230,6 +265,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.partnerSanctions,
     persisted.partnerTrust,
     persisted.tradePolicies?.length,
+    persisted.tradeCompliance?.score,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -268,13 +304,16 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     domestic,
     regionalImpacts,
     nationalTradeCondition: net.condition,
-    exportThroughput: net.throughput,
+    exportThroughput: logistics.effectiveExportThroughput,
     diplomacyTradeDealsActive: gtelActiveDeals(input.diplomacyState).filter(d => d.type === 'resource_trade').length,
     violationsLastWindow: gtelRecentViolations(input.diplomacyState, turn),
     activeSanctionTiers: sanctions.activeTiers,
     partnerTrust: persisted.partnerTrust || {},
     activeTradePolicies: listActiveTradePolicies(persisted),
-    openDisputeCount: countOpenTradeDisputes(persisted),
+    openDisputeCount: openDisputes,
+    logistics,
+    tradeBalance,
+    tradeCompliance: persisted.tradeCompliance,
     inputHash,
   };
 
@@ -301,5 +340,9 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   if (blocked.length) lines.push(`Restricted partners: ${blocked.map(p => p.label).join('; ')}.`);
   const stressed = state.regionalImpacts?.filter(r => r.stabilityDelta < -0.05).slice(0, 2);
   if (stressed?.length) lines.push(`Regional stress: ${stressed.map(r => r.regionId).join(', ')}.`);
+  lines.push(...tradeBalanceGiNotes(state.tradeBalance));
+  if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
+    lines.push(state.logistics.summary);
+  }
   return lines;
 }

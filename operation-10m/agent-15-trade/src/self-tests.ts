@@ -11,6 +11,10 @@ import { advancePartnerSanctions, deriveSanctionModifiers } from './sanctions.ts
 import { advancePartnerTrustScores, deriveTrustAccessModifiers } from './partner-trust.ts';
 import { autoTradePolicyAdjustments } from './trade-policy.ts';
 import { advanceTradeDisputes, openTradeDispute } from './trade-disputes.ts';
+import { advanceTradeComplianceRecord } from './trade-compliance.ts';
+import { computeLogisticsStress } from './export-logistics.ts';
+import { computeTradeBalanceSnapshot } from './trade-balance.ts';
+import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
@@ -217,6 +221,55 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     persisted.tradeDisputes = (persisted.tradeDisputes || []).map(d => ({ ...d, openedTurn: 1, status: 'open' as const }));
     const resolved = advanceTradeDisputes(persisted, 6, { europe: 'none' });
     gtelAssert(resolved.persisted.partnerSanctions?.europe?.tier !== 'sectoral', 'sanctions should step down');
+  });
+
+  ok('trade compliance falls after violations', () => {
+    let persisted = createEmptyGTELPersisted();
+    const base = persisted.tradeCompliance.score;
+    persisted = advanceTradeComplianceRecord(
+      persisted,
+      {
+        deals: [{ id: 'x', type: 'resource_trade', status: 'violated', participants: ['p', 'a'], compliance: 'violated' }],
+        events: [{ kind: 'violation', turn: 2, text: 'breach' }],
+      },
+      3,
+    );
+    gtelAssert(persisted.tradeCompliance.score < base, 'compliance should drop');
+  });
+
+  ok('logistics congestion under critical network', () => {
+    const partners = GTEL_PARTNER_DEFS.map(p => ({ ...p, access: 'normal' as const, accessScore: 0.6 }));
+    const logistics = computeLogisticsStress({
+      nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 140 } } },
+      partners,
+      exportThroughput: 140,
+      openDisputeCount: 2,
+    });
+    gtelAssert(logistics.band === 'congested' || logistics.band === 'tight', 'expected stress band');
+  });
+
+  ok('trade balance surplus when export quotes hot', () => {
+    const partners = GTEL_PARTNER_DEFS.map(p => ({ ...p, access: 'strategic' as const, accessScore: 0.9 }));
+    const commodities = GTEL_COMMODITIES.map(c => ({
+      commodity: c,
+      baseIndex: 100,
+      partnerModifier: 0.1,
+      diplomacyModifier: 0,
+      networkModifier: 0.05,
+      shockModifier: 0,
+      agreementModifier: 0,
+      effectiveIndex: 112,
+      trend: 'rising' as const,
+      evidence: [],
+    }));
+    const logistics = computeLogisticsStress({
+      nationalSystems: { national: { trade: { condition: 'surplus', exportedCapacity: 180 } } },
+      partners,
+      exportThroughput: 180,
+      openDisputeCount: 0,
+    });
+    const bal = computeTradeBalanceSnapshot({ commodities, partners, logistics, exportThroughput: 180 });
+    gtelAssert(bal.currentAccountTone === 'surplus' || bal.currentAccountTone === 'mild_surplus', 'expected surplus tone');
   });
 
   return { passed, failed };

@@ -2,6 +2,7 @@ import { GTEL_COMMODITIES, GTEL_LIMITS, GTEL_PARTNER_DEFS, GTEL_BASE_COMMODITY_I
 import type { GTELAccessBand, GTELCommodityId, GTELPartnerId, GTELPersisted, PartnerSanctionRegime, TradeAgreementRecord } from './types.ts';
 import { gtelClamp, gtelNum } from './util.ts';
 import { sanitizePartnerSanctionRegime } from './sanctions.ts';
+import { createEmptyTradeComplianceRecord, sanitizeTradeComplianceRecord } from './trade-compliance.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -21,6 +22,7 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     partnerTrust: {},
     tradePolicies: [],
     tradeDisputes: [],
+    tradeCompliance: createEmptyTradeComplianceRecord(),
   };
 }
 
@@ -160,5 +162,6 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
         severity: gtelClamp(gtelNum(d.severity, 0.5), 0.1, 1),
       })) as TradeDisputeCase[];
   }
+  base.tradeCompliance = sanitizeTradeComplianceRecord(r.tradeCompliance, turn);
   return base;
 }

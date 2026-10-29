@@ -110,6 +110,8 @@ export interface GTELPersisted {
   tradePolicies: TradePolicyInstrument[];
   /** Open / recently closed trade disputes. */
   tradeDisputes: TradeDisputeCase[];
+  /** Rolling rules-based trade compliance posture. */
+  tradeCompliance: TradeComplianceRecord;
 }
 
 export interface GTELState {
@@ -126,6 +128,9 @@ export interface GTELState {
   partnerTrust: Partial<Record<GTELPartnerId, PartnerTrustScore>>;
   activeTradePolicies: TradePolicyInstrument[];
   openDisputeCount: number;
+  logistics: GTELLogisticsStress;
+  tradeBalance: GTELTradeBalanceSnapshot;
+  tradeCompliance: TradeComplianceRecord;
   inputHash: string;
 }
 
@@ -267,6 +272,39 @@ export interface TradeDisputeCase {
   subject: string;
   requestedRelief: 'sanction_step_down' | 'shock_containment' | 'quota_restoration';
   severity: number;
+}
+
+export type TradeComplianceBand = 'strong' | 'adequate' | 'weak' | 'critical';
+
+export interface TradeComplianceRecord {
+  score: number;
+  band: TradeComplianceBand;
+  lastReviewTurn: number;
+  violationsWindow: number;
+  openDisputes: number;
+  findings: string[];
+}
+
+export type GTELLogisticsBand = 'fluid' | 'watch' | 'tight' | 'congested';
+
+export interface GTELLogisticsStress {
+  band: GTELLogisticsBand;
+  freightPressure: number;
+  redundancyScore: number;
+  effectiveExportThroughput: number;
+  networkStrain: number;
+  summary: string;
+}
+
+export type GTELCurrentAccountTone = 'surplus' | 'mild_surplus' | 'balanced' | 'mild_deficit' | 'deficit';
+
+export interface GTELTradeBalanceSnapshot {
+  exportValueIndex: number;
+  importPressureIndex: number;
+  netExportPulse: number;
+  currentAccountTone: GTELCurrentAccountTone;
+  effectiveThroughput: number;
+  narrative: string;
 }
 
 export interface GlobalTradeEconomyPanelProps {

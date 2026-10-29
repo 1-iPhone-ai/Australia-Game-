@@ -114,6 +114,8 @@ export interface GTELPersisted {
   tradePolicies: TradePolicyInstrument[];
   /** Open / recently closed trade disputes. */
   tradeDisputes: TradeDisputeCase[];
+  /** Rolling rules-based trade compliance posture. */
+  tradeCompliance: TradeComplianceRecord;
 }
 
 export interface GTELState {
@@ -130,6 +132,9 @@ export interface GTELState {
   partnerTrust: Partial<Record<GTELPartnerId, PartnerTrustScore>>;
   activeTradePolicies: TradePolicyInstrument[];
   openDisputeCount: number;
+  logistics: GTELLogisticsStress;
+  tradeBalance: GTELTradeBalanceSnapshot;
+  tradeCompliance: TradeComplianceRecord;
   inputHash: string;
 }
 
@@ -271,6 +276,39 @@ export interface TradeDisputeCase {
   subject: string;
   requestedRelief: 'sanction_step_down' | 'shock_containment' | 'quota_restoration';
   severity: number;
+}
+
+export type TradeComplianceBand = 'strong' | 'adequate' | 'weak' | 'critical';
+
+export interface TradeComplianceRecord {
+  score: number;
+  band: TradeComplianceBand;
+  lastReviewTurn: number;
+  violationsWindow: number;
+  openDisputes: number;
+  findings: string[];
+}
+
+export type GTELLogisticsBand = 'fluid' | 'watch' | 'tight' | 'congested';
+
+export interface GTELLogisticsStress {
+  band: GTELLogisticsBand;
+  freightPressure: number;
+  redundancyScore: number;
+  effectiveExportThroughput: number;
+  networkStrain: number;
+  summary: string;
+}
+
+export type GTELCurrentAccountTone = 'surplus' | 'mild_surplus' | 'balanced' | 'mild_deficit' | 'deficit';
+
+export interface GTELTradeBalanceSnapshot {
+  exportValueIndex: number;
+  importPressureIndex: number;
+  netExportPulse: number;
+  currentAccountTone: GTELCurrentAccountTone;
+  effectiveThroughput: number;
+  narrative: string;
 }
 
 export interface GlobalTradeEconomyPanelProps {
@@ -423,6 +461,7 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     partnerTrust: {},
     tradePolicies: [],
     tradeDisputes: [],
+    tradeCompliance: createEmptyTradeComplianceRecord(),
   };
 }
 
@@ -562,6 +601,7 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
         severity: gtelClamp(gtelNum(d.severity, 0.5), 0.1, 1),
       })) as TradeDisputeCase[];
   }
+  base.tradeCompliance = sanitizeTradeComplianceRecord(r.tradeCompliance, turn);
   return base;
 }
 
@@ -1781,6 +1821,256 @@ export function autoOpenDisputesFromSanctions(
 }
 
 
+// --- source: trade-compliance.ts ---
+
+export const TRADE_COMPLIANCE_RULES = [
+  { id: 'rule_honor_agreements', label: 'Honor ratified trade agreements', weight: 0.25 },
+  { id: 'rule_avoid_embargo_breach', label: 'Avoid embargo and breach events', weight: 0.3 },
+  { id: 'rule_dispute_engagement', label: 'Engage dispute mediation in good faith', weight: 0.2 },
+  { id: 'rule_transparent_tariffs', label: 'Keep tariff/sanction changes documented', weight: 0.25 },
+] as const;
+
+export function createEmptyTradeComplianceRecord(turn = 1): TradeComplianceRecord {
+  return {
+    score: 0.72,
+    band: 'adequate',
+    lastReviewTurn: turn,
+    violationsWindow: 0,
+    openDisputes: 0,
+    findings: ['Baseline compliance posture.'],
+  };
+}
+
+export function sanitizeTradeComplianceRecord(raw: unknown, turn = 1): TradeComplianceRecord {
+  const base = createEmptyTradeComplianceRecord(turn);
+  if (!raw || typeof raw !== 'object') return base;
+  const r = raw as Record<string, unknown>;
+  const score = gtelClamp(gtelNum(r.score, base.score), 0.1, 0.99);
+  const band: TradeComplianceRecord['band'] =
+    score >= 0.8 ? 'strong' : score >= 0.6 ? 'adequate' : score >= 0.4 ? 'weak' : 'critical';
+  return {
+    score: Math.round(score * 1000) / 1000,
+    band,
+    lastReviewTurn: Math.max(1, Math.floor(gtelNum(r.lastReviewTurn, turn))),
+    violationsWindow: Math.max(0, Math.floor(gtelNum(r.violationsWindow, 0))),
+    openDisputes: Math.max(0, Math.floor(gtelNum(r.openDisputes, 0))),
+    findings: (Array.isArray(r.findings) ? r.findings : base.findings).map(String).slice(0, 8),
+  };
+}
+
+export function advanceTradeComplianceRecord(
+  persisted: GTELPersisted,
+  diplomacy: GTELDiplomacyState | null,
+  turn: number,
+): GTELPersisted {
+  const prev = sanitizeTradeComplianceRecord(persisted.tradeCompliance, turn);
+  const violations = gtelRecentViolations(diplomacy, turn);
+  const openDisputes = countOpenTradeDisputes(persisted);
+  const ratified = persisted.agreements.filter(a => a.status === 'ratified').length;
+  let score = prev.score;
+  const findings: string[] = [];
+  if (violations === 0) {
+    score += 0.015;
+    findings.push('No diplomatic violations in the review window.');
+  } else {
+    score -= 0.035 * violations;
+    findings.push(`${violations} violation signal(s) recorded.`);
+  }
+  if (openDisputes === 0) {
+    score += 0.01;
+  } else {
+    score -= 0.02 * openDisputes;
+    findings.push(`${openDisputes} open trade dispute(s) require engagement.`);
+  }
+  if (ratified >= 2) {
+    score += 0.02;
+    findings.push('Multiple ratified agreements support compliance.');
+  }
+  const comprehensive = Object.values(persisted.partnerSanctions || {}).filter(s => s?.tier === 'comprehensive').length;
+  if (comprehensive > 0) {
+    score -= 0.04 * comprehensive;
+    findings.push('Comprehensive partner sanctions weigh on compliance score.');
+  }
+  score = gtelClamp(score, 0.12, 0.98);
+  const band: TradeComplianceRecord['band'] =
+    score >= 0.8 ? 'strong' : score >= 0.6 ? 'adequate' : score >= 0.4 ? 'weak' : 'critical';
+  return {
+    ...persisted,
+    tradeCompliance: {
+      score: Math.round(score * 1000) / 1000,
+      band,
+      lastReviewTurn: turn,
+      violationsWindow: violations,
+      openDisputes,
+      findings: findings.slice(0, 6),
+    },
+  };
+}
+
+/** Weak compliance accelerates external market friction. */
+export function deriveCompliancePartnerPenalty(record: TradeComplianceRecord | null | undefined): number {
+  if (!record) return 0;
+  if (record.band === 'critical') return -0.035;
+  if (record.band === 'weak') return -0.018;
+  return 0;
+}
+
+export function complianceReviewNotes(record: TradeComplianceRecord | null | undefined): string[] {
+  if (!record) return [];
+  return [`Compliance ${record.band} (${Math.round(record.score * 100)}%).`, ...record.findings.slice(0, 2)];
+}
+
+
+// --- source: export-logistics.ts ---
+  GTELCommodityId,
+  GTELCommodityQuote,
+  GTELLogisticsStress,
+  GTELNationalSystemsSlice,
+  GTELPartnerMarket,
+} from './types.ts';
+
+const BULK: GTELCommodityId[] = ['iron_ore', 'coal', 'lng', 'wheat', 'beef', 'aluminium'];
+
+export function computeLogisticsStress(params: {
+  nationalSystems: GTELNationalSystemsSlice | null;
+  partners: GTELPartnerMarket[];
+  exportThroughput: number;
+  openDisputeCount: number;
+}): GTELLogisticsStress {
+  const condition = String(params.nationalSystems?.national?.trade?.condition || 'healthy');
+  const rank: Record<string, number> = {
+    surplus: 0.12,
+    healthy: 0.05,
+    strained: -0.08,
+    bottlenecked: -0.16,
+    critical: -0.28,
+  };
+  const networkStrain = rank[condition] ?? 0;
+  const restrictedRoutes = params.partners.filter(p => p.id !== 'domestic_premium' && GTEL_ACCESS_RANK[p.access] <= 1).length;
+  const redundancyScore = gtelClamp(1 - restrictedRoutes * 0.18 - params.openDisputeCount * 0.04, 0.15, 1);
+  const throughputRatio = gtelClamp(params.exportThroughput / 120, 0, 1.4);
+  const freightPressure = gtelClamp(0.45 - redundancyScore * 0.35 + (throughputRatio > 1 ? 0.08 : 0) - networkStrain, 0, 1);
+  const effectiveThroughput = Math.round(params.exportThroughput * (0.75 + redundancyScore * 0.25 + networkStrain) * 10) / 10;
+  let band: GTELLogisticsStress['band'] = 'fluid';
+  if (freightPressure > 0.72) band = 'congested';
+  else if (freightPressure > 0.48) band = 'tight';
+  else if (freightPressure > 0.28) band = 'watch';
+  const summary =
+    band === 'congested'
+      ? 'Port and corridor congestion is capping export conversion.'
+      : band === 'tight'
+        ? 'Freight lanes are tight — schedule risk is elevated.'
+        : band === 'watch'
+          ? 'Logistics are manageable but redundancy is thin.'
+          : 'Export logistics have adequate redundancy.';
+  return {
+    band,
+    freightPressure: Math.round(freightPressure * 1000) / 1000,
+    redundancyScore: Math.round(redundancyScore * 1000) / 1000,
+    effectiveExportThroughput: effectiveThroughput,
+    networkStrain: Math.round(networkStrain * 1000) / 1000,
+    summary,
+  };
+}
+
+export function deriveLogisticsCommodityModifiers(logistics: GTELLogisticsStress): Partial<Record<GTELCommodityId, number>> {
+  const penalty = gtelClamp(logistics.freightPressure * 0.12, 0, 0.1);
+  const out: Partial<Record<GTELCommodityId, number>> = {};
+  BULK.forEach(c => {
+    out[c] = -penalty * (c === 'services' ? 0.3 : 1);
+  });
+  out.services = -penalty * 0.35;
+  out.manufacturing = -penalty * 0.55;
+  return out;
+}
+
+export function applyLogisticsToCommodityQuotes(
+  commodities: GTELCommodityQuote[],
+  logistics: GTELLogisticsStress,
+): GTELCommodityQuote[] {
+  const mods = deriveLogisticsCommodityModifiers(logistics);
+  return commodities.map(c => {
+    const logisticsMod = gtelNum(mods[c.commodity], 0);
+    if (!logisticsMod) return c;
+    const effectiveIndex = Math.round(c.effectiveIndex * (1 + logisticsMod) * 10) / 10;
+    return {
+      ...c,
+      effectiveIndex,
+      evidence: [...c.evidence, `Logistics ${logistics.band}: ${logistics.summary}`],
+    };
+  });
+}
+
+export function logisticsWorldEvent(logistics: GTELLogisticsStress, turn: number): {
+  id: string;
+  turn: number;
+  kind: 'trade';
+  title: string;
+  summary: string;
+  regionIds: string[];
+} | null {
+  if (logistics.band !== 'congested' && logistics.band !== 'tight') return null;
+  return {
+    id: `gtel_logistics_${logistics.band}_${turn}`,
+    turn,
+    kind: 'trade',
+    title: logistics.band === 'congested' ? 'Export corridor congestion' : 'Freight lane tightness',
+    summary: logistics.summary,
+    regionIds: ['NSW', 'VIC', 'QLD', 'WA'],
+  };
+}
+
+
+// --- source: trade-balance.ts ---
+  GTELCommodityQuote,
+  GTELLogisticsStress,
+  GTELPartnerMarket,
+  GTELTradeBalanceSnapshot,
+} from './types.ts';
+
+export function computeTradeBalanceSnapshot(params: {
+  commodities: GTELCommodityQuote[];
+  partners: GTELPartnerMarket[];
+  logistics: GTELLogisticsStress;
+  exportThroughput: number;
+}): GTELTradeBalanceSnapshot {
+  const exportWeighted = params.commodities.reduce((acc, c) => {
+    const w = gtelNum(GTEL_BASE_COMMODITY_INDEX[c.commodity], 90) / 100;
+    return acc + (c.effectiveIndex - c.baseIndex) * w;
+  }, 0);
+  const exportValueIndex = Math.round((100 + exportWeighted * 0.85) * 10) / 10;
+  const externalPartners = params.partners.filter(p => p.id !== 'domestic_premium');
+  const accessAvg =
+    externalPartners.reduce((a, p) => a + GTEL_ACCESS_RANK[p.access] / 4, 0) / Math.max(1, externalPartners.length);
+  const importPressureIndex = Math.round((100 + (0.55 - accessAvg) * 40 + params.logistics.freightPressure * 18) * 10) / 10;
+  const netExportPulse = Math.round((exportValueIndex - importPressureIndex) * 10) / 10;
+  let currentAccountTone: GTELTradeBalanceSnapshot['currentAccountTone'] = 'balanced';
+  if (netExportPulse > 8) currentAccountTone = 'surplus';
+  else if (netExportPulse > 3) currentAccountTone = 'mild_surplus';
+  else if (netExportPulse < -8) currentAccountTone = 'deficit';
+  else if (netExportPulse < -3) currentAccountTone = 'mild_deficit';
+  const narrative =
+    currentAccountTone === 'surplus'
+      ? 'Export values are outpacing import-linked price pressure.'
+      : currentAccountTone === 'deficit'
+        ? 'Import pressure and logistics costs dominate export receipts.'
+        : 'External trade flows are broadly balanced this turn.';
+  return {
+    exportValueIndex,
+    importPressureIndex,
+    netExportPulse,
+    currentAccountTone,
+    effectiveThroughput: params.logistics.effectiveExportThroughput,
+    narrative,
+  };
+}
+
+export function tradeBalanceGiNotes(balance: GTELTradeBalanceSnapshot | null | undefined): string[] {
+  if (!balance) return [];
+  return [`Trade balance: ${balance.currentAccountTone.replace(/_/g, ' ')} (net pulse ${balance.netExportPulse}).`, balance.narrative];
+}
+
+
 // --- source: domestic-consequences.ts ---
   GTELCommodityQuote,
   GTELDomesticCoupling,
@@ -1913,6 +2203,10 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   autoOpenDisputesFromSanctions,
   countOpenTradeDisputes,
 } from './trade-disputes.ts';
+  applyLogisticsToCommodityQuotes,
+  computeLogisticsStress,
+  logisticsWorldEvent,
+} from './export-logistics.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -1944,6 +2238,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   persisted = autoTradePolicyAdjustments(persisted, turn);
   const disputeStep = advanceTradeDisputes(persisted, turn, preSanctions.activeTiers);
   persisted = disputeStep.persisted;
+  persisted = advanceTradeComplianceRecord(persisted, input.diplomacyState, turn);
 
   const names = input.actorNames || {};
   const dip = deriveDiplomaticTradeModifiers(input.diplomacyState, turn, names);
@@ -1952,6 +2247,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const sanctions = deriveSanctionModifiers(persisted);
   const trust = deriveTrustAccessModifiers(persisted);
   const policy = deriveTradePolicyModifiers(persisted);
+  const compliancePenalty = deriveCompliancePartnerPenalty(persisted.tradeCompliance);
 
   const partnerDeltas = mergePartnerDeltas(
     mergePartnerDeltas(
@@ -1968,7 +2264,15 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     policy.commodityDeltas,
   );
 
-  const notes = [...dip.notes, ...agr.notes, ...shock.notes, ...sanctions.notes, ...trust.notes, ...policy.notes];
+  const notes = [
+    ...dip.notes,
+    ...agr.notes,
+    ...shock.notes,
+    ...sanctions.notes,
+    ...trust.notes,
+    ...policy.notes,
+    ...complianceReviewNotes(persisted.tradeCompliance),
+  ];
   const net = gtelNetworkModifier(input.nationalSystems);
   const worldEvents: GTELTurnResult['worldEvents'] = [];
 
@@ -1995,7 +2299,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const partners: GTELPartnerMarket[] = GTEL_PARTNER_DEFS.map(def => {
     const prevBand = persisted.partnerAccess[def.id] || 'normal';
     const prevScore = GTEL_ACCESS_RANK[prevBand] / 4;
-    const delta = gtelNum(partnerDeltas[def.id], 0);
+    const delta = gtelNum(partnerDeltas[def.id], 0) + (def.id !== 'domestic_premium' ? compliancePenalty : 0);
     const embKey = `embargo_${def.id}`;
     const cooldown = gtelNum(persisted.embargoCooldowns[embKey], 0);
     let penalty = cooldown > 0 ? -0.15 : 0;
@@ -2020,7 +2324,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     });
   }
 
-  const commodities = GTEL_COMMODITIES.map(commodity => {
+  let commodities = GTEL_COMMODITIES.map(commodity => {
     const baseIndex = GTEL_BASE_COMMODITY_INDEX[commodity];
     const prevSmooth = gtelNum(persisted.commoditySmoothing[commodity], baseIndex);
     let partnerModifier = 0;
@@ -2057,6 +2361,24 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       trend,
       evidence,
     };
+  });
+
+  const openDisputes = countOpenTradeDisputes(persisted);
+  const logistics = computeLogisticsStress({
+    nationalSystems: input.nationalSystems,
+    partners,
+    exportThroughput: net.throughput,
+    openDisputeCount: openDisputes,
+  });
+  commodities = applyLogisticsToCommodityQuotes(commodities, logistics);
+  const logisticsEvent = logisticsWorldEvent(logistics, turn);
+  if (logisticsEvent) worldEvents.push(logisticsEvent);
+
+  const tradeBalance = computeTradeBalanceSnapshot({
+    commodities,
+    partners,
+    logistics,
+    exportThroughput: net.throughput,
   });
 
   const exportLedPressure = gtelClamp(
@@ -2115,6 +2437,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.partnerSanctions,
     persisted.partnerTrust,
     persisted.tradePolicies?.length,
+    persisted.tradeCompliance?.score,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -2153,13 +2476,16 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     domestic,
     regionalImpacts,
     nationalTradeCondition: net.condition,
-    exportThroughput: net.throughput,
+    exportThroughput: logistics.effectiveExportThroughput,
     diplomacyTradeDealsActive: gtelActiveDeals(input.diplomacyState).filter(d => d.type === 'resource_trade').length,
     violationsLastWindow: gtelRecentViolations(input.diplomacyState, turn),
     activeSanctionTiers: sanctions.activeTiers,
     partnerTrust: persisted.partnerTrust || {},
     activeTradePolicies: listActiveTradePolicies(persisted),
-    openDisputeCount: countOpenTradeDisputes(persisted),
+    openDisputeCount: openDisputes,
+    logistics,
+    tradeBalance,
+    tradeCompliance: persisted.tradeCompliance,
     inputHash,
   };
 
@@ -2186,6 +2512,10 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   if (blocked.length) lines.push(`Restricted partners: ${blocked.map(p => p.label).join('; ')}.`);
   const stressed = state.regionalImpacts?.filter(r => r.stabilityDelta < -0.05).slice(0, 2);
   if (stressed?.length) lines.push(`Regional stress: ${stressed.map(r => r.regionId).join(', ')}.`);
+  lines.push(...tradeBalanceGiNotes(state.tradeBalance));
+  if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
+    lines.push(state.logistics.summary);
+  }
   return lines;
 }
 
@@ -2399,6 +2729,55 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     persisted.tradeDisputes = (persisted.tradeDisputes || []).map(d => ({ ...d, openedTurn: 1, status: 'open' as const }));
     const resolved = advanceTradeDisputes(persisted, 6, { europe: 'none' });
     gtelAssert(resolved.persisted.partnerSanctions?.europe?.tier !== 'sectoral', 'sanctions should step down');
+  });
+
+  ok('trade compliance falls after violations', () => {
+    let persisted = createEmptyGTELPersisted();
+    const base = persisted.tradeCompliance.score;
+    persisted = advanceTradeComplianceRecord(
+      persisted,
+      {
+        deals: [{ id: 'x', type: 'resource_trade', status: 'violated', participants: ['p', 'a'], compliance: 'violated' }],
+        events: [{ kind: 'violation', turn: 2, text: 'breach' }],
+      },
+      3,
+    );
+    gtelAssert(persisted.tradeCompliance.score < base, 'compliance should drop');
+  });
+
+  ok('logistics congestion under critical network', () => {
+    const partners = GTEL_PARTNER_DEFS.map(p => ({ ...p, access: 'normal' as const, accessScore: 0.6 }));
+    const logistics = computeLogisticsStress({
+      nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 140 } } },
+      partners,
+      exportThroughput: 140,
+      openDisputeCount: 2,
+    });
+    gtelAssert(logistics.band === 'congested' || logistics.band === 'tight', 'expected stress band');
+  });
+
+  ok('trade balance surplus when export quotes hot', () => {
+    const partners = GTEL_PARTNER_DEFS.map(p => ({ ...p, access: 'strategic' as const, accessScore: 0.9 }));
+    const commodities = GTEL_COMMODITIES.map(c => ({
+      commodity: c,
+      baseIndex: 100,
+      partnerModifier: 0.1,
+      diplomacyModifier: 0,
+      networkModifier: 0.05,
+      shockModifier: 0,
+      agreementModifier: 0,
+      effectiveIndex: 112,
+      trend: 'rising' as const,
+      evidence: [],
+    }));
+    const logistics = computeLogisticsStress({
+      nationalSystems: { national: { trade: { condition: 'surplus', exportedCapacity: 180 } } },
+      partners,
+      exportThroughput: 180,
+      openDisputeCount: 0,
+    });
+    const bal = computeTradeBalanceSnapshot({ commodities, partners, logistics, exportThroughput: 180 });
+    gtelAssert(bal.currentAccountTone === 'surplus' || bal.currentAccountTone === 'mild_surplus', 'expected surplus tone');
   });
 
   return { passed, failed };

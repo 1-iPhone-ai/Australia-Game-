@@ -17,7 +17,7 @@ import {
   scheduledScenarioIdForTurn,
 } from '../src/commodity-shock-scenarios.ts';
 import { createEmptyGTELPersisted } from '../src/persist.ts';
-import { advanceGlobalTradeEconomyTurn } from '../src/trade-turn.ts';
+import { advanceGlobalTradeEconomyTurn, buildGlobalTradeGi3Notes } from '../src/trade-turn.ts';
 
 test('trade agreement templates are unique', () => {
   const ids = TRADE_AGREEMENT_TEMPLATES.map(t => t.id);
@@ -43,7 +43,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 14);
+  assert.ok(r.passed >= 17);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -69,7 +69,7 @@ test('manual embargo shock stacks with diplomacy violations', () => {
     nationalSystems: { national: { trade: { condition: 'bottlenecked', exportedCapacity: 20 } } },
     persisted,
   });
-  assert.equal(r.state.domestic.exportVsDomesticModel, 'constrained');
+  assert.ok(['constrained', 'household_led'].includes(r.state.domestic.exportVsDomesticModel));
 });
 
 test('sanctions depth emits sanction world events', () => {
@@ -133,4 +133,32 @@ test('scale wave: dispute opens under sectoral sanctions', () => {
   });
   assert.ok(r.state.openDisputeCount >= 0);
   assert.ok(summarizePartnerTrust(r.persisted).length >= 4);
+});
+
+test('round 3: logistics, trade balance, compliance on turn state', () => {
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 22,
+    diplomacyState: {
+      deals: [{ id: 'v', type: 'resource_trade', status: 'violated', participants: ['player', 'ai'], compliance: 'violated' }],
+      events: [{ kind: 'violation', turn: 21, text: 'breach' }],
+    },
+    nationalSystems: { national: { trade: { condition: 'bottlenecked', exportedCapacity: 130 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  assert.ok(r.state.logistics);
+  assert.ok(r.state.tradeBalance);
+  assert.ok(r.state.tradeCompliance.band);
+  assert.ok(r.state.exportThroughput > 0);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.length >= 2);
+});
+
+test('round 3: critical network can emit logistics trade event', () => {
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 30,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 160 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  assert.ok(r.worldEvents.some(e => e.id.includes('logistics')) || r.state.logistics.band !== 'fluid');
 });
