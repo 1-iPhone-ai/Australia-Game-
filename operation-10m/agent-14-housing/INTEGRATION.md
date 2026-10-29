@@ -1,6 +1,21 @@
 # Agent 14 — Integration contract (Agent 25)
 
-## Anchor
+## Assembly chunk (Operation 10M)
+
+| Artifact | Path |
+|----------|------|
+| Source module | `operation-10m/agent-14-housing/` |
+| **Assembly chunk** | `operation-10m/modules/agent-14-housing/chunk.tsx` |
+| Markers | `OP10M_MODULE_BEGIN agent-14-housing` … `OP10M_MODULE_END agent-14-housing` |
+| Regenerate | `npm run build:agent14-housing-chunk` |
+
+Agent 25 inlines the chunk (or runs the assembly pipeline) — **do not** hand-edit generated `chunk.tsx`.
+
+## Git branch
+
+Integration branch: **`op10m/agent-14-housing`** (canonical worker branch for this module).
+
+## Anchor (canonical TSX)
 
 Inline before `// SECTION 21B:` in `(V9.4) australia-game-with-ai.tsx`, after existing `SECTION 20AP` public services KPI core (or merge exports into that section).
 
@@ -17,7 +32,7 @@ Suggested marker:
 
 ## Wire-in steps
 
-1. Import or paste exports from `operation-10m/agent-14-wellbeing/` (or inlined copy).
+1. Inline `operation-10m/modules/agent-14-housing/chunk.tsx` at the anchor (or merge exports from source tree).
 2. Extend `PublicServicesPersisted` (or parallel persisted blob on game state) with `delayedSpending: DelayedSpendingPersisted`.
 3. At national turn boundary **before** `computeNationalPublicServices`:
    - Call `advancePublicServicesTurn({ inputs, spendingPersisted, newCommitments })`.
@@ -44,7 +59,8 @@ Suggested marker:
 ## Verification
 
 ```bash
-npm run test:agent-14-wellbeing
+npm run test:agent-14-housing
+npm run build:agent14-housing-chunk
 ```
 
 All tests must pass before Agent 25 assembly.

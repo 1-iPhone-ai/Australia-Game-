@@ -1,5 +1,5 @@
 #!/usr/bin/env npx tsx
-import { runAgent14WellbeingSelfTests } from '../operation-10m/agent-14-wellbeing/self-tests.ts';
+import { runAgent14WellbeingSelfTests } from '../operation-10m/agent-14-housing/self-tests.ts';
 
 const suite = runAgent14WellbeingSelfTests();
 for (const r of suite.results) {

@@ -4,6 +4,6 @@ Modular slices live under `operation-10m/agent-NN-*` until Agent 25 inlines them
 
 | Agent | Path | Status |
 |------:|------|--------|
-| 14 | [agent-14-wellbeing](./agent-14-wellbeing/INTEGRATION.md) | Public service capacity + delayed spending effects |
+| 14 | [agent-14-housing](./agent-14-housing/INTEGRATION.md) | Public service capacity + delayed spending; assembly `modules/agent-14-housing/chunk.tsx` |
 
 Merge owner: Agent 25. Workers do not edit the canonical TSX directly during parallel Operation 10M work.
