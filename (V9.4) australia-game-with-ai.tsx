@@ -133292,6 +133292,263 @@ export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
+// SECTION 20P-A88: O111 MEMORY MANAGEMENT — BOUNDED HISTORIES • HEAP SAMPLING • DAILY TRIM
+// ============================================================================
+// Division I (Agent 88). Documents canonical caps, defense-in-depth trimming on day boundaries, and dev-only
+// heap / JSON-size sampling for integration gate R22. Does not change gameplay rules — only evicts overflow
+// using the same cap policies as save/load and notification append paths.
+
+export interface O111MemoryBudgetRow {
+  id: string;
+  label: string;
+  cap: number;
+  constant: string;
+  integrationRef: string;
+}
+
+/** Single catalog for merge reviews and LAB — values must match the referenced constants. */
+export const O111_MEMORY_BUDGETS: O111MemoryBudgetRow[] = [
+  { id: 'notifications', label: 'Notification history (live + save)', cap: 250, constant: 'V95_NOTIFICATION_HISTORY_CAP', integrationRef: 'R22 / F07' },
+  { id: 'activity_ledger', label: 'Game activity ledger events', cap: 5000, constant: 'GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING', integrationRef: 'F16' },
+  { id: 'ui_feedback', label: 'V9.4 UI feedback queue (ephemeral)', cap: 8, constant: 'UI_FEEDBACK_LIMITS.queue', integrationRef: '20P' },
+  { id: 'ai_memory_events', label: 'Per-actor AI memory events', cap: 60, constant: 'AI_MEMORY_EVENT_CAP', integrationRef: '1B' },
+  { id: 'ai_comm_messages', label: 'AI communication transcript', cap: 40, constant: 'COMM_MESSAGE_CAP', integrationRef: '1B' },
+  { id: 'diag2_buffer', label: 'Co-Pilot DIAG2 overlay buffer', cap: 40, constant: 'DIAG2_BUFFER_CAPACITY', integrationRef: 'DIAG2' },
+  { id: 'settings_ledger_default', label: 'Default ledger setting (before ceiling)', cap: 500, constant: 'DEFAULT_GAME_SETTINGS.gameActivityLedgerMaxEvents', integrationRef: 'GL11' }
+];
+
+export interface O111HeapSample {
+  atMs: number;
+  usedJsHeapBytes: number | null;
+  totalJsHeapBytes: number | null;
+  limitJsHeapBytes: number | null;
+  note?: string;
+}
+
+const O111_HEAP_SAMPLE_CAP = 48;
+const o111HeapSamples: O111HeapSample[] = [];
+
+/** Chrome/Edge performance.memory when available; null fields elsewhere. */
+export function sampleBrowserHeap(note?: string): O111HeapSample {
+  const perf: any = typeof performance !== 'undefined' ? performance : null;
+  const mem = perf?.memory;
+  const row: O111HeapSample = {
+    atMs: Date.now(),
+    usedJsHeapBytes: typeof mem?.usedJSHeapSize === 'number' ? mem.usedJSHeapSize : null,
+    totalJsHeapBytes: typeof mem?.totalJSHeapSize === 'number' ? mem.totalJSHeapSize : null,
+    limitJsHeapBytes: typeof mem?.jsHeapSizeLimit === 'number' ? mem.jsHeapSizeLimit : null,
+    note
+  };
+  o111HeapSamples.unshift(row);
+  if (o111HeapSamples.length > O111_HEAP_SAMPLE_CAP) o111HeapSamples.length = O111_HEAP_SAMPLE_CAP;
+  return row;
+}
+
+export function listO111HeapSamples(): O111HeapSample[] {
+  return [...o111HeapSamples];
+}
+
+export function estimateJsonBytes(value: unknown): number {
+  try { return JSON.stringify(value ?? null).length; } catch { return -1; }
+}
+
+/** Detect accidental canonical nesting (V9.5 F15). Returns depth ≥ 1 when gameState.gameState… exists. */
+export function measureCanonicalGameStateNesting(root: unknown): number {
+  let depth = 0;
+  let cur: any = root;
+  const seen = new Set<unknown>();
+  while (cur && typeof cur === 'object' && !seen.has(cur)) {
+    seen.add(cur);
+    const inner = cur.gameState;
+    if (!inner || typeof inner !== 'object' || inner === cur) break;
+    depth++;
+    cur = inner;
+  }
+  return depth;
+}
+
+/** Unwrap nested gameState chains to the deepest leaf (preserves sibling fields on each level). */
+export function flattenNestedCanonicalGameState(root: any): any {
+  if (!root || typeof root !== 'object') return root;
+  let cur: any = { ...root };
+  for (let i = 0; i < 32; i++) {
+    const inner = cur.gameState;
+    if (!inner || typeof inner !== 'object' || inner === cur) break;
+    const { gameState: _nested, ...outerRest } = cur;
+    cur = { ...outerRest, ...inner };
+  }
+  if (cur.gameState === cur) delete cur.gameState;
+  return cur;
+}
+
+export interface O111GameStateMemoryPatch {
+  patch: Record<string, unknown>;
+  repairs: string[];
+}
+
+/** Pure defense-in-depth: trim ledger + comms if something bypassed reducer caps. */
+export function enforceGameStateMemoryBudgets(
+  gameState: any,
+  opts: { ledgerMaxEvents?: number; retentionLimit?: number } = {}
+): O111GameStateMemoryPatch {
+  const repairs: string[] = [];
+  const patch: Record<string, unknown> = {};
+  if (!gameState || typeof gameState !== 'object') return { patch, repairs };
+
+  let gs: any = gameState;
+  const nestDepth = measureCanonicalGameStateNesting(gameState);
+  if (nestDepth > 0) {
+    gs = flattenNestedCanonicalGameState({ ...gameState });
+    if ('gameState' in gameState) patch.gameState = undefined;
+    Object.keys(gs).forEach(k => { if (k !== 'gameState') patch[k] = gs[k]; });
+    repairs.push(`flattened nested gameState depth ${nestDepth}`);
+  }
+  const ledger = gs.gameActivityLedger;
+  if (ledger && Array.isArray(ledger.events)) {
+    const maxEvents = Math.max(1, Math.min(
+      opts.ledgerMaxEvents ?? DEFAULT_GAME_SETTINGS.gameActivityLedgerMaxEvents ?? 500,
+      GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING
+    ));
+    const retentionLimit = opts.retentionLimit ?? GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING;
+    if (ledger.events.length > maxEvents) {
+      const pruned = pruneLedgerEvents(ledger.events, maxEvents, 'keep_recent');
+      patch.gameActivityLedger = {
+        ...ledger,
+        events: pruned.activeEvents,
+        archivedEvents: [...(ledger.archivedEvents || []), ...pruned.prunedEvents].slice(-retentionLimit)
+      };
+      repairs.push(`ledger events ${ledger.events.length} → ${pruned.activeEvents.length}`);
+    } else if (Array.isArray(ledger.archivedEvents) && ledger.archivedEvents.length > retentionLimit) {
+      patch.gameActivityLedger = { ...ledger, archivedEvents: ledger.archivedEvents.slice(-retentionLimit) };
+      repairs.push(`ledger archive ${ledger.archivedEvents.length} → ${retentionLimit}`);
+    }
+  }
+
+  if (gs.aiCommunication) {
+    const comm = migrateCommunicationState(gs.aiCommunication);
+    if (comm.messages.length > COMM_MESSAGE_CAP) {
+      patch.aiCommunication = { ...comm, messages: comm.messages.slice(-COMM_MESSAGE_CAP) };
+      repairs.push(`aiCommunication messages capped to ${COMM_MESSAGE_CAP}`);
+    }
+  }
+
+  return { patch, repairs };
+}
+
+export interface O111MemoryBudgetReport {
+  budgets: O111MemoryBudgetRow[];
+  heapSamples: O111HeapSample[];
+  topLevelBytes: Array<{ key: string; bytes: number }>;
+  arrayLengths: Record<string, number>;
+  nestingDepth: number;
+  repairs: string[];
+}
+
+export function buildO111MemoryBudgetReport(live: {
+  gameState?: unknown;
+  notifications?: unknown[];
+  settings?: unknown;
+}): O111MemoryBudgetReport {
+  const gs = live.gameState;
+  const bundle = gs && typeof gs === 'object' ? { gameState: gs, notifications: live.notifications, gameSettings: live.settings } : live;
+  const top = measureStateSizeBreakdown(bundle, 10);
+  const lengths = collectArrayLengths(bundle, 5, 8);
+  const enforce = enforceGameStateMemoryBudgets(gs);
+  return {
+    budgets: O111_MEMORY_BUDGETS,
+    heapSamples: listO111HeapSamples(),
+    topLevelBytes: top,
+    arrayLengths: lengths,
+    nestingDepth: measureCanonicalGameStateNesting(gs),
+    repairs: enforce.repairs
+  };
+}
+
+export function runO111MemoryManagementSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const r = fn();
+      results.push({ id, name, passed: r === true, detail: r === true ? 'ok' : String(r) });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  check('a88_catalog', 'Memory budget catalog matches live constants', () => {
+    const row = (id: string) => O111_MEMORY_BUDGETS.find(r => r.id === id);
+    return (
+      row('notifications')!.cap === V95_NOTIFICATION_HISTORY_CAP
+      && row('activity_ledger')!.cap === GAME_ACTIVITY_LEDGER_MAX_EVENTS_CEILING
+      && row('ui_feedback')!.cap === UI_FEEDBACK_LIMITS.queue
+      && row('ai_memory_events')!.cap === AI_MEMORY_EVENT_CAP
+      && row('ai_comm_messages')!.cap === COMM_MESSAGE_CAP
+    ) || 'catalog drift';
+  });
+
+  check('a88_nest_detect', 'Nested canonical gameState depth is detected', () => {
+    const nested = { day: 1, gameState: { day: 1, gameState: { day: 1 } } };
+    return measureCanonicalGameStateNesting(nested) === 2 || 'depth';
+  });
+
+  check('a88_nest_flatten', 'Nested gameState is flattened to a single level', () => {
+    const nested = { matchId: 'm', gameState: { day: 3, season: 'Summer', gameState: { day: 3, extra: true } } };
+    const flat = flattenNestedCanonicalGameState(nested);
+    return (flat.day === 3 && flat.season === 'Summer' && flat.extra === true && measureCanonicalGameStateNesting(flat) === 0) || JSON.stringify(flat);
+  });
+
+  check('a88_ledger_enforce', 'Oversized ledger events are pruned in enforce pass', () => {
+    const events = Array.from({ length: 120 }, (_, i) => ({ id: `e${i}`, category: 'system', summary: 'x', day: 1, turn: 1, sequence: i }));
+    const gs = { gameActivityLedger: { events, archivedEvents: [] } };
+    const { patch, repairs } = enforceGameStateMemoryBudgets(gs, { ledgerMaxEvents: 50 });
+    const next = (patch.gameActivityLedger as any)?.events || gs.gameActivityLedger.events;
+    return (next.length <= 50 && repairs.some(r => /ledger events/.test(r))) || `${next.length} ${repairs.join('|')}`;
+  });
+
+  check('a88_comm_cap', 'AI communication messages are capped in enforce pass', () => {
+    const msgs = Array.from({ length: 80 }, (_, i) => ({ id: `m${i}`, text: 'hi', turn: 1, speakerId: 'ai' }));
+    const gs = { aiCommunication: { messages: msgs, selectedSpeakerId: 'ai' } };
+    const { patch } = enforceGameStateMemoryBudgets(gs);
+    const out = (patch.aiCommunication as any)?.messages;
+    return (out?.length === COMM_MESSAGE_CAP && out[out.length - 1].id === `m${79}`) || String(out?.length);
+  });
+
+  check('a88_heap_ring', 'Heap sample ring buffer stays bounded', () => {
+    o111HeapSamples.length = 0;
+    for (let i = 0; i < O111_HEAP_SAMPLE_CAP + 5; i++) sampleBrowserHeap(`t${i}`);
+    return o111HeapSamples.length === O111_HEAP_SAMPLE_CAP || `${o111HeapSamples.length}`;
+  });
+
+  check('a88_report', 'Budget report includes caps and length scan', () => {
+    const rep = buildO111MemoryBudgetReport({ gameState: { day: 1 }, notifications: [{ id: 'n0' }] });
+    return (rep.budgets.length >= 6 && rep.nestingDepth === 0 && typeof rep.arrayLengths === 'object') || 'incomplete report';
+  });
+
+  return results;
+}
+
+export function attachO111MemoryDevTools(opts: {
+  readLive: () => { gameState?: unknown; notifications?: unknown[]; gameSettings?: unknown };
+}): void {
+  if (typeof window === 'undefined') return;
+  if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') return;
+  const api = {
+    sampleHeap: (note?: string) => sampleBrowserHeap(note),
+    samples: () => listO111HeapSamples(),
+    budgets: () => O111_MEMORY_BUDGETS,
+    report: () => {
+      const live = opts.readLive();
+      sampleBrowserHeap('report');
+      return buildO111MemoryBudgetReport({ gameState: live.gameState, notifications: live.notifications, settings: live.gameSettings });
+    },
+    enforceState: () => enforceGameStateMemoryBudgets(opts.readLive().gameState),
+    runSelfTests: () => runO111MemoryManagementSelfTests()
+  };
+  (window as any).__O111_MEMORY__ = api;
+}
+
+
+// ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
 // Local-only diagnostics. No network, workers, telemetry or storage writes happen in this section; every
@@ -181851,6 +182108,16 @@ function AustraliaGame() {
     }
   }, [gameSettings.notificationSettings, gameState.day, resolveNotificationSubtype]);
 
+  React.useEffect(() => {
+    attachO111MemoryDevTools({
+      readLive: () => ({
+        gameState: gameStateLiveRef.current,
+        notifications,
+        gameSettings
+      })
+    });
+  }, [notifications, gameSettings]);
+
   const runPhase5ProactiveIntelligence = useCallback((memoriesOverride?: AiMemoriesByActor) => {
     if (gameSettings.aiCommunicationEnabled === false || gameSettings.aiCommunicationProactiveEnabled === false) return;
     if (!shouldEmitLiveCommunication({
@@ -200113,6 +200380,14 @@ function dispatchGameSettingsChange(
 
     setAiPlayer(projectedAi);
     aiPlayerRef.current = projectedAi;
+
+    // O111-A88: defense-in-depth memory budgets once per day (caps only; same eviction rules as save/load).
+    sampleBrowserHeap(`day_${newDay}`);
+    setNotifications(prev => capNotificationHistory(prev));
+    const o111Mem = enforceGameStateMemoryBudgets(gameState, { ledgerMaxEvents: gameSettings.gameActivityLedgerMaxEvents });
+    if (o111Mem.patch && Object.keys(o111Mem.patch).length > 0) {
+      dispatchGameState({ type: 'LOAD_STATE', payload: o111Mem.patch });
+    }
 
     if (!gameSettings.showDayTransition) {
       addNotification(`Market trend: ${nextTrend}`, 'market', true);
