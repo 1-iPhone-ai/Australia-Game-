@@ -1,12 +1,12 @@
 {
   "projectionId": "tranche-projection-full-chunks",
-  "dryRunAt": "2026-10-29T14:23:20.430Z",
+  "dryRunAt": "2026-10-29T14:36:02.850Z",
   "canonicalBaseCommit": "bc1adf3",
   "baselineAuditedFunctional": 389566,
-  "projectedAuditedFunctional": 3139519,
-  "deltaAuditedFunctional": 2749953,
+  "projectedAuditedFunctional": 3166371,
+  "deltaAuditedFunctional": 2776805,
   "baselinePhysicalLines": 419353,
-  "projectedPhysicalLines": 3280387,
+  "projectedPhysicalLines": 3308008,
   "branchHeadCount": 33,
   "branchesScannedExcludingIntegration": 32,
   "assemblyReadyRemote": 24,
@@ -104,7 +104,7 @@
     {
       "moduleId": "agent-05-events",
       "slot": "pre-final-export",
-      "contentSha256": "50a1e3a05e6b17633d3e5a8a29f9fc3d27233bde7563441494df7a9110a4deff"
+      "contentSha256": "5581afbd9b9fbd004967c14e2c468b3d9967f65a122c5b00e000e67e15c1cde4"
     },
     {
       "moduleId": "agent-06-macroeconomy",
@@ -179,12 +179,12 @@
     {
       "moduleId": "agent-20-automation",
       "slot": "append-only-self-tests",
-      "contentSha256": "6390c9506e1b399eb315316e521b5274509aa3aa412e05243e8fc590f371d3a0"
+      "contentSha256": "70af5a8e8218eaed3f980d77c047d30223db94c627f82b28a5e1b9ac251a7da6"
     },
     {
       "moduleId": "agent-21-forecasting",
       "slot": "O10M_AGENT21_INTEGRATION_ANCHOR",
-      "contentSha256": "8ad2759e6749db1f50cd07e64f105a5aa9962c60a2bd3f9085c3d2986cd2723e"
+      "contentSha256": "b4fb600da687ff41ceddeecb147476ffe9fc0e6fab3184b7b72192f70c1f8e80"
     },
     {
       "moduleId": "agent-22-ui",
@@ -194,7 +194,7 @@
     {
       "moduleId": "agent-23-dashboards",
       "slot": "post-living-regions-national-systems",
-      "contentSha256": "ad7da9c79db882be2fef38012afd1ba283ce025080f39785bb97235eb08d853a"
+      "contentSha256": "3d1d80dab51df962f139b2514d7d1389e48ce0445e872eaad973d35238cc86ff"
     },
     {
       "moduleId": "agent-24-history",
