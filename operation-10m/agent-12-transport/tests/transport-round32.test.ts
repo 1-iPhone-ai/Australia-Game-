@@ -37,13 +37,13 @@ describe('Agent 12 round 32 catalog', () => {
 });
 
 describe('Agent 12 round 32 systems', () => {
-  it('returns agent12/33 with vanadium flow, bushfire evac, grain silo auto', () => {
+  it('returns agent12/34 with vanadium flow, bushfire evac, grain silo auto', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(290), {
       vanadiumFlowBatteryExportPolicy: 'accelerate',
       bushfireEvacuationRailBridgePolicy: 'surge',
       automatedGrainSiloRailLoadoutPolicy: 'deploy',
     });
-    assert.equal(state.schemaVersion, 'agent12/33');
+    assert.equal(state.schemaVersion, 'agent12/34');
     assert.ok(state.nationalVanadiumFlowBatteryExportIndex >= 5);
     assert.ok(state.nationalBushfireEvacuationRailBridgeIndex >= 6);
     assert.ok(state.automatedGrainSiloRailLoadoutShare >= 0.03);

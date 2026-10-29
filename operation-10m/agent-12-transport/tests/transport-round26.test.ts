@@ -37,13 +37,13 @@ describe('Agent 12 round 26 catalog', () => {
 });
 
 describe('Agent 12 round 26 systems', () => {
-  it('returns agent12/33 with green steel, indigenous airlift, berth slots', () => {
+  it('returns agent12/34 with green steel, indigenous airlift, berth slots', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(230), {
       greenSteelExportPolicy: 'accelerate',
       indigenousCommunityAirliftPolicy: 'expand',
       portBerthSlotOptimizerPolicy: 'deploy',
     });
-    assert.equal(state.schemaVersion, 'agent12/33');
+    assert.equal(state.schemaVersion, 'agent12/34');
     assert.ok(state.nationalGreenSteelExportIndex >= 5);
     assert.ok(state.nationalIndigenousCommunityAirliftIndex >= 5);
     assert.ok(state.portBerthSlotOptimizerShare >= 0.03);

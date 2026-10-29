@@ -30,6 +30,7 @@ import { TRANSPORT_CORRIDORS_ROUND29 } from './corridors-round29.ts';
 import { TRANSPORT_CORRIDORS_ROUND30 } from './corridors-round30.ts';
 import { TRANSPORT_CORRIDORS_ROUND31 } from './corridors-round31.ts';
 import { TRANSPORT_CORRIDORS_ROUND32 } from './corridors-round32.ts';
+import { TRANSPORT_CORRIDORS_ROUND33 } from './corridors-round33.ts';
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   {
@@ -208,6 +209,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND30,
   ...TRANSPORT_CORRIDORS_ROUND31,
   ...TRANSPORT_CORRIDORS_ROUND32,
+  ...TRANSPORT_CORRIDORS_ROUND33,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {

@@ -349,8 +349,14 @@ export type BushfireEvacuationRailBridgePolicy = 'baseline' | 'surge';
 
 export type AutomatedGrainSiloRailLoadoutPolicy = 'baseline' | 'deploy';
 
+export type GreenIronPelletExportPolicy = 'baseline' | 'accelerate';
+
+export type FloodLeveeRailProtectionPolicy = 'baseline' | 'harden';
+
+export type PortZeroEmissionDrayagePolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/33';
+  schemaVersion: 'agent12/34';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -580,6 +586,14 @@ export interface TransportInfrastructureState {
   automatedGrainSiloRailLoadoutShare: number;
   nationalAutomatedGrainSiloRailLoadoutThroughputIndex: number;
   automatedGrainSiloRailLoadoutThroughputByRegion: Record<AuRegionCode, number>;
+  nationalGreenIronPelletExportIndex: number;
+  greenIronPelletExportByRegion: Record<AuRegionCode, number>;
+  floodLeveeRailProtectionShare: number;
+  nationalFloodLeveeRailProtectionIndex: number;
+  floodLeveeRailProtectionByRegion: Record<AuRegionCode, number>;
+  portZeroEmissionDrayageShare: number;
+  nationalPortZeroEmissionDrayageThroughputIndex: number;
+  portZeroEmissionDrayageThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -669,6 +683,9 @@ export interface TransportInfrastructureOptions {
   vanadiumFlowBatteryExportPolicy?: VanadiumFlowBatteryExportPolicy;
   bushfireEvacuationRailBridgePolicy?: BushfireEvacuationRailBridgePolicy;
   automatedGrainSiloRailLoadoutPolicy?: AutomatedGrainSiloRailLoadoutPolicy;
+  greenIronPelletExportPolicy?: GreenIronPelletExportPolicy;
+  floodLeveeRailProtectionPolicy?: FloodLeveeRailProtectionPolicy;
+  portZeroEmissionDrayagePolicy?: PortZeroEmissionDrayagePolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2072,6 +2089,48 @@ export const TRANSPORT_CORRIDORS_ROUND32: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round33.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND33: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_qld_green_pellet',
+    name: 'WA–QLD Green Pellet',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['green_pellet_export', 'dri_feed_stock', 'decarb_bulk_rail'],
+      QLD: ['green_pellet_export', 'dri_feed_stock', 'decarb_bulk_rail'],
+    },
+    productivitySynergyPoints: 6.3,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_nsw_qld_flood_levee',
+    name: 'NSW–QLD Flood Levee',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'QLD'],
+    requiredTagsByRegion: {
+      NSW: ['flood_levee_rail', 'river_crossing_harden', 'inland_flood_routing'],
+      QLD: ['flood_levee_rail', 'river_crossing_harden', 'inland_flood_routing'],
+    },
+    productivitySynergyPoints: 5.9,
+    logisticsRelief: 0.033,
+  },
+  {
+    id: 'corr_nsw_vic_zero_drayage',
+    name: 'NSW–VIC Zero Drayage',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['zero_emission_drayage', 'port_gate_electric', 'short_haul_e_truck'],
+      VIC: ['zero_emission_drayage', 'port_gate_electric', 'short_haul_e_truck'],
+    },
+    productivitySynergyPoints: 5.7,
+    logisticsRelief: 0.03,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2251,6 +2310,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND30,
   ...TRANSPORT_CORRIDORS_ROUND31,
   ...TRANSPORT_CORRIDORS_ROUND32,
+  ...TRANSPORT_CORRIDORS_ROUND33,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -4268,6 +4328,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND30,
   ...TRANSPORT_SCENARIOS_ROUND31,
   ...TRANSPORT_SCENARIOS_ROUND32,
+  ...TRANSPORT_SCENARIOS_ROUND33,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -12335,6 +12396,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND30_ASSETS,
     ...SCALE_WAVE_ROUND31_ASSETS,
     ...SCALE_WAVE_ROUND32_ASSETS,
+    ...SCALE_WAVE_ROUND33_ASSETS,
   ];
 }
 
@@ -19462,6 +19524,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   automatedGrainSiloRailLoadoutProductivityMultiplier,
   nationalAutomatedGrainSiloRailLoadoutThroughputIndex,
 } from './automated-grain-silo-rail-loadout-index.ts';
+  computeGreenIronPelletExportByRegion,
+  greenIronPelletExportProductivityMultiplier,
+  nationalGreenIronPelletExportIndex,
+} from '../network/green-iron-pellet-export-index.ts';
+  computeFloodLeveeRailProtectionByRegion,
+  computeFloodLeveeRailProtectionShare,
+  floodLeveeRailProtectionProductivityMultiplier,
+  nationalFloodLeveeRailProtectionIndex,
+} from '../operations/flood-levee-rail-protection-index.ts';
+  computePortZeroEmissionDrayageShare,
+  computePortZeroEmissionDrayageThroughputByRegion,
+  nationalPortZeroEmissionDrayageThroughputIndex,
+  portZeroEmissionDrayageProductivityMultiplier,
+} from './port-zero-emission-drayage-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -20559,6 +20635,32 @@ export function computeTransportInfrastructureState(
     automatedGrainSiloRailLoadoutShare,
     options?.automatedGrainSiloRailLoadoutPolicy ?? 'baseline',
   );
+  const greenIronPelletExportByRegion = computeGreenIronPelletExportByRegion(ops);
+  const nationalGreenPellet = nationalGreenIronPelletExportIndex(greenIronPelletExportByRegion);
+  const greenPelletMult = greenIronPelletExportProductivityMultiplier(
+    nationalGreenPellet,
+    options?.greenIronPelletExportPolicy ?? 'baseline',
+  );
+  const floodLeveeRailProtectionByRegion = computeFloodLeveeRailProtectionByRegion(ops, networkStress);
+  const nationalFloodLevee = nationalFloodLeveeRailProtectionIndex(floodLeveeRailProtectionByRegion);
+  const floodLeveeRailProtectionShare = computeFloodLeveeRailProtectionShare(
+    ops,
+    options?.floodLeveeRailProtectionPolicy ?? 'baseline',
+  );
+  const floodLeveeMult = floodLeveeRailProtectionProductivityMultiplier(
+    floodLeveeRailProtectionShare,
+    options?.floodLeveeRailProtectionPolicy ?? 'baseline',
+  );
+  const portZeroEmissionDrayageThroughputByRegion = computePortZeroEmissionDrayageThroughputByRegion(ops);
+  const nationalZeroDrayage = nationalPortZeroEmissionDrayageThroughputIndex(portZeroEmissionDrayageThroughputByRegion);
+  const portZeroEmissionDrayageShare = computePortZeroEmissionDrayageShare(
+    ops,
+    options?.portZeroEmissionDrayagePolicy ?? 'baseline',
+  );
+  const zeroDrayageMult = portZeroEmissionDrayageProductivityMultiplier(
+    portZeroEmissionDrayageShare,
+    options?.portZeroEmissionDrayagePolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -20612,6 +20714,9 @@ export function computeTransportInfrastructureState(
     const vanadiumFlowBoost = (vanadiumFlowBatteryExportByRegion[code] - 5) * 0.0036;
     const bushfireEvacBoost = (bushfireEvacuationRailBridgeByRegion[code] - 6) * 0.0032;
     const grainSiloAutoBoost = (automatedGrainSiloRailLoadoutThroughputByRegion[code] - 1.9) * 0.0028;
+    const greenPelletBoost = (greenIronPelletExportByRegion[code] - 5) * 0.0035;
+    const floodLeveeBoost = (floodLeveeRailProtectionByRegion[code] - 6) * 0.0031;
+    const zeroDrayageBoost = (portZeroEmissionDrayageThroughputByRegion[code] - 2) * 0.0027;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -20664,7 +20769,10 @@ export function computeTransportInfrastructureState(
         ebusDepotBoost +
         vanadiumFlowBoost +
         bushfireEvacBoost +
-        grainSiloAutoBoost) *
+        grainSiloAutoBoost +
+        greenPelletBoost +
+        floodLeveeBoost +
+        zeroDrayageBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -20715,7 +20823,10 @@ export function computeTransportInfrastructureState(
       ebusDepotMult *
       vanadiumFlowMult *
       bushfireEvacMult *
-      grainSiloAutoMult;
+      grainSiloAutoMult *
+      greenPelletMult *
+      floodLeveeMult *
+      zeroDrayageMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -20789,7 +20900,10 @@ export function computeTransportInfrastructureState(
     nationalEbusDepot * 0.003 +
     nationalVanadiumFlow * 0.003 +
     nationalBushfireEvac * 0.003 +
-    nationalGrainSiloAuto * 0.003;
+    nationalGrainSiloAuto * 0.003 +
+    nationalGreenPellet * 0.003 +
+    nationalFloodLevee * 0.003 +
+    nationalZeroDrayage * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -20804,7 +20918,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/33',
+    schemaVersion: 'agent12/34',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -21034,6 +21148,14 @@ export function computeTransportInfrastructureState(
     automatedGrainSiloRailLoadoutShare,
     nationalAutomatedGrainSiloRailLoadoutThroughputIndex: nationalGrainSiloAuto,
     automatedGrainSiloRailLoadoutThroughputByRegion,
+    nationalGreenIronPelletExportIndex: nationalGreenPellet,
+    greenIronPelletExportByRegion,
+    floodLeveeRailProtectionShare,
+    nationalFloodLeveeRailProtectionIndex: nationalFloodLevee,
+    floodLeveeRailProtectionByRegion,
+    portZeroEmissionDrayageShare,
+    nationalPortZeroEmissionDrayageThroughputIndex: nationalZeroDrayage,
+    portZeroEmissionDrayageThroughputByRegion,
     computeMs,
   };
 }
@@ -21116,7 +21238,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/33' &&
+      infra.schemaVersion === 'agent12/34' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&

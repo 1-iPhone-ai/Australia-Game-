@@ -499,6 +499,23 @@ import {
   automatedGrainSiloRailLoadoutProductivityMultiplier,
   nationalAutomatedGrainSiloRailLoadoutThroughputIndex,
 } from './automated-grain-silo-rail-loadout-index.ts';
+import {
+  computeGreenIronPelletExportByRegion,
+  greenIronPelletExportProductivityMultiplier,
+  nationalGreenIronPelletExportIndex,
+} from '../network/green-iron-pellet-export-index.ts';
+import {
+  computeFloodLeveeRailProtectionByRegion,
+  computeFloodLeveeRailProtectionShare,
+  floodLeveeRailProtectionProductivityMultiplier,
+  nationalFloodLeveeRailProtectionIndex,
+} from '../operations/flood-levee-rail-protection-index.ts';
+import {
+  computePortZeroEmissionDrayageShare,
+  computePortZeroEmissionDrayageThroughputByRegion,
+  nationalPortZeroEmissionDrayageThroughputIndex,
+  portZeroEmissionDrayageProductivityMultiplier,
+} from './port-zero-emission-drayage-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1597,6 +1614,32 @@ export function computeTransportInfrastructureState(
     automatedGrainSiloRailLoadoutShare,
     options?.automatedGrainSiloRailLoadoutPolicy ?? 'baseline',
   );
+  const greenIronPelletExportByRegion = computeGreenIronPelletExportByRegion(ops);
+  const nationalGreenPellet = nationalGreenIronPelletExportIndex(greenIronPelletExportByRegion);
+  const greenPelletMult = greenIronPelletExportProductivityMultiplier(
+    nationalGreenPellet,
+    options?.greenIronPelletExportPolicy ?? 'baseline',
+  );
+  const floodLeveeRailProtectionByRegion = computeFloodLeveeRailProtectionByRegion(ops, networkStress);
+  const nationalFloodLevee = nationalFloodLeveeRailProtectionIndex(floodLeveeRailProtectionByRegion);
+  const floodLeveeRailProtectionShare = computeFloodLeveeRailProtectionShare(
+    ops,
+    options?.floodLeveeRailProtectionPolicy ?? 'baseline',
+  );
+  const floodLeveeMult = floodLeveeRailProtectionProductivityMultiplier(
+    floodLeveeRailProtectionShare,
+    options?.floodLeveeRailProtectionPolicy ?? 'baseline',
+  );
+  const portZeroEmissionDrayageThroughputByRegion = computePortZeroEmissionDrayageThroughputByRegion(ops);
+  const nationalZeroDrayage = nationalPortZeroEmissionDrayageThroughputIndex(portZeroEmissionDrayageThroughputByRegion);
+  const portZeroEmissionDrayageShare = computePortZeroEmissionDrayageShare(
+    ops,
+    options?.portZeroEmissionDrayagePolicy ?? 'baseline',
+  );
+  const zeroDrayageMult = portZeroEmissionDrayageProductivityMultiplier(
+    portZeroEmissionDrayageShare,
+    options?.portZeroEmissionDrayagePolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1650,6 +1693,9 @@ export function computeTransportInfrastructureState(
     const vanadiumFlowBoost = (vanadiumFlowBatteryExportByRegion[code] - 5) * 0.0036;
     const bushfireEvacBoost = (bushfireEvacuationRailBridgeByRegion[code] - 6) * 0.0032;
     const grainSiloAutoBoost = (automatedGrainSiloRailLoadoutThroughputByRegion[code] - 1.9) * 0.0028;
+    const greenPelletBoost = (greenIronPelletExportByRegion[code] - 5) * 0.0035;
+    const floodLeveeBoost = (floodLeveeRailProtectionByRegion[code] - 6) * 0.0031;
+    const zeroDrayageBoost = (portZeroEmissionDrayageThroughputByRegion[code] - 2) * 0.0027;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1702,7 +1748,10 @@ export function computeTransportInfrastructureState(
         ebusDepotBoost +
         vanadiumFlowBoost +
         bushfireEvacBoost +
-        grainSiloAutoBoost) *
+        grainSiloAutoBoost +
+        greenPelletBoost +
+        floodLeveeBoost +
+        zeroDrayageBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1753,7 +1802,10 @@ export function computeTransportInfrastructureState(
       ebusDepotMult *
       vanadiumFlowMult *
       bushfireEvacMult *
-      grainSiloAutoMult;
+      grainSiloAutoMult *
+      greenPelletMult *
+      floodLeveeMult *
+      zeroDrayageMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1827,7 +1879,10 @@ export function computeTransportInfrastructureState(
     nationalEbusDepot * 0.003 +
     nationalVanadiumFlow * 0.003 +
     nationalBushfireEvac * 0.003 +
-    nationalGrainSiloAuto * 0.003;
+    nationalGrainSiloAuto * 0.003 +
+    nationalGreenPellet * 0.003 +
+    nationalFloodLevee * 0.003 +
+    nationalZeroDrayage * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1842,7 +1897,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/33',
+    schemaVersion: 'agent12/34',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2072,6 +2127,14 @@ export function computeTransportInfrastructureState(
     automatedGrainSiloRailLoadoutShare,
     nationalAutomatedGrainSiloRailLoadoutThroughputIndex: nationalGrainSiloAuto,
     automatedGrainSiloRailLoadoutThroughputByRegion,
+    nationalGreenIronPelletExportIndex: nationalGreenPellet,
+    greenIronPelletExportByRegion,
+    floodLeveeRailProtectionShare,
+    nationalFloodLeveeRailProtectionIndex: nationalFloodLevee,
+    floodLeveeRailProtectionByRegion,
+    portZeroEmissionDrayageShare,
+    nationalPortZeroEmissionDrayageThroughputIndex: nationalZeroDrayage,
+    portZeroEmissionDrayageThroughputByRegion,
     computeMs,
   };
 }

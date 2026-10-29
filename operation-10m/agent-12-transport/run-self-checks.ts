@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/33' &&
+      infra.schemaVersion === 'agent12/34' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -182,8 +182,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalVanadiumFlowBatteryExportIndex >= 5 &&
       infra.nationalBushfireEvacuationRailBridgeIndex >= 6 &&
       infra.automatedGrainSiloRailLoadoutShare >= 0.03 &&
-      infra.nationalAutomatedGrainSiloRailLoadoutThroughputIndex >= 1.9,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} vanadium=${infra.nationalVanadiumFlowBatteryExportIndex.toFixed(1)} evac=${infra.nationalBushfireEvacuationRailBridgeIndex.toFixed(1)} grain=${infra.nationalAutomatedGrainSiloRailLoadoutThroughputIndex.toFixed(1)}`,
+      infra.nationalAutomatedGrainSiloRailLoadoutThroughputIndex >= 1.9 &&
+      infra.nationalGreenIronPelletExportIndex >= 5 &&
+      infra.nationalFloodLeveeRailProtectionIndex >= 6 &&
+      infra.portZeroEmissionDrayageShare >= 0.03 &&
+      infra.nationalPortZeroEmissionDrayageThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} pellet=${infra.nationalGreenIronPelletExportIndex.toFixed(1)} levee=${infra.nationalFloodLeveeRailProtectionIndex.toFixed(1)} drayage=${infra.nationalPortZeroEmissionDrayageThroughputIndex.toFixed(1)}`,
   });
 
   return results;

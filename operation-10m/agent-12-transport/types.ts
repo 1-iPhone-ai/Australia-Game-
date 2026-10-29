@@ -345,8 +345,14 @@ export type BushfireEvacuationRailBridgePolicy = 'baseline' | 'surge';
 
 export type AutomatedGrainSiloRailLoadoutPolicy = 'baseline' | 'deploy';
 
+export type GreenIronPelletExportPolicy = 'baseline' | 'accelerate';
+
+export type FloodLeveeRailProtectionPolicy = 'baseline' | 'harden';
+
+export type PortZeroEmissionDrayagePolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/33';
+  schemaVersion: 'agent12/34';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -576,6 +582,14 @@ export interface TransportInfrastructureState {
   automatedGrainSiloRailLoadoutShare: number;
   nationalAutomatedGrainSiloRailLoadoutThroughputIndex: number;
   automatedGrainSiloRailLoadoutThroughputByRegion: Record<AuRegionCode, number>;
+  nationalGreenIronPelletExportIndex: number;
+  greenIronPelletExportByRegion: Record<AuRegionCode, number>;
+  floodLeveeRailProtectionShare: number;
+  nationalFloodLeveeRailProtectionIndex: number;
+  floodLeveeRailProtectionByRegion: Record<AuRegionCode, number>;
+  portZeroEmissionDrayageShare: number;
+  nationalPortZeroEmissionDrayageThroughputIndex: number;
+  portZeroEmissionDrayageThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -665,6 +679,9 @@ export interface TransportInfrastructureOptions {
   vanadiumFlowBatteryExportPolicy?: VanadiumFlowBatteryExportPolicy;
   bushfireEvacuationRailBridgePolicy?: BushfireEvacuationRailBridgePolicy;
   automatedGrainSiloRailLoadoutPolicy?: AutomatedGrainSiloRailLoadoutPolicy;
+  greenIronPelletExportPolicy?: GreenIronPelletExportPolicy;
+  floodLeveeRailProtectionPolicy?: FloodLeveeRailProtectionPolicy;
+  portZeroEmissionDrayagePolicy?: PortZeroEmissionDrayagePolicy;
 }
 
 export interface V94ProjectSnapshot {

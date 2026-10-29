@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 33
+
+- Schema **`agent12/34`**: green iron pellet export throughput, flood levee rail protection readiness, port zero-emission drayage share (`greenIronPelletExportPolicy`, `floodLeveeRailProtectionPolicy`, `portZeroEmissionDrayagePolicy`)
+- Catalog: **458** assets, **113** corridors, **183** scenarios
+- Systems: `network/green-iron-pellet-export-index.ts`, `operations/flood-levee-rail-protection-index.ts`, `productivity/port-zero-emission-drayage-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 32
 
 - Schema **`agent12/33`**: vanadium flow-battery export throughput, bushfire evacuation rail bridge readiness, automated grain silo rail loadout share (`vanadiumFlowBatteryExportPolicy`, `bushfireEvacuationRailBridgePolicy`, `automatedGrainSiloRailLoadoutPolicy`)
