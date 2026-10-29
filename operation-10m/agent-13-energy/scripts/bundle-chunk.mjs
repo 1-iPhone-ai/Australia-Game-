@@ -50,6 +50,7 @@ const FILES = [
   'green-hydrogen-export-electrolyser-hub-ledger.ts',
   'critical-minerals-circular-battery-supply-ledger.ts',
   'offshore-shore-port-green-corridor-ledger.ts',
+  'national-decarbon-federation-relief-arbitration-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -110,6 +111,8 @@ const EXPORT_MANIFEST = [
   'V1014_BATTERY_SUPPLY_CHAIN_CATALOG',
   'V1014_OFFSHORE_SHORE_ELECTRIFICATION_CATALOG',
   'V1014_PORT_GREEN_CORRIDOR_CATALOG',
+  'V1014_DECARBON_FEDERATION_CATALOG',
+  'V1014_RELIEF_ARBITRATION_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -206,6 +209,9 @@ const EXPORT_MANIFEST = [
   'runAgent13OffshorePortScaleSelfTests',
   'runAgent13OffshorePortTurnScenario',
   'V1014_OFFSHORE_PORT_TURN_SCENARIOS',
+  'runAgent13FederationArbitrationScaleSelfTests',
+  'runAgent13FederationArbitrationTurnScenario',
+  'V1014_FEDERATION_ARBITRATION_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];
