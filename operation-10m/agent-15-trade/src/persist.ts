@@ -70,6 +70,8 @@ import { sanitizeNextArcOpenPrepContinuitySmoothing } from './next-arc-open-prep
 import { sanitizeBilateralPreparedArcOpeningHandoffSmoothing } from './bilateral-prepared-arc-opening-handoff.ts';
 import { sanitizePreparedArcHandoffContinuitySmoothing } from './prepared-arc-handoff-continuity.ts';
 import { sanitizeBilateralScaleLoopSealGateSmoothing } from './bilateral-scale-loop-seal-gate.ts';
+import { sanitizeSealedScaleLoopContinuitySmoothing } from './sealed-scale-loop-continuity.ts';
+import { sanitizeBilateralScaleWaveReentryGateSmoothing } from './bilateral-scale-wave-reentry-gate.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -158,6 +160,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralPreparedArcOpeningHandoffSmoothing: 0.52,
     preparedArcHandoffContinuitySmoothing: 0.52,
     bilateralScaleLoopSealGateSmoothing: 0.52,
+    sealedScaleLoopContinuitySmoothing: 0.52,
+    bilateralScaleWaveReentryGateSmoothing: 0.52,
   };
 }
 
@@ -459,6 +463,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   );
   base.bilateralScaleLoopSealGateSmoothing = sanitizeBilateralScaleLoopSealGateSmoothing(
     r.bilateralScaleLoopSealGateSmoothing,
+  );
+  base.sealedScaleLoopContinuitySmoothing = sanitizeSealedScaleLoopContinuitySmoothing(
+    r.sealedScaleLoopContinuitySmoothing,
+  );
+  base.bilateralScaleWaveReentryGateSmoothing = sanitizeBilateralScaleWaveReentryGateSmoothing(
+    r.bilateralScaleWaveReentryGateSmoothing,
   );
   return base;
 }

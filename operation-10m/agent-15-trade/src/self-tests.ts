@@ -330,6 +330,16 @@ import {
   bilateralScaleLoopSealGateExportScale,
 } from './bilateral-scale-loop-seal-gate.ts';
 import {
+  computeSealedScaleLoopContinuitySnapshot,
+  createEmptySealedScaleLoopContinuitySnapshot,
+  sealedScaleLoopContinuityExportScale,
+} from './sealed-scale-loop-continuity.ts';
+import {
+  computeBilateralScaleWaveReentryGateSnapshot,
+  createEmptyBilateralScaleWaveReentryGateSnapshot,
+  bilateralScaleWaveReentryGateExportScale,
+} from './bilateral-scale-wave-reentry-gate.ts';
+import {
   computeBilateralTradeWindowContinuitySnapshot,
   createEmptyBilateralTradeWindowContinuitySnapshot,
 } from './bilateral-trade-window-continuity.ts';
@@ -2232,6 +2242,54 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralPreparedArcOpeningHandoffExportScale(handed) >=
         bilateralPreparedArcOpeningHandoffExportScale(withheld),
       'expected prepared handoff scale lift',
+    );
+  });
+
+  ok('prepared arc handoff continuity improves when handoff is handed off', () => {
+    const handoff = {
+      ...createEmptyBilateralPreparedArcOpeningHandoffSnapshot(),
+      score: 0.95,
+      band: 'handed_off' as const,
+    };
+    const prep = { ...createEmptyNextArcOpenPrepContinuitySnapshot(), score: 0.93, band: 'ready' as const };
+    const locked = computePreparedArcHandoffContinuitySnapshot({
+      bilateralPreparedArcOpeningHandoff: handoff,
+      nextArcOpenPrepContinuity: prep,
+      persisted: { ...createEmptyGTELPersisted(), preparedArcHandoffContinuitySmoothing: 0.96 },
+    }).snapshot;
+    const broken = computePreparedArcHandoffContinuitySnapshot({
+      bilateralPreparedArcOpeningHandoff: { ...handoff, score: 0.1, band: 'withheld' },
+      nextArcOpenPrepContinuity: { ...prep, score: 0.08, band: 'cleared' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(locked.score > broken.score, 'expected locked handoff continuity');
+    gtelAssert(
+      preparedArcHandoffContinuityExportScale(locked) >= preparedArcHandoffContinuityExportScale(broken),
+      'expected handoff continuity scale lift',
+    );
+  });
+
+  ok('bilateral scale loop seal gate improves when handoff continuity is locked', () => {
+    const continuity = {
+      ...createEmptyPreparedArcHandoffContinuitySnapshot(),
+      score: 0.96,
+      band: 'locked' as const,
+    };
+    const seal = { ...createEmptyTradeCycleSealVerificationSnapshot(), score: 0.88, band: 'verified' as const };
+    const sealed = computeBilateralScaleLoopSealGateSnapshot({
+      preparedArcHandoffContinuity: continuity,
+      tradeCycleSealVerification: seal,
+      persisted: { ...createEmptyGTELPersisted(), bilateralScaleLoopSealGateSmoothing: 0.98 },
+    }).snapshot;
+    const open = computeBilateralScaleLoopSealGateSnapshot({
+      preparedArcHandoffContinuity: { ...continuity, score: 0.11, band: 'broken' },
+      tradeCycleSealVerification: { ...seal, score: 0.08, band: 'failed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(sealed.score > open.score, 'expected loop seal when locked');
+    gtelAssert(
+      bilateralScaleLoopSealGateExportScale(sealed) >= bilateralScaleLoopSealGateExportScale(open),
+      'expected loop seal scale lift',
     );
   });
 

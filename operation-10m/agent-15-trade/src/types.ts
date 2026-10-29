@@ -218,6 +218,8 @@ export interface GTELPersisted {
   bilateralPreparedArcOpeningHandoffSmoothing?: number;
   preparedArcHandoffContinuitySmoothing?: number;
   bilateralScaleLoopSealGateSmoothing?: number;
+  sealedScaleLoopContinuitySmoothing?: number;
+  bilateralScaleWaveReentryGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -305,6 +307,8 @@ export interface GTELState {
   bilateralPreparedArcOpeningHandoff: GTELBilateralPreparedArcOpeningHandoffSnapshot;
   preparedArcHandoffContinuity: GTELPreparedArcHandoffContinuitySnapshot;
   bilateralScaleLoopSealGate: GTELBilateralScaleLoopSealGateSnapshot;
+  sealedScaleLoopContinuity: GTELSealedScaleLoopContinuitySnapshot;
+  bilateralScaleWaveReentryGate: GTELBilateralScaleWaveReentryGateSnapshot;
   inputHash: string;
 }
 
@@ -1169,6 +1173,26 @@ export interface GTELBilateralScaleLoopSealGateSnapshot {
   band: GTELBilateralScaleLoopSealGateBand;
   handoffContinuityFeed: number;
   cycleSealLift: number;
+  summary: string;
+}
+
+export type GTELSealedScaleLoopContinuityBand = 'anchored' | 'holding' | 'loosening' | 'broken';
+
+export interface GTELSealedScaleLoopContinuitySnapshot {
+  score: number;
+  band: GTELSealedScaleLoopContinuityBand;
+  sealSupport: number;
+  handoffAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralScaleWaveReentryGateBand = 'reentered' | 'approaching' | 'stalled' | 'closed';
+
+export interface GTELBilateralScaleWaveReentryGateSnapshot {
+  score: number;
+  band: GTELBilateralScaleWaveReentryGateBand;
+  sealedContinuityFeed: number;
+  cycleReentryLift: number;
   summary: string;
 }
 

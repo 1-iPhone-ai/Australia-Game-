@@ -81,5 +81,7 @@ export * from './next-arc-open-prep-continuity.ts';
 export * from './bilateral-prepared-arc-opening-handoff.ts';
 export * from './prepared-arc-handoff-continuity.ts';
 export * from './bilateral-scale-loop-seal-gate.ts';
+export * from './sealed-scale-loop-continuity.ts';
+export * from './bilateral-scale-wave-reentry-gate.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';
