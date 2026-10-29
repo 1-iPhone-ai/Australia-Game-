@@ -132,6 +132,7 @@ export function attachExpungementSessionToState(
     reinstatementSession: null,
     setAsideSession: null,
     quashSession: null,
+    supersedeSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,

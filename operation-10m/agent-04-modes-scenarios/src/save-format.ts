@@ -39,6 +39,7 @@ import { sanitizeAnnulmentSession } from './save-format-annulment.js';
 import { sanitizeReinstatementSession } from './save-format-reinstatement.js';
 import { sanitizeSetAsideSession } from './save-format-setaside.js';
 import { sanitizeQuashSession } from './save-format-quash.js';
+import { sanitizeSupersedeSession } from './save-format-supersede.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -57,7 +58,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 39;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 40;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -195,6 +196,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     reinstatementSession: null,
     setAsideSession: null,
     quashSession: null,
+    supersedeSession: null,
   };
 }
 
@@ -253,6 +255,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       reinstatementSession: merged.reinstatementSession ?? null,
       setAsideSession: merged.setAsideSession ?? null,
       quashSession: merged.quashSession ?? null,
+      supersedeSession: merged.supersedeSession ?? null,
     };
     return upgraded;
   }
@@ -335,6 +338,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     reinstatementSession: sanitizeReinstatementSession(o.reinstatementSession),
     setAsideSession: sanitizeSetAsideSession(o.setAsideSession),
     quashSession: sanitizeQuashSession(o.quashSession),
+    supersedeSession: sanitizeSupersedeSession(o.supersedeSession),
   };
 }
 
@@ -614,6 +618,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Quash session failed sanitization; planner will ignore it.');
   } else if (quash && quash.cursor >= quash.scenarioIds.length) {
     warnings.push('Quash cursor out of range; clamp on next sanitize.');
+  }
+
+  const supersede = sanitizeSupersedeSession(state.supersedeSession);
+  if (state.supersedeSession && !supersede) {
+    warnings.push('Supersede session failed sanitization; planner will ignore it.');
+  } else if (supersede && supersede.cursor >= supersede.scenarioIds.length) {
+    warnings.push('Supersede cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

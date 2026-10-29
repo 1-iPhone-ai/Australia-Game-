@@ -144,6 +144,7 @@ export function attachVoyageSessionToState(
     reinstatementSession: null,
     setAsideSession: null,
     quashSession: null,
+    supersedeSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,

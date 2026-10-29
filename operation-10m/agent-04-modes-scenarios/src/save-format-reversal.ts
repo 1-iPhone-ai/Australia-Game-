@@ -129,6 +129,7 @@ export function attachReversalSessionToState(
     reinstatementSession: null,
     setAsideSession: null,
     quashSession: null,
+    supersedeSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,

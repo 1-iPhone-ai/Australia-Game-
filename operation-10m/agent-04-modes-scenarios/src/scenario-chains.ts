@@ -1368,6 +1368,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_supersede_route',
+    title: 'Supersede Route',
+    description:
+      'Three-phase supersede arc with score accrual between legs — round-40 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_supersede_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_supersede_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File supersede motion before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 500 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_supersede_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { SA: 6, NT: 5 },
+          forcedSettingsPatch: { o10mSupersedeMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_supersede_stay_finale',
+        title: 'Stay Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainSupersedeRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

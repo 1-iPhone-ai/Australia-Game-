@@ -117,6 +117,11 @@ import {
   sanitizeReversalSession,
 } from './save-format-reversal.js';
 import {
+  getSupersedeScenarioAtCursor,
+  supersedeSessionSummary,
+  sanitizeSupersedeSession,
+} from './save-format-supersede.js';
+import {
   getQuashScenarioAtCursor,
   quashSessionSummary,
   sanitizeQuashSession,
@@ -209,6 +214,7 @@ import type {
   O10mReinstatementPhase,
   O10mSetAsidePhase,
   O10mQuashPhase,
+  O10mSupersedePhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -351,9 +357,31 @@ const emptyQueuePlan = {
   quashCursor: null as number | null,
   quashPhase: null as O10mQuashPhase | null,
   quashScore: null as number | null,
+  supersedeId: null as string | null,
+  supersedeCursor: null as number | null,
+  supersedePhase: null as O10mSupersedePhase | null,
+  supersedeScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const supersede = sanitizeSupersedeSession(state.supersedeSession);
+  const supersedeScenario = getSupersedeScenarioAtCursor(supersede);
+  if (supersede && supersede.active && supersedeScenario) {
+    return {
+      kind: 'supersede_step',
+      scenarioId: supersedeScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      supersedeId: supersede.supersedeId,
+      supersedeCursor: supersede.cursor,
+      supersedePhase: supersede.phaseTag,
+      supersedeScore: supersede.supersedeScore,
+      reason: `Supersede "${supersede.label}" ${supersede.phaseTag} phase ${supersede.cursor + 1}/${supersede.scenarioIds.length} (score ${supersede.supersedeScore}).`,
+    };
+  }
+
   const quash = sanitizeQuashSession(state.quashSession);
   const quashScenario = getQuashScenarioAtCursor(quash);
   if (quash && quash.active && quashScenario) {
@@ -1084,6 +1112,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   reinstatementActive: boolean;
   setAsideActive: boolean;
   quashActive: boolean;
+  supersedeActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1126,6 +1155,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const reinstatement = reinstatementSessionSummary(state);
   const setAside = setAsideSessionSummary(state);
   const quash = quashSessionSummary(state);
+  const supersede = supersedeSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1166,6 +1196,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     reinstatementActive: reinstatement.active,
     setAsideActive: setAside.active,
     quashActive: quash.active,
+    supersedeActive: supersede.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
