@@ -1,0 +1,338 @@
+{
+  "generatedAt": "2026-10-29T05:59:14.718Z",
+  "canonicalCommit": "bc1adf3",
+  "sections": [
+    {
+      "title": "1: IMPORTS",
+      "line": 2
+    },
+    {
+      "title": "1B: BUILT-IN AI MEMORY, PERSISTENT MEMORY AND AI COMMUNICATION",
+      "line": 7
+    },
+    {
+      "title": "2: GAME DATA AND CONSTANTS",
+      "line": 1420
+    },
+    {
+      "title": "3: CORE TYPES AND INTERFACES",
+      "line": 34814
+    },
+    {
+      "title": "4: DEFAULT SETTINGS AND CONFIGURATION",
+      "line": 42019
+    },
+    {
+      "title": "5: CORE HELPERS AND UTILITIES",
+      "line": 43633
+    },
+    {
+      "title": "6: SAVE, LOAD, MIGRATION, AND REPLAY FOUNDATIONS",
+      "line": 49586
+    },
+    {
+      "title": "7: CORE GAMEPLAY SYSTEMS",
+      "line": 56226
+    },
+    {
+      "title": "8: ECONOMY AND TEAM SYSTEMS",
+      "line": 61500
+    },
+    {
+      "title": "9: CORE AI SYSTEMS",
+      "line": 62226
+    },
+    {
+      "title": "10: GOVERNANCE, APPROVALS, AND OVERSIGHT",
+      "line": 71259
+    },
+    {
+      "title": "11: AUTOMATION AND ADVANCED GAME SYSTEMS",
+      "line": 72151
+    },
+    {
+      "title": "11A: AGENT 02 — ADVANCED TURN PROCESSING (Operation 600K / Division A)",
+      "line": 73170
+    },
+    {
+      "title": "12: ASK THE GAME AI",
+      "line": 78300
+    },
+    {
+      "title": "13: GUARDIAN AI",
+      "line": 82867
+    },
+    {
+      "title": "14: HUMAN CO-PILOT AI",
+      "line": 103771
+    },
+    {
+      "title": "15: AI COMMAND CENTER",
+      "line": 111690
+    },
+    {
+      "title": "16: STRATEGY PLANNER AND RELATED ASSISTANTS",
+      "line": 121964
+    },
+    {
+      "title": "17: SHARED UI INFRASTRUCTURE",
+      "line": 125332
+    },
+    {
+      "title": "19: SETTINGS HUB COMPONENTS",
+      "line": 152857
+    },
+    {
+      "title": "20: FEATURE UI COMPONENTS",
+      "line": 158228
+    },
+    {
+      "title": "20B: V9 EXPERIENCE UNIFICATION",
+      "line": 158257
+    },
+    {
+      "title": "20C: GAME INTELLIGENCE 2.0",
+      "line": 160564
+    },
+    {
+      "title": "20D: TEAM INTELLIGENCE 2.0 — TEAM OPERATING SYSTEM",
+      "line": 168265
+    },
+    {
+      "title": "20E: GAME INTELLIGENCE 3.0 — STRATEGIC COMMAND CENTER",
+      "line": 171183
+    },
+    {
+      "title": "20F: BACKGROUND AI — PARALLEL INTELLIGENCE SYSTEM",
+      "line": 172921
+    },
+    {
+      "title": "20G: SETTINGS INTELLIGENCE 2.0 — INTELLIGENT GAME EXPERIENCE DIRECTOR",
+      "line": 175082
+    },
+    {
+      "title": "20H: DIPLOMACY & NEGOTIATION 2.0 — DYNAMIC DEAL-MAKING SYSTEM",
+      "line": 177297
+    },
+    {
+      "title": "20I: STRATEGIC CONSEQUENCE / WORLD REACTION SYSTEM",
+      "line": 180472
+    },
+    {
+      "title": "20J: LIVING REGIONS 2.0 — DYNAMIC REGIONAL STATE SYSTEM",
+      "line": 182138
+    },
+    {
+      "title": "20K: REGIONAL FACTIONS & STAKEHOLDERS 2.0",
+      "line": 184018
+    },
+    {
+      "title": "20L: V9 GAMEPLAY COHESION — ONE GAME • ONE MOMENT • ONE CLEAR NEXT DECISION",
+      "line": 185575
+    },
+    {
+      "title": "20M: V9.1 STRATEGIC DEPTH & BALANCE — diagnostics, policy simulation, ROI (LAB / tests only)",
+      "line": 186312
+    },
+    {
+      "title": "20N: V9.2 GUIDED LEARNING — LEARN BY PLAYING • TEACH WHEN RELEVANT • NEVER OVERWHELM",
+      "line": 187238
+    },
+    {
+      "title": "20O: V9.3 CONTENT EXPANSION & REPLAYABILITY — MORE SITUATIONS • SAME CORE SYSTEMS",
+      "line": 188118
+    },
+    {
+      "title": "20P: V9.4 GAME FEEL & POLISH — RESPONSIVE • SATISFYING • CLEAR • ALIVE • POLISHED",
+      "line": 190698
+    },
+    {
+      "title": "20PA: V9.4 GUARDIAN & HUMAN CO-PILOT ADVISORY OPS — MONITOR • ADVISE • ALERT",
+      "line": 191315
+    },
+    {
+      "title": "20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING",
+      "line": 191772
+    },
+    {
+      "title": "20R: V9.6 HUMAN VS AI FIDELITY — THINK → ACT → RE-EVALUATE → KNOW WHEN TO STOP → END TURN",
+      "line": 195727
+    },
+    {
+      "title": "20S: V10.0 NATIONAL SYSTEMS & INTERREGIONAL NETWORKS",
+      "line": 196507
+    },
+    {
+      "title": "O6K-A23: NATIONAL & REGIONAL DASHBOARDS (Agent 23 — Operation 600K)",
+      "line": 197438
+    },
+    {
+      "title": "20T: V10.1 INDUSTRIES & SUPPLY CHAINS",
+      "line": 198442
+    },
+    {
+      "title": "20U: V10.2 STRATEGIC INFRASTRUCTURE NETWORKS",
+      "line": 199703
+    },
+    {
+      "title": "20V: V10.3 NATIONAL MEGAPROJECTS",
+      "line": 200843
+    },
+    {
+      "title": "20W: V10.4 NATIONAL DEVELOPMENT STRATEGY",
+      "line": 202523
+    },
+    {
+      "title": "20X: V10.5 INNOVATION & EMERGING CAPABILITIES",
+      "line": 203658
+    },
+    {
+      "title": "20Y: V10.6 RESILIENCE, DEPENDENCIES & SYSTEMIC RISK",
+      "line": 204890
+    },
+    {
+      "title": "20Z: V10.7 DYNAMIC NATIONAL PRIORITIES",
+      "line": 206129
+    },
+    {
+      "title": "20AA: V10.8 REGIONAL COMPETITION & ECONOMIC GEOGRAPHY",
+      "line": 207587
+    },
+    {
+      "title": "20AB: V10.9 STRATEGIC CAPITAL ALLOCATION & INVESTMENT CLIMATE",
+      "line": 211945
+    },
+    {
+      "title": "20AC: V10.10 WORKFORCE, SKILLS & HUMAN CAPITAL",
+      "line": 217696
+    },
+    {
+      "title": "20AC — PART 2: CORE WORKFORCE ENGINE & PERSISTENCE",
+      "line": 218290
+    },
+    {
+      "title": "20AC — PART 3: CROSS-SYSTEM ADAPTERS, UI SURFACES & 50 SELF-TESTS",
+      "line": 220601
+    },
+    {
+      "title": "20AC — UI COMPONENTS",
+      "line": 221252
+    },
+    {
+      "title": "20AC — DETERMINISTIC FIXTURES & 50 SELF-TESTS (wf01–wf50)",
+      "line": 222009
+    },
+    {
+      "title": "20AD: V10.11 ADAPTIVE GOVERNANCE & STATE CAPACITY",
+      "line": 222873
+    },
+    {
+      "title": "20AD PART 3: UI SURFACES, INSPECTOR & 52-TEST SELF-TEST SUITE (V10.11)",
+      "line": 226618
+    },
+    {
+      "title": "20AE: V10.12 PUBLIC FINANCE, NATIONAL BUDGET & FISCAL CAPACITY",
+      "line": 228354
+    },
+    {
+      "title": "20AF: V10.13 HOUSEHOLDS, LIVING STANDARDS & DOMESTIC DEMAND",
+      "line": 234582
+    },
+    {
+      "title": "20AM: V10.14 ADVANCED LOCAL SAVE SLOTS — VALIDATION, MIGRATIONS, QUICK SAVE (Agent 25)",
+      "line": 240450
+    },
+    {
+      "title": "20AN: V10.14 AUTONOMOUS & IDLE NATIONAL MANAGEMENT",
+      "line": 240457
+    },
+    {
+      "title": "20AN — Agent 20 bridge hooks (merge adjacent to core 20AN block)",
+      "line": 241271
+    },
+    {
+      "title": "20AL: V10.14 INDUSTRIAL ENERGY, EXTRACTION, RENEWABLES & ENVIRONMENTAL CONSTRAINTS",
+      "line": 241840
+    },
+    {
+      "title": "20AP: V10.14 PUBLIC SERVICES, HOUSING, HEALTH & EDUCATION KPIs (Agent 14)",
+      "line": 267743
+    },
+    {
+      "title": "20AR: V10.14 TRANSPORT LOGISTICS OPERATIONS — ROADS • RAIL • PORTS",
+      "line": 287706
+    },
+    {
+      "title": "20AQ: AGENT 21 — STRATEGIC FORECASTING & POLICY LAB (NON-AUTHORITATIVE)",
+      "line": 288037
+    },
+    {
+      "title": "20AJ: V10.14 LABOR MARKET, DEMOGRAPHICS, EMPLOYMENT, WAGES & MIGRATION",
+      "line": 288406
+    },
+    {
+      "title": "20AI: V10.14 PRIVATE SECTOR SIMULATION — COMPANIES • PRODUCTION • SUPPLY CHAINS • REGIONAL ECOSYSTEMS",
+      "line": 289102
+    },
+    {
+      "title": "20AH: V10.14 STRATEGIC DECISION ARCHITECTURE — ACTIONS, CHAINS, POLICY TRADE-OFFS",
+      "line": 294473
+    },
+    {
+      "title": "20AO: V10.14 MONETARY CONDITIONS, CREDIT CYCLES, INFLATION & FINANCIAL STABILITY",
+      "line": 296022
+    },
+    {
+      "title": "20AG: V10.14 MACROECONOMIC CYCLES, PRODUCTIVITY, INVESTMENT & NATIONAL ACCOUNTING",
+      "line": 297050
+    },
+    {
+      "title": "20AK: V10.14 CITIES, REGIONAL GROWTH & INTERCITY LINKS",
+      "line": 297862
+    },
+    {
+      "title": "20AS: AGENT 05 — DYNAMIC EVENTS, CRISIS CHAINS & SIMULATION CONTENT",
+      "line": 304365
+    },
+    {
+      "title": "20AT: AGENT 15 — GLOBAL TRADE–DIPLOMACY LINKAGE (Operation 600K)",
+      "line": 313000
+    },
+    {
+      "title": "20AU: TEAM INTELLIGENCE 3.0 (Agent 18)",
+      "line": 313719
+    },
+    {
+      "title": "20P-A22: PROGRESSION-DEPENDENT FLAGSHIP UI — NATION DEVELOPMENT UNLOCKS (OPERATION 600K / AGENT 22)",
+      "line": 314920
+    },
+    {
+      "title": "20AW: V10.14 FISCAL POLICY INSTRUMENTS & OUTCOME LINKAGE (Agent 07)",
+      "line": 315405
+    },
+    {
+      "title": "20AX: V10.5 INNOVATION COMMERCIALIZATION EXPANSION (Agent 03)",
+      "line": 318296
+    },
+    {
+      "title": "20AV: V1015 NATIONAL TICK ORCHESTRATOR (Agent 02 / 25)",
+      "line": 319528
+    },
+    {
+      "title": "20BB: V10.1 SUPPLY CHAIN DEPTH — REGIONAL BOM & BOTTLENECK PROPAGATION",
+      "line": 325085
+    },
+    {
+      "title": "20BA: V10.14 TRADE DEPTH — TARIFFS, SANCTIONS & CAPITAL CONTROLS (T6-6)",
+      "line": 337691
+    },
+    {
+      "title": "21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS",
+      "line": 357835
+    },
+    {
+      "title": "22: FINAL EXPORT",
+      "line": 419350
+    }
+  ]
+}
