@@ -634,6 +634,43 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'events', 'dashboards', 'round19'],
   },
+  {
+    id: 'public_finance_debt_service_stack',
+    label: 'Public finance debt service stack',
+    description: 'Large deficit with critical debt service and anchor breach.',
+    patch: {
+      fiscalPressure: 'critical',
+      sovereignDebtPressure: 'critical',
+      fiscalSustainability: 'vulnerable',
+      inflationSettingMultiplier: 1.24,
+    },
+    tags: ['inflation', 'fiscal', 'round20'],
+  },
+  {
+    id: 'population_labor_wage_stress',
+    label: 'Population labor wage stress',
+    description: 'Wage surge with extreme cost-of-living stress.',
+    patch: {
+      householdAffordability: 'severe_pressure',
+      householdInflationScenarioActive: true,
+      highInflationScenario: true,
+      inflationSettingMultiplier: 1.22,
+    },
+    tags: ['inflation', 'labor', 'round20'],
+  },
+  {
+    id: 'fiscal_labor_fusion_stress',
+    label: 'Fiscal & labor fusion stress',
+    description: 'Aligned Agent 07 anchor breach + Agent 09 wage de-anchoring.',
+    patch: {
+      inflationSettingMultiplier: 1.31,
+      highInflationScenario: true,
+      fiscalPressure: 'critical',
+      householdInflationScenarioActive: true,
+      householdAffordability: 'severe_pressure',
+    },
+    tags: ['inflation', 'fiscal', 'labor', 'round20'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

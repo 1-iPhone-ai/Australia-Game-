@@ -120,6 +120,14 @@ import {
   assessDashboardMapInflationOverlay,
   type DashboardMapInflationOverlayBand,
 } from '../inflation/dashboard-map-inflation-overlay.js';
+import {
+  assessPublicFinanceDebtServiceInflation,
+  type PublicFinanceDebtServiceBand,
+} from '../inflation/public-finance-debt-service-inflation.js';
+import {
+  assessPopulationLaborWageInflation,
+  type PopulationLaborWageBand,
+} from '../inflation/population-labor-wage-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -158,6 +166,8 @@ export interface InflationForecastPoint {
   macroTransmissionMergeBand: MacroTransmissionMergeBand;
   dynamicEventsInflationSpilloverBand: DynamicEventsInflationSpilloverBand;
   dashboardMapInflationOverlayBand: DashboardMapInflationOverlayBand;
+  publicFinanceDebtServiceBand: PublicFinanceDebtServiceBand;
+  populationLaborWageBand: PopulationLaborWageBand;
 }
 
 export interface InflationForecastPath {
@@ -425,6 +435,40 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const publicFinanceDebt = assessPublicFinanceDebtServiceInflation({
+      consolidatedDeficitBand:
+        inputs.fiscalPressure === 'critical' ? 'large_deficit' : inputs.fiscalPressure === 'strained' ? 'moderate_deficit' : 'balanced',
+      debtServicePressure:
+        inputs.sovereignDebtPressure === 'critical'
+          ? 'critical'
+          : inputs.sovereignDebtPressure === 'elevated'
+            ? 'elevated'
+            : 'moderate',
+      fiscalAnchorBreached: inputs.fiscalPressure === 'critical' || inputs.fiscalSustainability === 'vulnerable',
+      indexedChargesInflationPassThrough: inputs.fiscalPressure !== 'healthy',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const populationLabor = assessPopulationLaborWageInflation({
+      laborParticipationBand: inputs.actorCreditStressIndex > 0.55 ? 'weak' : 'steady',
+      wageGrowthBand:
+        inputs.highInflationScenario && inputs.householdInflationScenarioActive
+          ? 'surge'
+          : inputs.householdInflationScenarioActive
+            ? 'elevated'
+            : 'moderate',
+      costOfLivingStress:
+        inputs.householdAffordability === 'severe_pressure'
+          ? 'extreme'
+          : inputs.householdAffordability === 'strained'
+            ? 'high'
+            : 'moderate',
+      participationSlackInflationBand:
+        inputs.householdAffordability === 'severe_pressure' ? 'severe_slack' : inputs.householdInflationScenarioActive ? 'slack' : 'balanced',
+      householdExpectationsDeanchoring: inputs.highInflationScenario && inputs.householdInflationScenarioActive,
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -463,6 +507,8 @@ export function projectInflationForecastPath(
       macroTransmissionMergeBand: macroMerge.mergeBand,
       dynamicEventsInflationSpilloverBand: eventsSpillover.spilloverBand,
       dashboardMapInflationOverlayBand: dashboardOverlay.overlayBand,
+      publicFinanceDebtServiceBand: publicFinanceDebt.debtServiceBand,
+      populationLaborWageBand: populationLabor.wageBand,
     });
   }
 

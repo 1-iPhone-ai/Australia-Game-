@@ -7,6 +7,10 @@ export interface Agent07FiscalSnapshot {
   consolidatedDeficitBand: 'surplus' | 'balanced' | 'moderate_deficit' | 'large_deficit';
   revenueMomentum: 'weak' | 'steady' | 'strong';
   debtServicePressure: 'low' | 'moderate' | 'elevated' | 'critical';
+  /** Round 20: fiscal anchor breach feeding indexed charges CPI. */
+  fiscalAnchorBreached?: boolean;
+  /** Round 20: government indexed charges pass-through active. */
+  indexedChargesInflationPassThrough?: boolean;
 }
 
 export function mergeAgent07IntoMacroFinancialInputs(
@@ -45,6 +49,14 @@ export function mergeAgent07IntoMacroFinancialInputs(
     fiscalSustainability = 'vulnerable';
   }
 
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.fiscalAnchorBreached && snapshot.indexedChargesInflationPassThrough) {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.fiscalAnchorBreached) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
@@ -52,6 +64,7 @@ export function mergeAgent07IntoMacroFinancialInputs(
     sovereignDebtPressure,
     fiscalSustainability,
     inflationSettingMultiplier,
+    highInflationScenario,
   };
 }
 

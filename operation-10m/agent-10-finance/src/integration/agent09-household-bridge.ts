@@ -7,6 +7,10 @@ export interface Agent09HouseholdSnapshot {
   laborParticipationBand: 'weak' | 'steady' | 'strong';
   wageGrowthBand: 'subdued' | 'moderate' | 'elevated' | 'surge';
   costOfLivingStress: 'low' | 'moderate' | 'high' | 'extreme';
+  /** Round 20: labor market slack band for wage-price pass-through. */
+  participationSlackInflationBand?: 'tight' | 'balanced' | 'slack' | 'severe_slack';
+  /** Round 20: household inflation expectations de-anchoring flag. */
+  householdExpectationsDeanchoring?: boolean;
 }
 
 export function mergeAgent09IntoMacroFinancialInputs(
@@ -37,6 +41,15 @@ export function mergeAgent09IntoMacroFinancialInputs(
     actorCreditStressIndex = finClamp(actorCreditStressIndex + 0.08, 0, 1);
   }
 
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.householdExpectationsDeanchoring) {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+  if (snapshot.participationSlackInflationBand === 'severe_slack' && snapshot.wageGrowthBand !== 'subdued') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
   return {
     ...base,
     turn: Math.max(base.turn, snapshot.turn),
@@ -44,6 +57,7 @@ export function mergeAgent09IntoMacroFinancialInputs(
     householdInflationScenarioActive,
     inflationSettingMultiplier,
     actorCreditStressIndex,
+    highInflationScenario,
   };
 }
 

@@ -32,11 +32,13 @@ import type { HousingMortgageEssentialBand } from '../inflation/housing-mortgage
 import type { MacroTransmissionMergeBand } from '../inflation/macro-transmission-merge-inflation.js';
 import type { DynamicEventsInflationSpilloverBand } from '../inflation/dynamic-events-inflation-spillover.js';
 import type { DashboardMapInflationOverlayBand } from '../inflation/dashboard-map-inflation-overlay.js';
+import type { PublicFinanceDebtServiceBand } from '../inflation/public-finance-debt-service-inflation.js';
+import type { PopulationLaborWageBand } from '../inflation/population-labor-wage-inflation.js';
 import { finRound } from '../compute/math.js';
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r19';
+  schemaVersion: '10.14.agent10.r20';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -70,6 +72,8 @@ export interface Agent21InflationForecastBundle {
   terminalMacroTransmissionMerge: MacroTransmissionMergeBand;
   terminalDynamicEventsInflationSpillover: DynamicEventsInflationSpilloverBand;
   terminalDashboardMapInflationOverlay: DashboardMapInflationOverlayBand;
+  terminalPublicFinanceDebtService: PublicFinanceDebtServiceBand;
+  terminalPopulationLaborWage: PopulationLaborWageBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -98,7 +102,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r19',
+    schemaVersion: '10.14.agent10.r20',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -132,6 +136,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalMacroTransmissionMerge: lastPoint?.macroTransmissionMergeBand ?? 'coherent',
     terminalDynamicEventsInflationSpillover: lastPoint?.dynamicEventsInflationSpilloverBand ?? 'muted',
     terminalDashboardMapInflationOverlay: lastPoint?.dashboardMapInflationOverlayBand ?? 'routine',
+    terminalPublicFinanceDebtService: lastPoint?.publicFinanceDebtServiceBand ?? 'anchored',
+    terminalPopulationLaborWage: lastPoint?.populationLaborWageBand ?? 'subdued',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
