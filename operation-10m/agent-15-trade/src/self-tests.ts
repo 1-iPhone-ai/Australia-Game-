@@ -379,6 +379,16 @@ import {
   createEmptyBilateralSustainedWaveThroughputGateSnapshot,
   bilateralSustainedWaveThroughputGateExportScale,
 } from './bilateral-sustained-wave-throughput-gate.ts';
+import {
+  computeSustainedWaveThroughputContinuitySnapshot,
+  createEmptySustainedWaveThroughputContinuitySnapshot,
+  sustainedWaveThroughputContinuityExportScale,
+} from './sustained-wave-throughput-continuity.ts';
+import {
+  computeBilateralClearedWaveHandoffGateSnapshot,
+  createEmptyBilateralClearedWaveHandoffGateSnapshot,
+  bilateralClearedWaveHandoffGateExportScale,
+} from './bilateral-cleared-wave-handoff-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -2572,6 +2582,54 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralSustainedWaveThroughputGateExportScale(cleared) >=
         bilateralSustainedWaveThroughputGateExportScale(blocked),
       'expected throughput gate scale lift',
+    );
+  });
+
+  ok('sustained wave throughput continuity improves when throughput gate is cleared', () => {
+    const gate = {
+      ...createEmptyBilateralSustainedWaveThroughputGateSnapshot(),
+      score: 0.95,
+      band: 'cleared' as const,
+    };
+    const sustain = { ...createEmptyLaunchedWaveSustainContinuitySnapshot(), score: 0.93, band: 'firm' as const };
+    const steady = computeSustainedWaveThroughputContinuitySnapshot({
+      bilateralSustainedWaveThroughputGate: gate,
+      launchedWaveSustainContinuity: sustain,
+      persisted: { ...createEmptyGTELPersisted(), sustainedWaveThroughputContinuitySmoothing: 0.98 },
+    }).snapshot;
+    const severed = computeSustainedWaveThroughputContinuitySnapshot({
+      bilateralSustainedWaveThroughputGate: { ...gate, score: 0.1, band: 'blocked' },
+      launchedWaveSustainContinuity: { ...sustain, score: 0.08, band: 'failed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(steady.score > severed.score, 'expected steady throughput continuity');
+    gtelAssert(
+      sustainedWaveThroughputContinuityExportScale(steady) >= sustainedWaveThroughputContinuityExportScale(severed),
+      'expected throughput continuity scale lift',
+    );
+  });
+
+  ok('bilateral cleared wave handoff gate improves when throughput continuity is steady', () => {
+    const continuity = {
+      ...createEmptySustainedWaveThroughputContinuitySnapshot(),
+      score: 0.96,
+      band: 'steady' as const,
+    };
+    const loop = { ...createEmptyResumedLoopContinuitySnapshot(), score: 0.9, band: 'continuous' as const };
+    const handed = computeBilateralClearedWaveHandoffGateSnapshot({
+      sustainedWaveThroughputContinuity: continuity,
+      resumedLoopContinuity: loop,
+      persisted: { ...createEmptyGTELPersisted(), bilateralClearedWaveHandoffGateSmoothing: 0.99 },
+    }).snapshot;
+    const blocked = computeBilateralClearedWaveHandoffGateSnapshot({
+      sustainedWaveThroughputContinuity: { ...continuity, score: 0.11, band: 'severed' },
+      resumedLoopContinuity: { ...loop, score: 0.08, band: 'broken' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(handed.score > blocked.score, 'expected wave handoff when steady');
+    gtelAssert(
+      bilateralClearedWaveHandoffGateExportScale(handed) >= bilateralClearedWaveHandoffGateExportScale(blocked),
+      'expected cleared handoff scale lift',
     );
   });
 
