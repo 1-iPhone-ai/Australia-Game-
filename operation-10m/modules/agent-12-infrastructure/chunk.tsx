@@ -241,8 +241,14 @@ export type TrackPossessionPolicy = 'baseline' | 'optimize';
 
 export type GreenBunkeringPolicy = 'baseline' | 'expand';
 
+export type PacificFeederPolicy = 'baseline' | 'expand';
+
+export type MedicalSupplyPolicy = 'baseline' | 'surge';
+
+export type DataCentreLogisticsPolicy = 'baseline' | 'accelerate';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/15';
+  schemaVersion: 'agent12/16';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -332,6 +338,13 @@ export interface TransportInfrastructureState {
   greenBunkeringShare: number;
   nationalGreenBunkeringThroughputIndex: number;
   greenBunkeringThroughputByRegion: Record<AuRegionCode, number>;
+  nationalPacificFeederThroughputIndex: number;
+  pacificFeederThroughputByRegion: Record<AuRegionCode, number>;
+  nationalMedicalSupplyChainIndex: number;
+  medicalSupplyChainByRegion: Record<AuRegionCode, number>;
+  dataCentreLogisticsShare: number;
+  nationalDataCentreLogisticsThroughputIndex: number;
+  dataCentreLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -367,6 +380,9 @@ export interface TransportInfrastructureOptions {
   agriculturalExportPolicy?: AgriculturalExportPolicy;
   trackPossessionPolicy?: TrackPossessionPolicy;
   greenBunkeringPolicy?: GreenBunkeringPolicy;
+  pacificFeederPolicy?: PacificFeederPolicy;
+  medicalSupplyPolicy?: MedicalSupplyPolicy;
+  dataCentreLogisticsPolicy?: DataCentreLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1017,6 +1033,47 @@ export const TRANSPORT_CORRIDORS_ROUND14: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round15.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND15: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_qld_pacific_feeder_chain',
+    name: 'Queensland Pacific Feeder Chain',
+    networkKind: 'trade',
+    regionSequence: ['QLD'],
+    requiredTagsByRegion: {
+      QLD: ['pacific_feeder', 'tradelane_pacific', 'feeder'],
+    },
+    productivitySynergyPoints: 6.4,
+    logisticsRelief: 0.037,
+  },
+  {
+    id: 'corr_nsw_act_medical_supply',
+    name: 'NSW–ACT Medical Supply Spine',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'ACT'],
+    requiredTagsByRegion: {
+      NSW: ['medical_supply', 'health_freight', 'pharma_cold'],
+      ACT: ['medical_supply', 'pharma_cold', 'capital'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.034,
+  },
+  {
+    id: 'corr_nsw_vic_data_centre_mesh',
+    name: 'NSW–VIC Data Centre Logistics Mesh',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['data_centre', 'hyperscale_logistics', 'digital_infra'],
+      VIC: ['data_centre', 'digital_infra'],
+    },
+    productivitySynergyPoints: 6.0,
+    logisticsRelief: 0.035,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1178,6 +1235,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND12,
   ...TRANSPORT_CORRIDORS_ROUND13,
   ...TRANSPORT_CORRIDORS_ROUND14,
+  ...TRANSPORT_CORRIDORS_ROUND15,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -1994,6 +2052,62 @@ export const TRANSPORT_SCENARIOS_ROUND14: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round15.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND15: TransportStressScenario[] = [
+  {
+    id: 'scn_qld_pacific_feeder_surge',
+    label: 'Queensland Pacific Feeder Surge',
+    description: 'Island tradelane demand spikes Brisbane feeder berths.',
+    targetRegions: ['QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_medical_supply_emergency',
+    label: 'NSW Medical Supply Emergency',
+    description: 'Health freight surge strains cold-chain pharma corridors.',
+    targetRegions: ['NSW', 'ACT'],
+    networkKind: 'freight',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_vic_data_centre_build_rush',
+    label: 'Victoria Data Centre Build Rush',
+    description: 'Hyperscale construction overloads digital infra freight.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'rail'],
+  },
+  {
+    id: 'scn_act_pharma_cold_shortage',
+    label: 'Canberra Pharma Cold Shortage',
+    description: 'Cold-chain fault delays capital medical supply.',
+    targetRegions: ['ACT', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_nt_pacific_relief_lift',
+    label: 'NT Pacific Relief Lift',
+    description: 'Pacific island relief diverts Darwin feeder capacity.',
+    targetRegions: ['NT', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -2169,6 +2283,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND12,
   ...TRANSPORT_SCENARIOS_ROUND13,
   ...TRANSPORT_SCENARIOS_ROUND14,
+  ...TRANSPORT_SCENARIOS_ROUND15,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -6059,6 +6174,232 @@ export const SCALE_WAVE_ROUND14_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round15-assets.ts ---
+
+export const ROUND15_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_qld_cairns_pacific_feeder',
+    category: 'road',
+    name: 'Cairns Pacific Feeder Link',
+    description: 'Feeder drayage to Pacific island tradelane berths.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 3.9,
+    strategicNetworks: ['trade'],
+    tags: ['pacific_feeder', 'tradelane_pacific', 'feeder', 'coastal_shipping'],
+    laneKilometres: 68,
+    designSpeedKmh: 100,
+    freightShare: 0.36,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_health_freight_spine',
+    category: 'road',
+    name: 'NSW Health Freight Spine',
+    description: 'Medical and pharma cold-chain motorway feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight'],
+    tags: ['medical_supply', 'health_freight', 'pharma_cold', 'motorway'],
+    laneKilometres: 94,
+    designSpeedKmh: 110,
+    freightShare: 0.34,
+    urbanShare: 0.15,
+    tollRoad: true,
+  },
+  {
+    id: 'road_nsw_western_sydney_dc_feed',
+    category: 'road',
+    name: 'Western Sydney Data Centre Feed',
+    description: 'Hyperscale equipment and digital infra drayage.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight'],
+    tags: ['data_centre', 'hyperscale_logistics', 'digital_infra', 'motorway'],
+    laneKilometres: 46,
+    designSpeedKmh: 100,
+    freightShare: 0.41,
+    urbanShare: 0.2,
+    tollRoad: true,
+  },
+  {
+    id: 'road_vic_dandenong_medical',
+    category: 'road',
+    name: 'Dandenong Medical Supply Link',
+    description: 'Melbourne health freight distribution feed.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC'],
+    baseProductivityPoints: 3.8,
+    strategicNetworks: ['freight'],
+    tags: ['medical_supply', 'health_freight', 'pharma_cold'],
+    laneKilometres: 32,
+    designSpeedKmh: 90,
+    freightShare: 0.33,
+    urbanShare: 0.24,
+    tollRoad: true,
+  },
+];
+
+export const ROUND15_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_nsw_sydney_data_centre',
+    category: 'rail',
+    name: 'Sydney Data Centre Rail Shuttle',
+    description: 'Digital infrastructure freight shuttle to Western Sydney.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['freight'],
+    tags: ['data_centre', 'digital_infra', 'hyperscale_logistics', 'freight_rail'],
+    trackKilometres: 58,
+    dualTrackShare: 0.62,
+    electrifiedShare: 0.75,
+    designFreightTonnesPerYear: 3_800_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_vic_melbourne_hyperscale',
+    category: 'rail',
+    name: 'Melbourne Hyperscale Rail Feed',
+    description: 'Data-centre construction and module delivery rail.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['freight'],
+    tags: ['data_centre', 'hyperscale_logistics', 'digital_infra', 'container'],
+    trackKilometres: 72,
+    dualTrackShare: 0.55,
+    electrifiedShare: 0.68,
+    designFreightTonnesPerYear: 4_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_townsville_pacific',
+    category: 'rail',
+    name: 'Townsville Pacific Feeder Rail',
+    description: 'Island tradelane container feed to coastal ports.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade'],
+    tags: ['pacific_feeder', 'tradelane_pacific', 'feeder', 'container'],
+    trackKilometres: 125,
+    dualTrackShare: 0.48,
+    electrifiedShare: 0.32,
+    designFreightTonnesPerYear: 4_600_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND15_PORTS: PortAsset[] = [
+  {
+    id: 'port_qld_brisbane_pacific_feeder',
+    category: 'port',
+    name: 'Brisbane Pacific Feeder Terminal',
+    description: 'Pacific island and tradelane feeder berths.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 6.1,
+    strategicNetworks: ['trade'],
+    tags: ['pacific_feeder', 'tradelane_pacific', 'feeder', 'pacific_islands', 'container'],
+    berthCount: 6,
+    maxDraftMetres: 13.8,
+    teuCapacityPerYear: 520_000,
+    automationLevel: 2,
+    bulkShare: 0.26,
+  },
+  {
+    id: 'port_nt_darwin_pacific_relief',
+    category: 'port',
+    name: 'Darwin Pacific Relief Berths',
+    description: 'Northern Pacific feeder and relief supply berths.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['pacific_feeder', 'pacific_islands', 'feeder', 'remote'],
+    berthCount: 5,
+    maxDraftMetres: 12.5,
+    teuCapacityPerYear: 310_000,
+    automationLevel: 1,
+    bulkShare: 0.34,
+  },
+];
+
+export const ROUND15_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nsw_sydney_medical_dc',
+    category: 'logistics',
+    name: 'Sydney Medical Supply DC',
+    description: 'Pharma cold-chain and health freight consolidation.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['freight'],
+    tags: ['medical_supply', 'health_freight', 'pharma_cold'],
+    warehouseSqm: 128_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'air'],
+    lastMileCoveragePct: 70,
+  },
+  {
+    id: 'log_act_canberra_pharma',
+    category: 'logistics',
+    name: 'Canberra Pharma Cold Hub',
+    description: 'Capital region medical and pharma cold-chain staging.',
+    hostRegion: 'ACT',
+    servedRegions: ['ACT', 'NSW'],
+    baseProductivityPoints: 3.9,
+    strategicNetworks: ['freight'],
+    tags: ['medical_supply', 'pharma_cold', 'health_freight', 'capital'],
+    warehouseSqm: 62_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'air'],
+    lastMileCoveragePct: 77,
+  },
+  {
+    id: 'log_nsw_western_sydney_hyperscale',
+    category: 'logistics',
+    name: 'Western Sydney Hyperscale Yard',
+    description: 'Data-centre module and digital infrastructure staging.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['freight'],
+    tags: ['data_centre', 'hyperscale_logistics', 'digital_infra'],
+    warehouseSqm: 178_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 64,
+  },
+  {
+    id: 'log_vic_melbourne_data_centre',
+    category: 'logistics',
+    name: 'Melbourne Data Centre Logistics Hub',
+    description: 'Hyperscale digital infra freight and cable landing feed.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['freight'],
+    tags: ['data_centre', 'digital_infra', 'hyperscale_logistics'],
+    warehouseSqm: 165_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 68,
+  },
+];
+
+export const SCALE_WAVE_ROUND15_ASSETS = [
+  ...ROUND15_ROADS,
+  ...ROUND15_RAIL,
+  ...ROUND15_PORTS,
+  ...ROUND15_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -6081,6 +6422,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND12_ASSETS,
     ...SCALE_WAVE_ROUND13_ASSETS,
     ...SCALE_WAVE_ROUND14_ASSETS,
+    ...SCALE_WAVE_ROUND15_ASSETS,
   ];
 }
 
@@ -6864,6 +7206,61 @@ export function agriculturalExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.043 : 0;
   const normalized = (throughputIndex - 10) / 100;
   return clamp(1 + normalized * 0.052 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/pacific-feeder-tradelane-index.ts ---
+
+/** 0–100 Pacific feeder / island tradelane throughput. */
+export function computePacificFeederThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const pacificTagged =
+      asset.tags.some(
+        (t) => t === 'pacific_feeder' || t === 'island_feeder' || t === 'tradelane_pacific' || t === 'pacific_islands',
+      ) || (asset.category === 'port' && asset.tags.includes('feeder'));
+
+    if (!pacificTagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.3 + asset.teuCapacityPerYear / 170_000;
+      for (const r of asset.servedRegions) {
+        if (r !== asset.hostRegion) byRegion[r] += 1.6;
+      }
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 98_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 750;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPacificFeederThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.53 + max * 0.47, 3, 82) * 10) / 10;
+}
+
+export function pacificFeederProductivityMultiplier(
+  throughputIndex: number,
+  policy: PacificFeederPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'expand' ? 0.042 : 0;
+  const normalized = (throughputIndex - 8) / 100;
+  return clamp(1 + normalized * 0.051 + policyBoost, 0.93, 1.11);
 }
 
 
@@ -7667,6 +8064,64 @@ export function trackPossessionProductivityMultiplier(
   const policyBoost = policy === 'optimize' ? 0.045 : 0;
   const normalized = (efficiencyIndex - 40) / 100;
   return clamp(1 + normalized * 0.05 + policyBoost, 0.92, 1.1);
+}
+
+
+// --- source: operations/medical-supply-chain-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type MedicalSupplyPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 medical / pharma supply chain readiness by region. */
+export function computeMedicalSupplyChainByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 33])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.includes('medical_supply') ||
+      asset.tags.includes('health_freight') ||
+      asset.tags.includes('pharma_cold')
+    ) {
+      if (asset.category === 'logistics') {
+        byRegion[asset.hostRegion] += asset.warehouseSqm / 82_000 + (asset.coldChainCapable ? 4 : 1.5);
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        byRegion[asset.hostRegion] += asset.laneKilometres / 520;
+      }
+      if (asset.category === 'port' && asset.tags.includes('gateway')) {
+        byRegion[asset.hostRegion] += asset.berthCount * 1.4;
+      }
+    }
+    if (asset.category === 'logistics' && asset.coldChainCapable && asset.tags.includes('capital')) {
+      byRegion[asset.hostRegion] += 2.2;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.04 - stress * 0.04), 17, 92) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalMedicalSupplyChainIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  return Math.round(clamp(avg, 20, 86) * 10) / 10;
+}
+
+export function medicalSupplyProductivityMultiplier(
+  supplyIndex: number,
+  policy: MedicalSupplyPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'surge' ? 0.047 : 0;
+  const normalized = (supplyIndex - 38) / 100;
+  return clamp(1 + normalized * 0.052 + policyBoost, 0.92, 1.1);
 }
 
 
@@ -8606,6 +9061,97 @@ export function nationalGreenBunkeringThroughputIndex(
 }
 
 
+// --- source: productivity/data-centre-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type DataCentreLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of logistics tied to data-centre / hyperscale digital infrastructure. */
+export function computeDataCentreLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: DataCentreLogisticsPolicy = 'baseline',
+): number {
+  let dcUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'logistics') {
+      const units = asset.warehouseSqm / 68_000 + asset.intermodalLinks.length;
+      totalUnits += units;
+      if (
+        asset.tags.includes('data_centre') ||
+        asset.tags.includes('hyperscale_logistics') ||
+        asset.tags.includes('digital_infra')
+      ) {
+        dcUnits += units * 0.88;
+      }
+    }
+    if (asset.category === 'road' && asset.tags.includes('digital_infra') && 'laneKilometres' in asset) {
+      totalUnits += asset.laneKilometres / 220;
+      dcUnits += asset.laneKilometres / 220 * 0.7;
+    }
+    if (asset.category === 'rail' && asset.tags.includes('data_centre')) {
+      totalUnits += asset.trackKilometres / 100;
+      dcUnits += asset.trackKilometres / 100;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.07;
+  const policyBoost = policy === 'accelerate' ? 0.041 : 0;
+  return Math.round(clamp(dcUnits / totalUnits + policyBoost, 0.06, 0.5) * 1000) / 1000;
+}
+
+export function dataCentreLogisticsProductivityMultiplier(
+  share: number,
+  policy: DataCentreLogisticsPolicy,
+): number {
+  const bias = policy === 'accelerate' ? 1.023 : 1;
+  return (1 + (share - 0.1) * 0.036) * bias;
+}
+
+export function computeDataCentreLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'data_centre' || t === 'hyperscale_logistics' || t === 'digital_infra',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 86_000 + asset.lastMileCoveragePct / 140;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 680;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 10_000_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalDataCentreLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.56 + max * 0.44, 2, 66) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -8931,6 +9477,19 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   greenBunkeringProductivityMultiplier,
   nationalGreenBunkeringThroughputIndex,
 } from './green-bunkering-index.ts';
+  computePacificFeederThroughputByRegion,
+  nationalPacificFeederThroughputIndex,
+  pacificFeederProductivityMultiplier,
+} from '../network/pacific-feeder-tradelane-index.ts';
+  computeMedicalSupplyChainByRegion,
+  medicalSupplyProductivityMultiplier,
+  nationalMedicalSupplyChainIndex,
+} from '../operations/medical-supply-chain-index.ts';
+  computeDataCentreLogisticsShare,
+  computeDataCentreLogisticsThroughputByRegion,
+  dataCentreLogisticsProductivityMultiplier,
+  nationalDataCentreLogisticsThroughputIndex,
+} from './data-centre-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -9507,6 +10066,64 @@ export function computeTransportInfrastructureState(
     nationalAgriculturalExport * 0.022 +
     nationalGreenBunkering * 0.017;
 
+  const pacificFeederThroughputByRegion = computePacificFeederThroughputByRegion(ops);
+  const nationalPacificFeeder = nationalPacificFeederThroughputIndex(pacificFeederThroughputByRegion);
+  const pacificMult = pacificFeederProductivityMultiplier(
+    nationalPacificFeeder,
+    options?.pacificFeederPolicy ?? 'baseline',
+  );
+  const medicalSupplyChainByRegion = computeMedicalSupplyChainByRegion(ops, networkStress);
+  const nationalMedicalSupply = nationalMedicalSupplyChainIndex(medicalSupplyChainByRegion);
+  const medicalMult = medicalSupplyProductivityMultiplier(
+    nationalMedicalSupply,
+    options?.medicalSupplyPolicy ?? 'baseline',
+  );
+  const dataCentreLogisticsThroughputByRegion = computeDataCentreLogisticsThroughputByRegion(ops);
+  const nationalDataCentreLogistics = nationalDataCentreLogisticsThroughputIndex(
+    dataCentreLogisticsThroughputByRegion,
+  );
+  const dataCentreLogisticsShare = computeDataCentreLogisticsShare(
+    ops,
+    options?.dataCentreLogisticsPolicy ?? 'baseline',
+  );
+  const dataCentreMult = dataCentreLogisticsProductivityMultiplier(
+    dataCentreLogisticsShare,
+    options?.dataCentreLogisticsPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const pacificBoost = (pacificFeederThroughputByRegion[code] - 7) * 0.0055;
+    const medicalBoost = (medicalSupplyChainByRegion[code] - 36) * 0.0044;
+    const dataCentreBoost = (dataCentreLogisticsThroughputByRegion[code] - 3) * 0.0056;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + pacificBoost + medicalBoost + dataCentreBoost) *
+      pacificMult *
+      medicalMult *
+      dataCentreMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023 +
+    nationalDefenceLogistics * 0.022 +
+    nationalDigitalFreight * 0.021 +
+    nationalCriticalMinerals * 0.024 +
+    nationalIndigenousRemoteSupply * 0.019 +
+    nationalGaugeInteroperability * 0.02 +
+    nationalCircularFreight * 0.018 +
+    nationalAgriculturalExport * 0.022 +
+    nationalGreenBunkering * 0.017 +
+    nationalPacificFeeder * 0.019 +
+    nationalDataCentreLogistics * 0.018;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -9520,7 +10137,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/15',
+    schemaVersion: 'agent12/16',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -9610,6 +10227,13 @@ export function computeTransportInfrastructureState(
     greenBunkeringShare,
     nationalGreenBunkeringThroughputIndex: nationalGreenBunkering,
     greenBunkeringThroughputByRegion,
+    nationalPacificFeederThroughputIndex: nationalPacificFeeder,
+    pacificFeederThroughputByRegion,
+    nationalMedicalSupplyChainIndex: nationalMedicalSupply,
+    medicalSupplyChainByRegion,
+    dataCentreLogisticsShare,
+    nationalDataCentreLogisticsThroughputIndex: nationalDataCentreLogistics,
+    dataCentreLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -9692,7 +10316,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/15' &&
+      infra.schemaVersion === 'agent12/16' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&

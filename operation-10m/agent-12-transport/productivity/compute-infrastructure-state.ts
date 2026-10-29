@@ -197,6 +197,22 @@ import {
   greenBunkeringProductivityMultiplier,
   nationalGreenBunkeringThroughputIndex,
 } from './green-bunkering-index.ts';
+import {
+  computePacificFeederThroughputByRegion,
+  nationalPacificFeederThroughputIndex,
+  pacificFeederProductivityMultiplier,
+} from '../network/pacific-feeder-tradelane-index.ts';
+import {
+  computeMedicalSupplyChainByRegion,
+  medicalSupplyProductivityMultiplier,
+  nationalMedicalSupplyChainIndex,
+} from '../operations/medical-supply-chain-index.ts';
+import {
+  computeDataCentreLogisticsShare,
+  computeDataCentreLogisticsThroughputByRegion,
+  dataCentreLogisticsProductivityMultiplier,
+  nationalDataCentreLogisticsThroughputIndex,
+} from './data-centre-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -774,6 +790,64 @@ export function computeTransportInfrastructureState(
     nationalAgriculturalExport * 0.022 +
     nationalGreenBunkering * 0.017;
 
+  const pacificFeederThroughputByRegion = computePacificFeederThroughputByRegion(ops);
+  const nationalPacificFeeder = nationalPacificFeederThroughputIndex(pacificFeederThroughputByRegion);
+  const pacificMult = pacificFeederProductivityMultiplier(
+    nationalPacificFeeder,
+    options?.pacificFeederPolicy ?? 'baseline',
+  );
+  const medicalSupplyChainByRegion = computeMedicalSupplyChainByRegion(ops, networkStress);
+  const nationalMedicalSupply = nationalMedicalSupplyChainIndex(medicalSupplyChainByRegion);
+  const medicalMult = medicalSupplyProductivityMultiplier(
+    nationalMedicalSupply,
+    options?.medicalSupplyPolicy ?? 'baseline',
+  );
+  const dataCentreLogisticsThroughputByRegion = computeDataCentreLogisticsThroughputByRegion(ops);
+  const nationalDataCentreLogistics = nationalDataCentreLogisticsThroughputIndex(
+    dataCentreLogisticsThroughputByRegion,
+  );
+  const dataCentreLogisticsShare = computeDataCentreLogisticsShare(
+    ops,
+    options?.dataCentreLogisticsPolicy ?? 'baseline',
+  );
+  const dataCentreMult = dataCentreLogisticsProductivityMultiplier(
+    dataCentreLogisticsShare,
+    options?.dataCentreLogisticsPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const pacificBoost = (pacificFeederThroughputByRegion[code] - 7) * 0.0055;
+    const medicalBoost = (medicalSupplyChainByRegion[code] - 36) * 0.0044;
+    const dataCentreBoost = (dataCentreLogisticsThroughputByRegion[code] - 3) * 0.0056;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + pacificBoost + medicalBoost + dataCentreBoost) *
+      pacificMult *
+      medicalMult *
+      dataCentreMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023 +
+    nationalDefenceLogistics * 0.022 +
+    nationalDigitalFreight * 0.021 +
+    nationalCriticalMinerals * 0.024 +
+    nationalIndigenousRemoteSupply * 0.019 +
+    nationalGaugeInteroperability * 0.02 +
+    nationalCircularFreight * 0.018 +
+    nationalAgriculturalExport * 0.022 +
+    nationalGreenBunkering * 0.017 +
+    nationalPacificFeeder * 0.019 +
+    nationalDataCentreLogistics * 0.018;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -787,7 +861,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/15',
+    schemaVersion: 'agent12/16',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -877,6 +951,13 @@ export function computeTransportInfrastructureState(
     greenBunkeringShare,
     nationalGreenBunkeringThroughputIndex: nationalGreenBunkering,
     greenBunkeringThroughputByRegion,
+    nationalPacificFeederThroughputIndex: nationalPacificFeeder,
+    pacificFeederThroughputByRegion,
+    nationalMedicalSupplyChainIndex: nationalMedicalSupply,
+    medicalSupplyChainByRegion,
+    dataCentreLogisticsShare,
+    nationalDataCentreLogisticsThroughputIndex: nationalDataCentreLogistics,
+    dataCentreLogisticsThroughputByRegion,
     computeMs,
   };
 }

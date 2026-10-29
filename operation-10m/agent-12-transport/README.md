@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 15
+
+- Schema **`agent12/16`**: Pacific feeder tradelane throughput, medical supply chain readiness, data-centre logistics share (`pacificFeederPolicy`, `medicalSupplyPolicy`, `dataCentreLogisticsPolicy`)
+- Catalog: **221** assets, **59** corridors, **93** scenarios
+- Systems: `network/pacific-feeder-tradelane-index.ts`, `operations/medical-supply-chain-index.ts`, `productivity/data-centre-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 14
 
 - Schema **`agent12/15`**: agricultural export throughput, track possession efficiency, green bunkering share (`agriculturalExportPolicy`, `trackPossessionPolicy`, `greenBunkeringPolicy`)

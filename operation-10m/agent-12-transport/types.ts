@@ -237,8 +237,14 @@ export type TrackPossessionPolicy = 'baseline' | 'optimize';
 
 export type GreenBunkeringPolicy = 'baseline' | 'expand';
 
+export type PacificFeederPolicy = 'baseline' | 'expand';
+
+export type MedicalSupplyPolicy = 'baseline' | 'surge';
+
+export type DataCentreLogisticsPolicy = 'baseline' | 'accelerate';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/15';
+  schemaVersion: 'agent12/16';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -328,6 +334,13 @@ export interface TransportInfrastructureState {
   greenBunkeringShare: number;
   nationalGreenBunkeringThroughputIndex: number;
   greenBunkeringThroughputByRegion: Record<AuRegionCode, number>;
+  nationalPacificFeederThroughputIndex: number;
+  pacificFeederThroughputByRegion: Record<AuRegionCode, number>;
+  nationalMedicalSupplyChainIndex: number;
+  medicalSupplyChainByRegion: Record<AuRegionCode, number>;
+  dataCentreLogisticsShare: number;
+  nationalDataCentreLogisticsThroughputIndex: number;
+  dataCentreLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -363,6 +376,9 @@ export interface TransportInfrastructureOptions {
   agriculturalExportPolicy?: AgriculturalExportPolicy;
   trackPossessionPolicy?: TrackPossessionPolicy;
   greenBunkeringPolicy?: GreenBunkeringPolicy;
+  pacificFeederPolicy?: PacificFeederPolicy;
+  medicalSupplyPolicy?: MedicalSupplyPolicy;
+  dataCentreLogisticsPolicy?: DataCentreLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

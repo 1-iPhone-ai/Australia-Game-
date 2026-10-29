@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/15' &&
+      infra.schemaVersion === 'agent12/16' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -110,8 +110,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalAgriculturalExportThroughputIndex >= 9 &&
       infra.nationalTrackPossessionEfficiencyIndex >= 38 &&
       infra.greenBunkeringShare >= 0.05 &&
-      infra.nationalGreenBunkeringThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} agricultural=${infra.nationalAgriculturalExportThroughputIndex.toFixed(1)} track=${infra.nationalTrackPossessionEfficiencyIndex.toFixed(1)} bunkering=${infra.nationalGreenBunkeringThroughputIndex.toFixed(1)}`,
+      infra.nationalGreenBunkeringThroughputIndex >= 2 &&
+      infra.nationalPacificFeederThroughputIndex >= 7 &&
+      infra.nationalMedicalSupplyChainIndex >= 36 &&
+      infra.dataCentreLogisticsShare >= 0.06 &&
+      infra.nationalDataCentreLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} pacific=${infra.nationalPacificFeederThroughputIndex.toFixed(1)} medical=${infra.nationalMedicalSupplyChainIndex.toFixed(1)} datacentre=${infra.nationalDataCentreLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
