@@ -94,7 +94,7 @@ export function runAgent24ArchiveScaleWaveWave31ExportGateSelfTests(): Array<{ n
   const wave30IntegrationVerification = {
     reportId: 'w30iv',
     matchId: 'self',
-    waveRound: 31,
+    waveRound: 32,
     integrationBaselineSha: '88fa570e',
     verified: true,
     issueCount: 0,
@@ -131,7 +131,7 @@ export function runAgent24ArchiveScaleWaveWave31ExportGateSelfTests(): Array<{ n
 
   return [
     { name: 'export_allowed_when_wave31_stack_ready', passed: report.exportAllowed && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 31 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 32 },
     {
       name: 'deterministic_fingerprint',
       passed:

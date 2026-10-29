@@ -90,7 +90,7 @@ export function runAgent24ArchiveReleaseGateSelfTests(): Array<{ name: string; p
   const waveAcceptance = {
     reportId: 'wa',
     matchId: 'self',
-    waveRound: 31,
+    waveRound: 32,
     accepted: true,
     blockerCount: 0,
     blockers: [],

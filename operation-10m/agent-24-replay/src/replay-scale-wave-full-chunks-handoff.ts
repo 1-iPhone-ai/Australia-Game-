@@ -12,6 +12,7 @@ import {
   O6K_AGENT24_WAVE29_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE30_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE31_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 export { O6K_AGENT24_WAVE22_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
@@ -49,7 +50,9 @@ export function buildAgent24ReplayScaleWaveFullChunksHandoffSeal(
   const waveRound = input.replayScaleWaveDryrunVerification.waveRound;
   const fullChunksBaselineSha =
     input.fullChunksBaselineSha ??
-    (waveRound >= 31
+    (waveRound >= 32
+      ? O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA
+      : waveRound >= 31
       ? O6K_AGENT24_WAVE31_INTEGRATION_BASELINE_SHA
       : waveRound >= 30
       ? O6K_AGENT24_WAVE30_INTEGRATION_BASELINE_SHA
@@ -137,8 +140,8 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const dryrunVerification = {
     reportId: 'dv',
     matchId: 'self',
-    waveRound: 31,
-    dryrunBaselineSha: O6K_AGENT24_WAVE31_INTEGRATION_BASELINE_SHA,
+    waveRound: 32,
+    dryrunBaselineSha: O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -149,7 +152,7 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
   const fullChunksGate = {
     reportId: 'fcg',
     matchId: 'self',
-    waveRound: 31,
+    waveRound: 32,
     chunksGateOpen: true,
     blockerCount: 0,
     blockers: [],
@@ -168,9 +171,9 @@ export function runAgent24ReplayScaleWaveFullChunksHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_full_chunks_baseline',
       passed:
         seal.handoffReady &&
-        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE31_INTEGRATION_BASELINE_SHA,
+        seal.fullChunksBaselineSha === O6K_AGENT24_WAVE32_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 31 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 32 },
     {
       name: 'deterministic_fingerprint',
       passed:
