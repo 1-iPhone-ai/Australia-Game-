@@ -6,7 +6,7 @@
 | --- | --- |
 | Branch | `op10m/agent-09-population` |
 | Base commit | `bc7d019` — wave **41** / round 41 inclusion stack |
-| Origin (round 42 feat) | **`<FEAT>`** — pushed first |
+| Origin (round 42 feat) | **`5086f2a`** — pushed first |
 | Wave baseline | **`431df5d`** projected (O10-215) |
 | Round **42** / wave **42** | Inclusion-flexibility coupling, flexibility flow, subject flexibility, workforce flexibility |
 | Self-tests | **714** cases (`npm run test:agent09`) |
