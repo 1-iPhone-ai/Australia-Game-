@@ -63,6 +63,8 @@ import { runFiscalRiskStressCoherenceSelfTests } from './modules/fiscal-risk-str
 import { runSovereignIssuanceCouplingBridgeSelfTests } from './modules/sovereign-issuance-coupling-bridge/self-tests';
 import { runFederalStateGrantCoherenceSelfTests } from './modules/federal-state-grant-coherence/self-tests';
 import { runReconciliationResilienceBridgeSelfTests } from './modules/reconciliation-resilience-bridge/self-tests';
+import { runTaxExpenditureForwardCoherenceSelfTests } from './modules/tax-expenditure-forward-coherence/self-tests';
+import { runDebtRolloverCoverageBridgeSelfTests } from './modules/debt-rollover-coverage-bridge/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -135,6 +137,8 @@ ok = runSuite('Fiscal risk stress coherence', runFiscalRiskStressCoherenceSelfTe
 ok = runSuite('Sovereign issuance coupling bridge', runSovereignIssuanceCouplingBridgeSelfTests) && ok;
 ok = runSuite('Federal state grant coherence', runFederalStateGrantCoherenceSelfTests) && ok;
 ok = runSuite('Reconciliation resilience bridge', runReconciliationResilienceBridgeSelfTests) && ok;
+ok = runSuite('Tax expenditure forward coherence', runTaxExpenditureForwardCoherenceSelfTests) && ok;
+ok = runSuite('Debt rollover coverage bridge', runDebtRolloverCoverageBridgeSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

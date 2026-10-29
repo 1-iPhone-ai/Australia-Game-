@@ -8015,6 +8015,223 @@ export function buildReconciliationResilienceBridgeReport(
 }
 
 
+// --- source: tax-expenditure-forward-coherence/types.ts ---
+export const TAX_EXPENDITURE_FORWARD_COHERENCE_SCHEMA =
+  'op10m-agent07-tax-expenditure-forward-coherence-v1';
+
+export interface TaxExpenditureForwardCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface TaxExpenditureForwardCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: TaxExpenditureForwardCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinTaxExpenditureForwardBand: boolean;
+  alignedWithIntegrityForwardBridge: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: tax-expenditure-forward-coherence/compute.ts ---
+
+const FORWARD_TOLERANCE = 5.4;
+
+export function buildTaxExpenditureForwardCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  taxExp: TaxExpenditureStatement,
+  revenueForward: RevenueForwardReconciliationReport,
+  integrityForward: RevenueIntegrityForwardBridgeReport
+): TaxExpenditureForwardCoherenceReport {
+  const capacityGap = Math.abs(taxExp.netStructuralCapacity - taxExp.grossStructuralCapacity + taxExp.totalForgone);
+  const forwardGap = Math.abs(revenueForward.aggregateGapPoints - taxExp.totalForgone * 0.14);
+  const integrityGap = Math.abs(integrityForward.bridgeGapPoints - forwardGap * 0.42);
+  const aggregateCoherenceGapPoints = Math.round((capacityGap + forwardGap + integrityGap) * 10) / 30;
+
+  const checks: TaxExpenditureForwardCheck[] = [
+    {
+      id: 'TEFC01',
+      label: 'Tax expenditure net within gross capacity',
+      passed:
+        taxExp.netStructuralCapacity <= taxExp.grossStructuralCapacity ||
+        v1012.pressure === 'critical',
+      detail: `net=${taxExp.netStructuralCapacity}, gross=${taxExp.grossStructuralCapacity}`
+    },
+    {
+      id: 'TEFC02',
+      label: 'Revenue forward reconciles tax forgone',
+      passed:
+        revenueForward.allPassed ||
+        forwardGap <= FORWARD_TOLERANCE + 2 ||
+        v1012.pressure === 'critical',
+      detail: `forgone=${taxExp.totalForgone}, forwardGap=${revenueForward.aggregateGapPoints}`
+    },
+    {
+      id: 'TEFC03',
+      label: 'Forward gap vs integrity bridge',
+      passed:
+        integrityGap <= FORWARD_TOLERANCE + 1.5 ||
+        integrityForward.withinIntegrityForwardBand ||
+        v1012.pressure === 'critical',
+      detail: `integrity=${integrityForward.bridgeGapPoints}, forward=${revenueForward.aggregateGapPoints}`
+    }
+  ];
+
+  const withinTaxExpenditureForwardBand =
+    checks.every(c => c.passed) ||
+    (taxExp.netStructuralCapacity <= taxExp.grossStructuralCapacity && revenueForward.allPassed) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithIntegrityForwardBridge =
+    integrityForward.alignedWithRevenueAnchor &&
+    (aggregateCoherenceGapPoints <= integrityForward.bridgeGapPoints + 2.2 ||
+      integrityForward.withinIntegrityForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinTaxExpenditureForwardBand) {
+    warnings.push(`Tax expenditure forward gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithIntegrityForwardBridge) {
+    warnings.push('Tax expenditure forward diverges from integrity bridge.');
+  }
+
+  const narrative = withinTaxExpenditureForwardBand
+    ? `Tax expenditure forward gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Tax expenditure forward alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: TAX_EXPENDITURE_FORWARD_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinTaxExpenditureForwardBand,
+    alignedWithIntegrityForwardBridge,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: debt-rollover-coverage-bridge/types.ts ---
+export const DEBT_ROLLOVER_COVERAGE_BRIDGE_SCHEMA =
+  'op10m-agent07-debt-rollover-coverage-bridge-v1';
+
+export interface RolloverCoverageCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface DebtRolloverCoverageBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: RolloverCoverageCheck[];
+  bridgeGapPoints: number;
+  withinRolloverCoverageBand: boolean;
+  alignedWithIssuanceCoupling: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: debt-rollover-coverage-bridge/compute.ts ---
+
+const COVERAGE_TOLERANCE = 6.1;
+
+export function buildDebtRolloverCoverageBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  debtRollover: DebtRolloverPlan,
+  debtService: DebtServiceCoverageReport,
+  issuanceCoupling: SovereignIssuanceCouplingBridgeReport
+): DebtRolloverCoverageBridgeReport {
+  const rolloverEvents = debtRollover.events.filter(e => e.outcome !== 'not_due').length;
+  const serviceGap = Math.max(0, debtServiceCoverageRatioGap(debtService) - rolloverEvents * 0.35);
+  const couplingGap = Math.abs(issuanceCoupling.bridgeCouplingGapPoints - serviceGap * 0.48);
+  const bridgeGapPoints = Math.round((serviceGap + couplingGap) * 10) / 20;
+
+  const checks: RolloverCoverageCheck[] = [
+    {
+      id: 'DRCB01',
+      label: 'Rollover liquidity within tolerance',
+      passed:
+        !debtRollover.liquidityStress ||
+        !v1012.debtEnabled ||
+        v1012.pressure === 'critical',
+      observed: rolloverEvents,
+      tolerance: 4
+    },
+    {
+      id: 'DRCB02',
+      label: 'Debt service coverage adequate',
+      passed:
+        debtService.withinCoverageFloor ||
+        debtService.coverageRatio >= 1.05 ||
+        v1012.pressure === 'critical',
+      observed: debtService.coverageRatio,
+      tolerance: 1.05
+    },
+    {
+      id: 'DRCB03',
+      label: 'Service gap vs issuance coupling',
+      passed:
+        couplingGap <= COVERAGE_TOLERANCE + 2 ||
+        issuanceCoupling.withinIssuanceCouplingBand ||
+        v1012.pressure === 'critical',
+      observed: couplingGap,
+      tolerance: COVERAGE_TOLERANCE + 2
+    }
+  ];
+
+  const withinRolloverCoverageBand =
+    checks.every(c => c.passed) ||
+    (!debtRollover.liquidityStress && debtService.withinCoverageFloor) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithIssuanceCoupling =
+    issuanceCoupling.alignedWithDebtService &&
+    (bridgeGapPoints <= issuanceCoupling.bridgeCouplingGapPoints + 2.6 ||
+      issuanceCoupling.withinIssuanceCouplingBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinRolloverCoverageBand) {
+    warnings.push(`Debt rollover coverage bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithIssuanceCoupling) {
+    warnings.push('Rollover coverage diverges from issuance coupling.');
+  }
+
+  const narrative = withinRolloverCoverageBand
+    ? `Debt rollover coverage bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Debt rollover coverage alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: DEBT_ROLLOVER_COVERAGE_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinRolloverCoverageBand,
+    alignedWithIssuanceCoupling,
+    narrative,
+    warnings
+  };
+}
+
+function debtServiceCoverageRatioGap(debtService: DebtServiceCoverageReport): number {
+  return Math.max(0, 1.35 - debtService.coverageRatio) * 10;
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -10001,6 +10218,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     resilienceStack,
     fiscalRiskStressCoherence
   );
+  const taxExpenditureForwardCoherence = buildTaxExpenditureForwardCoherenceReport(
+    turn,
+    v1012,
+    taxExp,
+    revenueForwardReconciliation,
+    revenueIntegrityForwardBridge
+  );
+  const debtRolloverCoverageBridge = buildDebtRolloverCoverageBridgeReport(
+    turn,
+    v1012,
+    debtRollover,
+    debtServiceCoverage,
+    sovereignIssuanceCouplingBridge
+  );
 
   checks.push({
     id: 'CF01',
@@ -10746,13 +10977,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `recon=${fiscalReconciliation.allPassed}, riskGap=${fiscalRiskStressCoherence.aggregateRiskStressGapPoints}`
   });
 
+  checks.push({
+    id: 'CF105',
+    label: 'Tax expenditure forward coherence within band',
+    passed: taxExpenditureForwardCoherence.withinTaxExpenditureForwardBand || v1012.pressure === 'critical',
+    detail: `gap=${taxExpenditureForwardCoherence.aggregateCoherenceGapPoints}, checks=${taxExpenditureForwardCoherence.checks.filter(c => c.passed).length}/${taxExpenditureForwardCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF106',
+    label: 'Debt rollover coverage bridge within band',
+    passed: debtRolloverCoverageBridge.withinRolloverCoverageBand || v1012.pressure === 'critical',
+    detail: `gap=${debtRolloverCoverageBridge.bridgeGapPoints}, checks=${debtRolloverCoverageBridge.checks.filter(c => c.passed).length}/${debtRolloverCoverageBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF107',
+    label: 'Tax expenditure aligned with integrity forward',
+    passed: taxExpenditureForwardCoherence.alignedWithIntegrityForwardBridge,
+    detail: `forgone=${taxExp.totalForgone}, bridge=${revenueIntegrityForwardBridge.bridgeGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF108',
+    label: 'Rollover coverage aligned with issuance coupling',
+    passed: debtRolloverCoverageBridge.alignedWithIssuanceCoupling,
+    detail: `stress=${debtRollover.liquidityStress}, coupling=${sovereignIssuanceCouplingBridge.bridgeCouplingGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 80
+    layerCount: 82
   };
 }
 
@@ -12632,12 +12891,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Eighty fiscal layers integrated', healthy.layerCount === 80, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Eighty-two fiscal layers integrated', healthy.layerCount === 82, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 104,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 108,
     'ok'
   );
 
@@ -12649,10 +12908,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF104 ids present',
-    healthy.checks.length === 104 &&
+    'CF01–CF108 ids present',
+    healthy.checks.length === 108 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[103]?.id === 'CF104',
+      healthy.checks[107]?.id === 'CF108',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -16150,6 +16409,167 @@ export function runReconciliationResilienceBridgeSelfTests(): {
     'RRB-T03',
     'Aligned with risk stress coherence',
     healthy.alignedWithRiskStressCoherence,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: tax-expenditure-forward-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runTaxExpenditureForwardCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const taxExp = buildTaxExpenditureStatement(9, v);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const taxSensitivity = buildTaxPolicySensitivityReport(9, v, ledger);
+  const revenueAudit = buildRevenueIntegrityAuditReport(9, v, ledger, taxSensitivity);
+  const revenueAnchor = buildMediumTermRevenueAnchorReport(9, v, ledger, myefo, outlook);
+  const integrityForward = buildRevenueIntegrityForwardBridgeReport(
+    9,
+    v,
+    revenueAudit,
+    revenueForward,
+    revenueAnchor
+  );
+  const healthy = buildTaxExpenditureForwardCoherenceReport(9, v, taxExp, revenueForward, integrityForward);
+
+  record('TEFC-T01', 'Three tax expenditure forward checks', healthy.checks.length === 3, 'ok');
+  record(
+    'TEFC-T02',
+    'Within tax expenditure forward band',
+    healthy.withinTaxExpenditureForwardBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'TEFC-T03',
+    'Aligned with integrity forward bridge',
+    healthy.alignedWithIntegrityForwardBridge,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: debt-rollover-coverage-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runDebtRolloverCoverageBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const debtRollover = resolveDebtRollover({
+    turn: 9,
+    v1012: v,
+    tranches: defaultMaturityLadder(9),
+    computeTrajectory: computeDebtOutcomeTrajectory
+  });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const debtGov = buildDebtPortfolioGovernanceReport(9, v, { liquidityStress: debtRollover.liquidityStress });
+  const fiscalStress = buildFiscalStressScenariosReport(9, v);
+  const sovereignCredit = buildSovereignCreditOutlookReport(9, v, debtGov, {
+    stressWorstDelta: fiscalStress.worstHeadroomDelta
+  });
+  const debtService = buildDebtServiceCoverageReport(9, v, ledger, cash);
+  const debtCoupling = buildDebtFiscalCouplingRegisterReport(9, v, debtService, sovereignCredit, fiscalBuffer);
+  const issuance = executeIssuanceCalendar(9, v);
+  const issuanceCoupling = buildSovereignIssuanceCouplingBridgeReport(9, v, issuance, debtCoupling, debtService);
+  const healthy = buildDebtRolloverCoverageBridgeReport(9, v, debtRollover, debtService, issuanceCoupling);
+
+  record('DRCB-T01', 'Three rollover coverage checks', healthy.checks.length === 3, 'ok');
+  record(
+    'DRCB-T02',
+    'Within rollover coverage band',
+    healthy.withinRolloverCoverageBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'DRCB-T03',
+    'Aligned with issuance coupling',
+    healthy.alignedWithIssuanceCoupling,
     healthy.narrative
   );
 
