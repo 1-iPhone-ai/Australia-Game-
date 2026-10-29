@@ -383,6 +383,7 @@ export type O10mPardonPhase = 'brief' | 'review' | 'pardon';
 export type O10mAmnestyPhase = 'warrant' | 'review' | 'amnesty';
 export type O10mReprievePhase = 'filing' | 'review' | 'reprieve';
 export type O10mParolePhase = 'intake' | 'review' | 'parole';
+export type O10mProbationPhase = 'enrollment' | 'review' | 'probation';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -604,6 +605,17 @@ export interface O10mParoleSession {
   phaseTag: O10mParolePhase;
 }
 
+/** Schema v28 — probation arc with compliance accrual between phases. */
+export interface O10mProbationSession {
+  probationId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  complianceScore: number;
+  phaseTag: O10mProbationPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -628,6 +640,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'probation_step'
     | 'parole_step'
     | 'reprieve_step'
     | 'amnesty_step'
@@ -746,6 +759,10 @@ export interface O10mCampaignPlan {
   paroleCursor: number | null;
   parolePhase: O10mParolePhase | null;
   paroleTrust: number | null;
+  probationId: string | null;
+  probationCursor: number | null;
+  probationPhase: O10mProbationPhase | null;
+  probationCompliance: number | null;
   reason: string;
 }
 
@@ -821,8 +838,10 @@ export interface O10mModesPersistedState {
   amnestySession?: O10mAmnestySession | null;
   /** Schema v26 — active reprieve arc (mutually exclusive with amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   reprieveSession?: O10mReprieveSession | null;
-  /** Schema v27 — active parole arc (mutually exclusive with reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v27 — active parole arc (mutually exclusive with probation / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   paroleSession?: O10mParoleSession | null;
+  /** Schema v28 — active probation arc (mutually exclusive with parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  probationSession?: O10mProbationSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -3989,6 +4008,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Parole finales', 'Trust ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_probation_enrollment_docket',
+    title: 'Probation Enrollment Docket',
+    description: 'Open a probation arc with low-pressure compliance pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100493,
+    startingMoney: 3200,
+    startingRegions: ['TAS', 'VIC'],
+    badgeId: 'badge_o10m_probation_enrollment_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100493),
+      o10mProbationEnrollmentDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_ped_obj_day',
+        label: 'Enrollment Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Probation arcs', 'Compliance pacing', 'Enrollment phase'],
+  },
+  {
+    id: 'o10m_probation_review_chamber',
+    title: 'Probation Review Chamber',
+    description: 'Mid-probation review with accrued compliance bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100494,
+    startingMoney: 3750,
+    startingRegions: ['NSW', 'WA'],
+    startingStanding: { NSW: 61, WA: 59 },
+    badgeId: 'badge_o10m_probation_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100494),
+      regionalStandingEnabled: true,
+      o10mProbationReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_prc2_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 67',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 67,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Compliance carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_probation_clearance_finale',
+    title: 'Probation Clearance Finale',
+    description: 'Finale probation stage — net worth gate with full compliance bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100495,
+    startingMoney: 4200,
+    startingRegions: ['QLD', 'NT', 'SA'],
+    badgeId: 'badge_o10m_probation_clearance_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100495),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mProbationClearanceFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_pcf_obj_net',
+        label: 'Clearance Net Worth',
+        description: 'Reach $18,800 net worth',
+        targetType: 'netWorth',
+        targetValue: 18800,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Probation finales', 'Compliance ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -5389,6 +5505,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_probation_route',
+    title: 'Probation Route',
+    description:
+      'Three-phase probation arc with compliance accrual between legs — round-28 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_probation_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_probation_enrollment_docket',
+        title: 'Enrollment Docket',
+        narrativeBridge: 'Enroll before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 380 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_probation_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, NSW: 5 },
+          forcedSettingsPatch: { o10mProbationMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_probation_clearance_finale',
+        title: 'Clearance Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainProbationRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -6215,7 +6365,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 27;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 28;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -6341,6 +6491,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
   };
 }
 
@@ -6387,6 +6538,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       amnestySession: merged.amnestySession ?? null,
       reprieveSession: merged.reprieveSession ?? null,
       paroleSession: merged.paroleSession ?? null,
+      probationSession: merged.probationSession ?? null,
     };
     return upgraded;
   }
@@ -6457,6 +6609,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     amnestySession: sanitizeAmnestySession(o.amnestySession),
     reprieveSession: sanitizeReprieveSession(o.reprieveSession),
     paroleSession: sanitizeParoleSession(o.paroleSession),
+    probationSession: sanitizeProbationSession(o.probationSession),
   };
 }
 
@@ -6654,6 +6807,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Parole cursor out of range; clamp on next sanitize.');
   }
 
+  const probation = sanitizeProbationSession(state.probationSession);
+  if (state.probationSession && !probation) {
+    warnings.push('Probation session failed sanitization; planner will ignore it.');
+  } else if (probation && probation.cursor >= probation.scenarioIds.length) {
+    warnings.push('Probation cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -6784,6 +6944,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'amnestySession',
   'reprieveSession',
   'paroleSession',
+  'probationSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -7309,6 +7470,7 @@ export function attachMarathonQueueToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -7426,6 +7588,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceProbationSessionAfterRun(next, run);
   next = advanceParoleSessionAfterRun(next, run);
   next = advanceReprieveSessionAfterRun(next, run);
   next = advanceAmnestySessionAfterRun(next, run);
@@ -7596,6 +7759,7 @@ export function attachGauntletSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -7845,6 +8009,7 @@ export function attachRelaySessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -8054,6 +8219,7 @@ export function attachCircuitSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -8281,6 +8447,7 @@ export function attachExpeditionSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -8506,6 +8673,7 @@ export function attachOdysseySessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -8730,6 +8898,7 @@ export function attachPilgrimageSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -8955,6 +9124,7 @@ export function attachCaravanSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -9174,6 +9344,7 @@ export function attachVoyageSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -9393,6 +9564,7 @@ export function attachSiegeSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -9612,6 +9784,7 @@ export function attachConvoySessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -9831,6 +10004,7 @@ export function attachEscortSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -10059,6 +10233,7 @@ export function attachExtractionSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -10295,6 +10470,7 @@ export function attachSubjectSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -10531,6 +10707,7 @@ export function attachWitnessSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -10767,6 +10944,7 @@ export function attachTribunalSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -11003,6 +11181,7 @@ export function attachIndictmentSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -11239,6 +11418,7 @@ export function attachAppealSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -11475,6 +11655,7 @@ export function attachClemencySessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -11711,6 +11892,7 @@ export function attachPardonSessionToState(
     amnestySession: null,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -11947,6 +12129,7 @@ export function attachAmnestySessionToState(
     amnestySession: sanitized,
     reprieveSession: null,
     paroleSession: null,
+    probationSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -12183,6 +12366,7 @@ export function attachReprieveSessionToState(
     ...state,
     reprieveSession: sanitized,
     paroleSession: null,
+    probationSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -12419,6 +12603,7 @@ export function attachParoleSessionToState(
   return {
     ...state,
     paroleSession: sanitized,
+    probationSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -12537,6 +12722,244 @@ export function paroleSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-probation.ts ---
+export const O10M_PROBATION_SCENARIO_CAP = 6;
+export const O10M_PROBATION_COMPLIANCE_SCORE_CAP = 900;
+export const O10M_PROBATION_COMPLIANCE_SCORE_MONEY_CAP = 980;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mProbationPhase>(['enrollment', 'review', 'probation']);
+
+export function unlockTokenForProbationId(probationId: string): string | null {
+  if (!probationId.startsWith('o10m_probation_')) return null;
+  return `o10m_unlock_${probationId.slice('o10m_probation_'.length)}`;
+}
+
+export function probationPhaseForCursor(cursor: number, scenarioCount: number): O10mProbationPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'probation';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'enrollment';
+}
+
+export function probationComplianceScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(118, Math.max(22, Math.floor(run.playerNetWorth / 162) + standingSlice));
+}
+
+export function sanitizeProbationSession(raw: unknown): O10mProbationSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const probationId =
+    typeof o.probationId === 'string' && o.probationId.startsWith('o10m_probation_') ? o.probationId : null;
+  if (!probationId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : probationId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_PROBATION_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const complianceScore = Math.min(
+    O10M_PROBATION_COMPLIANCE_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.complianceScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mProbationPhase)
+      ? (phaseRaw as O10mProbationPhase)
+      : probationPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    probationId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    complianceScore,
+    phaseTag,
+  };
+}
+
+export function createProbationSession(params: {
+  probationId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mProbationSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.probationId.startsWith('o10m_probation_')) {
+    return { session: null, warnings: ['Probation ids must start with o10m_probation_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_PROBATION_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Probation arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      probationId: params.probationId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      complianceScore: 0,
+      phaseTag: probationPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachProbationSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mProbationSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeProbationSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    probationSession: sanitized,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearProbationSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, probationSession: null };
+}
+
+export function getProbationScenarioAtCursor(
+  session: O10mProbationSession | null | undefined,
+): string | null {
+  const probation = sanitizeProbationSession(session);
+  if (!probation || !probation.active) return null;
+  return probation.scenarioIds[probation.cursor] ?? null;
+}
+
+export function buildProbationScenarioStartOverrides(
+  session: O10mProbationSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const probation = sanitizeProbationSession(session);
+  if (!probation) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_PROBATION_COMPLIANCE_SCORE_MONEY_CAP,
+    Math.floor(probation.complianceScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveProbationId: probation.probationId,
+      o10mActiveProbationStep: probation.cursor,
+      o10mActiveProbationPhase: probation.phaseTag,
+      o10mProbationComplianceScore: probation.complianceScore,
+    },
+  };
+}
+
+export function advanceProbationSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeProbationSession(state.probationSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const complianceScore = Math.min(
+    O10M_PROBATION_COMPLIANCE_SCORE_CAP,
+    session.complianceScore + probationComplianceScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      probationSession: {
+        ...session,
+        cursor,
+        complianceScore,
+        phaseTag: probationPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForProbationId(session.probationId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    probationSession: { ...session, active: false, complianceScore, phaseTag: 'probation' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function probationSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  complianceScore: number;
+  phase: O10mProbationPhase | null;
+} {
+  const session = sanitizeProbationSession(state.probationSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    complianceScore: session?.complianceScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -12627,9 +13050,31 @@ const emptyQueuePlan = {
   paroleCursor: null as number | null,
   parolePhase: null as O10mParolePhase | null,
   paroleTrust: null as number | null,
+  probationId: null as string | null,
+  probationCursor: null as number | null,
+  probationPhase: null as O10mProbationPhase | null,
+  probationCompliance: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const probation = sanitizeProbationSession(state.probationSession);
+  const probationScenario = getProbationScenarioAtCursor(probation);
+  if (probation && probation.active && probationScenario) {
+    return {
+      kind: 'probation_step',
+      scenarioId: probationScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      probationId: probation.probationId,
+      probationCursor: probation.cursor,
+      probationPhase: probation.phaseTag,
+      probationCompliance: probation.complianceScore,
+      reason: `Probation "${probation.label}" ${probation.phaseTag} phase ${probation.cursor + 1}/${probation.scenarioIds.length} (compliance ${probation.complianceScore}).`,
+    };
+  }
+
   const parole = sanitizeParoleSession(state.paroleSession);
   const paroleScenario = getParoleScenarioAtCursor(parole);
   if (parole && parole.active && paroleScenario) {
@@ -13132,6 +13577,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   amnestyActive: boolean;
   reprieveActive: boolean;
   paroleActive: boolean;
+  probationActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -13162,6 +13608,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const amnesty = amnestySessionSummary(state);
   const reprieve = reprieveSessionSummary(state);
   const parole = paroleSessionSummary(state);
+  const probation = probationSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -13190,6 +13637,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     amnestyActive: amnesty.active,
     reprieveActive: reprieve.active,
     paroleActive: parole.active,
+    probationActive: probation.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -13208,7 +13656,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 28, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 29, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -13420,16 +13868,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const paroleState = parole ? attachParoleSessionToState(createEmptyO10mModesPersistedState(), parole) : null;
   push('agent04_chunk_35', paroleState !== null && planNextCampaignAction(paroleState!).kind === 'parole_step');
 
+  const probation = createProbationSession({
+    probationId: 'o10m_probation_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_probation_enrollment_docket'],
+  }).session;
+  const probationState = probation ? attachProbationSessionToState(createEmptyO10mModesPersistedState(), probation) : null;
+  push('agent04_chunk_36', probationState !== null && planNextCampaignAction(probationState!).kind === 'probation_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v28',
+  schemaVersion: 'op10m-agent04-v29',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 27,
+  saveSchemaVersion: 28,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

@@ -22,6 +22,7 @@ import {
   attachAmnestySessionToState,
   attachReprieveSessionToState,
   attachParoleSessionToState,
+  attachProbationSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -47,6 +48,7 @@ import {
   createAmnestySession,
   createReprieveSession,
   createParoleSession,
+  createProbationSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -222,6 +224,160 @@ describe('scenario campaign planner round 4', () => {
     state = attachReprieveSessionToState(state, reprieve!);
     state = attachParoleSessionToState(state, parole!);
     assert.equal(planNextCampaignAction(state).kind, 'parole_step');
+  });
+
+  it('prefers active probation over parole, reprieve, amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: probation } = createProbationSession({
+      probationId: 'o10m_probation_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_probation_enrollment_docket', 'o10m_probation_review_chamber'],
+    });
+    const { session: parole } = createParoleSession({
+      paroleId: 'o10m_parole_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_parole_intake_docket', 'o10m_parole_review_chamber'],
+    });
+    const { session: reprieve } = createReprieveSession({
+      reprieveId: 'o10m_reprieve_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_reprieve_filing_docket', 'o10m_reprieve_review_chamber'],
+    });
+    const { session: amnesty } = createAmnestySession({
+      amnestyId: 'o10m_amnesty_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_amnesty_warrant_docket', 'o10m_amnesty_review_chamber'],
+    });
+    const { session: pardon } = createPardonSession({
+      pardonId: 'o10m_pardon_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_pardon_brief_docket', 'o10m_pardon_review_chamber'],
+    });
+    const { session: clemency } = createClemencySession({
+      clemencyId: 'o10m_clemency_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_clemency_plea_docket', 'o10m_clemency_review_chamber'],
+    });
+    const { session: appeal } = createAppealSession({
+      appealId: 'o10m_appeal_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_appeal_petition_filing', 'o10m_appeal_review_chamber'],
+    });
+    const { session: indictment } = createIndictmentSession({
+      indictmentId: 'o10m_indictment_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_indictment_charge_docket', 'o10m_indictment_arraign_bench'],
+    });
+    const { session: tribunal } = createTribunalSession({
+      tribunalId: 'o10m_tribunal_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_tribunal_docket_brief', 'o10m_tribunal_hearing_chamber'],
+    });
+    const { session: witness } = createWitnessSession({
+      witnessId: 'o10m_witness_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_witness_brief_room', 'o10m_witness_testimony_floor'],
+    });
+    const { session: subject } = createSubjectSession({
+      subjectId: 'o10m_subject_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_subject_intake_brief', 'o10m_subject_probe_field'],
+    });
+    const { session: extraction } = createExtractionSession({
+      extractionId: 'o10m_extraction_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_extraction_intel_brief', 'o10m_extraction_rescue_site'],
+    });
+    const { session: escort } = createEscortSession({
+      escortId: 'o10m_escort_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_escort_briefing_yard', 'o10m_escort_corridor_patrol'],
+    });
+    const { session: convoy } = createConvoySession({
+      convoyId: 'o10m_convoy_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_convoy_staging_depot', 'o10m_convoy_transit_corridor'],
+    });
+    const { session: siege } = createSiegeSession({
+      siegeId: 'o10m_siege_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_siege_mustering_yard', 'o10m_siege_breach_wall'],
+    });
+    const { session: voyage } = createVoyageSession({
+      voyageId: 'o10m_voyage_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_voyage_embark_pier', 'o10m_voyage_open_sea_passage'],
+    });
+    const { session: caravan } = createCaravanSession({
+      caravanId: 'o10m_caravan_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_caravan_assembly_yard', 'o10m_caravan_dune_crossing'],
+    });
+    const { session: pilgrimage } = createPilgrimageSession({
+      pilgrimageId: 'o10m_pilgrimage_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_pilgrimage_setting_out', 'o10m_pilgrimage_midway_shrine'],
+    });
+    const { session: odyssey } = createOdysseySession({
+      odysseyId: 'o10m_odyssey_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_odyssey_opening_winds', 'o10m_odyssey_crossing_shelves'],
+    });
+    const { session: expedition } = createExpeditionSession({
+      expeditionId: 'o10m_expedition_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_expedition_departure_dock', 'o10m_expedition_transit_pass'],
+    });
+    const { session: circuit } = createCircuitSession({
+      circuitId: 'o10m_circuit_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_circuit_warmup_laps', 'o10m_circuit_ridge_climb'],
+    });
+    const { session: relay } = createRelaySession({
+      relayId: 'o10m_relay_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_relay_dust_corridor', 'o10m_relay_coastal_handoff'],
+    });
+    const { session: gauntlet } = createGauntletSession({
+      gauntletId: 'o10m_gauntlet_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_gauntlet_opening_gate', 'o10m_gauntlet_pressure_lane'],
+    });
+    const marathon = createMarathonQueue({
+      queueId: 'o10m_marathon_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_marathon_pace_setter', 'o10m_marathon_midfield_push'],
+    }).queue;
+    let state = createEmptyO10mModesPersistedState();
+    state = pinCampaignSlot(state, {
+      slotId: 'o10m_slot_priority',
+      scenarioId: 'o10m_slot_rotation_lab',
+      turn: 99,
+    }).state;
+    state = attachMarathonQueueToState(state, marathon!);
+    state = attachGauntletSessionToState(state, gauntlet!);
+    state = attachRelaySessionToState(state, relay!);
+    state = attachCircuitSessionToState(state, circuit!);
+    state = attachExpeditionSessionToState(state, expedition!);
+    state = attachOdysseySessionToState(state, odyssey!);
+    state = attachPilgrimageSessionToState(state, pilgrimage!);
+    state = attachCaravanSessionToState(state, caravan!);
+    state = attachVoyageSessionToState(state, voyage!);
+    state = attachSiegeSessionToState(state, siege!);
+    state = attachConvoySessionToState(state, convoy!);
+    state = attachEscortSessionToState(state, escort!);
+    state = attachExtractionSessionToState(state, extraction!);
+    state = attachSubjectSessionToState(state, subject!);
+    state = attachWitnessSessionToState(state, witness!);
+    state = attachTribunalSessionToState(state, tribunal!);
+    state = attachIndictmentSessionToState(state, indictment!);
+    state = attachAppealSessionToState(state, appeal!);
+    state = attachClemencySessionToState(state, clemency!);
+    state = attachPardonSessionToState(state, pardon!);
+    state = attachAmnestySessionToState(state, amnesty!);
+    state = attachReprieveSessionToState(state, reprieve!);
+    state = attachParoleSessionToState(state, parole!);
+    state = attachProbationSessionToState(state, probation!);
+    assert.equal(planNextCampaignAction(state).kind, 'probation_step');
   });
 
   it('prefers active reprieve over amnesty, pardon, clemency, appeal, indictment, tribunal, witness, subject, extraction, escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
