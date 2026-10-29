@@ -124,7 +124,7 @@ describe('scale wave round 24 — cosmic coalition perpetuity', () => {
       coalitionCosmicPerpetuityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(40);
+    expect(save.version).toBe(41);
     expect(save.coalitionCosmicPerpetuityStreakDays).toBe(5);
   });
 });

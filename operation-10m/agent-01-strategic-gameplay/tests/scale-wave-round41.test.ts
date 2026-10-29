@@ -162,7 +162,7 @@ describe('scale wave round 41 — sentinel coalition ascendancy', () => {
       coalitionSentinelAscendancyStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(40);
+    expect(save.version).toBe(41);
     expect(save.coalitionSentinelAscendancyStreakDays).toBe(5);
   });
 });

@@ -63,6 +63,7 @@ import { resetCoalitionCustodialEternityStreak } from './coalition-custodial-ete
 import { resetCoalitionVanguardSynthesisStreak } from './coalition-vanguard-synthesis.ts';
 import { resetCoalitionSentinelAscendancyStreak } from './coalition-sentinel-ascendancy.ts';
 import { resetCoalitionOraclePerpetuityStreak } from './coalition-oracle-perpetuity.ts';
+import { resetCoalitionArchonEternityStreak } from './coalition-archon-eternity.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -121,6 +122,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
     coalitionOraclePerpetuityStreakDays: 0,
+    coalitionArchonEternityStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -479,6 +481,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_oracle_continuity_covenant') {
     nextState = resetCoalitionOraclePerpetuityStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_archon_eternity_charter') {
+    nextState = resetCoalitionArchonEternityStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_archon_continuity_covenant') {
+    nextState = resetCoalitionArchonEternityStreak(nextState);
   }
 
   contracts.ui.pushToast({

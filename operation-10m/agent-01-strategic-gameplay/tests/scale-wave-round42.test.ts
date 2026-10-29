@@ -160,7 +160,7 @@ describe('scale wave round 42 — oracle coalition perpetuity', () => {
       coalitionOraclePerpetuityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(40);
+    expect(save.version).toBe(41);
     expect(save.coalitionOraclePerpetuityStreakDays).toBe(5);
   });
 });

@@ -126,7 +126,7 @@ describe('scale wave round 23 — universal coalition immortality', () => {
       coalitionUniversalImmortalityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(40);
+    expect(save.version).toBe(41);
     expect(save.coalitionUniversalImmortalityStreakDays).toBe(5);
   });
 });

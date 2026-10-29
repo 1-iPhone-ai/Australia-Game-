@@ -398,3 +398,13 @@ export function oraclePerpetuityRankingBonus(
   if (streak >= action.minCoalitionOraclePerpetuityStreakDays) return 35;
   return 2;
 }
+
+export function archonEternityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionArchonEternityStreakDays === undefined) return 0;
+  const streak = state.coalitionArchonEternityStreakDays ?? 0;
+  if (streak >= action.minCoalitionArchonEternityStreakDays) return 36;
+  return 2;
+}
