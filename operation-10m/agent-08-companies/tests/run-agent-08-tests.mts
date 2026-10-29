@@ -1,4 +1,4 @@
-import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08StabilizationSelfTests, runAgent08MandateSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
+import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08StabilizationSelfTests, runAgent08MandateSelfTests, runAgent08ComplianceSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
 
 function main() {
   const tax = runAgent08TaxLaborSelfTests();
@@ -64,6 +64,14 @@ function main() {
     process.exit(1);
   }
   console.log(`Agent 08 coordination mandate: ${mandate.length} passed`);
+
+  const compliance = runAgent08ComplianceSelfTests();
+  const failedCompliance = compliance.filter(t => !t.passed);
+  if (failedCompliance.length) {
+    console.error('Agent 08 mandate compliance tests failed:', failedCompliance);
+    process.exit(1);
+  }
+  console.log(`Agent 08 mandate compliance: ${compliance.length} passed`);
 
   const moduleTests = runAgent08ModuleSelfTests();
   const failed = moduleTests.filter(t => !t.passed);

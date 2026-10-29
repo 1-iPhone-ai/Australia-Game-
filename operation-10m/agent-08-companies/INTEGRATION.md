@@ -25,6 +25,7 @@ Recommended placement: adjacent to existing V10.14 private sector block (SECTION
 | `computeNationalProductionRecoveryPlaybook` | Ranked recovery levers + regional plans from integrated brief (wave 4) |
 | `computeNationalProductionStabilizationOutlook` | Turn-horizon stabilization + upstream coordination clusters (wave 5) |
 | `computeNationalProductionCoordinationMandate` | Sequenced firm/cluster execution directives + resilience momentum (wave 6) |
+| `computeNationalProductionMandateCompliance` | Prior-mandate vs current stabilization compliance + cluster gaps (wave 7) |
 | `applySupplyChainDepthEvidence` | Bounded evidence tags on company rows |
 | `privateSectorWorldRoots` | World Reaction roots from derived private-sector events |
 | `runAgent08ModuleSelfTests` | Lab / release self-test registry |

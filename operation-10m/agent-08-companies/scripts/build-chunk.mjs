@@ -23,6 +23,7 @@ const FILES = [
   'production-recovery-playbook.ts',
   'production-stabilization-outlook.ts',
   'production-coordination-mandate.ts',
+  'production-mandate-compliance.ts',
   'chunk-exports.ts',
 ];
 

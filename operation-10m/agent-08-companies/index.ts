@@ -139,6 +139,24 @@ export type {
   ResilienceMomentumBand,
 } from './production-coordination-mandate';
 
+export {
+  AGENT08_COMPLIANCE_SCHEMA_VERSION,
+  buildClusterMandateComplianceGaps,
+  computeNationalComplianceScore,
+  computeNationalProductionMandateCompliance,
+  scoreFirmMandateCompliance,
+  summarizeRegionalMandateCompliance,
+  runAgent08ComplianceSelfTests,
+} from './production-mandate-compliance';
+
+export type {
+  ClusterMandateComplianceGap,
+  FirmMandateComplianceRow,
+  MandateComplianceBand,
+  NationalProductionMandateCompliance,
+  RegionalMandateComplianceSummary,
+} from './production-mandate-compliance';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -148,6 +166,7 @@ import { runAgent08IntegratedSelfTests } from './integrated-production-synthesis
 import { runAgent08RecoverySelfTests } from './production-recovery-playbook';
 import { runAgent08StabilizationSelfTests } from './production-stabilization-outlook';
 import { runAgent08MandateSelfTests } from './production-coordination-mandate';
+import { runAgent08ComplianceSelfTests } from './production-mandate-compliance';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -197,5 +216,21 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
-  return [...core.slice(0, 5), ...taxLabor, ...supply, ...sector, ...cascade, ...integrated, ...recovery, ...stabilization, ...mandate];
+  const compliance = runAgent08ComplianceSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
+  return [
+    ...core.slice(0, 5),
+    ...taxLabor,
+    ...supply,
+    ...sector,
+    ...cascade,
+    ...integrated,
+    ...recovery,
+    ...stabilization,
+    ...mandate,
+    ...compliance,
+  ];
 }
