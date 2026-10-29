@@ -181,4 +181,8 @@ export * from './batch-national-tick-session-wave50-integration-seal.js';
 export * from './batch-national-tick-session-wave50-integration-export.js';
 export * from './batch-national-tick-session-wave50-integration-export-compare.js';
 export * from './batch-national-tick-session-wave50-integration-replay-parity.js';
+export * from './batch-national-tick-session-wave51-integration-seal.js';
+export * from './batch-national-tick-session-wave51-integration-export.js';
+export * from './batch-national-tick-session-wave51-integration-export-compare.js';
+export * from './batch-national-tick-session-wave51-integration-replay-parity.js';
 export * from './engine.js';
