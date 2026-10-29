@@ -32,6 +32,7 @@ import {
   O6K_AGENT24_WAVE46_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE47_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE48_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE50_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE49_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
@@ -70,7 +71,9 @@ export function buildAgent24ReplayScaleWaveProjectionHandoffSeal(
   const waveRound = input.replayScaleWaveIntegrationVerification.waveRound;
   const projectionBaselineSha =
     input.projectionBaselineSha ??
-    (waveRound >= 49
+    (waveRound >= 50
+      ? O6K_AGENT24_WAVE50_INTEGRATION_BASELINE_SHA
+      : waveRound >= 49
       ? O6K_AGENT24_WAVE49_INTEGRATION_BASELINE_SHA
       : waveRound >= 48
       ? O6K_AGENT24_WAVE48_INTEGRATION_BASELINE_SHA
@@ -201,7 +204,7 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
   const integrationVerification = {
     reportId: 'iv',
     matchId: 'self',
-    waveRound: 49,
+    waveRound: 50,
     integrationBaselineSha: O6K_AGENT24_WAVE49_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,

@@ -126,7 +126,7 @@ export function runAgent24ReplayScaleWaveAcceptanceSelfTests(): Array<{ name: st
 
   const report = buildAgent24ReplayScaleWaveAcceptanceReport({
     matchId: 'self',
-    waveRound: 49,
+    waveRound: 50,
     archiveContinuityVerification: continuityVerification,
     exportReadiness,
     analyticsDepth,
@@ -134,14 +134,14 @@ export function runAgent24ReplayScaleWaveAcceptanceSelfTests(): Array<{ name: st
 
   return [
     { name: 'accepted_when_wave_gates_pass', passed: report.accepted && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 49 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 50 },
     {
       name: 'deterministic_fingerprint',
       passed:
         report.deterministicFingerprint ===
         buildAgent24ReplayScaleWaveAcceptanceReport({
           matchId: 'self',
-          waveRound: 49,
+          waveRound: 50,
           archiveContinuityVerification: continuityVerification,
           exportReadiness,
           analyticsDepth,

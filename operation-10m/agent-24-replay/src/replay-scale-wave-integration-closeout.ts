@@ -96,6 +96,9 @@ export const O6K_AGENT24_WAVE48_INTEGRATION_BASELINE_SHA = '4404bf0f';
 /** O10-229 integration baseline anchor (wave 49 roster). */
 export const O6K_AGENT24_WAVE49_INTEGRATION_BASELINE_SHA = '73e5e01e';
 
+/** O10-230 integration baseline anchor (wave 50 roster). */
+export const O6K_AGENT24_WAVE50_INTEGRATION_BASELINE_SHA = '8aaaf700';
+
 export interface Agent24ReplayScaleWaveIntegrationCloseoutCheckpoint {
   checkpointId: string;
   label: string;
@@ -130,7 +133,9 @@ export function buildAgent24ReplayScaleWaveIntegrationCloseoutReport(
   const waveRound = input.replayScaleWaveAttestationVerification.waveRound;
   const integrationBaselineSha =
     input.integrationBaselineSha ??
-    (waveRound >= 49
+    (waveRound >= 50
+      ? O6K_AGENT24_WAVE50_INTEGRATION_BASELINE_SHA
+      : waveRound >= 49
       ? O6K_AGENT24_WAVE49_INTEGRATION_BASELINE_SHA
       : waveRound >= 48
       ? O6K_AGENT24_WAVE48_INTEGRATION_BASELINE_SHA
@@ -308,7 +313,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   return [
     {
       name: 'integration_closeout_complete_when_wave_stack_ready',
-      passed: report.closeoutComplete && report.integrationBaselineSha === O6K_AGENT24_WAVE49_INTEGRATION_BASELINE_SHA,
+      passed: report.closeoutComplete && report.integrationBaselineSha === O6K_AGENT24_WAVE50_INTEGRATION_BASELINE_SHA,
     },
     { name: 'wave_round_pinned', passed: report.waveRound === 49 },
     {

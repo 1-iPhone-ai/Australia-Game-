@@ -97,7 +97,7 @@ export function runAgent24ArchiveScaleWavePostProjectionGateSelfTests(): Array<{
   const projectionVerification = {
     reportId: 'pv',
     matchId: 'self',
-    waveRound: 49,
+    waveRound: 50,
     projectionBaselineSha: '99f2e72b',
     verified: true,
     issueCount: 0,
@@ -134,7 +134,7 @@ export function runAgent24ArchiveScaleWavePostProjectionGateSelfTests(): Array<{
 
   return [
     { name: 'gate_open_when_post_projection_stack_ready', passed: report.gateOpen && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 49 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 50 },
     {
       name: 'deterministic_fingerprint',
       passed:

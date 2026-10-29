@@ -94,7 +94,7 @@ export function runAgent24ReplayScaleWaveHandoffSealSelfTests(): Array<{ name: s
   const waveAcceptance = {
     reportId: 'wa',
     matchId: 'self',
-    waveRound: 49,
+    waveRound: 50,
     accepted: true,
     blockerCount: 0,
     blockers: [],

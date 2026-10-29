@@ -72,7 +72,7 @@ export function runAgent24ReplayScaleWaveAttestationSelfTests(): Array<{ name: s
   const closeout = {
     reportId: 'co',
     matchId: 'self',
-    waveRound: 49,
+    waveRound: 50,
     closeoutComplete: true,
     checkpointCount: 3,
     satisfiedCheckpointCount: 3,
@@ -83,7 +83,7 @@ export function runAgent24ReplayScaleWaveAttestationSelfTests(): Array<{ name: s
   const verification = {
     reportId: 'sv',
     matchId: 'self',
-    waveRound: 49,
+    waveRound: 50,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -94,7 +94,7 @@ export function runAgent24ReplayScaleWaveAttestationSelfTests(): Array<{ name: s
   const finalization = {
     reportId: 'fin',
     matchId: 'self',
-    waveRound: 49,
+    waveRound: 50,
     finalized: true,
     blockerCount: 0,
     blockers: [],

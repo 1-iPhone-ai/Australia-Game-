@@ -110,7 +110,7 @@ export function runAgent24ReplayScaleWaveVerificationSelfTests(): Array<{ name: 
   const acceptance = {
     reportId: 'wa',
     matchId: 'self',
-    waveRound: 49,
+    waveRound: 50,
     accepted: true,
     blockerCount: 0,
     blockers: [],
@@ -120,7 +120,7 @@ export function runAgent24ReplayScaleWaveVerificationSelfTests(): Array<{ name: 
   const handoffSeal = {
     sealId: 'sws',
     matchId: 'self',
-    waveRound: 49,
+    waveRound: 50,
     handoffReady: true,
     linkCount: 3,
     readyLinkCount: 3,
@@ -131,7 +131,7 @@ export function runAgent24ReplayScaleWaveVerificationSelfTests(): Array<{ name: 
   const closeout = {
     reportId: 'co',
     matchId: 'self',
-    waveRound: 49,
+    waveRound: 50,
     closeoutComplete: true,
     checkpointCount: 3,
     satisfiedCheckpointCount: 3,
@@ -149,7 +149,7 @@ export function runAgent24ReplayScaleWaveVerificationSelfTests(): Array<{ name: 
 
   return [
     { name: 'verified_when_scale_wave_pipeline_ready', passed: report.verified && report.issueCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 49 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 50 },
     {
       name: 'deterministic_fingerprint',
       passed:
