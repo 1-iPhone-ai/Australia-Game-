@@ -266,6 +266,24 @@ export type {
   RegionalOperatingDigestSlice,
 } from './production-operating-digest';
 
+export {
+  AGENT08_READINESS_PORTFOLIO_SCHEMA_VERSION,
+  buildFirmProductionReadinessRow,
+  classifyNationalReadinessTier,
+  computeNationalProductionReadinessPortfolio,
+  computeNationalReadinessScore,
+  computePortfolioPressure,
+  summarizeRegionalProductionReadiness,
+  runAgent08ReadinessPortfolioSelfTests,
+} from './production-readiness-portfolio';
+
+export type {
+  FirmProductionReadinessRow,
+  NationalProductionReadinessPortfolio,
+  ProductionReadinessTier,
+  RegionalProductionReadinessPortfolio,
+} from './production-readiness-portfolio';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -282,6 +300,7 @@ import { runAgent08UtilizationDepthSelfTests } from './production-utilization-de
 import { runAgent08ReconciliationSelfTests } from './production-capacity-reconciliation';
 import { runAgent08OperatingPrioritySelfTests } from './production-operating-priorities';
 import { runAgent08OperatingDigestSelfTests } from './production-operating-digest';
+import { runAgent08ReadinessPortfolioSelfTests } from './production-readiness-portfolio';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -366,6 +385,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const readinessPortfolio = runAgent08ReadinessPortfolioSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -383,5 +407,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...reconciliation,
     ...operatingPriority,
     ...operatingDigest,
+    ...readinessPortfolio,
   ];
 }
