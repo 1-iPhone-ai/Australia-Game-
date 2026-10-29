@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: ade3d960a5ba86fb
+// content-sha256-prefix: 4d2a0c6b90fb5ccf
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -903,6 +903,10 @@ export interface DayAdvanceUiEvolutionResult {
   textScaleReadabilityDayCoachCopy: string | null;
   responsiveNavRailDayCoachCopy: string | null;
   onboardingFunnelDayHintCopy: string | null;
+  phaseCoachGateDayCoachCopy: string | null;
+  notificationLaneDayCoachCopy: string | null;
+  landmarkReadingDayCoachCopy: string | null;
+  coachLiveRegionDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1212,6 +1216,34 @@ export function tickEvolvingUiOnDayAdvance(
     dismissedKeys: persistedAfterCalm.onboardingDismissedKeys ?? [],
   });
 
+  const phaseCoachGateDayCoach =
+    context.phase != null
+      ? buildPhaseCoachGateDayCoach({
+          phase: context.phase,
+          band: cognitiveLoadDayCoach.band,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { suppressedSurfaceCount: 0, coachCopy: null };
+
+  const notificationLaneDayCoach = buildNotificationLaneDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+    onboardingEnabled: nextSignals.playerIntentOnboardingEnabled !== false,
+  });
+
+  const landmarkReadingDayCoach =
+    context.phase != null
+      ? buildLandmarkReadingDayCoach({
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { skipLinkCount: 0, coachCopy: null };
+
+  const coachLiveRegionDayCoach = buildCoachLiveRegionDayCoach({
+    plan: liveRegionPlan,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -1276,6 +1308,10 @@ export function tickEvolvingUiOnDayAdvance(
     textScaleReadabilityDayCoachCopy: textScaleReadabilityDayCoach.coachCopy,
     responsiveNavRailDayCoachCopy: responsiveNavRailDayCoach.coachCopy,
     onboardingFunnelDayHintCopy: onboardingFunnelDayHint.coachCopy,
+    phaseCoachGateDayCoachCopy: phaseCoachGateDayCoach.coachCopy,
+    notificationLaneDayCoachCopy: notificationLaneDayCoach.coachCopy,
+    landmarkReadingDayCoachCopy: landmarkReadingDayCoach.coachCopy,
+    coachLiveRegionDayCoachCopy: coachLiveRegionDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -5120,6 +5156,261 @@ export function buildOnboardingFunnelDayHint(input: {
     activeStepCount: active.length,
     coachCopy: `Day ${input.nextGameDay}: ${step.coachMessage}`,
   };
+}
+
+// --- source: engine/phase-coach-gate-day-coach.ts ---
+export interface PhaseCoachGateDayCoach {
+  suppressedSurfaceCount: number;
+  coachCopy: string | null;
+}
+
+export function buildPhaseCoachGateDayCoach(input: {
+  phase: V94StandardizedGamePhase;
+  band: CognitiveLoadBand;
+  nextGameDay: number;
+}): PhaseCoachGateDayCoach {
+  const plan = planPhaseCoachSurfaces(input.phase, input.band);
+  const base = phaseCoachGateCopy(plan);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+
+  return {
+    suppressedSurfaceCount: plan.suppressedSurfaces.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/notification-lane-day-coach.ts ---
+export interface NotificationLaneDayCoach {
+  activeLaneCount: number;
+  coachCopy: string | null;
+}
+
+export function buildNotificationLaneDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+  onboardingEnabled?: boolean;
+}): NotificationLaneDayCoach {
+  const plan = buildNotificationLaneCoachPlan(input.signals, input.onboardingEnabled !== false);
+  const coachCopy = plan.coachCopy ? `Day ${input.nextGameDay}: ${plan.coachCopy}` : null;
+
+  return {
+    activeLaneCount: plan.activeCategories.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/landmark-reading-day-coach.ts ---
+export interface LandmarkReadingDayCoach {
+  skipLinkCount: number;
+  coachCopy: string | null;
+}
+
+export function buildLandmarkReadingDayCoach(input: {
+  phase: V94StandardizedGamePhase;
+  nextGameDay: number;
+}): LandmarkReadingDayCoach {
+  const plan = buildCoachLandmarkReadingPlan(input.phase);
+  const base = landmarkReadingCoachCopy(plan);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+
+  return {
+    skipLinkCount: plan.skipLinkLabels.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/coach-live-region-day-coach.ts ---
+export interface CoachLiveRegionDayCoach {
+  messageCount: number;
+  coachCopy: string | null;
+}
+
+export function buildCoachLiveRegionDayCoach(input: {
+  plan: CoachLiveRegionDeliveryPlan;
+  nextGameDay: number;
+}): CoachLiveRegionDayCoach {
+  const base = coachLiveRegionDeliveryCopy(input.plan);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+
+  return {
+    messageCount: input.plan.messages.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/round22-self-tests.ts ---
+export function runAgent22Round22SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r22_phase_gate_save_load',
+    'phase coach gate day coach on save_load',
+    (() => {
+      const coach = buildPhaseCoachGateDayCoach({
+        phase: 'save_load',
+        band: 'moderate',
+        nextGameDay: 3,
+      });
+      return coach.suppressedSurfaceCount > 0 && Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r22_phase_gate_human_turn',
+    'phase coach gate day coach null when all allowed',
+    (() => {
+      const coach = buildPhaseCoachGateDayCoach({
+        phase: 'human_turn',
+        band: 'light',
+        nextGameDay: 4,
+      });
+      return coach.coachCopy === null || coach.coachCopy.includes('Day 4');
+    })()
+  );
+
+  check(
+    'r22_notification_lane',
+    'notification lane day coach on early day',
+    (() => {
+      const coach = buildNotificationLaneDayCoach({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        nextGameDay: 1,
+      });
+      return coach.activeLaneCount >= 0 && (coach.coachCopy === null || coach.coachCopy.includes('Day 1'));
+    })()
+  );
+
+  check(
+    'r22_landmark_reading',
+    'landmark reading day coach on human_turn',
+    (() => {
+      const coach = buildLandmarkReadingDayCoach({ phase: 'human_turn', nextGameDay: 5 });
+      return coach.skipLinkCount > 1 && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r22_live_region',
+    'coach live region day coach with messages',
+    (() => {
+      const plan = buildCoachLiveRegionDeliveryPlan(['Unlock map', 'Unlock market'], DEFAULT_ACCESSIBILITY_SNAPSHOT);
+      const coach = buildCoachLiveRegionDayCoach({ plan, nextGameDay: 6 });
+      return coach.messageCount > 0 && Boolean(coach.coachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r22_live_region_off',
+    'coach live region day coach null when SR off',
+    (() => {
+      const plan = buildCoachLiveRegionDeliveryPlan(['test'], {
+        ...DEFAULT_ACCESSIBILITY_SNAPSHOT,
+        screenReaderAnnouncements: false,
+      });
+      const coach = buildCoachLiveRegionDayCoach({ plan, nextGameDay: 2 });
+      return coach.messageCount === 0 && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r22_tick_phase_gate_field',
+    'day advance exposes phase coach gate day copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'save_load' }
+      );
+      return typeof r.phaseCoachGateDayCoachCopy === 'string' || r.phaseCoachGateDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r22_tick_lane_field',
+    'day advance exposes notification lane day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.notificationLaneDayCoachCopy === 'string' || r.notificationLaneDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r22_tick_landmark_field',
+    'day advance exposes landmark reading day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.landmarkReadingDayCoachCopy === 'string' || r.landmarkReadingDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r22_tick_live_region_field',
+    'day advance exposes coach live region day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.coachLiveRegionDayCoachCopy === 'string' || r.coachLiveRegionDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r22_tick_save_load_gate_copy',
+    'save_load day advance phase gate mentions deferred surfaces',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'save_load' }
+      );
+      return Boolean(r.phaseCoachGateDayCoachCopy?.toLowerCase().includes('deferred'));
+    })()
+  );
+
+  check(
+    'r22_tick_landmark_active',
+    'human_turn day advance landmark reading copy present',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.landmarkReadingDayCoachCopy?.includes('Day 5'));
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round21-self-tests.ts ---
@@ -9136,6 +9427,18 @@ export function SimulationUiEvolutionBridge({
       {result.onboardingFunnelDayHintCopy ? (
         <div data-testid="sim-ui-evolution-onboarding-day">{result.onboardingFunnelDayHintCopy}</div>
       ) : null}
+      {result.phaseCoachGateDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-phase-gate-day">{result.phaseCoachGateDayCoachCopy}</div>
+      ) : null}
+      {result.notificationLaneDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-lane-day">{result.notificationLaneDayCoachCopy}</div>
+      ) : null}
+      {result.landmarkReadingDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-landmark-day">{result.landmarkReadingDayCoachCopy}</div>
+      ) : null}
+      {result.coachLiveRegionDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-live-region-day">{result.coachLiveRegionDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -11009,8 +11312,96 @@ export function OnboardingFunnelDayHintStrip({
   );
 }
 
+// --- source: react/PhaseCoachGateDayCoachStrip.tsx ---
+export function PhaseCoachGateDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: PhaseCoachGateDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="phase-coach-gate-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-purple-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/NotificationLaneDayCoachStrip.tsx ---
+export function NotificationLaneDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: NotificationLaneDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="notification-lane-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-red-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/LandmarkReadingDayCoachStrip.tsx ---
+export function LandmarkReadingDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: LandmarkReadingDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="landmark-reading-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-teal-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/CoachLiveRegionDayCoachStrip.tsx ---
+export function CoachLiveRegionDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: CoachLiveRegionDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="coach-live-region-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-neutral-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.21.0';
+export const AGENT_22_MODULE_VERSION = '1.22.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -11156,6 +11547,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round21 = runAgent22Round21SelfTests();
   for (const r of round21.results) {
     check(`agent22_round21_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round22 = runAgent22Round22SelfTests();
+  for (const r of round22.results) {
+    check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

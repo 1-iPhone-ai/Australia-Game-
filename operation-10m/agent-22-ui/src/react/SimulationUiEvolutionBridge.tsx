@@ -132,6 +132,18 @@ export function SimulationUiEvolutionBridge({
       {result.onboardingFunnelDayHintCopy ? (
         <div data-testid="sim-ui-evolution-onboarding-day">{result.onboardingFunnelDayHintCopy}</div>
       ) : null}
+      {result.phaseCoachGateDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-phase-gate-day">{result.phaseCoachGateDayCoachCopy}</div>
+      ) : null}
+      {result.notificationLaneDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-lane-day">{result.notificationLaneDayCoachCopy}</div>
+      ) : null}
+      {result.landmarkReadingDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-landmark-day">{result.landmarkReadingDayCoachCopy}</div>
+      ) : null}
+      {result.coachLiveRegionDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-live-region-day">{result.coachLiveRegionDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

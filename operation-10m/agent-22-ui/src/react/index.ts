@@ -61,3 +61,7 @@ export { DeferredAnnouncementFlushDayHintStrip } from './DeferredAnnouncementFlu
 export { TextScaleReadabilityDayCoachStrip } from './TextScaleReadabilityDayCoachStrip.js';
 export { ResponsiveNavRailDayCoachStrip } from './ResponsiveNavRailDayCoachStrip.js';
 export { OnboardingFunnelDayHintStrip } from './OnboardingFunnelDayHintStrip.js';
+export { PhaseCoachGateDayCoachStrip } from './PhaseCoachGateDayCoachStrip.js';
+export { NotificationLaneDayCoachStrip } from './NotificationLaneDayCoachStrip.js';
+export { LandmarkReadingDayCoachStrip } from './LandmarkReadingDayCoachStrip.js';
+export { CoachLiveRegionDayCoachStrip } from './CoachLiveRegionDayCoachStrip.js';

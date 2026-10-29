@@ -65,6 +65,10 @@ import { buildDeferredAnnouncementFlushDayHint } from '../engine/deferred-announ
 import { buildTextScaleReadabilityDayCoach } from '../engine/text-scale-readability-day-coach.js';
 import { buildResponsiveNavRailDayCoach } from '../engine/responsive-nav-rail-day-coach.js';
 import { buildOnboardingFunnelDayHint } from '../engine/onboarding-funnel-day-hint.js';
+import { buildPhaseCoachGateDayCoach } from '../engine/phase-coach-gate-day-coach.js';
+import { buildNotificationLaneDayCoach } from '../engine/notification-lane-day-coach.js';
+import { buildLandmarkReadingDayCoach } from '../engine/landmark-reading-day-coach.js';
+import { buildCoachLiveRegionDayCoach } from '../engine/coach-live-region-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -138,6 +142,10 @@ export interface DayAdvanceUiEvolutionResult {
   textScaleReadabilityDayCoachCopy: string | null;
   responsiveNavRailDayCoachCopy: string | null;
   onboardingFunnelDayHintCopy: string | null;
+  phaseCoachGateDayCoachCopy: string | null;
+  notificationLaneDayCoachCopy: string | null;
+  landmarkReadingDayCoachCopy: string | null;
+  coachLiveRegionDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -447,6 +455,34 @@ export function tickEvolvingUiOnDayAdvance(
     dismissedKeys: persistedAfterCalm.onboardingDismissedKeys ?? [],
   });
 
+  const phaseCoachGateDayCoach =
+    context.phase != null
+      ? buildPhaseCoachGateDayCoach({
+          phase: context.phase,
+          band: cognitiveLoadDayCoach.band,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { suppressedSurfaceCount: 0, coachCopy: null };
+
+  const notificationLaneDayCoach = buildNotificationLaneDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+    onboardingEnabled: nextSignals.playerIntentOnboardingEnabled !== false,
+  });
+
+  const landmarkReadingDayCoach =
+    context.phase != null
+      ? buildLandmarkReadingDayCoach({
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { skipLinkCount: 0, coachCopy: null };
+
+  const coachLiveRegionDayCoach = buildCoachLiveRegionDayCoach({
+    plan: liveRegionPlan,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -511,6 +547,10 @@ export function tickEvolvingUiOnDayAdvance(
     textScaleReadabilityDayCoachCopy: textScaleReadabilityDayCoach.coachCopy,
     responsiveNavRailDayCoachCopy: responsiveNavRailDayCoach.coachCopy,
     onboardingFunnelDayHintCopy: onboardingFunnelDayHint.coachCopy,
+    phaseCoachGateDayCoachCopy: phaseCoachGateDayCoach.coachCopy,
+    notificationLaneDayCoachCopy: notificationLaneDayCoach.coachCopy,
+    landmarkReadingDayCoachCopy: landmarkReadingDayCoach.coachCopy,
+    coachLiveRegionDayCoachCopy: coachLiveRegionDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
