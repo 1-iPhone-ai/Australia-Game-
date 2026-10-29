@@ -57,6 +57,7 @@ operation-10m/agent-13-energy/
   modules/renewable-export-continuity-sovereign-security-federation-ledger.ts  # scale wave round 49 (O10-229)
   modules/national-export-orchestration-sovereign-continuity-federation-ledger.ts  # scale wave round 50 (O10-231)
   modules/sovereign-export-resilience-national-security-federation-ledger.ts  # scale wave round 51 (O10-233)
+  modules/national-security-strategic-reserve-defence-industrial-federation-ledger.ts  # scale wave round 52 (O10-235)
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge
