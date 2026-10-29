@@ -574,6 +574,23 @@ export type {
   TransitionAssuranceBand,
 } from './production-transition-assurance';
 
+export {
+  AGENT08_TRANSITION_TRUST_SCHEMA_VERSION,
+  buildFirmProductionTransitionTrust,
+  classifyNationalTrustBand,
+  computeNationalTrustPressure,
+  computeNationalProductionTransitionTrust,
+  summarizeRegionalTransitionTrust,
+  runAgent08TransitionTrustSelfTests,
+} from './production-transition-trust';
+
+export type {
+  FirmProductionTransitionTrust,
+  NationalProductionTransitionTrust,
+  RegionalTransitionTrustSummary,
+  TransitionTrustBand,
+} from './production-transition-trust';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -608,6 +625,7 @@ import { runAgent08TransitionStewardshipSelfTests } from './production-transitio
 import { runAgent08TransitionGovernanceSelfTests } from './production-transition-governance';
 import { runAgent08TransitionAccountabilitySelfTests } from './production-transition-accountability';
 import { runAgent08TransitionAssuranceSelfTests } from './production-transition-assurance';
+import { runAgent08TransitionTrustSelfTests } from './production-transition-trust';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -782,6 +800,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionTrust = runAgent08TransitionTrustSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -817,5 +840,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionGovernance,
     ...transitionAccountability,
     ...transitionAssurance,
+    ...transitionTrust,
   ];
 }
