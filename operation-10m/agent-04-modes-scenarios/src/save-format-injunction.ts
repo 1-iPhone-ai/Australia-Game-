@@ -9,7 +9,7 @@ import type {
 
 export const O10M_INJUNCTION_SCENARIO_CAP = 6;
 export const O10M_INJUNCTION_SCORE_CAP = 1118;
-export const O10M_INJUNCTION_SCORE_MONEY_CAP = 1180;
+export const O10M_INJUNCTION_SCORE_MONEY_CAP = 1190;
 
 function num(v: unknown, fallback = 0): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
