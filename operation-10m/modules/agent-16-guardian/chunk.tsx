@@ -181,6 +181,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   reprieveStrainIndex: number;
   reprieveIntegrityScore: number;
   governanceNerveScore: number;
+  acquittalStrainIndex: number;
+  acquittalIntegrityScore: number;
+  governanceMoxieScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -2551,6 +2554,62 @@ export function buildGuardianDepthReprieveReport(snapshot: GuardianCoPilotMonito
   return lines.slice(0, 3);
 }
 
+export function computeAcquittalStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceNerveScore < 50) load += Math.min(25, 50 - snapshot.governanceNerveScore);
+  if (snapshot.governanceNerveScore < 35) load += 10;
+  if (snapshot.reprieveIntegrityScore < 45) load += 20;
+  if (snapshot.reprieveIntegrityScore < 35) load += 10;
+  if (snapshot.reprieveStrainIndex >= 55) load += 20;
+  if (snapshot.reprieveStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeAcquittalIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.acquittalStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.acquittalStrainIndex * 0.35));
+  if (snapshot.reprieveIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.reprieveIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceNerveScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceMoxieScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.acquittalStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.acquittalStrainIndex * 0.32));
+  if (snapshot.acquittalIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.acquittalIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceNerveScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthAcquittalReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.acquittalStrainIndex >= 55) {
+    lines.push(
+      `Acquittal strain ${snapshot.acquittalStrainIndex} — stacked acquittal review may exceed operator acquittal capacity`
+    );
+  }
+  if (snapshot.acquittalIntegrityScore < 45) {
+    lines.push(
+      `Acquittal integrity ${snapshot.acquittalIntegrityScore} — align Co-Pilot acquittals with Guardian acquittal posture`
+    );
+  }
+  if (snapshot.governanceMoxieScore < 40) {
+    lines.push(
+      `Governance moxie ${snapshot.governanceMoxieScore} — little moxie to sustain acquittal oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -2943,9 +3002,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withReprieveStrain: GuardianCoPilotMonitorSnapshot = { ...withPluck, reprieveStrainIndex };
   const reprieveIntegrityScore = computeReprieveIntegrityScore(withReprieveStrain);
   const withReprieve: GuardianCoPilotMonitorSnapshot = { ...withReprieveStrain, reprieveIntegrityScore };
-  return {
+  const withNerve: GuardianCoPilotMonitorSnapshot = {
     ...withReprieve,
     governanceNerveScore: computeGovernanceNerveScore(withReprieve),
+    acquittalStrainIndex: 0,
+    acquittalIntegrityScore: 100,
+    governanceMoxieScore: 100,
+  };
+  const acquittalStrainIndex = computeAcquittalStrainIndex(withNerve);
+  const withAcquittalStrain: GuardianCoPilotMonitorSnapshot = { ...withNerve, acquittalStrainIndex };
+  const acquittalIntegrityScore = computeAcquittalIntegrityScore(withAcquittalStrain);
+  const withAcquittal: GuardianCoPilotMonitorSnapshot = { ...withAcquittalStrain, acquittalIntegrityScore };
+  return {
+    ...withAcquittal,
+    governanceMoxieScore: computeGovernanceMoxieScore(withAcquittal),
   };
 }
 
@@ -4186,6 +4256,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceNerveScore(snap) < 35;
+  });
+  ok('gd_acquittal_strain', () => {
+    const snap = {
+      governanceNerveScore: 30,
+      reprieveIntegrityScore: 32,
+      reprieveStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAcquittalStrainIndex(snap) >= 70;
+  });
+  ok('gd_acquittal_integrity', () => {
+    const snap = {
+      acquittalStrainIndex: 72,
+      reprieveIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceNerveScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAcquittalIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_moxie', () => {
+    const snap = {
+      acquittalStrainIndex: 78,
+      acquittalIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceNerveScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceMoxieScore(snap) < 35;
   });
   return out;
 }
@@ -9285,6 +9389,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_37: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_37_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_37.length;
 
 
+// --- source: monitor-rules-scale-wave-38.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_38: AdvisoryMonitorRule[] = [
+  {
+    id: 'acquittal_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Acquittal Strain High',
+    detailTemplate: 'Acquittal strain is in the high band — reduce overlapping warn-only acquittal review demands',
+    evidenceFields: ['acquittalStrainIndex', 'governanceNerveScore', 'acquittalIntegrityScore'],
+    evaluate: s => s.acquittalStrainIndex >= 70,
+  },
+  {
+    id: 'acquittal_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Acquittal Strain Elevated',
+    detailTemplate: 'Acquittal strain is elevated — expect slower acquittal review across turns',
+    evidenceFields: ['acquittalStrainIndex', 'reprieveStrainIndex'],
+    evaluate: s => s.acquittalStrainIndex >= 45 && s.acquittalStrainIndex < 70,
+  },
+  {
+    id: 'acquittal_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Acquittal Integrity Low',
+    detailTemplate: 'Acquittal integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['acquittalIntegrityScore', 'acquittalStrainIndex', 'reprieveIntegrityScore'],
+    evaluate: s => s.acquittalIntegrityScore < 35,
+  },
+  {
+    id: 'acquittal_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Acquittal While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate acquittal integrity',
+    evidenceFields: ['acquittalIntegrityScore', 'copilotAutonomousActive', 'acquittalStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.acquittalIntegrityScore >= 35 && s.acquittalIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_moxie_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Moxie Low',
+    detailTemplate: 'Little governance moxie remains for warn-only acquittal oversight across turns',
+    evidenceFields: ['governanceMoxieScore', 'acquittalStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceMoxieScore < 35,
+  },
+  {
+    id: 'governance_moxie_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Moxie While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance moxie',
+    evidenceFields: ['governanceMoxieScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceMoxieScore >= 35 && s.governanceMoxieScore < 55,
+  },
+  {
+    id: 'acquittal_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Acquittal Envelope Pressured',
+    detailTemplate: 'Acquittal strain and low acquittal integrity align in the pressured envelope band',
+    evidenceFields: ['acquittalStrainIndex', 'acquittalIntegrityScore', 'governanceMoxieScore'],
+    evaluate: s => s.acquittalStrainIndex >= 55 && s.acquittalIntegrityScore < 50,
+  },
+  {
+    id: 'rival_acquittal_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Acquittal Strain',
+    detailTemplate: 'Rival victory progress plus elevated acquittal strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'acquittalStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.acquittalStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_acquittal_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Acquittal Strain',
+    detailTemplate: 'Pending team plan while acquittal strain is elevated',
+    evidenceFields: ['teamPlanPending', 'acquittalStrainIndex', 'governanceMoxieScore'],
+    evaluate: s => s.teamPlanPending && s.acquittalStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_acquittal_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Acquittal Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance moxie',
+    evidenceFields: ['guardianRiskBand', 'governanceMoxieScore', 'acquittalStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceMoxieScore < 40,
+  },
+  {
+    id: 'copilot_acquittal_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Acquittal Strain',
+    detailTemplate: 'Autonomous Co-Pilot while acquittal strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'acquittalStrainIndex', 'acquittalIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.acquittalStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_moxie',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Moxie',
+    detailTemplate: 'Expiring contracts while governance moxie is low',
+    evidenceFields: ['expiringContractCount', 'governanceMoxieScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceMoxieScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_38_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_38.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -9551,6 +9788,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_35,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_36,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_37,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_38,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -9978,6 +10216,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     reprieveStrainIndex: 0,
     reprieveIntegrityScore: 100,
     governanceNerveScore: 100,
+    acquittalStrainIndex: 0,
+    acquittalIntegrityScore: 100,
+    governanceMoxieScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -12754,6 +12995,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['reprieve_envelope_pressured', 'guardian_reprieve_envelope_critical'],
     notes: 'Pressured reprieve envelope with critical Guardian band',
   },
+  {
+    id: 'sc_acquittal_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2260,
+      maxSpendPerAction: 10580,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['acquittal_strain_high', 'acquittal_integrity_low'],
+    notes: 'High acquittal strain with critical acquittal integrity',
+  },
+  {
+    id: 'sc_governance_moxie_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1380,
+      maxSpendPerAction: 8080,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_moxie_low', 'contracts_governance_moxie'],
+    notes: 'Low governance moxie with expiring contracts',
+  },
+  {
+    id: 'sc_acquittal_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 1300,
+      maxSpendPerAction: 8280,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['acquittal_envelope_pressured', 'guardian_acquittal_envelope_critical'],
+    notes: 'Pressured acquittal envelope with critical Guardian band',
+  },
 ];
 
 
@@ -12929,8 +13238,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 37 scale wave brings monitor catalog to 478+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 478;
+  check(results, 'a16_expansion_count', 'Round 38 scale wave brings monitor catalog to 490+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 490;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -14304,6 +14613,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthReprieveReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round38_metrics', 'Round 38 acquittal envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.acquittalStrainIndex >= 40 &&
+      snap.acquittalIntegrityScore <= 100 &&
+      snap.governanceMoxieScore <= 100
+    );
+  });
+
+  check(results, 'a16_acquittal_report', 'Guardian depth acquittal report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthAcquittalReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

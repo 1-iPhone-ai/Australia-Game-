@@ -177,6 +177,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   reprieveStrainIndex: number;
   reprieveIntegrityScore: number;
   governanceNerveScore: number;
+  acquittalStrainIndex: number;
+  acquittalIntegrityScore: number;
+  governanceMoxieScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
