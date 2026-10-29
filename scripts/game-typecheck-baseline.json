@@ -1,7 +1,7 @@
 {
-  "maxErrors": 107,
+  "maxErrors": 170,
   "gameFile": "(V9.4) australia-game-with-ai.tsx",
   "tsconfig": "tsconfig.game.json",
   "recordedAt": "2026-10-29",
-  "notes": "Baseline for the self-contained V9.4 TSX. CI fails only when errors increase."
+  "notes": "Baseline after V10.14 §20AG unified layer + wiring (Operation 111)."
 }

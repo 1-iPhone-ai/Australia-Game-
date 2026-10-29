@@ -138959,13 +138959,6 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1012', label: 'V10.12 Public Finance & Fiscal Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1012PublicFinanceSelfTests() },
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v1014', label: 'V10.14 Unified National Layer (§20AG)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014UnifiedSelfTests() },
-  { id: 'v1014', label: 'V10.14 Inflation & Price Dynamics', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014InflationPriceDynamicsSelfTests() },
-  { id: 'v1014', label: 'V10.14 Corporate Sector & Firm Economics', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014CorporateSectorSelfTests() },
-  { id: 'v1014', label: 'V10.14 National Economic Analytics & KPI Synthesis', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014EconomicAnalyticsSelfTests() },
-  { id: 'v1014', label: 'V10.14 Population Dynamics & Demographic Momentum', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014PopulationDynamicsSelfTests() },
-  { id: 'v1014', label: 'V10.14 Public Services & Civic Delivery', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014PublicServicesSelfTests() },
-  { id: 'v1014', label: 'V10.14 National Policy Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014NationalPolicySystemsSelfTests() },
-  { id: 'v1014', label: 'V10.14 National Wellbeing Index', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014NationalWellbeingSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -184696,6 +184689,7 @@ export function runV1013HouseholdsLivingStandardsSelfTests(): {
   };
 }
 // ============================================================================
+// ============================================================================
 // SECTION 20AG: V10.14 UNIFIED NATIONAL LAYER (Operation 111 — Agents 21,25,29,30,36,40,55,109)
 // ============================================================================
 // Shared core + submodules. Single schema version and clamp helpers.
@@ -188358,10 +188352,1492 @@ function stableJson(obj: unknown): string {
   }
 }
 
+export function publicServicesInputHash(inputs: PublicServicesSystemInputs): string {
+  return stableJson({
+    turn: inputs.turn,
+    enabled: inputs.enabled,
+    sc: inputs.stateCapacity?.national?.deliveryReadiness ?? null,
+    pf: inputs.publicFinance?.national?.fiscalHeadroomBand ?? null,
+    hh: inputs.households?.national?.essentialAccess ?? null,
+    stab: inputs.publicStabilityScore ?? null,
+    infra: inputs.completedInfrastructureSupport ?? null,
+    crises: inputs.activeCrises ?? 0
+  });
+}
 
-// Operation 111 · Agent 40 — V10.14 Public Services & Civic Delivery (Phase 1 core)
-// Merge target: insert as SECTION 20AG in `(V9.4) australia-game-with-ai.tsx` before SECTION 21B.
+export function buildPublicServicesInputs(params: {
+  turn: number;
+  gameState?: any;
+  gameSettings?: any;
+  stateCapacity?: unknown;
+  publicFinance?: unknown;
+  households?: unknown;
+}): PublicServicesSystemInputs {
+  const gs = params.gameState || {};
+  const gset = params.gameSettings || {};
+  const turn = Math.max(1, Math.floor(Number(params.turn) || 1));
+  const ps = gs.publicStabilityState;
+  const stability =
+    typeof ps === 'number' ? ps : ps && typeof ps.nationalStability === 'number' ? Number(ps.nationalStability) : null;
+  const crises = Array.isArray(gs.crisisChainState?.activeCrisisChains)
+    ? gs.crisisChainState.activeCrisisChains.filter((c: any) => c && c.status !== 'resolved').length
+    : 0;
+  return {
+    turn,
+    enabled: gset.publicServicesEnabled !== false && gset.nationalSystemsEnabled !== false,
+    regions: gs.regions,
+    livingRegions: gs.livingRegions,
+    stateCapacity: (params.stateCapacity || gs.stateCapacityState || gs.stateCapacity) as PublicServicesSystemInputs['stateCapacity'],
+    publicFinance: (params.publicFinance || gs.publicFinanceState || gs.publicFinance) as PublicServicesSystemInputs['publicFinance'],
+    households: (params.households || gs.householdEconomyState) as PublicServicesSystemInputs['households'],
+    publicStabilityScore: stability,
+    completedInfrastructureSupport: undefined,
+    activeCrises: crises
+  };
+}
+
+function domainScore(
+  domain: PublicServiceDomain,
+  inputs: PublicServicesSystemInputs,
+  regionalBias = 0
+): number {
+  let score = 58 + regionalBias;
+  const readiness = Number(inputs.stateCapacity?.national?.deliveryReadiness ?? 62);
+  const headroom = inputs.publicFinance?.national?.fiscalHeadroomBand;
+  const essential = inputs.households?.national?.essentialAccess;
+  const stab = inputs.publicStabilityScore ?? 70;
+  const infra = inputs.completedInfrastructureSupport ?? 65;
+  const crises = inputs.activeCrises ?? 0;
+
+  score += (readiness - 60) * 0.35;
+  score += (infra - 60) * 0.15;
+  score += (stab - 70) * 0.12;
+  if (headroom === 'strained' || headroom === 'critical') score -= 6;
+  if (headroom === 'strong' || headroom === 'comfortable') score += 4;
+  if (essential === 'critical' || essential === 'poor') score -= domain === 'health' || domain === 'emergency_response' ? 10 : 4;
+  if (essential === 'strong' || essential === 'excellent') score += 4;
+  score -= Math.min(18, crises * 4);
+
+  if (domain === 'education') score += 2;
+  if (domain === 'emergency_response') score -= crises * 2;
+  if (domain === 'justice_administration') score += (readiness - 60) * 0.08;
+  if (domain === 'local_civic') score += (infra - 60) * 0.12;
+
+  return v1014Clamp(score);
+}
+
+function pushTransition(
+  list: PublicServicesTransition[],
+  turn: number,
+  domain: PublicServiceDomain | 'national',
+  fromBand: ServiceDeliveryBand,
+  toBand: ServiceDeliveryBand,
+  regionId: string | null,
+  reason: string
+): void {
+  if (fromBand === toBand) return;
+  list.push({
+    id: `ps_${domain}_${regionId || 'national'}_t${turn}_${list.length}`,
+    turn,
+    domain,
+    fromBand,
+    toBand,
+    regionId,
+    reason
+  });
+}
+
+export function computeNationalPublicServices(
+  inputs: PublicServicesSystemInputs,
+  persistedRaw?: PublicServicesPersisted | null,
+  previousState?: NationalPublicServicesState | null
+): { state: NationalPublicServicesState; persisted: PublicServicesPersisted; events: PublicServicesTransition[] } {
+  const turn = Math.max(1, Math.floor(Number(inputs.turn) || 1));
+  const persisted = sanitizePublicServicesPersisted(persistedRaw, turn) || createInitialPublicServicesPersisted(turn);
+  const hash = publicServicesInputHash(inputs);
+  const events: PublicServicesTransition[] = [];
+
+  if (!inputs.enabled) {
+    const off: NationalPublicServicesState = {
+      schemaVersion: V1014_SCHEMA_VERSION,
+      revision: persisted.revision,
+      turn,
+      enabled: false,
+      inputHash: hash,
+      national: {
+        overall: 'adequate',
+        civicAccess: 'adequate',
+        accessScore: 0,
+        backlogPressure: 0,
+        domains: { ...persisted.domainBands },
+        strainedRegions: [],
+        leadingRegions: [],
+        summary: 'Public services module disabled.'
+      },
+      regions: [],
+      transitions: [],
+      warnings: []
+    };
+    return {
+      state: off,
+      persisted: { ...persisted, lastInputHash: hash, lastTurn: turn },
+      events
+    };
+  }
+
+  const domainBands = { ...persisted.domainBands };
+  const newTransitions: PublicServicesTransition[] = [];
+  for (const d of PUBLIC_SERVICE_DOMAINS) {
+    const prev = domainBands[d];
+    const score = domainScore(d, inputs);
+    const next = bandFromScore(score, prev, persisted.revision > 0);
+    domainBands[d] = next;
+    pushTransition(newTransitions, turn, d, prev, next, null, `National ${PUBLIC_SERVICE_DOMAIN_LABEL[d]} score ${Math.round(score)}`);
+  }
+
+  const domainScores = PUBLIC_SERVICE_DOMAINS.map(d => domainScore(d, inputs));
+  const nationalScore = v1014Clamp(domainScores.reduce((a, b) => a + b, 0) / domainScores.length);
+  const prevNational = persisted.nationalOverallBand || previousState?.national.overall || 'adequate';
+  const nationalOverall = bandFromScore(nationalScore, prevNational, persisted.revision > 0);
+  pushTransition(newTransitions, turn, 'national', prevNational, nationalOverall, null, `Composite civic delivery ${Math.round(nationalScore)}`);
+
+  const regions: PublicServicesRegionalRow[] = [];
+  const strainedRegions: string[] = [];
+  const leadingRegions: string[] = [];
+  for (let i = 0; i < V1014_CORE_REGIONS.length; i++) {
+    const regionId = V1014_CORE_REGIONS[i];
+    const bias = (i % 3) * 2 - 2;
+    const domMap = Object.fromEntries(
+      PUBLIC_SERVICE_DOMAINS.map(d => {
+        const s = domainScore(d, inputs, bias);
+        const prevR = persisted.regionalBandMemory[regionId];
+        const band = bandFromScore(s, prevR, Boolean(prevR));
+        return [d, band];
+      })
+    ) as Record<PublicServiceDomain, ServiceDeliveryBand>;
+    const avg = v1014Clamp(
+      PUBLIC_SERVICE_DOMAINS.reduce((acc, d) => acc + SERVICE_DELIVERY_RANK[domMap[d]], 0) *
+        (100 / (PUBLIC_SERVICE_DOMAINS.length * (SERVICE_DELIVERY_RANK.excellent || 4)))
+    );
+    const overall = bandFromScore(avg, persisted.regionalBandMemory[regionId], Boolean(persisted.regionalBandMemory[regionId]));
+    if (SERVICE_DELIVERY_RANK[overall] <= 1) strainedRegions.push(regionId);
+    if (SERVICE_DELIVERY_RANK[overall] >= 3) leadingRegions.push(regionId);
+    regions.push({
+      regionId,
+      overall,
+      domains: domMap,
+      accessScore: Math.round(avg),
+      backlogPressure: v1014Clamp(100 - avg + (inputs.activeCrises || 0) * 5),
+      explanation: `${regionId}: ${SERVICE_DELIVERY_LABEL[overall]} public service delivery.`
+    });
+  }
+
+  const backlogPressure = v1014Clamp(
+    100 - nationalScore + Math.max(0, (inputs.stateCapacity?.national?.coordinationLoad ?? 40) - 55)
+  );
+
+  const national: PublicServicesNationalSnapshot = {
+    overall: nationalOverall,
+    civicAccess: nationalOverall,
+    accessScore: Math.round(nationalScore),
+    backlogPressure: Math.round(backlogPressure),
+    domains: domainBands,
+    strainedRegions: strainedRegions.slice(0, 6),
+    leadingRegions: leadingRegions.slice(0, 6),
+    summary:
+      nationalOverall === 'excellent' || nationalOverall === 'strong'
+        ? 'Core public services are keeping pace with national demand.'
+        : nationalOverall === 'adequate'
+        ? 'Public services are functional but uneven across regions and domains.'
+        : 'Public service delivery is under pressure — backlog and access gaps are widening.'
+  };
+
+  const warnings: string[] = [];
+  if (backlogPressure >= 70) warnings.push('National service backlog pressure is elevated.');
+  if (strainedRegions.length >= 3) warnings.push('Multiple regions show strained civic delivery simultaneously.');
+
+  const nextPersisted: PublicServicesPersisted = {
+    ...persisted,
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: persisted.revision + 1,
+    lastInputHash: hash,
+    lastTurn: turn,
+    domainBands,
+    nationalOverallBand: nationalOverall,
+    regionalBandMemory: Object.fromEntries(regions.map(r => [r.regionId, r.overall])),
+    transitions: [...persisted.transitions, ...newTransitions].slice(-V1014_LIMITS.maxTransitions),
+    history: [...persisted.history, { turn, overall: nationalOverall, accessScore: Math.round(nationalScore) }].slice(
+      -V1014_LIMITS.maxHistory
+    )
+  };
+
+  const state: NationalPublicServicesState = {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: nextPersisted.revision,
+    turn,
+    enabled: true,
+    inputHash: hash,
+    national,
+    regions,
+    transitions: newTransitions,
+    warnings
+  };
+
+  events.push(...newTransitions);
+  return { state, persisted: nextPersisted, events };
+}
+
+export function validatePublicServicesState(state: NationalPublicServicesState | null): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  if (!state) return { valid: false, errors: ['null state'] };
+  if (state.schemaVersion !== V1014_SCHEMA_VERSION) errors.push(`schema ${state.schemaVersion}`);
+  if (!SERVICE_DELIVERY_BANDS.includes(state.national.overall)) errors.push('invalid national band');
+  if (state.regions.length > V1014_CORE_REGIONS.length) errors.push('too many regions');
+  return { valid: errors.length === 0, errors };
+}
+
+export function runV1014PublicServicesSelfTests(): {
+  passed: number;
+  failed: number;
+  total: number;
+  results: Array<{ name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ name: string; passed: boolean; detail: string }> = [];
+  const check = (name: string, ok: boolean, detail: string) => results.push({ name, passed: ok, detail });
+
+  const baseInputs = (): PublicServicesSystemInputs => ({
+    turn: 3,
+    enabled: true,
+    stateCapacity: { national: { deliveryReadiness: 66, coordinationLoad: 48 } },
+    publicFinance: { national: { fiscalHeadroomBand: 'balanced' } },
+    households: { national: { essentialAccess: 'adequate' } },
+    publicStabilityScore: 72,
+    completedInfrastructureSupport: 70,
+    activeCrises: 0
+  });
+
+  check('PS01 schema version', V1014_SCHEMA_VERSION === '10.14.0', V1014_SCHEMA_VERSION);
+  check('PS02 five domains', PUBLIC_SERVICE_DOMAINS.length === 5, String(PUBLIC_SERVICE_DOMAINS.length));
+  check('PS03 disabled off state', computeNationalPublicServices({ turn: 1, enabled: false }).state.enabled === false, 'enabled=false');
+
+  const r1 = computeNationalPublicServices(baseInputs(), createInitialPublicServicesPersisted());
+  check('PS04 compute returns state', Boolean(r1.state.national.summary), r1.state.national.summary);
+  check('PS05 validate clean', validatePublicServicesState(r1.state).valid, validatePublicServicesState(r1.state).errors.join(';'));
+
+  const r2 = computeNationalPublicServices(baseInputs(), r1.persisted, r1.state);
+  check('PS06 revision increments', r2.persisted.revision === r1.persisted.revision + 1, `${r1.persisted.revision}->${r2.persisted.revision}`);
+
+  const crisisInp = { ...baseInputs(), activeCrises: 3 };
+  const rc = computeNationalPublicServices(crisisInp, createInitialPublicServicesPersisted());
+  const rn = computeNationalPublicServices(baseInputs(), createInitialPublicServicesPersisted());
+  check(
+    'PS07 crises reduce access',
+    rc.state.national.accessScore <= rn.state.national.accessScore,
+    `${rc.state.national.accessScore} vs ${rn.state.national.accessScore}`
+  );
+
+  const lowRead = { ...baseInputs(), stateCapacity: { national: { deliveryReadiness: 30, coordinationLoad: 80 } } };
+  const rh = computeNationalPublicServices(baseInputs(), createInitialPublicServicesPersisted());
+  const rl = computeNationalPublicServices(lowRead, createInitialPublicServicesPersisted());
+  check(
+    'PS08 low readiness hurts delivery',
+    rl.state.national.accessScore < rh.state.national.accessScore,
+    `${rl.state.national.accessScore} vs ${rh.state.national.accessScore}`
+  );
+
+  const dA = computeNationalPublicServices(baseInputs(), createInitialPublicServicesPersisted());
+  const dB = computeNationalPublicServices(baseInputs(), createInitialPublicServicesPersisted());
+  check('PS09 determinism', JSON.stringify(dA.state.national) === JSON.stringify(dB.state.national), 'national snapshot match');
+
+  const san = sanitizePublicServicesPersisted({ schemaVersion: '10.14.0', revision: 2, domainBands: r1.persisted.domainBands });
+  check('PS10 sanitize roundtrip', san?.revision === 2, String(san?.revision));
+
+  check('PS11 eight regions', r1.state.regions.length === 8, String(r1.state.regions.length));
+  check('PS12 hash stable', publicServicesInputHash(baseInputs()) === publicServicesInputHash(baseInputs()), 'hash');
+
+  const built = buildPublicServicesInputs({ turn: 2, gameSettings: { publicServicesEnabled: true, nationalSystemsEnabled: true } });
+  check('PS13 build enabled', built.enabled === true, String(built.enabled));
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, failed: results.length - passed, total: results.length, results };
+}
+
 // ============================================================================
+
+// --- 20AG-policy: NATIONAL POLICY SYSTEMS & GOVERNMENT AGENDA ---
+// ============================================================================
+// Division F — Agent 55 (Policy Systems Engineer). Interprets upstream national
+// layers (V10.7–V10.13) into a coherent policy posture and player-facing agenda.
+// Does NOT replace V10.12 revenue/reserve levers or team governance votes.
+// Off when `policySystemsEnabled` or National Systems is disabled → exact V10.13 behaviour.
+
+
+export type NationalPolicyDomain =
+  | 'fiscal'
+  | 'regulatory'
+  | 'social'
+  | 'environmental'
+  | 'trade'
+  | 'security';
+
+export const NATIONAL_POLICY_DOMAINS: readonly NationalPolicyDomain[] = [
+  'fiscal',
+  'regulatory',
+  'social',
+  'environmental',
+  'trade',
+  'security'
+] as const;
+
+export type PolicyStanceBand =
+  | 'restrictive'
+  | 'cautious'
+  | 'balanced'
+  | 'supportive'
+  | 'expansionary';
+
+export const POLICY_STANCE_LABEL: Record<PolicyStanceBand, string> = {
+  restrictive: 'RESTRICTIVE',
+  cautious: 'CAUTIOUS',
+  balanced: 'BALANCED',
+  supportive: 'SUPPORTIVE',
+  expansionary: 'EXPANSIONARY'
+};
+
+export const POLICY_STANCE_RANK: Record<PolicyStanceBand, number> = {
+  restrictive: 0,
+  cautious: 1,
+  balanced: 2,
+  supportive: 3,
+  expansionary: 4
+};
+
+export type NationalPolicyAgendaTheme =
+  | 'growth'
+  | 'stability'
+  | 'equity'
+  | 'climate'
+  | 'infrastructure'
+  | 'innovation';
+
+export const POLICY_AGENDA_THEME_LABEL: Record<NationalPolicyAgendaTheme, string> = {
+  growth: 'Growth & productivity',
+  stability: 'Stability & resilience',
+  equity: 'Equity & services',
+  climate: 'Climate & environment',
+  infrastructure: 'Infrastructure & connectivity',
+  innovation: 'Innovation & skills'
+};
+
+export interface PolicyDomainEvidence {
+  id: string;
+  sourceSystem: string;
+  factor: string;
+  contribution: number;
+  turn: number;
+}
+
+export interface PolicyDomainState {
+  domain: NationalPolicyDomain;
+  stance: PolicyStanceBand;
+  score: number;
+  coherenceWithAgenda: number;
+  evidence: PolicyDomainEvidence[];
+  summary: string;
+}
+
+export interface NationalPolicyAgendaState {
+  primary: NationalPolicyAgendaTheme;
+  secondary: NationalPolicyAgendaTheme | null;
+  pinnedThemes: NationalPolicyAgendaTheme[];
+}
+
+export interface NationalPolicyCoherence {
+  overall: number;
+  agendaAlignment: number;
+  crossDomainFriction: number;
+  bindingConstraint: NationalPolicyDomain | null;
+  explanation: string;
+}
+
+export interface NationalPolicySystemsState {
+  schemaVersion: string;
+  revision: number;
+  turn: number;
+  enabled: boolean;
+  agenda: NationalPolicyAgendaState;
+  domains: Record<NationalPolicyDomain, PolicyDomainState>;
+  coherence: NationalPolicyCoherence;
+  inputHash: string;
+  lastUpdatedTurn: number;
+}
+
+export interface PolicySystemsPersisted {
+  schemaVersion: string;
+  revision: number;
+  agenda: NationalPolicyAgendaState;
+  lastDomainStances: Partial<Record<NationalPolicyDomain, PolicyStanceBand>>;
+  lastCoherence: number;
+  lastInputHash: string;
+  lastUpdatedTurn: number;
+}
+
+export interface PolicySystemsInputs {
+  turn: number;
+  enabled: boolean;
+  publicStability: number;
+  nationalPrioritiesTop: string[];
+  systemicRiskPressure: number;
+  fiscalPressure: FiscalPressureBand | null;
+  fiscalHeadroomBand: NationalFiscalPosition['headroomBand'] | null;
+  stateCapacityPressure: StateCapacityPressureBand | null;
+  householdProsperityBand: LivingStandardsBand | null;
+  agendaOverride?: Partial<NationalPolicyAgendaState>;
+}
+
+export interface PolicySystemsComputeResult {
+  state: NationalPolicySystemsState;
+  persisted: PolicySystemsPersisted;
+}
+
+export function createInitialPolicySystemsPersisted(turn = 1): PolicySystemsPersisted {
+  return {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: 0,
+    agenda: { primary: 'stability', secondary: 'infrastructure', pinnedThemes: [] },
+    lastDomainStances: {},
+    lastCoherence: 50,
+    lastInputHash: '',
+    lastUpdatedTurn: turn
+  };
+}
+
+export function sanitizePolicySystemsPersisted(raw: unknown, turn = 1): PolicySystemsPersisted | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const p = raw as Partial<PolicySystemsPersisted>;
+  const base = createInitialPolicySystemsPersisted(turn);
+  const themes: NationalPolicyAgendaTheme[] = ['growth', 'stability', 'equity', 'climate', 'infrastructure', 'innovation'];
+  const pickTheme = (v: unknown, fallback: NationalPolicyAgendaTheme) =>
+    themes.includes(v as NationalPolicyAgendaTheme) ? (v as NationalPolicyAgendaTheme) : fallback;
+  const agendaRaw = (p.agenda || {}) as Partial<NationalPolicyAgendaState>;
+  const pinned = Array.isArray(agendaRaw.pinnedThemes)
+    ? agendaRaw.pinnedThemes.filter(t => themes.includes(t)).slice(0, 3)
+    : [];
+  return {
+    ...base,
+    schemaVersion: typeof p.schemaVersion === 'string' ? p.schemaVersion : V1014_SCHEMA_VERSION,
+    revision: typeof p.revision === 'number' ? Math.max(0, Math.floor(p.revision)) : 0,
+    agenda: {
+      primary: pickTheme(agendaRaw.primary, base.agenda.primary),
+      secondary: agendaRaw.secondary ? pickTheme(agendaRaw.secondary, base.agenda.secondary!) : null,
+      pinnedThemes: pinned
+    },
+    lastDomainStances: typeof p.lastDomainStances === 'object' && p.lastDomainStances ? p.lastDomainStances : {},
+    lastCoherence: typeof p.lastCoherence === 'number' ? p.lastCoherence : 50,
+    lastInputHash: typeof p.lastInputHash === 'string' ? p.lastInputHash : '',
+    lastUpdatedTurn: typeof p.lastUpdatedTurn === 'number' ? p.lastUpdatedTurn : turn
+  };
+}
+
+
+function v1014StanceFromScore(score: number): PolicyStanceBand {
+  if (score < 22) return 'restrictive';
+  if (score < 38) return 'cautious';
+  if (score < 58) return 'balanced';
+  if (score < 78) return 'supportive';
+  return 'expansionary';
+}
+
+function v1014FiscalScore(p: FiscalPressureBand | null, headroom: NationalFiscalPosition['headroomBand'] | null): number {
+  const pressureMap: Record<FiscalPressureBand, number> = {
+    comfortable: 82,
+    healthy: 68,
+    tight: 48,
+    strained: 32,
+    critical: 18
+  };
+  let s = p ? pressureMap[p] : 50;
+  if (headroom === 'high') s += 8;
+  if (headroom === 'critical') s -= 12;
+  else if (headroom === 'low') s -= 6;
+  return v1014Clamp(s, 0, 100);
+}
+
+function v1014RegulatoryScore(pressure: StateCapacityPressureBand | null): number {
+  if (!pressure) return 50;
+  const map: Record<StateCapacityPressureBand, number> = {
+    underused: 72,
+    healthy: 62,
+    busy: 52,
+    strained: 36,
+    overloaded: 22,
+    critical: 12
+  };
+  return map[pressure] ?? 50;
+}
+
+function v1014SocialScore(prosperity: LivingStandardsBand | null, stability: number): number {
+  const bandMap: Record<LivingStandardsBand, number> = {
+    stressed: 22,
+    weak: 35,
+    moderate: 52,
+    strong: 72,
+    prosperous: 86
+  };
+  let s = prosperity ? bandMap[prosperity] : 50;
+  s += v1014Clamp((stability - 50) * 0.35, -12, 12);
+  return v1014Clamp(s, 0, 100);
+}
+
+function v1014EnvironmentalScore(priorities: string[], riskPressure: number): number {
+  const climateFocus = priorities.some(p => /climate|environment|water|energy transition/i.test(p));
+  let s = climateFocus ? 68 : 48;
+  s -= v1014Clamp(riskPressure * 0.25, 0, 18);
+  return v1014Clamp(s, 0, 100);
+}
+
+function v1014TradeScore(priorities: string[], fiscalScore: number): number {
+  const tradeFocus = priorities.some(p => /trade|export|logistics|port/i.test(p));
+  let s = tradeFocus ? 70 : 52;
+  s += (fiscalScore - 50) * 0.12;
+  return v1014Clamp(s, 0, 100);
+}
+
+function v1014SecurityScore(stability: number, riskPressure: number): number {
+  let s = 40 + stability * 0.45;
+  s -= v1014Clamp(riskPressure * 0.35, 0, 22);
+  return v1014Clamp(s, 0, 100);
+}
+
+const V1014_THEME_DOMAIN_WEIGHTS: Record<NationalPolicyAgendaTheme, Partial<Record<NationalPolicyDomain, number>>> = {
+  growth: { fiscal: 0.35, trade: 0.3, regulatory: 0.15, social: 0.1, environmental: 0.05, security: 0.05 },
+  stability: { security: 0.3, fiscal: 0.25, regulatory: 0.2, social: 0.15, environmental: 0.05, trade: 0.05 },
+  equity: { social: 0.4, fiscal: 0.2, regulatory: 0.15, environmental: 0.1, trade: 0.1, security: 0.05 },
+  climate: { environmental: 0.45, regulatory: 0.2, fiscal: 0.15, social: 0.1, trade: 0.05, security: 0.05 },
+  infrastructure: { fiscal: 0.3, trade: 0.25, regulatory: 0.2, environmental: 0.1, social: 0.1, security: 0.05 },
+  innovation: { regulatory: 0.25, fiscal: 0.25, trade: 0.2, social: 0.15, environmental: 0.1, security: 0.05 }
+};
+
+function v1014AgendaTargetStance(theme: NationalPolicyAgendaTheme): number {
+  const targets: Record<NationalPolicyAgendaTheme, number> = {
+    growth: 72,
+    stability: 55,
+    equity: 62,
+    climate: 58,
+    infrastructure: 68,
+    innovation: 70
+  };
+  return targets[theme];
+}
+
+function v1014DomainAgendaCoherence(domain: NationalPolicyDomain, score: number, agenda: NationalPolicyAgendaState): number {
+  const themes = [agenda.primary, agenda.secondary, ...agenda.pinnedThemes].filter(Boolean) as NationalPolicyAgendaTheme[];
+  if (!themes.length) return 50;
+  let weightedTarget = 0;
+  let wSum = 0;
+  for (const t of themes) {
+    const w = V1014_THEME_DOMAIN_WEIGHTS[t][domain] ?? 0.15;
+    weightedTarget += v1014AgendaTargetStance(t) * w;
+    wSum += w;
+  }
+  const target = wSum > 0 ? weightedTarget / wSum : 55;
+  return v1014Clamp(100 - Math.abs(score - target), 0, 100);
+}
+
+export function policySystemsInputHash(inputs: PolicySystemsInputs, persisted: PolicySystemsPersisted | null): string {
+  const raw = JSON.stringify([
+    inputs.turn,
+    inputs.enabled,
+    Math.round(inputs.publicStability),
+    inputs.nationalPrioritiesTop.slice(0, 5),
+    Math.round(inputs.systemicRiskPressure),
+    inputs.fiscalPressure,
+    inputs.fiscalHeadroomBand,
+    inputs.stateCapacityPressure,
+    inputs.householdProsperityBand,
+    persisted?.agenda || inputs.agendaOverride || null
+  ]);
+  let h = 2166136261;
+  for (let k = 0; k < raw.length; k++) { h ^= raw.charCodeAt(k); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+
+export function buildPolicySystemsInputs(params: {
+  turn: number;
+  gameSettings: any;
+  gameState: any;
+  publicFinance?: NationalPublicFinanceState | null;
+  stateCapacity?: NationalStateCapacityState | null;
+  households?: NationalHouseholdEconomyState | null;
+  nationalPriorities?: NationalPrioritiesState | null;
+  systemicRisk?: SystemicRiskState | null;
+  persisted?: PolicySystemsPersisted | null;
+}): PolicySystemsInputs {
+  const gset = params.gameSettings || {};
+  const enabled = gset.nationalSystemsEnabled !== false && gset.policySystemsEnabled !== false;
+  const pf = params.publicFinance || null;
+  const sc = params.stateCapacity || null;
+  const hh = params.households || null;
+  const np = params.nationalPriorities || null;
+  const sr = params.systemicRisk || null;
+  const stability = Number(params.gameState?.publicStabilityState?.nationalScore ?? params.gameState?.publicStability ?? 70);
+  const prioritiesTop = (np?.activePriorities || []).slice(0, 5).map((p: any) => String(p.title || p.id || ''));
+  return {
+    turn: params.turn,
+    enabled,
+    publicStability: stability,
+    nationalPrioritiesTop: prioritiesTop,
+    systemicRiskPressure: Number(sr?.nationalPressure?.pressureScore ?? sr?.pressureScore ?? 20),
+    fiscalPressure: pf?.fiscalPosition?.pressure ?? null,
+    fiscalHeadroomBand: pf?.fiscalPosition?.headroomBand ?? null,
+    stateCapacityPressure: sc?.implementationLoad?.pressure ?? null,
+    householdProsperityBand: hh?.national?.prosperity ?? null,
+    agendaOverride: params.persisted?.agenda
+  };
+}
+
+export function computeNationalPolicySystems(
+  inputs: PolicySystemsInputs,
+  prev: PolicySystemsPersisted | null
+): PolicySystemsComputeResult {
+  const persistedBase = prev ? { ...prev } : createInitialPolicySystemsPersisted(inputs.turn);
+  const agenda: NationalPolicyAgendaState = {
+    ...persistedBase.agenda,
+    ...(inputs.agendaOverride || {})
+  };
+  const inputHash = policySystemsInputHash(inputs, persistedBase);
+  if (!inputs.enabled) {
+    const emptyDomains = {} as Record<NationalPolicyDomain, PolicyDomainState>;
+    for (const d of NATIONAL_POLICY_DOMAINS) {
+      emptyDomains[d] = {
+        domain: d,
+        stance: 'balanced',
+        score: 50,
+        coherenceWithAgenda: 50,
+        evidence: [],
+        summary: 'Policy systems disabled.'
+      };
+    }
+    return {
+      state: {
+        schemaVersion: V1014_SCHEMA_VERSION,
+        revision: persistedBase.revision,
+        turn: inputs.turn,
+        enabled: false,
+        agenda,
+        domains: emptyDomains,
+        coherence: { overall: 50, agendaAlignment: 50, crossDomainFriction: 0, bindingConstraint: null, explanation: 'Disabled.' },
+        inputHash,
+        lastUpdatedTurn: inputs.turn
+      },
+      persisted: { ...persistedBase, lastInputHash: inputHash, lastUpdatedTurn: inputs.turn }
+    };
+  }
+
+  const fiscalScore = v1014FiscalScore(inputs.fiscalPressure, inputs.fiscalHeadroomBand);
+  const domainScores: Record<NationalPolicyDomain, number> = {
+    fiscal: fiscalScore,
+    regulatory: v1014RegulatoryScore(inputs.stateCapacityPressure),
+    social: v1014SocialScore(inputs.householdProsperityBand, inputs.publicStability),
+    environmental: v1014EnvironmentalScore(inputs.nationalPrioritiesTop, inputs.systemicRiskPressure),
+    trade: v1014TradeScore(inputs.nationalPrioritiesTop, fiscalScore),
+    security: v1014SecurityScore(inputs.publicStability, inputs.systemicRiskPressure)
+  };
+
+  const domains = {} as Record<NationalPolicyDomain, PolicyDomainState>;
+  let frictionSum = 0;
+  for (const d of NATIONAL_POLICY_DOMAINS) {
+    const score = domainScores[d];
+    const stance = v1014StanceFromScore(score);
+    const coherenceWithAgenda = v1014DomainAgendaCoherence(d, score, agenda);
+    if (persistedBase.lastDomainStances[d] && persistedBase.lastDomainStances[d] !== stance) {
+      frictionSum += Math.abs(POLICY_STANCE_RANK[stance] - POLICY_STANCE_RANK[persistedBase.lastDomainStances[d]!]);
+    }
+    domains[d] = {
+      domain: d,
+      stance,
+      score,
+      coherenceWithAgenda,
+      evidence: [
+        { id: `${d}_core`, sourceSystem: 'v1014', factor: 'derived_posture', contribution: score, turn: inputs.turn }
+      ],
+      summary: `${POLICY_STANCE_LABEL[stance]} posture (${Math.round(score)}/100).`
+    };
+  }
+
+  const agendaAlignment =
+    NATIONAL_POLICY_DOMAINS.reduce((s, d) => s + domains[d].coherenceWithAgenda, 0) / NATIONAL_POLICY_DOMAINS.length;
+  const crossDomainFriction = v1014Clamp(frictionSum * 4, 0, 40);
+  const overall = v1014Clamp(agendaAlignment - crossDomainFriction * 0.35, 0, 100);
+
+  let bindingConstraint: NationalPolicyDomain | null = null;
+  let lowestHeadroom = 999;
+  if (inputs.fiscalPressure === 'critical' || inputs.fiscalHeadroomBand === 'critical') {
+    bindingConstraint = 'fiscal';
+  } else if (inputs.stateCapacityPressure === 'overloaded' || inputs.stateCapacityPressure === 'strained') {
+    bindingConstraint = 'regulatory';
+  } else {
+    for (const d of NATIONAL_POLICY_DOMAINS) {
+      const gap = 100 - domains[d].coherenceWithAgenda;
+      if (gap > lowestHeadroom) {
+        lowestHeadroom = gap;
+        bindingConstraint = d;
+      }
+    }
+  }
+
+  const lastStances: Partial<Record<NationalPolicyDomain, PolicyStanceBand>> = {};
+  for (const d of NATIONAL_POLICY_DOMAINS) lastStances[d] = domains[d].stance;
+
+  const persisted: PolicySystemsPersisted = {
+    ...persistedBase,
+    revision: persistedBase.revision + (persistedBase.lastInputHash === inputHash ? 0 : 1),
+    agenda,
+    lastDomainStances: lastStances,
+    lastCoherence: overall,
+    lastInputHash: inputHash,
+    lastUpdatedTurn: inputs.turn
+  };
+
+  return {
+    state: {
+      schemaVersion: V1014_SCHEMA_VERSION,
+      revision: persisted.revision,
+      turn: inputs.turn,
+      enabled: true,
+      agenda,
+      domains,
+      coherence: {
+        overall,
+        agendaAlignment,
+        crossDomainFriction,
+        bindingConstraint,
+        explanation:
+          bindingConstraint === 'fiscal'
+            ? 'Fiscal headroom is the binding constraint on the national agenda.'
+            : bindingConstraint === 'regulatory'
+              ? 'Institutional delivery capacity is limiting policy execution.'
+              : `Largest agenda gap sits in ${bindingConstraint || 'cross-domain'} alignment.`
+      },
+      inputHash,
+      lastUpdatedTurn: inputs.turn
+    },
+    persisted
+  };
+}
+
+export function validateNationalPolicySystemsState(state: NationalPolicySystemsState): { valid: boolean; issues: string[] } {
+  const issues: string[] = [];
+  if (state.schemaVersion !== V1014_SCHEMA_VERSION) issues.push('schema mismatch');
+  for (const d of NATIONAL_POLICY_DOMAINS) {
+    if (!state.domains[d]) issues.push(`missing domain ${d}`);
+  }
+  if (!Number.isFinite(state.coherence.overall)) issues.push('coherence non-finite');
+  return { valid: issues.length === 0, issues };
+}
+
+export function setNationalPolicyAgendaPrimary(
+  persisted: PolicySystemsPersisted,
+  theme: NationalPolicyAgendaTheme,
+  turn: number
+): PolicySystemsPersisted {
+  return {
+    ...persisted,
+    revision: persisted.revision + 1,
+    agenda: { ...persisted.agenda, primary: theme },
+    lastUpdatedTurn: turn,
+    lastInputHash: ''
+  };
+}
+
+export function setNationalPolicyAgendaSecondary(
+  persisted: PolicySystemsPersisted,
+  theme: NationalPolicyAgendaTheme | null,
+  turn: number
+): PolicySystemsPersisted {
+  return {
+    ...persisted,
+    revision: persisted.revision + 1,
+    agenda: { ...persisted.agenda, secondary: theme },
+    lastUpdatedTurn: turn,
+    lastInputHash: ''
+  };
+}
+
+export function toggleNationalPolicyAgendaPin(
+  persisted: PolicySystemsPersisted,
+  theme: NationalPolicyAgendaTheme,
+  turn: number
+): PolicySystemsPersisted {
+  const pinned = persisted.agenda.pinnedThemes.includes(theme)
+    ? persisted.agenda.pinnedThemes.filter(t => t !== theme)
+    : [...persisted.agenda.pinnedThemes, theme].slice(0, 3);
+  return {
+    ...persisted,
+    revision: persisted.revision + 1,
+    agenda: { ...persisted.agenda, pinnedThemes: pinned },
+    lastUpdatedTurn: turn,
+    lastInputHash: ''
+  };
+}
+
+export interface PolicySystemsWorldView {
+  enabled: boolean;
+  state: NationalPolicySystemsState;
+  persisted: PolicySystemsPersisted;
+  setAgendaPrimary: (theme: NationalPolicyAgendaTheme) => void;
+  setAgendaSecondary: (theme: NationalPolicyAgendaTheme | null) => void;
+  toggleAgendaPin: (theme: NationalPolicyAgendaTheme) => void;
+}
+
+export type PolicySystemsQueryTopic = 'overview' | 'agenda' | 'domain' | 'coherence';
+export interface PolicySystemsQuery {
+  topic: PolicySystemsQueryTopic;
+  domain: NationalPolicyDomain | null;
+}
+
+export function detectPolicySystemsQuery(raw: string, gw: GIWorld): PolicySystemsQuery | null {
+  const view = (gw.national as any)?.policySystems as PolicySystemsWorldView | undefined;
+  if (!view?.enabled || !view.state?.enabled) return null;
+  const q = ` ${String(raw || '').toLowerCase().replace(/[’']/g, "'").replace(/[?!.]/g, ' ').replace(/\s+/g, ' ').trim()} `;
+  if (!/\b(policy|policies|government agenda|national agenda|policy stance|policy posture)\b/.test(q)) return null;
+  const domain =
+    (/\bfiscal\b/.test(q) && 'fiscal') ||
+    (/\b(regulation|regulatory|red tape)\b/.test(q) && 'regulatory') ||
+    (/\b(social|equity|services|household)\b/.test(q) && 'social') ||
+    (/\b(climate|environment|environmental)\b/.test(q) && 'environmental') ||
+    (/\b(trade|export|openness)\b/.test(q) && 'trade') ||
+    (/\b(security|defence|defense)\b/.test(q) && 'security') ||
+    null;
+  if (/\b(agenda|priority|priorities|platform)\b/.test(q)) return { topic: 'agenda', domain: null };
+  if (/\b(coherence|alignment|friction|constraint)\b/.test(q)) return { topic: 'coherence', domain: null };
+  if (domain) return { topic: 'domain', domain };
+  return { topic: 'overview', domain: null };
+}
+
+export function composePolicySystemsAnswer(query: PolicySystemsQuery, gw: GIWorld): GIComposePart & { shape: GIAnswerShape } {
+  const view = (gw.national as any)!.policySystems as PolicySystemsWorldView;
+  const s = view.state;
+  const sections: GIAnswerSection[] = [];
+  const say = (id: string, heading: string | null, text: string) => {
+    sections.push({ id, heading, claims: [claim(text, 'calculated', 'high', ['policy.systems'])] });
+  };
+  let title = 'National policy systems';
+  switch (query.topic) {
+    case 'agenda':
+      title = 'Government policy agenda';
+      say(
+        'agenda',
+        'Agenda',
+        `Primary: ${POLICY_AGENDA_THEME_LABEL[s.agenda.primary]}${
+          s.agenda.secondary ? `; secondary: ${POLICY_AGENDA_THEME_LABEL[s.agenda.secondary]}` : ''
+        }. Coherence ${Math.round(s.coherence.overall)}/100.`
+      );
+      break;
+    case 'coherence':
+      title = 'Policy coherence';
+      say(
+        'coherence',
+        'Coherence',
+        `${s.coherence.explanation} Overall ${Math.round(s.coherence.overall)}/100 (agenda ${Math.round(
+          s.coherence.agendaAlignment
+        )}, friction ${Math.round(s.coherence.crossDomainFriction)}).`
+      );
+      break;
+    case 'domain': {
+      const d = query.domain || 'fiscal';
+      const dom = s.domains[d];
+      title = `${d} policy stance`;
+      say('domain', 'Domain', `${dom.summary} Agenda fit ${Math.round(dom.coherenceWithAgenda)}/100.`);
+      break;
+    }
+    default:
+      say(
+        'overview',
+        'Overview',
+        `National posture is ${POLICY_STANCE_LABEL[s.domains.fiscal.stance]} fiscally and ${POLICY_STANCE_LABEL[s.domains.social.stance]} on social policy; coherence ${Math.round(
+          s.coherence.overall
+        )}/100.`
+      );
+  }
+  return { title, sections, shape: 'status' };
+}
+
+export function policySystemsActionAlignment(
+  state: NationalPolicySystemsState | null,
+  action: { kind?: string; category?: string; theme?: string }
+): { score: number; reason: string | null } {
+  if (!state?.enabled) return { score: 0, reason: null };
+  const kind = String(action.kind || action.category || '').toLowerCase();
+  let domain: NationalPolicyDomain = 'fiscal';
+  if (/environment|climate|water/.test(kind)) domain = 'environmental';
+  else if (/trade|export|port/.test(kind)) domain = 'trade';
+  else if (/security|defense|defence/.test(kind)) domain = 'security';
+  else if (/social|housing|health/.test(kind)) domain = 'social';
+  else if (/regul|permit|compliance/.test(kind)) domain = 'regulatory';
+  const dom = state.domains[domain];
+  const agendaBoost = dom.coherenceWithAgenda >= 70 ? 1.5 : dom.coherenceWithAgenda <= 35 ? -1.5 : 0;
+  const stanceBoost = (POLICY_STANCE_RANK[dom.stance] - 2) * 0.35;
+  const score = v1014Clamp(agendaBoost + stanceBoost, -2, 2);
+  return { score, reason: score !== 0 ? `${domain} policy alignment ${score > 0 ? '+' : ''}${score.toFixed(1)}` : null };
+}
+
+export function runV1014NationalPolicySystemsSelfTests(): {
+  passed: number;
+  failed: number;
+  total: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, name: string, cond: boolean, detail: string) =>
+    results.push({ id, name, passed: Boolean(cond), detail });
+
+  const baseInp: PolicySystemsInputs = {
+    turn: 3,
+    enabled: true,
+    publicStability: 72,
+    nationalPrioritiesTop: ['Climate resilience', 'Trade corridors'],
+    systemicRiskPressure: 22,
+    fiscalPressure: 'healthy',
+    fiscalHeadroomBand: 'moderate',
+    stateCapacityPressure: 'manageable',
+    householdProsperityBand: 'moderate'
+  };
+  const p0 = createInitialPolicySystemsPersisted(1);
+  const r1 = computeNationalPolicySystems(baseInp, p0);
+  check('PS1', 'Canonical creation', validateNationalPolicySystemsState(r1.state).valid, JSON.stringify(r1.state.coherence));
+
+  const rDisabled = computeNationalPolicySystems({ ...baseInp, enabled: false }, p0);
+  check('PS2', 'Disabled mode', !rDisabled.state.enabled && rDisabled.state.domains.fiscal.score === 50, 'disabled');
+
+  const fiscalTight = computeNationalPolicySystems({ ...baseInp, fiscalPressure: 'critical', fiscalHeadroomBand: 'critical' }, p0);
+  check(
+    'PS3',
+    'Fiscal stress',
+    fiscalTight.state.domains.fiscal.stance === 'restrictive' || fiscalTight.state.domains.fiscal.score < 30,
+    `score=${fiscalTight.state.domains.fiscal.score}`
+  );
+
+  const rA = computeNationalPolicySystems(baseInp, p0);
+  const rB = computeNationalPolicySystems(baseInp, p0);
+  check('PS4', 'Determinism', JSON.stringify(rA.state) === JSON.stringify(rB.state), 'match');
+
+  const withAgenda = setNationalPolicyAgendaPrimary(p0, 'climate', 4);
+  const rClimate = computeNationalPolicySystems(baseInp, withAgenda);
+  check(
+    'PS5',
+    'Climate agenda lifts environmental coherence',
+    rClimate.state.domains.environmental.coherenceWithAgenda >= r1.state.domains.environmental.coherenceWithAgenda,
+    `${rClimate.state.domains.environmental.coherenceWithAgenda} vs ${r1.state.domains.environmental.coherenceWithAgenda}`
+  );
+
+  check(
+    'PS6',
+    'Binding fiscal constraint',
+    fiscalTight.state.coherence.bindingConstraint === 'fiscal',
+    String(fiscalTight.state.coherence.bindingConstraint)
+  );
+
+  const overloaded = computeNationalPolicySystems({ ...baseInp, stateCapacityPressure: 'overloaded' }, p0);
+  check(
+    'PS7',
+    'Regulatory overload constraint',
+    overloaded.state.coherence.bindingConstraint === 'regulatory',
+    String(overloaded.state.coherence.bindingConstraint)
+  );
+
+  check('PS8', 'Sanitize persisted', Boolean(sanitizePolicySystemsPersisted({ agenda: { primary: 'growth' } }, 2)), 'ok');
+
+  check(
+    'PS9',
+    'Hash stability',
+    policySystemsInputHash(baseInp, p0) === policySystemsInputHash(baseInp, p0),
+    'stable'
+  );
+
+  const pin = toggleNationalPolicyAgendaPin(p0, 'equity', 2);
+  check('PS10', 'Pin toggle', pin.agenda.pinnedThemes.includes('equity'), JSON.stringify(pin.agenda.pinnedThemes));
+
+  const align = policySystemsActionAlignment(r1.state, { kind: 'trade_export' });
+  check('PS11', 'Action alignment bounded', align.score >= -2 && align.score <= 2, String(align.score));
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, failed: results.length - passed, total: results.length, results };
+}
+
+// ============================================================================
+
+// --- 20AG-wellbeing: NATIONAL WELLBEING INDEX ---
+// ============================================================================
+// Derived interpretation layer only — composes V10.13 living standards with optional
+// Public Stability scores. Never mutates households, stability, Living Regions, or fiscal state.
+// Invariants W1–W6:
+//   W1 — V10.13 remains authoritative for material living standards and domestic demand.
+//   W2 — Public Stability remains authoritative for societal stability; V10.14 reads scores only.
+//   W3 — No wellbeing mana, no household actors, no direct economy or AP effects.
+//   W4 — Feature off when nationalSystemsEnabled, householdsEnabled, or nationalWellbeingEnabled is false.
+//   W5 — Bands use hysteresis on the composite score (no raw-formula flicker).
+//   W6 — Pre-V10.14 saves load with null persisted memory; derived bands only.
+
+
+export type NationalWellbeingBand = 'critical' | 'strained' | 'mixed' | 'positive' | 'flourishing';
+
+export const NATIONAL_WELLBEING_LABEL: Record<NationalWellbeingBand, string> = {
+  critical: 'Critical wellbeing',
+  strained: 'Strained wellbeing',
+  mixed: 'Mixed wellbeing',
+  positive: 'Positive wellbeing',
+  flourishing: 'Flourishing wellbeing'
+};
+
+export const NATIONAL_WELLBEING_ICON: Record<NationalWellbeingBand, string> = {
+  critical: '⛔',
+  strained: '●',
+  mixed: '◐',
+  positive: '✓',
+  flourishing: '★'
+};
+
+const V1014_BAND_BOUNDS: Array<[NationalWellbeingBand, number]> = [
+  ['critical', 0],
+  ['strained', 28],
+  ['mixed', 45],
+  ['positive', 58],
+  ['flourishing', 75]
+];
+
+const v1014C = (n: number) => Math.round(v1014Clamp(n) * 10) / 10;
+
+function v1014BandForScore(score: number): NationalWellbeingBand {
+  let band: NationalWellbeingBand = 'critical';
+  for (const [b, min] of V1014_BAND_BOUNDS) {
+    if (score >= min) band = b;
+  }
+  return band;
+}
+
+function v1014BandWithHysteresis(score: number, prev: { score: number; band: NationalWellbeingBand } | null): NationalWellbeingBand {
+  const raw = v1014BandForScore(score);
+  if (!prev) return raw;
+  const dead = V1013_LIMITS.hysteresisDeadband;
+  const prevIdx = V1014_BAND_BOUNDS.findIndex(([b]) => b === prev.band);
+  const rawIdx = V1014_BAND_BOUNDS.findIndex(([b]) => b === raw);
+  if (rawIdx === prevIdx) return prev.band;
+  if (rawIdx > prevIdx && score < V1014_BAND_BOUNDS[rawIdx][1] + dead) return prev.band;
+  if (rawIdx < prevIdx && score > V1014_BAND_BOUNDS[prevIdx][1] - dead) return prev.band;
+  return raw;
+}
+
+function v1014NormRank(rank: number, max: number): number {
+  return max <= 0 ? 50 : v1014C((rank / max) * 100);
+}
+
+function v1014InverseRank(rank: number, max: number): number {
+  return v1014NormRank(max - rank, max);
+}
+
+export interface NationalWellbeingDimensions {
+  material: number;
+  security: number;
+  opportunity: number;
+  housing: number;
+  cohesion: number | null;
+}
+
+export interface NationalWellbeingState {
+  schemaVersion: string;
+  revision: number;
+  enabled: boolean;
+  score: number;
+  band: NationalWellbeingBand;
+  dimensions: NationalWellbeingDimensions;
+  trajectory: LivingStandardsTrajectory;
+  worstRegionId: string | null;
+  bestRegionId: string | null;
+  divergenceBand: 'low' | 'moderate' | 'high';
+  concerns: string[];
+  strengths: string[];
+  summary: string;
+  inputHash: string;
+  lastUpdatedTurn: number;
+  sources: { households: boolean; publicStability: boolean };
+}
+
+export interface NationalWellbeingPersisted {
+  schemaVersion: string;
+  revision: number;
+  initializedTurn: number | null;
+  lastUpdatedTurn: number;
+  lastInputHash: string;
+  bandHysteresis: { score: number; band: NationalWellbeingBand };
+}
+
+export interface NationalWellbeingInputs {
+  turn: number;
+  enabled: boolean;
+  households: NationalHouseholdEconomyState | null;
+  publicStabilityScore: number | null;
+}
+
+export interface NationalWellbeingComputeResult {
+  state: NationalWellbeingState | null;
+  persisted: NationalWellbeingPersisted;
+}
+
+export interface NationalWellbeingWorldView {
+  enabled: boolean;
+  state: NationalWellbeingState;
+  persisted: NationalWellbeingPersisted;
+}
+
+export function createInitialNationalWellbeingPersisted(): NationalWellbeingPersisted {
+  return {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: 0,
+    initializedTurn: null,
+    lastUpdatedTurn: 0,
+    lastInputHash: '',
+    bandHysteresis: { score: 50, band: 'mixed' }
+  };
+}
+
+export function sanitizeNationalWellbeingPersisted(raw: unknown, turn = 0): NationalWellbeingPersisted {
+  const base = createInitialNationalWellbeingPersisted();
+  if (!raw || typeof raw !== 'object') return base;
+  const o = raw as Record<string, unknown>;
+  const band = (o.bandHysteresis && typeof o.bandHysteresis === 'object' ? o.bandHysteresis : null) as Record<string, unknown> | null;
+  const bandName = band && typeof band.band === 'string' && band.band in NATIONAL_WELLBEING_LABEL ? (band.band as NationalWellbeingBand) : base.bandHysteresis.band;
+  const score = band && typeof band.score === 'number' ? v1014C(band.score) : base.bandHysteresis.score;
+  return {
+    schemaVersion: typeof o.schemaVersion === 'string' ? o.schemaVersion : V1014_SCHEMA_VERSION,
+    revision: typeof o.revision === 'number' ? o.revision : 0,
+    initializedTurn: typeof o.initializedTurn === 'number' ? o.initializedTurn : null,
+    lastUpdatedTurn: typeof o.lastUpdatedTurn === 'number' ? o.lastUpdatedTurn : turn,
+    lastInputHash: typeof o.lastInputHash === 'string' ? o.lastInputHash : '',
+    bandHysteresis: { score, band: bandName }
+  };
+}
+
+export function nationalWellbeingInputHash(inputs: NationalWellbeingInputs): string {
+  const hh = inputs.households;
+  const snap = hh
+    ? `${hh.inputHash}|${hh.national.prosperity}|${hh.national.affordability}|${hh.national.trajectory}|${Object.keys(hh.regions).length}`
+    : 'none';
+  const stab = inputs.publicStabilityScore == null ? 'na' : String(Math.round(inputs.publicStabilityScore));
+  return `v1014:${inputs.turn}:${inputs.enabled ? 1 : 0}:${snap}:${stab}`;
+}
+
+export function buildNationalWellbeingInputs(args: {
+  turn: number;
+  enabled: boolean;
+  householdState: NationalHouseholdEconomyState | null;
+  publicStabilityState?: PublicStabilityState | null;
+  publicStabilityEnabled?: boolean;
+}): NationalWellbeingInputs {
+  const stabilityOn = args.publicStabilityEnabled !== false;
+  const score =
+    stabilityOn && args.publicStabilityState && typeof args.publicStabilityState.nationalStability === 'number'
+      ? v1014C(args.publicStabilityState.nationalStability)
+      : null;
+  return {
+    turn: args.turn,
+    enabled: args.enabled,
+    households: args.householdState,
+    publicStabilityScore: score
+  };
+}
+
+function v1014RegionalProsperityScore(reg: RegionalLivingStandardsState): number {
+  const pr = V1013_PROSPERITY_RANK[reg.prosperity] ?? 2;
+  const af = V1013_AFFORDABILITY_RANK[reg.affordability] ?? 2;
+  const hp = V1013_HOUSING_PRESSURE_RANK[reg.housingPressure] ?? 2;
+  return v1014C(pr * 8 + af * 6 + v1014InverseRank(hp, 4) * 4);
+}
+
+export function computeNationalWellbeing(
+  inputs: NationalWellbeingInputs,
+  persistedIn: NationalWellbeingPersisted | null,
+  _prevState: NationalWellbeingState | null
+): NationalWellbeingComputeResult {
+  let persisted = persistedIn ? sanitizeNationalWellbeingPersisted(persistedIn, inputs.turn) : createInitialNationalWellbeingPersisted();
+  const inputHash = nationalWellbeingInputHash(inputs);
+  if (!inputs.enabled || !inputs.households) {
+    return { state: null, persisted: { ...persisted, lastInputHash: inputHash, lastUpdatedTurn: inputs.turn } };
+  }
+  if (persisted.lastInputHash === inputHash && persisted.revision > 0) {
+    const band = persisted.bandHysteresis.band;
+    const score = persisted.bandHysteresis.score;
+    return {
+      state: {
+        schemaVersion: V1014_SCHEMA_VERSION,
+        revision: persisted.revision,
+        enabled: true,
+        score,
+        band,
+        dimensions: {
+          material: score,
+          security: score,
+          opportunity: score,
+          housing: score,
+          cohesion: inputs.publicStabilityScore
+        },
+        trajectory: inputs.households.national.trajectory,
+        worstRegionId: null,
+        bestRegionId: null,
+        divergenceBand: 'low',
+        concerns: [],
+        strengths: [],
+        summary: NATIONAL_WELLBEING_LABEL[band],
+        inputHash,
+        lastUpdatedTurn: inputs.turn,
+        sources: { households: true, publicStability: inputs.publicStabilityScore != null }
+      },
+      persisted
+    };
+  }
+
+  const nat = inputs.households.national;
+  const material = v1014C(
+    (v1014NormRank(V1013_PROSPERITY_RANK[nat.prosperity], 4) * 0.34 +
+      v1014NormRank(V1013_AFFORDABILITY_RANK[nat.affordability], 4) * 0.33 +
+      v1014NormRank(V1013_ESSENTIAL_ACCESS_RANK[nat.essentialAccess], 4) * 0.33)
+  );
+  const secRank = Math.max(0, V1013_SECURITY_ORDER.indexOf(nat.economicSecurity));
+  const security = v1014C(v1014NormRank(secRank, V1013_SECURITY_ORDER.length - 1) * 0.5 + v1014NormRank(V1013_RESILIENCE_RANK[nat.financialResilience], 4) * 0.5);
+  const opportunity = v1014NormRank(V1013_EMPLOYMENT_RANK[nat.employmentOpportunity], 4);
+  const housing = v1014InverseRank(V1013_HOUSING_PRESSURE_RANK[nat.housingPressure], 4);
+  const cohesion = inputs.publicStabilityScore == null ? null : v1014C(inputs.publicStabilityScore);
+
+  let composite = material * 0.28 + security * 0.2 + opportunity * 0.18 + housing * 0.14;
+  if (cohesion != null) composite += cohesion * 0.2;
+  else composite /= 0.8;
+  const score = v1014C(composite);
+  const band = v1014BandWithHysteresis(score, persisted.bandHysteresis);
+
+  const regionalScores = Object.entries(inputs.households.regions).map(([id, reg]) => ({ id, s: v1014RegionalProsperityScore(reg) }));
+  regionalScores.sort((a, b) => a.s - b.s);
+  const worstRegionId = regionalScores[0]?.id || null;
+  const bestRegionId = regionalScores[regionalScores.length - 1]?.id || null;
+  const spread = regionalScores.length ? regionalScores[regionalScores.length - 1].s - regionalScores[0].s : 0;
+  const divergenceBand: NationalWellbeingState['divergenceBand'] = spread >= 28 ? 'high' : spread >= 14 ? 'moderate' : 'low';
+
+  const concerns: string[] = [];
+  if (nat.prosperity === 'stressed' || nat.prosperity === 'weak') concerns.push('Material living standards are under pressure nationally.');
+  if (nat.affordability === 'severe_pressure' || nat.affordability === 'strained') concerns.push('Affordability strain is weighing on households.');
+  if (nat.housingPressure === 'severe' || nat.housingPressure === 'high') concerns.push('Housing pressure is elevated in key regions.');
+  if (cohesion != null && cohesion < 45) concerns.push('Public stability is weak, dragging social cohesion.');
+  if (divergenceBand === 'high' && worstRegionId) concerns.push(`Wellbeing diverges sharply — ${worstRegionId} lags the national average.`);
+
+  const strengths: string[] = [];
+  if (nat.prosperity === 'strong' || nat.prosperity === 'prosperous') strengths.push('Broad-based prosperity supports wellbeing.');
+  if (nat.employmentOpportunity === 'strong' || nat.employmentOpportunity === 'abundant') strengths.push('Employment opportunity is supportive.');
+  if (cohesion != null && cohesion >= 75) strengths.push('Social cohesion from stability is a buffer.');
+  if (nat.trajectory === 'improving') strengths.push('Living standards trajectory is improving.');
+
+  const summary = `${NATIONAL_WELLBEING_LABEL[band]} (${Math.round(score)}/100) — ${concerns[0] || strengths[0] || 'Conditions are broadly balanced.'}`;
+
+  persisted = {
+    ...persisted,
+    revision: persisted.revision + 1,
+    initializedTurn: persisted.initializedTurn ?? inputs.turn,
+    lastUpdatedTurn: inputs.turn,
+    lastInputHash: inputHash,
+    bandHysteresis: { score, band }
+  };
+
+  const state: NationalWellbeingState = {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: persisted.revision,
+    enabled: true,
+    score,
+    band,
+    dimensions: { material, security, opportunity, housing, cohesion },
+    trajectory: nat.trajectory,
+    worstRegionId,
+    bestRegionId,
+    divergenceBand,
+    concerns: concerns.slice(0, 4),
+    strengths: strengths.slice(0, 4),
+    summary,
+    inputHash,
+    lastUpdatedTurn: inputs.turn,
+    sources: { households: true, publicStability: cohesion != null }
+  };
+
+  return { state, persisted };
+}
+
+export function validateNationalWellbeingState(state: NationalWellbeingState | null): { valid: boolean; issues: string[] } {
+  if (!state) return { valid: true, issues: [] };
+  const issues: string[] = [];
+  if (state.schemaVersion !== V1014_SCHEMA_VERSION) issues.push('schemaVersion mismatch');
+  if (state.score < 0 || state.score > 100) issues.push('score out of range');
+  if (!(state.band in NATIONAL_WELLBEING_LABEL)) issues.push('invalid band');
+  return { valid: issues.length === 0, issues };
+}
+
+export function makeDefaultV1014TestHouseholdInputs(
+  overrides: Partial<V1013HouseholdEconomyInputs> = {},
+  regionOverrides: Record<string, Partial<V1013RegionInput>> = {}
+): V1013HouseholdEconomyInputs {
+  return makeDefaultV1013TestInputs(overrides, regionOverrides);
+}
+
+export function runV1014NationalWellbeingSelfTests(): {
+  passed: number;
+  failed: number;
+  total: number;
+  results: Array<{ name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ name: string; passed: boolean; detail: string }> = [];
+  const check = (name: string, condition: boolean, detail: string) => {
+    results.push({ name, passed: Boolean(condition), detail });
+  };
+
+  check('TEST 1 — FEATURE OFF', (() => {
+    const r = computeNationalWellbeing({ turn: 1, enabled: false, households: null, publicStabilityScore: null }, createInitialNationalWellbeingPersisted(), null);
+    return r.state === null;
+  })(), 'disabled → null state');
+
+  check('TEST 2 — HEALTHY BASELINE', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs(), createInitialHouseholdEconomyPersisted(), null).state;
+    const r = computeNationalWellbeing({ turn: 3, enabled: true, households: hh, publicStabilityScore: 78 }, createInitialNationalWellbeingPersisted(), null);
+    return r.state != null && (r.state.band === 'positive' || r.state.band === 'flourishing');
+  })(), 'strong inputs → positive band');
+
+  check('TEST 3 — STRESSED MATERIAL', (() => {
+    const hh = computeNationalHouseholdEconomy(
+      makeDefaultV1014TestHouseholdInputs({ highInflationScenarioActive: true }, { NSW: { economyBand: 'weak', housingNeedSeverity: 'critical', investmentPressure: 'overheated' } }),
+      createInitialHouseholdEconomyPersisted(),
+      null
+    ).state;
+    const r = computeNationalWellbeing({ turn: 4, enabled: true, households: hh, publicStabilityScore: 70 }, createInitialNationalWellbeingPersisted(), null);
+    return r.state != null && (r.state.band === 'strained' || r.state.band === 'critical' || r.state.band === 'mixed');
+  })(), `band=${(() => {
+    const hh = computeNationalHouseholdEconomy(
+      makeDefaultV1014TestHouseholdInputs({ highInflationScenarioActive: true }, { NSW: { economyBand: 'weak', housingNeedSeverity: 'critical' } }),
+      createInitialHouseholdEconomyPersisted(),
+      null
+    ).state;
+    return computeNationalWellbeing({ turn: 4, enabled: true, households: hh, publicStabilityScore: 70 }, createInitialNationalWellbeingPersisted(), null).state?.band;
+  })()}`);
+
+  check('TEST 4 — COHESION READ ONLY', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs(), createInitialHouseholdEconomyPersisted(), null).state;
+    const before = hh.national.prosperity;
+    computeNationalWellbeing({ turn: 2, enabled: true, households: hh, publicStabilityScore: 22 }, createInitialNationalWellbeingPersisted(), null);
+    return hh.national.prosperity === before;
+  })(), 'household state unchanged');
+
+  check('TEST 5 — NO STABILITY DATA', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs(), createInitialHouseholdEconomyPersisted(), null).state;
+    const r = computeNationalWellbeing({ turn: 2, enabled: true, households: hh, publicStabilityScore: null }, createInitialNationalWellbeingPersisted(), null);
+    return r.state != null && r.state.dimensions.cohesion === null && r.state.sources.publicStability === false;
+  })(), 'cohesion null without stability');
+
+  check('TEST 6 — LOW STABILITY DRAG', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs(), createInitialHouseholdEconomyPersisted(), null).state;
+    const high = computeNationalWellbeing({ turn: 2, enabled: true, households: hh, publicStabilityScore: 85 }, createInitialNationalWellbeingPersisted(), null).state!;
+    const low = computeNationalWellbeing({ turn: 2, enabled: true, households: hh, publicStabilityScore: 25 }, createInitialNationalWellbeingPersisted(), null).state!;
+    return high.score > low.score;
+  })(), 'lower stability lowers composite');
+
+  check('TEST 7 — REGIONAL DIVERGENCE', (() => {
+    const hh = computeNationalHouseholdEconomy(
+      makeDefaultV1014TestHouseholdInputs({}, { NSW: { economyBand: 'strong', essentialInfraScore: 90 }, WA: { economyBand: 'weak', essentialInfraScore: 35, housingNeedSeverity: 'critical' } }),
+      createInitialHouseholdEconomyPersisted(),
+      null
+    ).state;
+    const r = computeNationalWellbeing({ turn: 5, enabled: true, households: hh, publicStabilityScore: 60 }, createInitialNationalWellbeingPersisted(), null);
+    return r.state != null && r.state.worstRegionId != null && r.state.bestRegionId != null && r.state.worstRegionId !== r.state.bestRegionId;
+  })(), 'best/worst regions differ');
+
+  check('TEST 8 — DETERMINISM', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs({ turn: 6 }), createInitialHouseholdEconomyPersisted(), null).state;
+    const a = computeNationalWellbeing({ turn: 6, enabled: true, households: hh, publicStabilityScore: 64 }, createInitialNationalWellbeingPersisted(), null).state;
+    const b = computeNationalWellbeing({ turn: 6, enabled: true, households: hh, publicStabilityScore: 64 }, createInitialNationalWellbeingPersisted(), null).state;
+    return JSON.stringify(a) === JSON.stringify(b);
+  })(), 'identical outputs');
+
+  check('TEST 9 — SAVE LOAD', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs({ turn: 7 }), createInitialHouseholdEconomyPersisted(), null).state;
+    const run1 = computeNationalWellbeing({ turn: 7, enabled: true, households: hh, publicStabilityScore: 66 }, createInitialNationalWellbeingPersisted(), null);
+    const restored = sanitizeNationalWellbeingPersisted(JSON.parse(JSON.stringify(run1.persisted)));
+    const run2 = computeNationalWellbeing({ turn: 7, enabled: true, households: hh, publicStabilityScore: 66 }, restored, null);
+    return run1.state?.band === run2.state?.band && run1.state?.score === run2.state?.score;
+  })(), 'persisted round-trip');
+
+  check('TEST 10 — OLD SAVE', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs({ turn: 8 }), createInitialHouseholdEconomyPersisted(), null).state;
+    const r = computeNationalWellbeing({ turn: 8, enabled: true, households: hh, publicStabilityScore: 55 }, sanitizeNationalWellbeingPersisted(undefined), null);
+    return r.state != null && r.persisted.initializedTurn === 8;
+  })(), 'null persisted derives cleanly');
+
+  check('TEST 11 — VALIDATION', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs(), createInitialHouseholdEconomyPersisted(), null).state;
+    const r = computeNationalWellbeing({ turn: 1, enabled: true, households: hh, publicStabilityScore: 50 }, createInitialNationalWellbeingPersisted(), null);
+    return validateNationalWellbeingState(r.state).valid;
+  })(), 'validateNationalWellbeingState');
+
+  check('TEST 12 — INPUT HASH CACHE', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs({ turn: 9 }), createInitialHouseholdEconomyPersisted(), null).state;
+    const first = computeNationalWellbeing({ turn: 9, enabled: true, households: hh, publicStabilityScore: 72 }, createInitialNationalWellbeingPersisted(), null);
+    const second = computeNationalWellbeing({ turn: 9, enabled: true, households: hh, publicStabilityScore: 72 }, first.persisted, first.state);
+    return second.persisted.revision === first.persisted.revision;
+  })(), 'same hash does not bump revision');
+
+  check('TEST 13 — HYSTERESIS', (() => {
+    const hh = computeNationalHouseholdEconomy(
+      makeDefaultV1014TestHouseholdInputs({ highInflationScenarioActive: true }, { NSW: { economyBand: 'weak', housingNeedSeverity: 'critical' } }),
+      createInitialHouseholdEconomyPersisted(),
+      null
+    ).state;
+    let p = createInitialNationalWellbeingPersisted();
+    p.bandHysteresis = { score: 60, band: 'positive' };
+    const r = computeNationalWellbeing({ turn: 3, enabled: true, households: hh, publicStabilityScore: 50 }, p, null);
+    return r.state != null && r.state.score < 58 && r.state.band === 'positive';
+  })(), 'band holds on downgrade inside deadband');
+
+  check('TEST 14 — BUILD INPUTS HELPER', (() => {
+    const hh = computeNationalHouseholdEconomy(makeDefaultV1014TestHouseholdInputs(), createInitialHouseholdEconomyPersisted(), null).state;
+    const inp = buildNationalWellbeingInputs({ turn: 2, enabled: true, householdState: hh, publicStabilityState: createDefaultPublicStabilityState(), publicStabilityEnabled: true });
+    return inp.publicStabilityScore === 80;
+  })(), 'reads default stability');
+
+  check('TEST 15 — CONCERNS WHEN STRAINED', (() => {
+    const hh = computeNationalHouseholdEconomy(
+      makeDefaultV1014TestHouseholdInputs({ highInflationScenarioActive: true }, { VIC: { housingNeedSeverity: 'critical', investmentPressure: 'overheated' } }),
+      createInitialHouseholdEconomyPersisted(),
+      null
+    ).state;
+    const r = computeNationalWellbeing({ turn: 4, enabled: true, households: hh, publicStabilityScore: 40 }, createInitialNationalWellbeingPersisted(), null);
+    return (r.state?.concerns.length || 0) > 0;
+  })(), 'concerns populated under strain');
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, failed: results.length - passed, total: results.length, results };
+}
+
+
+/**
+ * Downloads `data` as a JSON file. Never throws: sandboxed embeds and some browsers block downloads or lack
+ * URL.createObjectURL, and a throw here used to abort match finalisation (replay) mid AI turn.
+ */
+
+// ============================================================================
+
+export function runV1014UnifiedSelfTests(): V9SelfTestResult[] {
+  return [
+    ...runV1014NationalMacroeconomySelfTests(),
+    ...runV1014InflationPriceDynamicsSelfTests(),
+    ...runV1014CorporateSectorSelfTests(),
+    ...runV1014EconomicAnalyticsSelfTests(),
+    ...runV1014PopulationDynamicsSelfTests(),
+    ...runV1014PublicServicesSelfTests(),
+    ...runV1014NationalPolicySystemsSelfTests(),
+    ...runV1014NationalWellbeingSelfTests(),
+  ];
+}
 // SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
 // ----------------------------------------------------------------------------
 // One check per substantive reliability fix (crash, accounting, lifecycle, determinism, gating).
@@ -226359,15 +227835,20 @@ function dispatchGameSettingsChange(
                   </label>
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v1013-setting-households">
                     <input type="checkbox" checked={gameSettings.householdsEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🏠 Households & Living Standards', prev => ({ ...prev, householdsEnabled: e.target.checked }))} />
-                    <input type="checkbox" checked={gameSettings.nationalWellbeingEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false || gameSettings.householdsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '☀️ National Wellbeing Index', prev => ({ ...prev, nationalWellbeingEnabled: e.target.checked }))} />
                     Households, Living Standards &amp; Domestic Demand (V10.13): household prosperity, affordability, housing pressure, essential access and domestic demand feedback (needs National Systems)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm mt-2" data-testid="v1014-setting-wellbeing">
+                    <input type="checkbox" checked={gameSettings.nationalWellbeingEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false || gameSettings.householdsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '☀️ National Wellbeing Index', prev => ({ ...prev, nationalWellbeingEnabled: e.target.checked }))} />
+                    National Wellbeing Index (V10.14): composite wellbeing from households, services, policy and macro context (needs V10.13 + National Systems)
                   </label>
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v1014-setting-inflation">
                     <input type="checkbox" checked={gameSettings.inflationDynamicsEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '💸 Inflation & Price Dynamics', prev => ({ ...prev, inflationDynamicsEnabled: e.target.checked }))} />
                     National Inflation &amp; Price Dynamics (V10.14): canonical CPI vs commodity boundary, headline inflation bands, category pressures feeding households (needs National Systems)
+                  </label>
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v1014-setting-public-services">
                     <input type="checkbox" checked={gameSettings.publicServicesEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🏥 Public Services & Civic Delivery', prev => ({ ...prev, publicServicesEnabled: e.target.checked }))} />
                     Public Services &amp; Civic Delivery (V10.14): health, education, emergency, justice and local civic service quality interpreted from state capacity, finance and infrastructure (needs National Systems)
+                  </label>
                   <label className="flex items-start gap-2 text-sm opacity-90">
                     <input type="checkbox" checked={gameSettings.policySystemsEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '📜 National Policy Systems', prev => ({ ...prev, policySystemsEnabled: e.target.checked }))} />
                     National Policy Systems &amp; Government Agenda (V10.14): fiscal/regulatory/social/environmental/trade/security posture and agenda coherence (needs National Systems)
