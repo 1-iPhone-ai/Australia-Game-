@@ -170,6 +170,13 @@ import {
   type V1014RegionalZeroCarbonPrecinctLedger,
 } from './precinct-zero-carbon-embedded-network-ledger';
 import {
+  advanceRegionalMerchantStorageOrchestration,
+  computeRegionalTransmissionCongestionLedger,
+  scoreAgent13TransmissionMerchantGIAlignment,
+  type V1014RegionalMerchantStorageLedger,
+  type V1014RegionalTransmissionCongestionLedger,
+} from './transmission-congestion-merchant-storage-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25714,6 +25721,10 @@ export interface V1014RegionalEnergyProfile {
   zeroCarbonPrecinctRelief: number;
   embeddedNetworkBand: string;
   embeddedNetworkRelief: number;
+  transmissionCongestionBand: string;
+  transmissionCongestionRelief: number;
+  merchantStorageBand: string;
+  merchantStorageRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25794,6 +25805,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalFlexibleLoadOrchestrationLedgers: Record<string, V1014RegionalFlexibleLoadOrchestrationLedger>;
   regionalZeroCarbonPrecinctLedgers: Record<string, V1014RegionalZeroCarbonPrecinctLedger>;
   regionalEmbeddedNetworkLedgers: Record<string, V1014RegionalEmbeddedNetworkLedger>;
+  regionalTransmissionCongestionLedgers: Record<string, V1014RegionalTransmissionCongestionLedger>;
+  regionalMerchantStorageLedgers: Record<string, V1014RegionalMerchantStorageLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25845,6 +25858,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalFlexLoadMemory: Record<string, { flexIndex: number }>;
   regionalZeroCarbonPrecinctMemory: Record<string, { decarbBalance: number; precinctIndex: number }>;
   regionalEmbeddedNetworkMemory: Record<string, { networkIndex: number }>;
+  regionalTransmissionCongestionMemory: Record<string, { flowBalance: number; congestionIndex: number }>;
+  regionalMerchantStorageMemory: Record<string, { merchantIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25908,6 +25923,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalFlexLoadMemory: {},
     regionalZeroCarbonPrecinctMemory: {},
     regionalEmbeddedNetworkMemory: {},
+    regionalTransmissionCongestionMemory: {},
+    regionalMerchantStorageMemory: {},
     history: [],
   };
 }
@@ -26008,6 +26025,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     regionalEmbeddedNetworkMemory:
       typeof raw.regionalEmbeddedNetworkMemory === 'object' && raw.regionalEmbeddedNetworkMemory
         ? raw.regionalEmbeddedNetworkMemory
+        : {},
+    regionalTransmissionCongestionMemory:
+      typeof raw.regionalTransmissionCongestionMemory === 'object' && raw.regionalTransmissionCongestionMemory
+        ? raw.regionalTransmissionCongestionMemory
+        : {},
+    regionalMerchantStorageMemory:
+      typeof raw.regionalMerchantStorageMemory === 'object' && raw.regionalMerchantStorageMemory
+        ? raw.regionalMerchantStorageMemory
         : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
@@ -26159,6 +26184,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalFlexibleLoadOrchestrationLedgers: {},
       regionalZeroCarbonPrecinctLedgers: {},
       regionalEmbeddedNetworkLedgers: {},
+      regionalTransmissionCongestionLedgers: {},
+      regionalMerchantStorageLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26213,6 +26240,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const flexibleLoadOrchestrationLedgers: Record<string, V1014RegionalFlexibleLoadOrchestrationLedger> = {};
   const zeroCarbonPrecinctLedgers: Record<string, V1014RegionalZeroCarbonPrecinctLedger> = {};
   const embeddedNetworkLedgers: Record<string, V1014RegionalEmbeddedNetworkLedger> = {};
+  const transmissionCongestionLedgers: Record<string, V1014RegionalTransmissionCongestionLedger> = {};
+  const merchantStorageLedgers: Record<string, V1014RegionalMerchantStorageLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26299,6 +26328,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextEmbeddedNetworkMemory: Record<string, { networkIndex: number }> = {
     ...persisted.regionalEmbeddedNetworkMemory,
+  };
+  const nextTransmissionCongestionMemory: Record<string, { flowBalance: number; congestionIndex: number }> = {
+    ...persisted.regionalTransmissionCongestionMemory,
+  };
+  const nextMerchantStorageMemory: Record<string, { merchantIndex: number }> = {
+    ...persisted.regionalMerchantStorageMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -26821,6 +26856,29 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextEmbeddedNetworkMemory[regionId] = embeddedNetworkStep.next;
     embeddedNetworkLedgers[regionId] = embeddedNetworkStep.ledger;
 
+    const transmissionCongestionStep = computeRegionalTransmissionCongestionLedger({
+      regionId,
+      rezSpillRelief: rezStep.ledger.rezSpillRelief,
+      embeddedNetworkRelief: embeddedNetworkStep.ledger.embeddedNetworkRelief,
+      hydrogenGridRelief: hydrogenStep.ledger.hydrogenGridRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextTransmissionCongestionMemory[regionId] || null,
+    });
+    nextTransmissionCongestionMemory[regionId] = transmissionCongestionStep.next;
+    transmissionCongestionLedgers[regionId] = transmissionCongestionStep.ledger;
+
+    const merchantStorageStep = advanceRegionalMerchantStorageOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      congestionBand: transmissionCongestionStep.ledger.band,
+      gridFirmingRelief: firmingStep.ledger.gridFirmingRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextMerchantStorageMemory[regionId] || null,
+    });
+    nextMerchantStorageMemory[regionId] = merchantStorageStep.next;
+    merchantStorageLedgers[regionId] = merchantStorageStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26870,6 +26928,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= flexLoadStep.ledger.flexibleLoadRelief;
     pressure -= zeroCarbonPrecinctStep.ledger.zeroCarbonPrecinctRelief;
     pressure -= embeddedNetworkStep.ledger.embeddedNetworkRelief;
+    pressure -= transmissionCongestionStep.ledger.transmissionCongestionRelief;
+    pressure -= merchantStorageStep.ledger.merchantStorageRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26944,6 +27004,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       flexLoadStep.ledger.summary,
       zeroCarbonPrecinctStep.ledger.summary,
       embeddedNetworkStep.ledger.summary,
+      transmissionCongestionStep.ledger.summary,
+      merchantStorageStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -27108,6 +27170,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       zeroCarbonPrecinctRelief: zeroCarbonPrecinctStep.ledger.zeroCarbonPrecinctRelief,
       embeddedNetworkBand: embeddedNetworkStep.ledger.band,
       embeddedNetworkRelief: embeddedNetworkStep.ledger.embeddedNetworkRelief,
+      transmissionCongestionBand: transmissionCongestionStep.ledger.band,
+      transmissionCongestionRelief: transmissionCongestionStep.ledger.transmissionCongestionRelief,
+      merchantStorageBand: merchantStorageStep.ledger.band,
+      merchantStorageRelief: merchantStorageStep.ledger.merchantStorageRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -27217,6 +27283,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalFlexibleLoadOrchestrationLedgers: flexibleLoadOrchestrationLedgers,
     regionalZeroCarbonPrecinctLedgers: zeroCarbonPrecinctLedgers,
     regionalEmbeddedNetworkLedgers: embeddedNetworkLedgers,
+    regionalTransmissionCongestionLedgers: transmissionCongestionLedgers,
+    regionalMerchantStorageLedgers: merchantStorageLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -27268,6 +27336,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalFlexLoadMemory: nextFlexLoadMemory,
     regionalZeroCarbonPrecinctMemory: nextZeroCarbonPrecinctMemory,
     regionalEmbeddedNetworkMemory: nextEmbeddedNetworkMemory,
+    regionalTransmissionCongestionMemory: nextTransmissionCongestionMemory,
+    regionalMerchantStorageMemory: nextMerchantStorageMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -28075,6 +28145,44 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     embeddedBand: rr23.state.regions.NSW?.embeddedNetworkBand,
   });
   check('PRECINCT EMBEDDED GI alignment', giPe.relevanceDelta > 0.5, giPe.reason || '');
+
+  const tmInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'dynamic_line_rating_corridor',
+      'interconnect_merchant_flow_loop',
+      'merchant_battery_arbitrage_fleet',
+      'storage_arbitrage_merchant_pool',
+      'flow_gate_orchestration_hub',
+      'firming_merchant_orchestration_hub',
+      'congestion_relief_market_layer',
+      'export_aligned_merchant_storage',
+      'rez_spill_soak_recovery_loop',
+      'private_wire_embedded_network',
+    ],
+  };
+  const rr24 = computeIndustrialEnergyEnvironmentalState(tmInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check(
+    'TRANSMISSION congestion ledger tracked',
+    !!rr24.state.regionalTransmissionCongestionLedgers.QLD?.band,
+    rr24.state.regionalTransmissionCongestionLedgers.QLD?.band || '',
+  );
+  check(
+    'MERCHANT storage relief',
+    (rr24.state.regions.QLD?.merchantStorageRelief || 0) > 0,
+    String(rr24.state.regions.QLD?.merchantStorageRelief),
+  );
+  check(
+    'TRANSMISSION congestion memory persisted',
+    !!rr24.persisted.regionalTransmissionCongestionMemory.QLD,
+    String(rr24.persisted.regionalTransmissionCongestionMemory.QLD?.congestionIndex),
+  );
+  const giTm = scoreAgent13TransmissionMerchantGIAlignment({
+    actionText: 'Dynamic line rating with interconnect merchant flow and storage arbitrage pool',
+    congestionBand: rr24.state.regions.QLD?.transmissionCongestionBand,
+    merchantBand: rr24.state.regions.QLD?.merchantStorageBand,
+  });
+  check('TRANSMISSION MERCHANT GI alignment', giTm.relevanceDelta > 0.5, giTm.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

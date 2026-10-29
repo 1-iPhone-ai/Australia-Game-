@@ -100,6 +100,11 @@ import {
   V1014_PRECINCT_EMBEDDED_TURN_SCENARIOS,
 } from '../modules/precinct-zero-carbon-embedded-network-ledger.ts';
 import {
+  runAgent13TransmissionMerchantScaleSelfTests,
+  runAgent13TransmissionMerchantTurnScenario,
+  V1014_TRANSMISSION_MERCHANT_TURN_SCENARIOS,
+} from '../modules/transmission-congestion-merchant-storage-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -327,6 +332,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const peTurn = runAgent13PrecinctEmbeddedTurnScenario(V1014_PRECINCT_EMBEDDED_TURN_SCENARIOS[0]);
   ok(peTurn.passed);
+
+  const transmissionMerchant = runAgent13TransmissionMerchantScaleSelfTests();
+  ok(transmissionMerchant.failed === 0 && transmissionMerchant.passed >= 7);
+
+  const tmTurn = runAgent13TransmissionMerchantTurnScenario(V1014_TRANSMISSION_MERCHANT_TURN_SCENARIOS[0]);
+  ok(tmTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

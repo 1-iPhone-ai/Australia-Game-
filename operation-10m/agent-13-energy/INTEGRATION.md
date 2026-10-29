@@ -29,6 +29,7 @@ operation-10m/agent-13-energy/
   modules/battery-recycling-second-life-storage-ledger.ts  # scale wave round 21
   modules/curtailment-recovery-flex-load-ledger.ts  # scale wave round 22
   modules/precinct-zero-carbon-embedded-network-ledger.ts  # scale wave round 23
+  modules/transmission-congestion-merchant-storage-ledger.ts  # scale wave round 24
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge
@@ -63,6 +64,7 @@ operation-10m/agent-13-energy/
 - Round 21 slices: `regionalBatteryRecyclingMemory`, `regionalSecondLifeMemory`
 - Round 22 slices: `regionalCurtailmentMemory`, `regionalFlexLoadMemory`
 - Round 23 slices: `regionalZeroCarbonPrecinctMemory`, `regionalEmbeddedNetworkMemory`
+- Round 24 slices: `regionalTransmissionCongestionMemory`, `regionalMerchantStorageMemory`
 - Regression id: `v1014_energy` → `runV1014IndustrialEnergyEnvironmentalSelfTests()`
 
 ## Boundaries

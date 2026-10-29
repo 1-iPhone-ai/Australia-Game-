@@ -43,6 +43,7 @@ const FILES = [
   'battery-recycling-second-life-storage-ledger.ts',
   'curtailment-recovery-flex-load-ledger.ts',
   'precinct-zero-carbon-embedded-network-ledger.ts',
+  'transmission-congestion-merchant-storage-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -89,6 +90,8 @@ const EXPORT_MANIFEST = [
   'V1014_FLEXIBLE_LOAD_ORCHESTRATION_CATALOG',
   'V1014_ZERO_CARBON_PRECINCT_CATALOG',
   'V1014_EMBEDDED_NETWORK_CATALOG',
+  'V1014_TRANSMISSION_CONGESTION_CATALOG',
+  'V1014_MERCHANT_STORAGE_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -164,6 +167,9 @@ const EXPORT_MANIFEST = [
   'runAgent13PrecinctEmbeddedScaleSelfTests',
   'runAgent13PrecinctEmbeddedTurnScenario',
   'V1014_PRECINCT_EMBEDDED_TURN_SCENARIOS',
+  'runAgent13TransmissionMerchantScaleSelfTests',
+  'runAgent13TransmissionMerchantTurnScenario',
+  'V1014_TRANSMISSION_MERCHANT_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];
