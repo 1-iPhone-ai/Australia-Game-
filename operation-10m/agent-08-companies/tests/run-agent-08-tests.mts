@@ -1,4 +1,4 @@
-import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08StabilizationSelfTests, runAgent08MandateSelfTests, runAgent08ComplianceSelfTests, runAgent08RemediationSelfTests, runAgent08ExecutionSelfTests, runAgent08UtilizationDepthSelfTests, runAgent08ReconciliationSelfTests, runAgent08OperatingPrioritySelfTests, runAgent08OperatingDigestSelfTests, runAgent08ReadinessPortfolioSelfTests, runAgent08TransitionHorizonSelfTests, runAgent08TransitionCommitmentSelfTests, runAgent08TransitionMobilizationSelfTests, runAgent08TransitionDeploymentSelfTests, runAgent08TransitionValidationSelfTests, runAgent08TransitionConsolidationSelfTests, runAgent08TransitionSustainmentSelfTests, runAgent08TransitionResilienceSelfTests, runAgent08TransitionEquilibriumSelfTests, runAgent08TransitionMaturitySelfTests, runAgent08TransitionContinuitySelfTests, runAgent08TransitionHeritageSelfTests, runAgent08TransitionCodificationSelfTests, runAgent08TransitionStewardshipSelfTests, runAgent08TransitionGovernanceSelfTests, runAgent08TransitionAccountabilitySelfTests, runAgent08TransitionAssuranceSelfTests, runAgent08TransitionTrustSelfTests, runAgent08TransitionLegitimacySelfTests, runAgent08TransitionRecognitionSelfTests, runAgent08TransitionPrecedenceSelfTests, runAgent08TransitionRatificationSelfTests, runAgent08TransitionConfirmationSelfTests, runAgent08TransitionFinalizationSelfTests, runAgent08TransitionClosureSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
+import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08RecoverySelfTests, runAgent08StabilizationSelfTests, runAgent08MandateSelfTests, runAgent08ComplianceSelfTests, runAgent08RemediationSelfTests, runAgent08ExecutionSelfTests, runAgent08UtilizationDepthSelfTests, runAgent08ReconciliationSelfTests, runAgent08OperatingPrioritySelfTests, runAgent08OperatingDigestSelfTests, runAgent08ReadinessPortfolioSelfTests, runAgent08TransitionHorizonSelfTests, runAgent08TransitionCommitmentSelfTests, runAgent08TransitionMobilizationSelfTests, runAgent08TransitionDeploymentSelfTests, runAgent08TransitionValidationSelfTests, runAgent08TransitionConsolidationSelfTests, runAgent08TransitionSustainmentSelfTests, runAgent08TransitionResilienceSelfTests, runAgent08TransitionEquilibriumSelfTests, runAgent08TransitionMaturitySelfTests, runAgent08TransitionContinuitySelfTests, runAgent08TransitionHeritageSelfTests, runAgent08TransitionCodificationSelfTests, runAgent08TransitionStewardshipSelfTests, runAgent08TransitionGovernanceSelfTests, runAgent08TransitionAccountabilitySelfTests, runAgent08TransitionAssuranceSelfTests, runAgent08TransitionTrustSelfTests, runAgent08TransitionLegitimacySelfTests, runAgent08TransitionRecognitionSelfTests, runAgent08TransitionPrecedenceSelfTests, runAgent08TransitionRatificationSelfTests, runAgent08TransitionConfirmationSelfTests, runAgent08TransitionFinalizationSelfTests, runAgent08TransitionClosureSelfTests, runAgent08TransitionCompletionSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
 
 function main() {
   const tax = runAgent08TaxLaborSelfTests();
@@ -328,6 +328,14 @@ function main() {
     process.exit(1);
   }
   console.log(`Agent 08 transition closure: ${transitionClosure.length} passed`);
+
+  const transitionCompletion = runAgent08TransitionCompletionSelfTests();
+  const failedCompletion = transitionCompletion.filter(t => !t.passed);
+  if (failedCompletion.length) {
+    console.error('Agent 08 transition completion tests failed:', failedCompletion);
+    process.exit(1);
+  }
+  console.log(`Agent 08 transition completion: ${transitionCompletion.length} passed`);
 
   const moduleTests = runAgent08ModuleSelfTests();
   const failed = moduleTests.filter(t => !t.passed);
