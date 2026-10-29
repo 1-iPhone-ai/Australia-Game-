@@ -146,6 +146,12 @@ import { nrDashBuildCorridorPulseAsymmetry } from '../core/corridor-pulse-asymme
 import { nrDashBuildNeutralOwnerPortfolioSkew } from '../core/neutral-owner-portfolio-skew.ts';
 import { nrDashBuildMultiTierNeedsConcentration } from '../core/multi-tier-needs-concentration.ts';
 import { nrDashBuildLrNsHistoryOverlapGap } from '../core/lr-ns-history-overlap-gap.ts';
+import { nrDashBuildUnknownOwnerPortfolioSkew } from '../core/unknown-owner-portfolio-skew.ts';
+import { nrDashBuildHighTierNeedsConcentration } from '../core/high-tier-needs-concentration.ts';
+import { nrDashBuildLinkPulseAsymmetry } from '../core/link-pulse-asymmetry.ts';
+import { nrDashBuildNsOnlySnippetHeadroom } from '../core/ns-only-snippet-headroom.ts';
+import { nrDashBuildDerivedMajorOverlapGap } from '../core/derived-major-overlap-gap.ts';
+import { nrDashBuildCorridorSaturationShare } from '../core/corridor-saturation-share.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1143,6 +1149,50 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     lr.state.derived.push({ turn: 5, text: 'Same turn echo', significance: 'meaningful' });
     const gap = nrDashBuildLrNsHistoryOverlapGap(lr, createAgent23NsFixture())!;
     return gap.totalEntries === 3 && gap.uniqueTurnCount === 2 && gap.overlapGap === 1;
+  });
+
+  check('a23_unknown_owner_portfolio_skew', 'Unknown owner portfolio skew is one on default fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const skew = nrDashBuildUnknownOwnerPortfolioSkew(snap)!;
+    return skew.unknownShare === 1 && skew.portfolioSkew === 1;
+  });
+
+  check('a23_high_tier_needs_concentration', 'High-tier needs concentration splits high and critical mix', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs.push({ category: 'security', status: 'open', severity: 'critical' });
+    lr.state.regions.VIC!.needs.push({ category: 'trade', status: 'open', severity: 'high' });
+    const conc = nrDashBuildHighTierNeedsConcentration(lr)!;
+    return conc.highTierOpenCount === 2 && conc.activeHighTierSlots === 2 && conc.concentrationIndex === 0.5;
+  });
+
+  check('a23_link_pulse_asymmetry', 'Link pulse asymmetry is positive on merged map links', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    const links = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(createAgent23NsFixture(), AGENT23_REGION_MAP_LAYOUT)
+    );
+    const asym = nrDashBuildLinkPulseAsymmetry(links, nodes)!;
+    return asym.linkCount > 0 && asym.maxEndpointDelta > 0.01;
+  });
+
+  check('a23_ns_only_snippet_headroom', 'NS-only snippet headroom reports four-slot lane', () => {
+    const snap = nrDashBuildAuthSnapshot(5, null, createAgent23NsFixture(), null)!;
+    const head = nrDashBuildNsOnlySnippetHeadroom(snap)!;
+    return head.nsSnippetCap === 4 && head.surfacedCount === 1 && head.headroomSlots === 3;
+  });
+
+  check('a23_derived_major_overlap_gap', 'Derived-major overlap gap ignores meaningful derived turns', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 5, text: 'Same turn echo', significance: 'meaningful' });
+    const gap = nrDashBuildDerivedMajorOverlapGap(lr, createAgent23NsFixture())!;
+    return gap.totalEntries === 2 && gap.overlapGap === 0;
+  });
+
+  check('a23_corridor_saturation_share', 'Corridor saturation share is below one on hotspot fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const sat = nrDashBuildCorridorSaturationShare(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return sat.corridorCount > 0 && sat.saturationShare > 0 && sat.saturationShare < 1;
   });
 
   return results;

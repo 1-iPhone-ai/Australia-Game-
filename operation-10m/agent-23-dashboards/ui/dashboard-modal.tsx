@@ -150,6 +150,12 @@ import { nrDashBuildCorridorPulseAsymmetry } from '../core/corridor-pulse-asymme
 import { nrDashBuildNeutralOwnerPortfolioSkew } from '../core/neutral-owner-portfolio-skew.ts';
 import { nrDashBuildMultiTierNeedsConcentration } from '../core/multi-tier-needs-concentration.ts';
 import { nrDashBuildLrNsHistoryOverlapGap } from '../core/lr-ns-history-overlap-gap.ts';
+import { nrDashBuildUnknownOwnerPortfolioSkew } from '../core/unknown-owner-portfolio-skew.ts';
+import { nrDashBuildHighTierNeedsConcentration } from '../core/high-tier-needs-concentration.ts';
+import { nrDashBuildLinkPulseAsymmetry } from '../core/link-pulse-asymmetry.ts';
+import { nrDashBuildNsOnlySnippetHeadroom } from '../core/ns-only-snippet-headroom.ts';
+import { nrDashBuildDerivedMajorOverlapGap } from '../core/derived-major-overlap-gap.ts';
+import { nrDashBuildCorridorSaturationShare } from '../core/corridor-saturation-share.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -533,6 +539,42 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-lr-ns-history-overlap-gap">
           LR–NS history overlap gap {overlapGap.overlapGap} · {overlapGap.totalEntries} entries · {overlapGap.uniqueTurnCount}{' '}
           unique turns
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const majorOverlap = nrDashBuildDerivedMajorOverlapGap(lrView, nsState);
+      return majorOverlap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-derived-major-overlap-gap">
+          Derived-major overlap gap {majorOverlap.overlapGap} · {majorOverlap.totalEntries} entries ·{' '}
+          {majorOverlap.uniqueTurnCount} unique turns
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const nsHeadroom = nrDashBuildNsOnlySnippetHeadroom(snap);
+      return nsHeadroom ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-ns-only-snippet-headroom">
+          NS-only snippet headroom {nsHeadroom.headroomSlots} · share {nsHeadroom.headroomShare} · {nsHeadroom.surfacedCount}/
+          {nsHeadroom.nsSnippetCap}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const unknownSkew = nrDashBuildUnknownOwnerPortfolioSkew(snap);
+      return unknownSkew ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-unknown-owner-portfolio-skew">
+          Unknown owner portfolio skew {unknownSkew.portfolioSkew} · unknown {unknownSkew.unknownShare} · you{' '}
+          {unknownSkew.youShare}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const highConc = nrDashBuildHighTierNeedsConcentration(lrView);
+      return highConc ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-high-tier-needs-concentration">
+          High-tier needs concentration {highConc.concentrationIndex} · {highConc.activeHighTierSlots} slots ·{' '}
+          {highConc.highTierOpenCount} open
         </div>
       ) : null;
     })()}
@@ -1418,11 +1460,28 @@ export const NrDashMapTab: React.FC<{
         ) : null;
       })()}
       {(() => {
+        const corridorSat = nrDashBuildCorridorSaturationShare(nsState, baseNodes);
+        return corridorSat && corridorSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-corridor-saturation-share">
+            Corridor saturation share {corridorSat.saturationShare} · μ {corridorSat.meanBlend} · peak {corridorSat.peakBlend}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
         const linkPulse = nrDashBuildLinkPulseSpan(stressedLinks, baseNodes);
         return linkPulse && linkPulse.intensitySpread > 0 ? (
           <p className="text-[10px] opacity-75" data-testid="nr-dash-link-pulse-span">
             Link pulse span {linkPulse.intensitySpread} · min {linkPulse.minBlend} · max {linkPulse.maxBlend} ·{' '}
             {linkPulse.linkCount} links
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const linkAsym = nrDashBuildLinkPulseAsymmetry(stressedLinks, baseNodes);
+        return linkAsym && linkAsym.maxEndpointDelta > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-link-pulse-asymmetry">
+            Link pulse asymmetry μΔ {linkAsym.meanEndpointDelta} · peak {linkAsym.maxEndpointDelta} · {linkAsym.linkCount}{' '}
+            links
           </p>
         ) : null;
       })()}
