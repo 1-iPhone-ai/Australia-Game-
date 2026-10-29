@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '1.6.0';
+export const O10M_AGENT21_MODULE_VERSION = '1.7.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -2033,6 +2033,336 @@ export function runAg21ReliabilityGatesSelfChecks(): { id: string; passed: boole
   return out;
 }
 
+// --- bundled from forecast-horizon-volatility.ts ---
+/**
+ * Agent 21 — multi-horizon ladder volatility (step-to-step spread, read-only).
+ */
+
+
+export interface Ag21HorizonVolatilityMetric {
+  metric: 'cash' | 'debt';
+  stepCount: number;
+  meanStepDelta: number;
+  maxStepDeltaPct: number;
+  volatilityIndex: number;
+}
+
+export interface Ag21HorizonVolatilityReport {
+  baselineFingerprint: string;
+  metrics: Ag21HorizonVolatilityMetric[];
+  compositeVolatility: number;
+  stabilityTone: 'steady' | 'wobbly' | 'chaotic';
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritativeMutationDetected: boolean;
+}
+
+function ag21StepDeltas(values: number[]): number[] {
+  const deltas: number[] = [];
+  for (let i = 1; i < values.length; i++) {
+    deltas.push(Math.abs(values[i] - values[i - 1]));
+  }
+  return deltas;
+}
+
+function ag21VolatilityIndex(deltas: number[], baseline: number): number {
+  if (!deltas.length) return 0;
+  const mean = deltas.reduce((s, d) => s + d, 0) / deltas.length;
+  const denom = Math.max(1, Math.abs(baseline));
+  return Math.min(1, (mean / denom) * 0.85 + (Math.max(...deltas) / denom) * 0.15);
+}
+
+function ag21ToneFromComposite(v: number): Ag21HorizonVolatilityReport['stabilityTone'] {
+  if (v <= 0.22) return 'steady';
+  if (v <= 0.48) return 'wobbly';
+  return 'chaotic';
+}
+
+function ag21BandFromComposite(v: number): Ag21UncertaintyBand {
+  if (v > 0.52) return 'high';
+  if (v > 0.28) return 'moderate';
+  return 'low';
+}
+
+/** Measure ladder step volatility for cash/debt (isolated multi-horizon projection). */
+export function measureAg21HorizonVolatility(ctx: Ag21ForecastContext): Ag21HorizonVolatilityReport {
+  const subject: Ag21ForecastContext = { ...ctx, nationalPriorityMomentum: ctx.nationalPriorityMomentum ?? 'stable' };
+  const baselineFingerprint = ag21FingerprintSnapshot(subject);
+
+  const iso = ag21VerifyIsolatedExperiment(subject, copy => {
+    const ladder = buildAg21MultiHorizonProjection(copy);
+    const cashSeries = ladder.steps.map(s => s.projectedCash);
+    const debtSeries = ladder.steps.map(s => s.projectedDebt);
+
+    const buildMetric = (metric: 'cash' | 'debt', series: number[]): Ag21HorizonVolatilityMetric => {
+      const deltas = ag21StepDeltas(series);
+      const baseline = series[0] ?? copy.actorCash;
+      const meanStepDelta = deltas.length ? deltas.reduce((s, d) => s + d, 0) / deltas.length : 0;
+      const maxStepDeltaPct = deltas.length
+        ? Math.max(...deltas) / Math.max(1, Math.abs(baseline))
+        : 0;
+      return {
+        metric,
+        stepCount: series.length,
+        meanStepDelta,
+        maxStepDeltaPct,
+        volatilityIndex: ag21VolatilityIndex(deltas, baseline)
+      };
+    };
+
+    const metrics = [
+      buildMetric('cash', cashSeries),
+      buildMetric('debt', debtSeries)
+    ];
+    const compositeVolatility =
+      metrics.reduce((sum, m) => sum + m.volatilityIndex, 0) / Math.max(1, metrics.length);
+
+    return { metrics, compositeVolatility };
+  });
+
+  const payload = iso.result as { metrics: Ag21HorizonVolatilityMetric[]; compositeVolatility: number };
+  const tone = ag21ToneFromComposite(payload.compositeVolatility);
+
+  return {
+    baselineFingerprint,
+    metrics: payload.metrics,
+    compositeVolatility: payload.compositeVolatility,
+    stabilityTone: tone,
+    overallUncertainty: ag21LabelUncertainty(ag21BandFromComposite(payload.compositeVolatility), [`tone=${tone}`]),
+    authoritativeMutationDetected: baselineFingerprint !== ag21FingerprintSnapshot(subject)
+  };
+}
+
+export function runAg21HorizonVolatilitySelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 11, seed: 22, actorCash: 940, actorDebt: 55, regionsControlled: 4 };
+  const before = ag21FingerprintSnapshot(ctx);
+  const report = measureAg21HorizonVolatility(ctx);
+
+  push('vol_metrics', report.metrics.length === 2, String(report.metrics.length));
+  push('vol_composite_range', report.compositeVolatility >= 0 && report.compositeVolatility <= 1, String(report.compositeVolatility));
+  push('vol_no_mutation', before === ag21FingerprintSnapshot(ctx), 'fp');
+  push('vol_tone', ['steady', 'wobbly', 'chaotic'].includes(report.stabilityTone), report.stabilityTone);
+
+  return out;
+}
+
+// --- bundled from forecast-lever-attribution.ts ---
+/**
+ * Agent 21 — sensitivity lever attribution (share of ensemble spread, read-only).
+ */
+
+
+export interface Ag21LeverAttributionRow {
+  lever: string;
+  attributedShare: number;
+  sensitivityScore: number;
+  uncertainty: Ag21UncertaintyBand;
+}
+
+export interface Ag21LeverAttributionReport {
+  baselineFingerprint: string;
+  ensembleDispersion: number;
+  rows: Ag21LeverAttributionRow[];
+  topLever: string | null;
+  concentrationIndex: number;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritativeMutationDetected: boolean;
+}
+
+function ag21BandFromConcentration(c: number): Ag21UncertaintyBand {
+  if (c > 0.72) return 'high';
+  if (c > 0.45) return 'moderate';
+  return 'low';
+}
+
+/** Attribute ensemble dispersion to policy sensitivity levers (lab-only). */
+export function buildAg21LeverAttributionReport(ctx: Ag21ForecastContext): Ag21LeverAttributionReport {
+  const subject: Ag21ForecastContext = { ...ctx, nationalPriorityMomentum: ctx.nationalPriorityMomentum ?? 'stable' };
+  const baselineFingerprint = ag21FingerprintSnapshot(subject);
+
+  const iso = ag21VerifyIsolatedExperiment(subject, copy => {
+    const ensemble = buildAg21EnsembleProjection(copy);
+    const sweep = runAg21PolicySensitivitySweep(copy);
+    const totalSensitivity = sweep.rows.reduce((sum, r) => sum + r.sensitivityScore, 0) || 1;
+
+    const byLever = new Map<string, { score: number; band: Ag21UncertaintyBand }>();
+    for (const row of sweep.rows) {
+      const prev = byLever.get(row.lever) ?? { score: 0, band: row.uncertainty };
+      byLever.set(row.lever, {
+        score: prev.score + row.sensitivityScore,
+        band: row.uncertainty === 'high' || prev.band === 'high' ? 'high' : row.uncertainty
+      });
+    }
+
+    const rows: Ag21LeverAttributionRow[] = [...byLever.entries()]
+      .map(([lever, agg]) => ({
+        lever,
+        sensitivityScore: agg.score,
+        attributedShare: agg.score / totalSensitivity,
+        uncertainty: agg.band
+      }))
+      .sort((a, b) => b.attributedShare - a.attributedShare);
+
+    const top = rows[0] ?? null;
+    const concentrationIndex = top ? top.attributedShare : 0;
+
+    return {
+      ensembleDispersion: ensemble.dispersion,
+      rows,
+      topLever: top?.lever ?? null,
+      concentrationIndex
+    };
+  });
+
+  const payload = iso.result as {
+    ensembleDispersion: number;
+    rows: Ag21LeverAttributionRow[];
+    topLever: string | null;
+    concentrationIndex: number;
+  };
+
+  return {
+    baselineFingerprint,
+    ensembleDispersion: payload.ensembleDispersion,
+    rows: payload.rows,
+    topLever: payload.topLever,
+    concentrationIndex: payload.concentrationIndex,
+    overallUncertainty: ag21LabelUncertainty(ag21BandFromConcentration(payload.concentrationIndex), [
+      `top=${payload.topLever ?? 'none'}`
+    ]),
+    authoritativeMutationDetected: baselineFingerprint !== ag21FingerprintSnapshot(subject)
+  };
+}
+
+export function runAg21LeverAttributionSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 7, seed: 44, actorCash: 720, actorDebt: 110, regionsControlled: 2 };
+  const report = buildAg21LeverAttributionReport(ctx);
+
+  push('attrib_rows', report.rows.length >= 3, String(report.rows.length));
+  push('attrib_share_sum', report.rows.reduce((s, r) => s + r.attributedShare, 0) > 0.95, String(report.rows.length));
+  push('attrib_dispersion', report.ensembleDispersion >= 0, String(report.ensembleDispersion));
+  push('attrib_top', report.topLever !== null, report.topLever ?? 'none');
+
+  return out;
+}
+
+// --- bundled from forecast-surfacing-scorecard.ts ---
+/**
+ * Agent 21 — player surfacing scorecard (gates + backtest + regret composite, read-only).
+ */
+
+
+export interface Ag21SurfacingScorecard {
+  readinessScore: number;
+  tier: 'green' | 'amber' | 'red';
+  gatePassRatio: number;
+  backtestTone: ReturnType<typeof runAg21EnsembleResidualBacktest>['calibrationTone'];
+  regretSpread: number;
+  horizonStability: ReturnType<typeof measureAg21HorizonVolatility>['stabilityTone'];
+  playerGuidance: 'surface_brief' | 'surface_with_caveats' | 'suppress';
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+function ag21TierFromScore(score: number): Ag21SurfacingScorecard['tier'] {
+  if (score >= 72) return 'green';
+  if (score >= 45) return 'amber';
+  return 'red';
+}
+
+function ag21GuidanceFromTier(tier: Ag21SurfacingScorecard['tier']): Ag21SurfacingScorecard['playerGuidance'] {
+  if (tier === 'green') return 'surface_brief';
+  if (tier === 'amber') return 'surface_with_caveats';
+  return 'suppress';
+}
+
+function ag21BandFromTier(tier: Ag21SurfacingScorecard['tier']): Ag21UncertaintyBand {
+  if (tier === 'green') return 'low';
+  if (tier === 'amber') return 'moderate';
+  return 'high';
+}
+
+function ag21ToneScore(tone: Ag21SurfacingScorecard['backtestTone']): number {
+  if (tone === 'tight') return 28;
+  if (tone === 'balanced') return 18;
+  return 8;
+}
+
+function ag21StabilityScore(tone: Ag21SurfacingScorecard['horizonStability']): number {
+  if (tone === 'steady') return 22;
+  if (tone === 'wobbly') return 12;
+  return 4;
+}
+
+/** Composite scorecard for whether lab outputs may surface to players (non-authoritative). */
+export function buildAg21SurfacingScorecard(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21SurfacingScorecard {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.8),
+      actorDebt: baseCtx.actorDebt + 120
+    } satisfies Ag21ForecastContext);
+
+  const gates = evaluateAg21ReliabilityGates(baseCtx, candidate);
+  const backtest = runAg21EnsembleResidualBacktest(baseCtx);
+  const regret = rankAg21PolicyRegret(baseCtx);
+  const volatility = measureAg21HorizonVolatility(baseCtx);
+
+  const gatePassRatio = gates.passCount / Math.max(1, gates.gates.length);
+  const regretSpread =
+    regret.rows.length >= 2
+      ? Math.abs(regret.rows[regret.rows.length - 1].regretScore - regret.rows[0].regretScore)
+      : 0;
+
+  const readinessScore = Math.min(
+    100,
+    Math.round(
+      gatePassRatio * 40 +
+        ag21ToneScore(backtest.calibrationTone) +
+        ag21StabilityScore(volatility.stabilityTone) +
+        Math.max(0, 10 - regretSpread * 12)
+    )
+  );
+
+  const tier = ag21TierFromScore(readinessScore);
+
+  return {
+    readinessScore,
+    tier,
+    gatePassRatio,
+    backtestTone: backtest.calibrationTone,
+    regretSpread,
+    horizonStability: volatility.stabilityTone,
+    playerGuidance: ag21GuidanceFromTier(tier),
+    overallUncertainty: ag21LabelUncertainty(ag21BandFromTier(tier), [`score=${readinessScore}`]),
+    authoritative: false
+  };
+}
+
+export function runAg21SurfacingScorecardSelfChecks(): { id: string; passed: boolean; detail: string }[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 10, seed: 19, actorCash: 1050, actorDebt: 65, regionsControlled: 3 };
+  const card = buildAg21SurfacingScorecard(ctx);
+
+  push('score_range', card.readinessScore >= 0 && card.readinessScore <= 100, String(card.readinessScore));
+  push('score_tier', ['green', 'amber', 'red'].includes(card.tier), card.tier);
+  push('score_guidance', ['surface_brief', 'surface_with_caveats', 'suppress'].includes(card.playerGuidance), card.playerGuidance);
+  push('score_non_auth', card.authoritative === false, String(card.readinessScore));
+
+  return out;
+}
+
 // --- bundled from scenario-comparison-ui.tsx ---
 /**
  * Agent 21 — scenario comparison UI fragment (non-authoritative lab review).
@@ -2352,6 +2682,41 @@ export const Ag21ForecastRound4Console: React.FC<{ seed?: number }> = ({ seed = 
   );
 };
 
+// --- bundled from forecast-round5-console.tsx ---
+/**
+ * Agent 21 — scale wave round 5 console (volatility + attribution + surfacing scorecard).
+ */
+
+
+export const Ag21ForecastRound5Console: React.FC<{ seed?: number }> = ({ seed = 41 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 15 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.78), actorDebt: base.actorDebt + 200 }),
+    [base]
+  );
+
+  const volatility = useMemo(() => measureAg21HorizonVolatility(base), [base]);
+  const attribution = useMemo(() => buildAg21LeverAttributionReport(base), [base]);
+  const scorecard = useMemo(() => buildAg21SurfacingScorecard(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-emerald-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round5-console">
+      <div className="font-bold text-emerald-200">
+        🔬 Forecast Lab Round 5 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round5-volatility">
+        Volatility · {volatility.stabilityTone} · index {volatility.compositeVolatility.toFixed(2)}
+      </div>
+      <div data-testid="ag21-round5-attribution">
+        Attribution · top {attribution.topLever ?? 'none'} · concentration {attribution.concentrationIndex.toFixed(2)}
+      </div>
+      <div data-testid="ag21-round5-scorecard">
+        Scorecard · {scorecard.readinessScore}/100 · tier {scorecard.tier} · {scorecard.playerGuidance}
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -2395,6 +2760,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21ReliabilityGatesSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21HorizonVolatilitySelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LeverAttributionSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21SurfacingScorecardSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({

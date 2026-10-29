@@ -27,11 +27,15 @@ const SOURCE_FILES = [
   'operation-10m/agent-21-forecasting/forecast-residual-backtest.ts',
   'operation-10m/agent-21-forecasting/forecast-policy-regret.ts',
   'operation-10m/agent-21-forecasting/forecast-reliability-gates.ts',
+  'operation-10m/agent-21-forecasting/forecast-horizon-volatility.ts',
+  'operation-10m/agent-21-forecasting/forecast-lever-attribution.ts',
+  'operation-10m/agent-21-forecasting/forecast-surfacing-scorecard.ts',
   'operation-10m/agent-21-forecasting/scenario-comparison-ui.tsx',
   'operation-10m/agent-21-forecasting/forecast-depth-panel.tsx',
   'operation-10m/agent-21-forecasting/forecast-round2-console.tsx',
   'operation-10m/agent-21-forecasting/forecast-round3-console.tsx',
-  'operation-10m/agent-21-forecasting/forecast-round4-console.tsx'
+  'operation-10m/agent-21-forecasting/forecast-round4-console.tsx',
+  'operation-10m/agent-21-forecasting/forecast-round5-console.tsx'
 ];
 
 function stripModuleImports(src) {
@@ -96,6 +100,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21ReliabilityGatesSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21HorizonVolatilitySelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LeverAttributionSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21SurfacingScorecardSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({
