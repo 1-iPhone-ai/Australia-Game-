@@ -1,0 +1,24 @@
+{
+  "name": "australia-game",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "test:integration": "node scripts/run-o111-integration-tests.mjs",
+    "test:integration:gate-b2": "node scripts/run-o111-integration-gate.mjs b2",
+    "test:integration:gate-final": "node scripts/run-o111-integration-gate.mjs final"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "5.2.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.7"
+  }
+}
