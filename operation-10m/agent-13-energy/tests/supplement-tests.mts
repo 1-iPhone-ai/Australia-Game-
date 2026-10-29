@@ -13,6 +13,7 @@ import { runV1014RegionalGridClimateScaleSelfTests } from '../modules/regional-g
 import { runAgent13StoragePermitScaleSelfTests } from '../modules/storage-permit-lifecycle.ts';
 import { runAgent13EmissionsWaterScaleSelfTests } from '../modules/emissions-water-credit-ledger.ts';
 import { runAgent13BiodiversityCircularScaleSelfTests } from '../modules/biodiversity-circular-recovery-ledger.ts';
+import { runAgent13HydrogenMineralsScaleSelfTests } from '../modules/hydrogen-critical-minerals-ledger.ts';
 import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
@@ -133,6 +134,9 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const biodiversityCircular = runAgent13BiodiversityCircularScaleSelfTests();
   ok(biodiversityCircular.failed === 0 && biodiversityCircular.passed >= 5);
+
+  const hydrogenMinerals = runAgent13HydrogenMineralsScaleSelfTests();
+  ok(hydrogenMinerals.failed === 0 && hydrogenMinerals.passed >= 5);
 
   return { passed, failed, total: passed + failed };
 }

@@ -44,6 +44,12 @@ import {
   type V1014RegionalCircularLedger,
 } from './biodiversity-circular-recovery-ledger';
 import {
+  advanceRegionalMineralsSupply,
+  computeRegionalHydrogenLedger,
+  type V1014RegionalHydrogenLedger,
+  type V1014RegionalMineralsLedger,
+} from './hydrogen-critical-minerals-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25516,6 +25522,10 @@ export interface V1014RegionalEnergyProfile {
   landStewardshipRelief: number;
   circularRecoveryBand: string;
   circularRecoveryRelief: number;
+  hydrogenExportBand: string;
+  hydrogenGridRelief: number;
+  mineralsSecurityBand: string;
+  mineralsSupplyRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25560,6 +25570,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalWaterLedgers: Record<string, V1014RegionalWaterLedger>;
   regionalBiodiversityLedgers: Record<string, V1014RegionalBiodiversityLedger>;
   regionalCircularLedgers: Record<string, V1014RegionalCircularLedger>;
+  regionalHydrogenLedgers: Record<string, V1014RegionalHydrogenLedger>;
+  regionalMineralsLedgers: Record<string, V1014RegionalMineralsLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25575,6 +25587,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalWaterMemory: Record<string, { allocationUsed: number }>;
   regionalBiodiversityMemory: Record<string, { offsetBalance: number; stewardshipIndex: number }>;
   regionalCircularMemory: Record<string, { recoveryIndex: number }>;
+  regionalHydrogenMemory: Record<string, { electrolyserBalance: number; exportIndex: number }>;
+  regionalMineralsMemory: Record<string, { securityIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25602,6 +25616,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalWaterMemory: {},
     regionalBiodiversityMemory: {},
     regionalCircularMemory: {},
+    regionalHydrogenMemory: {},
+    regionalMineralsMemory: {},
     history: [],
   };
 }
@@ -25622,6 +25638,8 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
     regionalBiodiversityMemory:
       typeof raw.regionalBiodiversityMemory === 'object' && raw.regionalBiodiversityMemory ? raw.regionalBiodiversityMemory : {},
     regionalCircularMemory: typeof raw.regionalCircularMemory === 'object' && raw.regionalCircularMemory ? raw.regionalCircularMemory : {},
+    regionalHydrogenMemory: typeof raw.regionalHydrogenMemory === 'object' && raw.regionalHydrogenMemory ? raw.regionalHydrogenMemory : {},
+    regionalMineralsMemory: typeof raw.regionalMineralsMemory === 'object' && raw.regionalMineralsMemory ? raw.regionalMineralsMemory : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -25736,6 +25754,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalWaterLedgers: {},
       regionalBiodiversityLedgers: {},
       regionalCircularLedgers: {},
+      regionalHydrogenLedgers: {},
+      regionalMineralsLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -25754,6 +25774,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const waterLedgers: Record<string, V1014RegionalWaterLedger> = {};
   const biodiversityLedgers: Record<string, V1014RegionalBiodiversityLedger> = {};
   const circularLedgers: Record<string, V1014RegionalCircularLedger> = {};
+  const hydrogenLedgers: Record<string, V1014RegionalHydrogenLedger> = {};
+  const mineralsLedgers: Record<string, V1014RegionalMineralsLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -25763,6 +25785,10 @@ export function computeIndustrialEnergyEnvironmentalState(
     ...persisted.regionalBiodiversityMemory,
   };
   const nextCircularMemory: Record<string, { recoveryIndex: number }> = { ...persisted.regionalCircularMemory };
+  const nextHydrogenMemory: Record<string, { electrolyserBalance: number; exportIndex: number }> = {
+    ...persisted.regionalHydrogenMemory,
+  };
+  const nextMineralsMemory: Record<string, { securityIndex: number }> = { ...persisted.regionalMineralsMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -25881,6 +25907,28 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextCircularMemory[regionId] = circularStep.next;
     circularLedgers[regionId] = circularStep.ledger;
 
+    const hydrogenStep = computeRegionalHydrogenLedger({
+      regionId,
+      renewableShareScore,
+      gridStressPoints: gridStress.stressPoints,
+      circularRecoveryRelief: circularStep.ledger.circularRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextHydrogenMemory[regionId] || null,
+    });
+    nextHydrogenMemory[regionId] = hydrogenStep.next;
+    hydrogenLedgers[regionId] = hydrogenStep.ledger;
+
+    const mineralsStep = advanceRegionalMineralsSupply({
+      regionId,
+      extractionScore,
+      miningIndustryStrength: miningStr,
+      hydrogenBand: hydrogenStep.ledger.band,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextMineralsMemory[regionId] || null,
+    });
+    nextMineralsMemory[regionId] = mineralsStep.next;
+    mineralsLedgers[regionId] = mineralsStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -25894,6 +25942,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= emissionsStep.ledger.pressureRelief;
     pressure -= biodiversityStep.ledger.landStewardshipRelief;
     pressure -= circularStep.ledger.circularRelief;
+    pressure -= hydrogenStep.ledger.hydrogenGridRelief;
+    pressure -= mineralsStep.ledger.mineralsSupplyRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -25932,6 +25982,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       waterStep.ledger.summary,
       biodiversityStep.ledger.summary,
       circularStep.ledger.summary,
+      hydrogenStep.ledger.summary,
+      mineralsStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26024,6 +26076,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       landStewardshipRelief: biodiversityStep.ledger.landStewardshipRelief,
       circularRecoveryBand: circularStep.ledger.band,
       circularRecoveryRelief: circularStep.ledger.circularRelief,
+      hydrogenExportBand: hydrogenStep.ledger.band,
+      hydrogenGridRelief: hydrogenStep.ledger.hydrogenGridRelief,
+      mineralsSecurityBand: mineralsStep.ledger.band,
+      mineralsSupplyRelief: mineralsStep.ledger.mineralsSupplyRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -26097,6 +26153,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalWaterLedgers: waterLedgers,
     regionalBiodiversityLedgers: biodiversityLedgers,
     regionalCircularLedgers: circularLedgers,
+    regionalHydrogenLedgers: hydrogenLedgers,
+    regionalMineralsLedgers: mineralsLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -26112,6 +26170,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalWaterMemory: nextWaterMemory,
     regionalBiodiversityMemory: nextBiodiversityMemory,
     regionalCircularMemory: nextCircularMemory,
+    regionalHydrogenMemory: nextHydrogenMemory,
+    regionalMineralsMemory: nextMineralsMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -26295,6 +26355,29 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     'BIODIVERSITY memory persisted',
     !!rc5.persisted.regionalBiodiversityMemory.WA,
     String(rc5.persisted.regionalBiodiversityMemory.WA?.offsetBalance),
+  );
+
+  const h2Inp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'green_hydrogen_hub',
+      'ammonia_export_terminal',
+      'lithium_processing',
+      'nickel_processing',
+      'hydrogen_industrial_heat',
+    ],
+  };
+  const rh6 = computeIndustrialEnergyEnvironmentalState(h2Inp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check('HYDROGEN ledger tracked', !!rh6.state.regionalHydrogenLedgers.SA?.band, rh6.state.regionalHydrogenLedgers.SA?.band || '');
+  check(
+    'MINERALS supply relief',
+    (rh6.state.regions.WA?.mineralsSupplyRelief || 0) > 0,
+    String(rh6.state.regions.WA?.mineralsSupplyRelief),
+  );
+  check(
+    'HYDROGEN memory persisted',
+    !!rh6.persisted.regionalHydrogenMemory.SA,
+    String(rh6.persisted.regionalHydrogenMemory.SA?.exportIndex),
   );
 
   for (let i = 0; i < 40; i++) {
