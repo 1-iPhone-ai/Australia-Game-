@@ -186,6 +186,10 @@ import { op10mA11ComputeRegionalCollapseOmniSingularityPanpsychism } from './reg
 import { op10mA11ComputeInterregionalVoidTotalErosionAttenuation } from './interregional-void-total-erosion-attenuation.ts';
 import { op10mA11ComputeSettlementExistentialAbsoluteNullityConsecration } from './settlement-existential-absolute-nullity-consecration.ts';
 
+import { op10mA11ComputeRegionalCollapseOmniSingularityPantheosis } from './regional-collapse-omni-singularity-pantheosis.ts';
+import { op10mA11ComputeInterregionalVoidTotalErosionEvaporation } from './interregional-void-total-erosion-evaporation.ts';
+import { op10mA11ComputeSettlementExistentialAbsoluteNullityGlorification } from './settlement-existential-absolute-nullity-glorification.ts';
+
 import { op10mA11ComputeRegionalCollapseOmniSingularityPanidealism } from './regional-collapse-omni-singularity-panidealism.ts';
 import { op10mA11ComputeInterregionalVoidTotalErosionDissipation } from './interregional-void-total-erosion-dissipation.ts';
 import { op10mA11ComputeSettlementExistentialAbsoluteNullityBeatification } from './settlement-existential-absolute-nullity-beatification.ts';
@@ -517,7 +521,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.48',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.49',
     composite.state.schemaVersion,
   );
 
@@ -3857,6 +3861,33 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(out, 'a11_435', composite.persisted.lastVoidTotalErosionDissipationIndex === composite.state.nationalVoidTotalErosionDissipationIndex, `persisted dissipation ${composite.persisted.lastVoidTotalErosionDissipationIndex}`);
   push(out, 'a11_436', composite.derived.some((d) => d.kind === 'existential_absolute_nullity_beatification') || composite.state.existentialAbsoluteNullityBeatification.some((c) => c.band === 'absolute' || c.band === 'total_beatification'), composite.state.existentialAbsoluteNullityBeatification[0]?.band ?? 'none');
   push(out, 'a11_437', composite.state.existentialAbsoluteNullityBeatification.every((c) => c.narrative.includes('existential absolute nullity beatification')), composite.state.existentialAbsoluteNullityBeatification[0]?.band ?? 'none');
+  const collapseOmniSingularityPantheosis = op10mA11ComputeRegionalCollapseOmniSingularityPantheosis({
+    collapseOmniSingularityPanidealism: composite.state.collapseOmniSingularityPanidealism,
+    voidTotalErosionDissipation: composite.state.voidTotalErosionDissipation,
+    existentialAbsoluteNullityBeatification: composite.state.existentialAbsoluteNullityBeatification,
+  });
+  push(out, 'a11_438', composite.state.collapseOmniSingularityPantheosis.length === 8 && composite.state.nationalCollapseOmniSingularityPantheosisIndex === collapseOmniSingularityPantheosis.nationalIndex, `omni pantheosis ${composite.state.nationalCollapseOmniSingularityPantheosisIndex}`);
+
+  const voidTotalErosionEvaporation = op10mA11ComputeInterregionalVoidTotalErosionEvaporation({
+    voidTotalErosionDissipation: composite.state.voidTotalErosionDissipation,
+    collapseOmniSingularityPanidealism: composite.state.collapseOmniSingularityPanidealism,
+    voidExistenceAnnihilationFront: composite.state.voidExistenceAnnihilationFront,
+  });
+  push(out, 'a11_439', composite.state.voidTotalErosionEvaporation.length === 8 && composite.state.nationalVoidTotalErosionEvaporationIndex === voidTotalErosionEvaporation.nationalIndex, `erosion evaporation ${composite.state.nationalVoidTotalErosionEvaporationIndex}`);
+
+  const existentialAbsoluteNullityGlorification = op10mA11ComputeSettlementExistentialAbsoluteNullityGlorification({
+    existentialAbsoluteNullityBeatification: composite.state.existentialAbsoluteNullityBeatification,
+    collapseOmniSingularityPanidealism: composite.state.collapseOmniSingularityPanidealism,
+    existentialFinalNullitySentence: composite.state.existentialFinalNullitySentence,
+  });
+  push(out, 'a11_440', composite.state.existentialAbsoluteNullityGlorification.length === 8 && composite.state.nationalExistentialAbsoluteNullityGlorificationIndex === existentialAbsoluteNullityGlorification.nationalIndex, `nullity glorification ${composite.state.nationalExistentialAbsoluteNullityGlorificationIndex}`);
+
+  push(out, 'a11_441', composite.state.collapseOmniSingularityPantheosis.every((p) => p.narrative.includes('collapse omni singularity pantheosis')), composite.state.collapseOmniSingularityPantheosis[0]?.band ?? 'none');
+  push(out, 'a11_442', composite.derived.some((d) => d.kind === 'collapse_omni_singularity_pantheosis') || composite.state.collapseOmniSingularityPantheosis.some((p) => p.band === 'total' || p.band === 'pantheosis'), composite.derived.map((d) => d.kind).join(', '));
+  push(out, 'a11_443', composite.derived.some((d) => d.kind === 'void_total_erosion_evaporation') || composite.state.voidTotalErosionEvaporation.some((e) => e.band === 'total' || e.band === 'complete_evaporation'), composite.state.voidTotalErosionEvaporation[0]?.band ?? 'none');
+  push(out, 'a11_444', composite.persisted.lastVoidTotalErosionEvaporationIndex === composite.state.nationalVoidTotalErosionEvaporationIndex, `persisted evaporation ${composite.persisted.lastVoidTotalErosionEvaporationIndex}`);
+  push(out, 'a11_445', composite.derived.some((d) => d.kind === 'existential_absolute_nullity_glorification') || composite.state.existentialAbsoluteNullityGlorification.some((c) => c.band === 'absolute' || c.band === 'total_glorification'), composite.state.existentialAbsoluteNullityGlorification[0]?.band ?? 'none');
+  push(out, 'a11_446', composite.state.existentialAbsoluteNullityGlorification.every((c) => c.narrative.includes('existential absolute nullity glorification')), composite.state.existentialAbsoluteNullityGlorification[0]?.band ?? 'none');
 
   return out;
 }

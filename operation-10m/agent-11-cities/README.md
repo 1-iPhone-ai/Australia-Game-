@@ -2,6 +2,8 @@
 
 Urban growth balance, regional inequality metrics, and national–local spillover links. Standalone TypeScript until Agent 25 assembly into V9.4.
 
+**Scale wave round 50 (O10-231):** regional collapse omni singularity pantheosis, interregional void total erosion evaporation, settlement existential absolute nullity glorification (schema `10m.a11.composite.49`).
+
 **Scale wave round 49 (O10-229):** regional collapse omni singularity panidealism, interregional void total erosion dissipation, settlement existential absolute nullity beatification (schema `10m.a11.composite.48`).
 
 **Scale wave round 46 (O10-223):** regional collapse omni singularity pantheism, interregional void total erosion exhaustion, settlement existential absolute nullity canonization (schema `10m.a11.composite.45`).
