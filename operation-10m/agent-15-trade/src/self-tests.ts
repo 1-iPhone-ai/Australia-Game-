@@ -340,6 +340,16 @@ import {
   bilateralScaleWaveReentryGateExportScale,
 } from './bilateral-scale-wave-reentry-gate.ts';
 import {
+  computeScaleWaveReentryContinuitySnapshot,
+  createEmptyScaleWaveReentryContinuitySnapshot,
+  scaleWaveReentryContinuityExportScale,
+} from './scale-wave-reentry-continuity.ts';
+import {
+  computeBilateralNextWavePrimingGateSnapshot,
+  createEmptyBilateralNextWavePrimingGateSnapshot,
+  bilateralNextWavePrimingGateExportScale,
+} from './bilateral-next-wave-priming-gate.ts';
+import {
   computeBilateralTradeWindowContinuitySnapshot,
   createEmptyBilateralTradeWindowContinuitySnapshot,
 } from './bilateral-trade-window-continuity.ts';
@@ -2290,6 +2300,54 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralScaleLoopSealGateExportScale(sealed) >= bilateralScaleLoopSealGateExportScale(open),
       'expected loop seal scale lift',
+    );
+  });
+
+  ok('sealed scale loop continuity improves when loop seal gate is sealed', () => {
+    const seal = {
+      ...createEmptyBilateralScaleLoopSealGateSnapshot(),
+      score: 0.95,
+      band: 'sealed' as const,
+    };
+    const handoff = { ...createEmptyPreparedArcHandoffContinuitySnapshot(), score: 0.93, band: 'locked' as const };
+    const anchored = computeSealedScaleLoopContinuitySnapshot({
+      bilateralScaleLoopSealGate: seal,
+      preparedArcHandoffContinuity: handoff,
+      persisted: { ...createEmptyGTELPersisted(), sealedScaleLoopContinuitySmoothing: 0.97 },
+    }).snapshot;
+    const broken = computeSealedScaleLoopContinuitySnapshot({
+      bilateralScaleLoopSealGate: { ...seal, score: 0.1, band: 'open' },
+      preparedArcHandoffContinuity: { ...handoff, score: 0.08, band: 'broken' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(anchored.score > broken.score, 'expected anchored sealed loop continuity');
+    gtelAssert(
+      sealedScaleLoopContinuityExportScale(anchored) >= sealedScaleLoopContinuityExportScale(broken),
+      'expected sealed loop continuity scale lift',
+    );
+  });
+
+  ok('bilateral scale wave reentry gate improves when sealed continuity is anchored', () => {
+    const sealed = {
+      ...createEmptySealedScaleLoopContinuitySnapshot(),
+      score: 0.96,
+      band: 'anchored' as const,
+    };
+    const reentry = { ...createEmptyBilateralCycleReentryGateSnapshot(), score: 0.91, band: 'entered' as const };
+    const reentered = computeBilateralScaleWaveReentryGateSnapshot({
+      sealedScaleLoopContinuity: sealed,
+      bilateralCycleReentryGate: reentry,
+      persisted: { ...createEmptyGTELPersisted(), bilateralScaleWaveReentryGateSmoothing: 0.99 },
+    }).snapshot;
+    const closed = computeBilateralScaleWaveReentryGateSnapshot({
+      sealedScaleLoopContinuity: { ...sealed, score: 0.11, band: 'broken' },
+      bilateralCycleReentryGate: { ...reentry, score: 0.08, band: 'denied' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(reentered.score > closed.score, 'expected wave reentry when anchored');
+    gtelAssert(
+      bilateralScaleWaveReentryGateExportScale(reentered) >= bilateralScaleWaveReentryGateExportScale(closed),
+      'expected wave reentry scale lift',
     );
   });
 

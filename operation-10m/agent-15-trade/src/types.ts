@@ -220,6 +220,8 @@ export interface GTELPersisted {
   bilateralScaleLoopSealGateSmoothing?: number;
   sealedScaleLoopContinuitySmoothing?: number;
   bilateralScaleWaveReentryGateSmoothing?: number;
+  scaleWaveReentryContinuitySmoothing?: number;
+  bilateralNextWavePrimingGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -309,6 +311,8 @@ export interface GTELState {
   bilateralScaleLoopSealGate: GTELBilateralScaleLoopSealGateSnapshot;
   sealedScaleLoopContinuity: GTELSealedScaleLoopContinuitySnapshot;
   bilateralScaleWaveReentryGate: GTELBilateralScaleWaveReentryGateSnapshot;
+  scaleWaveReentryContinuity: GTELScaleWaveReentryContinuitySnapshot;
+  bilateralNextWavePrimingGate: GTELBilateralNextWavePrimingGateSnapshot;
   inputHash: string;
 }
 
@@ -1193,6 +1197,26 @@ export interface GTELBilateralScaleWaveReentryGateSnapshot {
   band: GTELBilateralScaleWaveReentryGateBand;
   sealedContinuityFeed: number;
   cycleReentryLift: number;
+  summary: string;
+}
+
+export type GTELScaleWaveReentryContinuityBand = 'established' | 'linked' | 'fading' | 'lost';
+
+export interface GTELScaleWaveReentryContinuitySnapshot {
+  score: number;
+  band: GTELScaleWaveReentryContinuityBand;
+  reentrySupport: number;
+  sealedAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralNextWavePrimingGateBand = 'primed' | 'charging' | 'idle' | 'blocked';
+
+export interface GTELBilateralNextWavePrimingGateSnapshot {
+  score: number;
+  band: GTELBilateralNextWavePrimingGateBand;
+  reentryContinuityFeed: number;
+  renewalLift: number;
   summary: string;
 }
 
