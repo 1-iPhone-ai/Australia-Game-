@@ -28,6 +28,7 @@ import type {
   ResearchTrancheDryRunHandoffBandEvent,
   ResearchMergedIntegrationBaselineBandEvent,
   ResearchScaleWavePostIntegrationDryRunBandEvent,
+  ResearchScaleWaveIntegrationSealBandEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
@@ -72,6 +73,8 @@ import {
 import { RESEARCH_MERGED_INTEGRATION_BASELINE_BAND_LOG_CAP } from './merged-integration-baseline-band-log.ts';
 import { mergePostIntegrationDryRunSnapshots } from './post-integration-dry-run-snapshot.ts';
 import { RESEARCH_POST_INTEGRATION_DRY_RUN_BAND_LOG_CAP } from './post-integration-dry-run-band-log.ts';
+import { mergeIntegrationSealSnapshots } from './scale-wave-integration-seal-snapshot.ts';
+import { RESEARCH_INTEGRATION_SEAL_BAND_LOG_CAP } from './scale-wave-integration-seal-band-log.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -327,6 +330,18 @@ function mergePostIntegrationDryRunBandLogs(
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_POST_INTEGRATION_DRY_RUN_BAND_LOG_CAP);
 }
 
+function mergeIntegrationSealBandLogs(
+  local: ResearchScaleWaveIntegrationSealBandEvent[] | undefined,
+  remote: ResearchScaleWaveIntegrationSealBandEvent[] | undefined
+): ResearchScaleWaveIntegrationSealBandEvent[] {
+  const byKey = new Map<string, ResearchScaleWaveIntegrationSealBandEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.band}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_INTEGRATION_SEAL_BAND_LOG_CAP);
+}
+
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
   const { coreFingerprint, ...rest } = core;
   void coreFingerprint;
@@ -561,6 +576,15 @@ export function mergeResearchPersistedCores(
         local.postIntegrationDryRunSnapshot ?? undefined,
         remote.postIntegrationDryRunSnapshot ?? undefined
       ) ?? null,
+    integrationSealBandLog: mergeIntegrationSealBandLogs(
+      local.integrationSealBandLog,
+      remote.integrationSealBandLog
+    ),
+    integrationSealSnapshot:
+      mergeIntegrationSealSnapshots(
+        local.integrationSealSnapshot ?? undefined,
+        remote.integrationSealSnapshot ?? undefined
+      ) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -625,6 +649,8 @@ export function reconcileResearchProgressOnLoad(
         mergedIntegrationBaselineSnapshot: persist.mergedIntegrationBaselineSnapshot,
         postIntegrationDryRunBandLog: persist.postIntegrationDryRunBandLog,
         postIntegrationDryRunSnapshot: persist.postIntegrationDryRunSnapshot,
+        integrationSealBandLog: persist.integrationSealBandLog,
+        integrationSealSnapshot: persist.integrationSealSnapshot,
       },
       persist,
     };
@@ -681,6 +707,8 @@ export function reconcileResearchProgressOnLoad(
     mergedIntegrationBaselineSnapshot: mergedCore.mergedIntegrationBaselineSnapshot,
     postIntegrationDryRunBandLog: mergedCore.postIntegrationDryRunBandLog,
     postIntegrationDryRunSnapshot: mergedCore.postIntegrationDryRunSnapshot,
+    integrationSealBandLog: mergedCore.integrationSealBandLog,
+    integrationSealSnapshot: mergedCore.integrationSealSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -738,6 +766,8 @@ export function reconcileResearchProgressOnLoad(
       mergedIntegrationBaselineSnapshot: persist.mergedIntegrationBaselineSnapshot,
       postIntegrationDryRunBandLog: persist.postIntegrationDryRunBandLog,
       postIntegrationDryRunSnapshot: persist.postIntegrationDryRunSnapshot,
+      integrationSealBandLog: persist.integrationSealBandLog,
+      integrationSealSnapshot: persist.integrationSealSnapshot,
     },
     persist,
   };

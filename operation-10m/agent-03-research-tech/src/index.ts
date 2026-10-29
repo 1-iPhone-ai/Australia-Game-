@@ -73,4 +73,7 @@ export * from './scale-wave-post-integration-dry-run-outlook.ts';
 export * from './post-integration-dry-run-band-log.ts';
 export * from './post-integration-dry-run-snapshot.ts';
 export * from './scale-wave-integration-seal-outlook.ts';
+export * from './scale-wave-integration-seal-band-log.ts';
+export * from './scale-wave-integration-seal-snapshot.ts';
+export * from './scale-wave-post-seal-handoff-outlook.ts';
 export * from './compute.ts';
