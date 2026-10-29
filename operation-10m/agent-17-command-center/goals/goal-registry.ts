@@ -1154,6 +1154,30 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Revoked administrator or surrendered curatorship yields curatorAccordBlocksAdministrator.',
     severity: 'major',
   },
+  {
+    id: 'G17-163',
+    title: 'Superintendence index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'superintendenceIndex reports superintendenceScore 0–100 with empowered/provisional/dissolved band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-164',
+    title: 'Superintendent accord directives complete',
+    category: 'telemetry',
+    acceptance:
+      'superintendentAccord exposes ≥5 directives and superintendentScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-165',
+    title: 'Recused curator suspends superintendent accord',
+    category: 'integration',
+    acceptance:
+      'Recused curator or dissolved superintendence yields superintendentAccordBlocksCurator.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

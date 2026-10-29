@@ -279,6 +279,8 @@ export interface Agent17PlanningDepthSnapshot {
   administratorAccord: Agent17AdministratorAccordSnapshot;
   curatorshipIndex: Agent17CuratorshipIndexSnapshot;
   curatorAccord: Agent17CuratorAccordSnapshot;
+  superintendenceIndex: Agent17SuperintendenceIndexSnapshot;
+  superintendentAccord: Agent17SuperintendentAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1835,6 +1837,40 @@ export interface Agent17CuratorAccordSnapshot {
   curatorshipBand: Agent17CuratorshipIndexSnapshot['band'];
   administratorBand: Agent17AdministratorAccordSnapshot['band'];
   curatorInducted: boolean;
+  headline: string;
+}
+
+export interface Agent17SuperintendenceMandate {
+  id: string;
+  label: string;
+  empowered: boolean;
+  weight: number;
+}
+
+export interface Agent17SuperintendenceIndexSnapshot {
+  superintendenceScore: number;
+  band: 'empowered' | 'provisional' | 'dissolved';
+  mandates: Agent17SuperintendenceMandate[];
+  curatorBand: Agent17CuratorAccordSnapshot['band'];
+  curatorshipBand: Agent17CuratorshipIndexSnapshot['band'];
+  superintendenceEmpowered: boolean;
+  headline: string;
+}
+
+export interface Agent17SuperintendentDirective {
+  id: string;
+  label: string;
+  chartered: boolean;
+  weight: number;
+}
+
+export interface Agent17SuperintendentAccordSnapshot {
+  superintendentScore: number;
+  band: 'chartered' | 'acting' | 'suspended';
+  directives: Agent17SuperintendentDirective[];
+  superintendenceBand: Agent17SuperintendenceIndexSnapshot['band'];
+  curatorBand: Agent17CuratorAccordSnapshot['band'];
+  superintendentChartered: boolean;
   headline: string;
 }
 
@@ -13043,6 +13079,216 @@ export function curatorAccordBlocksAdministrator(
 }
 
 
+// --- source: planning/superintendence-index.ts ---
+  Agent17AdministratorAccordSnapshot,
+  Agent17CuratorAccordSnapshot,
+  Agent17CuratorshipIndexSnapshot,
+  Agent17SuperintendenceIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17SuperintendenceIndexInputs {
+  curatorAccord: Agent17CuratorAccordSnapshot;
+  curatorshipIndex: Agent17CuratorshipIndexSnapshot;
+  administratorAccord: Agent17AdministratorAccordSnapshot;
+}
+
+export function buildAgent17SuperintendenceIndex(
+  inputs: Agent17SuperintendenceIndexInputs
+): Agent17SuperintendenceIndexSnapshot {
+  const mandates: Agent17SuperintendenceIndexSnapshot['mandates'] = [];
+
+  mandates.push({
+    id: 'curator_inducted',
+    label: 'Curator accord curator-inducted',
+    empowered:
+      inputs.curatorAccord.curatorInducted &&
+      !curatorAccordBlocksAdministrator(inputs.curatorAccord),
+    weight: 30,
+  });
+
+  mandates.push({
+    id: 'curator_band',
+    label: 'Curator inducted or serving',
+    empowered:
+      inputs.curatorAccord.band === 'inducted' ||
+      inputs.curatorAccord.band === 'serving',
+    weight: 25,
+  });
+
+  mandates.push({
+    id: 'curatorship_entrusted',
+    label: 'Curatorship index curatorship-entrusted',
+    empowered:
+      inputs.curatorshipIndex.curatorshipEntrusted &&
+      !curatorshipIndexBlocksCurator(inputs.curatorshipIndex),
+    weight: 20,
+  });
+
+  mandates.push({
+    id: 'administrator_clear',
+    label: 'Administrator accord not blocking executor',
+    empowered: !administratorAccordBlocksExecutor(inputs.administratorAccord),
+    weight: 15,
+  });
+
+  mandates.push({
+    id: 'curatorship_score',
+    label: 'Curatorship score headroom',
+    empowered: inputs.curatorshipIndex.curatorshipScore >= 2,
+    weight: 10,
+  });
+
+  const weighted = mandates.reduce(
+    (n, m) => n + (m.empowered ? 100 : 1) * (m.weight / 100),
+    0
+  );
+  const totalWeight = mandates.reduce((n, m) => n + m.weight, 0);
+  const superintendenceScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const dissolvedSignals =
+    curatorAccordBlocksAdministrator(inputs.curatorAccord) ||
+    curatorshipIndexBlocksCurator(inputs.curatorshipIndex) ||
+    administratorAccordBlocksExecutor(inputs.administratorAccord);
+
+  const band: Agent17SuperintendenceIndexSnapshot['band'] = dissolvedSignals
+    ? 'dissolved'
+    : superintendenceScore >= 44 &&
+        inputs.curatorAccord.band === 'inducted' &&
+        inputs.curatorshipIndex.band === 'entrusted'
+      ? 'empowered'
+      : 'provisional';
+
+  const superintendenceEmpowered =
+    band === 'empowered' &&
+    inputs.curatorAccord.curatorInducted &&
+    !curatorAccordBlocksAdministrator(inputs.curatorAccord);
+
+  return {
+    superintendenceScore,
+    band,
+    mandates,
+    curatorBand: inputs.curatorAccord.band,
+    curatorshipBand: inputs.curatorshipIndex.band,
+    superintendenceEmpowered,
+    headline: `Superintendence ${band} (${superintendenceScore}/100) · ${mandates.filter(m => m.empowered).length}/${mandates.length} mandates`,
+  };
+}
+
+export function superintendenceIndexBlocksSuperintendent(
+  snapshot: Agent17SuperintendenceIndexSnapshot
+): boolean {
+  return snapshot.band === 'dissolved' || !snapshot.superintendenceEmpowered;
+}
+
+
+// --- source: planning/superintendent-accord.ts ---
+  Agent17CuratorAccordSnapshot,
+  Agent17CuratorshipIndexSnapshot,
+  Agent17SuperintendenceIndexSnapshot,
+  Agent17SuperintendentAccordSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17SuperintendentAccordInputs {
+  superintendenceIndex: Agent17SuperintendenceIndexSnapshot;
+  curatorAccord: Agent17CuratorAccordSnapshot;
+  curatorshipIndex: Agent17CuratorshipIndexSnapshot;
+}
+
+export function buildAgent17SuperintendentAccord(
+  inputs: Agent17SuperintendentAccordInputs
+): Agent17SuperintendentAccordSnapshot {
+  const directives: Agent17SuperintendentAccordSnapshot['directives'] = [];
+
+  directives.push({
+    id: 'superintendence_empowered',
+    label: 'Superintendence index superintendence-empowered',
+    chartered:
+      inputs.superintendenceIndex.superintendenceEmpowered &&
+      !superintendenceIndexBlocksSuperintendent(inputs.superintendenceIndex),
+    weight: 30,
+  });
+
+  directives.push({
+    id: 'superintendence_band',
+    label: 'Superintendence empowered or provisional',
+    chartered:
+      inputs.superintendenceIndex.band === 'empowered' ||
+      inputs.superintendenceIndex.band === 'provisional',
+    weight: 25,
+  });
+
+  directives.push({
+    id: 'curator_inducted',
+    label: 'Curator accord curator-ready',
+    chartered:
+      inputs.curatorAccord.curatorInducted &&
+      !curatorAccordBlocksAdministrator(inputs.curatorAccord),
+    weight: 20,
+  });
+
+  directives.push({
+    id: 'curatorship_clear',
+    label: 'Curatorship index not blocking curator',
+    chartered: !curatorshipIndexBlocksCurator(inputs.curatorshipIndex),
+    weight: 15,
+  });
+
+  directives.push({
+    id: 'superintendence_score',
+    label: 'Superintendence score headroom',
+    chartered: inputs.superintendenceIndex.superintendenceScore >= 2,
+    weight: 10,
+  });
+
+  const weighted = directives.reduce(
+    (n, d) => n + (d.chartered ? 100 : 1) * (d.weight / 100),
+    0
+  );
+  const totalWeight = directives.reduce((n, d) => n + d.weight, 0);
+  const superintendentScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const suspendedSignals =
+    superintendenceIndexBlocksSuperintendent(inputs.superintendenceIndex) ||
+    curatorAccordBlocksAdministrator(inputs.curatorAccord) ||
+    curatorshipIndexBlocksCurator(inputs.curatorshipIndex);
+
+  const band: Agent17SuperintendentAccordSnapshot['band'] = suspendedSignals
+    ? 'suspended'
+    : superintendentScore >= 41 &&
+        inputs.superintendenceIndex.band === 'empowered' &&
+        inputs.curatorAccord.band === 'inducted'
+      ? 'chartered'
+      : 'acting';
+
+  const superintendentChartered =
+    band === 'chartered' &&
+    inputs.superintendenceIndex.superintendenceEmpowered &&
+    !superintendenceIndexBlocksSuperintendent(inputs.superintendenceIndex);
+
+  return {
+    superintendentScore,
+    band,
+    directives,
+    superintendenceBand: inputs.superintendenceIndex.band,
+    curatorBand: inputs.curatorAccord.band,
+    superintendentChartered,
+    headline: `Superintendent ${band} (${superintendentScore}/100) · ${directives.filter(d => d.chartered).length}/${directives.length} directives`,
+  };
+}
+
+export function superintendentAccordBlocksCurator(
+  snapshot: Agent17SuperintendentAccordSnapshot
+): boolean {
+  return snapshot.band === 'suspended' || !snapshot.superintendentChartered;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -13622,6 +13868,16 @@ export function buildAgent17PlanningDepthSnapshot(
     administratorAccord,
     administrationIndex,
   });
+  const superintendenceIndex = buildAgent17SuperintendenceIndex({
+    curatorAccord,
+    curatorshipIndex,
+    administratorAccord,
+  });
+  const superintendentAccord = buildAgent17SuperintendentAccord({
+    superintendenceIndex,
+    curatorAccord,
+    curatorshipIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -13719,6 +13975,8 @@ export function buildAgent17PlanningDepthSnapshot(
     administratorAccord,
     curatorshipIndex,
     curatorAccord,
+    superintendenceIndex,
+    superintendentAccord,
   };
 }
 
@@ -15163,6 +15421,30 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Revoked administrator or surrendered curatorship yields curatorAccordBlocksAdministrator.',
     severity: 'major',
   },
+  {
+    id: 'G17-163',
+    title: 'Superintendence index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'superintendenceIndex reports superintendenceScore 0–100 with empowered/provisional/dissolved band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-164',
+    title: 'Superintendent accord directives complete',
+    category: 'telemetry',
+    acceptance:
+      'superintendentAccord exposes ≥5 directives and superintendentScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-165',
+    title: 'Recused curator suspends superintendent accord',
+    category: 'integration',
+    acceptance:
+      'Recused curator or dissolved superintendence yields superintendentAccordBlocksCurator.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -15455,6 +15737,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17CuratorAccord,
   curatorAccordBlocksAdministrator,
 } from '../planning/curator-accord.ts';
+  buildAgent17SuperintendenceIndex,
+  superintendenceIndexBlocksSuperintendent,
+} from '../planning/superintendence-index.ts';
+  buildAgent17SuperintendentAccord,
+  superintendentAccordBlocksCurator,
+} from '../planning/superintendent-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -17940,6 +18228,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const superintendenceIndex = depthEval.snapshot.planningDepth?.superintendenceIndex;
+  goalResults.push(
+    result(
+      'G17-163',
+      !!superintendenceIndex &&
+        superintendenceIndex.mandates.length >= 5 &&
+        superintendenceIndex.superintendenceScore >= 0 &&
+        superintendenceIndex.superintendenceScore <= 100 &&
+        (superintendenceIndex.band === 'empowered' ||
+          superintendenceIndex.band === 'provisional' ||
+          superintendenceIndex.band === 'dissolved'),
+      `mandates=${superintendenceIndex?.mandates.length} score=${superintendenceIndex?.superintendenceScore}`
+    )
+  );
+
+  const superintendentAccord = depthEval.snapshot.planningDepth?.superintendentAccord;
+  goalResults.push(
+    result(
+      'G17-164',
+      !!superintendentAccord &&
+        superintendentAccord.directives.length >= 5 &&
+        superintendentAccord.superintendentScore >= 0 &&
+        superintendentAccord.superintendentScore <= 100,
+      `directives=${superintendentAccord?.directives.length} score=${superintendentAccord?.superintendentScore}`
+    )
+  );
+
+  const dissolvedSuperintendence = buildAgent17SuperintendenceIndex({
+    curatorAccord: recusedCurator,
+    curatorshipIndex: surrenderedCuratorship,
+    administratorAccord: revokedAdministrator,
+  });
+  const suspendedSuperintendent = buildAgent17SuperintendentAccord({
+    superintendenceIndex: dissolvedSuperintendence,
+    curatorAccord: recusedCurator,
+    curatorshipIndex: surrenderedCuratorship,
+  });
+  goalResults.push(
+    result(
+      'G17-165',
+      curatorAccordBlocksAdministrator(recusedCurator) ||
+        superintendenceIndexBlocksSuperintendent(dissolvedSuperintendence) ||
+        superintendentAccordBlocksCurator(suspendedSuperintendent),
+      `${dissolvedSuperintendence.band}/${suspendedSuperintendent.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -18132,6 +18467,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-160',
     'G17-161',
     'G17-162',
+    'G17-163',
+    'G17-164',
+    'G17-165',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
