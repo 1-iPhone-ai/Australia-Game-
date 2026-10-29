@@ -12,6 +12,8 @@ import { getNationalEscalationTier, countRegionsWithContagionAtLeast } from './n
 import { hasArmedBypass } from './deep-chain-orchestrator.ts';
 import { getContagionLevel } from './regional-graph.ts';
 import { getDeferredQueueDepth, getTurnComputePassCount } from './deferred-queue.ts';
+import { OP10M_COMPUTE_DRIFT_FLAG } from './compute-turn-reconcile.ts';
+import { OP10M_COMPUTE_DRIFT_SETTLED_FLAG, OP10M_COMPUTE_TURN_GAP_ACK_FLAG } from './compute-turn-drift-settle.ts';
 import { OP10M_TURN_COMPUTE_DIGEST_FLAG } from './types.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
@@ -171,6 +173,26 @@ export function evaluateRequirements(
         }
         break;
       }
+      case 'compute_turn_drift':
+        if (!sim.flags[OP10M_COMPUTE_DRIFT_FLAG]) {
+          return { ok: false, reason: 'no compute drift' };
+        }
+        break;
+      case 'no_compute_turn_drift':
+        if (sim.flags[OP10M_COMPUTE_DRIFT_FLAG]) {
+          return { ok: false, reason: 'compute drift active' };
+        }
+        break;
+      case 'compute_drift_settled':
+        if (!sim.flags[OP10M_COMPUTE_DRIFT_SETTLED_FLAG]) {
+          return { ok: false, reason: 'drift not settled' };
+        }
+        break;
+      case 'compute_turn_gap_ack':
+        if (!sim.flags[OP10M_COMPUTE_TURN_GAP_ACK_FLAG]) {
+          return { ok: false, reason: 'turn gap not acked' };
+        }
+        break;
       default:
         break;
     }

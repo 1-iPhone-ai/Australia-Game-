@@ -8,6 +8,7 @@ import type { Op10mNarrativeEngineState, Op10mSimulationSlice } from './types.ts
 
 export const OP10M_COMPUTE_DRIFT_FLAG = 'op10m_compute_turn_drift';
 export const OP10M_COMPUTE_ELIGIBILITY_PRIMED_FLAG = 'op10m_compute_eligibility_primed';
+export const OP10M_COMPUTE_TURN_GAP_ACK_FLAG = 'op10m_compute_turn_gap_ack';
 
 export interface ComputeTurnReconcileResult {
   simulation: Op10mSimulationSlice;
@@ -47,6 +48,13 @@ export function reconcileOp10mTurnComputeLedger(
 
   if (ledger.lastTurn > 0 && turn > ledger.lastTurn + 1) {
     log.push(`compute turn gap ${ledger.lastTurn}->${turn}`);
+    simulation = {
+      ...simulation,
+      flags: {
+        ...simulation.flags,
+        [OP10M_COMPUTE_TURN_GAP_ACK_FLAG]: true,
+      },
+    };
   }
 
   narrative = {

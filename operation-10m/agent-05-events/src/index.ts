@@ -10,6 +10,7 @@ export * from './cross-system-orchestrator.ts';
 export * from './deferred-queue.ts';
 export * from './compute-turn-orchestrator.ts';
 export * from './compute-turn-reconcile.ts';
+export * from './compute-turn-drift-settle.ts';
 export * from './compute-turn-hooks.ts';
 export * from './chain-catalog-aggregate.ts';
 export {

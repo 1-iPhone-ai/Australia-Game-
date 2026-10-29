@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   OP10M_COMPUTE_DRIFT_FLAG,
+  OP10M_COMPUTE_DRIFT_SETTLED_FLAG,
   OP10M_COMPUTE_ELIGIBILITY_PRIMED_FLAG,
   OP10M_TURN_COMPUTE_DIGEST_FLAG,
   createDefaultOp10mNarrativeEngineState,
@@ -76,7 +77,8 @@ describe('Compute turn reconcile', () => {
       narrative,
       catalog: [],
     });
-    assert.equal(result.simulation.flags[OP10M_COMPUTE_DRIFT_FLAG], true);
+    assert.equal(result.simulation.flags[OP10M_COMPUTE_DRIFT_FLAG], undefined);
+    assert.equal(result.simulation.flags[OP10M_COMPUTE_DRIFT_SETTLED_FLAG], true);
     assert.match(result.log.join(' '), /drift/);
   });
 });

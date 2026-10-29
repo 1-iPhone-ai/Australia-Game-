@@ -3,6 +3,7 @@ import {
   primeComputeTurnNarrativeEligibility,
   reconcileOp10mTurnComputeLedger,
 } from './compute-turn-reconcile.ts';
+import { settleOp10mComputeTurnDriftAfterReconcile } from './compute-turn-drift-settle.ts';
 import {
   drainDeferredNarrativeMutationsForTurn,
   getDeferredQueueDepth,
@@ -104,6 +105,11 @@ export function executeOp10mNarrativeComputeTurnHook(
   narrative = reconcile.narrative;
   log.push(...reconcile.log);
 
+  const settled = settleOp10mComputeTurnDriftAfterReconcile(simulation, narrative);
+  simulation = settled.simulation;
+  narrative = settled.narrative;
+  log.push(...settled.log);
+
   const pre = drainDeferredNarrativeMutationsForTurn(simulation, narrative, params.turn);
   simulation = pre.simulation;
   narrative = pre.narrative;
@@ -162,6 +168,11 @@ export function executeOp10mNarrativeComputeTurnHook(
   };
   log.push(`digest ${digest}`);
   stagesRun.push('finalize');
+
+  const postSettle = settleOp10mComputeTurnDriftAfterReconcile(simulation, narrative);
+  simulation = postSettle.simulation;
+  narrative = postSettle.narrative;
+  log.push(...postSettle.log);
 
   return {
     ok: true,

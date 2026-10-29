@@ -7,7 +7,9 @@ State-triggered crisis chains with cooldowns, passive persistent modifiers, and 
 - `src/` — runtime engine (triggers, cooldowns, consequences, tick/resolve)
 - `generated/chain-catalog-tranche4.ts` — 320 national lattice chains
 - `generated/chain-catalog-tranche6.ts` — 320 reconcile-wave chains (`scripts/generate-catalog-tranche6.py`)
+- `generated/chain-catalog-tranche7.ts` — 320 drift-settle-wave chains (`scripts/generate-catalog-tranche7.py`)
 - `src/compute-turn-reconcile.ts` — digest drift reconcile + eligibility priming on compute turn hook
+- `src/compute-turn-drift-settle.ts` — drift settlement + turn-gap ack flags on compute turn hook
 - `generated/regional-hook-catalog.ts` — 120 cross-region hooks (`scripts/generate-regional-hooks.py`)
 - `src/regional-hook-engine.ts` — contagion, neighbor stability, deep follow-up arming, seasonal bypass for escalated chains
 - `chunk.tsx` — Agent 25 assembly bundle (`npm run bundle:agent05`, markers `OP10M_MODULE_BEGIN agent-05-events`)

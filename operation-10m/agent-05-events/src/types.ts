@@ -1,7 +1,7 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.5.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.6.0';
 export const OP10M_TURN_COMPUTE_DIGEST_FLAG = 'op10m_turn_compute_digest';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
@@ -208,6 +208,22 @@ export interface Op10mTriggerRequireTurnComputeDigestSet {
   k: 'turn_compute_digest_set';
 }
 
+export interface Op10mTriggerRequireComputeTurnDrift {
+  k: 'compute_turn_drift';
+}
+
+export interface Op10mTriggerRequireNoComputeTurnDrift {
+  k: 'no_compute_turn_drift';
+}
+
+export interface Op10mTriggerRequireComputeDriftSettled {
+  k: 'compute_drift_settled';
+}
+
+export interface Op10mTriggerRequireComputeTurnGapAck {
+  k: 'compute_turn_gap_ack';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -252,7 +268,11 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireMinTurnComputePasses
   | Op10mTriggerRequireMinDeferredQueue
   | Op10mTriggerRequireMinComputeTurn
-  | Op10mTriggerRequireTurnComputeDigestSet;
+  | Op10mTriggerRequireTurnComputeDigestSet
+  | Op10mTriggerRequireComputeTurnDrift
+  | Op10mTriggerRequireNoComputeTurnDrift
+  | Op10mTriggerRequireComputeDriftSettled
+  | Op10mTriggerRequireComputeTurnGapAck;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
