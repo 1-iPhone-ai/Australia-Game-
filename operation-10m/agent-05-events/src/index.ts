@@ -19,6 +19,7 @@ export * from './compute-turn-integration-sync-coordinator.ts';
 export * from './compute-turn-assembly-handoff-coordinator.ts';
 export * from './compute-turn-chunk-assembly-seal-coordinator.ts';
 export * from './compute-turn-module-manifest-anchor-coordinator.ts';
+export * from './compute-turn-inline-assembly-lock-coordinator.ts';
 export * from './compute-turn-hooks.ts';
 export * from './chain-catalog-aggregate.ts';
 export {

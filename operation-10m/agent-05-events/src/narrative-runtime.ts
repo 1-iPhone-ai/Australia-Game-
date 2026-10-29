@@ -91,6 +91,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       handoffManifestCommits: 0,
       moduleManifestAnchors: 0,
       chunkInlineReadyPasses: 0,
+      inlineAssemblyLocks: 0,
+      agent25SlotReadyPasses: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -168,6 +170,8 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.handoffManifestCommits = Math.max(0, Number(t.handoffManifestCommits) || 0);
     base.telemetry.moduleManifestAnchors = Math.max(0, Number(t.moduleManifestAnchors) || 0);
     base.telemetry.chunkInlineReadyPasses = Math.max(0, Number(t.chunkInlineReadyPasses) || 0);
+    base.telemetry.inlineAssemblyLocks = Math.max(0, Number(t.inlineAssemblyLocks) || 0);
+    base.telemetry.agent25SlotReadyPasses = Math.max(0, Number(t.agent25SlotReadyPasses) || 0);
   }
 
   if (r.turnCompute) {

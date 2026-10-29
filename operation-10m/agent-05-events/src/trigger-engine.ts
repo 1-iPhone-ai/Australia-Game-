@@ -48,6 +48,10 @@ import {
   OP10M_CHUNK_INLINE_READY_FLAG,
   OP10M_MODULE_MANIFEST_ANCHOR_FLAG,
 } from './compute-turn-module-manifest-anchor-coordinator.ts';
+import {
+  OP10M_AGENT25_SLOT_READY_FLAG,
+  OP10M_INLINE_ASSEMBLY_LOCK_FLAG,
+} from './compute-turn-inline-assembly-lock-coordinator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -318,6 +322,16 @@ export function evaluateRequirements(
       case 'chunk_inline_ready':
         if (!sim.flags[OP10M_CHUNK_INLINE_READY_FLAG]) {
           return { ok: false, reason: 'chunk inline not ready' };
+        }
+        break;
+      case 'inline_assembly_lock':
+        if (!sim.flags[OP10M_INLINE_ASSEMBLY_LOCK_FLAG]) {
+          return { ok: false, reason: 'inline assembly not locked' };
+        }
+        break;
+      case 'agent25_slot_ready':
+        if (!sim.flags[OP10M_AGENT25_SLOT_READY_FLAG]) {
+          return { ok: false, reason: 'agent25 slot not ready' };
         }
         break;
       default:
