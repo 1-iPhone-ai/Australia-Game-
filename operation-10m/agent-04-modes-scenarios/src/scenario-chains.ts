@@ -246,6 +246,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_relay_convoy',
+    title: 'Relay Convoy',
+    description:
+      'Three-scenario relay with save-safe carry accumulation between legs — round-7 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_relay_convoy',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_relay_dust_corridor',
+        title: 'Dust Corridor',
+        narrativeBridge: 'Establish convoy rhythm before the coastal handoff.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 180 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_relay_coastal_handoff',
+        title: 'Coastal Handoff',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { WA: 5, SA: 5 },
+          forcedSettingsPatch: { o10mRelayMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_relay_terminal_sprint',
+        title: 'Terminal Sprint',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainRelayConvoyComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

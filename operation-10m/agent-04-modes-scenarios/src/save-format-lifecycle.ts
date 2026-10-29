@@ -33,6 +33,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'replayLedger',
   'gauntletSession',
   'catalogUnlockTokens',
+  'relaySession',
 ];
 
 function stableStringify(value: unknown): string {

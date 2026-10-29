@@ -18,8 +18,8 @@ import {
 
 describe('content audit at scale', () => {
   it('catalog meets scale wave minimums', () => {
-    assert.ok(O10M_OPERATION_SCENARIOS.length >= 22);
-    assert.equal(O10M_SCENARIO_CHAINS.length, 7);
+    assert.ok(O10M_OPERATION_SCENARIOS.length >= 25);
+    assert.equal(O10M_SCENARIO_CHAINS.length, 8);
     assert.ok(O10M_CHALLENGE_MODES.length >= 5);
   });
 
@@ -49,7 +49,7 @@ describe('mode mission registry', () => {
 
   it('reports chain region coverage', () => {
     const coverage = chainCoverageReport();
-    assert.equal(coverage.length, 7);
+    assert.equal(coverage.length, 8);
     assert.ok(coverage.every(c => c.scenarioCount === 3));
   });
 });

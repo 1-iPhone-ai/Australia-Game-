@@ -351,6 +351,16 @@ export interface O10mScenarioReplayRow {
   lastPlayedTurn: number;
 }
 
+/** Schema v7 — sequential relay with accumulated carry between legs. */
+export interface O10mRelaySession {
+  relayId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  legCarry: O10mChainCarryBonus;
+}
+
 /** Schema v6 — lives-based sequential gauntlet with optional challenge lock-in. */
 export interface O10mGauntletSession {
   gauntletId: string;
@@ -364,7 +374,7 @@ export interface O10mGauntletSession {
 }
 
 export interface O10mCampaignPlan {
-  kind: 'gauntlet_step' | 'marathon_step' | 'chain_step' | 'slot_resume' | 'free_play';
+  kind: 'relay_step' | 'gauntlet_step' | 'marathon_step' | 'chain_step' | 'slot_resume' | 'free_play';
   scenarioId: string | null;
   chainId: string | null;
   chainStepIndex: number | null;
@@ -374,6 +384,9 @@ export interface O10mCampaignPlan {
   gauntletId: string | null;
   gauntletCursor: number | null;
   gauntletLives: number | null;
+  relayId: string | null;
+  relayCursor: number | null;
+  relayCarryMoney: number | null;
   reason: string;
 }
 
@@ -409,6 +422,8 @@ export interface O10mModesPersistedState {
   gauntletSession?: O10mGauntletSession | null;
   /** Schema v6 — catalog unlock tokens earned from gauntlet completion. */
   catalogUnlockTokens?: string[];
+  /** Schema v7 — active relay convoy (mutually exclusive with marathon / gauntlet). */
+  relaySession?: O10mRelaySession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

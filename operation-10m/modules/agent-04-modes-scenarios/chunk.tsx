@@ -355,6 +355,16 @@ export interface O10mScenarioReplayRow {
   lastPlayedTurn: number;
 }
 
+/** Schema v7 — sequential relay with accumulated carry between legs. */
+export interface O10mRelaySession {
+  relayId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  legCarry: O10mChainCarryBonus;
+}
+
 /** Schema v6 — lives-based sequential gauntlet with optional challenge lock-in. */
 export interface O10mGauntletSession {
   gauntletId: string;
@@ -368,7 +378,7 @@ export interface O10mGauntletSession {
 }
 
 export interface O10mCampaignPlan {
-  kind: 'gauntlet_step' | 'marathon_step' | 'chain_step' | 'slot_resume' | 'free_play';
+  kind: 'relay_step' | 'gauntlet_step' | 'marathon_step' | 'chain_step' | 'slot_resume' | 'free_play';
   scenarioId: string | null;
   chainId: string | null;
   chainStepIndex: number | null;
@@ -378,6 +388,9 @@ export interface O10mCampaignPlan {
   gauntletId: string | null;
   gauntletCursor: number | null;
   gauntletLives: number | null;
+  relayId: string | null;
+  relayCursor: number | null;
+  relayCarryMoney: number | null;
   reason: string;
 }
 
@@ -413,6 +426,8 @@ export interface O10mModesPersistedState {
   gauntletSession?: O10mGauntletSession | null;
   /** Schema v6 — catalog unlock tokens earned from gauntlet completion. */
   catalogUnlockTokens?: string[];
+  /** Schema v7 — active relay convoy (mutually exclusive with marathon / gauntlet). */
+  relaySession?: O10mRelaySession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -1535,6 +1550,110 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Gauntlet finales', 'Unlock tokens', 'Catalog progression'],
   },
+  {
+    id: 'o10m_relay_dust_corridor',
+    title: 'Relay Dust Corridor',
+    description: 'Open a convoy relay with a short cash gate before inland handoffs.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100423,
+    startingMoney: 2000,
+    startingRegions: ['NT', 'SA'],
+    badgeId: 'badge_o10m_relay_dust_corridor',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100423),
+      scenarioEngineV73Enabled: true,
+      o10mRelayDustCorridor: true,
+      totalDays: 9,
+    },
+    objectives: [
+      {
+        id: 'o10m_rdc_obj_day',
+        label: 'Corridor Window',
+        description: 'Reach day 4',
+        targetType: 'daysPassed',
+        targetValue: 4,
+        isPrimary: true,
+      },
+      {
+        id: 'o10m_rdc_obj_cash',
+        label: 'Convoy Float',
+        description: 'Hold $2,800',
+        targetType: 'money',
+        targetValue: 2800,
+        isPrimary: false,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Relay convoys', 'Carry bonuses', 'Leg pacing'],
+  },
+  {
+    id: 'o10m_relay_coastal_handoff',
+    title: 'Relay Coastal Handoff',
+    description: 'Mid-relay standing maintenance before the terminal sprint.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100424,
+    startingMoney: 2600,
+    startingRegions: ['WA', 'SA'],
+    startingStanding: { WA: 42, SA: 40 },
+    badgeId: 'badge_o10m_relay_coastal_handoff',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100424),
+      regionalStandingEnabled: true,
+      totalDays: 12,
+    },
+    objectives: [
+      {
+        id: 'o10m_rch_obj_avg',
+        label: 'Handoff Threshold',
+        description: 'Average standing of 48',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 48,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Relay midpoints', 'Standing carry', 'Convoy continuity'],
+  },
+  {
+    id: 'o10m_relay_terminal_sprint',
+    title: 'Relay Terminal Sprint',
+    description: 'Finale relay leg — net worth gate with accumulated carry applied at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100425,
+    startingMoney: 3000,
+    startingRegions: ['NSW', 'VIC', 'QLD'],
+    badgeId: 'badge_o10m_relay_terminal_sprint',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100425),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      totalDays: 15,
+    },
+    objectives: [
+      {
+        id: 'o10m_rts_obj_net',
+        label: 'Terminal Net Worth',
+        description: 'Reach $14,000 net worth',
+        targetType: 'netWorth',
+        targetValue: 14000,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Relay finales', 'Carry ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -2218,6 +2337,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
         title: 'Iron Finish',
         requiresPrimaryVictory: true,
         carryBonusOnComplete: { forcedSettingsPatch: { o10mChainIronGauntletComplete: true } },
+      },
+    ],
+  },
+  {
+    id: 'o10m_chain_relay_convoy',
+    title: 'Relay Convoy',
+    description:
+      'Three-scenario relay with save-safe carry accumulation between legs — round-7 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_relay_convoy',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_relay_dust_corridor',
+        title: 'Dust Corridor',
+        narrativeBridge: 'Establish convoy rhythm before the coastal handoff.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 180 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_relay_coastal_handoff',
+        title: 'Coastal Handoff',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { WA: 5, SA: 5 },
+          forcedSettingsPatch: { o10mRelayMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_relay_terminal_sprint',
+        title: 'Terminal Sprint',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainRelayConvoyComplete: true } },
       },
     ],
   },
@@ -3047,7 +3200,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 6;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 7;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -3152,6 +3305,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     replayLedger: [],
     gauntletSession: null,
     catalogUnlockTokens: [],
+    relaySession: null,
   };
 }
 
@@ -3177,6 +3331,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       replayLedger: merged.replayLedger ?? [],
       gauntletSession: merged.gauntletSession ?? null,
       catalogUnlockTokens: merged.catalogUnlockTokens ?? [],
+      relaySession: merged.relaySession ?? null,
     };
     return upgraded;
   }
@@ -3226,6 +3381,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     replayLedger: sanitizeReplayLedger(o.replayLedger),
     gauntletSession: sanitizeGauntletSession(o.gauntletSession),
     catalogUnlockTokens: sanitizeCatalogUnlockTokens(o.catalogUnlockTokens),
+    relaySession: sanitizeRelaySession(o.relaySession),
   };
 }
 
@@ -3274,6 +3430,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Gauntlet session failed sanitization; planner will ignore it.');
   } else if (gauntlet && gauntlet.cursor >= gauntlet.scenarioIds.length) {
     warnings.push('Gauntlet cursor out of range; clamp on next sanitize.');
+  }
+
+  const relay = sanitizeRelaySession(state.relaySession);
+  if (state.relaySession && !relay) {
+    warnings.push('Relay session failed sanitization; planner will ignore it.');
+  } else if (relay && relay.cursor >= relay.scenarioIds.length) {
+    warnings.push('Relay cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -3385,6 +3548,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'replayLedger',
   'gauntletSession',
   'catalogUnlockTokens',
+  'relaySession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -3888,6 +4052,8 @@ export function attachMarathonQueueToState(
   return {
     ...state,
     marathonQueue: sanitized,
+    gauntletSession: null,
+    relaySession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -4005,6 +4171,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceRelaySessionAfterRun(next, run);
   next = advanceMarathonQueueAfterRun(next, run);
   next = advanceGauntletSessionAfterRun(next, run);
   return next;
@@ -4133,6 +4300,7 @@ export function attachGauntletSessionToState(
     ...state,
     gauntletSession: sanitized,
     marathonQueue: null,
+    relaySession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -4230,14 +4398,249 @@ export function gauntletSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-relay.ts ---
+export const O10M_RELAY_SCENARIO_CAP = 6;
+export const O10M_RELAY_CARRY_MONEY_CAP = 2500;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+function mergeLegCarry(base: O10mChainCarryBonus, add: O10mChainCarryBonus): O10mChainCarryBonus {
+  const standingDelta = { ...(base.standingDelta || {}) };
+  for (const [k, v] of Object.entries(add.standingDelta || {})) {
+    standingDelta[k] = (standingDelta[k] || 0) + v;
+  }
+  const money = Math.min(
+    O10M_RELAY_CARRY_MONEY_CAP,
+    (base.startingMoneyDelta || 0) + (add.startingMoneyDelta || 0),
+  );
+  return {
+    startingMoneyDelta: money > 0 ? money : undefined,
+    standingDelta: Object.keys(standingDelta).length ? standingDelta : undefined,
+    forcedSettingsPatch: { ...(base.forcedSettingsPatch || {}), ...(add.forcedSettingsPatch || {}) },
+  };
+}
+
+function sanitizeLegCarry(raw: unknown): O10mChainCarryBonus {
+  if (!raw || typeof raw !== 'object') return {};
+  const o = raw as Record<string, unknown>;
+  const standingDelta =
+    o.standingDelta && typeof o.standingDelta === 'object'
+      ? (Object.fromEntries(
+          Object.entries(o.standingDelta as Record<string, unknown>).filter(
+            ([, v]) => typeof v === 'number' && Number.isFinite(v),
+          ),
+        ) as Record<string, number>)
+      : undefined;
+  const moneyRaw = num(o.startingMoneyDelta, 0);
+  const startingMoneyDelta =
+    moneyRaw > 0 ? Math.min(O10M_RELAY_CARRY_MONEY_CAP, Math.floor(moneyRaw)) : undefined;
+  const forcedSettingsPatch =
+    o.forcedSettingsPatch && typeof o.forcedSettingsPatch === 'object'
+      ? (o.forcedSettingsPatch as Record<string, unknown>)
+      : undefined;
+  return { startingMoneyDelta, standingDelta, forcedSettingsPatch };
+}
+
+export function unlockTokenForRelayId(relayId: string): string | null {
+  if (!relayId.startsWith('o10m_relay_')) return null;
+  return `o10m_unlock_${relayId.slice('o10m_relay_'.length)}`;
+}
+
+export function relayLegCarryFromRun(run: O10mRunSummary): O10mChainCarryBonus {
+  if (!run.primaryVictory) return {};
+  const bonus = Math.min(500, Math.max(50, Math.floor(run.playerMoney / 12)));
+  return { startingMoneyDelta: bonus };
+}
+
+export function sanitizeRelaySession(raw: unknown): O10mRelaySession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const relayId =
+    typeof o.relayId === 'string' && o.relayId.startsWith('o10m_relay_') ? o.relayId : null;
+  if (!relayId) return null;
+  const label = typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : relayId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_RELAY_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const active = o.active !== false;
+  return {
+    relayId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    legCarry: sanitizeLegCarry(o.legCarry),
+  };
+}
+
+export function createRelaySession(params: {
+  relayId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mRelaySession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.relayId.startsWith('o10m_relay_')) {
+    return { session: null, warnings: ['Relay ids must start with o10m_relay_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_RELAY_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return { session: null, warnings: [...warnings, 'Relay requires at least one valid scenario.'] };
+  }
+  return {
+    session: {
+      relayId: params.relayId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      legCarry: {},
+    },
+    warnings,
+  };
+}
+
+export function attachRelaySessionToState(
+  state: O10mModesPersistedState,
+  session: O10mRelaySession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeRelaySession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    relaySession: sanitized,
+    marathonQueue: null,
+    gauntletSession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearRelaySession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, relaySession: null };
+}
+
+export function getRelayScenarioAtCursor(session: O10mRelaySession | null | undefined): string | null {
+  const relay = sanitizeRelaySession(session);
+  if (!relay || !relay.active) return null;
+  return relay.scenarioIds[relay.cursor] ?? null;
+}
+
+export function buildRelayScenarioStartOverrides(session: O10mRelaySession | null | undefined): {
+  startingMoneyDelta: number;
+  startingStandingDelta?: Record<string, number>;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const relay = sanitizeRelaySession(session);
+  if (!relay) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const carry = relay.legCarry;
+  return {
+    startingMoneyDelta: carry.startingMoneyDelta ?? 0,
+    startingStandingDelta: carry.standingDelta ? { ...carry.standingDelta } : undefined,
+    forcedSettingsPatch: {
+      ...(carry.forcedSettingsPatch || {}),
+      o10mActiveRelayId: relay.relayId,
+      o10mActiveRelayStep: relay.cursor,
+    },
+  };
+}
+
+export function advanceRelaySessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeRelaySession(state.relaySession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const legCarry = mergeLegCarry(session.legCarry, relayLegCarryFromRun(run));
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      relaySession: { ...session, cursor, legCarry },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForRelayId(session.relayId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    relaySession: { ...session, active: false, legCarry },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function relaySessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  carryMoney: number;
+} {
+  const session = sanitizeRelaySession(state.relaySession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    carryMoney: session?.legCarry.startingMoneyDelta ?? 0,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
-const emptyGauntletPlan = {
+const emptyQueuePlan = {
+  marathonQueueId: null as string | null,
+  marathonCursor: null as number | null,
   gauntletId: null as string | null,
   gauntletCursor: null as number | null,
   gauntletLives: null as number | null,
+  relayId: null as string | null,
+  relayCursor: null as number | null,
+  relayCarryMoney: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const relay = sanitizeRelaySession(state.relaySession);
+  const relayScenario = getRelayScenarioAtCursor(relay);
+  if (relay && relay.active && relayScenario) {
+    const carryMoney = relay.legCarry.startingMoneyDelta ?? 0;
+    return {
+      kind: 'relay_step',
+      scenarioId: relayScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      relayId: relay.relayId,
+      relayCursor: relay.cursor,
+      relayCarryMoney: carryMoney,
+      reason: `Relay "${relay.label}" leg ${relay.cursor + 1}/${relay.scenarioIds.length} (+$${carryMoney} carry).`,
+    };
+  }
+
   const gauntlet = sanitizeGauntletSession(state.gauntletSession);
   const gauntletScenario = getGauntletScenarioAtCursor(gauntlet);
   if (gauntlet && gauntlet.active && gauntletScenario) {
@@ -4252,6 +4655,9 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       gauntletId: gauntlet.gauntletId,
       gauntletCursor: gauntlet.cursor,
       gauntletLives: gauntlet.livesRemaining,
+      relayId: null,
+      relayCursor: null,
+      relayCarryMoney: null,
       reason: `Gauntlet "${gauntlet.label}" step ${gauntlet.cursor + 1}/${gauntlet.scenarioIds.length} (${gauntlet.livesRemaining} lives).`,
     };
   }
@@ -4267,7 +4673,12 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       slotId: state.activeCampaignSlotId ?? null,
       marathonQueueId: marathon.queueId,
       marathonCursor: marathon.cursor,
-      ...emptyGauntletPlan,
+      gauntletId: null,
+      gauntletCursor: null,
+      gauntletLives: null,
+      relayId: null,
+      relayCursor: null,
+      relayCarryMoney: null,
       reason: `Marathon "${marathon.label}" step ${marathon.cursor + 1}/${marathon.scenarioIds.length}.`,
     };
   }
@@ -4281,9 +4692,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
         chainId: slot.chainId,
         chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
         slotId: slot.slotId,
-        marathonQueueId: null,
-        marathonCursor: null,
-        ...emptyGauntletPlan,
+        ...emptyQueuePlan,
         reason: `Resume pinned slot "${slot.label}".`,
       };
     }
@@ -4299,9 +4708,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
         chainId: state.chainProgress.chainId,
         chainStepIndex: step.stepIndex,
         slotId: null,
-        marathonQueueId: null,
-        marathonCursor: null,
-        ...emptyGauntletPlan,
+        ...emptyQueuePlan,
         reason: `Continue chain "${chain?.title ?? state.chainProgress.chainId}" at step ${step.stepIndex + 1}.`,
       };
     }
@@ -4315,9 +4722,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       chainId: state.chainProgress?.chainId ?? null,
       chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
       slotId: null,
-      marathonQueueId: null,
-      marathonCursor: null,
-      ...emptyGauntletPlan,
+      ...emptyQueuePlan,
       reason:
         ratio > 0 && ratio < 1
           ? `Resume in-progress scenario (${Math.round(ratio * 100)}% objectives captured).`
@@ -4331,9 +4736,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
     chainId: null,
     chainStepIndex: null,
     slotId: null,
-    marathonQueueId: null,
-    marathonCursor: null,
-    ...emptyGauntletPlan,
+    ...emptyQueuePlan,
     reason: 'No active chain, slot, or scenario — pick from catalog.',
   };
 }
@@ -4350,6 +4753,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   activeChainTitle: string | null;
   marathonActive: boolean;
   gauntletActive: boolean;
+  relayActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -4359,14 +4763,17 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const recentVictories = state.recentRuns.filter(r => r.primaryVictory).length;
   const marathon = sanitizeMarathonQueue(state.marathonQueue);
   const gauntlet = gauntletSessionSummary(state);
+  const relay = relaySessionSummary(state);
+  const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
     recentVictories,
     activeChainTitle: chain?.title ?? null,
     marathonActive: marathon?.active === true,
     gauntletActive: gauntlet.active,
+    relayActive: relay.active,
     replayTracked: (state.replayLedger ?? []).length,
-    unlockTokens: gauntlet.unlockTokenCount,
+    unlockTokens: tokens.length,
     nextPlan,
   };
 }
@@ -4382,8 +4789,8 @@ export function runAgent04ModesScenariosSelfTests(): {
   const push = (id: string, passed: boolean, detail?: string) => results.push({ id, passed, detail });
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
-  push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 22, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 7, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 8, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -4427,16 +4834,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const gauntletState = gauntlet ? attachGauntletSessionToState(createEmptyO10mModesPersistedState(), gauntlet) : null;
   push('agent04_chunk_14', gauntletState !== null && planNextCampaignAction(gauntletState!).kind === 'gauntlet_step');
 
+  const relay = createRelaySession({
+    relayId: 'o10m_relay_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_relay_dust_corridor'],
+  }).session;
+  const relayState = relay ? attachRelaySessionToState(createEmptyO10mModesPersistedState(), relay) : null;
+  push('agent04_chunk_15', relayState !== null && planNextCampaignAction(relayState!).kind === 'relay_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v7',
+  schemaVersion: 'op10m-agent04-v8',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 6,
+  saveSchemaVersion: 7,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

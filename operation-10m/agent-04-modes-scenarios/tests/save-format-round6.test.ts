@@ -150,7 +150,7 @@ describe('save format round 6 gauntlet schema', () => {
 
     const imported = importO10mModesProgressJson(JSON.stringify(state));
     assert.equal(imported.errors.length, 0);
-    assert.equal(imported.state!.schemaVersion, 6);
+    assert.equal(imported.state!.schemaVersion, O10M_MODES_SAVE_SCHEMA_VERSION);
 
     const other = {
       ...createEmptyO10mModesPersistedState(),

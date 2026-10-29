@@ -4,22 +4,51 @@ import { sanitizeCampaignSlots } from './save-format-campaign.js';
 import {
   getGauntletScenarioAtCursor,
   gauntletSessionSummary,
+  sanitizeCatalogUnlockTokens,
   sanitizeGauntletSession,
 } from './save-format-gauntlet.js';
 import {
   getMarathonScenarioAtCursor,
   sanitizeMarathonQueue,
 } from './save-format-marathon.js';
+import {
+  getRelayScenarioAtCursor,
+  relaySessionSummary,
+  sanitizeRelaySession,
+} from './save-format-relay.js';
 import { objectiveProgressCompletionRatio } from './save-format-objective-sync.js';
 import type { O10mCampaignPlan, O10mModesPersistedState } from './types.js';
 
-const emptyGauntletPlan = {
+const emptyQueuePlan = {
+  marathonQueueId: null as string | null,
+  marathonCursor: null as number | null,
   gauntletId: null as string | null,
   gauntletCursor: null as number | null,
   gauntletLives: null as number | null,
+  relayId: null as string | null,
+  relayCursor: null as number | null,
+  relayCarryMoney: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const relay = sanitizeRelaySession(state.relaySession);
+  const relayScenario = getRelayScenarioAtCursor(relay);
+  if (relay && relay.active && relayScenario) {
+    const carryMoney = relay.legCarry.startingMoneyDelta ?? 0;
+    return {
+      kind: 'relay_step',
+      scenarioId: relayScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      relayId: relay.relayId,
+      relayCursor: relay.cursor,
+      relayCarryMoney: carryMoney,
+      reason: `Relay "${relay.label}" leg ${relay.cursor + 1}/${relay.scenarioIds.length} (+$${carryMoney} carry).`,
+    };
+  }
+
   const gauntlet = sanitizeGauntletSession(state.gauntletSession);
   const gauntletScenario = getGauntletScenarioAtCursor(gauntlet);
   if (gauntlet && gauntlet.active && gauntletScenario) {
@@ -34,6 +63,9 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       gauntletId: gauntlet.gauntletId,
       gauntletCursor: gauntlet.cursor,
       gauntletLives: gauntlet.livesRemaining,
+      relayId: null,
+      relayCursor: null,
+      relayCarryMoney: null,
       reason: `Gauntlet "${gauntlet.label}" step ${gauntlet.cursor + 1}/${gauntlet.scenarioIds.length} (${gauntlet.livesRemaining} lives).`,
     };
   }
@@ -49,7 +81,12 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       slotId: state.activeCampaignSlotId ?? null,
       marathonQueueId: marathon.queueId,
       marathonCursor: marathon.cursor,
-      ...emptyGauntletPlan,
+      gauntletId: null,
+      gauntletCursor: null,
+      gauntletLives: null,
+      relayId: null,
+      relayCursor: null,
+      relayCarryMoney: null,
       reason: `Marathon "${marathon.label}" step ${marathon.cursor + 1}/${marathon.scenarioIds.length}.`,
     };
   }
@@ -63,9 +100,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
         chainId: slot.chainId,
         chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
         slotId: slot.slotId,
-        marathonQueueId: null,
-        marathonCursor: null,
-        ...emptyGauntletPlan,
+        ...emptyQueuePlan,
         reason: `Resume pinned slot "${slot.label}".`,
       };
     }
@@ -81,9 +116,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
         chainId: state.chainProgress.chainId,
         chainStepIndex: step.stepIndex,
         slotId: null,
-        marathonQueueId: null,
-        marathonCursor: null,
-        ...emptyGauntletPlan,
+        ...emptyQueuePlan,
         reason: `Continue chain "${chain?.title ?? state.chainProgress.chainId}" at step ${step.stepIndex + 1}.`,
       };
     }
@@ -97,9 +130,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       chainId: state.chainProgress?.chainId ?? null,
       chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
       slotId: null,
-      marathonQueueId: null,
-      marathonCursor: null,
-      ...emptyGauntletPlan,
+      ...emptyQueuePlan,
       reason:
         ratio > 0 && ratio < 1
           ? `Resume in-progress scenario (${Math.round(ratio * 100)}% objectives captured).`
@@ -113,9 +144,7 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
     chainId: null,
     chainStepIndex: null,
     slotId: null,
-    marathonQueueId: null,
-    marathonCursor: null,
-    ...emptyGauntletPlan,
+    ...emptyQueuePlan,
     reason: 'No active chain, slot, or scenario — pick from catalog.',
   };
 }
@@ -132,6 +161,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   activeChainTitle: string | null;
   marathonActive: boolean;
   gauntletActive: boolean;
+  relayActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -141,14 +171,17 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const recentVictories = state.recentRuns.filter(r => r.primaryVictory).length;
   const marathon = sanitizeMarathonQueue(state.marathonQueue);
   const gauntlet = gauntletSessionSummary(state);
+  const relay = relaySessionSummary(state);
+  const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
     recentVictories,
     activeChainTitle: chain?.title ?? null,
     marathonActive: marathon?.active === true,
     gauntletActive: gauntlet.active,
+    relayActive: relay.active,
     replayTracked: (state.replayLedger ?? []).length,
-    unlockTokens: gauntlet.unlockTokenCount,
+    unlockTokens: tokens.length,
     nextPlan,
   };
 }
