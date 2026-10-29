@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 4d2a0c6b90fb5ccf
+// content-sha256-prefix: 11e0ff7c87ce6aac
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -907,6 +907,10 @@ export interface DayAdvanceUiEvolutionResult {
   notificationLaneDayCoachCopy: string | null;
   landmarkReadingDayCoachCopy: string | null;
   coachLiveRegionDayCoachCopy: string | null;
+  attentionSurfaceDayCoachCopy: string | null;
+  guidedLearningDayCoachCopy: string | null;
+  keyboardShortcutConflictDayCoachCopy: string | null;
+  contextualWidgetDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -920,6 +924,7 @@ export interface TickEvolvingUiDayAdvanceContext {
   sessionMemory?: SessionUiMemory;
   layoutPreset?: V94LayoutPreset;
   viewportWidthPx?: number;
+  contextualShouldShowByWidget?: Record<string, boolean>;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -1244,6 +1249,41 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const attentionSurfaceDayCoach =
+    context.phase != null
+      ? buildAttentionSurfaceDayCoach({
+          band: cognitiveLoadDayCoach.band,
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+          cognitiveLoadCoachRequested: cognitiveLoadDayCoach.shouldSurfaceCoach,
+          panelUnlockCoachRequested: newlyUnlockedPanelIds.length > 0,
+          simEvolutionBridgeRequested: newlyUnlockedPanelIds.length > 0,
+          keyboardHintsRequested: true,
+          focusSessionBannerRequested: focusSummary.suppressedCount > 0,
+        })
+      : { deferredSurfaceCount: 0, coachCopy: null };
+
+  const guidedLearningDayCoach = buildGuidedLearningDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const keyboardShortcutConflictDayCoach =
+    context.phase != null
+      ? buildKeyboardShortcutConflictDayCoach({
+          interfaceLevel: nextSignals.interfaceLevel,
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { conflictCount: 0, coachCopy: null };
+
+  const contextualWidgetDayCoach = buildContextualWidgetDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+    contextualShouldShowByWidget: context.contextualShouldShowByWidget,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -1312,6 +1352,10 @@ export function tickEvolvingUiOnDayAdvance(
     notificationLaneDayCoachCopy: notificationLaneDayCoach.coachCopy,
     landmarkReadingDayCoachCopy: landmarkReadingDayCoach.coachCopy,
     coachLiveRegionDayCoachCopy: coachLiveRegionDayCoach.coachCopy,
+    attentionSurfaceDayCoachCopy: attentionSurfaceDayCoach.coachCopy,
+    guidedLearningDayCoachCopy: guidedLearningDayCoach.coachCopy,
+    keyboardShortcutConflictDayCoachCopy: keyboardShortcutConflictDayCoach.coachCopy,
+    contextualWidgetDayCoachCopy: contextualWidgetDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -5236,6 +5280,325 @@ export function buildCoachLiveRegionDayCoach(input: {
     messageCount: input.plan.messages.length,
     coachCopy,
   };
+}
+
+// --- source: engine/attention-surface-day-coach.ts ---
+export interface AttentionSurfaceDayCoach {
+  deferredSurfaceCount: number;
+  coachCopy: string | null;
+}
+
+export function buildAttentionSurfaceDayCoach(input: {
+  band: CognitiveLoadBand;
+  phase: V94StandardizedGamePhase;
+  nextGameDay: number;
+  cognitiveLoadCoachRequested?: boolean;
+  focusSessionBannerRequested?: boolean;
+  panelUnlockCoachRequested?: boolean;
+  simEvolutionBridgeRequested?: boolean;
+  keyboardHintsRequested?: boolean;
+}): AttentionSurfaceDayCoach {
+  const plan = planAttentionSurfaceGate({
+    band: input.band,
+    phase: input.phase,
+    cognitiveLoadCoachRequested: input.cognitiveLoadCoachRequested,
+    focusSessionBannerRequested: input.focusSessionBannerRequested,
+    panelUnlockCoachRequested: input.panelUnlockCoachRequested,
+    simEvolutionBridgeRequested: input.simEvolutionBridgeRequested,
+    keyboardHintsRequested: input.keyboardHintsRequested,
+  });
+
+  const base = attentionDeferralCopy(plan.deferredIds);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+
+  return {
+    deferredSurfaceCount: plan.deferredIds.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/guided-learning-day-coach.ts ---
+export interface GuidedLearningDayCoach {
+  hintCount: number;
+  coachCopy: string | null;
+}
+
+export function buildGuidedLearningDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): GuidedLearningDayCoach {
+  const hints = buildGuidedLearningPanelHints(input.signals);
+  const base = guidedLearningPanelCoachCopy(hints);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+
+  return {
+    hintCount: hints.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/keyboard-shortcut-conflict-day-coach.ts ---
+export interface KeyboardShortcutConflictDayCoach {
+  conflictCount: number;
+  coachCopy: string | null;
+}
+
+export function buildKeyboardShortcutConflictDayCoach(input: {
+  interfaceLevel: InterfaceExperienceLevel;
+  phase: V94StandardizedGamePhase;
+  nextGameDay: number;
+}): KeyboardShortcutConflictDayCoach {
+  const conflicts = planKeyboardShortcutConflicts(input.interfaceLevel, input.phase);
+  const base = shortcutConflictWarningCopy(conflicts);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+
+  return {
+    conflictCount: conflicts.length,
+    coachCopy,
+  };
+}
+
+// --- source: engine/contextual-widget-day-coach.ts ---
+export const DEFAULT_CONTEXTUAL_WIDGET_AUDIT_IDS = [
+  'quick_actions',
+  'ask_game_floating_button',
+  'guardian_floating_button',
+  'strategy_planner_widget',
+] as const;
+
+export interface ContextualWidgetDayCoach {
+  hiddenWidgetCount: number;
+  coachCopy: string | null;
+}
+
+export function buildContextualWidgetDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  nextGameDay: number;
+  widgetIds?: readonly string[];
+  contextualShouldShowByWidget?: Record<string, boolean>;
+}): ContextualWidgetDayCoach {
+  const widgetIds = input.widgetIds ?? DEFAULT_CONTEXTUAL_WIDGET_AUDIT_IDS;
+  const entries = auditWidgetContextualVisibility({
+    widgetIds: [...widgetIds],
+    contextualShouldShowByWidget: input.contextualShouldShowByWidget ?? {},
+    signals: input.signals,
+    policy: input.policy,
+  });
+  const base = widgetContextualCoachCopy(entries);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  const hiddenWidgetCount = entries.filter(e => !e.show).length;
+
+  return {
+    hiddenWidgetCount,
+    coachCopy,
+  };
+}
+
+// --- source: engine/round23-self-tests.ts ---
+export function runAgent22Round23SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r23_attention_deferral',
+    'attention surface day coach when budget tight',
+    (() => {
+      const coach = buildAttentionSurfaceDayCoach({
+        band: 'heavy',
+        phase: 'save_load',
+        nextGameDay: 4,
+        cognitiveLoadCoachRequested: true,
+        panelUnlockCoachRequested: true,
+        simEvolutionBridgeRequested: true,
+        keyboardHintsRequested: true,
+        focusSessionBannerRequested: true,
+      });
+      return coach.deferredSurfaceCount > 0 && Boolean(coach.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r23_attention_clear',
+    'attention surface day coach null when nothing deferred',
+    (() => {
+      const coach = buildAttentionSurfaceDayCoach({
+        band: 'light',
+        phase: 'human_turn',
+        nextGameDay: 2,
+        cognitiveLoadCoachRequested: false,
+        panelUnlockCoachRequested: false,
+        simEvolutionBridgeRequested: false,
+        keyboardHintsRequested: false,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r23_guided_learning',
+    'guided learning day coach with introduced concept',
+    (() => {
+      const coach = buildGuidedLearningDayCoach({
+        signals: {
+          gameDay: 5,
+          turnCount: 5,
+          interfaceLevel: 'guided',
+          guidedConceptStatuses: { capital_allocation: 'introduced' },
+        },
+        nextGameDay: 5,
+      });
+      return coach.hintCount > 0 && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r23_guided_empty',
+    'guided learning day coach null without concepts',
+    (() => {
+      const coach = buildGuidedLearningDayCoach({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        nextGameDay: 1,
+      });
+      return coach.hintCount === 0 && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r23_shortcut_conflict',
+    'keyboard shortcut conflict day coach copy shape',
+    (() => {
+      const coach = buildKeyboardShortcutConflictDayCoach({
+        interfaceLevel: 'expert',
+        phase: 'human_turn',
+        nextGameDay: 8,
+      });
+      return coach.conflictCount >= 0 && (coach.coachCopy === null || coach.coachCopy.includes('Day 8'));
+    })()
+  );
+
+  check(
+    'r23_contextual_widget',
+    'contextual widget day coach on early day',
+    (() => {
+      const coach = buildContextualWidgetDayCoach({
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 1,
+        contextualShouldShowByWidget: { guardian_floating_button: true },
+      });
+      return coach.hiddenWidgetCount >= 0 && (coach.coachCopy === null || coach.coachCopy.includes('Day 1'));
+    })()
+  );
+
+  check(
+    'r23_tick_attention_field',
+    'day advance exposes attention surface day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'simple' },
+        { gameDay: 6, turnCount: 6, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'save_load' }
+      );
+      return typeof r.attentionSurfaceDayCoachCopy === 'string' || r.attentionSurfaceDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r23_tick_guided_field',
+    'day advance exposes guided learning day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        {
+          gameDay: 5,
+          turnCount: 5,
+          interfaceLevel: 'guided',
+          guidedConceptStatuses: { liquidity: 'mastered' },
+        },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.guidedLearningDayCoachCopy === 'string' || r.guidedLearningDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r23_tick_shortcut_field',
+    'day advance exposes keyboard conflict day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'expert' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'expert' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.keyboardShortcutConflictDayCoachCopy === 'string' || r.keyboardShortcutConflictDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r23_tick_widget_field',
+    'day advance exposes contextual widget day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.contextualWidgetDayCoachCopy === 'string' || r.contextualWidgetDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r23_tick_guided_active',
+    'day advance guided learning copy when concept mastered',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 6, turnCount: 6, interfaceLevel: 'guided' },
+        {
+          gameDay: 7,
+          turnCount: 7,
+          interfaceLevel: 'guided',
+          guidedConceptStatuses: { capital_allocation: 'mastered' },
+        },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.guidedLearningDayCoachCopy?.includes('Day 7'));
+    })()
+  );
+
+  check(
+    'r23_tick_attention_deferred',
+    'save_load day advance may defer attention surfaces',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 8, turnCount: 8, interfaceLevel: 'guided' },
+        { gameDay: 9, turnCount: 9, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'save_load' }
+      );
+      return r.attentionSurfaceDayCoachCopy === null || r.attentionSurfaceDayCoachCopy.includes('Day 9');
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round22-self-tests.ts ---
@@ -9439,6 +9802,18 @@ export function SimulationUiEvolutionBridge({
       {result.coachLiveRegionDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-live-region-day">{result.coachLiveRegionDayCoachCopy}</div>
       ) : null}
+      {result.attentionSurfaceDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-attention-day">{result.attentionSurfaceDayCoachCopy}</div>
+      ) : null}
+      {result.guidedLearningDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-guided-day">{result.guidedLearningDayCoachCopy}</div>
+      ) : null}
+      {result.keyboardShortcutConflictDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-shortcut-conflict-day">{result.keyboardShortcutConflictDayCoachCopy}</div>
+      ) : null}
+      {result.contextualWidgetDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-widget-day">{result.contextualWidgetDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -11400,8 +11775,96 @@ export function CoachLiveRegionDayCoachStrip({
   );
 }
 
+// --- source: react/AttentionSurfaceDayCoachStrip.tsx ---
+export function AttentionSurfaceDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: AttentionSurfaceDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="attention-surface-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-orange-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/GuidedLearningDayCoachStrip.tsx ---
+export function GuidedLearningDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: GuidedLearningDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="guided-learning-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-indigo-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/KeyboardShortcutConflictDayCoachStrip.tsx ---
+export function KeyboardShortcutConflictDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: KeyboardShortcutConflictDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="keyboard-shortcut-conflict-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-rose-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/ContextualWidgetDayCoachStrip.tsx ---
+export function ContextualWidgetDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: ContextualWidgetDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="contextual-widget-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-amber-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.22.0';
+export const AGENT_22_MODULE_VERSION = '1.23.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -11552,6 +12015,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round23 = runAgent22Round23SelfTests();
+  for (const r of round23.results) {
+    check(`agent22_round23_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

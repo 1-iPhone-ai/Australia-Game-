@@ -69,6 +69,10 @@ import { buildPhaseCoachGateDayCoach } from '../engine/phase-coach-gate-day-coac
 import { buildNotificationLaneDayCoach } from '../engine/notification-lane-day-coach.js';
 import { buildLandmarkReadingDayCoach } from '../engine/landmark-reading-day-coach.js';
 import { buildCoachLiveRegionDayCoach } from '../engine/coach-live-region-day-coach.js';
+import { buildAttentionSurfaceDayCoach } from '../engine/attention-surface-day-coach.js';
+import { buildGuidedLearningDayCoach } from '../engine/guided-learning-day-coach.js';
+import { buildKeyboardShortcutConflictDayCoach } from '../engine/keyboard-shortcut-conflict-day-coach.js';
+import { buildContextualWidgetDayCoach } from '../engine/contextual-widget-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -146,6 +150,10 @@ export interface DayAdvanceUiEvolutionResult {
   notificationLaneDayCoachCopy: string | null;
   landmarkReadingDayCoachCopy: string | null;
   coachLiveRegionDayCoachCopy: string | null;
+  attentionSurfaceDayCoachCopy: string | null;
+  guidedLearningDayCoachCopy: string | null;
+  keyboardShortcutConflictDayCoachCopy: string | null;
+  contextualWidgetDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -159,6 +167,7 @@ export interface TickEvolvingUiDayAdvanceContext {
   sessionMemory?: SessionUiMemory;
   layoutPreset?: V94LayoutPreset;
   viewportWidthPx?: number;
+  contextualShouldShowByWidget?: Record<string, boolean>;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -483,6 +492,41 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const attentionSurfaceDayCoach =
+    context.phase != null
+      ? buildAttentionSurfaceDayCoach({
+          band: cognitiveLoadDayCoach.band,
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+          cognitiveLoadCoachRequested: cognitiveLoadDayCoach.shouldSurfaceCoach,
+          panelUnlockCoachRequested: newlyUnlockedPanelIds.length > 0,
+          simEvolutionBridgeRequested: newlyUnlockedPanelIds.length > 0,
+          keyboardHintsRequested: true,
+          focusSessionBannerRequested: focusSummary.suppressedCount > 0,
+        })
+      : { deferredSurfaceCount: 0, coachCopy: null };
+
+  const guidedLearningDayCoach = buildGuidedLearningDayCoach({
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const keyboardShortcutConflictDayCoach =
+    context.phase != null
+      ? buildKeyboardShortcutConflictDayCoach({
+          interfaceLevel: nextSignals.interfaceLevel,
+          phase: context.phase,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { conflictCount: 0, coachCopy: null };
+
+  const contextualWidgetDayCoach = buildContextualWidgetDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+    contextualShouldShowByWidget: context.contextualShouldShowByWidget,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -551,6 +595,10 @@ export function tickEvolvingUiOnDayAdvance(
     notificationLaneDayCoachCopy: notificationLaneDayCoach.coachCopy,
     landmarkReadingDayCoachCopy: landmarkReadingDayCoach.coachCopy,
     coachLiveRegionDayCoachCopy: coachLiveRegionDayCoach.coachCopy,
+    attentionSurfaceDayCoachCopy: attentionSurfaceDayCoach.coachCopy,
+    guidedLearningDayCoachCopy: guidedLearningDayCoach.coachCopy,
+    keyboardShortcutConflictDayCoachCopy: keyboardShortcutConflictDayCoach.coachCopy,
+    contextualWidgetDayCoachCopy: contextualWidgetDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

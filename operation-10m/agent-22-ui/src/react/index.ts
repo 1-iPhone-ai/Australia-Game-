@@ -65,3 +65,7 @@ export { PhaseCoachGateDayCoachStrip } from './PhaseCoachGateDayCoachStrip.js';
 export { NotificationLaneDayCoachStrip } from './NotificationLaneDayCoachStrip.js';
 export { LandmarkReadingDayCoachStrip } from './LandmarkReadingDayCoachStrip.js';
 export { CoachLiveRegionDayCoachStrip } from './CoachLiveRegionDayCoachStrip.js';
+export { AttentionSurfaceDayCoachStrip } from './AttentionSurfaceDayCoachStrip.js';
+export { GuidedLearningDayCoachStrip } from './GuidedLearningDayCoachStrip.js';
+export { KeyboardShortcutConflictDayCoachStrip } from './KeyboardShortcutConflictDayCoachStrip.js';
+export { ContextualWidgetDayCoachStrip } from './ContextualWidgetDayCoachStrip.js';

@@ -144,6 +144,18 @@ export function SimulationUiEvolutionBridge({
       {result.coachLiveRegionDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-live-region-day">{result.coachLiveRegionDayCoachCopy}</div>
       ) : null}
+      {result.attentionSurfaceDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-attention-day">{result.attentionSurfaceDayCoachCopy}</div>
+      ) : null}
+      {result.guidedLearningDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-guided-day">{result.guidedLearningDayCoachCopy}</div>
+      ) : null}
+      {result.keyboardShortcutConflictDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-shortcut-conflict-day">{result.keyboardShortcutConflictDayCoachCopy}</div>
+      ) : null}
+      {result.contextualWidgetDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-widget-day">{result.contextualWidgetDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
