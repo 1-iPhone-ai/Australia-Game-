@@ -127,5 +127,8 @@ export * from './settlement-existential-absolute-nullity-determinism.ts';
 export * from './regional-collapse-omni-singularity-holism.ts';
 export * from './interregional-void-total-erosion-granulation.ts';
 export * from './settlement-existential-absolute-nullity-certitude.ts';
+export * from './regional-collapse-omni-singularity-monism.ts';
+export * from './interregional-void-total-erosion-comminution.ts';
+export * from './settlement-existential-absolute-nullity-conviction.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';
