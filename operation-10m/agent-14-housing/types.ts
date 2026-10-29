@@ -1,6 +1,6 @@
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.13-scale-wave-13' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.14-scale-wave-14' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -122,6 +122,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   handoffTrajectory?: HandoffTrajectorySnapshot;
   gatedCommitSchedule?: GatedCommitSchedule;
   wellbeingIntegrationHandoffBrief?: WellbeingIntegrationHandoffBrief;
+  integrationTrajectory?: IntegrationTrajectorySnapshot;
+  scheduleReadinessMonitor?: ScheduleReadinessMonitor;
+  nationalWireInReadinessBrief?: NationalWireInReadinessBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -537,6 +540,43 @@ export interface WellbeingIntegrationHandoffBrief {
   shouldPublishIntegration: boolean;
   scheduledCommitCount: number;
   deferUntilTurn: number;
+  headlines: string[];
+  summary: string;
+}
+
+export type IntegrationPublishBand = 'publish' | 'watch' | 'hold';
+
+export interface IntegrationTrajectorySnapshot {
+  turn: number;
+  integrationReadinessEma: number;
+  instantaneousReadiness: number;
+  band: IntegrationPublishBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface IntegrationTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  integrationReadinessEma: number;
+  priorEma?: number;
+}
+
+export interface ScheduleReadinessMonitor {
+  turn: number;
+  dueThisTurn: number;
+  futureItems: number;
+  overdueCount: number;
+  readinessRatio: number;
+  shouldExpediteSchedule: boolean;
+  summary: string;
+}
+
+export interface NationalWireInReadinessBrief {
+  turn: number;
+  shouldWireNationalTurn: boolean;
+  dueCommitCount: number;
   headlines: string[];
   summary: string;
 }

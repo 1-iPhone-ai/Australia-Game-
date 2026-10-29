@@ -41,4 +41,7 @@ export * from './portfolio-handoff-brief.ts';
 export * from './handoff-trajectory.ts';
 export * from './gated-commit-scheduler.ts';
 export * from './wellbeing-integration-handoff-brief.ts';
+export * from './integration-trajectory.ts';
+export * from './schedule-readiness-monitor.ts';
+export * from './national-wire-in-readiness-brief.ts';
 export { runAgent14WellbeingSelfTests } from './self-tests.ts';

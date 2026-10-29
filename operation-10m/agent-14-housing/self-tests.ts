@@ -95,6 +95,13 @@ import {
 } from './handoff-trajectory.ts';
 import { buildGatedCommitSchedule } from './gated-commit-scheduler.ts';
 import { composeWellbeingIntegrationHandoffBrief } from './wellbeing-integration-handoff-brief.ts';
+import {
+  advanceIntegrationTrajectory,
+  createInitialIntegrationTrajectory,
+  sanitizeIntegrationTrajectory,
+} from './integration-trajectory.ts';
+import { buildScheduleReadinessMonitor } from './schedule-readiness-monitor.ts';
+import { composeNationalWireInReadinessBrief } from './national-wire-in-readiness-brief.ts';
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -596,8 +603,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Twenty-eight housing scenarios registered',
-    listAgent14ScenarioIds().length === 28,
+    'Thirty housing scenarios registered',
+    listAgent14ScenarioIds().length === 30,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -825,8 +832,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave5_schema_version',
-    'Wellbeing schema version is wave 13',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.13-scale-wave-13',
+    'Wellbeing schema version is wave 14',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.14-scale-wave-14',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -2199,6 +2206,159 @@ export function runAgent14WellbeingSelfTests(): {
       'Handoff trajectory advance updates persisted turn',
       snap.persisted.lastTurn === 3 && snap.snapshot.handoffReadinessEma > 0,
       `ema=${snap.snapshot.handoffReadinessEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 5, fiscalHeadroom: 44, stateCapacityLoad: 62, workforceReadiness: 'strained' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+      integrationTrajectoryPersisted: createInitialIntegrationTrajectory(),
+    });
+    check(
+      results,
+      'wave14_integration_trajectory',
+      'Turn advance attaches integration trajectory',
+      adv.inputs.integrationTrajectory !== undefined &&
+        adv.integrationTrajectoryPersisted.lastTurn === 5 &&
+        adv.inputs.integrationTrajectory!.integrationReadinessEma > 0,
+      `band=${adv.inputs.integrationTrajectory?.band} ema=${adv.inputs.integrationTrajectory?.integrationReadinessEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 6, fiscalHeadroom: 16, stateCapacityLoad: 94, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave14_schedule_readiness_monitor',
+      'Schedule readiness monitor populated under stress',
+      adv.inputs.scheduleReadinessMonitor !== undefined &&
+        adv.inputs.scheduleReadinessMonitor!.summary.length > 8,
+      adv.inputs.scheduleReadinessMonitor?.summary.slice(0, 72)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 4, fiscalHeadroom: 51, stateCapacityLoad: 50, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave14_national_wire_in_brief',
+      'National wire-in brief includes summary',
+      adv.inputs.nationalWireInReadinessBrief !== undefined &&
+        adv.inputs.nationalWireInReadinessBrief!.summary.length > 10,
+      `wire=${adv.inputs.nationalWireInReadinessBrief?.shouldWireNationalTurn}`
+    );
+  }
+
+  {
+    const raw = sanitizeIntegrationTrajectory({
+      schemaVersion: '10.14.13-scale-wave-13' as any,
+      lastTurn: 2,
+      emaAlpha: 0.3,
+      integrationReadinessEma: 44,
+    });
+    check(
+      results,
+      'wave14_integration_sanitize',
+      'Integration trajectory sanitize upgrades schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.integrationReadinessEma === 44,
+      `schema=${raw.schemaVersion}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('integration_trajectory_arc', 10);
+    const last = sim.turns[9];
+    check(
+      results,
+      'wave14_integration_arc_scenario',
+      'Integration arc wires trajectory, schedule monitor, and wire-in brief',
+      last.integrationTrajectory !== undefined &&
+        last.scheduleReadinessMonitor !== undefined &&
+        last.nationalWireInReadinessBrief !== undefined,
+      `band=${last.integrationTrajectory?.band} wire=${last.nationalWireInReadinessBrief?.shouldWireNationalTurn}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('schedule_readiness_stress', 8);
+    const last = sim.turns[7];
+    check(
+      results,
+      'wave14_schedule_stress_scenario',
+      'Schedule stress expedites or blocks wire-in',
+      last.scheduleReadinessMonitor !== undefined &&
+        (last.scheduleReadinessMonitor!.shouldExpediteSchedule ||
+          last.gatedCommitSchedule!.shouldDeferAll ||
+          !last.nationalWireInReadinessBrief!.shouldWireNationalTurn),
+      `expedite=${last.scheduleReadinessMonitor?.shouldExpediteSchedule} wire=${last.nationalWireInReadinessBrief?.shouldWireNationalTurn}`
+    );
+  }
+
+  check(
+    results,
+    'wave14_wire_in_stub_catalog',
+    'Wave 14 wire-in stubs present',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_VIC_national_wire_in') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_NT_schedule_readiness'),
+    `n=${AGENT14_HEALTH_ED_PROGRAM_STUBS.length}`
+  );
+
+  check(
+    results,
+    'wave14_scenario_catalog',
+    'Scenario catalog includes wave 14 scenarios',
+    listAgent14ScenarioIds().includes('integration_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('schedule_readiness_stress'),
+    `count=${listAgent14ScenarioIds().length}`
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 7, fiscalHeadroom: 22, stateCapacityLoad: 89, workforceReadiness: 'blocking' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const monitor = buildScheduleReadinessMonitor({
+      turn: 7,
+      gatedCommitSchedule: adv.inputs.gatedCommitSchedule!,
+    });
+    const wireIn = composeNationalWireInReadinessBrief({
+      turn: 7,
+      integrationHandoff: adv.inputs.wellbeingIntegrationHandoffBrief!,
+      scheduleReadiness: monitor,
+      integrationTrajectory: adv.inputs.integrationTrajectory,
+    });
+    check(
+      results,
+      'wave14_wire_in_composer',
+      'Standalone wire-in composer returns headlines',
+      wireIn.headlines.length > 0 && wireIn.summary.length > 10,
+      wireIn.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 3, fiscalHeadroom: 48, stateCapacityLoad: 54, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceIntegrationTrajectory(
+      3,
+      adv.inputs.wellbeingIntegrationHandoffBrief!,
+      createInitialIntegrationTrajectory()
+    );
+    check(
+      results,
+      'wave14_integration_advance_unit',
+      'Integration trajectory advance updates persisted turn',
+      snap.persisted.lastTurn === 3 && snap.snapshot.integrationReadinessEma > 0,
+      `ema=${snap.snapshot.integrationReadinessEma}`
     );
   }
 

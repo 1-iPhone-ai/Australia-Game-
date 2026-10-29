@@ -36,7 +36,9 @@ export type Agent14HousingScenarioId =
   | 'resumption_trajectory_arc'
   | 'commit_gating_stress'
   | 'handoff_trajectory_arc'
-  | 'gated_commit_scheduler_stress';
+  | 'gated_commit_scheduler_stress'
+  | 'integration_trajectory_arc'
+  | 'schedule_readiness_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -308,6 +310,29 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_h_QLD_regional_release',
     ],
   },
+  {
+    id: 'integration_trajectory_arc',
+    label: 'Integration trajectory arc',
+    baseInputs: { fiscalHeadroom: 56, stateCapacityLoad: 44, workforceReadiness: 'balanced' },
+    launchProgramIds: [
+      'ps_xp_VIC_national_wire_in',
+      'ps_h_VIC_planning_reform',
+      'ps_he_VIC_hospital_backlog',
+    ],
+  },
+  {
+    id: 'schedule_readiness_stress',
+    label: 'Schedule readiness stress',
+    baseInputs: { fiscalHeadroom: 13, stateCapacityLoad: 97, workforceReadiness: 'blocking', workforceSpecialistGap: 86 },
+    launchProgramIds: [
+      'ps_xp_NT_schedule_readiness',
+      'ps_h_NT_remote_housing',
+      'ps_he_NT_remote_clinic',
+      'ps_ed_NSW_skills',
+      'ps_h_NSW_social_accel',
+      'ps_h_WA_remote_housing',
+    ],
+  },
 ];
 
 export { commitmentFromProgramStub } from './program-stub-commitments.ts';
@@ -334,6 +359,7 @@ export function simulateAgent14HousingScenario(
   let readinessTrajectoryPersisted = null;
   let resumptionTrajectoryPersisted = null;
   let handoffTrajectoryPersisted = null;
+  let integrationTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -358,6 +384,7 @@ export function simulateAgent14HousingScenario(
       readinessTrajectoryPersisted,
       resumptionTrajectoryPersisted,
       handoffTrajectoryPersisted,
+      integrationTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -373,6 +400,7 @@ export function simulateAgent14HousingScenario(
     readinessTrajectoryPersisted = result.readinessTrajectoryPersisted;
     resumptionTrajectoryPersisted = result.resumptionTrajectoryPersisted;
     handoffTrajectoryPersisted = result.handoffTrajectoryPersisted;
+    integrationTrajectoryPersisted = result.integrationTrajectoryPersisted;
     turns.push(result.inputs);
   }
 

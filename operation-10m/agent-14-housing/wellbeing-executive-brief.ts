@@ -29,6 +29,9 @@ import type {
   HandoffTrajectorySnapshot,
   GatedCommitSchedule,
   WellbeingIntegrationHandoffBrief,
+  IntegrationTrajectorySnapshot,
+  ScheduleReadinessMonitor,
+  NationalWireInReadinessBrief,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -64,6 +67,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   handoffTrajectory?: HandoffTrajectorySnapshot;
   gatedCommitSchedule?: GatedCommitSchedule;
   wellbeingIntegrationHandoffBrief?: WellbeingIntegrationHandoffBrief;
+  integrationTrajectory?: IntegrationTrajectorySnapshot;
+  scheduleReadinessMonitor?: ScheduleReadinessMonitor;
+  nationalWireInReadinessBrief?: NationalWireInReadinessBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -188,6 +194,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.wellbeingIntegrationHandoffBrief?.shouldPublishIntegration) {
     giNotes.push(args.wellbeingIntegrationHandoffBrief.summary);
   }
+  if (args.integrationTrajectory?.band === 'hold') {
+    giNotes.push(
+      `Integration band ${args.integrationTrajectory.band} (EMA ${args.integrationTrajectory.integrationReadinessEma})`
+    );
+  }
+  if (args.scheduleReadinessMonitor?.shouldExpediteSchedule) {
+    giNotes.push(args.scheduleReadinessMonitor.summary);
+  }
+  if (args.nationalWireInReadinessBrief?.shouldWireNationalTurn) {
+    giNotes.push(args.nationalWireInReadinessBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -215,6 +232,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('portfolio handoff ready');
   } else if (args.wellbeingIntegrationHandoffBrief?.shouldPublishIntegration) {
     headlineParts.push('national integration handoff ready');
+  } else if (args.nationalWireInReadinessBrief?.shouldWireNationalTurn) {
+    headlineParts.push('national wire-in ready');
   }
 
   return {
