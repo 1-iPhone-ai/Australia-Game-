@@ -127,6 +127,8 @@ const FILES = [
   'inflation/wholesale-grid-transition-inflation-surge.ts',
   'inflation/trade-cleared-forward-arc-inflation-handoff-latch.ts',
   'inflation/guardian-entrustment-envelope-inflation-pressure-surge.ts',
+  'inflation/housing-wellbeing-mortgage-inflation-escalation-latch.ts',
+  'inflation/transport-corridor-freight-inflation-surge-latch.ts',
   'credit/loan-pricing.ts',
   'investment/climate-link.ts',
   'transmission/channels.ts',
@@ -210,6 +212,7 @@ const FILES = [
   'react/MacroCorporateWaveInflationPanel.tsx',
   'react/ResearchTradeWaveInflationPanel.tsx',
   'react/TradeGuardianWaveInflationPanel.tsx',
+  'react/HousingTransportWave50InflationPanel.tsx',
 ];
 
 function stripModulePreamble(source) {

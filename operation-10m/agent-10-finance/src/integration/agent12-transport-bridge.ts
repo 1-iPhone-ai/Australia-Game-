@@ -24,6 +24,10 @@ export interface Agent12TransportSnapshot {
   wave44FreightGridlockLatch?: boolean;
   /** Round 44: freight gridlock surge band. */
   freightGridlockSurgeBand?: 'clear' | 'building' | 'ruptured';
+  /** Round 50: corridor freight surge latch. */
+  wave50FreightCorridorSurgeLatch?: boolean;
+  /** Round 50: corridor freight surge band. */
+  corridorFreightSurgeBand?: 'clear' | 'building' | 'ruptured';
 }
 
 export function mergeAgent12IntoMacroFinancialInputs(
@@ -82,6 +86,13 @@ export function mergeAgent12IntoMacroFinancialInputs(
     highInflationScenario = true;
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
   } else if (snapshot.freightGridlockSurgeBand === 'building' && snapshot.freightCapacityBand === 'critical') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
+  if (snapshot.wave50FreightCorridorSurgeLatch && snapshot.corridorFreightSurgeBand === 'ruptured') {
+    highInflationScenario = true;
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  } else if (snapshot.corridorFreightSurgeBand === 'building' && snapshot.freightCapacityBand === 'critical') {
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 

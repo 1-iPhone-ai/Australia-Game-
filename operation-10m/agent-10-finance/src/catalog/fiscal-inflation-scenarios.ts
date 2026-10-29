@@ -1874,6 +1874,48 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'trade', 'guardian', 'round49'],
   },
+  {
+    id: 'housing_wellbeing_mortgage_escalation_latch_stack',
+    label: 'Housing wellbeing mortgage escalation latch stack',
+    description: 'Mortgage wellbeing escalation under essential services stress.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.54,
+      fiscalPressure: 'critical',
+      publicStability: 24,
+    },
+    tags: ['inflation', 'housing', 'round50'],
+  },
+  {
+    id: 'transport_corridor_freight_surge_stress',
+    label: 'Transport corridor freight surge stress',
+    description: 'Corridor freight surge under critical capacity and fuel surcharge.',
+    patch: {
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.51,
+      publicStability: 22,
+    },
+    tags: ['inflation', 'transport', 'round50'],
+  },
+  {
+    id: 'housing_transport_wave50_fusion_stress',
+    label: 'Housing & transport wave 50 fusion stress',
+    description: 'Mortgage wellbeing escalation colliding with corridor freight surge.',
+    patch: {
+      inflationSettingMultiplier: 1.61,
+      highInflationScenario: true,
+      creditShockActive: true,
+      householdInflationScenarioActive: true,
+      fiscalPressure: 'critical',
+      systemicLiquidityBand: 'critical',
+      publicStability: 10,
+    },
+    tags: ['inflation', 'housing', 'transport', 'round50'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

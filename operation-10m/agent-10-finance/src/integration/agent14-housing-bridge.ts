@@ -15,6 +15,10 @@ export interface Agent14HousingSnapshot {
   shelterEssentialInflationLatch?: boolean;
   /** Round 28: mortgage wellbeing stress band. */
   mortgageWellbeingStressBand?: 'stable' | 'strained' | 'acute';
+  /** Round 50: housing wellbeing mortgage escalation latch. */
+  wave50HousingWellbeingEscalationLatch?: boolean;
+  /** Round 50: mortgage wellbeing escalation band. */
+  mortgageWellbeingEscalationBand?: 'contained' | 'building' | 'acute';
 }
 
 export function mergeAgent14IntoMacroFinancialInputs(
@@ -52,6 +56,12 @@ export function mergeAgent14IntoMacroFinancialInputs(
     inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
   }
 
+  if (snapshot.wave50HousingWellbeingEscalationLatch && snapshot.mortgageWellbeingEscalationBand === 'acute') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  } else if (snapshot.mortgageWellbeingEscalationBand === 'building' && snapshot.wellbeingCostBand === 'critical') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.03, 0.85, 1.45);
+  }
+
   let householdAffordability = base.householdAffordability;
   if (
     snapshot.mortgageStressBand === 'severe' &&
@@ -76,7 +86,9 @@ export function mergeAgent14IntoMacroFinancialInputs(
       base.highInflationScenario ||
       snapshot.inlineMergeTrajectoryBand === 'blocked' ||
       snapshot.inlineActivationBoundaryCritical === true ||
-      snapshot.mortgageWellbeingStressBand === 'acute',
+      snapshot.mortgageWellbeingStressBand === 'acute' ||
+      (snapshot.wave50HousingWellbeingEscalationLatch === true &&
+        snapshot.mortgageWellbeingEscalationBand === 'acute'),
   };
 }
 
