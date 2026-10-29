@@ -1,8 +1,8 @@
 /**
- * Agent 15 scale wave round 56 (O10-257) — sovereign handoff depth stacking stub (stacks wave-55 depth).
+ * Agent 15 scale wave round 57 (O10-257) — sovereign handoff depth stacking stub (stacks wave-56 depth).
  */
 
-import type { GTELWave57SovereignHandoffDepthStackingSnapshot } from './o10-254-wave57-sovereign-handoff-depth-stacking.ts';
+import type { GTELWave56SovereignHandoffDepthStackingSnapshot } from './o10-254-wave56-sovereign-handoff-depth-stacking.ts';
 import type { GTELPersisted } from './types.ts';
 import { gtelClamp, gtelNum } from './util.ts';
 
@@ -17,10 +17,10 @@ export function sanitizeWave57SovereignHandoffDepthStackingSmoothing(raw: unknow
 }
 
 export function computeWave57SovereignHandoffDepthStackingSnapshot(input: {
-  wave57Stacking: GTELWave57SovereignHandoffDepthStackingSnapshot;
+  wave56Stacking: GTELWave56SovereignHandoffDepthStackingSnapshot;
   persisted: GTELPersisted;
 }): { snapshot: GTELWave57SovereignHandoffDepthStackingSnapshot; persisted: GTELPersisted } {
-  const raw = gtelClamp(input.wave57Stacking.score * 0.94 + 0.08, 0.2, 0.96);
+  const raw = gtelClamp(input.wave56Stacking.score * 0.94 + 0.08, 0.2, 0.96);
   const prev = sanitizeWave57SovereignHandoffDepthStackingSmoothing(
     input.persisted.wave57SovereignHandoffDepthStackingSmoothing,
   );
