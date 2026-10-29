@@ -160,6 +160,9 @@ export * from './replay-scale-wave-wave52-integration-handoff.ts';
 export * from './replay-scale-wave-wave53-integration-verification.ts';
 export * from './archive-scale-wave-wave54-export-gate.ts';
 export * from './replay-scale-wave-wave54-integration-handoff.ts';
+export * from './archive-scale-wave-wave58-export-gate.ts';
+export * from './replay-scale-wave-wave58-integration-handoff.ts';
+
 export * from './archive-scale-wave-wave57-export-gate.ts';
 export * from './replay-scale-wave-wave57-integration-handoff.ts';
 
