@@ -19,5 +19,7 @@ export * from './trade-finance.ts';
 export * from './market-diversification.ts';
 export * from './terms-of-trade.ts';
 export * from './supply-chain-resilience.ts';
+export * from './foreign-exchange-pressure.ts';
+export * from './trade-retaliation.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

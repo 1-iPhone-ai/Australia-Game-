@@ -130,6 +130,10 @@ export interface GTELPersisted {
   termsOfTradeSmoothing?: number;
   /** Smoothed supply-chain resilience score (0–1). */
   supplyChainResilienceSmoothing?: number;
+  /** Smoothed trade-weighted FX pressure index (~1 = neutral). */
+  foreignExchangeSmoothing?: number;
+  /** Smoothed retaliation intensity (0–1). */
+  retaliationPressureSmoothing?: number;
 }
 
 export interface GTELState {
@@ -155,6 +159,8 @@ export interface GTELState {
   marketDiversification: GTELMarketDiversificationSnapshot;
   termsOfTrade: GTELTermsOfTradeSnapshot;
   supplyChainResilience: GTELSupplyChainResilienceSnapshot;
+  foreignExchange: GTELForeignExchangeSnapshot;
+  tradeRetaliation: GTELTradeRetaliationSnapshot;
   inputHash: string;
 }
 
@@ -402,6 +408,26 @@ export interface GTELSupplyChainResilienceSnapshot {
   summary: string;
 }
 
+export type GTELForeignExchangeBand = 'supportive' | 'neutral' | 'stress' | 'crisis';
+
+export interface GTELForeignExchangeSnapshot {
+  pressureIndex: number;
+  band: GTELForeignExchangeBand;
+  passThroughToImports: number;
+  exportCompetitiveness: number;
+  summary: string;
+}
+
+export type GTELTradeRetaliationBand = 'dormant' | 'watch' | 'active' | 'escalating';
+
+export interface GTELTradeRetaliationSnapshot {
+  intensity: number;
+  band: GTELTradeRetaliationBand;
+  activeMeasureCount: number;
+  targetedPartnerIds: GTELPartnerId[];
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -559,6 +585,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     partnerMixSmoothing: {},
     termsOfTradeSmoothing: 1,
     supplyChainResilienceSmoothing: 0.58,
+    foreignExchangeSmoothing: 1,
+    retaliationPressureSmoothing: 0.22,
   };
 }
 
@@ -715,6 +743,8 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.partnerMixSmoothing = sanitizePartnerMixSmoothing(r.partnerMixSmoothing);
   base.termsOfTradeSmoothing = sanitizeTermsOfTradeSmoothing(r.termsOfTradeSmoothing);
   base.supplyChainResilienceSmoothing = sanitizeSupplyChainResilienceSmoothing(r.supplyChainResilienceSmoothing);
+  base.foreignExchangeSmoothing = sanitizeForeignExchangeSmoothing(r.foreignExchangeSmoothing);
+  base.retaliationPressureSmoothing = sanitizeRetaliationPressureSmoothing(r.retaliationPressureSmoothing);
   return base;
 }
 
@@ -3074,6 +3104,280 @@ export function supplyChainResilienceGiNotes(
 }
 
 
+// --- source: foreign-exchange-pressure.ts ---
+  GTELForeignExchangeSnapshot,
+  GTELPersisted,
+  GTELTermsOfTradeSnapshot,
+  GTELTradeBalanceSnapshot,
+  GTELTradeFinanceSnapshot,
+  GTELTurnResult,
+} from './types.ts';
+
+export type GTELForeignExchangeBand = GTELForeignExchangeSnapshot['band'];
+
+function fxBand(pressureIndex: number): GTELForeignExchangeBand {
+  if (pressureIndex >= 1.045) return 'supportive';
+  if (pressureIndex >= 0.96) return 'neutral';
+  if (pressureIndex >= 0.88) return 'stress';
+  return 'crisis';
+}
+
+export function sanitizeForeignExchangeSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 1), 0.78, 1.22);
+}
+
+export function createEmptyForeignExchangeSnapshot(): GTELForeignExchangeSnapshot {
+  return {
+    pressureIndex: 1,
+    band: 'neutral',
+    passThroughToImports: 0.12,
+    exportCompetitiveness: 0.5,
+    summary: 'Trade-weighted FX pass-through is near neutral.',
+  };
+}
+
+export function advanceForeignExchangeSmoothing(
+  persisted: GTELPersisted,
+  rawPressure: number,
+): GTELPersisted {
+  const prev = sanitizeForeignExchangeSmoothing(persisted.foreignExchangeSmoothing);
+  const next = gtelClamp(prev * 0.76 + gtelClamp(rawPressure, 0.8, 1.18) * 0.24, 0.78, 1.22);
+  return { ...persisted, foreignExchangeSmoothing: Math.round(next * 1000) / 1000 };
+}
+
+export function computeForeignExchangeSnapshot(input: {
+  termsOfTrade: GTELTermsOfTradeSnapshot;
+  tradeBalance: GTELTradeBalanceSnapshot;
+  tradeFinance: GTELTradeFinanceSnapshot;
+  persisted: GTELPersisted;
+}): { snapshot: GTELForeignExchangeSnapshot; persisted: GTELPersisted } {
+  const termsLift = gtelClamp((input.termsOfTrade.index - 1) * 0.35, -0.08, 0.1);
+  const balanceLift =
+    input.tradeBalance.currentAccountTone === 'surplus' || input.tradeBalance.currentAccountTone === 'mild_surplus'
+      ? 0.035
+      : input.tradeBalance.currentAccountTone === 'deficit'
+        ? -0.045
+        : 0;
+  const financeDrag =
+    input.tradeFinance.band === 'frozen'
+      ? -0.06
+      : input.tradeFinance.band === 'tight'
+        ? -0.035
+        : input.tradeFinance.band === 'fluid'
+          ? 0.025
+          : 0;
+  const rawPressure = gtelClamp(1 + termsLift + balanceLift + financeDrag, 0.82, 1.16);
+  const persisted = advanceForeignExchangeSmoothing(input.persisted, rawPressure);
+  const pressureIndex = sanitizeForeignExchangeSmoothing(persisted.foreignExchangeSmoothing);
+  const band = fxBand(pressureIndex);
+  const passThroughToImports = gtelClamp(0.08 + (1.02 - pressureIndex) * 0.22, 0.04, 0.28);
+  const exportCompetitiveness = gtelClamp((pressureIndex - 0.88) / 0.34, 0, 1);
+
+  const summary =
+    band === 'supportive'
+      ? 'Commodity-linked FX is easing import costs while keeping export quotes competitive.'
+      : band === 'crisis'
+        ? 'FX pass-through is amplifying import inflation faster than export receipts can offset.'
+        : band === 'stress'
+          ? 'Currency pressure is feeding through to import prices and squeezing household budgets.'
+          : 'Trade-weighted exchange pass-through is broadly balanced this turn.';
+
+  return {
+    snapshot: {
+      pressureIndex: Math.round(pressureIndex * 1000) / 1000,
+      band,
+      passThroughToImports: Math.round(passThroughToImports * 1000) / 1000,
+      exportCompetitiveness: Math.round(exportCompetitiveness * 1000) / 1000,
+      summary,
+    },
+    persisted,
+  };
+}
+
+export function foreignExchangeExportScale(
+  snapshot: GTELForeignExchangeSnapshot | null | undefined,
+): number {
+  if (!snapshot) return 1;
+  return gtelClamp(0.88 + snapshot.exportCompetitiveness * 0.16, 0.86, 1.06);
+}
+
+export function foreignExchangeHouseholdModifier(
+  snapshot: GTELForeignExchangeSnapshot | null | undefined,
+): number {
+  if (!snapshot) return 0;
+  return gtelClamp((1 - snapshot.pressureIndex) * 0.18 - snapshot.passThroughToImports * 0.12, -0.12, 0.08);
+}
+
+export function foreignExchangeDomesticStress(
+  snapshot: GTELForeignExchangeSnapshot | null | undefined,
+): number {
+  if (!snapshot) return 0;
+  return gtelClamp(snapshot.passThroughToImports * 0.14 + (snapshot.band === 'crisis' ? 0.04 : 0), 0, 0.1);
+}
+
+export function foreignExchangeWorldEvent(
+  snapshot: GTELForeignExchangeSnapshot,
+  turn: number,
+): GTELTurnResult['worldEvents'][0] | null {
+  if (snapshot.band !== 'crisis') return null;
+  return {
+    id: `gtel_fx_crisis_${turn}`,
+    turn,
+    kind: 'trade',
+    title: 'Trade-weighted FX stress',
+    summary: snapshot.summary,
+    regionIds: ['NSW', 'VIC', 'QLD'],
+  };
+}
+
+export function foreignExchangeGiNotes(
+  fx: GTELForeignExchangeSnapshot | null | undefined,
+): string[] {
+  if (!fx) return [];
+  return [
+    `FX pass-through: ${fx.band.replace(/_/g, ' ')} (index ${Math.round(fx.pressureIndex * 100) / 100}).`,
+    fx.summary,
+  ];
+}
+
+
+// --- source: trade-retaliation.ts ---
+  GTELDiplomaticEngagementState,
+  GTELPartnerId,
+  GTELPersisted,
+  GTELTradeRetaliationSnapshot,
+  GTELTurnResult,
+} from './types.ts';
+
+export type GTELTradeRetaliationBand = GTELTradeRetaliationSnapshot['band'];
+
+function retaliationBand(intensity: number): GTELTradeRetaliationBand {
+  if (intensity >= 0.62) return 'escalating';
+  if (intensity >= 0.38) return 'active';
+  if (intensity >= 0.18) return 'watch';
+  return 'dormant';
+}
+
+export function sanitizeRetaliationPressureSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.22), 0.05, 0.88);
+}
+
+export function createEmptyTradeRetaliationSnapshot(): GTELTradeRetaliationSnapshot {
+  return {
+    intensity: 0.22,
+    band: 'watch',
+    activeMeasureCount: 0,
+    targetedPartnerIds: [],
+    summary: 'No coordinated trade retaliation is in force.',
+  };
+}
+
+export function advanceRetaliationPressureSmoothing(
+  persisted: GTELPersisted,
+  rawIntensity: number,
+): GTELPersisted {
+  const prev = sanitizeRetaliationPressureSmoothing(persisted.retaliationPressureSmoothing);
+  const next = gtelClamp(prev * 0.7 + gtelClamp(rawIntensity, 0.05, 0.9) * 0.3, 0.05, 0.88);
+  return { ...persisted, retaliationPressureSmoothing: Math.round(next * 1000) / 1000 };
+}
+
+export function computeTradeRetaliationSnapshot(input: {
+  openDisputeCount: number;
+  activeSanctionCount: number;
+  engagement: GTELDiplomaticEngagementState;
+  persisted: GTELPersisted;
+}): { snapshot: GTELTradeRetaliationSnapshot; persisted: GTELPersisted } {
+  const stalledTracks = Object.values(input.engagement.tracks || {}).filter(
+    t => t && (t.band === 'stalled' || t.momentum < 0.25),
+  ).length;
+  const disputeIntensity = gtelClamp(input.openDisputeCount * 0.14, 0, 0.42);
+  const sanctionIntensity = gtelClamp(input.activeSanctionCount * 0.11, 0, 0.35);
+  const engagementIntensity = gtelClamp(stalledTracks * 0.08 + (1 - input.engagement.summitPulse) * 0.06, 0, 0.22);
+  const rawIntensity = gtelClamp(disputeIntensity + sanctionIntensity + engagementIntensity, 0.05, 0.88);
+  const persisted = advanceRetaliationPressureSmoothing(input.persisted, rawIntensity);
+  const intensity = sanitizeRetaliationPressureSmoothing(persisted.retaliationPressureSmoothing);
+  const band = retaliationBand(intensity);
+  const activeMeasureCount =
+    Math.min(6, input.openDisputeCount + input.activeSanctionCount + (band === 'escalating' ? 1 : 0));
+  const targetedPartnerIds: GTELPartnerId[] = [];
+  GTEL_PARTNER_DEFS.forEach(p => {
+    if (p.id === 'domestic_premium') return;
+    const track = input.engagement.tracks?.[p.id];
+    if (input.openDisputeCount > 0 || (track && track.band === 'stalled')) {
+      if (intensity > 0.28) targetedPartnerIds.push(p.id);
+    }
+  });
+
+  const summary =
+    band === 'escalating'
+      ? 'Partners are stacking counter-tariffs and compliance probes across multiple lanes.'
+      : band === 'active'
+        ? 'Retaliatory trade measures are live — expect tighter partner gates until diplomacy cools.'
+        : band === 'dormant'
+          ? 'Retaliation risk is low; disputes have not yet triggered counter-measures.'
+          : 'Retaliation risk is elevated but still mostly rhetorical.';
+
+  return {
+    snapshot: {
+      intensity: Math.round(intensity * 1000) / 1000,
+      band,
+      activeMeasureCount,
+      targetedPartnerIds: targetedPartnerIds.slice(0, 4),
+      summary,
+    },
+    persisted,
+  };
+}
+
+export function deriveRetaliationPartnerModifiers(snapshot: GTELTradeRetaliationSnapshot): {
+  partnerDeltas: Partial<Record<GTELPartnerId, number>>;
+  domesticStress: number;
+} {
+  const partnerDeltas: Partial<Record<GTELPartnerId, number>> = {};
+  if (snapshot.band === 'dormant' || snapshot.band === 'watch') {
+    return { partnerDeltas, domesticStress: snapshot.intensity * 0.04 };
+  }
+  const delta = snapshot.band === 'escalating' ? -0.09 : -0.05;
+  snapshot.targetedPartnerIds.forEach(id => {
+    partnerDeltas[id] = delta;
+  });
+  if (snapshot.band === 'escalating' && snapshot.targetedPartnerIds.length === 0) {
+    GTEL_PARTNER_DEFS.forEach(p => {
+      if (p.id !== 'domestic_premium') partnerDeltas[p.id] = delta * 0.6;
+    });
+  }
+  return {
+    partnerDeltas,
+    domesticStress: gtelClamp(snapshot.intensity * 0.12, 0, 0.1),
+  };
+}
+
+export function tradeRetaliationWorldEvent(
+  snapshot: GTELTradeRetaliationSnapshot,
+  turn: number,
+): GTELTurnResult['worldEvents'][0] | null {
+  if (snapshot.band !== 'escalating' || snapshot.activeMeasureCount < 2) return null;
+  return {
+    id: `gtel_retaliation_${turn}`,
+    turn,
+    kind: 'sanction',
+    title: 'Coordinated trade retaliation',
+    summary: snapshot.summary,
+    regionIds: ['WA', 'NSW', 'ACT'],
+  };
+}
+
+export function tradeRetaliationGiNotes(
+  retaliation: GTELTradeRetaliationSnapshot | null | undefined,
+): string[] {
+  if (!retaliation) return [];
+  return [
+    `Trade retaliation: ${retaliation.band.replace(/_/g, ' ')} (intensity ${Math.round(retaliation.intensity * 100)}%).`,
+    retaliation.summary,
+  ];
+}
+
+
 // --- source: domestic-consequences.ts ---
   GTELCommodityQuote,
   GTELDomesticCoupling,
@@ -3240,6 +3544,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   supplyChainResilienceGiNotes,
   supplyChainResilienceWorldEvent,
 } from './supply-chain-resilience.ts';
+  computeForeignExchangeSnapshot,
+  foreignExchangeDomesticStress,
+  foreignExchangeExportScale,
+  foreignExchangeGiNotes,
+  foreignExchangeHouseholdModifier,
+  foreignExchangeWorldEvent,
+} from './foreign-exchange-pressure.ts';
+  computeTradeRetaliationSnapshot,
+  deriveRetaliationPartnerModifiers,
+  tradeRetaliationGiNotes,
+  tradeRetaliationWorldEvent,
+} from './trade-retaliation.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -3275,6 +3591,18 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const engagementStep = advanceDiplomaticEngagement(persisted, input.diplomacyState, turn);
   persisted = engagementStep.persisted;
 
+  const openDisputesEarly = countOpenTradeDisputes(persisted);
+  const activeSanctionCountEarly = Object.values(preSanctions.activeTiers).filter(t => t && t !== 'none').length;
+  const retaliationStep = computeTradeRetaliationSnapshot({
+    openDisputeCount: openDisputesEarly,
+    activeSanctionCount: activeSanctionCountEarly,
+    engagement: engagementStep.state,
+    persisted,
+  });
+  persisted = retaliationStep.persisted;
+  const retaliationMods = deriveRetaliationPartnerModifiers(retaliationStep.snapshot);
+  const tradeRetaliation = retaliationStep.snapshot;
+
   const names = input.actorNames || {};
   const dip = deriveDiplomaticTradeModifiers(input.diplomacyState, turn, names);
   const agr = deriveTradeAgreementModifiers(persisted, turn);
@@ -3292,7 +3620,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     ),
     mergePartnerDeltas(
       mergePartnerDeltas(trust.partnerDeltas, policy.partnerDeltas),
-      engagement.partnerDeltas,
+      mergePartnerDeltas(engagement.partnerDeltas, retaliationMods.partnerDeltas),
     ),
   );
   const commodityDeltas = mergeCommodityDeltas(
@@ -3336,6 +3664,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   worldEvents.push(...sanctionStep.events);
   worldEvents.push(...disputeStep.events);
   worldEvents.push(...engagementStep.events);
+  const retaliationEvent = tradeRetaliationWorldEvent(tradeRetaliation, turn);
+  if (retaliationEvent) worldEvents.push(retaliationEvent);
 
   const partners: GTELPartnerMarket[] = GTEL_PARTNER_DEFS.map(def => {
     const prevBand = persisted.partnerAccess[def.id] || 'normal';
@@ -3468,11 +3798,23 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const resilienceEvent = supplyChainResilienceWorldEvent(supplyChainResilience, turn);
   if (resilienceEvent) worldEvents.push(resilienceEvent);
 
+  const fxStep = computeForeignExchangeSnapshot({
+    termsOfTrade,
+    tradeBalance,
+    tradeFinance,
+    persisted,
+  });
+  persisted = fxStep.persisted;
+  const foreignExchange = fxStep.snapshot;
+  const fxEvent = foreignExchangeWorldEvent(foreignExchange, turn);
+  if (fxEvent) worldEvents.push(fxEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
         tradeFinanceExportScale(tradeFinance) *
         supplyChainResilienceExportScale(supplyChainResilience) *
+        foreignExchangeExportScale(foreignExchange) *
         10,
     ) / 10;
 
@@ -3485,7 +3827,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const householdOffset = gtelClamp(
     (avgCommodity - 95) / -80 -
       (shock.domesticStress + sanctions.domesticStress + policy.domesticStress) * 0.15 +
-      termsOfTradeHouseholdModifier(termsOfTrade),
+      termsOfTradeHouseholdModifier(termsOfTrade) +
+      foreignExchangeHouseholdModifier(foreignExchange),
     -0.25,
     0.35,
   );
@@ -3525,7 +3868,9 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       importPressure +
       diversificationMods.domesticStress +
       tradeFinanceDomesticStress(tradeFinance) +
-      supplyChainResilienceDomesticStress(supplyChainResilience),
+      supplyChainResilienceDomesticStress(supplyChainResilience) +
+      foreignExchangeDomesticStress(foreignExchange) +
+      retaliationMods.domesticStress,
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -3548,6 +3893,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.partnerMixSmoothing,
     persisted.termsOfTradeSmoothing,
     persisted.supplyChainResilienceSmoothing,
+    persisted.foreignExchangeSmoothing,
+    persisted.retaliationPressureSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -3602,6 +3949,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     marketDiversification,
     termsOfTrade,
     supplyChainResilience,
+    foreignExchange,
+    tradeRetaliation,
     inputHash,
   };
 
@@ -3635,6 +3984,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...marketDiversificationGiNotes(state.marketDiversification));
   lines.push(...termsOfTradeGiNotes(state.termsOfTrade));
   lines.push(...supplyChainResilienceGiNotes(state.supplyChainResilience));
+  lines.push(...foreignExchangeGiNotes(state.foreignExchange));
+  lines.push(...tradeRetaliationGiNotes(state.tradeRetaliation));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -3653,6 +4004,9 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   computeSupplyChainResilienceSnapshot,
   supplyChainResilienceExportScale,
 } from './supply-chain-resilience.ts';
+  computeTradeRetaliationSnapshot,
+  deriveRetaliationPartnerModifiers,
+} from './trade-retaliation.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -4086,6 +4440,62 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     });
     gtelAssert(step.snapshot.band === 'fragile' || step.snapshot.band === 'brittle', 'expected fragile resilience');
     gtelAssert(supplyChainResilienceExportScale(step.snapshot) < 1, 'expected export scale haircut');
+  });
+
+  ok('foreign exchange stress when finance frozen and deficit tone', () => {
+    const terms = {
+      index: 0.92,
+      band: 'unfavorable' as const,
+      exportBasketIndex: 98,
+      importBasketIndex: 108,
+      summary: 'test',
+    };
+    const balance = {
+      exportValueIndex: 92,
+      importPressureIndex: 112,
+      netExportPulse: -0.12,
+      currentAccountTone: 'deficit' as const,
+      effectiveThroughput: 80,
+      narrative: 'test',
+    };
+    const finance = {
+      availabilityScore: 0.28,
+      band: 'frozen' as const,
+      financingPremium: 0.42,
+      exportCreditCeiling: 70,
+      summary: 'test',
+    };
+    const step = computeForeignExchangeSnapshot({
+      termsOfTrade: terms,
+      tradeBalance: balance,
+      tradeFinance: finance,
+      persisted: { ...createEmptyGTELPersisted(), foreignExchangeSmoothing: 0.88 },
+    });
+    gtelAssert(
+      step.snapshot.band === 'stress' || step.snapshot.band === 'crisis' || step.snapshot.pressureIndex < 0.96,
+      'expected FX stress',
+    );
+    gtelAssert(step.snapshot.pressureIndex < 0.96, 'expected sub-neutral FX index');
+  });
+
+  ok('trade retaliation escalates with disputes and sanctions', () => {
+    const engagement = {
+      tracks: {},
+      summitPulse: 0.2,
+      summary: 'test',
+    };
+    const step = computeTradeRetaliationSnapshot({
+      openDisputeCount: 3,
+      activeSanctionCount: 2,
+      engagement,
+      persisted: createEmptyGTELPersisted(),
+    });
+    gtelAssert(
+      ['watch', 'active', 'escalating'].includes(step.snapshot.band),
+      'expected retaliation band',
+    );
+    const mods = deriveRetaliationPartnerModifiers(step.snapshot);
+    gtelAssert(mods.domesticStress > 0, 'expected retaliation domestic stress');
   });
 
   return { passed, failed };

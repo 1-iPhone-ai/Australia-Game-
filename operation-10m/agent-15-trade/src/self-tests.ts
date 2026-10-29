@@ -26,6 +26,11 @@ import {
   computeSupplyChainResilienceSnapshot,
   supplyChainResilienceExportScale,
 } from './supply-chain-resilience.ts';
+import { computeForeignExchangeSnapshot } from './foreign-exchange-pressure.ts';
+import {
+  computeTradeRetaliationSnapshot,
+  deriveRetaliationPartnerModifiers,
+} from './trade-retaliation.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
   validateScenarioShockCatalog,
@@ -462,6 +467,62 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     });
     gtelAssert(step.snapshot.band === 'fragile' || step.snapshot.band === 'brittle', 'expected fragile resilience');
     gtelAssert(supplyChainResilienceExportScale(step.snapshot) < 1, 'expected export scale haircut');
+  });
+
+  ok('foreign exchange stress when finance frozen and deficit tone', () => {
+    const terms = {
+      index: 0.92,
+      band: 'unfavorable' as const,
+      exportBasketIndex: 98,
+      importBasketIndex: 108,
+      summary: 'test',
+    };
+    const balance = {
+      exportValueIndex: 92,
+      importPressureIndex: 112,
+      netExportPulse: -0.12,
+      currentAccountTone: 'deficit' as const,
+      effectiveThroughput: 80,
+      narrative: 'test',
+    };
+    const finance = {
+      availabilityScore: 0.28,
+      band: 'frozen' as const,
+      financingPremium: 0.42,
+      exportCreditCeiling: 70,
+      summary: 'test',
+    };
+    const step = computeForeignExchangeSnapshot({
+      termsOfTrade: terms,
+      tradeBalance: balance,
+      tradeFinance: finance,
+      persisted: { ...createEmptyGTELPersisted(), foreignExchangeSmoothing: 0.88 },
+    });
+    gtelAssert(
+      step.snapshot.band === 'stress' || step.snapshot.band === 'crisis' || step.snapshot.pressureIndex < 0.96,
+      'expected FX stress',
+    );
+    gtelAssert(step.snapshot.pressureIndex < 0.96, 'expected sub-neutral FX index');
+  });
+
+  ok('trade retaliation escalates with disputes and sanctions', () => {
+    const engagement = {
+      tracks: {},
+      summitPulse: 0.2,
+      summary: 'test',
+    };
+    const step = computeTradeRetaliationSnapshot({
+      openDisputeCount: 3,
+      activeSanctionCount: 2,
+      engagement,
+      persisted: createEmptyGTELPersisted(),
+    });
+    gtelAssert(
+      ['watch', 'active', 'escalating'].includes(step.snapshot.band),
+      'expected retaliation band',
+    );
+    const mods = deriveRetaliationPartnerModifiers(step.snapshot);
+    gtelAssert(mods.domesticStress > 0, 'expected retaliation domestic stress');
   });
 
   return { passed, failed };
