@@ -170270,6 +170270,57 @@ export const MAINTENANCE_BURDEN_LABEL: Record<MaintenanceBurdenBand, string> = {
   unsustainable: 'UNSUSTAINABLE'
 };
 
+/** Parts 73–76: bounded national revenue posture (not player tax / not Auto Mode taxReliefPct). */
+export const NATIONAL_REVENUE_POLICY_ORDER: NationalRevenuePolicy[] = [
+  'growth_focused',
+  'balanced',
+  'revenue_focused'
+];
+
+export const NATIONAL_REVENUE_POLICY_META: Record<
+  NationalRevenuePolicy,
+  { label: string; shortLabel: string; description: string; currentCapacityDelta: number; structuralCapacityDelta: number }
+> = {
+  growth_focused: {
+    label: 'Growth-Focused Revenue',
+    shortLabel: 'Growth',
+    description:
+      'Prioritizes private investment and near-term economic expansion over maximizing public revenue capture (−4 current capacity, +2 structural).',
+    currentCapacityDelta: -4,
+    structuralCapacityDelta: 2
+  },
+  balanced: {
+    label: 'Balanced Revenue',
+    shortLabel: 'Balanced',
+    description: 'Default posture: revenue capacity follows economic fundamentals without an explicit policy tilt.',
+    currentCapacityDelta: 0,
+    structuralCapacityDelta: 0
+  },
+  revenue_focused: {
+    label: 'Revenue-Focused Mobilization',
+    shortLabel: 'Revenue',
+    description:
+      'Mobilizes additional public revenue capacity from the existing economic base (+6 current, +4 structural). Never taxes actor cash or Team Treasury.',
+    currentCapacityDelta: 6,
+    structuralCapacityDelta: 4
+  }
+};
+
+export function resolveEffectiveNationalRevenuePolicy(
+  policy: NationalRevenuePolicy | null | undefined
+): NationalRevenuePolicy {
+  if (policy === 'growth_focused' || policy === 'revenue_focused') return policy;
+  return 'balanced';
+}
+
+export function formatNationalRevenuePolicyLabel(
+  policy: NationalRevenuePolicy | null | undefined,
+  style: 'play' | 'lab' = 'play'
+): string {
+  const eff = resolveEffectiveNationalRevenuePolicy(policy);
+  return style === 'lab' ? eff.toUpperCase() : NATIONAL_REVENUE_POLICY_META[eff].shortLabel;
+}
+
 export const V1012_LIMITS = {
   maxCommitments: 28,
   maxFiscalPressures: 14,
@@ -174464,7 +174515,8 @@ export function NationalPublicFinanceSection(props: {
             {st.revenue.trend === 'rising' ? 'RISING' : st.revenue.trend === 'weakening' ? 'WEAKENING' : 'STABLE'}
           </div>
           <div className="text-[10px] text-slate-400">
-            Resilience: {st.revenue.resilience >= 70 ? 'HIGH' : st.revenue.resilience >= 45 ? 'MODERATE' : 'LOW'}
+            Resilience: {st.revenue.resilience >= 70 ? 'HIGH' : st.revenue.resilience >= 45 ? 'MODERATE' : 'LOW'} • Policy:{' '}
+            {formatNationalRevenuePolicyLabel(st.revenuePolicy, 'play')}
           </div>
         </div>
         <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-2">
@@ -174500,6 +174552,50 @@ export function NationalPublicFinanceSection(props: {
           </div>
         </div>
       </div>
+
+      {/* Parts 73–76: Bounded National Revenue Policy (macro posture — not actor tax / not Auto Mode relief) */}
+      {view.setRevenuePolicy && (
+        <div
+          className="rounded-lg border border-slate-800 bg-slate-950/55 p-2.5 space-y-2"
+          data-testid="national-revenue-policy-selector"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="font-semibold text-slate-200">National Revenue Policy</div>
+              <div className="text-[10px] text-slate-400">
+                Adjusts derived national revenue capacity only — never taxes your cash, loans, or Team Treasury.
+              </div>
+            </div>
+            <span className="text-[10px] font-bold uppercase text-cyan-300">
+              Active: {formatNationalRevenuePolicyLabel(st.revenuePolicy, 'play')}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {NATIONAL_REVENUE_POLICY_ORDER.map(pol => {
+              const active = resolveEffectiveNationalRevenuePolicy(st.revenuePolicy) === pol;
+              const meta = NATIONAL_REVENUE_POLICY_META[pol];
+              return (
+                <button
+                  key={pol}
+                  type="button"
+                  onClick={() => view.setRevenuePolicy!(pol)}
+                  className={`rounded px-2.5 py-1 text-[10px] font-semibold transition ${
+                    active
+                      ? 'bg-cyan-700 text-white'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                  title={meta.description}
+                >
+                  {meta.shortLabel}
+                </button>
+              );
+            })}
+          </div>
+          <div className="text-[10px] text-slate-400">
+            {NATIONAL_REVENUE_POLICY_META[resolveEffectiveNationalRevenuePolicy(st.revenuePolicy)].description}
+          </div>
+        </div>
+      )}
 
       {/* Guided Learning Drawer */}
       {showGuidedLearning && (
@@ -174879,6 +174975,24 @@ export function PublicFinanceInspector(props: {
           <div>Structural: {st.revenue.structuralCapacity}</div>
           <div>Current: {st.revenue.currentCapacity}</div>
           <div>Volatility: {st.revenue.volatility} | Resil: {st.revenue.resilience}</div>
+          <div className="mt-1 text-cyan-300">
+            Rev Policy: {formatNationalRevenuePolicyLabel(st.revenuePolicy, 'lab')} (persisted:{' '}
+            {view.persisted.revenuePolicy ?? 'null→balanced'})
+          </div>
+          {view.setRevenuePolicy && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {NATIONAL_REVENUE_POLICY_ORDER.map(pol => (
+                <button
+                  key={pol}
+                  type="button"
+                  onClick={() => view.setRevenuePolicy!(pol)}
+                  className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px]"
+                >
+                  {pol}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="p-2 rounded bg-slate-900 border border-slate-800">
           <div className="text-slate-400 text-[10px]">2. FISCAL POSITION (RAW)</div>
@@ -176044,6 +176158,58 @@ export function runV1012PublicFinanceSelfTests(): {
       'No regression & complete V10.12 state validation',
       val.valid && val.issues.length === 0,
       `valid=${val.valid}, issues=${val.issues.join(';')}`
+    );
+  }
+
+  // TEST 51 — Revenue-Focused policy raises bounded current capacity vs balanced
+  {
+    const p0 = createInitialPublicFinancePersisted();
+    const balanced = computeNationalPublicFinance(makeBaseInputs(), p0).state;
+    const pRev = setNationalRevenuePolicy(p0, 'revenue_focused', 1);
+    const revenueFocused = computeNationalPublicFinance(makeBaseInputs(), pRev).state;
+    const delta = revenueFocused.revenue.currentCapacity - balanced.revenue.currentCapacity;
+    record(
+      'TEST 51',
+      'Revenue-Focused policy raises bounded current capacity vs balanced',
+      delta >= 5 && delta <= 7 && revenueFocused.revenue.structuralCapacity > balanced.revenue.structuralCapacity,
+      `delta=${delta}, balanced=${balanced.revenue.currentCapacity}, focused=${revenueFocused.revenue.currentCapacity}`
+    );
+  }
+
+  // TEST 52 — Growth-Focused policy lowers near-term capacity vs balanced
+  {
+    const p0 = createInitialPublicFinancePersisted();
+    const balanced = computeNationalPublicFinance(makeBaseInputs(), p0).state;
+    const pGrowth = setNationalRevenuePolicy(p0, 'growth_focused', 1);
+    const growth = computeNationalPublicFinance(makeBaseInputs(), pGrowth).state;
+    const delta = growth.revenue.currentCapacity - balanced.revenue.currentCapacity;
+    record(
+      'TEST 52',
+      'Growth-Focused policy lowers near-term capacity vs balanced',
+      delta <= -3 && delta >= -5,
+      `delta=${delta}, balanced=${balanced.revenue.currentCapacity}, growth=${growth.revenue.currentCapacity}`
+    );
+  }
+
+  // TEST 53 — National revenue policy never introduces forbidden tax_slider politics tokens
+  {
+    const p0 = createInitialPublicFinancePersisted();
+    const policies: NationalRevenuePolicy[] = ['growth_focused', 'balanced', 'revenue_focused'];
+    let ok = true;
+    for (const pol of policies) {
+      const persisted = setNationalRevenuePolicy(p0, pol, 1);
+      const st = computeNationalPublicFinance(makeBaseInputs(), persisted).state;
+      const blob = JSON.stringify(st).toLowerCase();
+      if (blob.includes('tax_slider') || blob.includes('political_party') || blob.includes('election')) {
+        ok = false;
+        break;
+      }
+    }
+    record(
+      'TEST 53',
+      'National revenue policy respects SC50 (no tax_slider / politics tokens)',
+      ok,
+      `policiesChecked=${policies.length}, ok=${ok}`
     );
   }
 
