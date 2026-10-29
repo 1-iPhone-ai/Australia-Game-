@@ -174,6 +174,10 @@ import { computeNationalZenithFlexibilityCouplingBrief } from './zenith-flexibil
 import { computeNationalFlexibilityAscentOutlook } from './flexibility-ascent-outlook';
 import { computeNationalSubjectApogeeReadinessBrief } from './subject-apogee-readiness-brief';
 import { computeNationalWorkforceApogeeIndex } from './national-workforce-apogee-index';
+import { computeNationalApogeeInclusionCouplingBrief } from './apogee-inclusion-coupling-brief';
+import { computeNationalInclusionOrbitOutlook } from './inclusion-orbit-outlook';
+import { computeNationalSubjectOrbitReadinessBrief } from './subject-orbit-readiness-brief';
+import { computeNationalWorkforceOrbitIndex } from './national-workforce-orbit-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1868,6 +1872,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'apogee steward note'
   );
   check('R3016', flexibilityEaseForRegion('NSW', 'technology') > 0, 'flexibility ease for region');
+
+  check('R3101', Boolean(r1.state.apogeeInclusionCouplingBrief?.band), 'apogee inclusion on state');
+  check('R3102', (r1.state.apogeeInclusionCouplingBrief?.apogeeDrag ?? 0) >= 0, 'apogee inclusion drag');
+  check('R3103', Boolean(r1.state.inclusionOrbitOutlook?.band), 'inclusion orbit on state');
+  check('R3104', (r1.state.inclusionOrbitOutlook?.ascentDrag ?? 0) >= 0, 'inclusion orbit ascent drag');
+  check('R3105', Boolean(r1.state.subjectOrbitReadinessBrief?.band), 'subject orbit on state');
+  check('R3106', Boolean(r1.state.nationalWorkforceOrbitIndex?.band), 'workforce orbit on state');
+  check(
+    'R3107',
+    detectLaborDemographicsQuery('apogee inclusion coupling') === 'apogee_inclusion_coupling',
+    'GI apogee inclusion detect'
+  );
+  check(
+    'R3108',
+    detectLaborDemographicsQuery('inclusion orbit') === 'inclusion_orbit',
+    'GI inclusion orbit detect'
+  );
+  check(
+    'R3109',
+    detectLaborDemographicsQuery('subject orbit readiness') === 'subject_orbit_readiness',
+    'GI subject orbit detect'
+  );
+  check(
+    'R3110',
+    detectLaborDemographicsQuery('workforce orbit') === 'workforce_orbit',
+    'GI workforce orbit detect'
+  );
+  check(
+    'R3111',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_orbit').headline.length > 5,
+    'GI workforce orbit answer'
+  );
+  const apogeeInclusionOnly = computeNationalApogeeInclusionCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceApogeeIndex
+  );
+  check('R3112', apogeeInclusionOnly.summary.length > 10, 'apogee inclusion standalone summary');
+  const inclusionOrbitOnly = computeNationalInclusionOrbitOutlook(r1.state, r1.state.flexibilityAscentOutlook);
+  check('R3113', inclusionOrbitOnly.band.length > 3, 'inclusion orbit band string');
+  const subjectOrbitOnly = computeNationalSubjectOrbitReadinessBrief(
+    r1.state,
+    r1.state.subjectApogeeReadinessBrief,
+    r1.state.nationalWorkforceApogeeIndex
+  );
+  check('R3114', subjectOrbitOnly.orbitDrag >= 0, 'subject orbit drag');
+  check(
+    'R3115',
+    computeNationalWorkforceOrbitIndex(
+      rHhBad.state,
+      rHhBad.state.apogeeInclusionCouplingBrief,
+      rHhBad.state.inclusionOrbitOutlook,
+      rHhBad.state.subjectOrbitReadinessBrief
+    ).stewardNote.length > 8,
+    'orbit steward note'
+  );
+  check('R3116', inclusionEaseForRegion('NSW', 'technology') > 0, 'inclusion ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
