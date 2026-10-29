@@ -275,9 +275,15 @@ import {
   runAgent13HeliosphericSovereignNetZeroExportContinuityTurnScenario,
   V1014_HELIOSPHERIC_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_STELLAR_MESH_TURN_SCENARIOS,
 } from '../modules/heliospheric-sovereign-net-zero-export-continuity-stellar-mesh-orchestration-ledger.ts';
+import {
+  runAgent13GalacticSovereignNetZeroExportContinuityScaleSelfTests,
+  runAgent13GalacticSovereignNetZeroExportContinuityTurnScenario,
+  V1014_GALACTIC_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_COSMIC_MESH_TURN_SCENARIOS,
+} from '../modules/galactic-sovereign-net-zero-export-continuity-cosmic-mesh-orchestration-ledger.ts';
 import { runAgent13Agent25Wave56ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave56-projection-handoff-brief.ts';
 import { runAgent13Agent25Wave57ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave57-projection-handoff-brief.ts';
 import { runAgent13Agent25Wave58ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave58-projection-handoff-brief.ts';
+import { runAgent13Agent25Wave59ProjectionHandoffBriefSelfTests } from '../modules/agent25-wave59-projection-handoff-brief.ts';
 import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
@@ -736,6 +742,14 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
   ok(heliosphericTurn.passed);
   const wave58Handoff = runAgent13Agent25Wave58ProjectionHandoffBriefSelfTests();
   ok(wave58Handoff.failed === 0 && wave58Handoff.passed >= 4);
+  const galactic = runAgent13GalacticSovereignNetZeroExportContinuityScaleSelfTests();
+  ok(galactic.failed === 0 && galactic.passed >= 4);
+  const galacticTurn = runAgent13GalacticSovereignNetZeroExportContinuityTurnScenario(
+    V1014_GALACTIC_SOVEREIGN_NET_ZERO_EXPORT_CONTINUITY_COSMIC_MESH_TURN_SCENARIOS[0],
+  );
+  ok(galacticTurn.passed);
+  const wave59Handoff = runAgent13Agent25Wave59ProjectionHandoffBriefSelfTests();
+  ok(wave59Handoff.failed === 0 && wave59Handoff.passed >= 4);
 
   return { passed, failed, total: passed + failed };
 }
