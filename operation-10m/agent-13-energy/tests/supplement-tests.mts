@@ -165,6 +165,11 @@ import {
   V1014_FLEX_INTERCONNECTION_TURN_SCENARIOS,
 } from '../modules/industrial-electrification-interconnection-orchestration-ledger.ts';
 import {
+  runAgent13ResilienceBackupScaleSelfTests,
+  runAgent13ResilienceBackupTurnScenario,
+  V1014_RESILIENCE_BACKUP_TURN_SCENARIOS,
+} from '../modules/community-energy-resilience-distributed-backup-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -470,6 +475,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const fiTurn = runAgent13FlexInterconnectionTurnScenario(V1014_FLEX_INTERCONNECTION_TURN_SCENARIOS[0]);
   ok(fiTurn.passed);
+
+  const resilienceBackup = runAgent13ResilienceBackupScaleSelfTests();
+  ok(resilienceBackup.failed === 0 && resilienceBackup.passed >= 7);
+
+  const rbTurn = runAgent13ResilienceBackupTurnScenario(V1014_RESILIENCE_BACKUP_TURN_SCENARIOS[0]);
+  ok(rbTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

@@ -261,6 +261,13 @@ import {
   type V1014RegionalInterregionalInterconnectionLedger,
 } from './industrial-electrification-interconnection-orchestration-ledger';
 import {
+  advanceRegionalDistributedBackupOrchestration,
+  computeRegionalCommunityEnergyResilienceLedger,
+  scoreAgent13ResilienceBackupGIAlignment,
+  type V1014RegionalCommunityEnergyResilienceLedger,
+  type V1014RegionalDistributedBackupLedger,
+} from './community-energy-resilience-distributed-backup-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25857,6 +25864,10 @@ export interface V1014RegionalEnergyProfile {
   industrialElectrificationFlexRelief: number;
   interregionalInterconnectionBand: string;
   interregionalInterconnectionRelief: number;
+  communityEnergyResilienceBand: string;
+  communityEnergyResilienceRelief: number;
+  distributedBackupBand: string;
+  distributedBackupRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25963,6 +25974,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalCarbonMarketIntegrityLedgers: Record<string, V1014RegionalCarbonMarketIntegrityLedger>;
   regionalIndustrialElectrificationFlexLedgers: Record<string, V1014RegionalIndustrialElectrificationFlexLedger>;
   regionalInterregionalInterconnectionLedgers: Record<string, V1014RegionalInterregionalInterconnectionLedger>;
+  regionalCommunityEnergyResilienceLedgers: Record<string, V1014RegionalCommunityEnergyResilienceLedger>;
+  regionalDistributedBackupLedgers: Record<string, V1014RegionalDistributedBackupLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -26040,6 +26053,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalCarbonMarketIntegrityMemory: Record<string, { integrityIndex: number }>;
   regionalIndustrialElectrificationFlexMemory: Record<string, { electrificationBalance: number; flexIndex: number }>;
   regionalInterregionalInterconnectionMemory: Record<string, { linkIndex: number }>;
+  regionalCommunityEnergyResilienceMemory: Record<string, { resilienceBalance: number; resilienceIndex: number }>;
+  regionalDistributedBackupMemory: Record<string, { backupIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26129,6 +26144,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalCarbonMarketIntegrityMemory: {},
     regionalIndustrialElectrificationFlexMemory: {},
     regionalInterregionalInterconnectionMemory: {},
+    regionalCommunityEnergyResilienceMemory: {},
+    regionalDistributedBackupMemory: {},
     history: [],
   };
 }
@@ -26334,6 +26351,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalInterregionalInterconnectionMemory === 'object' && raw.regionalInterregionalInterconnectionMemory
         ? raw.regionalInterregionalInterconnectionMemory
         : {},
+    regionalCommunityEnergyResilienceMemory:
+      typeof raw.regionalCommunityEnergyResilienceMemory === 'object' && raw.regionalCommunityEnergyResilienceMemory
+        ? raw.regionalCommunityEnergyResilienceMemory
+        : {},
+    regionalDistributedBackupMemory:
+      typeof raw.regionalDistributedBackupMemory === 'object' && raw.regionalDistributedBackupMemory
+        ? raw.regionalDistributedBackupMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26510,6 +26535,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalCarbonMarketIntegrityLedgers: {},
       regionalIndustrialElectrificationFlexLedgers: {},
       regionalInterregionalInterconnectionLedgers: {},
+      regionalCommunityEnergyResilienceLedgers: {},
+      regionalDistributedBackupLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26590,6 +26617,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const carbonMarketIntegrityLedgers: Record<string, V1014RegionalCarbonMarketIntegrityLedger> = {};
   const industrialElectrificationFlexLedgers: Record<string, V1014RegionalIndustrialElectrificationFlexLedger> = {};
   const interregionalInterconnectionLedgers: Record<string, V1014RegionalInterregionalInterconnectionLedger> = {};
+  const communityEnergyResilienceLedgers: Record<string, V1014RegionalCommunityEnergyResilienceLedger> = {};
+  const distributedBackupLedgers: Record<string, V1014RegionalDistributedBackupLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26754,6 +26783,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextInterregionalInterconnectionMemory: Record<string, { linkIndex: number }> = {
     ...persisted.regionalInterregionalInterconnectionMemory,
+  };
+  const nextCommunityEnergyResilienceMemory: Record<string, { resilienceBalance: number; resilienceIndex: number }> = {
+    ...persisted.regionalCommunityEnergyResilienceMemory,
+  };
+  const nextDistributedBackupMemory: Record<string, { backupIndex: number }> = {
+    ...persisted.regionalDistributedBackupMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -27703,6 +27738,34 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextInterregionalInterconnectionMemory[regionId] = interregionalInterconnectionStep.next;
     interregionalInterconnectionLedgers[regionId] = interregionalInterconnectionStep.ledger;
     pressure -= interregionalInterconnectionStep.ledger.interregionalInterconnectionRelief;
+
+    const communityEnergyResilienceStep = computeRegionalCommunityEnergyResilienceLedger({
+      regionId,
+      interregionalInterconnectionRelief: interregionalInterconnectionStep.ledger.interregionalInterconnectionRelief,
+      industrialElectrificationFlexRelief: industrialElectrificationFlexStep.ledger.industrialElectrificationFlexRelief,
+      interconnectionBand: interregionalInterconnectionStep.ledger.band,
+      flexBand: industrialElectrificationFlexStep.ledger.band,
+      floodHeatResilienceRelief: floodHeatResilienceStep.ledger.floodHeatResilienceRelief,
+      climateAdaptationRelief: climateAdaptationHardeningStep.ledger.climateAdaptationRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextCommunityEnergyResilienceMemory[regionId] || null,
+    });
+    nextCommunityEnergyResilienceMemory[regionId] = communityEnergyResilienceStep.next;
+    communityEnergyResilienceLedgers[regionId] = communityEnergyResilienceStep.ledger;
+    pressure -= communityEnergyResilienceStep.ledger.communityEnergyResilienceRelief;
+
+    const distributedBackupStep = advanceRegionalDistributedBackupOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      resilienceBand: communityEnergyResilienceStep.ledger.band,
+      bushfireResilienceRelief: bushfireStep.ledger.bushfireGridRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextDistributedBackupMemory[regionId] || null,
+    });
+    nextDistributedBackupMemory[regionId] = distributedBackupStep.next;
+    distributedBackupLedgers[regionId] = distributedBackupStep.ledger;
+    pressure -= distributedBackupStep.ledger.distributedBackupRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -27785,6 +27848,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       carbonMarketIntegrityStep.ledger.summary,
       industrialElectrificationFlexStep.ledger.summary,
       interregionalInterconnectionStep.ledger.summary,
+      communityEnergyResilienceStep.ledger.summary,
+      distributedBackupStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -28001,6 +28066,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       industrialElectrificationFlexRelief: industrialElectrificationFlexStep.ledger.industrialElectrificationFlexRelief,
       interregionalInterconnectionBand: interregionalInterconnectionStep.ledger.band,
       interregionalInterconnectionRelief: interregionalInterconnectionStep.ledger.interregionalInterconnectionRelief,
+      communityEnergyResilienceBand: communityEnergyResilienceStep.ledger.band,
+      communityEnergyResilienceRelief: communityEnergyResilienceStep.ledger.communityEnergyResilienceRelief,
+      distributedBackupBand: distributedBackupStep.ledger.band,
+      distributedBackupRelief: distributedBackupStep.ledger.distributedBackupRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -28136,6 +28205,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalCarbonMarketIntegrityLedgers: carbonMarketIntegrityLedgers,
     regionalIndustrialElectrificationFlexLedgers: industrialElectrificationFlexLedgers,
     regionalInterregionalInterconnectionLedgers: interregionalInterconnectionLedgers,
+    regionalCommunityEnergyResilienceLedgers: communityEnergyResilienceLedgers,
+    regionalDistributedBackupLedgers: distributedBackupLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -28213,6 +28284,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalCarbonMarketIntegrityMemory: nextCarbonMarketIntegrityMemory,
     regionalIndustrialElectrificationFlexMemory: nextIndustrialElectrificationFlexMemory,
     regionalInterregionalInterconnectionMemory: nextInterregionalInterconnectionMemory,
+    regionalCommunityEnergyResilienceMemory: nextCommunityEnergyResilienceMemory,
+    regionalDistributedBackupMemory: nextDistributedBackupMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -29551,6 +29624,49 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     interconnectionBand: rr36.state.regions.NSW?.interregionalInterconnectionBand,
   });
   check('FLEX INTERCONNECTION GI alignment', giFlexInterconnection.relevanceDelta > 0.5, giFlexInterconnection.reason || '');
+
+  const resilienceBackupInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'suburban_islanded_resilience_cluster',
+      'federation_community_resilience_tie',
+      'bushfire_aware_vpp_dispatch',
+      'critical_load_backup_mesh',
+      'process_heat_electrification_hub',
+      'hvdc_link_orchestration_hub',
+      'industrial_climate_hardening_loop',
+      'compound_hazard_recovery_hub',
+      'bushfire_line_hardening',
+      'renewable_grid',
+      'battery_grid',
+    ],
+  };
+  const rr37 = computeIndustrialEnergyEnvironmentalState(
+    resilienceBackupInp,
+    createInitialIndustrialEnergyEnvironmentalPersisted(),
+    null,
+  );
+  check(
+    'COMMUNITY energy resilience tracked',
+    !!rr37.state.regionalCommunityEnergyResilienceLedgers.QLD?.band,
+    rr37.state.regionalCommunityEnergyResilienceLedgers.QLD?.band || '',
+  );
+  check(
+    'DISTRIBUTED backup relief',
+    (rr37.state.regions.QLD?.distributedBackupRelief || 0) > 0,
+    String(rr37.state.regions.QLD?.distributedBackupRelief),
+  );
+  check(
+    'COMMUNITY resilience memory persisted',
+    !!rr37.persisted.regionalCommunityEnergyResilienceMemory.QLD,
+    String(rr37.persisted.regionalCommunityEnergyResilienceMemory.QLD?.resilienceIndex),
+  );
+  const giResilienceBackup = scoreAgent13ResilienceBackupGIAlignment({
+    actionText: 'Community microgrid resilience with bushfire-aware VPP dispatch and critical-load backup mesh',
+    resilienceBand: rr37.state.regions.QLD?.communityEnergyResilienceBand,
+    backupBand: rr37.state.regions.QLD?.distributedBackupBand,
+  });
+  check('RESILIENCE BACKUP GI alignment', giResilienceBackup.relevanceDelta > 0.5, giResilienceBackup.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
