@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.13' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.14' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -260,7 +260,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'systemic_settlement_fragility'
   | 'governance_resilience_decay'
   | 'migration_stability_erosion'
-  | 'adaptive_capacity_ceiling';
+  | 'adaptive_capacity_ceiling'
+  | 'fiscal_governance_coupling_strain'
+  | 'network_equity_tension'
+  | 'resilience_frontier_pressure';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -567,6 +570,36 @@ export interface OP10M_A11_AdaptiveCeilingRow {
   narrative: string;
 }
 
+export type OP10M_A11_FiscalGovernanceCouplingBand = 'aligned' | 'strained' | 'misaligned' | 'ruptured';
+
+export interface OP10M_A11_FiscalGovernanceCouplingRow {
+  regionId: OP10M_A11_RegionId;
+  strainScore: number;
+  band: OP10M_A11_FiscalGovernanceCouplingBand;
+  tensions: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_NetworkEquityTensionBand = 'balanced' | 'stressed' | 'polarized' | 'fractured';
+
+export interface OP10M_A11_NetworkEquityTensionRow {
+  regionId: OP10M_A11_RegionId;
+  tensionScore: number;
+  band: OP10M_A11_NetworkEquityTensionBand;
+  drivers: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_ResilienceFrontierBand = 'within' | 'approaching' | 'at_limit' | 'breached';
+
+export interface OP10M_A11_ResilienceFrontierRow {
+  regionId: OP10M_A11_RegionId;
+  pressureScore: number;
+  band: OP10M_A11_ResilienceFrontierBand;
+  pressures: string[];
+  narrative: string;
+}
+
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
 export interface OP10M_A11_MigrationPressureRow {
@@ -737,6 +770,12 @@ export interface OP10M_A11_CompositeState {
   nationalMigrationStabilityErosionIndex: number;
   adaptiveCapacityCeiling: OP10M_A11_AdaptiveCeilingRow[];
   nationalAdaptiveCapacityCeilingIndex: number;
+  fiscalGovernanceCoupling: OP10M_A11_FiscalGovernanceCouplingRow[];
+  nationalFiscalGovernanceCouplingIndex: number;
+  networkEquityTension: OP10M_A11_NetworkEquityTensionRow[];
+  nationalNetworkEquityTensionIndex: number;
+  resilienceFrontier: OP10M_A11_ResilienceFrontierRow[];
+  nationalResilienceFrontierIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -776,5 +815,8 @@ export interface OP10M_A11_CompositePersisted {
   lastGovernanceResilienceDecayIndex: number;
   lastMigrationStabilityErosionIndex: number;
   lastAdaptiveCapacityCeilingIndex: number;
+  lastFiscalGovernanceCouplingIndex: number;
+  lastNetworkEquityTensionIndex: number;
+  lastResilienceFrontierIndex: number;
   inputHash: string;
 }
