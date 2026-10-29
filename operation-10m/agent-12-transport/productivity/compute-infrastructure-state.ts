@@ -448,6 +448,23 @@ import {
   containerYardAutomationProductivityMultiplier,
   nationalContainerYardAutomationThroughputIndex,
 } from './container-yard-automation-index.ts';
+import {
+  computeNickelCobaltBatteryPrecursorByRegion,
+  nickelCobaltBatteryPrecursorProductivityMultiplier,
+  nationalNickelCobaltBatteryPrecursorIndex,
+} from '../network/nickel-cobalt-battery-precursor-index.ts';
+import {
+  computeRemoteIslandSealiftByRegion,
+  computeRemoteIslandSealiftShare,
+  nationalRemoteIslandSealiftIndex,
+  remoteIslandSealiftProductivityMultiplier,
+} from '../operations/remote-island-sealift-index.ts';
+import {
+  computeRailInlandTerminalAutomationShare,
+  computeRailInlandTerminalAutomationThroughputByRegion,
+  nationalRailInlandTerminalAutomationThroughputIndex,
+  railInlandTerminalAutomationProductivityMultiplier,
+} from './rail-inland-terminal-automation-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1459,6 +1476,35 @@ export function computeTransportInfrastructureState(
     containerYardAutomationShare,
     options?.containerYardAutomationPolicy ?? 'baseline',
   );
+  const nickelCobaltBatteryPrecursorByRegion = computeNickelCobaltBatteryPrecursorByRegion(ops);
+  const nationalNickelPrecursor = nationalNickelCobaltBatteryPrecursorIndex(nickelCobaltBatteryPrecursorByRegion);
+  const nickelPrecursorMult = nickelCobaltBatteryPrecursorProductivityMultiplier(
+    nationalNickelPrecursor,
+    options?.nickelCobaltBatteryPrecursorPolicy ?? 'baseline',
+  );
+  const remoteIslandSealiftByRegion = computeRemoteIslandSealiftByRegion(ops, networkStress);
+  const nationalRemoteSealift = nationalRemoteIslandSealiftIndex(remoteIslandSealiftByRegion);
+  const remoteIslandSealiftShare = computeRemoteIslandSealiftShare(
+    ops,
+    options?.remoteIslandSealiftPolicy ?? 'baseline',
+  );
+  const remoteSealiftMult = remoteIslandSealiftProductivityMultiplier(
+    remoteIslandSealiftShare,
+    options?.remoteIslandSealiftPolicy ?? 'baseline',
+  );
+  const railInlandTerminalAutomationThroughputByRegion =
+    computeRailInlandTerminalAutomationThroughputByRegion(ops);
+  const nationalInlandTerminalAuto = nationalRailInlandTerminalAutomationThroughputIndex(
+    railInlandTerminalAutomationThroughputByRegion,
+  );
+  const railInlandTerminalAutomationShare = computeRailInlandTerminalAutomationShare(
+    ops,
+    options?.railInlandTerminalAutomationPolicy ?? 'baseline',
+  );
+  const inlandTerminalAutoMult = railInlandTerminalAutomationProductivityMultiplier(
+    railInlandTerminalAutomationShare,
+    options?.railInlandTerminalAutomationPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1503,6 +1549,9 @@ export function computeTransportInfrastructureState(
     const aluminaBoost = (aluminaRefineryExportByRegion[code] - 5) * 0.0039;
     const reliefAirBoost = (disasterReliefAirBridgeByRegion[code] - 6) * 0.0035;
     const yardAutoBoost = (containerYardAutomationThroughputByRegion[code] - 2) * 0.0031;
+    const nickelPrecursorBoost = (nickelCobaltBatteryPrecursorByRegion[code] - 5) * 0.0038;
+    const remoteSealiftBoost = (remoteIslandSealiftByRegion[code] - 6) * 0.0034;
+    const inlandTerminalAutoBoost = (railInlandTerminalAutomationThroughputByRegion[code] - 1.8) * 0.003;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1546,7 +1595,10 @@ export function computeTransportInfrastructureState(
         paxFreightPathBoost +
         aluminaBoost +
         reliefAirBoost +
-        yardAutoBoost) *
+        yardAutoBoost +
+        nickelPrecursorBoost +
+        remoteSealiftBoost +
+        inlandTerminalAutoBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1588,7 +1640,10 @@ export function computeTransportInfrastructureState(
       paxFreightPathMult *
       aluminaMult *
       reliefAirMult *
-      yardAutoMult;
+      yardAutoMult *
+      nickelPrecursorMult *
+      remoteSealiftMult *
+      inlandTerminalAutoMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1653,7 +1708,10 @@ export function computeTransportInfrastructureState(
     nationalPaxFreightPath * 0.003 +
     nationalAluminaRefinery * 0.003 +
     nationalDisasterReliefAir * 0.003 +
-    nationalContainerYardAuto * 0.003;
+    nationalContainerYardAuto * 0.003 +
+    nationalNickelPrecursor * 0.003 +
+    nationalRemoteSealift * 0.003 +
+    nationalInlandTerminalAuto * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1668,7 +1726,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/30',
+    schemaVersion: 'agent12/31',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1874,6 +1932,14 @@ export function computeTransportInfrastructureState(
     containerYardAutomationShare,
     nationalContainerYardAutomationThroughputIndex: nationalContainerYardAuto,
     containerYardAutomationThroughputByRegion,
+    nationalNickelCobaltBatteryPrecursorIndex: nationalNickelPrecursor,
+    nickelCobaltBatteryPrecursorByRegion,
+    remoteIslandSealiftShare,
+    nationalRemoteIslandSealiftIndex: nationalRemoteSealift,
+    remoteIslandSealiftByRegion,
+    railInlandTerminalAutomationShare,
+    nationalRailInlandTerminalAutomationThroughputIndex: nationalInlandTerminalAuto,
+    railInlandTerminalAutomationThroughputByRegion,
     computeMs,
   };
 }

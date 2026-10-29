@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 30
+
+- Schema **`agent12/31`**: nickel–cobalt battery precursor export throughput, remote island sealift readiness, rail inland terminal automation share (`nickelCobaltBatteryPrecursorPolicy`, `remoteIslandSealiftPolicy`, `railInlandTerminalAutomationPolicy`)
+- Catalog: **419** assets, **104** corridors, **168** scenarios
+- Systems: `network/nickel-cobalt-battery-precursor-index.ts`, `operations/remote-island-sealift-index.ts`, `productivity/rail-inland-terminal-automation-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 29
 
 - Schema **`agent12/30`**: alumina refinery export throughput, disaster relief air-bridge readiness, container yard automation share (`aluminaRefineryExportPolicy`, `disasterReliefAirBridgePolicy`, `containerYardAutomationPolicy`)

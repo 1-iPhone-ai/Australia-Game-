@@ -327,8 +327,14 @@ export type DisasterReliefAirBridgePolicy = 'baseline' | 'surge';
 
 export type ContainerYardAutomationPolicy = 'baseline' | 'deploy';
 
+export type NickelCobaltBatteryPrecursorPolicy = 'baseline' | 'accelerate';
+
+export type RemoteIslandSealiftPolicy = 'baseline' | 'surge';
+
+export type RailInlandTerminalAutomationPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/30';
+  schemaVersion: 'agent12/31';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -534,6 +540,14 @@ export interface TransportInfrastructureState {
   containerYardAutomationShare: number;
   nationalContainerYardAutomationThroughputIndex: number;
   containerYardAutomationThroughputByRegion: Record<AuRegionCode, number>;
+  nationalNickelCobaltBatteryPrecursorIndex: number;
+  nickelCobaltBatteryPrecursorByRegion: Record<AuRegionCode, number>;
+  remoteIslandSealiftShare: number;
+  nationalRemoteIslandSealiftIndex: number;
+  remoteIslandSealiftByRegion: Record<AuRegionCode, number>;
+  railInlandTerminalAutomationShare: number;
+  nationalRailInlandTerminalAutomationThroughputIndex: number;
+  railInlandTerminalAutomationThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -614,6 +628,9 @@ export interface TransportInfrastructureOptions {
   aluminaRefineryExportPolicy?: AluminaRefineryExportPolicy;
   disasterReliefAirBridgePolicy?: DisasterReliefAirBridgePolicy;
   containerYardAutomationPolicy?: ContainerYardAutomationPolicy;
+  nickelCobaltBatteryPrecursorPolicy?: NickelCobaltBatteryPrecursorPolicy;
+  remoteIslandSealiftPolicy?: RemoteIslandSealiftPolicy;
+  railInlandTerminalAutomationPolicy?: RailInlandTerminalAutomationPolicy;
 }
 
 export interface V94ProjectSnapshot {

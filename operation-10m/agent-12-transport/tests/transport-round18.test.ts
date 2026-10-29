@@ -37,13 +37,13 @@ describe('Agent 12 round 18 catalog', () => {
 });
 
 describe('Agent 12 round 18 systems', () => {
-  it('returns agent12/30 with lithium brine, inland express, space launch', () => {
+  it('returns agent12/31 with lithium brine, inland express, space launch', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(150), {
       lithiumBrineExportPolicy: 'accelerate',
       inlandRailExpressPolicy: 'deploy',
       spaceLaunchLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/30');
+    assert.equal(state.schemaVersion, 'agent12/31');
     assert.ok(state.nationalLithiumBrineExportIndex >= 6);
     assert.ok(state.nationalInlandRailExpressIndex >= 10);
     assert.ok(state.spaceLaunchLogisticsShare >= 0.03);

@@ -331,8 +331,14 @@ export type DisasterReliefAirBridgePolicy = 'baseline' | 'surge';
 
 export type ContainerYardAutomationPolicy = 'baseline' | 'deploy';
 
+export type NickelCobaltBatteryPrecursorPolicy = 'baseline' | 'accelerate';
+
+export type RemoteIslandSealiftPolicy = 'baseline' | 'surge';
+
+export type RailInlandTerminalAutomationPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/30';
+  schemaVersion: 'agent12/31';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -538,6 +544,14 @@ export interface TransportInfrastructureState {
   containerYardAutomationShare: number;
   nationalContainerYardAutomationThroughputIndex: number;
   containerYardAutomationThroughputByRegion: Record<AuRegionCode, number>;
+  nationalNickelCobaltBatteryPrecursorIndex: number;
+  nickelCobaltBatteryPrecursorByRegion: Record<AuRegionCode, number>;
+  remoteIslandSealiftShare: number;
+  nationalRemoteIslandSealiftIndex: number;
+  remoteIslandSealiftByRegion: Record<AuRegionCode, number>;
+  railInlandTerminalAutomationShare: number;
+  nationalRailInlandTerminalAutomationThroughputIndex: number;
+  railInlandTerminalAutomationThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -618,6 +632,9 @@ export interface TransportInfrastructureOptions {
   aluminaRefineryExportPolicy?: AluminaRefineryExportPolicy;
   disasterReliefAirBridgePolicy?: DisasterReliefAirBridgePolicy;
   containerYardAutomationPolicy?: ContainerYardAutomationPolicy;
+  nickelCobaltBatteryPrecursorPolicy?: NickelCobaltBatteryPrecursorPolicy;
+  remoteIslandSealiftPolicy?: RemoteIslandSealiftPolicy;
+  railInlandTerminalAutomationPolicy?: RailInlandTerminalAutomationPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1895,6 +1912,48 @@ export const TRANSPORT_CORRIDORS_ROUND29: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round30.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND30: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_nsw_nickel_precursor',
+    name: 'WA–NSW Nickel Precursor',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'NSW'],
+    requiredTagsByRegion: {
+      WA: ['nickel_cobalt_precursor', 'battery_cathode_feed', 'critical_mineral_rail'],
+      NSW: ['nickel_cobalt_precursor', 'battery_cathode_feed', 'critical_mineral_rail'],
+    },
+    productivitySynergyPoints: 6.2,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_qld_tas_remote_island_sealift',
+    name: 'QLD–TAS Remote Island Sealift',
+    networkKind: 'trade',
+    regionSequence: ['QLD', 'TAS'],
+    requiredTagsByRegion: {
+      QLD: ['remote_island_sealift', 'pacific_island_supply', 'sea_lift_staging'],
+      TAS: ['remote_island_sealift', 'pacific_island_supply', 'sea_lift_staging'],
+    },
+    productivitySynergyPoints: 5.7,
+    logisticsRelief: 0.031,
+  },
+  {
+    id: 'corr_nsw_vic_inland_terminal_auto',
+    name: 'NSW–VIC Inland Terminal Auto',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['inland_terminal_auto', 'rail_terminal_robot', 'automated_gantry'],
+      VIC: ['inland_terminal_auto', 'rail_terminal_robot', 'automated_gantry'],
+    },
+    productivitySynergyPoints: 5.9,
+    logisticsRelief: 0.033,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2071,6 +2130,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND27,
   ...TRANSPORT_CORRIDORS_ROUND28,
   ...TRANSPORT_CORRIDORS_ROUND29,
+  ...TRANSPORT_CORRIDORS_ROUND30,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -3917,6 +3977,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND27,
   ...TRANSPORT_SCENARIOS_ROUND28,
   ...TRANSPORT_SCENARIOS_ROUND29,
+  ...TRANSPORT_SCENARIOS_ROUND30,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -11293,6 +11354,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND27_ASSETS,
     ...SCALE_WAVE_ROUND28_ASSETS,
     ...SCALE_WAVE_ROUND29_ASSETS,
+    ...SCALE_WAVE_ROUND30_ASSETS,
   ];
 }
 
@@ -17685,6 +17747,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   containerYardAutomationProductivityMultiplier,
   nationalContainerYardAutomationThroughputIndex,
 } from './container-yard-automation-index.ts';
+  computeNickelCobaltBatteryPrecursorByRegion,
+  nickelCobaltBatteryPrecursorProductivityMultiplier,
+  nationalNickelCobaltBatteryPrecursorIndex,
+} from '../network/nickel-cobalt-battery-precursor-index.ts';
+  computeRemoteIslandSealiftByRegion,
+  computeRemoteIslandSealiftShare,
+  nationalRemoteIslandSealiftIndex,
+  remoteIslandSealiftProductivityMultiplier,
+} from '../operations/remote-island-sealift-index.ts';
+  computeRailInlandTerminalAutomationShare,
+  computeRailInlandTerminalAutomationThroughputByRegion,
+  nationalRailInlandTerminalAutomationThroughputIndex,
+  railInlandTerminalAutomationProductivityMultiplier,
+} from './rail-inland-terminal-automation-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -18695,6 +18771,35 @@ export function computeTransportInfrastructureState(
     containerYardAutomationShare,
     options?.containerYardAutomationPolicy ?? 'baseline',
   );
+  const nickelCobaltBatteryPrecursorByRegion = computeNickelCobaltBatteryPrecursorByRegion(ops);
+  const nationalNickelPrecursor = nationalNickelCobaltBatteryPrecursorIndex(nickelCobaltBatteryPrecursorByRegion);
+  const nickelPrecursorMult = nickelCobaltBatteryPrecursorProductivityMultiplier(
+    nationalNickelPrecursor,
+    options?.nickelCobaltBatteryPrecursorPolicy ?? 'baseline',
+  );
+  const remoteIslandSealiftByRegion = computeRemoteIslandSealiftByRegion(ops, networkStress);
+  const nationalRemoteSealift = nationalRemoteIslandSealiftIndex(remoteIslandSealiftByRegion);
+  const remoteIslandSealiftShare = computeRemoteIslandSealiftShare(
+    ops,
+    options?.remoteIslandSealiftPolicy ?? 'baseline',
+  );
+  const remoteSealiftMult = remoteIslandSealiftProductivityMultiplier(
+    remoteIslandSealiftShare,
+    options?.remoteIslandSealiftPolicy ?? 'baseline',
+  );
+  const railInlandTerminalAutomationThroughputByRegion =
+    computeRailInlandTerminalAutomationThroughputByRegion(ops);
+  const nationalInlandTerminalAuto = nationalRailInlandTerminalAutomationThroughputIndex(
+    railInlandTerminalAutomationThroughputByRegion,
+  );
+  const railInlandTerminalAutomationShare = computeRailInlandTerminalAutomationShare(
+    ops,
+    options?.railInlandTerminalAutomationPolicy ?? 'baseline',
+  );
+  const inlandTerminalAutoMult = railInlandTerminalAutomationProductivityMultiplier(
+    railInlandTerminalAutomationShare,
+    options?.railInlandTerminalAutomationPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -18739,6 +18844,9 @@ export function computeTransportInfrastructureState(
     const aluminaBoost = (aluminaRefineryExportByRegion[code] - 5) * 0.0039;
     const reliefAirBoost = (disasterReliefAirBridgeByRegion[code] - 6) * 0.0035;
     const yardAutoBoost = (containerYardAutomationThroughputByRegion[code] - 2) * 0.0031;
+    const nickelPrecursorBoost = (nickelCobaltBatteryPrecursorByRegion[code] - 5) * 0.0038;
+    const remoteSealiftBoost = (remoteIslandSealiftByRegion[code] - 6) * 0.0034;
+    const inlandTerminalAutoBoost = (railInlandTerminalAutomationThroughputByRegion[code] - 1.8) * 0.003;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -18782,7 +18890,10 @@ export function computeTransportInfrastructureState(
         paxFreightPathBoost +
         aluminaBoost +
         reliefAirBoost +
-        yardAutoBoost) *
+        yardAutoBoost +
+        nickelPrecursorBoost +
+        remoteSealiftBoost +
+        inlandTerminalAutoBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -18824,7 +18935,10 @@ export function computeTransportInfrastructureState(
       paxFreightPathMult *
       aluminaMult *
       reliefAirMult *
-      yardAutoMult;
+      yardAutoMult *
+      nickelPrecursorMult *
+      remoteSealiftMult *
+      inlandTerminalAutoMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -18889,7 +19003,10 @@ export function computeTransportInfrastructureState(
     nationalPaxFreightPath * 0.003 +
     nationalAluminaRefinery * 0.003 +
     nationalDisasterReliefAir * 0.003 +
-    nationalContainerYardAuto * 0.003;
+    nationalContainerYardAuto * 0.003 +
+    nationalNickelPrecursor * 0.003 +
+    nationalRemoteSealift * 0.003 +
+    nationalInlandTerminalAuto * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -18904,7 +19021,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/30',
+    schemaVersion: 'agent12/31',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -19110,6 +19227,14 @@ export function computeTransportInfrastructureState(
     containerYardAutomationShare,
     nationalContainerYardAutomationThroughputIndex: nationalContainerYardAuto,
     containerYardAutomationThroughputByRegion,
+    nationalNickelCobaltBatteryPrecursorIndex: nationalNickelPrecursor,
+    nickelCobaltBatteryPrecursorByRegion,
+    remoteIslandSealiftShare,
+    nationalRemoteIslandSealiftIndex: nationalRemoteSealift,
+    remoteIslandSealiftByRegion,
+    railInlandTerminalAutomationShare,
+    nationalRailInlandTerminalAutomationThroughputIndex: nationalInlandTerminalAuto,
+    railInlandTerminalAutomationThroughputByRegion,
     computeMs,
   };
 }
@@ -19192,7 +19317,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/30' &&
+      infra.schemaVersion === 'agent12/31' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&

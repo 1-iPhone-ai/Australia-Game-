@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/30' &&
+      infra.schemaVersion === 'agent12/31' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -170,8 +170,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalAluminaRefineryExportIndex >= 5 &&
       infra.nationalDisasterReliefAirBridgeIndex >= 6 &&
       infra.containerYardAutomationShare >= 0.03 &&
-      infra.nationalContainerYardAutomationThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} alumina=${infra.nationalAluminaRefineryExportIndex.toFixed(1)} relief=${infra.nationalDisasterReliefAirBridgeIndex.toFixed(1)} yard=${infra.nationalContainerYardAutomationThroughputIndex.toFixed(1)}`,
+      infra.nationalContainerYardAutomationThroughputIndex >= 2 &&
+      infra.nationalNickelCobaltBatteryPrecursorIndex >= 5 &&
+      infra.nationalRemoteIslandSealiftIndex >= 6 &&
+      infra.railInlandTerminalAutomationShare >= 0.03 &&
+      infra.nationalRailInlandTerminalAutomationThroughputIndex >= 1.8,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} nickel=${infra.nationalNickelCobaltBatteryPrecursorIndex.toFixed(1)} sealift=${infra.nationalRemoteIslandSealiftIndex.toFixed(1)} inland=${infra.nationalRailInlandTerminalAutomationThroughputIndex.toFixed(1)}`,
   });
 
   return results;
