@@ -1,0 +1,31 @@
+import type { V1023CladDroughtBufferEdge } from '../../types/core.ts';
+
+/** Drought buffer graph shard 020 (heat/flood/drought corridor coupling). */
+export const V1023_CLAD_DROUGHT_BUFFER_SHARD_020: readonly V1023CladDroughtBufferEdge[] = [
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.266, lagTurns: 4, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.272, lagTurns: 5, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.278, lagTurns: 6, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.284, lagTurns: 7, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.29, lagTurns: 4, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.296, lagTurns: 5, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.302, lagTurns: 6, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.308, lagTurns: 7, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.314, lagTurns: 4, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.32, lagTurns: 5, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.326, lagTurns: 6, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.332, lagTurns: 7, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.236, lagTurns: 4, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.242, lagTurns: 5, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.248, lagTurns: 6, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.254, lagTurns: 7, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.26, lagTurns: 4, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.266, lagTurns: 5, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.272, lagTurns: 6, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.278, lagTurns: 7, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.284, lagTurns: 4, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.29, lagTurns: 5, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.296, lagTurns: 6, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.302, lagTurns: 7, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.308, lagTurns: 4, nodeId: 'flood_node_20' },
+  { fromChannel: 'heat_urban', toChannel: 'fire_interface', weight: 0.314, lagTurns: 5, nodeId: 'flood_node_20' },
+];

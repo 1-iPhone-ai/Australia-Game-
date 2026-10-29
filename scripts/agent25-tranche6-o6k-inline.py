@@ -25,6 +25,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     maritime_trade_paths,
     intermodal_freight_paths,
     housing_affordability_paths,
+    climate_adaptation_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -45,6 +46,7 @@ RPIPE_MARKER = "export function runV1020RpipeTurn"
 MTRD_MARKER = "export function runV1019MtrdTurn"
 IMFD_MARKER = "export function runV1021ImfdTurn"
 HAFF_MARKER = "export function runV1022HaffTurn"
+CLAD_MARKER = "export function runV1023CladTurn"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -136,6 +138,13 @@ HAFF_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20BQ: V10.22 HOUSING AFFORDABILITY — STRESS SCENARIOS, SUPPLY PIPELINE & ZONING FRICTION (O6K-49)\n"
     "// Renumbered from shard 20BP (canonical 20BP = intermodal freight, push #18)\n"
+    "// ============================================================================\n"
+)
+
+CLAD_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BR: V10.23 CLIMATE ADAPTATION — HAZARD SCENARIOS, DROUGHT BUFFERS & FLOOD DEFEND (O6K-50)\n"
+    "// Renumbered from shard 20BQ (canonical 20BQ = housing affordability, push #19)\n"
     "// ============================================================================\n"
 )
 
@@ -1770,6 +1779,163 @@ def push_haff(text: str) -> str:
     return text
 
 
+CLAD_HELPERS = """
+function V1023_CLAD_readPersistedFromGameState(gs: any): V1023CladPersisted | null {
+  const raw = (gs?.save?.meta?.v1023 as any)?.climate_adaptation;
+  return raw ? sanitizeV1023CladPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1023_CLAD_applyToGameState(gs: any, out: V1023CladTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1023 = { ...(meta.v1023 || {}) };
+  v1023.climate_adaptation = out.persisted;
+  meta.v1023 = v1023;
+  save.meta = meta;
+  return { ...gs, save, v1023ClimateAdaptation: out.state };
+}
+
+export function buildV1023CladTurnInputFromGameState(gs: any, turn: number): V1023CladTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 10230;
+  const inp = buildV1023CladTurnInputFromGameStateStub(turn, seed);
+  const trade = gs?.v1014TradeDepth ?? null;
+  const energy = gs?.energyDepth ?? null;
+  const supply = gs?.v1014SupplyChain ?? null;
+  const workforce = gs?.v1014WorkforceMigration ?? gs?.workforceHumanCapital ?? null;
+  const pubsvc = gs?.v1014PublicServicesCrosswalk ?? null;
+  const scen = gs?.v1014ScenarioV2 ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      droughtBufferIndex: Number(supply?.droughtBufferIndex ?? inp.supply20bb.droughtBufferIndex),
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+      importDependencyRatio: Number(trade?.importDependencyRatio ?? inp.trade20ba.importDependencyRatio),
+    },
+    energy20bc: {
+      ...inp.energy20bc,
+      turn,
+      gridStability: Number(energy?.gridStability ?? inp.energy20bc.gridStability),
+      reserveMarginPct: Number(energy?.reserveMarginPct ?? inp.energy20bc.reserveMarginPct),
+      carbonStress: Number(energy?.carbonStress ?? inp.energy20bc.carbonStress),
+    },
+    workforce20bf: {
+      ...inp.workforce20bf,
+      turn,
+      specialistGap: Number(workforce?.specialistGap ?? inp.workforce20bf.specialistGap),
+      nationalReadiness: Number(workforce?.nationalReadiness ?? inp.workforce20bf.nationalReadiness),
+      mismatchIndex: Number(workforce?.mismatchIndex ?? inp.workforce20bf.mismatchIndex),
+    },
+    publicServices20az: {
+      ...inp.publicServices20az,
+      turn,
+      clinicCapacityScore: Number(pubsvc?.clinicCapacityScore ?? inp.publicServices20az.clinicCapacityScore),
+      digitalServiceCoverage: Number(
+        pubsvc?.digitalServiceCoverage ?? inp.publicServices20az.digitalServiceCoverage,
+      ),
+      serviceDeliveryReadiness: Number(
+        pubsvc?.serviceDeliveryReadiness ?? inp.publicServices20az.serviceDeliveryReadiness,
+      ),
+    },
+    scenarioPacks20bd: {
+      ...inp.scenarioPacks20bd,
+      turn,
+      packCohesionPressure: Number(scen?.packCohesionPressure ?? inp.scenarioPacks20bd.packCohesionPressure),
+      grantStackLoad: Number(scen?.grantStackLoad ?? inp.scenarioPacks20bd.grantStackLoad),
+      objectiveDriftTurns: Number(scen?.objectiveDriftTurns ?? inp.scenarioPacks20bd.objectiveDriftTurns),
+    },
+    persisted: null,
+  };
+}
+"""
+
+CLAD_DAY_HOOK = """
+      if (typeof runV1023CladTurn === 'function') {
+        try {
+          const cladIn = buildV1023CladTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          cladIn.persisted = V1023_CLAD_readPersistedFromGameState(mergedGameState);
+          const cladOut = runV1023CladTurn(cladIn);
+          mergedGameState = V1023_CLAD_applyToGameState(mergedGameState, cladOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_clad_day_hook(text: str) -> str:
+    marker = "runV1023CladTurn(cladIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:45000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip clad day hook (present)")
+        return text
+    mega5_tail = """      if (typeof runV1020T6Mega5DepthTurn === 'function') {
+        try {
+          const m5In = buildV1020T6Mega5DepthTurnInputFromGameState(
+            mergedGameState,
+            passCtx.turnCounter,
+            settings?.t6Mega5DepthEnabled !== false,
+          );
+          m5In.persisted = V1020_T6MEGA5_readPersistedFromGameState(mergedGameState);
+          const m5Out = runV1020T6Mega5DepthTurn(m5In);
+          mergedGameState = V1020_T6MEGA5_applyToGameState(mergedGameState, m5Out);
+        } catch (_) { /* isolated */ }
+      }"""
+    if mega5_tail not in text:
+        raise SystemExit("T6 mega5 day hook anchor missing for clad hook")
+    return text.replace(mega5_tail, mega5_tail + CLAD_DAY_HOOK, 1)
+
+
+def wire_clad_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1020T6Mega5DepthPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1023CladPersisted === 'function') {\n"
+        "    const cladRaw = (migrated.gameState as any)?.save?.meta?.v1023?.climate_adaptation;\n"
+        "    if (cladRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1023 = { ...(meta.v1023 || {}) };\n"
+        "      v1023.climate_adaptation = sanitizeV1023CladPersisted(cladRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1023 = v1023;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1023.climate_adaptation = sanitizeV1023CladPersisted" in text:
+        print("skip clad §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("mega5 §6 anchor missing for clad migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_clad(text: str) -> str:
+    block = CLAD_SECTION + bundle_local_files(climate_adaptation_paths()) + CLAD_HELPERS
+    text = insert_before(text, block, CLAD_MARKER, "T6 push #21 v1023-climate-adaptation (PR #347)")
+    text = wire_clad_day_hook(text)
+    text = wire_clad_migration(text)
+    lab = """  { id: 'v1023_climate_adaptation', label: 'V10.23 Climate adaptation (20BR hazard & drought buffers)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1023CladSelfTestsForLab() },
+"""
+    mega5_lab = (
+        "  { id: 'v1020_t6_mega5_depth', label: 'V10.20 T6 mega5 wave-6 lattice (20BS / 20BA–20BQ)', "
+        "tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV1020T6Mega5DepthSelfTestsForLab() },"
+    )
+    if "{ id: 'v1023_climate_adaptation'" not in text:
+        if mega5_lab in text:
+            text = text.replace(mega5_lab, mega5_lab + "\n" + lab.strip(), 1)
+            print("registered LAB v1023_climate_adaptation")
+        else:
+            text = wire_lab(text, lab, "v1023_climate_adaptation")
+            print("registered LAB v1023_climate_adaptation (fallback)")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -1784,7 +1950,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 15, 16, 18, 19, 21])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -1817,6 +1983,8 @@ def main() -> None:
         text = push_imfd(text)
     elif args.push == 19:
         text = push_haff(text)
+    elif args.push == 21:
+        text = push_clad(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

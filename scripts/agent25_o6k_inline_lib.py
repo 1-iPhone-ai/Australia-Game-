@@ -388,6 +388,50 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  createEmptyV1022HaffPersisted,\n  v1022HaffInputHash,\n  sanitizeV1022HaffPersisted,\n} from '../engine/housing-affordability-orchestrator';",
             "  v1022HaffInputHash,\n} from '../engine/housing-affordability-orchestrator';\nimport {\n  createEmptyV1022HaffPersisted,\n  sanitizeV1022HaffPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1023-climate-adaptation" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BQ", "SECTION 20BR")
+        src = src.replace("SECTION 20BP", "SECTION 20BR")
+        src = src.replace("SECTION 20BS", "SECTION 20BR")
+    if "climate-adaptation/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1023CladClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1023CladClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1023_CLAD_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1023_CLAD_MIG_REGIONS", src)
+    if "climate-adaptation-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1023CladPersisted, sanitizeV1023CladPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1023_CLAD_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1023_CLAD_ORCH_REGIONS.forEach", src)
+    if "climate-adaptation-utils.ts" in name:
+        src = re.sub(
+            r"export function V1023_CLAD_droughtBufferGraphHash",
+            "export function V1023_CLAD_utilDroughtBufferGraphHash",
+            src,
+        )
+    if "v1023-climate-adaptation/drought-buffer-stacks/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"V1023_CLAD_droughtBufferGraphHash as imfdPgHashCore",
+            "V1023_CLAD_utilDroughtBufferGraphHash as cladPgHashCore",
+            src,
+        )
+        src = re.sub(r"imfdPgHashCore", "cladPgHashCore", src)
+    if "run-v1023-clad-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1023CladSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1023CladSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1023CladBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1023CladBaseInput(", src)
+        src = src.replace(
+            "  runV1023CladTurn,\n  createEmptyV1023CladPersisted,\n  v1023CladInputHash,\n  sanitizeV1023CladPersisted,\n} from '../engine/climate-adaptation-orchestrator';",
+            "  runV1023CladTurn,\n  v1023CladInputHash,\n} from '../engine/climate-adaptation-orchestrator';\nimport {\n  createEmptyV1023CladPersisted,\n  sanitizeV1023CladPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1023CladPersisted,\n  v1023CladInputHash,\n  sanitizeV1023CladPersisted,\n} from '../engine/climate-adaptation-orchestrator';",
+            "  v1023CladInputHash,\n} from '../engine/climate-adaptation-orchestrator';\nimport {\n  createEmptyV1023CladPersisted,\n  sanitizeV1023CladPersisted,\n} from '../persistence/migrations';",
+        )
     return src
 
 
@@ -908,6 +952,54 @@ def housing_affordability_paths() -> list[str]:
             if p.name not in {"index.ts", "run-self-tests.ts"}
             and "/scripts/" not in str(p)
             and not (p.parent.name == "generated" and p.name == "index.ts")
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def climate_adaptation_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1023-climate-adaptation"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/drought-buffer-stacks/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/hazard-scenarios/" in s:
+            return (3, s)
+        if "/generated/drought-buffer-stacks/" in s:
+            return (4, s)
+        if "hazard-registry" in s or "drought-buffer-bundle" in s:
+            return (5, s)
+        if "/flood-defend-nodes/" in s:
+            return (6, s)
+        if "climate-adaptation-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "climate-adaptation-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        if "stress-registry" in s or "supply-pipeline" in s:
+            return (98, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+            and not (p.parent.name == "generated" and p.name == "index.ts")
+            and "stress-registry" not in str(p)
+            and "supply-pipeline" not in str(p)
         ),
         key=sort_key,
     )

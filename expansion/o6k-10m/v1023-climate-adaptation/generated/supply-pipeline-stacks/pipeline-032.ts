@@ -1,0 +1,31 @@
+import type { V1023CladDroughtBufferEdge } from '../../types/core.ts';
+
+/** Drought buffer graph shard 032 (heat/flood/drought corridor coupling). */
+export const V1023_CLAD_DROUGHT_BUFFER_SHARD_032: readonly V1023CladDroughtBufferEdge[] = [
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.668, lagTurns: 7, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.674, lagTurns: 8, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.68, lagTurns: 9, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.686, lagTurns: 10, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.692, lagTurns: 7, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.698, lagTurns: 8, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.704, lagTurns: 9, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.71, lagTurns: 10, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.716, lagTurns: 7, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.62, lagTurns: 8, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.626, lagTurns: 9, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.632, lagTurns: 10, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.638, lagTurns: 7, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.644, lagTurns: 8, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.65, lagTurns: 9, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.656, lagTurns: 10, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.662, lagTurns: 7, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.668, lagTurns: 8, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.674, lagTurns: 9, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.68, lagTurns: 10, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.686, lagTurns: 7, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.692, lagTurns: 8, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.698, lagTurns: 9, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.704, lagTurns: 10, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.71, lagTurns: 7, nodeId: 'flood_node_08' },
+  { fromChannel: 'social', toChannel: 'senior', weight: 0.716, lagTurns: 8, nodeId: 'flood_node_08' },
+];
