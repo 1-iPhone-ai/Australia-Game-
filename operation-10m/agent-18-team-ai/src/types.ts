@@ -285,6 +285,11 @@ export interface TeamMultiAgentCoordinationMeta {
   handoffReadinessSpreadIndex?: number;
   workstreamParallelismIndex?: number;
   escalationRecoveryAlignmentIndex?: number;
+  auditPressureIndex?: number;
+  roleLockFrictionIndex?: number;
+  lockedRoleActorIds?: string[];
+  directiveConstraintDensityIndex?: number;
+  directiveConstrainedActorIds?: string[];
 }
 
 export const AGENT18_LIMITS = {

@@ -26,6 +26,9 @@ import { combineDualTeamCompositeHealthGradient } from './composite-health-gradi
 import { combineDualTeamHandoffReadinessSpread } from './handoff-readiness-spread.ts';
 import { combineDualTeamWorkstreamParallelism } from './workstream-parallelism-index.ts';
 import { combineDualTeamEscalationRecoveryAlignment } from './escalation-recovery-alignment.ts';
+import { combineDualTeamAuditPressure } from './audit-pressure-index.ts';
+import { combineDualTeamRoleLockFriction } from './role-lock-friction-index.ts';
+import { combineDualTeamDirectiveConstraintDensity } from './directive-constraint-density.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -69,6 +72,9 @@ export interface DualTeamMultiAgentResult {
   handoffReadinessSpreadCombined: number;
   workstreamParallelismCombined: number;
   escalationRecoveryAlignmentCombined: number;
+  auditPressureCombined: number;
+  roleLockFrictionCombined: number;
+  directiveConstraintDensityCombined: number;
 }
 
 /**
@@ -128,6 +134,9 @@ export function evaluateDualTeamMultiAgentLayers(
       handoffReadinessSpreadCombined: friendly.state.meta.handoffReadinessSpreadIndex ?? 0,
       workstreamParallelismCombined: friendly.state.meta.workstreamParallelismIndex ?? 0,
       escalationRecoveryAlignmentCombined: friendly.state.meta.escalationRecoveryAlignmentIndex ?? 0,
+      auditPressureCombined: friendly.state.meta.auditPressureIndex ?? 0,
+      roleLockFrictionCombined: friendly.state.meta.roleLockFrictionIndex ?? 0,
+      directiveConstraintDensityCombined: friendly.state.meta.directiveConstraintDensityIndex ?? 0,
     };
   }
 
@@ -315,6 +324,18 @@ export function evaluateDualTeamMultiAgentLayers(
     escalationRecoveryAlignmentCombined: combineDualTeamEscalationRecoveryAlignment(
       friendly.state.meta.escalationRecoveryAlignmentIndex ?? 0,
       enemy.state.meta.escalationRecoveryAlignmentIndex ?? 0,
+    ),
+    auditPressureCombined: combineDualTeamAuditPressure(
+      friendly.state.meta.auditPressureIndex ?? 0,
+      enemy.state.meta.auditPressureIndex ?? 0,
+    ),
+    roleLockFrictionCombined: combineDualTeamRoleLockFriction(
+      friendly.state.meta.roleLockFrictionIndex ?? 0,
+      enemy.state.meta.roleLockFrictionIndex ?? 0,
+    ),
+    directiveConstraintDensityCombined: combineDualTeamDirectiveConstraintDensity(
+      friendly.state.meta.directiveConstraintDensityIndex ?? 0,
+      enemy.state.meta.directiveConstraintDensityIndex ?? 0,
     ),
   };
 }

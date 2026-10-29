@@ -67,6 +67,9 @@ import { computeCompositeHealthGradient } from './composite-health-gradient.ts';
 import { computeHandoffReadinessSpread } from './handoff-readiness-spread.ts';
 import { measureWorkstreamParallelism } from './workstream-parallelism-index.ts';
 import { computeEscalationRecoveryAlignment } from './escalation-recovery-alignment.ts';
+import { computeAuditPressureIndex } from './audit-pressure-index.ts';
+import { computeRoleLockFrictionIndex } from './role-lock-friction-index.ts';
+import { computeDirectiveConstraintDensity } from './directive-constraint-density.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -2012,6 +2015,75 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.handoffReadinessSpreadCombined === 'number' &&
       typeof dual.workstreamParallelismCombined === 'number' &&
       typeof dual.escalationRecoveryAlignmentCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_pressure_errors', 'Audit pressure: errors and warnings aggregate', () => {
+    const report = computeAuditPressureIndex([
+      { id: 'e1', severity: 'error', message: 'x', actorIds: [], regionId: null },
+      { id: 'w1', severity: 'warning', message: 'y', actorIds: [], regionId: null },
+      { id: 'w2', severity: 'warning', message: 'z', actorIds: [], regionId: null },
+    ]);
+    return report.pressureIndex >= 45;
+  });
+
+  check(results, 'a18_role_lock_friction', 'Role lock friction: locked roles raise index', () => {
+    const report = computeRoleLockFrictionIndex(2, [
+      { actorId: 'player', primaryRole: 'controller', responsibility: 'lead', taskIds: ['t1'], lockedUntilTurn: 5 },
+      { actorId: 'mate', primaryRole: 'support', responsibility: 'assist', taskIds: ['t2'], lockedUntilTurn: 4 },
+    ]);
+    return report.frictionIndex >= 55 && report.lockedRoleActorIds.includes('player');
+  });
+
+  check(results, 'a18_directive_constraint_density', 'Directive constraint density: constrained actors score high', () => {
+    const report = computeDirectiveConstraintDensity({
+      player: 'mutex:NSW',
+      mate: 'handoff_pending',
+      scout: 'barrier',
+    });
+    return report.densityIndex >= 60 && report.constrainedActorIds.length === 3;
+  });
+
+  check(results, 'a18_directive_constraint_sparse', 'Directive constraint density: empty map stays low', () => {
+    const report = computeDirectiveConstraintDensity({});
+    return report.densityIndex < 20;
+  });
+
+  check(results, 'a18_eval_round14_meta', 'Layer: round-14 meta exposes audit, lock, constraint signals', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.auditPressureIndex === 'number' &&
+      typeof m.roleLockFrictionIndex === 'number' &&
+      typeof m.directiveConstraintDensityIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_role_lock_friction', 'Audit: high role lock friction surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = {
+      ...ev.state,
+      meta: { ...ev.state.meta, roleLockFrictionIndex: 70, lockedRoleActorIds: ['player'] },
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /lock friction/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round14_combined', 'Dual team: round-14 combined audit, lock, constraint exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.auditPressureCombined === 'number' &&
+      typeof dual.roleLockFrictionCombined === 'number' &&
+      typeof dual.directiveConstraintDensityCombined === 'number'
     );
   });
 

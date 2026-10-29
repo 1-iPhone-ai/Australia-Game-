@@ -45,4 +45,7 @@ export * from './composite-health-gradient.ts';
 export * from './handoff-readiness-spread.ts';
 export * from './workstream-parallelism-index.ts';
 export * from './escalation-recovery-alignment.ts';
+export * from './audit-pressure-index.ts';
+export * from './role-lock-friction-index.ts';
+export * from './directive-constraint-density.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

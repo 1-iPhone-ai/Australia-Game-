@@ -59,6 +59,9 @@ import { computeCompositeHealthGradient } from './composite-health-gradient.ts';
 import { computeHandoffReadinessSpread } from './handoff-readiness-spread.ts';
 import { measureWorkstreamParallelism } from './workstream-parallelism-index.ts';
 import { computeEscalationRecoveryAlignment } from './escalation-recovery-alignment.ts';
+import { computeAuditPressureIndex } from './audit-pressure-index.ts';
+import { computeRoleLockFrictionIndex } from './role-lock-friction-index.ts';
+import { computeDirectiveConstraintDensity } from './directive-constraint-density.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -323,6 +326,20 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.escalationRecoveryAlignmentIndex === 'number'
           ? metaRaw.escalationRecoveryAlignmentIndex
           : undefined,
+      auditPressureIndex:
+        typeof metaRaw.auditPressureIndex === 'number' ? metaRaw.auditPressureIndex : undefined,
+      roleLockFrictionIndex:
+        typeof metaRaw.roleLockFrictionIndex === 'number' ? metaRaw.roleLockFrictionIndex : undefined,
+      lockedRoleActorIds: Array.isArray(metaRaw.lockedRoleActorIds)
+        ? metaRaw.lockedRoleActorIds.map(String).slice(0, 8)
+        : undefined,
+      directiveConstraintDensityIndex:
+        typeof metaRaw.directiveConstraintDensityIndex === 'number'
+          ? metaRaw.directiveConstraintDensityIndex
+          : undefined,
+      directiveConstrainedActorIds: Array.isArray(metaRaw.directiveConstrainedActorIds)
+        ? metaRaw.directiveConstrainedActorIds.map(String).slice(0, 8)
+        : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -348,6 +365,8 @@ export function evaluateTeamMultiAgentLayer(
   diagnostics.push(...notes);
   const roleTaskCoverage = computeRoleTaskCoverageGap(roles, inputs.tasks);
   roleTaskCoverage.notes.forEach(n => diagnostics.push(n));
+  const roleLockFriction = computeRoleLockFrictionIndex(inputs.turn, roles);
+  roleLockFriction.notes.forEach(n => diagnostics.push(n));
   const sharedIssues = detectIllegalSharedExclusiveTasks(inputs.tasks);
   const locked = [...inputs.lockedRoles, ...(inputs.command?.lockedActorIds || [])];
   const coordination = orchestrateTeamCoordination(inputs.turn, inputs.tasks, roles, locked);
@@ -526,6 +545,10 @@ export function evaluateTeamMultiAgentLayer(
     coordinationComposite.compositeScore,
   );
   compositeGradient.notes.forEach(n => diagnostics.push(n));
+  const directiveConstraintDensity = computeDirectiveConstraintDensity(
+    directiveResult.constraintsByActor,
+  );
+  directiveConstraintDensity.notes.forEach(n => diagnostics.push(n));
 
   state = {
     ...state,
@@ -589,6 +612,10 @@ export function evaluateTeamMultiAgentLayer(
       compositeHealthTrend: compositeGradient.trend,
       handoffReadinessSpreadIndex: handoffReadinessSpread.spreadIndex,
       workstreamParallelismIndex: workstreamParallelism.parallelismIndex,
+      roleLockFrictionIndex: roleLockFriction.frictionIndex,
+      lockedRoleActorIds: roleLockFriction.lockedRoleActorIds,
+      directiveConstraintDensityIndex: directiveConstraintDensity.densityIndex,
+      directiveConstrainedActorIds: directiveConstraintDensity.constrainedActorIds,
     },
   };
 
@@ -614,12 +641,15 @@ export function evaluateTeamMultiAgentLayer(
     recoveryPlaybook.recoveryUrgency,
   );
   escalationAlignment.notes.forEach(n => diagnostics.push(n));
+  const auditPressure = computeAuditPressureIndex(auditFindings);
+  auditPressure.notes.forEach(n => diagnostics.push(n));
   state = attachAuditToState(state, auditFindings, {
     coordinationEscalationTier: escalation.tier,
     coordinationEscalationLabel: escalation.label,
     coordinationRecoveryUrgency: recoveryPlaybook.recoveryUrgency,
     coordinationRecoveryActions: recoveryPlaybook.recommendedActions,
     escalationRecoveryAlignmentIndex: escalationAlignment.alignmentIndex,
+    auditPressureIndex: auditPressure.pressureIndex,
   });
   state = { ...state, diagnostics };
 

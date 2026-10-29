@@ -289,6 +289,11 @@ export interface TeamMultiAgentCoordinationMeta {
   handoffReadinessSpreadIndex?: number;
   workstreamParallelismIndex?: number;
   escalationRecoveryAlignmentIndex?: number;
+  auditPressureIndex?: number;
+  roleLockFrictionIndex?: number;
+  lockedRoleActorIds?: string[];
+  directiveConstraintDensityIndex?: number;
+  directiveConstrainedActorIds?: string[];
 }
 
 export const AGENT18_LIMITS = {
@@ -3333,6 +3338,112 @@ export function combineDualTeamEscalationRecoveryAlignment(friendly: number, ene
 }
 
 
+// --- source: audit-pressure-index.ts ---
+
+export interface AuditPressureReport {
+  pressureIndex: number;
+  notes: string[];
+}
+
+/**
+ * Aggregate audit finding severity into a single pressure score.
+ */
+export function computeAuditPressureIndex(findings: CoordinationAuditFinding[]): AuditPressureReport {
+  const notes: string[] = [];
+  const errors = findings.filter(f => f.severity === 'error').length;
+  const warnings = findings.filter(f => f.severity === 'warning').length;
+
+  if (errors > 0) notes.push(`${errors} coordination audit error(s)`);
+  if (warnings >= 3) notes.push(`${warnings} coordination audit warnings`);
+
+  const pressureIndex = Math.round(Math.min(100, errors * 28 + warnings * 9));
+
+  return { pressureIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamAuditPressure(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: role-lock-friction-index.ts ---
+
+export interface RoleLockFrictionReport {
+  frictionIndex: number;
+  lockedRoleActorIds: string[];
+  notes: string[];
+}
+
+/**
+ * Score friction from role locks that block reassignment this turn.
+ */
+export function computeRoleLockFrictionIndex(
+  turn: number,
+  roles: RoleAssignment[],
+): RoleLockFrictionReport {
+  const notes: string[] = [];
+  const lockedRoleActorIds = roles
+    .filter(r => r.lockedUntilTurn !== null && r.lockedUntilTurn > turn)
+    .map(r => r.actorId);
+
+  if (lockedRoleActorIds.length > 0) {
+    notes.push(`Role locks active for: ${lockedRoleActorIds.join(', ')}`);
+  }
+
+  const ratio = roles.length === 0 ? 0 : lockedRoleActorIds.length / roles.length;
+  const frictionIndex = Math.round(Math.min(100, ratio * 80 + lockedRoleActorIds.length * 10));
+
+  return {
+    frictionIndex,
+    lockedRoleActorIds: lockedRoleActorIds.slice(0, 8),
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamRoleLockFriction(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: directive-constraint-density.ts ---
+export interface DirectiveConstraintDensityReport {
+  densityIndex: number;
+  constrainedActorIds: string[];
+  notes: string[];
+}
+
+/**
+ * Measure how many actors carry active directive coordination constraints.
+ */
+export function computeDirectiveConstraintDensity(
+  constraintsByActor: Record<string, string>,
+): DirectiveConstraintDensityReport {
+  const notes: string[] = [];
+  const constrainedActorIds = Object.entries(constraintsByActor)
+    .filter(([, value]) => value.trim().length > 0)
+    .map(([actorId]) => actorId);
+
+  if (constrainedActorIds.length > 0) {
+    notes.push(`Directive constraints on: ${constrainedActorIds.join(', ')}`);
+  }
+
+  const densityIndex = Math.round(Math.min(100, constrainedActorIds.length * 18 + 8));
+
+  return {
+    densityIndex,
+    constrainedActorIds: constrainedActorIds.slice(0, 8),
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamDirectiveConstraintDensity(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
 // --- source: coordination-audit.ts ---
   AGENT18_LIMITS,
   CoordinationAuditFinding,
@@ -3781,6 +3892,36 @@ export function auditTeamMultiAgentLayer(
     push({
       severity: 'warning',
       message: `Escalation/recovery misalignment (${state.meta.escalationRecoveryAlignmentIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.roleLockFrictionIndex === 'number' && state.meta.roleLockFrictionIndex >= 55) {
+    push({
+      severity: 'warning',
+      message: `Role lock friction (${state.meta.roleLockFrictionIndex})`,
+      actorIds: state.meta.lockedRoleActorIds || [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.directiveConstraintDensityIndex === 'number' &&
+    state.meta.directiveConstraintDensityIndex >= 60
+  ) {
+    push({
+      severity: 'warning',
+      message: `Directive constraint density (${state.meta.directiveConstraintDensityIndex})`,
+      actorIds: state.meta.directiveConstrainedActorIds || [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.auditPressureIndex === 'number' && state.meta.auditPressureIndex >= 65) {
+    push({
+      severity: 'warning',
+      message: `Coordination audit pressure (${state.meta.auditPressureIndex})`,
       actorIds: [],
       regionId: null,
     });
@@ -4240,6 +4381,20 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.escalationRecoveryAlignmentIndex === 'number'
           ? metaRaw.escalationRecoveryAlignmentIndex
           : undefined,
+      auditPressureIndex:
+        typeof metaRaw.auditPressureIndex === 'number' ? metaRaw.auditPressureIndex : undefined,
+      roleLockFrictionIndex:
+        typeof metaRaw.roleLockFrictionIndex === 'number' ? metaRaw.roleLockFrictionIndex : undefined,
+      lockedRoleActorIds: Array.isArray(metaRaw.lockedRoleActorIds)
+        ? metaRaw.lockedRoleActorIds.map(String).slice(0, 8)
+        : undefined,
+      directiveConstraintDensityIndex:
+        typeof metaRaw.directiveConstraintDensityIndex === 'number'
+          ? metaRaw.directiveConstraintDensityIndex
+          : undefined,
+      directiveConstrainedActorIds: Array.isArray(metaRaw.directiveConstrainedActorIds)
+        ? metaRaw.directiveConstrainedActorIds.map(String).slice(0, 8)
+        : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -4265,6 +4420,8 @@ export function evaluateTeamMultiAgentLayer(
   diagnostics.push(...notes);
   const roleTaskCoverage = computeRoleTaskCoverageGap(roles, inputs.tasks);
   roleTaskCoverage.notes.forEach(n => diagnostics.push(n));
+  const roleLockFriction = computeRoleLockFrictionIndex(inputs.turn, roles);
+  roleLockFriction.notes.forEach(n => diagnostics.push(n));
   const sharedIssues = detectIllegalSharedExclusiveTasks(inputs.tasks);
   const locked = [...inputs.lockedRoles, ...(inputs.command?.lockedActorIds || [])];
   const coordination = orchestrateTeamCoordination(inputs.turn, inputs.tasks, roles, locked);
@@ -4443,6 +4600,10 @@ export function evaluateTeamMultiAgentLayer(
     coordinationComposite.compositeScore,
   );
   compositeGradient.notes.forEach(n => diagnostics.push(n));
+  const directiveConstraintDensity = computeDirectiveConstraintDensity(
+    directiveResult.constraintsByActor,
+  );
+  directiveConstraintDensity.notes.forEach(n => diagnostics.push(n));
 
   state = {
     ...state,
@@ -4506,6 +4667,10 @@ export function evaluateTeamMultiAgentLayer(
       compositeHealthTrend: compositeGradient.trend,
       handoffReadinessSpreadIndex: handoffReadinessSpread.spreadIndex,
       workstreamParallelismIndex: workstreamParallelism.parallelismIndex,
+      roleLockFrictionIndex: roleLockFriction.frictionIndex,
+      lockedRoleActorIds: roleLockFriction.lockedRoleActorIds,
+      directiveConstraintDensityIndex: directiveConstraintDensity.densityIndex,
+      directiveConstrainedActorIds: directiveConstraintDensity.constrainedActorIds,
     },
   };
 
@@ -4531,12 +4696,15 @@ export function evaluateTeamMultiAgentLayer(
     recoveryPlaybook.recoveryUrgency,
   );
   escalationAlignment.notes.forEach(n => diagnostics.push(n));
+  const auditPressure = computeAuditPressureIndex(auditFindings);
+  auditPressure.notes.forEach(n => diagnostics.push(n));
   state = attachAuditToState(state, auditFindings, {
     coordinationEscalationTier: escalation.tier,
     coordinationEscalationLabel: escalation.label,
     coordinationRecoveryUrgency: recoveryPlaybook.recoveryUrgency,
     coordinationRecoveryActions: recoveryPlaybook.recommendedActions,
     escalationRecoveryAlignmentIndex: escalationAlignment.alignmentIndex,
+    auditPressureIndex: auditPressure.pressureIndex,
   });
   state = { ...state, diagnostics };
 
@@ -4620,6 +4788,9 @@ export interface DualTeamMultiAgentResult {
   handoffReadinessSpreadCombined: number;
   workstreamParallelismCombined: number;
   escalationRecoveryAlignmentCombined: number;
+  auditPressureCombined: number;
+  roleLockFrictionCombined: number;
+  directiveConstraintDensityCombined: number;
 }
 
 /**
@@ -4679,6 +4850,9 @@ export function evaluateDualTeamMultiAgentLayers(
       handoffReadinessSpreadCombined: friendly.state.meta.handoffReadinessSpreadIndex ?? 0,
       workstreamParallelismCombined: friendly.state.meta.workstreamParallelismIndex ?? 0,
       escalationRecoveryAlignmentCombined: friendly.state.meta.escalationRecoveryAlignmentIndex ?? 0,
+      auditPressureCombined: friendly.state.meta.auditPressureIndex ?? 0,
+      roleLockFrictionCombined: friendly.state.meta.roleLockFrictionIndex ?? 0,
+      directiveConstraintDensityCombined: friendly.state.meta.directiveConstraintDensityIndex ?? 0,
     };
   }
 
@@ -4866,6 +5040,18 @@ export function evaluateDualTeamMultiAgentLayers(
     escalationRecoveryAlignmentCombined: combineDualTeamEscalationRecoveryAlignment(
       friendly.state.meta.escalationRecoveryAlignmentIndex ?? 0,
       enemy.state.meta.escalationRecoveryAlignmentIndex ?? 0,
+    ),
+    auditPressureCombined: combineDualTeamAuditPressure(
+      friendly.state.meta.auditPressureIndex ?? 0,
+      enemy.state.meta.auditPressureIndex ?? 0,
+    ),
+    roleLockFrictionCombined: combineDualTeamRoleLockFriction(
+      friendly.state.meta.roleLockFrictionIndex ?? 0,
+      enemy.state.meta.roleLockFrictionIndex ?? 0,
+    ),
+    directiveConstraintDensityCombined: combineDualTeamDirectiveConstraintDensity(
+      friendly.state.meta.directiveConstraintDensityIndex ?? 0,
+      enemy.state.meta.directiveConstraintDensityIndex ?? 0,
     ),
   };
 }
@@ -6844,6 +7030,75 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.handoffReadinessSpreadCombined === 'number' &&
       typeof dual.workstreamParallelismCombined === 'number' &&
       typeof dual.escalationRecoveryAlignmentCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_pressure_errors', 'Audit pressure: errors and warnings aggregate', () => {
+    const report = computeAuditPressureIndex([
+      { id: 'e1', severity: 'error', message: 'x', actorIds: [], regionId: null },
+      { id: 'w1', severity: 'warning', message: 'y', actorIds: [], regionId: null },
+      { id: 'w2', severity: 'warning', message: 'z', actorIds: [], regionId: null },
+    ]);
+    return report.pressureIndex >= 45;
+  });
+
+  check(results, 'a18_role_lock_friction', 'Role lock friction: locked roles raise index', () => {
+    const report = computeRoleLockFrictionIndex(2, [
+      { actorId: 'player', primaryRole: 'controller', responsibility: 'lead', taskIds: ['t1'], lockedUntilTurn: 5 },
+      { actorId: 'mate', primaryRole: 'support', responsibility: 'assist', taskIds: ['t2'], lockedUntilTurn: 4 },
+    ]);
+    return report.frictionIndex >= 55 && report.lockedRoleActorIds.includes('player');
+  });
+
+  check(results, 'a18_directive_constraint_density', 'Directive constraint density: constrained actors score high', () => {
+    const report = computeDirectiveConstraintDensity({
+      player: 'mutex:NSW',
+      mate: 'handoff_pending',
+      scout: 'barrier',
+    });
+    return report.densityIndex >= 60 && report.constrainedActorIds.length === 3;
+  });
+
+  check(results, 'a18_directive_constraint_sparse', 'Directive constraint density: empty map stays low', () => {
+    const report = computeDirectiveConstraintDensity({});
+    return report.densityIndex < 20;
+  });
+
+  check(results, 'a18_eval_round14_meta', 'Layer: round-14 meta exposes audit, lock, constraint signals', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.auditPressureIndex === 'number' &&
+      typeof m.roleLockFrictionIndex === 'number' &&
+      typeof m.directiveConstraintDensityIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_role_lock_friction', 'Audit: high role lock friction surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = {
+      ...ev.state,
+      meta: { ...ev.state.meta, roleLockFrictionIndex: 70, lockedRoleActorIds: ['player'] },
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /lock friction/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round14_combined', 'Dual team: round-14 combined audit, lock, constraint exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.auditPressureCombined === 'number' &&
+      typeof dual.roleLockFrictionCombined === 'number' &&
+      typeof dual.directiveConstraintDensityCombined === 'number'
     );
   });
 
