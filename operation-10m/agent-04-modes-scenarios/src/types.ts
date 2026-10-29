@@ -357,6 +357,8 @@ export type O10mExpeditionLeg = 'departure' | 'transit' | 'arrival';
 
 export type O10mOdysseyAct = 'opening' | 'crossing' | 'homecoming';
 
+export type O10mPilgrimageStage = 'setting_out' | 'midway' | 'sanctuary';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -390,6 +392,17 @@ export interface O10mOdysseySession {
   actTag: O10mOdysseyAct;
 }
 
+/** Schema v11 — staged pilgrimage with devotion accrual between shrines. */
+export interface O10mPilgrimageSession {
+  pilgrimageId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  devotionScore: number;
+  stageTag: O10mPilgrimageStage;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -414,6 +427,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'pilgrimage_step'
     | 'odyssey_step'
     | 'expedition_step'
     | 'circuit_step'
@@ -447,6 +461,10 @@ export interface O10mCampaignPlan {
   odysseyCursor: number | null;
   odysseyAct: O10mOdysseyAct | null;
   odysseyRenown: number | null;
+  pilgrimageId: string | null;
+  pilgrimageCursor: number | null;
+  pilgrimageStage: O10mPilgrimageStage | null;
+  pilgrimageDevotion: number | null;
   reason: string;
 }
 
@@ -490,6 +508,8 @@ export interface O10mModesPersistedState {
   expeditionSession?: O10mExpeditionSession | null;
   /** Schema v10 — active odyssey arc (mutually exclusive with expedition / circuit / relay / gauntlet / marathon). */
   odysseySession?: O10mOdysseySession | null;
+  /** Schema v11 — active pilgrimage route (mutually exclusive with odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  pilgrimageSession?: O10mPilgrimageSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

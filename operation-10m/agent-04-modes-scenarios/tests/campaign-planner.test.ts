@@ -5,6 +5,7 @@ import {
   attachCircuitSessionToState,
   attachExpeditionSessionToState,
   attachOdysseySessionToState,
+  attachPilgrimageSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -13,6 +14,7 @@ import {
   createCircuitSession,
   createExpeditionSession,
   createOdysseySession,
+  createPilgrimageSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -40,6 +42,58 @@ describe('scenario campaign planner round 4', () => {
     assert.equal(plan.kind, 'chain_step');
     assert.equal(plan.scenarioId, 'o10m_continuity_drill');
     assert.equal(plan.chainId, 'o10m_chain_continuity_arc');
+  });
+
+  it('prefers active pilgrimage over odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: pilgrimage } = createPilgrimageSession({
+      pilgrimageId: 'o10m_pilgrimage_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_pilgrimage_setting_out', 'o10m_pilgrimage_midway_shrine'],
+    });
+    const { session: odyssey } = createOdysseySession({
+      odysseyId: 'o10m_odyssey_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_odyssey_opening_winds', 'o10m_odyssey_crossing_shelves'],
+    });
+    const { session: expedition } = createExpeditionSession({
+      expeditionId: 'o10m_expedition_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_expedition_departure_dock', 'o10m_expedition_transit_pass'],
+    });
+    const { session: circuit } = createCircuitSession({
+      circuitId: 'o10m_circuit_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_circuit_warmup_laps', 'o10m_circuit_ridge_climb'],
+    });
+    const { session: relay } = createRelaySession({
+      relayId: 'o10m_relay_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_relay_dust_corridor', 'o10m_relay_coastal_handoff'],
+    });
+    const { session: gauntlet } = createGauntletSession({
+      gauntletId: 'o10m_gauntlet_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_gauntlet_opening_gate', 'o10m_gauntlet_midfield_press'],
+    });
+    const { queue } = createMarathonQueue({
+      queueId: 'o10m_marathon_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_marathon_pace_setter'],
+    });
+    let state = createEmptyO10mModesPersistedState();
+    state = pinCampaignSlot(state, {
+      slotId: 'o10m_slot_lab',
+      scenarioId: 'o10m_slot_rotation_lab',
+      turn: 4,
+    }).state;
+    state = attachMarathonQueueToState(state, queue!);
+    state = attachGauntletSessionToState(state, gauntlet!);
+    state = attachRelaySessionToState(state, relay!);
+    state = attachCircuitSessionToState(state, circuit!);
+    state = attachExpeditionSessionToState(state, expedition!);
+    state = attachOdysseySessionToState(state, odyssey!);
+    state = attachPilgrimageSessionToState(state, pilgrimage!);
+    assert.equal(planNextCampaignAction(state).kind, 'pilgrimage_step');
   });
 
   it('prefers active odyssey over expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {

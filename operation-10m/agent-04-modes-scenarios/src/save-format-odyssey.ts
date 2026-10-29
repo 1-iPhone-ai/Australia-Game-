@@ -118,6 +118,7 @@ export function attachOdysseySessionToState(
   return {
     ...state,
     odysseySession: sanitized,
+    pilgrimageSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,

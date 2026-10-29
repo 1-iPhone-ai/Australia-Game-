@@ -31,12 +31,18 @@ import {
   odysseySessionSummary,
   sanitizeOdysseySession,
 } from './save-format-odyssey.js';
+import {
+  getPilgrimageScenarioAtCursor,
+  pilgrimageSessionSummary,
+  sanitizePilgrimageSession,
+} from './save-format-pilgrimage.js';
 import { objectiveProgressCompletionRatio } from './save-format-objective-sync.js';
 import type {
   O10mCampaignPlan,
   O10mCircuitPhase,
   O10mExpeditionLeg,
   O10mOdysseyAct,
+  O10mPilgrimageStage,
   O10mModesPersistedState,
 } from './types.js';
 
@@ -61,9 +67,31 @@ const emptyQueuePlan = {
   odysseyCursor: null as number | null,
   odysseyAct: null as O10mOdysseyAct | null,
   odysseyRenown: null as number | null,
+  pilgrimageId: null as string | null,
+  pilgrimageCursor: null as number | null,
+  pilgrimageStage: null as O10mPilgrimageStage | null,
+  pilgrimageDevotion: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const pilgrimage = sanitizePilgrimageSession(state.pilgrimageSession);
+  const pilgrimageScenario = getPilgrimageScenarioAtCursor(pilgrimage);
+  if (pilgrimage && pilgrimage.active && pilgrimageScenario) {
+    return {
+      kind: 'pilgrimage_step',
+      scenarioId: pilgrimageScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      pilgrimageId: pilgrimage.pilgrimageId,
+      pilgrimageCursor: pilgrimage.cursor,
+      pilgrimageStage: pilgrimage.stageTag,
+      pilgrimageDevotion: pilgrimage.devotionScore,
+      reason: `Pilgrimage "${pilgrimage.label}" ${pilgrimage.stageTag} stop ${pilgrimage.cursor + 1}/${pilgrimage.scenarioIds.length} (devotion ${pilgrimage.devotionScore}).`,
+    };
+  }
+
   const odyssey = sanitizeOdysseySession(state.odysseySession);
   const odysseyScenario = getOdysseyScenarioAtCursor(odyssey);
   if (odyssey && odyssey.active && odysseyScenario) {
@@ -243,6 +271,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   circuitActive: boolean;
   expeditionActive: boolean;
   odysseyActive: boolean;
+  pilgrimageActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -256,6 +285,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const circuit = circuitSessionSummary(state);
   const expedition = expeditionSessionSummary(state);
   const odyssey = odysseySessionSummary(state);
+  const pilgrimage = pilgrimageSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -267,6 +297,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     circuitActive: circuit.active,
     expeditionActive: expedition.active,
     odysseyActive: odyssey.active,
+    pilgrimageActive: pilgrimage.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

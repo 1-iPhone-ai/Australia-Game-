@@ -361,6 +361,8 @@ export type O10mExpeditionLeg = 'departure' | 'transit' | 'arrival';
 
 export type O10mOdysseyAct = 'opening' | 'crossing' | 'homecoming';
 
+export type O10mPilgrimageStage = 'setting_out' | 'midway' | 'sanctuary';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -394,6 +396,17 @@ export interface O10mOdysseySession {
   actTag: O10mOdysseyAct;
 }
 
+/** Schema v11 — staged pilgrimage with devotion accrual between shrines. */
+export interface O10mPilgrimageSession {
+  pilgrimageId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  devotionScore: number;
+  stageTag: O10mPilgrimageStage;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -418,6 +431,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'pilgrimage_step'
     | 'odyssey_step'
     | 'expedition_step'
     | 'circuit_step'
@@ -451,6 +465,10 @@ export interface O10mCampaignPlan {
   odysseyCursor: number | null;
   odysseyAct: O10mOdysseyAct | null;
   odysseyRenown: number | null;
+  pilgrimageId: string | null;
+  pilgrimageCursor: number | null;
+  pilgrimageStage: O10mPilgrimageStage | null;
+  pilgrimageDevotion: number | null;
   reason: string;
 }
 
@@ -494,6 +512,8 @@ export interface O10mModesPersistedState {
   expeditionSession?: O10mExpeditionSession | null;
   /** Schema v10 — active odyssey arc (mutually exclusive with expedition / circuit / relay / gauntlet / marathon). */
   odysseySession?: O10mOdysseySession | null;
+  /** Schema v11 — active pilgrimage route (mutually exclusive with odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  pilgrimageSession?: O10mPilgrimageSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -2011,6 +2031,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Odyssey finales', 'Renown ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_pilgrimage_setting_out',
+    title: 'Pilgrimage Setting Out',
+    description: 'Begin a staged pilgrimage with devotion building before the midway shrine.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100435,
+    startingMoney: 2250,
+    startingRegions: ['VIC', 'SA'],
+    badgeId: 'badge_o10m_pilgrimage_setting_out',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100435),
+      o10mPilgrimageSettingOut: true,
+      totalDays: 7,
+    },
+    objectives: [
+      {
+        id: 'o10m_pso_obj_day',
+        label: 'Setting Out Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Pilgrimage routes', 'Devotion pacing', 'Stage setting out'],
+  },
+  {
+    id: 'o10m_pilgrimage_midway_shrine',
+    title: 'Pilgrimage Midway Shrine',
+    description: 'Mid-pilgrimage standing gate with accrued devotion applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100436,
+    startingMoney: 2850,
+    startingRegions: ['NSW', 'ACT'],
+    startingStanding: { NSW: 44, ACT: 47 },
+    badgeId: 'badge_o10m_pilgrimage_midway_shrine',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100436),
+      regionalStandingEnabled: true,
+      o10mPilgrimageMidwayShrine: true,
+      totalDays: 10,
+    },
+    objectives: [
+      {
+        id: 'o10m_pms_obj_avg',
+        label: 'Shrine Threshold',
+        description: 'Average standing of 50',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 50,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Pilgrimage midway', 'Devotion carry', 'Stage transitions'],
+  },
+  {
+    id: 'o10m_pilgrimage_sanctuary_rest',
+    title: 'Pilgrimage Sanctuary Rest',
+    description: 'Finale pilgrimage stop — net worth gate with full devotion bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100437,
+    startingMoney: 3350,
+    startingRegions: ['QLD', 'NT', 'WA'],
+    badgeId: 'badge_o10m_pilgrimage_sanctuary_rest',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100437),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mPilgrimageSanctuaryRest: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_psr_obj_net',
+        label: 'Sanctuary Net Worth',
+        description: 'Reach $15,400 net worth',
+        targetType: 'netWorth',
+        targetValue: 15400,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Pilgrimage finales', 'Devotion ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -2830,6 +2947,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
         title: 'Homecoming Harbor',
         requiresPrimaryVictory: true,
         carryBonusOnComplete: { forcedSettingsPatch: { o10mChainOdysseyRouteComplete: true } },
+      },
+    ],
+  },
+  {
+    id: 'o10m_chain_pilgrimage_path',
+    title: 'Pilgrimage Path',
+    description:
+      'Three-stage pilgrimage with devotion accrual between shrines — round-11 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_pilgrimage_path',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_pilgrimage_setting_out',
+        title: 'Setting Out',
+        narrativeBridge: 'Gather devotion before the midway shrine.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 205 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_pilgrimage_midway_shrine',
+        title: 'Midway Shrine',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, ACT: 5 },
+          forcedSettingsPatch: { o10mPilgrimageMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_pilgrimage_sanctuary_rest',
+        title: 'Sanctuary Rest',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainPilgrimagePathComplete: true } },
       },
     ],
   },
@@ -3659,7 +3810,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 10;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 11;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -3768,6 +3919,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     circuitSession: null,
     expeditionSession: null,
     odysseySession: null,
+    pilgrimageSession: null,
   };
 }
 
@@ -3797,6 +3949,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       circuitSession: merged.circuitSession ?? null,
       expeditionSession: merged.expeditionSession ?? null,
       odysseySession: merged.odysseySession ?? null,
+      pilgrimageSession: merged.pilgrimageSession ?? null,
     };
     return upgraded;
   }
@@ -3850,6 +4003,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     circuitSession: sanitizeCircuitSession(o.circuitSession),
     expeditionSession: sanitizeExpeditionSession(o.expeditionSession),
     odysseySession: sanitizeOdysseySession(o.odysseySession),
+    pilgrimageSession: sanitizePilgrimageSession(o.pilgrimageSession),
   };
 }
 
@@ -3926,6 +4080,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Odyssey session failed sanitization; planner will ignore it.');
   } else if (odyssey && odyssey.cursor >= odyssey.scenarioIds.length) {
     warnings.push('Odyssey cursor out of range; clamp on next sanitize.');
+  }
+
+  const pilgrimage = sanitizePilgrimageSession(state.pilgrimageSession);
+  if (state.pilgrimageSession && !pilgrimage) {
+    warnings.push('Pilgrimage session failed sanitization; planner will ignore it.');
+  } else if (pilgrimage && pilgrimage.cursor >= pilgrimage.scenarioIds.length) {
+    warnings.push('Pilgrimage cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -4041,6 +4202,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'circuitSession',
   'expeditionSession',
   'odysseySession',
+  'pilgrimageSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -4549,6 +4711,7 @@ export function attachMarathonQueueToState(
     circuitSession: null,
     expeditionSession: null,
     odysseySession: null,
+    pilgrimageSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -4666,6 +4829,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advancePilgrimageSessionAfterRun(next, run);
   next = advanceOdysseySessionAfterRun(next, run);
   next = advanceExpeditionSessionAfterRun(next, run);
   next = advanceCircuitSessionAfterRun(next, run);
@@ -4802,6 +4966,7 @@ export function attachGauntletSessionToState(
     circuitSession: null,
     expeditionSession: null,
     odysseySession: null,
+    pilgrimageSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -5034,6 +5199,7 @@ export function attachRelaySessionToState(
     circuitSession: null,
     expeditionSession: null,
     odysseySession: null,
+    pilgrimageSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -5226,6 +5392,7 @@ export function attachCircuitSessionToState(
     ...state,
     circuitSession: sanitized,
     odysseySession: null,
+    pilgrimageSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -5436,6 +5603,7 @@ export function attachExpeditionSessionToState(
     ...state,
     expeditionSession: sanitized,
     odysseySession: null,
+    pilgrimageSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -5644,6 +5812,7 @@ export function attachOdysseySessionToState(
   return {
     ...state,
     odysseySession: sanitized,
+    pilgrimageSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -5735,6 +5904,221 @@ export function odysseySessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-pilgrimage.ts ---
+export const O10M_PILGRIMAGE_SCENARIO_CAP = 6;
+export const O10M_PILGRIMAGE_DEVOTION_CAP = 640;
+export const O10M_PILGRIMAGE_DEVOTION_MONEY_CAP = 700;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_STAGES = new Set<O10mPilgrimageStage>(['setting_out', 'midway', 'sanctuary']);
+
+export function unlockTokenForPilgrimageId(pilgrimageId: string): string | null {
+  if (!pilgrimageId.startsWith('o10m_pilgrimage_')) return null;
+  return `o10m_unlock_${pilgrimageId.slice('o10m_pilgrimage_'.length)}`;
+}
+
+export function pilgrimageStageForCursor(cursor: number, scenarioCount: number): O10mPilgrimageStage {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'sanctuary';
+  if (clamped >= Math.floor(total / 2)) return 'midway';
+  return 'setting_out';
+}
+
+export function pilgrimageDevotionFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const regionBonus = Math.min(20, run.regionsControlled * 6);
+  return Math.min(92, Math.max(11, Math.floor(run.playerNetWorth / 205) + regionBonus));
+}
+
+export function sanitizePilgrimageSession(raw: unknown): O10mPilgrimageSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const pilgrimageId =
+    typeof o.pilgrimageId === 'string' && o.pilgrimageId.startsWith('o10m_pilgrimage_')
+      ? o.pilgrimageId
+      : null;
+  if (!pilgrimageId) return null;
+  const label = typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : pilgrimageId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_PILGRIMAGE_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const devotionScore = Math.min(
+    O10M_PILGRIMAGE_DEVOTION_CAP,
+    Math.max(0, Math.floor(num(o.devotionScore, 0))),
+  );
+  const stageRaw = o.stageTag;
+  const stageTag =
+    typeof stageRaw === 'string' && VALID_STAGES.has(stageRaw as O10mPilgrimageStage)
+      ? (stageRaw as O10mPilgrimageStage)
+      : pilgrimageStageForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    pilgrimageId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    devotionScore,
+    stageTag,
+  };
+}
+
+export function createPilgrimageSession(params: {
+  pilgrimageId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mPilgrimageSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.pilgrimageId.startsWith('o10m_pilgrimage_')) {
+    return { session: null, warnings: ['Pilgrimage ids must start with o10m_pilgrimage_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_PILGRIMAGE_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return { session: null, warnings: [...warnings, 'Pilgrimage requires at least one valid scenario.'] };
+  }
+  return {
+    session: {
+      pilgrimageId: params.pilgrimageId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      devotionScore: 0,
+      stageTag: pilgrimageStageForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachPilgrimageSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mPilgrimageSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizePilgrimageSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    pilgrimageSession: sanitized,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearPilgrimageSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, pilgrimageSession: null };
+}
+
+export function getPilgrimageScenarioAtCursor(session: O10mPilgrimageSession | null | undefined): string | null {
+  const pilgrimage = sanitizePilgrimageSession(session);
+  if (!pilgrimage || !pilgrimage.active) return null;
+  return pilgrimage.scenarioIds[pilgrimage.cursor] ?? null;
+}
+
+export function buildPilgrimageScenarioStartOverrides(session: O10mPilgrimageSession | null | undefined): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const pilgrimage = sanitizePilgrimageSession(session);
+  if (!pilgrimage) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_PILGRIMAGE_DEVOTION_MONEY_CAP,
+    Math.floor(pilgrimage.devotionScore * 0.78),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActivePilgrimageId: pilgrimage.pilgrimageId,
+      o10mActivePilgrimageStep: pilgrimage.cursor,
+      o10mActivePilgrimageStage: pilgrimage.stageTag,
+      o10mPilgrimageDevotion: pilgrimage.devotionScore,
+    },
+  };
+}
+
+export function advancePilgrimageSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizePilgrimageSession(state.pilgrimageSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const devotionScore = Math.min(
+    O10M_PILGRIMAGE_DEVOTION_CAP,
+    session.devotionScore + pilgrimageDevotionFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      pilgrimageSession: {
+        ...session,
+        cursor,
+        devotionScore,
+        stageTag: pilgrimageStageForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForPilgrimageId(session.pilgrimageId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    pilgrimageSession: { ...session, active: false, devotionScore, stageTag: 'sanctuary' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function pilgrimageSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  devotion: number;
+  stage: O10mPilgrimageStage | null;
+} {
+  const session = sanitizePilgrimageSession(state.pilgrimageSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    devotion: session?.devotionScore ?? 0,
+    stage: session?.active ? session.stageTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -5757,9 +6141,31 @@ const emptyQueuePlan = {
   odysseyCursor: null as number | null,
   odysseyAct: null as O10mOdysseyAct | null,
   odysseyRenown: null as number | null,
+  pilgrimageId: null as string | null,
+  pilgrimageCursor: null as number | null,
+  pilgrimageStage: null as O10mPilgrimageStage | null,
+  pilgrimageDevotion: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const pilgrimage = sanitizePilgrimageSession(state.pilgrimageSession);
+  const pilgrimageScenario = getPilgrimageScenarioAtCursor(pilgrimage);
+  if (pilgrimage && pilgrimage.active && pilgrimageScenario) {
+    return {
+      kind: 'pilgrimage_step',
+      scenarioId: pilgrimageScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      pilgrimageId: pilgrimage.pilgrimageId,
+      pilgrimageCursor: pilgrimage.cursor,
+      pilgrimageStage: pilgrimage.stageTag,
+      pilgrimageDevotion: pilgrimage.devotionScore,
+      reason: `Pilgrimage "${pilgrimage.label}" ${pilgrimage.stageTag} stop ${pilgrimage.cursor + 1}/${pilgrimage.scenarioIds.length} (devotion ${pilgrimage.devotionScore}).`,
+    };
+  }
+
   const odyssey = sanitizeOdysseySession(state.odysseySession);
   const odysseyScenario = getOdysseyScenarioAtCursor(odyssey);
   if (odyssey && odyssey.active && odysseyScenario) {
@@ -5939,6 +6345,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   circuitActive: boolean;
   expeditionActive: boolean;
   odysseyActive: boolean;
+  pilgrimageActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -5952,6 +6359,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const circuit = circuitSessionSummary(state);
   const expedition = expeditionSessionSummary(state);
   const odyssey = odysseySessionSummary(state);
+  const pilgrimage = pilgrimageSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -5963,6 +6371,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     circuitActive: circuit.active,
     expeditionActive: expedition.active,
     odysseyActive: odyssey.active,
+    pilgrimageActive: pilgrimage.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -5981,7 +6390,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 11, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 12, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -6057,16 +6466,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const odysseyState = odyssey ? attachOdysseySessionToState(createEmptyO10mModesPersistedState(), odyssey) : null;
   push('agent04_chunk_18', odysseyState !== null && planNextCampaignAction(odysseyState!).kind === 'odyssey_step');
 
+  const pilgrimage = createPilgrimageSession({
+    pilgrimageId: 'o10m_pilgrimage_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_pilgrimage_setting_out'],
+  }).session;
+  const pilgrimageState = pilgrimage ? attachPilgrimageSessionToState(createEmptyO10mModesPersistedState(), pilgrimage) : null;
+  push('agent04_chunk_19', pilgrimageState !== null && planNextCampaignAction(pilgrimageState!).kind === 'pilgrimage_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v11',
+  schemaVersion: 'op10m-agent04-v12',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 10,
+  saveSchemaVersion: 11,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

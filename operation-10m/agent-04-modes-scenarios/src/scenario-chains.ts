@@ -382,6 +382,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_pilgrimage_path',
+    title: 'Pilgrimage Path',
+    description:
+      'Three-stage pilgrimage with devotion accrual between shrines — round-11 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_pilgrimage_path',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_pilgrimage_setting_out',
+        title: 'Setting Out',
+        narrativeBridge: 'Gather devotion before the midway shrine.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 205 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_pilgrimage_midway_shrine',
+        title: 'Midway Shrine',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, ACT: 5 },
+          forcedSettingsPatch: { o10mPilgrimageMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_pilgrimage_sanctuary_rest',
+        title: 'Sanctuary Rest',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainPilgrimagePathComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

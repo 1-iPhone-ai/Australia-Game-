@@ -6,7 +6,7 @@
     "o10mModesProgress"
   ],
   "saveFormat": {
-    "schemaVersion": 10,
+    "schemaVersion": 11,
     "gameStateKey": "o10mModesProgress",
     "nestedFields": [
       "chainProgress",
@@ -26,10 +26,11 @@
       "relaySession",
       "circuitSession",
       "expeditionSession",
-      "odysseySession"
+      "odysseySession",
+      "pilgrimageSession"
     ]
   },
-  "contentSha256": "305f36829e05383d839fc1b7d9a87d4a98a4c805f1459362b7ad2f5136ee0240",
+  "contentSha256": "ee898fe47d8693802df9dd05d5eb12733713d20990ab4d395d6d878544e9a6f6",
   "chunkPath": "operation-10m/modules/agent-04-modes-scenarios/chunk.tsx",
   "regenerate": "cd operation-10m/agent-04-modes-scenarios && npm run bundle:agent-04-chunk"
 }
