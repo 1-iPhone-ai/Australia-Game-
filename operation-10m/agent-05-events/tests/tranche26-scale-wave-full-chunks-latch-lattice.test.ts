@@ -18,12 +18,12 @@ describe('Tranche 26 scale-wave-full-chunks-latch lattice catalog', () => {
   it('adds 320 scale-wave-full-chunks-latch lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE26_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche26Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 9800);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 10120);
   });
 
   it('uses op10m_t26 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 9800);
+    assert.equal(ids.size, 10120);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE26) {
       assert.match(c.chainId, /^op10m_t26_/);
     }

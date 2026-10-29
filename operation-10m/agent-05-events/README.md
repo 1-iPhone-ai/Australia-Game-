@@ -53,6 +53,7 @@ State-triggered crisis chains with cooldowns, passive persistent modifiers, and 
 - `src/compute-turn-scale-wave-full-chunks-commit-coordinator.ts` — full-chunks wave commit after full-chunks latch
 - `src/compute-turn-scale-wave-full-chunks-sync-latch-coordinator.ts` — full-chunks sync latch after full-chunks commit
 - `src/compute-turn-scale-wave-full-chunks-sync-commit-coordinator.ts` — full-chunks sync commit after sync latch
+- `src/compute-turn-scale-wave-full-chunks-handoff-latch-coordinator.ts` — full-chunks handoff latch after sync commit
 - `src/compute-turn-reconcile.ts` — digest drift reconcile + eligibility priming on compute turn hook
 - `src/compute-turn-drift-settle.ts` — drift settlement + turn-gap ack flags on compute turn hook
 - `generated/regional-hook-catalog.ts` — 120 cross-region hooks (`scripts/generate-regional-hooks.py`)
