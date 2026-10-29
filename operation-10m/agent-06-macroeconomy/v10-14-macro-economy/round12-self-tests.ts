@@ -46,8 +46,8 @@ export function runAgent06Round12SelfTests(): {
   record('R12-04', 'State exposes guardian summary', integrated.state.guardianSpilloverSummary != null, 'ok');
   record(
     'R12-05',
-    'Twenty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 26,
+    'Twenty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 28,
     String(integrated.state.transmissionReport.layers.length)
   );
 

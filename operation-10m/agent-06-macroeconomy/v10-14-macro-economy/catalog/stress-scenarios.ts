@@ -102,6 +102,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Team AI & replay stress',
     shockIds: ['global_slowdown', 'credit_contraction'],
     description: 'Fractured team cohesion with persistent replay stress memory (harness overlay).'
+  },
+  {
+    id: 'memory_dashboard_stress',
+    label: 'Memory & dashboards stress',
+    shockIds: ['global_slowdown', 'housing_correction'],
+    description: 'Runaway memory drift with stale dashboard refresh (harness overlay).'
   }
 ];
 

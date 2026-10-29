@@ -46,8 +46,8 @@ export function runAgent06Round11SelfTests(): {
   record('R11-04', 'State exposes population summary', integrated.state.populationSpilloverSummary != null, 'ok');
   record(
     'R11-05',
-    'Twenty-six transmission layers',
-    integrated.state.transmissionReport.layers.length === 26,
+    'Twenty-eight transmission layers',
+    integrated.state.transmissionReport.layers.length === 28,
     String(integrated.state.transmissionReport.layers.length)
   );
 

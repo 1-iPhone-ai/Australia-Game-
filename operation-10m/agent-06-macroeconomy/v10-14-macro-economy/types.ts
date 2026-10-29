@@ -111,6 +111,8 @@ export interface NationalMacroEconomyState {
   automationSpilloverSummary: string | null;
   teamAiSpilloverSummary: string | null;
   replaySpilloverSummary: string | null;
+  memorySpilloverSummary: string | null;
+  dashboardsSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;
@@ -121,6 +123,7 @@ export interface NationalMacroEconomyState {
   transmissionCoverage: MacroTransmissionCoverageSnapshot;
   transmissionAmplification: MacroTransmissionAmplificationSnapshot;
   transmissionTension: MacroTransmissionTensionSnapshot;
+  transmissionDivergence: MacroTransmissionDivergenceSnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -284,6 +287,16 @@ export interface MacroTransmissionTensionSnapshot {
   band: MacroTransmissionTensionBand;
   supportiveMass: number;
   restrictiveMass: number;
+  summary: string;
+}
+
+export type MacroTransmissionDivergenceBand = 'aligned' | 'moderate' | 'elevated' | 'wide';
+
+export interface MacroTransmissionDivergenceSnapshot {
+  divergenceIndex: number;
+  band: MacroTransmissionDivergenceBand;
+  conflictingLayerCount: number;
+  alignedLayerCount: number;
   summary: string;
 }
 

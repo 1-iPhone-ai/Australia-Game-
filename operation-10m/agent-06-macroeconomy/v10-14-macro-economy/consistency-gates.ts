@@ -466,5 +466,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Elevated transmission tension — restrictive layer mass dominates supportive nudges.'
     });
   }
+  const mem: any = inputs.aiMemory ?? inputs.explainability ?? inputs.nationalAiMemory;
+  const drift = String(mem?.driftBand ?? mem?.memoryDrift?.band ?? '');
+  if (
+    (drift === 'runaway' || drift === 'critical') &&
+    (state.transmissionCoherence?.band === 'contradictory' || state.transmissionCoherence?.band === 'mixed')
+  ) {
+    gates.push({
+      id: 'memory_explainability_drift',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Runaway AI memory drift aligns with contradictory transmission coherence read.'
+    });
+  }
+  const dash: any = inputs.dashboardsMaps ?? inputs.nationalDashboards ?? inputs.mapsTelemetry;
+  const refreshLag = String(dash?.refreshLag?.band ?? dash?.dataLagBand ?? '');
+  if (
+    (refreshLag === 'stale' || refreshLag === 'critical') &&
+    (state.investmentClimate === 'cautious' || state.investmentClimate === 'frozen')
+  ) {
+    gates.push({
+      id: 'dashboard_signal_lag',
+      triggered: true,
+      severity: 'info',
+      summary: 'Stale dashboard refresh coincides with cautious macro investment climate.'
+    });
+  }
+  if (state.transmissionDivergence?.band === 'wide' || state.transmissionDivergence?.band === 'elevated') {
+    gates.push({
+      id: 'transmission_divergence_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated cycle vs investment transmission divergence — layer reads may conflict.'
+    });
+  }
   return gates;
 }
