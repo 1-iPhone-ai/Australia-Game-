@@ -85,6 +85,9 @@ import { computeGradientAuditTensionIndex } from './gradient-audit-tension-index
 import { computeEscalationSaturationStackIndex } from './escalation-saturation-stack-index.ts';
 import { computeRecoveryCascadeMismatchIndex } from './recovery-cascade-mismatch-index.ts';
 import { computePersistenceGradientFrictionIndex } from './persistence-gradient-friction-index.ts';
+import { computeStackMismatchCouplingIndex } from './stack-mismatch-coupling-index.ts';
+import { computeAuditStackAmplificationIndex } from './audit-stack-amplification-index.ts';
+import { computeFrictionAlignmentGapIndex } from './friction-alignment-gap-index.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -2372,6 +2375,56 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.escalationSaturationStackCombined === 'number' &&
       typeof dual.recoveryCascadeMismatchCombined === 'number' &&
       typeof dual.persistenceGradientFrictionCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_stack_mismatch_coupling', 'Stack–mismatch coupling: stack plus mismatch scores high', () => {
+    const report = computeStackMismatchCouplingIndex(50, 48, 3);
+    return report.couplingIndex >= 48;
+  });
+
+  check(results, 'a18_audit_stack_amplification', 'Audit–stack amplification: audit plus stack scores high', () => {
+    const report = computeAuditStackAmplificationIndex(45, 48, 44);
+    return report.amplificationIndex >= 47;
+  });
+
+  check(results, 'a18_friction_alignment_gap', 'Friction–alignment gap: friction with weak alignment scores high', () => {
+    const report = computeFrictionAlignmentGapIndex(46, 30, 40);
+    return report.gapIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round20_meta', 'Layer: round-20 meta exposes stack coupling, audit amplification, friction gap', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.stackMismatchCouplingIndex === 'number' &&
+      typeof m.auditStackAmplificationIndex === 'number' &&
+      typeof m.frictionAlignmentGapIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_stack_mismatch_coupling', 'Audit: stack–mismatch coupling surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, stackMismatchCouplingIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Stack–mismatch coupling/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round20_combined', 'Dual team: round-20 combined coupling, amplification, gap exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.stackMismatchCouplingCombined === 'number' &&
+      typeof dual.auditStackAmplificationCombined === 'number' &&
+      typeof dual.frictionAlignmentGapCombined === 'number'
     );
   });
 

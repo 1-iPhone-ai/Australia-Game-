@@ -63,4 +63,7 @@ export * from './gradient-audit-tension-index.ts';
 export * from './escalation-saturation-stack-index.ts';
 export * from './recovery-cascade-mismatch-index.ts';
 export * from './persistence-gradient-friction-index.ts';
+export * from './stack-mismatch-coupling-index.ts';
+export * from './audit-stack-amplification-index.ts';
+export * from './friction-alignment-gap-index.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

@@ -310,6 +310,9 @@ export interface TeamMultiAgentCoordinationMeta {
   escalationSaturationStackIndex?: number;
   recoveryCascadeMismatchIndex?: number;
   persistenceGradientFrictionIndex?: number;
+  stackMismatchCouplingIndex?: number;
+  auditStackAmplificationIndex?: number;
+  frictionAlignmentGapIndex?: number;
 }
 
 export const AGENT18_LIMITS = {
@@ -4084,6 +4087,131 @@ export function combineDualTeamPersistenceGradientFriction(
 }
 
 
+// --- source: stack-mismatch-coupling-index.ts ---
+export interface StackMismatchCouplingReport {
+  couplingIndex: number;
+  notes: string[];
+}
+
+/**
+ * Escalation–saturation stack coupled with recovery–cascade mismatch stress.
+ */
+export function computeStackMismatchCouplingIndex(
+  escalationSaturationStackIndex: number,
+  recoveryCascadeMismatchIndex: number,
+  coordinationEscalationTier: number,
+): StackMismatchCouplingReport {
+  const notes: string[] = [];
+  if (escalationSaturationStackIndex >= 42 && recoveryCascadeMismatchIndex >= 40) {
+    notes.push('Escalation stack and recovery mismatch both elevated');
+  }
+  if (coordinationEscalationTier >= 2 && recoveryCascadeMismatchIndex >= 44) {
+    notes.push('Recovery mismatch under active escalation tier');
+  }
+
+  const couplingIndex = Math.round(
+    Math.min(
+      100,
+      escalationSaturationStackIndex * 0.37 +
+        recoveryCascadeMismatchIndex * 0.39 +
+        coordinationEscalationTier * 6 +
+        (escalationSaturationStackIndex >= 46 && recoveryCascadeMismatchIndex >= 44 ? 15 : 0),
+    ),
+  );
+
+  return { couplingIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamStackMismatchCoupling(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: audit-stack-amplification-index.ts ---
+export interface AuditStackAmplificationReport {
+  amplificationIndex: number;
+  notes: string[];
+}
+
+/**
+ * Audit pressure amplifying escalation–saturation stack under gradient tension.
+ */
+export function computeAuditStackAmplificationIndex(
+  auditPressureIndex: number,
+  escalationSaturationStackIndex: number,
+  gradientAuditTensionIndex: number,
+): AuditStackAmplificationReport {
+  const notes: string[] = [];
+  if (auditPressureIndex >= 38 && escalationSaturationStackIndex >= 40) {
+    notes.push('Audit pressure atop escalation–saturation stack');
+  }
+  if (gradientAuditTensionIndex >= 42 && auditPressureIndex >= 40) {
+    notes.push('Gradient–audit tension reinforcing stack amplification');
+  }
+
+  const amplificationIndex = Math.round(
+    Math.min(
+      100,
+      auditPressureIndex * 0.36 +
+        escalationSaturationStackIndex * 0.34 +
+        gradientAuditTensionIndex * 0.28 +
+        (auditPressureIndex >= 42 && escalationSaturationStackIndex >= 44 ? 14 : 0),
+    ),
+  );
+
+  return { amplificationIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamAuditStackAmplification(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: friction-alignment-gap-index.ts ---
+export interface FrictionAlignmentGapReport {
+  gapIndex: number;
+  notes: string[];
+}
+
+/**
+ * Persistence–gradient friction diverging from escalation–recovery alignment.
+ */
+export function computeFrictionAlignmentGapIndex(
+  persistenceGradientFrictionIndex: number,
+  escalationRecoveryAlignmentIndex: number,
+  persistenceChurnIndex: number,
+): FrictionAlignmentGapReport {
+  const notes: string[] = [];
+  const misaligned = escalationRecoveryAlignmentIndex < 45;
+  if (persistenceGradientFrictionIndex >= 40 && misaligned) {
+    notes.push('Persistence friction while escalation–recovery alignment is weak');
+  }
+  if (persistenceChurnIndex >= 38 && persistenceGradientFrictionIndex >= 42) {
+    notes.push('Elevated churn contributing to friction–alignment gap');
+  }
+
+  const alignmentPenalty = misaligned ? Math.max(0, 55 - escalationRecoveryAlignmentIndex) * 0.5 : 0;
+  const gapIndex = Math.round(
+    Math.min(
+      100,
+      persistenceGradientFrictionIndex * 0.38 +
+        alignmentPenalty +
+        persistenceChurnIndex * 0.22 +
+        (misaligned && persistenceGradientFrictionIndex >= 44 ? 16 : 0),
+    ),
+  );
+
+  return { gapIndex, notes: notes.slice(0, 6) };
+}
+
+export function combineDualTeamFrictionAlignmentGap(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
 // --- source: coordination-audit.ts ---
   AGENT18_LIMITS,
   CoordinationAuditFinding,
@@ -4738,6 +4866,42 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (
+    typeof state.meta.stackMismatchCouplingIndex === 'number' &&
+    state.meta.stackMismatchCouplingIndex >= 48
+  ) {
+    push({
+      severity: 'warning',
+      message: `Stack–mismatch coupling (${state.meta.stackMismatchCouplingIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.auditStackAmplificationIndex === 'number' &&
+    state.meta.auditStackAmplificationIndex >= 47
+  ) {
+    push({
+      severity: 'warning',
+      message: `Audit–stack amplification (${state.meta.auditStackAmplificationIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.frictionAlignmentGapIndex === 'number' &&
+    state.meta.frictionAlignmentGapIndex >= 46
+  ) {
+    push({
+      severity: 'warning',
+      message: `Friction–alignment gap (${state.meta.frictionAlignmentGapIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
@@ -5269,6 +5433,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.persistenceGradientFrictionIndex === 'number'
           ? metaRaw.persistenceGradientFrictionIndex
           : undefined,
+      stackMismatchCouplingIndex:
+        typeof metaRaw.stackMismatchCouplingIndex === 'number'
+          ? metaRaw.stackMismatchCouplingIndex
+          : undefined,
+      auditStackAmplificationIndex:
+        typeof metaRaw.auditStackAmplificationIndex === 'number'
+          ? metaRaw.auditStackAmplificationIndex
+          : undefined,
+      frictionAlignmentGapIndex:
+        typeof metaRaw.frictionAlignmentGapIndex === 'number'
+          ? metaRaw.frictionAlignmentGapIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -5690,6 +5866,18 @@ export function evaluateTeamMultiAgentLayer(
     state.meta.coordinationRecoveryUrgency ?? 0,
   );
   recoveryCascadeMismatch.notes.forEach(n => diagnostics.push(n));
+  const stackMismatchCoupling = computeStackMismatchCouplingIndex(
+    escalationSaturationStack.stackIndex,
+    recoveryCascadeMismatch.mismatchIndex,
+    state.meta.coordinationEscalationTier ?? 0,
+  );
+  stackMismatchCoupling.notes.forEach(n => diagnostics.push(n));
+  const auditStackAmplification = computeAuditStackAmplificationIndex(
+    state.meta.auditPressureIndex ?? 0,
+    escalationSaturationStack.stackIndex,
+    gradientAuditTension.tensionIndex,
+  );
+  auditStackAmplification.notes.forEach(n => diagnostics.push(n));
   state = {
     ...state,
     meta: {
@@ -5697,6 +5885,8 @@ export function evaluateTeamMultiAgentLayer(
       gradientAuditTensionIndex: gradientAuditTension.tensionIndex,
       escalationSaturationStackIndex: escalationSaturationStack.stackIndex,
       recoveryCascadeMismatchIndex: recoveryCascadeMismatch.mismatchIndex,
+      stackMismatchCouplingIndex: stackMismatchCoupling.couplingIndex,
+      auditStackAmplificationIndex: auditStackAmplification.amplificationIndex,
     },
   };
   state = { ...state, diagnostics };
@@ -5732,6 +5922,20 @@ export function evaluateTeamMultiAgentLayer(
     meta: {
       ...state.meta,
       persistenceGradientFrictionIndex: persistenceGradientFriction.frictionIndex,
+    },
+  };
+  const frictionAlignmentGap = computeFrictionAlignmentGapIndex(
+    persistenceGradientFriction.frictionIndex,
+    state.meta.escalationRecoveryAlignmentIndex ?? 100,
+    persistenceChurn.churnIndex,
+  );
+  frictionAlignmentGap.notes.forEach(n => diagnostics.push(n));
+  state = {
+    ...state,
+    diagnostics,
+    meta: {
+      ...state.meta,
+      frictionAlignmentGapIndex: frictionAlignmentGap.gapIndex,
     },
   };
 
@@ -5813,6 +6017,9 @@ export interface DualTeamMultiAgentResult {
   escalationSaturationStackCombined: number;
   recoveryCascadeMismatchCombined: number;
   persistenceGradientFrictionCombined: number;
+  stackMismatchCouplingCombined: number;
+  auditStackAmplificationCombined: number;
+  frictionAlignmentGapCombined: number;
 }
 
 /**
@@ -5890,6 +6097,9 @@ export function evaluateDualTeamMultiAgentLayers(
       escalationSaturationStackCombined: friendly.state.meta.escalationSaturationStackIndex ?? 0,
       recoveryCascadeMismatchCombined: friendly.state.meta.recoveryCascadeMismatchIndex ?? 0,
       persistenceGradientFrictionCombined: friendly.state.meta.persistenceGradientFrictionIndex ?? 0,
+      stackMismatchCouplingCombined: friendly.state.meta.stackMismatchCouplingIndex ?? 0,
+      auditStackAmplificationCombined: friendly.state.meta.auditStackAmplificationIndex ?? 0,
+      frictionAlignmentGapCombined: friendly.state.meta.frictionAlignmentGapIndex ?? 0,
     };
   }
 
@@ -6149,6 +6359,18 @@ export function evaluateDualTeamMultiAgentLayers(
     persistenceGradientFrictionCombined: combineDualTeamPersistenceGradientFriction(
       friendly.state.meta.persistenceGradientFrictionIndex ?? 0,
       enemy.state.meta.persistenceGradientFrictionIndex ?? 0,
+    ),
+    stackMismatchCouplingCombined: combineDualTeamStackMismatchCoupling(
+      friendly.state.meta.stackMismatchCouplingIndex ?? 0,
+      enemy.state.meta.stackMismatchCouplingIndex ?? 0,
+    ),
+    auditStackAmplificationCombined: combineDualTeamAuditStackAmplification(
+      friendly.state.meta.auditStackAmplificationIndex ?? 0,
+      enemy.state.meta.auditStackAmplificationIndex ?? 0,
+    ),
+    frictionAlignmentGapCombined: combineDualTeamFrictionAlignmentGap(
+      friendly.state.meta.frictionAlignmentGapIndex ?? 0,
+      enemy.state.meta.frictionAlignmentGapIndex ?? 0,
     ),
   };
 }
@@ -8469,6 +8691,56 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.escalationSaturationStackCombined === 'number' &&
       typeof dual.recoveryCascadeMismatchCombined === 'number' &&
       typeof dual.persistenceGradientFrictionCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_stack_mismatch_coupling', 'Stack–mismatch coupling: stack plus mismatch scores high', () => {
+    const report = computeStackMismatchCouplingIndex(50, 48, 3);
+    return report.couplingIndex >= 48;
+  });
+
+  check(results, 'a18_audit_stack_amplification', 'Audit–stack amplification: audit plus stack scores high', () => {
+    const report = computeAuditStackAmplificationIndex(45, 48, 44);
+    return report.amplificationIndex >= 47;
+  });
+
+  check(results, 'a18_friction_alignment_gap', 'Friction–alignment gap: friction with weak alignment scores high', () => {
+    const report = computeFrictionAlignmentGapIndex(46, 30, 40);
+    return report.gapIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round20_meta', 'Layer: round-20 meta exposes stack coupling, audit amplification, friction gap', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.stackMismatchCouplingIndex === 'number' &&
+      typeof m.auditStackAmplificationIndex === 'number' &&
+      typeof m.frictionAlignmentGapIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_stack_mismatch_coupling', 'Audit: stack–mismatch coupling surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, stackMismatchCouplingIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Stack–mismatch coupling/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round20_combined', 'Dual team: round-20 combined coupling, amplification, gap exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.stackMismatchCouplingCombined === 'number' &&
+      typeof dual.auditStackAmplificationCombined === 'number' &&
+      typeof dual.frictionAlignmentGapCombined === 'number'
     );
   });
 

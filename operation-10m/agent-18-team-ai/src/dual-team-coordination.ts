@@ -44,6 +44,9 @@ import { combineDualTeamGradientAuditTension } from './gradient-audit-tension-in
 import { combineDualTeamEscalationSaturationStack } from './escalation-saturation-stack-index.ts';
 import { combineDualTeamRecoveryCascadeMismatch } from './recovery-cascade-mismatch-index.ts';
 import { combineDualTeamPersistenceGradientFriction } from './persistence-gradient-friction-index.ts';
+import { combineDualTeamStackMismatchCoupling } from './stack-mismatch-coupling-index.ts';
+import { combineDualTeamAuditStackAmplification } from './audit-stack-amplification-index.ts';
+import { combineDualTeamFrictionAlignmentGap } from './friction-alignment-gap-index.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -105,6 +108,9 @@ export interface DualTeamMultiAgentResult {
   escalationSaturationStackCombined: number;
   recoveryCascadeMismatchCombined: number;
   persistenceGradientFrictionCombined: number;
+  stackMismatchCouplingCombined: number;
+  auditStackAmplificationCombined: number;
+  frictionAlignmentGapCombined: number;
 }
 
 /**
@@ -182,6 +188,9 @@ export function evaluateDualTeamMultiAgentLayers(
       escalationSaturationStackCombined: friendly.state.meta.escalationSaturationStackIndex ?? 0,
       recoveryCascadeMismatchCombined: friendly.state.meta.recoveryCascadeMismatchIndex ?? 0,
       persistenceGradientFrictionCombined: friendly.state.meta.persistenceGradientFrictionIndex ?? 0,
+      stackMismatchCouplingCombined: friendly.state.meta.stackMismatchCouplingIndex ?? 0,
+      auditStackAmplificationCombined: friendly.state.meta.auditStackAmplificationIndex ?? 0,
+      frictionAlignmentGapCombined: friendly.state.meta.frictionAlignmentGapIndex ?? 0,
     };
   }
 
@@ -441,6 +450,18 @@ export function evaluateDualTeamMultiAgentLayers(
     persistenceGradientFrictionCombined: combineDualTeamPersistenceGradientFriction(
       friendly.state.meta.persistenceGradientFrictionIndex ?? 0,
       enemy.state.meta.persistenceGradientFrictionIndex ?? 0,
+    ),
+    stackMismatchCouplingCombined: combineDualTeamStackMismatchCoupling(
+      friendly.state.meta.stackMismatchCouplingIndex ?? 0,
+      enemy.state.meta.stackMismatchCouplingIndex ?? 0,
+    ),
+    auditStackAmplificationCombined: combineDualTeamAuditStackAmplification(
+      friendly.state.meta.auditStackAmplificationIndex ?? 0,
+      enemy.state.meta.auditStackAmplificationIndex ?? 0,
+    ),
+    frictionAlignmentGapCombined: combineDualTeamFrictionAlignmentGap(
+      friendly.state.meta.frictionAlignmentGapIndex ?? 0,
+      enemy.state.meta.frictionAlignmentGapIndex ?? 0,
     ),
   };
 }
