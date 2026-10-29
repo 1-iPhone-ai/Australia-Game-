@@ -26,3 +26,7 @@ export { CoachLiveRegionDeliveryStrip } from './CoachLiveRegionDeliveryStrip.js'
 export { PhaseCoachGateBanner } from './PhaseCoachGateBanner.js';
 export { ProgressionCoverageCoachStrip } from './ProgressionCoverageCoachStrip.js';
 export { ShowAllSafetyCoachBanner } from './ShowAllSafetyCoachBanner.js';
+export { NotificationLaneCoachStrip } from './NotificationLaneCoachStrip.js';
+export { LayoutPresetDensityHintBanner } from './LayoutPresetDensityHintBanner.js';
+export { ProgressionSignalDeltaBanner } from './ProgressionSignalDeltaBanner.js';
+export { ModalFocusTrapStatusStrip } from './ModalFocusTrapStatusStrip.js';

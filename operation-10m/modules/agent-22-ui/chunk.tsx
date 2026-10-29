@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 1778d595a3c59c5d
+// content-sha256-prefix: 2fbdafd98678a9e2
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -860,6 +860,7 @@ export interface EvolvingUiPersistedState {
   /** onboarding funnel dismiss keys persisted for host */
   onboardingDismissedKeys?: string[];
   lastProgressionCoverageRatio?: number;
+  lastInterfaceLevel?: import('../types/progression.js').InterfaceExperienceLevel;
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -871,6 +872,8 @@ export interface DayAdvanceUiEvolutionResult {
   coachLiveRegionMessageCount: number;
   progressionCoverageRatio: number;
   progressionCoverageDeltaCopy: string | null;
+  progressionSignalDeltaCopy: string | null;
+  activeNotificationLaneCount: number;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -983,15 +986,20 @@ export function tickEvolvingUiOnDayAdvance(
   const highlightIds = onboardingHighlightedPanelIds(nextSignals.gameDay, updatedPersistedWithPacing);
   const coverage = buildProgressionCoverageSnapshot(nextSignals, policy);
   const deltaCopy = coverageDeltaCopy(persisted.lastProgressionCoverageRatio, coverage.coverageRatio);
+  const signalDelta = computeProgressionSignalDelta(priorSignals, nextSignals);
+  const laneCount = countActiveNotificationLanes(nextSignals, nextSignals.playerIntentOnboardingEnabled !== false);
 
-  const updatedPersistedFinal = mergeCoverageRatioIntoPersisted(
-    {
-      ...updatedPersistedWithPacing,
-      rememberedPanelIds: [
-        ...new Set([...(updatedPersistedWithPacing.rememberedPanelIds ?? []), ...highlightIds]),
-      ],
-    },
-    coverage.coverageRatio
+  const updatedPersistedFinal = mergeLastInterfaceLevelIntoPersisted(
+    mergeCoverageRatioIntoPersisted(
+      {
+        ...updatedPersistedWithPacing,
+        rememberedPanelIds: [
+          ...new Set([...(updatedPersistedWithPacing.rememberedPanelIds ?? []), ...highlightIds]),
+        ],
+      },
+      coverage.coverageRatio
+    ),
+    nextSignals.interfaceLevel
   );
 
   return {
@@ -1003,6 +1011,8 @@ export function tickEvolvingUiOnDayAdvance(
     coachLiveRegionMessageCount: liveRegionPlan.messages.length,
     progressionCoverageRatio: coverage.coverageRatio,
     progressionCoverageDeltaCopy: deltaCopy,
+    progressionSignalDeltaCopy: signalDelta.coachCopy,
+    activeNotificationLaneCount: laneCount,
     updatedPersisted: updatedPersistedFinal,
     visiblePanelCount,
   };
@@ -3532,6 +3542,177 @@ export function widgetContextualCoachCopy(entries: WidgetContextualCoachEntry[])
   return `${hidden.length} widgets stay hidden by contextual or progression rules.`;
 }
 
+// --- source: engine/notification-lane-coach-plan.ts ---
+export interface NotificationLaneCoachPlan {
+  activeCategories: NotificationLaneCategory[];
+  suppressedCategories: NotificationLaneCategory[];
+  coachCopy: string | null;
+}
+
+export function buildNotificationLaneCoachPlan(
+  signals: ProgressionSignalSnapshot,
+  onboardingEnabled = true
+): NotificationLaneCoachPlan {
+  const suppressedCategories = listSuppressedNotificationCategories(signals, onboardingEnabled);
+  const suppressedSet = new Set(suppressedCategories);
+  const activeCategories = NOTIFICATION_LANE_PROGRESSION.map(r => r.category).filter(
+    c => !suppressedSet.has(c)
+  );
+
+  let coachCopy: string | null = null;
+  if (suppressedCategories.length >= 3) {
+    coachCopy = `${suppressedCategories.length} notification lanes are gated until progression catches up.`;
+  } else if (suppressedCategories.includes('automation')) {
+    coachCopy = 'Automation notices stay quiet until advanced assistance unlocks.';
+  } else if (suppressedCategories.includes('activity')) {
+    coachCopy = 'Activity feed lanes unlock after the first travel day.';
+  }
+
+  return { activeCategories, suppressedCategories, coachCopy };
+}
+
+export function notificationLaneStatusLine(category: NotificationLaneCategory, active: boolean): string {
+  const rule = NOTIFICATION_LANE_PROGRESSION.find(r => r.category === category);
+  return active ? `${category}: on` : `${category}: gated — ${rule?.description ?? 'locked'}`;
+}
+
+export function countActiveNotificationLanes(
+  signals: ProgressionSignalSnapshot,
+  onboardingEnabled = true
+): number {
+  return NOTIFICATION_LANE_PROGRESSION.filter(r =>
+    shouldShowNotificationLaneCategory(r.category, signals, onboardingEnabled)
+  ).length;
+}
+
+// --- source: engine/layout-preset-density-bridge.ts ---
+export interface LayoutPresetDensityRecommendation {
+  preset: V94LayoutPreset;
+  suggestedDensity: UiDensityTier;
+  coachCopy: string;
+}
+
+const PRESET_DENSITY: Record<V94LayoutPreset, UiDensityTier> = {
+  Clean: 'spacious',
+  Assisted: 'comfortable',
+  Advanced: 'compact',
+  Developer: 'compact',
+  'Current/Custom': 'comfortable',
+};
+
+export function recommendDensityForLayoutPreset(preset: V94LayoutPreset | undefined): UiDensityTier {
+  if (!preset) return 'comfortable';
+  return PRESET_DENSITY[preset] ?? 'comfortable';
+}
+
+export function buildLayoutPresetDensityRecommendation(input: {
+  layoutPreset?: V94LayoutPreset;
+  interfaceLevel: InterfaceExperienceLevel;
+  preferredTier?: UiDensityTier | null;
+}): LayoutPresetDensityRecommendation {
+  const preset =
+    input.layoutPreset ?? suggestLayoutPresetForInterfaceLevel(input.interfaceLevel);
+  const suggestedDensity = input.preferredTier ?? recommendDensityForLayoutPreset(preset);
+  const evolution = resolveLayoutPresetEvolution(preset);
+
+  return {
+    preset,
+    suggestedDensity,
+    coachCopy: `${evolution.coachSummary} Recommended density: ${suggestedDensity}.`,
+  };
+}
+
+export function layoutDensityMismatchCopy(
+  preset: V94LayoutPreset | undefined,
+  activeDensity: UiDensityTier
+): string | null {
+  const recommended = recommendDensityForLayoutPreset(preset);
+  if (activeDensity === recommended) return null;
+  return `Layout preset ${preset ?? 'Assisted'} pairs best with ${recommended} density (currently ${activeDensity}).`;
+}
+
+// --- source: engine/progression-signal-delta.ts ---
+export interface ProgressionSignalDelta {
+  dayDelta: number;
+  interfaceLevelChanged: boolean;
+  priorInterfaceLevel: InterfaceExperienceLevel;
+  nextInterfaceLevel: InterfaceExperienceLevel;
+  coachCopy: string | null;
+}
+
+export function computeProgressionSignalDelta(
+  prior: ProgressionSignalSnapshot,
+  next: ProgressionSignalSnapshot
+): ProgressionSignalDelta {
+  const dayDelta = next.gameDay - prior.gameDay;
+  const interfaceLevelChanged = prior.interfaceLevel !== next.interfaceLevel;
+
+  let coachCopy: string | null = null;
+  if (interfaceLevelChanged) {
+    coachCopy = `Interface experience shifted from ${prior.interfaceLevel} to ${next.interfaceLevel}.`;
+  } else if (dayDelta >= 3) {
+    coachCopy = `Large time jump (+${dayDelta} days) — review newly unlocked panels.`;
+  }
+
+  return {
+    dayDelta,
+    interfaceLevelChanged,
+    priorInterfaceLevel: prior.interfaceLevel,
+    nextInterfaceLevel: next.interfaceLevel,
+    coachCopy,
+  };
+}
+
+export function mergeLastInterfaceLevelIntoPersisted<
+  T extends { lastInterfaceLevel?: InterfaceExperienceLevel },
+>(persisted: T, level: InterfaceExperienceLevel): T {
+  return { ...persisted, lastInterfaceLevel: level };
+}
+
+// --- source: engine/modal-focus-trap-registry.ts ---
+export interface ModalFocusTrapEntry {
+  modalId: string;
+  panelId: string;
+  trapEnabled: boolean;
+  restoreEnabled: boolean;
+}
+
+export function listRegisteredModalFocusTraps(): ModalFocusTrapEntry[] {
+  return MODAL_PANELS.map(panel => ({
+    modalId: panel.id.replace(/^modal_/, '') + '_modal',
+    panelId: panel.id,
+    trapEnabled: true,
+    restoreEnabled: true,
+  }));
+}
+
+export function planModalFocusTrapStatus(input: {
+  openModalId: string | null;
+  lastNavTarget: string | null;
+  accessibility: AccessibilitySettingsSnapshot;
+}): {
+  plan: ReturnType<typeof resolveModalFocusRestorePlan> | null;
+  skipLabel: string | null;
+} {
+  if (!input.openModalId) {
+    return { plan: null, skipLabel: null };
+  }
+  const plan = resolveModalFocusRestorePlan({
+    modalId: input.openModalId,
+    lastNavTarget: input.lastNavTarget,
+    accessibility: input.accessibility,
+  });
+  return {
+    plan,
+    skipLabel: modalFocusRestoreSkipLabel(plan),
+  };
+}
+
+export function modalFocusTrapCoachCopy(openModalId: string | null): string | null {
+  if (!openModalId) return null;
+  return `Focus is trapped in ${openModalId} until you dismiss it.`;
+}
+
 // --- source: engine/legacy-access.ts ---
 /** Mirrors V9.4 resolveIntentNavToUiPatch targets (standalone copy for module tests). */
 export function resolveIntentNavToUiPatch(target: string): Record<string, boolean | string> {
@@ -5241,6 +5422,126 @@ export function runAgent22Round12SelfTests(): {
   return { passed: results.length - failed, failed, results };
 }
 
+// --- source: engine/round13-self-tests.ts ---
+export function runAgent22Round13SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r13_lane_plan_early_day',
+    'early day suppresses automation lane',
+    (() => {
+      const plan = buildNotificationLaneCoachPlan({ gameDay: 1, turnCount: 1, interfaceLevel: 'simple' });
+      return plan.suppressedCategories.includes('automation');
+    })()
+  );
+
+  check(
+    'r13_lane_count',
+    'lane count matches active categories',
+    (() => {
+      const signals = { gameDay: 10, turnCount: 10, interfaceLevel: 'advanced' as const };
+      return countActiveNotificationLanes(signals) >= 4;
+    })()
+  );
+
+  check(
+    'r13_lane_status_line',
+    'lane status line mentions gated',
+    notificationLaneStatusLine('automation', false).includes('gated')
+  );
+
+  check(
+    'r13_layout_density_recommend',
+    'Clean preset recommends spacious density',
+    recommendDensityForLayoutPreset('Clean') === 'spacious'
+  );
+
+  check(
+    'r13_layout_density_mismatch',
+    'mismatch copy references density',
+    Boolean(layoutDensityMismatchCopy('Advanced', 'spacious')?.includes('compact'))
+  );
+
+  check(
+    'r13_layout_density_coach',
+    'recommendation includes coach copy',
+    buildLayoutPresetDensityRecommendation({ interfaceLevel: 'guided' }).coachCopy.includes('density')
+  );
+
+  check(
+    'r13_signal_delta_level',
+    'signal delta detects interface level change',
+    (() => {
+      const delta = computeProgressionSignalDelta(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' }
+      );
+      return delta.interfaceLevelChanged && Boolean(delta.coachCopy?.includes('guided'));
+    })()
+  );
+
+  check(
+    'r13_signal_delta_day_jump',
+    'signal delta flags large day jump',
+    Boolean(
+      computeProgressionSignalDelta(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'guided' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' }
+      ).coachCopy?.includes('Large time jump')
+    )
+  );
+
+  check(
+    'r13_tick_signal_delta',
+    'day advance exposes signal delta copy field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState()
+      );
+      return r.progressionSignalDeltaCopy != null && r.updatedPersisted.lastInterfaceLevel === 'guided';
+    })()
+  );
+
+  check(
+    'r13_merge_last_level',
+    'merge last interface level into persisted',
+    mergeLastInterfaceLevelIntoPersisted(createDefaultEvolvingUiPersistedState(), 'advanced').lastInterfaceLevel ===
+      'advanced'
+  );
+
+  check(
+    'r13_modal_trap_registry',
+    'modal trap registry lists modals',
+    listRegisteredModalFocusTraps().length >= 5
+  );
+
+  check(
+    'r13_modal_trap_coach',
+    'modal trap coach mentions trap',
+    Boolean(
+      modalFocusTrapCoachCopy('settings_modal')?.includes('trapped') &&
+        planModalFocusTrapStatus({
+          openModalId: 'settings_modal',
+          lastNavTarget: 'map',
+          accessibility: DEFAULT_ACCESSIBILITY_SNAPSHOT,
+        }).plan?.trapEnabled
+    )
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
 // --- source: a11y/aria-builders.ts ---
 const RING_CLASSES: Record<FocusRingStyle, string> = {
   emerald: 'focus-visible:ring-emerald-400',
@@ -5918,6 +6219,14 @@ export function SimulationUiEvolutionBridge({
       ) : null}
       {result.progressionCoverageDeltaCopy ? (
         <div data-testid="sim-ui-evolution-coverage-delta">{result.progressionCoverageDeltaCopy}</div>
+      ) : null}
+      {result.progressionSignalDeltaCopy ? (
+        <div data-testid="sim-ui-evolution-signal-delta">{result.progressionSignalDeltaCopy}</div>
+      ) : null}
+      {result.activeNotificationLaneCount > 0 ? (
+        <div data-testid="sim-ui-evolution-lane-count">
+          {result.activeNotificationLaneCount} notification lanes active
+        </div>
       ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
         <div key={i}>{line}</div>
@@ -6852,8 +7161,128 @@ export function ShowAllSafetyCoachBanner({
   );
 }
 
+// --- source: react/NotificationLaneCoachStrip.tsx ---
+export interface NotificationLaneCoachStripProps {
+  signals: ProgressionSignalSnapshot;
+  onboardingEnabled?: boolean;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function NotificationLaneCoachStrip({
+  signals,
+  onboardingEnabled = true,
+  accessibility,
+}: NotificationLaneCoachStripProps): React.ReactElement | null {
+  const plan = buildNotificationLaneCoachPlan(signals, onboardingEnabled);
+  if (!plan.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="notification-lane-coach-strip"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-blue-500/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-active-lanes={countActiveNotificationLanes(signals, onboardingEnabled)}
+    >
+      {plan.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/LayoutPresetDensityHintBanner.tsx ---
+export interface LayoutPresetDensityHintBannerProps {
+  signals: ProgressionSignalSnapshot;
+  activeDensity: UiDensityTier;
+  preferredDensity?: UiDensityTier | null;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function LayoutPresetDensityHintBanner({
+  signals,
+  activeDensity,
+  preferredDensity,
+  accessibility,
+}: LayoutPresetDensityHintBannerProps): React.ReactElement | null {
+  const recommendation = buildLayoutPresetDensityRecommendation({
+    layoutPreset: signals.layoutPreset as V94LayoutPreset | undefined,
+    interfaceLevel: signals.interfaceLevel,
+    preferredTier: preferredDensity,
+  });
+  const mismatch = layoutDensityMismatchCopy(recommendation.preset, activeDensity);
+  const copy = mismatch ?? recommendation.coachCopy;
+
+  return (
+    <div
+      data-testid="layout-preset-density-hint-banner"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-lime-500/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {copy}
+    </div>
+  );
+}
+
+// --- source: react/ProgressionSignalDeltaBanner.tsx ---
+export interface ProgressionSignalDeltaBannerProps {
+  delta: ProgressionSignalDelta;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function ProgressionSignalDeltaBanner({
+  delta,
+  accessibility,
+}: ProgressionSignalDeltaBannerProps): React.ReactElement | null {
+  if (!delta.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="progression-signal-delta-banner"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-fuchsia-500/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-interface-level-changed={delta.interfaceLevelChanged ? 'true' : 'false'}
+    >
+      {delta.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/ModalFocusTrapStatusStrip.tsx ---
+export interface ModalFocusTrapStatusStripProps {
+  openModalId: string | null;
+  lastNavTarget: string | null;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function ModalFocusTrapStatusStrip({
+  openModalId,
+  lastNavTarget,
+  accessibility,
+}: ModalFocusTrapStatusStripProps): React.ReactElement | null {
+  const { skipLabel } = planModalFocusTrapStatus({ openModalId, lastNavTarget, accessibility });
+  const copy = modalFocusTrapCoachCopy(openModalId);
+  if (!copy) return null;
+
+  return (
+    <div
+      data-testid="modal-focus-trap-status-strip"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-stone-500/35 rounded p-2 space-y-1"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      <p>{copy}</p>
+      {skipLabel ? <p className="opacity-80">{skipLabel}</p> : null}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.12.0';
+export const AGENT_22_MODULE_VERSION = '1.13.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -6954,6 +7383,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round12 = runAgent22Round12SelfTests();
   for (const r of round12.results) {
     check(`agent22_round12_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round13 = runAgent22Round13SelfTests();
+  for (const r of round13.results) {
+    check(`agent22_round13_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

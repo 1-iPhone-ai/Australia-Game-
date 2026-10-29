@@ -26,6 +26,8 @@ import {
   coverageDeltaCopy,
   mergeCoverageRatioIntoPersisted,
 } from '../engine/progression-coverage-snapshot.js';
+import { computeProgressionSignalDelta, mergeLastInterfaceLevelIntoPersisted } from '../engine/progression-signal-delta.js';
+import { countActiveNotificationLanes } from '../engine/notification-lane-coach-plan.js';
 
 /** Persisted slice proposed for `gameSettings.evolvingUi` (assembly-owned). */
 export interface EvolvingUiPersistedState {
@@ -51,6 +53,7 @@ export interface EvolvingUiPersistedState {
   /** onboarding funnel dismiss keys persisted for host */
   onboardingDismissedKeys?: string[];
   lastProgressionCoverageRatio?: number;
+  lastInterfaceLevel?: import('../types/progression.js').InterfaceExperienceLevel;
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -62,6 +65,8 @@ export interface DayAdvanceUiEvolutionResult {
   coachLiveRegionMessageCount: number;
   progressionCoverageRatio: number;
   progressionCoverageDeltaCopy: string | null;
+  progressionSignalDeltaCopy: string | null;
+  activeNotificationLaneCount: number;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -174,15 +179,20 @@ export function tickEvolvingUiOnDayAdvance(
   const highlightIds = onboardingHighlightedPanelIds(nextSignals.gameDay, updatedPersistedWithPacing);
   const coverage = buildProgressionCoverageSnapshot(nextSignals, policy);
   const deltaCopy = coverageDeltaCopy(persisted.lastProgressionCoverageRatio, coverage.coverageRatio);
+  const signalDelta = computeProgressionSignalDelta(priorSignals, nextSignals);
+  const laneCount = countActiveNotificationLanes(nextSignals, nextSignals.playerIntentOnboardingEnabled !== false);
 
-  const updatedPersistedFinal = mergeCoverageRatioIntoPersisted(
-    {
-      ...updatedPersistedWithPacing,
-      rememberedPanelIds: [
-        ...new Set([...(updatedPersistedWithPacing.rememberedPanelIds ?? []), ...highlightIds]),
-      ],
-    },
-    coverage.coverageRatio
+  const updatedPersistedFinal = mergeLastInterfaceLevelIntoPersisted(
+    mergeCoverageRatioIntoPersisted(
+      {
+        ...updatedPersistedWithPacing,
+        rememberedPanelIds: [
+          ...new Set([...(updatedPersistedWithPacing.rememberedPanelIds ?? []), ...highlightIds]),
+        ],
+      },
+      coverage.coverageRatio
+    ),
+    nextSignals.interfaceLevel
   );
 
   return {
@@ -194,6 +204,8 @@ export function tickEvolvingUiOnDayAdvance(
     coachLiveRegionMessageCount: liveRegionPlan.messages.length,
     progressionCoverageRatio: coverage.coverageRatio,
     progressionCoverageDeltaCopy: deltaCopy,
+    progressionSignalDeltaCopy: signalDelta.coachCopy,
+    activeNotificationLaneCount: laneCount,
     updatedPersisted: updatedPersistedFinal,
     visiblePanelCount,
   };

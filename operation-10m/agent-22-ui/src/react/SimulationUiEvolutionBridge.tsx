@@ -42,6 +42,14 @@ export function SimulationUiEvolutionBridge({
       {result.progressionCoverageDeltaCopy ? (
         <div data-testid="sim-ui-evolution-coverage-delta">{result.progressionCoverageDeltaCopy}</div>
       ) : null}
+      {result.progressionSignalDeltaCopy ? (
+        <div data-testid="sim-ui-evolution-signal-delta">{result.progressionSignalDeltaCopy}</div>
+      ) : null}
+      {result.activeNotificationLaneCount > 0 ? (
+        <div data-testid="sim-ui-evolution-lane-count">
+          {result.activeNotificationLaneCount} notification lanes active
+        </div>
+      ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
         <div key={i}>{line}</div>
       ))}
