@@ -106,6 +106,10 @@ import {
   advanceCoalitionApexTranscendenceStreak,
   applyApexTranscendenceMandateBonus,
 } from './coalition-apex-transcendence.ts';
+import {
+  advanceCoalitionZenithPerpetuityStreak,
+  applyZenithPerpetuityMandateBonus,
+} from './coalition-zenith-perpetuity.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -213,6 +217,8 @@ export function advanceStrategicGameplayCalendar(
   next = applySupremeConvergenceMandateBonus(next, daysAdvanced);
   next = advanceCoalitionApexTranscendenceStreak(next, daysAdvanced);
   next = applyApexTranscendenceMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionZenithPerpetuityStreak(next, daysAdvanced);
+  next = applyZenithPerpetuityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 

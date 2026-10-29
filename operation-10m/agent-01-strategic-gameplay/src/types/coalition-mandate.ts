@@ -91,6 +91,8 @@ export interface TurnStrategicBriefing {
   coalitionSupremeConvergenceStreakDays: number;
   apexCoalitionTranscendence: boolean;
   coalitionApexTranscendenceStreakDays: number;
+  zenithCoalitionPerpetuity: boolean;
+  coalitionZenithPerpetuityStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;

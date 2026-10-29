@@ -318,3 +318,13 @@ export function apexTranscendenceRankingBonus(
   if (streak >= action.minCoalitionApexTranscendenceStreakDays) return 27;
   return 2;
 }
+
+export function zenithPerpetuityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionZenithPerpetuityStreakDays === undefined) return 0;
+  const streak = state.coalitionZenithPerpetuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionZenithPerpetuityStreakDays) return 28;
+  return 2;
+}

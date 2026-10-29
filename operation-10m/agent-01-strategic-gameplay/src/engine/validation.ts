@@ -54,6 +54,7 @@ import { coalitionHyperversalHarmonizationStreakIssues } from './coalition-hyper
 import { coalitionTranscendentOmniumStreakIssues } from './coalition-transcendent-omnium-gates.ts';
 import { coalitionSupremeConvergenceStreakIssues } from './coalition-supreme-convergence-gates.ts';
 import { coalitionApexTranscendenceStreakIssues } from './coalition-apex-transcendence-gates.ts';
+import { coalitionZenithPerpetuityStreakIssues } from './coalition-zenith-perpetuity-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -331,6 +332,7 @@ export function validateAction(
     issues.push(...coalitionTranscendentOmniumStreakIssues(action, state));
     issues.push(...coalitionSupremeConvergenceStreakIssues(action, state));
     issues.push(...coalitionApexTranscendenceStreakIssues(action, state));
+    issues.push(...coalitionZenithPerpetuityStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

@@ -122,6 +122,7 @@ export {
   transcendentOmniumRankingBonus,
   supremeConvergenceRankingBonus,
   apexTranscendenceRankingBonus,
+  zenithPerpetuityRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -457,6 +458,16 @@ export {
   applyApexTranscendenceMandateBonus,
 } from './engine/coalition-apex-transcendence.ts';
 
+export { coalitionZenithPerpetuityStreakIssues } from './engine/coalition-zenith-perpetuity-gates.ts';
+
+export {
+  ZENITH_COALITION_PERPETUITY_THRESHOLD,
+  advanceCoalitionZenithPerpetuityStreak,
+  resetCoalitionZenithPerpetuityStreak,
+  isZenithCoalitionPerpetuity,
+  applyZenithPerpetuityMandateBonus,
+} from './engine/coalition-zenith-perpetuity.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '4.4.0';
+export const AGENT_01_MODULE_VERSION = '4.5.0';
