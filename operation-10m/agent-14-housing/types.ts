@@ -2172,6 +2172,42 @@ export interface Agent25Wave56ProjectionHandoffBrief {
   summary: string;
 }
 
+
+export type Wave57GateBand = 'ready' | 'pending' | 'blocked';
+
+export interface Wave57GateTrajectorySnapshot {
+  turn: number;
+  wave57GateEma: number;
+  instantaneousGate: number;
+  band: Wave57GateBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface Wave57GateTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  wave57GateEma: number;
+  priorEma?: number;
+}
+
+export interface Wave57IntegrationMonitor {
+  turn: number;
+  shouldRunO10m257DryRun: boolean;
+  wave57GateBand: Wave57GateBand;
+  blockingReasons: string[];
+  summary: string;
+}
+
+export interface Agent25Wave57ProjectionHandoffBrief {
+  turn: number;
+  shouldProjectWave57: boolean;
+  shouldRunO10m257DryRun: boolean;
+  headlines: string[];
+  summary: string;
+}
+
 export interface Agent25Wave52ProjectionHandoffBrief {
   turn: number;
   shouldProjectWave52: boolean;
