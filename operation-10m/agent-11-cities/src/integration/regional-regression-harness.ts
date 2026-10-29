@@ -24,6 +24,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   landUseGridlockIndex: number;
   mobilityTrapIndex: number;
   absorptionGapIndex: number;
+  reliefOverheadIndex: number;
+  corridorEquityDriftIndex: number;
+  climateAdaptationLagIndex: number;
   validationErrors: number;
 };
 
@@ -74,6 +77,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       landUseGridlockIndex: out.state.nationalLandUseGridlockIndex,
       mobilityTrapIndex: out.state.nationalMobilityTrapIndex,
       absorptionGapIndex: out.state.nationalAbsorptionGapIndex,
+      reliefOverheadIndex: out.state.nationalReliefOverheadIndex,
+      corridorEquityDriftIndex: out.state.nationalCorridorEquityDriftIndex,
+      climateAdaptationLagIndex: out.state.nationalClimateAdaptationLagIndex,
       validationErrors,
     });
   }
@@ -95,6 +101,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const landUseGridlockStable = snapshots.every((s) => s.landUseGridlockIndex >= 8 && s.landUseGridlockIndex <= 100);
   const mobilityTrapStable = snapshots.every((s) => s.mobilityTrapIndex >= 8 && s.mobilityTrapIndex <= 100);
   const absorptionGapStable = snapshots.every((s) => s.absorptionGapIndex >= 8 && s.absorptionGapIndex <= 100);
+  const reliefOverheadStable = snapshots.every((s) => s.reliefOverheadIndex >= 8 && s.reliefOverheadIndex <= 100);
+  const corridorDriftStable = snapshots.every((s) => s.corridorEquityDriftIndex >= 8 && s.corridorEquityDriftIndex <= 100);
+  const adaptationLagStable = snapshots.every((s) => s.climateAdaptationLagIndex >= 8 && s.climateAdaptationLagIndex <= 100);
 
   const ok =
     monotonicRevision &&
@@ -113,10 +122,13 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     receptionStrainStable &&
     landUseGridlockStable &&
     mobilityTrapStable &&
-    absorptionGapStable;
+    absorptionGapStable &&
+    reliefOverheadStable &&
+    corridorDriftStable &&
+    adaptationLagStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, absorption gap ${snapshots[snapshots.length - 1].absorptionGapIndex}`
-    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable}`;
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, adaptation lag ${snapshots[snapshots.length - 1].climateAdaptationLagIndex}`
+    : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable}`;
 
   return { ok, snapshots, detail };
 }

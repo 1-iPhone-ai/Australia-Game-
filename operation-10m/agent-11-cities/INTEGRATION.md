@@ -33,6 +33,14 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 4. Persist infra slice under `gameState.op10mAgent11IntercityInfra` (`createEmptyOP10M_A11_InfraPersisted()`).
 5. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
 
+### Scale wave round 11 (schema `10m.a11.composite.10`)
+
+- **Regional relief coordination overhead** — relief playbook × governance × reception strain (`op10mA11ComputeRegionalReliefCoordinationOverhead`)
+- **Interregional corridor equity drift** — corridor flows × service equity × commute wedge (`op10mA11ComputeInterregionalCorridorEquityDrift`)
+- **Settlement climate adaptation lag** — climate displacement × absorption gap × infra backlog (`op10mA11ComputeSettlementClimateAdaptationLag`)
+- **10-turn regression harness** — extended bounds for relief overhead, corridor drift, adaptation lag
+- Derived events: `relief_coordination_overhead`, `corridor_equity_drift`, `climate_adaptation_lag`
+
 ### Scale wave round 10 (schema `10m.a11.composite.9`)
 
 - **Regional land-use regulatory gridlock** — governance friction × peri-urban × housing spillover (`op10mA11ComputeRegionalLandUseRegulatoryGridlock`)

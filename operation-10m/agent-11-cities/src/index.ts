@@ -34,5 +34,8 @@ export * from './settlement-reception-capacity-strain.ts';
 export * from './regional-land-use-regulatory-gridlock.ts';
 export * from './interregional-mobility-affordability-trap.ts';
 export * from './settlement-infrastructure-absorption-gap.ts';
+export * from './regional-relief-coordination-overhead.ts';
+export * from './interregional-corridor-equity-drift.ts';
+export * from './settlement-climate-adaptation-lag.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

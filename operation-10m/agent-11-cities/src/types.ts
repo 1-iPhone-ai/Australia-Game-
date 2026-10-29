@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.9' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.10' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -248,7 +248,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'settlement_reception_strain'
   | 'land_use_regulatory_gridlock'
   | 'mobility_affordability_trap'
-  | 'infrastructure_absorption_gap';
+  | 'infrastructure_absorption_gap'
+  | 'relief_coordination_overhead'
+  | 'corridor_equity_drift'
+  | 'climate_adaptation_lag';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -435,6 +438,36 @@ export interface OP10M_A11_AbsorptionGapRow {
   narrative: string;
 }
 
+export type OP10M_A11_ReliefOverheadBand = 'lean' | 'elevated' | 'overloaded' | 'paralytic';
+
+export interface OP10M_A11_ReliefOverheadRow {
+  regionId: OP10M_A11_RegionId;
+  overheadScore: number;
+  band: OP10M_A11_ReliefOverheadBand;
+  stressors: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_CorridorEquityDriftBand = 'aligned' | 'drifting' | 'polarized' | 'fractured';
+
+export interface OP10M_A11_CorridorEquityDriftRow {
+  regionId: OP10M_A11_RegionId;
+  driftScore: number;
+  band: OP10M_A11_CorridorEquityDriftBand;
+  signals: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_AdaptationLagBand = 'responsive' | 'lagging' | 'stalled' | 'critical_lag';
+
+export interface OP10M_A11_AdaptationLagRow {
+  regionId: OP10M_A11_RegionId;
+  lagScore: number;
+  band: OP10M_A11_AdaptationLagBand;
+  drivers: string[];
+  narrative: string;
+}
+
 export type OP10M_A11_MigrationPressureBand = 'stable' | 'elevated' | 'high' | 'surge';
 
 export interface OP10M_A11_MigrationPressureRow {
@@ -581,6 +614,12 @@ export interface OP10M_A11_CompositeState {
   nationalMobilityTrapIndex: number;
   absorptionGap: OP10M_A11_AbsorptionGapRow[];
   nationalAbsorptionGapIndex: number;
+  reliefOverhead: OP10M_A11_ReliefOverheadRow[];
+  nationalReliefOverheadIndex: number;
+  corridorEquityDrift: OP10M_A11_CorridorEquityDriftRow[];
+  nationalCorridorEquityDriftIndex: number;
+  climateAdaptationLag: OP10M_A11_AdaptationLagRow[];
+  nationalClimateAdaptationLagIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -608,5 +647,8 @@ export interface OP10M_A11_CompositePersisted {
   lastLandUseGridlockIndex: number;
   lastMobilityTrapIndex: number;
   lastAbsorptionGapIndex: number;
+  lastReliefOverheadIndex: number;
+  lastCorridorEquityDriftIndex: number;
+  lastClimateAdaptationLagIndex: number;
   inputHash: string;
 }

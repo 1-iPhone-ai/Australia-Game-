@@ -133,6 +133,21 @@ import {
   op10mA11ComputeSettlementInfrastructureAbsorptionGap,
   op10mA11RegionsWithCriticalAbsorptionGap,
 } from './settlement-infrastructure-absorption-gap.ts';
+import {
+  op10mA11ComputeRegionalReliefCoordinationOverhead,
+  op10mA11RegionsWithReliefOverheadCritical,
+  op10mA11ReliefOverheadEscalating,
+} from './regional-relief-coordination-overhead.ts';
+import {
+  op10mA11ComputeInterregionalCorridorEquityDrift,
+  op10mA11CorridorEquityDriftEscalating,
+  op10mA11RegionsWithCorridorEquityFracture,
+} from './interregional-corridor-equity-drift.ts';
+import {
+  op10mA11AdaptationLagEscalating,
+  op10mA11ComputeSettlementClimateAdaptationLag,
+  op10mA11RegionsWithCriticalAdaptationLag,
+} from './settlement-climate-adaptation-lag.ts';
 
 export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePersisted {
   return {
@@ -158,6 +173,9 @@ export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePe
     lastLandUseGridlockIndex: 0,
     lastMobilityTrapIndex: 0,
     lastAbsorptionGapIndex: 0,
+    lastReliefOverheadIndex: 0,
+    lastCorridorEquityDriftIndex: 0,
+    lastClimateAdaptationLagIndex: 0,
     inputHash: '',
   };
 }
@@ -209,6 +227,12 @@ export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState
   if (state.nationalLandUseGridlockIndex < 0 || state.nationalLandUseGridlockIndex > 100) errs.push('land use gridlock index out of range');
   if (state.nationalMobilityTrapIndex < 0 || state.nationalMobilityTrapIndex > 100) errs.push('mobility trap index out of range');
   if (state.nationalAbsorptionGapIndex < 0 || state.nationalAbsorptionGapIndex > 100) errs.push('absorption gap index out of range');
+  if (state.reliefOverhead.length !== 8) errs.push('relief overhead row count');
+  if (state.corridorEquityDrift.length !== 8) errs.push('corridor equity drift row count');
+  if (state.climateAdaptationLag.length !== 8) errs.push('climate adaptation lag row count');
+  if (state.nationalReliefOverheadIndex < 0 || state.nationalReliefOverheadIndex > 100) errs.push('relief overhead index out of range');
+  if (state.nationalCorridorEquityDriftIndex < 0 || state.nationalCorridorEquityDriftIndex > 100) errs.push('corridor equity drift index out of range');
+  if (state.nationalClimateAdaptationLagIndex < 0 || state.nationalClimateAdaptationLagIndex > 100) errs.push('climate adaptation lag index out of range');
   return errs;
 }
 
@@ -394,6 +418,24 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     infrastructureBacklog: backlogOut.rows,
     receptionStrain: receptionStrainOut.rows,
     absorptionStress,
+  });
+
+  const reliefOverheadOut = op10mA11ComputeRegionalReliefCoordinationOverhead({
+    reliefPlaybook,
+    governanceFriction: governanceOut.rows,
+    receptionStrain: receptionStrainOut.rows,
+  });
+
+  const corridorEquityDriftOut = op10mA11ComputeInterregionalCorridorEquityDrift({
+    corridorFlows,
+    serviceEquity: serviceEquityOut.rows,
+    commuteWedge: commuteWedgeOut.rows,
+  });
+
+  const climateAdaptationLagOut = op10mA11ComputeSettlementClimateAdaptationLag({
+    climateDisplacement: climateOut.rows,
+    absorptionGap: absorptionGapOut.rows,
+    infrastructureBacklog: backlogOut.rows,
   });
 
   const derivedRaw: Omit<OP10M_A11_CompositeDerivedEvent, 'id'>[] = [];
@@ -796,6 +838,63 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     );
   }
 
+  const reliefOverloaded = op10mA11RegionsWithReliefOverheadCritical(reliefOverheadOut.rows);
+  if (
+    reliefOverloaded.length >= 2 ||
+    reliefOverheadOut.nationalIndex >= 45 ||
+    op10mA11ReliefOverheadEscalating(
+      reliefOverheadOut.nationalIndex,
+      base.revision > 0 ? base.lastReliefOverheadIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'relief_coordination_overhead',
+      reliefOverloaded.slice(0, 5),
+      `Regional relief coordination overhead (index ${reliefOverheadOut.nationalIndex.toFixed(1)}).`,
+      reliefOverheadOut.nationalIndex >= 54 ? 'major' : 'meaningful',
+    );
+  }
+
+  const corridorFractured = op10mA11RegionsWithCorridorEquityFracture(corridorEquityDriftOut.rows);
+  if (
+    corridorFractured.length >= 2 ||
+    corridorEquityDriftOut.nationalIndex >= 46 ||
+    op10mA11CorridorEquityDriftEscalating(
+      corridorEquityDriftOut.nationalIndex,
+      base.revision > 0 ? base.lastCorridorEquityDriftIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'corridor_equity_drift',
+      corridorFractured.slice(0, 5),
+      `Interregional corridor equity drift (index ${corridorEquityDriftOut.nationalIndex.toFixed(1)}).`,
+      corridorEquityDriftOut.nationalIndex >= 55 ? 'major' : 'meaningful',
+    );
+  }
+
+  const adaptationLagCritical = op10mA11RegionsWithCriticalAdaptationLag(climateAdaptationLagOut.rows);
+  if (
+    adaptationLagCritical.length >= 2 ||
+    climateAdaptationLagOut.nationalIndex >= 48 ||
+    op10mA11AdaptationLagEscalating(
+      climateAdaptationLagOut.nationalIndex,
+      base.revision > 0 ? base.lastClimateAdaptationLagIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'climate_adaptation_lag',
+      adaptationLagCritical.slice(0, 5),
+      `Settlement climate adaptation lag (index ${climateAdaptationLagOut.nationalIndex.toFixed(1)}).`,
+      climateAdaptationLagOut.nationalIndex >= 58 ? 'major' : 'meaningful',
+    );
+  }
+
   base.revision += 1;
   base.urban = urbanOut.persisted;
   base.infra = infraOut.persisted;
@@ -816,11 +915,14 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
   base.lastLandUseGridlockIndex = landUseGridlockOut.nationalIndex;
   base.lastMobilityTrapIndex = mobilityTrapOut.nationalIndex;
   base.lastAbsorptionGapIndex = absorptionGapOut.nationalIndex;
+  base.lastReliefOverheadIndex = reliefOverheadOut.nationalIndex;
+  base.lastCorridorEquityDriftIndex = corridorEquityDriftOut.nationalIndex;
+  base.lastClimateAdaptationLagIndex = climateAdaptationLagOut.nationalIndex;
   base.inputHash = op10mA11HashInputs({
     turn: inputs.urban.turn,
     cityCount: inputs.urban.cities.length,
     regionKeys: 'composite',
-    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}:${housingSpilloverOut.nationalIndex}:${climateOut.nationalIndex}:${amenityOut.nationalIndex}:${relocationOut.nationalIndex}:${employmentAnchorOut.nationalIndex}:${commuteWedgeOut.nationalIndex}:${receptionStrainOut.nationalIndex}:${landUseGridlockOut.nationalIndex}:${mobilityTrapOut.nationalIndex}:${absorptionGapOut.nationalIndex}`,
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}:${housingSpilloverOut.nationalIndex}:${climateOut.nationalIndex}:${amenityOut.nationalIndex}:${relocationOut.nationalIndex}:${employmentAnchorOut.nationalIndex}:${commuteWedgeOut.nationalIndex}:${receptionStrainOut.nationalIndex}:${landUseGridlockOut.nationalIndex}:${mobilityTrapOut.nationalIndex}:${absorptionGapOut.nationalIndex}:${reliefOverheadOut.nationalIndex}:${corridorEquityDriftOut.nationalIndex}:${climateAdaptationLagOut.nationalIndex}`,
   });
 
   const state: OP10M_A11_CompositeState = {
@@ -877,7 +979,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     nationalMobilityTrapIndex: mobilityTrapOut.nationalIndex,
     absorptionGap: absorptionGapOut.rows,
     nationalAbsorptionGapIndex: absorptionGapOut.nationalIndex,
-    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}; housing spillover ${housingSpilloverOut.nationalIndex}; talent drain ${talentOut.nationalIndex}; climate displacement ${climateOut.nationalIndex}; amenity cost ${amenityOut.nationalIndex}; decentralization ${decentralOut.nationalIndex}; relocation burden ${relocationOut.nationalIndex}; employment anchor ${employmentAnchorOut.nationalIndex}; commute wedge ${commuteWedgeOut.nationalIndex}; reception strain ${receptionStrainOut.nationalIndex}; land-use gridlock ${landUseGridlockOut.nationalIndex}; mobility trap ${mobilityTrapOut.nationalIndex}; absorption gap ${absorptionGapOut.nationalIndex}.`,
+    reliefOverhead: reliefOverheadOut.rows,
+    nationalReliefOverheadIndex: reliefOverheadOut.nationalIndex,
+    corridorEquityDrift: corridorEquityDriftOut.rows,
+    nationalCorridorEquityDriftIndex: corridorEquityDriftOut.nationalIndex,
+    climateAdaptationLag: climateAdaptationLagOut.rows,
+    nationalClimateAdaptationLagIndex: climateAdaptationLagOut.nationalIndex,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}; housing spillover ${housingSpilloverOut.nationalIndex}; talent drain ${talentOut.nationalIndex}; climate displacement ${climateOut.nationalIndex}; amenity cost ${amenityOut.nationalIndex}; decentralization ${decentralOut.nationalIndex}; relocation burden ${relocationOut.nationalIndex}; employment anchor ${employmentAnchorOut.nationalIndex}; commute wedge ${commuteWedgeOut.nationalIndex}; reception strain ${receptionStrainOut.nationalIndex}; land-use gridlock ${landUseGridlockOut.nationalIndex}; mobility trap ${mobilityTrapOut.nationalIndex}; absorption gap ${absorptionGapOut.nationalIndex}; relief overhead ${reliefOverheadOut.nationalIndex}; corridor equity drift ${corridorEquityDriftOut.nationalIndex}; climate adaptation lag ${climateAdaptationLagOut.nationalIndex}.`,
     inputHash: base.inputHash,
   };
 

@@ -72,6 +72,9 @@ import { op10mA11ComputeSettlementReceptionCapacityStrain } from './settlement-r
 import { op10mA11ComputeRegionalLandUseRegulatoryGridlock } from './regional-land-use-regulatory-gridlock.ts';
 import { op10mA11ComputeInterregionalMobilityAffordabilityTrap } from './interregional-mobility-affordability-trap.ts';
 import { op10mA11ComputeSettlementInfrastructureAbsorptionGap } from './settlement-infrastructure-absorption-gap.ts';
+import { op10mA11ComputeRegionalReliefCoordinationOverhead } from './regional-relief-coordination-overhead.ts';
+import { op10mA11ComputeInterregionalCorridorEquityDrift } from './interregional-corridor-equity-drift.ts';
+import { op10mA11ComputeSettlementClimateAdaptationLag } from './settlement-climate-adaptation-lag.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -398,7 +401,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.9',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.10',
     composite.state.schemaVersion,
   );
 
@@ -501,7 +504,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastReceptionStrainIndex === composite.state.nationalReceptionStrainIndex &&
       composite.persisted.lastLandUseGridlockIndex === composite.state.nationalLandUseGridlockIndex &&
       composite.persisted.lastMobilityTrapIndex === composite.state.nationalMobilityTrapIndex &&
-      composite.persisted.lastAbsorptionGapIndex === composite.state.nationalAbsorptionGapIndex,
+      composite.persisted.lastAbsorptionGapIndex === composite.state.nationalAbsorptionGapIndex &&
+      composite.persisted.lastReliefOverheadIndex === composite.state.nationalReliefOverheadIndex &&
+      composite.persisted.lastCorridorEquityDriftIndex === composite.state.nationalCorridorEquityDriftIndex &&
+      composite.persisted.lastClimateAdaptationLagIndex === composite.state.nationalClimateAdaptationLagIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -975,6 +981,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_86',
     composite.state.mobilityTrap.every((m) => m.narrative.includes('mobility affordability')),
     composite.state.mobilityTrap[0]?.band ?? 'none',
+  );
+
+  const reliefOverhead = op10mA11ComputeRegionalReliefCoordinationOverhead({
+    reliefPlaybook: composite.state.reliefPlaybook,
+    governanceFriction: composite.state.governanceFriction,
+    receptionStrain: composite.state.receptionStrain,
+  });
+  push(
+    out,
+    'a11_87',
+    composite.state.reliefOverhead.length === 8 &&
+      composite.state.nationalReliefOverheadIndex === reliefOverhead.nationalIndex,
+    `relief overhead ${composite.state.nationalReliefOverheadIndex}`,
+  );
+
+  const corridorDrift = op10mA11ComputeInterregionalCorridorEquityDrift({
+    corridorFlows: composite.state.corridorFlows,
+    serviceEquity: composite.state.serviceEquity,
+    commuteWedge: composite.state.commuteWedge,
+  });
+  push(
+    out,
+    'a11_88',
+    composite.state.corridorEquityDrift.length === 8 &&
+      composite.state.nationalCorridorEquityDriftIndex === corridorDrift.nationalIndex,
+    `corridor drift ${composite.state.nationalCorridorEquityDriftIndex}`,
+  );
+
+  const adaptationLag = op10mA11ComputeSettlementClimateAdaptationLag({
+    climateDisplacement: composite.state.climateDisplacement,
+    absorptionGap: composite.state.absorptionGap,
+    infrastructureBacklog: composite.state.infrastructureBacklog,
+  });
+  push(
+    out,
+    'a11_89',
+    composite.state.climateAdaptationLag.length === 8 &&
+      composite.state.nationalClimateAdaptationLagIndex === adaptationLag.nationalIndex,
+    `adaptation lag ${composite.state.nationalClimateAdaptationLagIndex}`,
+  );
+
+  push(
+    out,
+    'a11_90',
+    composite.state.reliefOverhead.every((r) => r.narrative.includes('relief coordination')),
+    composite.state.reliefOverhead[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_91',
+    composite.derived.some((d) => d.kind === 'relief_coordination_overhead') ||
+      composite.state.reliefOverhead.some((r) => r.band === 'overloaded' || r.band === 'paralytic'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_92',
+    composite.derived.some((d) => d.kind === 'corridor_equity_drift') ||
+      composite.state.corridorEquityDrift.some((c) => c.band === 'polarized' || c.band === 'fractured'),
+    composite.state.corridorEquityDrift[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_93',
+    composite.persisted.lastReliefOverheadIndex === composite.state.nationalReliefOverheadIndex,
+    `persisted relief ${composite.persisted.lastReliefOverheadIndex}`,
+  );
+
+  push(
+    out,
+    'a11_94',
+    composite.derived.some((d) => d.kind === 'climate_adaptation_lag') ||
+      composite.state.climateAdaptationLag.some((a) => a.band === 'stalled' || a.band === 'critical_lag'),
+    composite.state.climateAdaptationLag[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_95',
+    composite.state.corridorEquityDrift.every((c) => c.narrative.includes('corridor equity')),
+    composite.state.corridorEquityDrift[0]?.band ?? 'none',
   );
 
   return out;

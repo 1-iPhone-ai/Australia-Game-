@@ -2,6 +2,8 @@
 
 Urban growth balance, regional inequality metrics, and national–local spillover links. Standalone TypeScript until Agent 25 assembly into V9.4.
 
+**Scale wave round 11:** regional relief coordination overhead, interregional corridor equity drift, settlement climate adaptation lag (schema `10m.a11.composite.10`).
+
 **Scale wave round 10:** regional land-use regulatory gridlock, interregional mobility affordability trap, settlement infrastructure absorption gap (schema `10m.a11.composite.9`).
 
 **Scale wave round 9:** regional employment anchor stress, interregional commute affordability wedge, settlement reception capacity strain (schema `10m.a11.composite.8`).
