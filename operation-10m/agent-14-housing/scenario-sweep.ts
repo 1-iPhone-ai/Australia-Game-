@@ -112,7 +112,9 @@ export type Agent14HousingScenarioId =
   | 'wave50_gate_trajectory_arc'
   | 'wave50_integration_stress'
   | 'wave51_gate_trajectory_arc'
-  | 'wave51_integration_stress';
+  | 'wave51_integration_stress'
+  | 'wave52_gate_trajectory_arc'
+  | 'wave52_integration_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -1259,6 +1261,29 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_h_ACT_density',
     ],
   },
+  {
+    id: 'wave52_gate_trajectory_arc',
+    label: 'Wave 52 gate trajectory arc',
+    baseInputs: { fiscalHeadroom: 88, stateCapacityLoad: 7, workforceReadiness: 'strong' },
+    launchProgramIds: [
+      'ps_xp_QLD_wave52_projection',
+      'ps_xp_QLD_wave51_projection',
+      'ps_xp_VIC_wave50_projection',
+      'ps_h_NSW_social_accel',
+    ],
+  },
+  {
+    id: 'wave52_integration_stress',
+    label: 'Wave 52 integration stress',
+    baseInputs: { fiscalHeadroom: 0, stateCapacityLoad: 99, workforceReadiness: 'blocking', workforceSpecialistGap: 100 },
+    launchProgramIds: [
+      'ps_xp_WA_o10m233_gate',
+      'ps_xp_WA_o10m231_gate',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_NSW_skills',
+      'ps_h_ACT_density',
+    ],
+  },
 ];
 
 export { commitmentFromProgramStub } from './program-stub-commitments.ts';
@@ -1323,6 +1348,7 @@ export function simulateAgent14HousingScenario(
   let wave49GateTrajectoryPersisted = null;
   let wave50GateTrajectoryPersisted = null;
   let wave51GateTrajectoryPersisted = null;
+  let wave52GateTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -1385,6 +1411,7 @@ export function simulateAgent14HousingScenario(
       wave49GateTrajectoryPersisted,
       wave50GateTrajectoryPersisted,
       wave51GateTrajectoryPersisted,
+      wave52GateTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -1438,6 +1465,7 @@ export function simulateAgent14HousingScenario(
     wave49GateTrajectoryPersisted = result.wave49GateTrajectoryPersisted;
     wave50GateTrajectoryPersisted = result.wave50GateTrajectoryPersisted;
     wave51GateTrajectoryPersisted = result.wave51GateTrajectoryPersisted;
+    wave52GateTrajectoryPersisted = result.wave52GateTrajectoryPersisted;
     turns.push(result.inputs);
   }
 
