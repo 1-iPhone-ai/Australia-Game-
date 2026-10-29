@@ -1,5 +1,5 @@
 {
-  "scannedAt": "2026-10-29T09:09:33.667Z",
+  "scannedAt": "2026-10-29T09:16:54.829Z",
   "canonicalBase": "origin/australia-game-upgrade",
   "baselineCommit": "bc1adf3",
   "originOp10mHeadCount": 33,
@@ -55,7 +55,7 @@
       "chunkPath": "operation-10m/agent-05-events/chunk.tsx",
       "markerModuleId": "agent-05-events",
       "assemblyReady": true,
-      "contentSha256": "5f248d4c5ed90849f640ecaa1958ced900dc353744c50020c068e08952e5e2c2",
+      "contentSha256": "9f2473c4c762fa84388d7b048f95f8696f829befdeddaf8f7a5efff21343fb59",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -115,7 +115,7 @@
       "chunkPath": "operation-10m/modules/agent-10-finance/chunk.tsx",
       "markerModuleId": "agent-10-finance",
       "assemblyReady": true,
-      "contentSha256": "65deb741c0520d328a6c6c041a80778503e01d53fff9d288548ab72c36fae64f",
+      "contentSha256": "8c2e9937e487a34d997b2601f395d86fa9b11610d88f54af1c66feaf22ef62b1",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -323,7 +323,7 @@
       "chunkPath": "operation-10m/modules/agent-24-history/chunk.tsx",
       "markerModuleId": "agent-24-history",
       "assemblyReady": false,
-      "contentSha256": "dac9677803bd57d20fb6465cb4c41c60be9f6521073ea8dc14692af27ab2424a",
+      "contentSha256": "085a8fcc29eb3990af22250c017a269ef45e4c8ba1519b97ababd705ce47e386",
       "defaultSlot": "pre-final-export",
       "duplicateModuleIdOf": "origin/op10m/agent-24-history",
       "skipReason": "duplicate moduleId (branch not primary)"
