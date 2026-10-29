@@ -11,6 +11,6 @@ Branch: `op10m/agent-05-events` · baseline **`81b50b86`** · **`69caf59b`** @ *
 
 ## Commit
 
-Round 30 base: **`69caf59b`**. Round 31 HEAD: TBD. Push-first.
+Round 30 base: **`69caf59b`**. Round 31 HEAD: **`6ecda061`**. Push-first.
 
 No V9.4. No promote.
