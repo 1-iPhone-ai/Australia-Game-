@@ -121,6 +121,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       agent25FullChunksSyncWaveReadyPasses: 0,
       scaleWaveFullChunksSyncCommits: 0,
       agent25FullChunksSyncWaveSealedPasses: 0,
+      scaleWaveFullChunksHandoffLatches: 0,
+      agent25FullChunksHandoffWaveReadyPasses: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -293,6 +295,14 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.agent25FullChunksSyncWaveSealedPasses = Math.max(
       0,
       Number(t.agent25FullChunksSyncWaveSealedPasses) || 0
+    );
+    base.telemetry.scaleWaveFullChunksHandoffLatches = Math.max(
+      0,
+      Number(t.scaleWaveFullChunksHandoffLatches) || 0
+    );
+    base.telemetry.agent25FullChunksHandoffWaveReadyPasses = Math.max(
+      0,
+      Number(t.agent25FullChunksHandoffWaveReadyPasses) || 0
     );
   }
 

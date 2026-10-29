@@ -417,6 +417,14 @@ export interface Op10mTriggerRequireAgent25FullChunksSyncWaveSealed {
   k: 'agent25_full_chunks_sync_wave_sealed';
 }
 
+export interface Op10mTriggerRequireScaleWaveFullChunksHandoffLatch {
+  k: 'scale_wave_full_chunks_handoff_latch';
+}
+
+export interface Op10mTriggerRequireAgent25FullChunksHandoffWaveReady {
+  k: 'agent25_full_chunks_handoff_wave_ready';
+}
+
 export type Op10mComputeTurnStage =
   | 'pre_simulation'
   | 'post_simulation'
@@ -513,7 +521,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireScaleWaveFullChunksSyncLatch
   | Op10mTriggerRequireAgent25FullChunksSyncWaveReady
   | Op10mTriggerRequireScaleWaveFullChunksSyncCommit
-  | Op10mTriggerRequireAgent25FullChunksSyncWaveSealed;
+  | Op10mTriggerRequireAgent25FullChunksSyncWaveSealed
+  | Op10mTriggerRequireScaleWaveFullChunksHandoffLatch
+  | Op10mTriggerRequireAgent25FullChunksHandoffWaveReady;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -647,6 +657,8 @@ export interface Op10mNarrativeEngineState {
     agent25FullChunksSyncWaveReadyPasses: number;
     scaleWaveFullChunksSyncCommits: number;
     agent25FullChunksSyncWaveSealedPasses: number;
+    scaleWaveFullChunksHandoffLatches: number;
+    agent25FullChunksHandoffWaveReadyPasses: number;
   };
   regional?: Op10mRegionalContagionLedger;
   turnCompute?: Op10mTurnComputeLedger;

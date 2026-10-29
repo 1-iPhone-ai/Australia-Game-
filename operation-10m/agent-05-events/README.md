@@ -30,6 +30,7 @@ State-triggered crisis chains with cooldowns, passive persistent modifiers, and 
 - `generated/chain-catalog-tranche27.ts` — 320 scale-wave-full-chunks-commit lattice chains (`scripts/generate-catalog-tranche27.py`)
 - `generated/chain-catalog-tranche28.ts` — 320 scale-wave-full-chunks-sync-latch lattice chains (`scripts/generate-catalog-tranche28.py`)
 - `generated/chain-catalog-tranche29.ts` — 320 scale-wave-full-chunks-sync-commit lattice chains (`scripts/generate-catalog-tranche29.py`)
+- `generated/chain-catalog-tranche30.ts` — 320 scale-wave-full-chunks-handoff-latch lattice chains (`scripts/generate-catalog-tranche30.py`)
 - `src/pending-response-expiry-coordinator.ts` — expired dilemma prune + queue-clear flags on compute hook
 - `src/pending-response-stabilization-coordinator.ts` — post-clear calm + stabilization wave flags on compute hook
 - `src/pending-stabilization-closure-coordinator.ts` — digest closure latch after finalize on compute hook

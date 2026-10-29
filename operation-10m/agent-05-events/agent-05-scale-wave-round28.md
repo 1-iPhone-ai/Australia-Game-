@@ -10,6 +10,7 @@ O10-187: full-chunks sync commit lattice + integration baseline merge. Wave **28
 |--------|----------------------------|----------------|
 | Chain count | 9160 | **9480** (+320 tranche29) |
 | `chunk.tsx` lines | 1,132,976 | **1,172,160** |
+| Tests | 186/186 | **192/192** |
 
 ## Manifest SHA
 
