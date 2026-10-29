@@ -391,8 +391,14 @@ export type RemoteSchoolSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortLithiumHydroxideLogisticsPolicy = 'baseline' | 'expand';
 
+export type DesalinationBrineExportPolicy = 'baseline' | 'accelerate';
+
+export type WildlifeRescueAirliftStagingPolicy = 'baseline' | 'surge';
+
+export type UrbanEvFreightChargingLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/40';
+  schemaVersion: 'agent12/41';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -678,6 +684,14 @@ export interface TransportInfrastructureState {
   portLithiumHydroxideLogisticsShare: number;
   nationalPortLithiumHydroxideLogisticsThroughputIndex: number;
   portLithiumHydroxideLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalDesalinationBrineExportIndex: number;
+  desalinationBrineExportByRegion: Record<AuRegionCode, number>;
+  wildlifeRescueAirliftStagingShare: number;
+  nationalWildlifeRescueAirliftStagingIndex: number;
+  wildlifeRescueAirliftStagingByRegion: Record<AuRegionCode, number>;
+  urbanEvFreightChargingLogisticsShare: number;
+  nationalUrbanEvFreightChargingLogisticsThroughputIndex: number;
+  urbanEvFreightChargingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -788,6 +802,9 @@ export interface TransportInfrastructureOptions {
   offshoreWaveEnergyExportPolicy?: OffshoreWaveEnergyExportPolicy;
   remoteSchoolSupplyStagingPolicy?: RemoteSchoolSupplyStagingPolicy;
   portLithiumHydroxideLogisticsPolicy?: PortLithiumHydroxideLogisticsPolicy;
+  desalinationBrineExportPolicy?: DesalinationBrineExportPolicy;
+  wildlifeRescueAirliftStagingPolicy?: WildlifeRescueAirliftStagingPolicy;
+  urbanEvFreightChargingLogisticsPolicy?: UrbanEvFreightChargingLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2485,6 +2502,48 @@ export const TRANSPORT_CORRIDORS_ROUND39: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round40.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND40: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_sa_desalination_brine',
+    name: 'WA–SA Desalination Brine',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'SA'],
+    requiredTagsByRegion: {
+      WA: ['desalination_brine_export', 'desal_plant_rail_feed', 'industrial_brine_logistics'],
+      SA: ['desalination_brine_export', 'desal_plant_rail_feed', 'industrial_brine_logistics'],
+    },
+    productivitySynergyPoints: 6.4,
+    logisticsRelief: 0.041,
+  },
+  {
+    id: 'corr_vic_nsw_wildlife_rescue_airlift',
+    name: 'VIC–NSW Wildlife Rescue Airlift',
+    networkKind: 'mobility',
+    regionSequence: ['VIC', 'NSW'],
+    requiredTagsByRegion: {
+      VIC: ['wildlife_rescue_airlift', 'fauna_medevac_staging', 'rescue_rotary_logistics'],
+      NSW: ['wildlife_rescue_airlift', 'fauna_medevac_staging', 'rescue_rotary_logistics'],
+    },
+    productivitySynergyPoints: 6.2,
+    logisticsRelief: 0.035,
+  },
+  {
+    id: 'corr_nsw_vic_urban_ev_freight_charging',
+    name: 'NSW–VIC Urban EV Freight Charging',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['urban_ev_freight_charging', 'depot_fast_charge_hub', 'last_mile_ev_logistics'],
+      VIC: ['urban_ev_freight_charging', 'depot_fast_charge_hub', 'last_mile_ev_logistics'],
+    },
+    productivitySynergyPoints: 6.1,
+    logisticsRelief: 0.037,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2671,6 +2730,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND37,
   ...TRANSPORT_CORRIDORS_ROUND38,
   ...TRANSPORT_CORRIDORS_ROUND39,
+  ...TRANSPORT_CORRIDORS_ROUND40,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -4887,6 +4947,62 @@ export const TRANSPORT_SCENARIOS_ROUND39: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round40.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND40: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_brine_export_surge',
+    label: 'WA Brine Export Surge',
+    description: 'Desal throughput overloads Fremantle brine berths.',
+    targetRegions: ['WA', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_sa_desal_feed_delay',
+    label: 'SA Desal Feed Delay',
+    description: 'Maintenance delays Adelaide brine staging.',
+    targetRegions: ['SA', 'WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_vic_wildlife_rescue_surge',
+    label: 'Victoria Wildlife Rescue Surge',
+    description: 'Bushfire season strains Geelong rescue base.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_nsw_ev_freight_peak',
+    label: 'NSW EV Freight Peak',
+    description: 'Grid events peak Botany EV charging demand.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_vic_depot_charge_backlog',
+    label: 'Victoria Depot Charge Backlog',
+    description: 'Fleet turnover backs up Dandenong charge hub.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics', 'rail'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -5087,6 +5203,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND37,
   ...TRANSPORT_SCENARIOS_ROUND38,
   ...TRANSPORT_SCENARIOS_ROUND39,
+  ...TRANSPORT_SCENARIOS_ROUND40,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -14718,6 +14835,233 @@ export const SCALE_WAVE_ROUND39_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round40-assets.ts ---
+
+export const ROUND40_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_perth_desal_brine_haul',
+    category: 'road',
+    name: 'Perth Desal Brine Haul',
+    description: 'WA desalination brine export staging road.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['desalination_brine_export', 'desal_plant_rail_feed', 'industrial_brine_logistics'],
+    laneKilometres: 25,
+    designSpeedKmh: 83,
+    freightShare: 0.34,
+    urbanShare: 0.09,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_adelaide_desal_feed',
+    category: 'road',
+    name: 'Adelaide Desal Feed',
+    description: 'SA industrial brine logistics connector.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['trade'],
+    tags: ['desalination_brine_export', 'desal_plant_rail_feed', 'industrial_brine_logistics'],
+    laneKilometres: 22,
+    designSpeedKmh: 80,
+    freightShare: 0.3,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_geelong_wildlife_access',
+    category: 'road',
+    name: 'Geelong Wildlife Access',
+    description: 'VIC fauna medevac staging road feed.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['mobility'],
+    tags: ['wildlife_rescue_airlift', 'fauna_medevac_staging', 'rescue_rotary_logistics'],
+    laneKilometres: 19,
+    designSpeedKmh: 77,
+    freightShare: 0.08,
+    urbanShare: 0.22,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_dubbo_wildlife_staging',
+    category: 'road',
+    name: 'Dubbo Wildlife Staging',
+    description: 'NSW rescue rotary logistics connector.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['wildlife_rescue_airlift', 'fauna_medevac_staging', 'rescue_rotary_logistics'],
+    laneKilometres: 18,
+    designSpeedKmh: 75,
+    freightShare: 0.07,
+    urbanShare: 0.21,
+    tollRoad: false,
+  },
+];
+
+export const ROUND40_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_perth_desal_brine_rail',
+    category: 'rail',
+    name: 'Perth Desal Brine Rail',
+    description: 'WA desal plant brine export feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['desalination_brine_export', 'desal_plant_rail_feed', 'industrial_brine_logistics'],
+    trackKilometres: 40,
+    dualTrackShare: 0.47,
+    electrifiedShare: 0.54,
+    designFreightTonnesPerYear: 3_900_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_sa_adelaide_desal_link',
+    category: 'rail',
+    name: 'Adelaide Desal Link',
+    description: 'SA brine export rail handoff.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade'],
+    tags: ['desalination_brine_export', 'desal_plant_rail_feed', 'industrial_brine_logistics'],
+    trackKilometres: 35,
+    dualTrackShare: 0.52,
+    electrifiedShare: 0.56,
+    designFreightTonnesPerYear: 3_000_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_western_ev_freight_rail',
+    category: 'rail',
+    name: 'Western Sydney EV Freight Rail',
+    description: 'NSW depot fast-charge hub rail feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['urban_ev_freight_charging', 'depot_fast_charge_hub', 'last_mile_ev_logistics'],
+    trackKilometres: 26,
+    dualTrackShare: 0.55,
+    electrifiedShare: 0.62,
+    designFreightTonnesPerYear: 2_500_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND40_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_fremantle_brine_export',
+    category: 'port',
+    name: 'Fremantle Brine Export',
+    description: 'WA desalination brine export port.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['trade'],
+    tags: ['desalination_brine_export', 'desal_plant_rail_feed', 'industrial_brine_logistics'],
+    berthCount: 3,
+    maxDraftMetres: 13.1,
+    teuCapacityPerYear: 108_000,
+    automationLevel: 2,
+    bulkShare: 0.42,
+  },
+  {
+    id: 'port_vic_geelong_wildlife_rescue',
+    category: 'port',
+    name: 'Geelong Wildlife Rescue',
+    description: 'Victorian fauna medevac logistics port.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['wildlife_rescue_airlift', 'fauna_medevac_staging', 'rescue_rotary_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.6,
+    teuCapacityPerYear: 88_000,
+    automationLevel: 1,
+    bulkShare: 0.11,
+  },
+  {
+    id: 'port_nsw_port_botany_ev_freight',
+    category: 'port',
+    name: 'Botany EV Freight',
+    description: 'NSW urban EV freight charging port.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['urban_ev_freight_charging', 'depot_fast_charge_hub', 'last_mile_ev_logistics'],
+    berthCount: 3,
+    maxDraftMetres: 12.5,
+    teuCapacityPerYear: 230_000,
+    automationLevel: 3,
+    bulkShare: 0.07,
+  },
+];
+
+export const ROUND40_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_sa_lonsdale_desal_stores',
+    category: 'logistics',
+    name: 'Lonsdale Desal Stores',
+    description: 'SA industrial brine consolidation yard.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['trade'],
+    tags: ['desalination_brine_export', 'desal_plant_rail_feed', 'industrial_brine_logistics'],
+    warehouseSqm: 42_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 38,
+  },
+  {
+    id: 'log_nsw_taronga_wildlife_stores',
+    category: 'logistics',
+    name: 'Taronga Wildlife Stores',
+    description: 'NSW rescue rotary logistics consolidation.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['mobility'],
+    tags: ['wildlife_rescue_airlift', 'fauna_medevac_staging', 'rescue_rotary_logistics'],
+    warehouseSqm: 22_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 52,
+  },
+  {
+    id: 'log_vic_dandenong_ev_charge_hub',
+    category: 'logistics',
+    name: 'Dandenong EV Charge Hub',
+    description: 'VIC last-mile EV freight charging yard.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['urban_ev_freight_charging', 'depot_fast_charge_hub', 'last_mile_ev_logistics'],
+    warehouseSqm: 54_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 74,
+  },
+];
+
+export const SCALE_WAVE_ROUND40_ASSETS = [
+  ...ROUND40_ROADS,
+  ...ROUND40_RAIL,
+  ...ROUND40_PORTS,
+  ...ROUND40_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -14765,6 +15109,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND37_ASSETS,
     ...SCALE_WAVE_ROUND38_ASSETS,
     ...SCALE_WAVE_ROUND39_ASSETS,
+    ...SCALE_WAVE_ROUND40_ASSETS,
   ];
 }
 
@@ -16977,6 +17322,67 @@ export function offshoreWaveEnergyExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.036 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.038 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/desalination-brine-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type DesalinationBrineExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 desalination brine export throughput by region. */
+export function computeDesalinationBrineExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'desalination_brine_export' ||
+        t === 'desal_plant_rail_feed' ||
+        t === 'industrial_brine_logistics',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.92 + asset.maxDraftMetres * 0.34;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 71_000 + asset.intermodalLinks.length * 0.71;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 475;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_000_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalDesalinationBrineExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 5, 72) * 10) / 10;
+}
+
+export function desalinationBrineExportProductivityMultiplier(
+  index: number,
+  policy: DesalinationBrineExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.033 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.037 + policyBoost, 0.93, 1.09);
 }
 
 
@@ -19850,6 +20256,96 @@ export function remoteSchoolSupplyStagingProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.018 : 1;
   return (1 + (share - 0.048) * 0.023) * bias;
+}
+
+
+// --- source: operations/wildlife-rescue-airlift-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type TransportAsset,
+  type WildlifeRescueAirliftStagingPolicy,
+} from '../types.ts';
+
+/** 0–100 wildlife rescue airlift staging readiness by region. */
+export function computeWildlifeRescueAirliftStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'wildlife_rescue_airlift' ||
+          t === 'fauna_medevac_staging' ||
+          t === 'rescue_rotary_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 66_000 + (asset.coldChainCapable ? 1.15 : 0.68);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 450;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.86;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 305;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.035 - stress * 0.022), 5, 76) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalWildlifeRescueAirliftStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.53 + max * 0.47, 6, 74) * 10) / 10;
+}
+
+export function computeWildlifeRescueAirliftStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: WildlifeRescueAirliftStagingPolicy = 'baseline',
+): number {
+  let rescueUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('wildlife_rescue_airlift') || asset.tags.includes('rescue_rotary_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 59_000;
+        rescueUnits += (asset.warehouseSqm / 59_000) * 0.52;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 415;
+        rescueUnits += (asset.laneKilometres / 415) * 0.46;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.035;
+  const policyBoost = policy === 'surge' ? 0.025 : 0;
+  return Math.round(clamp(rescueUnits / totalUnits + policyBoost, 0.034, 0.23) * 1000) / 1000;
+}
+
+export function wildlifeRescueAirliftStagingProductivityMultiplier(
+  share: number,
+  policy: WildlifeRescueAirliftStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.017 : 1;
+  return (1 + (share - 0.046) * 0.022) * bias;
 }
 
 
@@ -22970,6 +23466,98 @@ export function nationalPortLithiumHydroxideLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/urban-ev-freight-charging-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type TransportAsset,
+  type UrbanEvFreightChargingLogisticsPolicy,
+} from '../types.ts';
+
+/** 0–1 share of urban logistics supporting EV freight charging hubs. */
+export function computeUrbanEvFreightChargingLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: UrbanEvFreightChargingLogisticsPolicy = 'baseline',
+): number {
+  let evUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'urban_ev_freight_charging' ||
+          t === 'depot_fast_charge_hub' ||
+          t === 'last_mile_ev_logistics',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.1 + asset.teuCapacityPerYear / 370_000;
+        evUnits += (asset.berthCount * 1.1) * 0.59;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 53_000;
+        evUnits += (asset.warehouseSqm / 53_000) * 0.55;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.037;
+  const policyBoost = policy === 'expand' ? 0.027 : 0;
+  return Math.round(clamp(evUnits / totalUnits + policyBoost, 0.036, 0.26) * 1000) / 1000;
+}
+
+export function urbanEvFreightChargingLogisticsProductivityMultiplier(
+  share: number,
+  policy: UrbanEvFreightChargingLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.019 : 1;
+  return (1 + (share - 0.055) * 0.023) * bias;
+}
+
+export function computeUrbanEvFreightChargingLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'urban_ev_freight_charging' ||
+          t === 'depot_fast_charge_hub' ||
+          t === 'last_mile_ev_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.5 + asset.teuCapacityPerYear / 335_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 56_000 + asset.lastMileCoveragePct / 105;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 400;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalUrbanEvFreightChargingLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 2, 52) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -23641,6 +24229,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalPortLithiumHydroxideLogisticsThroughputIndex,
   portLithiumHydroxideLogisticsProductivityMultiplier,
 } from './port-lithium-hydroxide-logistics-index.ts';
+  computeDesalinationBrineExportByRegion,
+  desalinationBrineExportProductivityMultiplier,
+  nationalDesalinationBrineExportIndex,
+} from '../network/desalination-brine-export-index.ts';
+  computeWildlifeRescueAirliftStagingByRegion,
+  computeWildlifeRescueAirliftStagingShare,
+  nationalWildlifeRescueAirliftStagingIndex,
+  wildlifeRescueAirliftStagingProductivityMultiplier,
+} from '../operations/wildlife-rescue-airlift-staging-index.ts';
+  computeUrbanEvFreightChargingLogisticsShare,
+  computeUrbanEvFreightChargingLogisticsThroughputByRegion,
+  nationalUrbanEvFreightChargingLogisticsThroughputIndex,
+  urbanEvFreightChargingLogisticsProductivityMultiplier,
+} from './urban-ev-freight-charging-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -24938,6 +25540,35 @@ export function computeTransportInfrastructureState(
     portLithiumHydroxideLogisticsShare,
     options?.portLithiumHydroxideLogisticsPolicy ?? 'baseline',
   );
+  const desalinationBrineExportByRegion = computeDesalinationBrineExportByRegion(ops);
+  const nationalDesalBrine = nationalDesalinationBrineExportIndex(desalinationBrineExportByRegion);
+  const desalBrineMult = desalinationBrineExportProductivityMultiplier(
+    nationalDesalBrine,
+    options?.desalinationBrineExportPolicy ?? 'baseline',
+  );
+  const wildlifeRescueAirliftStagingByRegion = computeWildlifeRescueAirliftStagingByRegion(ops, networkStress);
+  const nationalWildlifeRescue = nationalWildlifeRescueAirliftStagingIndex(wildlifeRescueAirliftStagingByRegion);
+  const wildlifeRescueAirliftStagingShare = computeWildlifeRescueAirliftStagingShare(
+    ops,
+    options?.wildlifeRescueAirliftStagingPolicy ?? 'baseline',
+  );
+  const wildlifeRescueMult = wildlifeRescueAirliftStagingProductivityMultiplier(
+    wildlifeRescueAirliftStagingShare,
+    options?.wildlifeRescueAirliftStagingPolicy ?? 'baseline',
+  );
+  const urbanEvFreightChargingLogisticsThroughputByRegion =
+    computeUrbanEvFreightChargingLogisticsThroughputByRegion(ops);
+  const nationalEvFreightCharging = nationalUrbanEvFreightChargingLogisticsThroughputIndex(
+    urbanEvFreightChargingLogisticsThroughputByRegion,
+  );
+  const urbanEvFreightChargingLogisticsShare = computeUrbanEvFreightChargingLogisticsShare(
+    ops,
+    options?.urbanEvFreightChargingLogisticsPolicy ?? 'baseline',
+  );
+  const evFreightChargingMult = urbanEvFreightChargingLogisticsProductivityMultiplier(
+    urbanEvFreightChargingLogisticsShare,
+    options?.urbanEvFreightChargingLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -25012,6 +25643,9 @@ export function computeTransportInfrastructureState(
     const waveEnergyBoost = (offshoreWaveEnergyExportByRegion[code] - 5) * 0.0029;
     const schoolSupplyBoost = (remoteSchoolSupplyStagingByRegion[code] - 6) * 0.0025;
     const lithiumHydroxideBoost = (portLithiumHydroxideLogisticsThroughputByRegion[code] - 2) * 0.0021;
+    const desalBrineBoost = (desalinationBrineExportByRegion[code] - 5) * 0.0028;
+    const wildlifeRescueBoost = (wildlifeRescueAirliftStagingByRegion[code] - 6) * 0.0024;
+    const evFreightChargingBoost = (urbanEvFreightChargingLogisticsThroughputByRegion[code] - 2) * 0.002;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -25085,7 +25719,10 @@ export function computeTransportInfrastructureState(
         robotSortationBoost +
         waveEnergyBoost +
         schoolSupplyBoost +
-        lithiumHydroxideBoost) *
+        lithiumHydroxideBoost +
+        desalBrineBoost +
+        wildlifeRescueBoost +
+        evFreightChargingBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -25157,7 +25794,10 @@ export function computeTransportInfrastructureState(
       robotSortationMult *
       waveEnergyMult *
       schoolSupplyMult *
-      lithiumHydroxideMult;
+      lithiumHydroxideMult *
+      desalBrineMult *
+      wildlifeRescueMult *
+      evFreightChargingMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -25252,7 +25892,10 @@ export function computeTransportInfrastructureState(
     nationalRobotSortation * 0.003 +
     nationalWaveEnergy * 0.003 +
     nationalSchoolSupply * 0.003 +
-    nationalLithiumHydroxide * 0.003;
+    nationalLithiumHydroxide * 0.003 +
+    nationalDesalBrine * 0.003 +
+    nationalWildlifeRescue * 0.003 +
+    nationalEvFreightCharging * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -25267,7 +25910,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/40',
+    schemaVersion: 'agent12/41',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -25553,6 +26196,14 @@ export function computeTransportInfrastructureState(
     portLithiumHydroxideLogisticsShare,
     nationalPortLithiumHydroxideLogisticsThroughputIndex: nationalLithiumHydroxide,
     portLithiumHydroxideLogisticsThroughputByRegion,
+    nationalDesalinationBrineExportIndex: nationalDesalBrine,
+    desalinationBrineExportByRegion,
+    wildlifeRescueAirliftStagingShare,
+    nationalWildlifeRescueAirliftStagingIndex: nationalWildlifeRescue,
+    wildlifeRescueAirliftStagingByRegion,
+    urbanEvFreightChargingLogisticsShare,
+    nationalUrbanEvFreightChargingLogisticsThroughputIndex: nationalEvFreightCharging,
+    urbanEvFreightChargingLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -25635,7 +26286,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/40' &&
+      infra.schemaVersion === 'agent12/41' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -25777,8 +26428,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalOffshoreWaveEnergyExportIndex >= 5 &&
       infra.nationalRemoteSchoolSupplyStagingIndex >= 6 &&
       infra.portLithiumHydroxideLogisticsShare >= 0.03 &&
-      infra.nationalPortLithiumHydroxideLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} wave=${infra.nationalOffshoreWaveEnergyExportIndex.toFixed(1)} school=${infra.nationalRemoteSchoolSupplyStagingIndex.toFixed(1)} hydroxide=${infra.nationalPortLithiumHydroxideLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalPortLithiumHydroxideLogisticsThroughputIndex >= 2 &&
+      infra.nationalDesalinationBrineExportIndex >= 5 &&
+      infra.nationalWildlifeRescueAirliftStagingIndex >= 6 &&
+      infra.urbanEvFreightChargingLogisticsShare >= 0.03 &&
+      infra.nationalUrbanEvFreightChargingLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} brine=${infra.nationalDesalinationBrineExportIndex.toFixed(1)} wildlife=${infra.nationalWildlifeRescueAirliftStagingIndex.toFixed(1)} evfreight=${infra.nationalUrbanEvFreightChargingLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
