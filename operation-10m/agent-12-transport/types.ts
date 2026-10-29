@@ -423,8 +423,14 @@ export type CoastalRescueHelicopterStagingPolicy = 'baseline' | 'surge';
 
 export type PortBatterySwappingLogisticsPolicy = 'baseline' | 'expand';
 
+export type RecycledSteelExportPolicy = 'baseline' | 'accelerate';
+
+export type RemotePathologySupplyStagingPolicy = 'baseline' | 'surge';
+
+export type AirportDroneCargoLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/46';
+  schemaVersion: 'agent12/47';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -758,6 +764,14 @@ export interface TransportInfrastructureState {
   portBatterySwappingLogisticsShare: number;
   nationalPortBatterySwappingLogisticsThroughputIndex: number;
   portBatterySwappingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalRecycledSteelExportIndex: number;
+  recycledSteelExportByRegion: Record<AuRegionCode, number>;
+  remotePathologySupplyStagingShare: number;
+  nationalRemotePathologySupplyStagingIndex: number;
+  remotePathologySupplyStagingByRegion: Record<AuRegionCode, number>;
+  airportDroneCargoLogisticsShare: number;
+  nationalAirportDroneCargoLogisticsThroughputIndex: number;
+  airportDroneCargoLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -886,6 +900,9 @@ export interface TransportInfrastructureOptions {
   floatingSolarArrayExportPolicy?: FloatingSolarArrayExportPolicy;
   coastalRescueHelicopterStagingPolicy?: CoastalRescueHelicopterStagingPolicy;
   portBatterySwappingLogisticsPolicy?: PortBatterySwappingLogisticsPolicy;
+  recycledSteelExportPolicy?: RecycledSteelExportPolicy;
+  remotePathologySupplyStagingPolicy?: RemotePathologySupplyStagingPolicy;
+  airportDroneCargoLogisticsPolicy?: AirportDroneCargoLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {

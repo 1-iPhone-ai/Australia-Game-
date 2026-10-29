@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/46' &&
+      infra.schemaVersion === 'agent12/47' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -225,11 +225,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalPortContainerReeferLogisticsThroughputIndex >= 2 &&
       infra.nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex >= 2 &&
       infra.nationalRailAutomatedInspectionLogisticsThroughputIndex >= 2 &&
-      infra.nationalFloatingSolarArrayExportIndex >= 5 &&
-      infra.nationalCoastalRescueHelicopterStagingIndex >= 6 &&
-      infra.portBatterySwappingLogisticsShare >= 0.03 &&
-      infra.nationalPortBatterySwappingLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} solar=${infra.nationalFloatingSolarArrayExportIndex.toFixed(1)} rescue=${infra.nationalCoastalRescueHelicopterStagingIndex.toFixed(1)} swap=${infra.nationalPortBatterySwappingLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalPortBatterySwappingLogisticsThroughputIndex >= 2 &&
+      infra.nationalRecycledSteelExportIndex >= 5 &&
+      infra.nationalRemotePathologySupplyStagingIndex >= 6 &&
+      infra.airportDroneCargoLogisticsShare >= 0.03 &&
+      infra.nationalAirportDroneCargoLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} steel=${infra.nationalRecycledSteelExportIndex.toFixed(1)} pathology=${infra.nationalRemotePathologySupplyStagingIndex.toFixed(1)} drone=${infra.nationalAirportDroneCargoLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;

@@ -37,13 +37,13 @@ describe('Agent 12 round 42 catalog', () => {
 });
 
 describe('Agent 12 round 42 systems', () => {
-  it('returns agent12/46 with biomethane, mining camp, container reefer', () => {
+  it('returns agent12/47 with biomethane, mining camp, container reefer', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(390), {
       biomethaneGridExportPolicy: 'accelerate',
       miningCampResupplyStagingPolicy: 'surge',
       portContainerReeferLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/46');
+    assert.equal(state.schemaVersion, 'agent12/47');
     assert.ok(state.nationalBiomethaneGridExportIndex >= 5);
     assert.ok(state.nationalMiningCampResupplyStagingIndex >= 6);
     assert.ok(state.portContainerReeferLogisticsShare >= 0.03);

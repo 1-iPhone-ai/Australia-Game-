@@ -720,6 +720,23 @@ import {
   nationalPortBatterySwappingLogisticsThroughputIndex,
   portBatterySwappingLogisticsProductivityMultiplier,
 } from './port-battery-swapping-logistics-index.ts';
+import {
+  computeRecycledSteelExportByRegion,
+  nationalRecycledSteelExportIndex,
+  recycledSteelExportProductivityMultiplier,
+} from '../network/recycled-steel-export-index.ts';
+import {
+  computeRemotePathologySupplyStagingByRegion,
+  computeRemotePathologySupplyStagingShare,
+  nationalRemotePathologySupplyStagingIndex,
+  remotePathologySupplyStagingProductivityMultiplier,
+} from '../operations/remote-pathology-supply-staging-index.ts';
+import {
+  airportDroneCargoLogisticsProductivityMultiplier,
+  computeAirportDroneCargoLogisticsShare,
+  computeAirportDroneCargoLogisticsThroughputByRegion,
+  nationalAirportDroneCargoLogisticsThroughputIndex,
+} from './airport-drone-cargo-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -2195,6 +2212,35 @@ export function computeTransportInfrastructureState(
     portBatterySwappingLogisticsShare,
     options?.portBatterySwappingLogisticsPolicy ?? 'baseline',
   );
+  const recycledSteelExportByRegion = computeRecycledSteelExportByRegion(ops);
+  const nationalRecycledSteel = nationalRecycledSteelExportIndex(recycledSteelExportByRegion);
+  const recycledSteelMult = recycledSteelExportProductivityMultiplier(
+    nationalRecycledSteel,
+    options?.recycledSteelExportPolicy ?? 'baseline',
+  );
+  const remotePathologySupplyStagingByRegion = computeRemotePathologySupplyStagingByRegion(ops, networkStress);
+  const nationalPathology = nationalRemotePathologySupplyStagingIndex(remotePathologySupplyStagingByRegion);
+  const remotePathologySupplyStagingShare = computeRemotePathologySupplyStagingShare(
+    ops,
+    options?.remotePathologySupplyStagingPolicy ?? 'baseline',
+  );
+  const pathologyMult = remotePathologySupplyStagingProductivityMultiplier(
+    remotePathologySupplyStagingShare,
+    options?.remotePathologySupplyStagingPolicy ?? 'baseline',
+  );
+  const airportDroneCargoLogisticsThroughputByRegion =
+    computeAirportDroneCargoLogisticsThroughputByRegion(ops);
+  const nationalDroneCargo = nationalAirportDroneCargoLogisticsThroughputIndex(
+    airportDroneCargoLogisticsThroughputByRegion,
+  );
+  const airportDroneCargoLogisticsShare = computeAirportDroneCargoLogisticsShare(
+    ops,
+    options?.airportDroneCargoLogisticsPolicy ?? 'baseline',
+  );
+  const droneCargoMult = airportDroneCargoLogisticsProductivityMultiplier(
+    airportDroneCargoLogisticsShare,
+    options?.airportDroneCargoLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2287,6 +2333,9 @@ export function computeTransportInfrastructureState(
     const floatingSolarBoost = (floatingSolarArrayExportByRegion[code] - 5) * 0.0023;
     const coastalRescueBoost = (coastalRescueHelicopterStagingByRegion[code] - 6) * 0.0019;
     const batterySwapBoost = (portBatterySwappingLogisticsThroughputByRegion[code] - 2) * 0.0015;
+    const recycledSteelBoost = (recycledSteelExportByRegion[code] - 5) * 0.0022;
+    const pathologyBoost = (remotePathologySupplyStagingByRegion[code] - 6) * 0.0018;
+    const droneCargoBoost = (airportDroneCargoLogisticsThroughputByRegion[code] - 2) * 0.0014;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2378,7 +2427,10 @@ export function computeTransportInfrastructureState(
         railInspectionBoost +
         floatingSolarBoost +
         coastalRescueBoost +
-        batterySwapBoost) *
+        batterySwapBoost +
+        recycledSteelBoost +
+        pathologyBoost +
+        droneCargoBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2468,7 +2520,10 @@ export function computeTransportInfrastructureState(
       railInspectionMult *
       floatingSolarMult *
       coastalRescueMult *
-      batterySwapMult;
+      batterySwapMult *
+      recycledSteelMult *
+      pathologyMult *
+      droneCargoMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2581,7 +2636,10 @@ export function computeTransportInfrastructureState(
     nationalRailInspection * 0.003 +
     nationalFloatingSolar * 0.003 +
     nationalCoastalRescue * 0.003 +
-    nationalBatterySwap * 0.003;
+    nationalBatterySwap * 0.003 +
+    nationalRecycledSteel * 0.003 +
+    nationalPathology * 0.003 +
+    nationalDroneCargo * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2596,7 +2654,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/46',
+    schemaVersion: 'agent12/47',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2930,6 +2988,14 @@ export function computeTransportInfrastructureState(
     portBatterySwappingLogisticsShare,
     nationalPortBatterySwappingLogisticsThroughputIndex: nationalBatterySwap,
     portBatterySwappingLogisticsThroughputByRegion,
+    nationalRecycledSteelExportIndex: nationalRecycledSteel,
+    recycledSteelExportByRegion,
+    remotePathologySupplyStagingShare,
+    nationalRemotePathologySupplyStagingIndex: nationalPathology,
+    remotePathologySupplyStagingByRegion,
+    airportDroneCargoLogisticsShare,
+    nationalAirportDroneCargoLogisticsThroughputIndex: nationalDroneCargo,
+    airportDroneCargoLogisticsThroughputByRegion,
     computeMs,
   };
 }

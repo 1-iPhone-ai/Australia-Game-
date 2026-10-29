@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 46
+
+- Schema **`agent12/47`**: recycled steel export throughput, remote pathology supply staging readiness, airport drone cargo logistics share (`recycledSteelExportPolicy`, `remotePathologySupplyStagingPolicy`, `airportDroneCargoLogisticsPolicy`)
+- Catalog: **628** assets, **152** corridors, **248** scenarios
+- Systems: `network/recycled-steel-export-index.ts`, `operations/remote-pathology-supply-staging-index.ts`, `productivity/airport-drone-cargo-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 45
 
 - Schema **`agent12/46`**: floating solar array export throughput, coastal rescue helicopter staging readiness, port battery swapping logistics share (`floatingSolarArrayExportPolicy`, `coastalRescueHelicopterStagingPolicy`, `portBatterySwappingLogisticsPolicy`)
