@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 85);
+  assert.ok(r.passed >= 87);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -1763,5 +1763,49 @@ test('round 38: open loop seal weakens continuity vs sealed baseline', () => {
   });
   assert.ok(
     sealed.state.sealedScaleLoopContinuity.score >= open.state.sealedScaleLoopContinuity.score - 0.14,
+  );
+});
+
+test('round 39: reentry continuity and next wave priming gate on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.scaleWaveReentryContinuitySmoothing = 0.66;
+  persisted.bilateralNextWavePrimingGateSmoothing = 0.64;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 95,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 126 } } },
+    persisted,
+  });
+  assert.ok(r.state.scaleWaveReentryContinuity);
+  assert.ok(['established', 'linked', 'fading', 'lost'].includes(r.state.scaleWaveReentryContinuity.band));
+  assert.ok(r.state.bilateralNextWavePrimingGate);
+  assert.ok(['primed', 'charging', 'idle', 'blocked'].includes(r.state.bilateralNextWavePrimingGate.band));
+  assert.ok(r.persisted.scaleWaveReentryContinuitySmoothing != null);
+  assert.ok(r.persisted.bilateralNextWavePrimingGateSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Scale wave reentry continuity/i.test(n)));
+  assert.ok(notes.some(n => /Bilateral next wave priming gate/i.test(n)));
+});
+
+test('round 39: closed reentry gate weakens continuity vs reentered baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralScaleWaveReentryGateSmoothing = 0.99;
+  persisted.sealedScaleLoopContinuitySmoothing = 0.96;
+  const reentered = advanceGlobalTradeEconomyTurn({
+    turn: 96,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 108 } } },
+    persisted: { ...persisted },
+  });
+  persisted.bilateralScaleWaveReentryGateSmoothing = 0.21;
+  persisted.sealedScaleLoopContinuitySmoothing = 0.19;
+  const closed = advanceGlobalTradeEconomyTurn({
+    turn: 96,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 258 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    reentered.state.scaleWaveReentryContinuity.score >= closed.state.scaleWaveReentryContinuity.score - 0.14,
   );
 });
