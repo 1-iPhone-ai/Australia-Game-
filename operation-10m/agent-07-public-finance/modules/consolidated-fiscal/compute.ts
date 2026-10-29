@@ -6,6 +6,9 @@ import { scheduleRecurringCommitments } from '../recurring-commitments/compute';
 import { buildNationalRevenueLedger } from '../revenue-ledger/compute';
 import { buildTaxExpenditureStatement } from '../tax-expenditure/compute';
 import { buildMediumTermFiscalOutlook } from '../medium-term-outlook/compute';
+import { buildMultiYearExpenditureFramework } from '../multi-year-framework/compute';
+import { assessContingentLiabilities } from '../contingent-liabilities/compute';
+import { scoreFiscalTransparencyIndex } from '../fiscal-transparency/compute';
 import type { V1012FiscalSnapshot } from '../fiscal-outcomes/types';
 
 export const CONSOLIDATED_FISCAL_SCHEMA = 'op10m-agent07-consolidated-v1';
@@ -35,6 +38,17 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   const igr = reconcileFederalStateTransfers(turn, v1012);
   const taxExp = buildTaxExpenditureStatement(turn, v1012);
   const outlook = buildMediumTermFiscalOutlook(v1012, 3);
+  const myefo = buildMultiYearExpenditureFramework(v1012, 3);
+  const contingent = assessContingentLiabilities(turn, v1012);
+  const transparency = scoreFiscalTransparencyIndex({
+    turn,
+    v1012,
+    publishesTaxExpenditure: true,
+    publishesMultiYearEstimates: true,
+    publishesContingentRegister: contingent.withinSoftCap,
+    publishesProgramOutcomes: true,
+    auditLagTurns: 2
+  });
 
   checks.push({
     id: 'CF01',
@@ -92,12 +106,33 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `now=${v1012.pressure}, worst=${outlook.worstPressure}`
   });
 
+  checks.push({
+    id: 'CF09',
+    label: 'Multi-year forward bands within ceiling',
+    passed: myefo.forwardBands.every(b => b.withinCeiling) || v1012.pressure === 'critical',
+    detail: `binding=${myefo.aggregateCeilingBinding}`
+  });
+
+  checks.push({
+    id: 'CF10',
+    label: 'Contingent liabilities within soft cap',
+    passed: contingent.withinSoftCap,
+    detail: `expected=${contingent.expectedLossPoints}`
+  });
+
+  checks.push({
+    id: 'CF11',
+    label: 'Transparency index at least enhanced under full disclosure',
+    passed: transparency.compositeTier !== 'basic' || v1012.fiscalHeadroom < -10,
+    detail: `tier=${transparency.compositeTier}, score=${transparency.compositeScore}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 7
+    layerCount: 10
   };
 }

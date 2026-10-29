@@ -4523,6 +4523,17 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   const igr = reconcileFederalStateTransfers(turn, v1012);
   const taxExp = buildTaxExpenditureStatement(turn, v1012);
   const outlook = buildMediumTermFiscalOutlook(v1012, 3);
+  const myefo = buildMultiYearExpenditureFramework(v1012, 3);
+  const contingent = assessContingentLiabilities(turn, v1012);
+  const transparency = scoreFiscalTransparencyIndex({
+    turn,
+    v1012,
+    publishesTaxExpenditure: true,
+    publishesMultiYearEstimates: true,
+    publishesContingentRegister: contingent.withinSoftCap,
+    publishesProgramOutcomes: true,
+    auditLagTurns: 2
+  });
 
   checks.push({
     id: 'CF01',
@@ -4580,13 +4591,34 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `now=${v1012.pressure}, worst=${outlook.worstPressure}`
   });
 
+  checks.push({
+    id: 'CF09',
+    label: 'Multi-year forward bands within ceiling',
+    passed: myefo.forwardBands.every(b => b.withinCeiling) || v1012.pressure === 'critical',
+    detail: `binding=${myefo.aggregateCeilingBinding}`
+  });
+
+  checks.push({
+    id: 'CF10',
+    label: 'Contingent liabilities within soft cap',
+    passed: contingent.withinSoftCap,
+    detail: `expected=${contingent.expectedLossPoints}`
+  });
+
+  checks.push({
+    id: 'CF11',
+    label: 'Transparency index at least enhanced under full disclosure',
+    passed: transparency.compositeTier !== 'basic' || v1012.fiscalHeadroom < -10,
+    detail: `tier=${transparency.compositeTier}, score=${transparency.compositeScore}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 7
+    layerCount: 10
   };
 }
 
@@ -5004,6 +5036,420 @@ export function reviewProgramPerformance(turn: number, v1012: V1012FiscalSnapsho
     aggregateFeedbackPoints,
     programsAtRisk,
     rebalanceRecommendations
+  };
+}
+
+
+// --- source: multi-year-framework/types.ts ---
+
+export const MULTI_YEAR_FRAMEWORK_SCHEMA = 'op10m-agent07-multi-year-framework-v1';
+
+export interface ExpenditureCeilingRow {
+  category: BudgetEnvelopeCategory;
+  baselinePoints: number;
+  ceilingPoints: number;
+  growthCapPercent: number;
+  headroomToCeiling: number;
+  binding: boolean;
+}
+
+export interface ForwardEstimateBand {
+  turn: number;
+  label: string;
+  envelopeCapacity: number;
+  recurringLoad: number;
+  capitalPipeline: number;
+  contingencyFlex: number;
+  withinCeiling: boolean;
+}
+
+export interface MultiYearExpenditureFramework {
+  schemaVersion: string;
+  baseTurn: number;
+  horizonTurns: number;
+  ceilings: ExpenditureCeilingRow[];
+  forwardBands: ForwardEstimateBand[];
+  aggregateCeilingBinding: boolean;
+  parameterSettingsGrowth: number;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: multi-year-framework/compute.ts ---
+
+const CATEGORY_GROWTH_CAPS: Partial<Record<ExpenditureCeilingRow['category'], number>> = {
+  health_social: 3.2,
+  education_skills: 2.8,
+  infrastructure_capital: 4.5,
+  defence_security: 2.0,
+  transfers_states: 3.5,
+  debt_service_reserve: 1.5,
+  contingency: 0.5
+};
+
+export function buildExpenditureCeilingRows(
+  v1012: V1012FiscalSnapshot,
+  envelope = buildBudgetEnvelope(v1012)
+): ExpenditureCeilingRow[] {
+  return envelope.lines.map(line => {
+    const growthCap = CATEGORY_GROWTH_CAPS[line.category] ?? 2.5;
+    const baseline = line.allocatedPoints;
+    const ceiling = Math.round(baseline * (1 + growthCap / 100) * 10) / 10;
+    const headroom = Math.round((ceiling - baseline) * 10) / 10;
+    const binding = v1012.fiscalHeadroom < 0 && (line.flexPoints <= 1 || v1012.pressure === 'strained' || v1012.pressure === 'critical');
+    return {
+      category: line.category,
+      baselinePoints: baseline,
+      ceilingPoints: ceiling,
+      growthCapPercent: growthCap,
+      headroomToCeiling: headroom,
+      binding
+    };
+  });
+}
+
+export function buildMultiYearExpenditureFramework(
+  v1012: V1012FiscalSnapshot,
+  horizonTurns = 4
+): MultiYearExpenditureFramework {
+  const warnings: string[] = [];
+  const persisted = createInitialFiscalOutcomesPersisted(v1012.turn);
+  const { state } = computeFiscalOutcomesLayer({ turn: v1012.turn, v1012 }, persisted);
+  const ceilings = buildExpenditureCeilingRows(v1012, state.budget);
+  const forwardBands: ForwardEstimateBand[] = [];
+
+  let working = { ...v1012 };
+  for (let i = 0; i <= horizonTurns; i++) {
+    const turn = v1012.turn + i;
+    const envelope = buildBudgetEnvelope(working);
+    const recurring = scheduleRecurringCommitments(turn, working, envelope);
+    const infraLine = envelope.lines.find(l => l.category === 'infrastructure_capital');
+    const contingency = envelope.lines.find(l => l.category === 'contingency');
+    const capitalPipeline = Math.round((infraLine?.allocatedPoints ?? 0) * (1 + i * 0.04) * 10) / 10;
+    const withinCeiling =
+      recurring.totalLoadThisTurn <= envelope.totalCapacityPoints * 0.48 &&
+      capitalPipeline <= (infraLine?.flexPoints ?? 0) + envelope.totalCapacityPoints * 0.12;
+
+    forwardBands.push({
+      turn,
+      label: i === 0 ? 'Budget' : `Forward +${i}`,
+      envelopeCapacity: envelope.totalCapacityPoints,
+      recurringLoad: recurring.totalLoadThisTurn,
+      capitalPipeline,
+      contingencyFlex: contingency?.flexPoints ?? 0,
+      withinCeiling
+    });
+
+    working = {
+      ...working,
+      turn,
+      fiscalHeadroom: Math.round((working.fiscalHeadroom - 0.25 - working.debtServiceLoad * 0.015) * 10) / 10,
+      maintenanceLoad: Math.round((working.maintenanceLoad + 0.08) * 10) / 10
+    };
+  }
+
+  const aggregateCeilingBinding = ceilings.some(c => c.binding) || forwardBands.some(b => !b.withinCeiling);
+  const parameterSettingsGrowth =
+    Math.round(ceilings.reduce((s, c) => s + c.growthCapPercent, 0) / Math.max(1, ceilings.length) * 10) / 10;
+
+  if (aggregateCeilingBinding) {
+    warnings.push('At least one forward band or category ceiling is binding under current settings.');
+  }
+  if (forwardBands.some(b => b.contingencyFlex < 2)) {
+    warnings.push('Contingency flex falls below 2pt guard in forward estimates.');
+  }
+
+  const narrative = aggregateCeilingBinding
+    ? 'Multi-year framework signals sequencing — align parameter settings with ceiling headroom.'
+    : 'Multi-year expenditure settings remain within staged ceiling bands across the horizon.';
+
+  return {
+    schemaVersion: MULTI_YEAR_FRAMEWORK_SCHEMA,
+    baseTurn: v1012.turn,
+    horizonTurns,
+    ceilings,
+    forwardBands,
+    aggregateCeilingBinding,
+    parameterSettingsGrowth,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: contingent-liabilities/types.ts ---
+export const CONTINGENT_LIABILITIES_SCHEMA = 'op10m-agent07-contingent-liabilities-v1';
+
+export type ContingentExposureKind =
+  | 'state_guarantee'
+  | 'ppp_minimum_revenue'
+  | 'disaster_reinsurance'
+  | 'infrastructure_warranty'
+  | 'financial_sector_backstop';
+
+export interface ContingentExposureLine {
+  id: string;
+  kind: ContingentExposureKind;
+  label: string;
+  notionalPoints: number;
+  probabilityWeight: number;
+  warnOnly: boolean;
+}
+
+export interface ContingentLiabilityAssessment {
+  schemaVersion: string;
+  turn: number;
+  exposures: ContingentExposureLine[];
+  expectedLossPoints: number;
+  tailRiskPoints: number;
+  offBalanceSheetShare: number;
+  stressMultiplier: number;
+  withinSoftCap: boolean;
+  disclosures: string[];
+  warnings: string[];
+}
+
+
+// --- source: contingent-liabilities/compute.ts ---
+
+export const DEFAULT_CONTINGENT_EXPOSURES: Omit<ContingentExposureLine, 'id'>[] = [
+  {
+    kind: 'state_guarantee',
+    label: 'State borrowing facility guarantees',
+    notionalPoints: 22,
+    probabilityWeight: 0.08,
+    warnOnly: true
+  },
+  {
+    kind: 'ppp_minimum_revenue',
+    label: 'PPP availability payment floors',
+    notionalPoints: 14,
+    probabilityWeight: 0.12,
+    warnOnly: true
+  },
+  {
+    kind: 'disaster_reinsurance',
+    label: 'National disaster reinsurance layer',
+    notionalPoints: 18,
+    probabilityWeight: 0.05,
+    warnOnly: false
+  },
+  {
+    kind: 'infrastructure_warranty',
+    label: 'Megaproject delivery warranties',
+    notionalPoints: 9,
+    probabilityWeight: 0.15,
+    warnOnly: true
+  },
+  {
+    kind: 'financial_sector_backstop',
+    label: 'Systemic backstop envelope (latent)',
+    notionalPoints: 35,
+    probabilityWeight: 0.02,
+    warnOnly: true
+  }
+];
+
+export function catalogContingentExposures(turn: number): ContingentExposureLine[] {
+  return DEFAULT_CONTINGENT_EXPOSURES.map((row, idx) => ({
+    id: `cl_${turn}_${idx}_${row.kind}`,
+    ...row
+  }));
+}
+
+export function assessContingentLiabilities(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  exposures: ContingentExposureLine[] = catalogContingentExposures(turn)
+): ContingentLiabilityAssessment {
+  const stressMultiplier =
+    v1012.pressure === 'critical' ? 1.45 : v1012.pressure === 'strained' ? 1.2 : v1012.pressure === 'tight' ? 1.08 : 1;
+  const expectedLossPoints = Math.round(
+    exposures.reduce((s, e) => s + e.notionalPoints * e.probabilityWeight, 0) * stressMultiplier * 10
+  ) / 10;
+  const tailRiskPoints = Math.round(
+    exposures.reduce((s, e) => s + e.notionalPoints * Math.min(0.35, e.probabilityWeight * 2.5), 0) * 10
+  ) / 10;
+  const totalNotional = exposures.reduce((s, e) => s + e.notionalPoints, 0);
+  const offBalanceSheetShare =
+    totalNotional > 0
+      ? Math.round((tailRiskPoints / Math.max(v1012.debtLevel, 1)) * 100) / 100
+      : 0;
+
+  const softCap = 22 + Math.max(0, v1012.fiscalHeadroom * 0.5);
+  const withinSoftCap = expectedLossPoints <= softCap;
+
+  const warnings: string[] = [];
+  const disclosures: string[] = [];
+
+  if (!withinSoftCap) {
+    warnings.push(`Expected contingent loss ${expectedLossPoints} exceeds soft cap ${softCap.toFixed(1)}.`);
+  }
+  if (offBalanceSheetShare > 1.2) {
+    warnings.push('Off-balance-sheet tail risk elevated relative to recorded debt level.');
+  }
+  exposures.forEach(e => {
+    disclosures.push(`${e.label}: notional ${e.notionalPoints} pts @ weight ${e.probabilityWeight}.`);
+  });
+
+  return {
+    schemaVersion: CONTINGENT_LIABILITIES_SCHEMA,
+    turn,
+    exposures,
+    expectedLossPoints,
+    tailRiskPoints,
+    offBalanceSheetShare,
+    stressMultiplier,
+    withinSoftCap,
+    disclosures,
+    warnings
+  };
+}
+
+
+// --- source: fiscal-transparency/types.ts ---
+export const FISCAL_TRANSPARENCY_SCHEMA = 'op10m-agent07-fiscal-transparency-v1';
+
+export type TransparencyTier = 'basic' | 'enhanced' | 'leading';
+
+export interface TransparencyDimensionScore {
+  id: string;
+  label: string;
+  score: number;
+  maxScore: number;
+  tier: TransparencyTier;
+  detail: string;
+}
+
+export interface FiscalTransparencyIndex {
+  schemaVersion: string;
+  turn: number;
+  dimensions: TransparencyDimensionScore[];
+  compositeScore: number;
+  compositeTier: TransparencyTier;
+  openDataReady: boolean;
+  improvementActions: string[];
+}
+
+
+// --- source: fiscal-transparency/compute.ts ---
+
+function tierFromScore(score: number, max: number): TransparencyTier {
+  const ratio = score / max;
+  if (ratio >= 0.85) return 'leading';
+  if (ratio >= 0.65) return 'enhanced';
+  return 'basic';
+}
+
+export interface FiscalTransparencyInputs {
+  turn: number;
+  v1012: V1012FiscalSnapshot;
+  publishesTaxExpenditure: boolean;
+  publishesMultiYearEstimates: boolean;
+  publishesContingentRegister: boolean;
+  publishesProgramOutcomes: boolean;
+  auditLagTurns: number;
+}
+
+export function scoreFiscalTransparencyIndex(inputs: FiscalTransparencyInputs): FiscalTransparencyIndex {
+  const { v1012, turn } = inputs;
+  const dimensions: TransparencyDimensionScore[] = [];
+
+  const budgetOpenness = Math.min(
+    25,
+    12 +
+      (inputs.publishesMultiYearEstimates ? 6 : 0) +
+      (v1012.fiscalHeadroom >= 0 ? 4 : 0) +
+      (inputs.auditLagTurns <= 2 ? 3 : 0)
+  );
+  dimensions.push({
+    id: 'budget_openness',
+    label: 'Budget papers & forward estimates',
+    score: budgetOpenness,
+    maxScore: 25,
+    tier: tierFromScore(budgetOpenness, 25),
+    detail: `MYEFO=${inputs.publishesMultiYearEstimates}, auditLag=${inputs.auditLagTurns}`
+  });
+
+  const taxTransparency = Math.min(
+    20,
+    8 + (inputs.publishesTaxExpenditure ? 10 : 0) + (v1012.revenuePolicy !== 'growth_focused' ? 2 : 0)
+  );
+  dimensions.push({
+    id: 'tax_transparency',
+    label: 'Tax expenditure & revenue disclosure',
+    score: taxTransparency,
+    maxScore: 20,
+    tier: tierFromScore(taxTransparency, 20),
+    detail: `taxExp=${inputs.publishesTaxExpenditure}`
+  });
+
+  const riskDisclosure = Math.min(
+    20,
+    6 +
+      (inputs.publishesContingentRegister ? 9 : 0) +
+      (v1012.debtEnabled ? 3 : 0) +
+      (v1012.pressure !== 'critical' ? 2 : 0)
+  );
+  dimensions.push({
+    id: 'risk_disclosure',
+    label: 'Contingent liabilities & fiscal risks',
+    score: riskDisclosure,
+    maxScore: 20,
+    tier: tierFromScore(riskDisclosure, 20),
+    detail: `contingent=${inputs.publishesContingentRegister}`
+  });
+
+  const performanceReporting = Math.min(
+    20,
+    7 + (inputs.publishesProgramOutcomes ? 11 : 0) + (v1012.commitmentCount <= 8 ? 2 : 0)
+  );
+  dimensions.push({
+    id: 'performance_reporting',
+    label: 'Program outcomes & service delivery',
+    score: performanceReporting,
+    maxScore: 20,
+    tier: tierFromScore(performanceReporting, 20),
+    detail: `programs=${inputs.publishesProgramOutcomes}`
+  });
+
+  const dataAccess = Math.min(15, 5 + (inputs.auditLagTurns <= 1 ? 5 : 2) + (inputs.publishesTaxExpenditure ? 3 : 0));
+  dimensions.push({
+    id: 'open_data',
+    label: 'Open fiscal data readiness',
+    score: dataAccess,
+    maxScore: 15,
+    tier: tierFromScore(dataAccess, 15),
+    detail: `lag=${inputs.auditLagTurns}`
+  });
+
+  const compositeScore = dimensions.reduce((s, d) => s + d.score, 0);
+  const compositeTier = tierFromScore(compositeScore, 100);
+  const openDataReady = dataAccess >= 10 && inputs.publishesMultiYearEstimates;
+
+  const improvementActions: string[] = [];
+  if (!inputs.publishesContingentRegister) {
+    improvementActions.push('Publish contingent liability register alongside budget papers.');
+  }
+  if (!inputs.publishesProgramOutcomes) {
+    improvementActions.push('Link appropriation lines to program outcome dashboards.');
+  }
+  if (inputs.auditLagTurns > 2) {
+    improvementActions.push('Reduce audit publication lag to within two turns.');
+  }
+  if (compositeTier === 'basic') {
+    improvementActions.push('Adopt enhanced tier checklist for tax expenditure and MYEFO tables.');
+  }
+
+  return {
+    schemaVersion: FISCAL_TRANSPARENCY_SCHEMA,
+    turn,
+    dimensions,
+    compositeScore,
+    compositeTier,
+    openDataReady,
+    improvementActions
   };
 }
 
@@ -6052,12 +6498,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Seven fiscal layers integrated', healthy.layerCount === 7, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Ten fiscal layers integrated', healthy.layerCount === 10, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 8,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 11,
     'ok'
   );
 
@@ -6069,8 +6515,8 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF08 ids present',
-    healthy.checks.map(c => c.id).join(',') === 'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08',
+    'CF01–CF11 ids present',
+    healthy.checks.map(c => c.id).join(',') === 'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11',
     'ok'
   );
 
@@ -6231,6 +6677,224 @@ export function runProgramPerformanceSelfTests(): {
   record('PP04', 'Failing programs negative feedback', review.scores.every(s => s.band !== 'failing' || s.fiscalFeedbackPoints < 0), 'ok');
 
   record('PP05', 'Rebalance text when aggregate drag', critical.rebalanceRecommendations.length >= 1, `recs=${critical.rebalanceRecommendations.length}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: multi-year-framework/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 64,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 5,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 8,
+    commitmentCount: partial.commitmentCount ?? 4,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runMultiYearFrameworkSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const framework = buildMultiYearExpenditureFramework(snap({}), 3);
+  record('MYF01', 'Forward bands cover horizon', framework.forwardBands.length === 4, `n=${framework.forwardBands.length}`);
+  record('MYF02', 'Ceiling rows for envelope categories', framework.ceilings.length >= 6, `n=${framework.ceilings.length}`);
+  record('MYF03', 'Healthy baseline within ceiling bands', framework.forwardBands.every(b => b.withinCeiling), 'ok');
+
+  const ceilings = buildExpenditureCeilingRows(snap({ fiscalHeadroom: -6, pressure: 'strained' }));
+  record('MYF04', 'Negative headroom can bind ceilings', ceilings.some(c => c.binding), `binding=${ceilings.filter(c => c.binding).length}`);
+
+  const tight = buildMultiYearExpenditureFramework(
+    snap({ fiscalHeadroom: -12, pressure: 'critical', debtServiceLoad: 19, maintenanceLoad: 16 }),
+    2
+  );
+  record('MYF05', 'Critical path emits warnings', tight.warnings.length >= 1, `w=${tight.warnings.length}`);
+  record('MYF06', 'Parameter settings growth bounded', framework.parameterSettingsGrowth > 0 && framework.parameterSettingsGrowth < 6, `g=${framework.parameterSettingsGrowth}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: contingent-liabilities/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 12,
+    revenueCapacity: partial.revenueCapacity ?? 60,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 4,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 24,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 3,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runContingentLiabilitiesSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const catalog = catalogContingentExposures(12);
+  record('CL01', 'Default exposure catalog populated', catalog.length >= 4, `n=${catalog.length}`);
+
+  const base = assessContingentLiabilities(12, snap({}));
+  record('CL02', 'Expected loss positive and bounded', base.expectedLossPoints > 0 && base.expectedLossPoints < 40, `el=${base.expectedLossPoints}`);
+  record('CL03', 'Tail risk at least expected loss', base.tailRiskPoints >= base.expectedLossPoints, 'ok');
+  record('CL04', 'Disclosures mirror exposures', base.disclosures.length === base.exposures.length, 'ok');
+
+  const critical = assessContingentLiabilities(12, snap({ pressure: 'critical', fiscalHeadroom: -14, debtLevel: 55 }));
+  record('CL05', 'Critical stress raises multiplier', critical.stressMultiplier > base.stressMultiplier, `${critical.stressMultiplier} vs ${base.stressMultiplier}`);
+  record('CL06', 'Severe snapshot elevates stress multiplier', critical.stressMultiplier >= 1.4, `mult=${critical.stressMultiplier}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: fiscal-transparency/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 8,
+    revenueCapacity: partial.revenueCapacity ?? 58,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 4,
+    debtLevel: partial.debtLevel ?? 15,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFiscalTransparencySelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const minimal = scoreFiscalTransparencyIndex({
+    turn: 8,
+    v1012: snap({}),
+    publishesTaxExpenditure: false,
+    publishesMultiYearEstimates: false,
+    publishesContingentRegister: false,
+    publishesProgramOutcomes: false,
+    auditLagTurns: 4
+  });
+  record('FTI01', 'Five transparency dimensions scored', minimal.dimensions.length === 5, `n=${minimal.dimensions.length}`);
+  record('FTI02', 'Minimal disclosure stays basic tier', minimal.compositeTier === 'basic', minimal.compositeTier);
+
+  const full = scoreFiscalTransparencyIndex({
+    turn: 8,
+    v1012: snap({ fiscalHeadroom: 10 }),
+    publishesTaxExpenditure: true,
+    publishesMultiYearEstimates: true,
+    publishesContingentRegister: true,
+    publishesProgramOutcomes: true,
+    auditLagTurns: 1
+  });
+  record('FTI03', 'Full disclosure improves composite', full.compositeScore > minimal.compositeScore, `${full.compositeScore} vs ${minimal.compositeScore}`);
+  record('FTI04', 'Open data ready when MYEFO + low lag', full.openDataReady === true, String(full.openDataReady));
+  record('FTI05', 'Basic tier lists improvements', minimal.improvementActions.length >= 2, `n=${minimal.improvementActions.length}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: infrastructure-financing/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 6,
+    revenueCapacity: partial.revenueCapacity ?? 63,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 9,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 4,
+    debtLevel: partial.debtLevel ?? 17,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 5,
+    commitmentCount: partial.commitmentCount ?? 4,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+const sampleRequest = (overrides: Partial<InfrastructureProjectFundingRequest> = {}): InfrastructureProjectFundingRequest => ({
+  projectId: 'infra_test_1',
+  title: 'Test corridor',
+  regionIds: ['r1'],
+  capitalPoints: 12,
+  maintenancePointsPerTurn: 2,
+  strategicWeight: 0.6,
+  preferredVehicle: 'sovereign_bond_series',
+  ...overrides
+});
+
+export function runInfrastructureFinancingSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v1012 = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(v1012.turn);
+  const { state } = computeFiscalOutcomesLayer({ turn: v1012.turn, v1012 }, persisted);
+
+  const plan = planInfrastructureFunding(sampleRequest(), v1012, state.budget);
+  record('IF01', 'Funding plan stacks capital', plan.stack.reduce((s, l) => s + l.capitalPoints, 0) === plan.totalCapitalPoints, `pts=${plan.totalCapitalPoints}`);
+  record('IF02', 'Healthy snapshot feasible', plan.feasible, String(plan.feasible));
+
+  const noDebt = planInfrastructureFunding(sampleRequest({ capitalPoints: 20 }), snap({ debtEnabled: false }), state.budget);
+  record('IF03', 'Debt disabled uses grant-match warn path', noDebt.stack.some(l => l.vehicle === 'grant_match_federal'), noDebt.warnings.join(';'));
+
+  const summary = summarizeInfrastructureFinancing(6, [sampleRequest(), sampleRequest({ projectId: 'infra_test_2', capitalPoints: 8 })], v1012, state.budget);
+  record('IF04', 'Summary aggregates service load', summary.aggregateServiceLoad >= 0, `load=${summary.aggregateServiceLoad}`);
+  record('IF05', 'Two-project portfolio plans', summary.plans.length === 2, `n=${summary.plans.length}`);
 
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };

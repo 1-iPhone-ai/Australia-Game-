@@ -12,6 +12,10 @@ import { runConsolidatedFiscalSelfTests } from './modules/consolidated-fiscal/se
 import { runFiscalRulesSelfTests } from './modules/fiscal-rules/self-tests';
 import { runSovereignIssuanceSelfTests } from './modules/sovereign-issuance/self-tests';
 import { runProgramPerformanceSelfTests } from './modules/program-performance/self-tests';
+import { runMultiYearFrameworkSelfTests } from './modules/multi-year-framework/self-tests';
+import { runContingentLiabilitiesSelfTests } from './modules/contingent-liabilities/self-tests';
+import { runFiscalTransparencySelfTests } from './modules/fiscal-transparency/self-tests';
+import { runInfrastructureFinancingSelfTests } from './modules/infrastructure-financing/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -33,6 +37,10 @@ ok = runSuite('Consolidated fiscal stack', runConsolidatedFiscalSelfTests) && ok
 ok = runSuite('Fiscal rules framework', runFiscalRulesSelfTests) && ok;
 ok = runSuite('Sovereign debt issuance', runSovereignIssuanceSelfTests) && ok;
 ok = runSuite('Program performance review', runProgramPerformanceSelfTests) && ok;
+ok = runSuite('Multi-year expenditure framework', runMultiYearFrameworkSelfTests) && ok;
+ok = runSuite('Contingent liabilities register', runContingentLiabilitiesSelfTests) && ok;
+ok = runSuite('Fiscal transparency index', runFiscalTransparencySelfTests) && ok;
+ok = runSuite('Infrastructure financing stacks', runInfrastructureFinancingSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

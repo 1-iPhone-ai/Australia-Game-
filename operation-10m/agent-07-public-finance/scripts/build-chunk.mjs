@@ -54,6 +54,12 @@ const FILES = [
   'sovereign-issuance/compute.ts',
   'program-performance/types.ts',
   'program-performance/compute.ts',
+  'multi-year-framework/types.ts',
+  'multi-year-framework/compute.ts',
+  'contingent-liabilities/types.ts',
+  'contingent-liabilities/compute.ts',
+  'fiscal-transparency/types.ts',
+  'fiscal-transparency/compute.ts',
   'reconciliation/reconcile.ts',
   'fiscal-outcomes/react/FiscalOutcomesInspector.tsx',
   'fiscal-outcomes/self-tests.ts',
@@ -68,7 +74,11 @@ const FILES = [
   'consolidated-fiscal/self-tests.ts',
   'fiscal-rules/self-tests.ts',
   'sovereign-issuance/self-tests.ts',
-  'program-performance/self-tests.ts'
+  'program-performance/self-tests.ts',
+  'multi-year-framework/self-tests.ts',
+  'contingent-liabilities/self-tests.ts',
+  'fiscal-transparency/self-tests.ts',
+  'infrastructure-financing/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {

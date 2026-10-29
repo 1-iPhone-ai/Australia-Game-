@@ -18,6 +18,17 @@ National **budget envelopes**, **revenue** (tax instruments + ledger), **soverei
 | Fiscal resilience | `modules/fiscal-resilience/` | Shock catalog and stacked stress assessment |
 | Debt rollover | `modules/debt-rollover/` | Maturity ladder rollover outcomes and liquidity edge cases |
 | Reconciliation | `modules/reconciliation/` | Envelope + ledger + boundary checks |
+| Multi-year framework | `modules/multi-year-framework/` | MYEFO-style ceilings and forward estimate bands |
+| Contingent liabilities | `modules/contingent-liabilities/` | Off-balance-sheet exposures and soft-cap assessment |
+| Fiscal transparency | `modules/fiscal-transparency/` | Disclosure tier index for budget papers and open data |
+| Infrastructure financing | `modules/infrastructure-financing/` | Pay-go vs debt capital stacks (with self-tests) |
+
+### Scale wave round 4
+
+- **multi-year-framework/** — category expenditure ceilings, forward bands, parameter-settings growth
+- **contingent-liabilities/** — guarantee/PPP/backstop register with stress-weighted expected loss
+- **fiscal-transparency/** — composite transparency index (basic / enhanced / leading)
+- **infrastructure-financing/self-tests.ts** — capital stack regression suite
 
 ## Commands
 

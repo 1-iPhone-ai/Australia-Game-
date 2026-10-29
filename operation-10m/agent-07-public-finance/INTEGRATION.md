@@ -33,6 +33,7 @@
 1. `runV1014FiscalOutcomesSelfTests()` — canonical quick tier (`v1014_fiscal`)
 2. `runAgent07ReconciliationSelfTests()` — Operation 10M envelope/ledger/infra reconciliation (wire on merge)
 3. `runRecurringCommitmentsSelfTests()` / `runFiscalResilienceSelfTests()` / `runDebtRolloverSelfTests()` — extended fiscal dynamics (wire on merge)
+4. Wave 4: `runMultiYearFrameworkSelfTests()` / `runContingentLiabilitiesSelfTests()` / `runFiscalTransparencySelfTests()` / `runInfrastructureFinancingSelfTests()` — consolidated checks CF09–CF11
 
 ## Module self-test entrypoints
 
