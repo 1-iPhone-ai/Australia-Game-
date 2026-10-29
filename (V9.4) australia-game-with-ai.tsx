@@ -87692,7 +87692,7 @@ export class GlobalUISurfaceManager {
       { flags: ['showGuardianWarningModal'], surfaceId: 'guardian_warning_modal' },
       { flags: ['showGuardianAiCenter', 'showGuardianAiCenterModal', 'showGuardianCenter'], surfaceId: 'guardian_ai_center' },
       { flags: ['showAiCommandCenterModal'], surfaceId: 'ai_command_center_modal' },
-      { flags: ['showHelp', 'showAskGameAi'], surfaceId: 'ask_game_ai' },
+      { flags: ['showHelp', 'showAskGameAi', 'showPlayAiQaModal'], surfaceId: 'ask_game_ai' },
       { flags: ['showStrategyPlanner', 'showStrategyPlannerModal'], surfaceId: 'strategy_planner' },
       { flags: ['showNegotiationCenter'], surfaceId: 'negotiation_center' },
       { flags: ['showSaveLoadModal'], surfaceId: 'save_load_modal' },
@@ -180734,6 +180734,8 @@ function AustraliaGame() {
     showNotifications: false,
     showProgress: false,
     showHelp: false,
+    showPlayAiQaModal: false,
+    isPaused: false,
     showSettings: false,
     showNegotiationCenter: false,
     showOverseerDashboard: false,
@@ -189059,7 +189061,8 @@ function dispatchGameSettingsChange(
     if (gameState.gameMode === 'game' && 
         (gameState.selectedMode === 'ai' || gameState.selectedMode === 'grand_tour' || gameState.selectedMode === 'scenario') && 
         gameState.currentTurn === 'ai' && 
-        !gameState.isAiThinking) {
+        !gameState.isAiThinking &&
+        !playAiQaPauseRef.current) {
       
       // V9.6: never schedule a turn that is already claimed or finished (end-of-turn relaunch race).
       const v96Key = computeSoloAiTurnKey(gameState, v95MatchEpochRef.current);
@@ -189253,6 +189256,10 @@ function dispatchGameSettingsChange(
 	          updateUiState({ showHelp: !uiState.showHelp });
 	          break;
 	        case 'closeModal': {
+	          if (uiState.showPlayAiQaModal) {
+	            resumePlayAfterAiQaRef.current();
+	            break;
+	          }
 	          if (confirmationDialog.isOpen) {
 	            if (confirmationDialog.type === 'teamAiOverrideRequest' && typeof confirmationDialog.data?.onDeny === 'function') {
 	              confirmationDialog.data.onDeny();
@@ -189268,6 +189275,10 @@ function dispatchGameSettingsChange(
 
 	          const handledBySurfaceManager = globalUISurfaceManager.handleEscapeKey();
 	          if (handledBySurfaceManager && activeSurfaceIdBefore) {
+	            if (activeSurfaceIdBefore === 'ask_game_ai' && uiState.showPlayAiQaModal) {
+	              resumePlayAfterAiQaRef.current();
+	              break;
+	            }
 	            const flagNameMap: Record<string, string> = {
 	              settings_hub: 'showSettings',
 	              quick_actions_customizer: 'showQuickActionsCustomizer',
@@ -189443,6 +189454,61 @@ function dispatchGameSettingsChange(
     // useAskGameAIState returns a new object literal every render; depending on
     // it re-bound this listener on every single render.
   }, [askAI.toggleDrawer, gameSettings.askGameAiUiEnabled]);
+  const resumePlayAfterAiQa = useCallback(() => {
+    const snap = playAiPauseSnapshotRef.current;
+    playAiPauseSnapshotRef.current = null;
+    playAiQaPauseRef.current = false;
+    updateUiState({ showPlayAiQaModal: false, isPaused: snap?.uiPaused ?? false });
+    if (snap?.autoplayEnabled) {
+      dispatchGameState({
+        type: 'SET_AUTOPLAY',
+        payload: {
+          ...(gameState.autoplay || initialGameState.autoplay),
+          enabled: true,
+          paused: snap.autoplayPaused,
+          speed: gameState.autoplay?.speed || 1
+        }
+      });
+    }
+    setPlayAiQaQuery('');
+    setPlayAiQaResponse('');
+    setPlayAiQaBusy(false);
+  }, [updateUiState, dispatchGameState, gameState.autoplay]);
+  resumePlayAfterAiQaRef.current = resumePlayAfterAiQa;
+
+  const openPlayAiQaModal = useCallback(() => {
+    if (gameState.gameMode !== 'game' || uiState.showPlayAiQaModal) return;
+    playAiPauseSnapshotRef.current = {
+      uiPaused: Boolean(uiState.isPaused),
+      autoplayPaused: Boolean(gameState.autoplay?.paused),
+      autoplayEnabled: Boolean(gameState.autoplay?.enabled),
+    };
+    playAiQaPauseRef.current = true;
+    updateUiState({ showPlayAiQaModal: true, isPaused: true });
+    if (gameState.autoplay?.enabled && !gameState.autoplay?.paused) {
+      dispatchGameState({
+        type: 'SET_AUTOPLAY',
+        payload: { ...gameState.autoplay, paused: true, enabled: true }
+      });
+    }
+    setPlayAiQaQuery('');
+    setPlayAiQaResponse('');
+  }, [gameState.gameMode, gameState.autoplay, uiState.isPaused, uiState.showPlayAiQaModal, updateUiState, dispatchGameState]);
+
+  const submitPlayAiQa = useCallback(async () => {
+    const q = playAiQaQuery.trim();
+    if (!q || playAiQaBusy) return;
+    setPlayAiQaBusy(true);
+    setPlayAiQaResponse('');
+    try {
+      const response = await askAI.submitQuery(q);
+      setPlayAiQaResponse(response?.mainAnswer || 'No answer returned.');
+    } catch (err) {
+      setPlayAiQaResponse(`[Demo] Ask-the-Game could not answer right now (${err instanceof Error ? err.message : 'busy'}). Try a simpler question about cash, regions, or your next turn.`);
+    } finally {
+      setPlayAiQaBusy(false);
+    }
+  }, [playAiQaQuery, playAiQaBusy, askAI]);
 
 
   const handleSettingsSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -207834,7 +207900,7 @@ function dispatchGameSettingsChange(
   };
 
   useEffect(() => {
-    if (!isTeamMode || gameState.gameMode !== 'game' || gameState.isAiThinking || isAiThinkingRef.current) return;
+    if (!isTeamMode || gameState.gameMode !== 'game' || gameState.isAiThinking || isAiThinkingRef.current || playAiQaPauseRef.current) return;
     const actor = getActorState(gameState.currentActorId || '');
     if (!actor || actor.kind !== 'ai') return;
     if (gameState.selectedMode === 'team_ai_vs_ai' && gameState.autoplay?.enabled && gameState.autoplay?.paused) return;
@@ -210217,6 +210283,12 @@ function dispatchGameSettingsChange(
   const [v9IntelFeed, setV9IntelFeed] = useState<GameIntelligenceAnswer[]>([]);
   const [v9IntelQuery, setV9IntelQuery] = useState('');
   const [v9IntelBusy, setV9IntelBusy] = useState(false);
+  const [playAiQaQuery, setPlayAiQaQuery] = useState('');
+  const [playAiQaResponse, setPlayAiQaResponse] = useState('');
+  const [playAiQaBusy, setPlayAiQaBusy] = useState(false);
+  const playAiPauseSnapshotRef = useRef<{ uiPaused: boolean; autoplayPaused: boolean; autoplayEnabled: boolean } | null>(null);
+  const playAiQaPauseRef = useRef(false);
+  const resumePlayAfterAiQaRef = useRef<() => void>(() => {});
   const [v9SelfTestResults, setV9SelfTestResults] = useState<V9SelfTestResult[] | null>(null);
 
   // Take Control: the exact canonical interrupt the HUD always used, plus cancellation of any
@@ -229364,6 +229436,23 @@ function dispatchGameSettingsChange(
             endgame={Number(gameSettings.totalDays || 30) - Number(gameState.day || 1) <= 3}
           />
 
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              className={`${themeStyles.buttonSecondary} px-4 py-2 rounded-lg flex items-center space-x-2 font-semibold disabled:opacity-50`}
+              data-testid="v9-play-ai-qa"
+              title="Pause and ask the game a question"
+              disabled={uiState.showPlayAiQaModal}
+              onClick={() => openPlayAiQaModal()}
+            >
+              <span aria-hidden="true">🧠</span>
+              <span>AI</span>
+            </button>
+            {uiState.showPlayAiQaModal && (
+              <span className="text-xs font-bold text-amber-300" role="status" data-testid="v9-play-ai-paused">Paused for Q&amp;A</span>
+            )}
+          </div>
+
           <FeedbackStrip theme={themeStyles} major={v94Visible.major} minor={v94Visible.minor} onDismiss={dismissV94} onWhy={e => void submitIntelligenceQuery(e.kind === 'region_control_changed' ? `Why did control of ${REGIONS[e.subject]?.name || e.subject} change?` : e.kind === 'crisis_resolved' ? 'What changed after the crisis?' : 'What should I focus on next?')} />
 
           {glShowWelcome && (
@@ -232064,6 +232153,7 @@ function dispatchGameSettingsChange(
         {renderAiStatsModal()}
         {renderProgressDashboard()}
         {renderHelpModal()}
+        {renderPlayAiQaModal()}
         {renderSettingsModal()}
         {renderLiveControlCenterModal()}
         {renderDependencyAutoFixModal()}
@@ -233691,6 +233781,49 @@ const KeyboardShortcutsHelpModal: React.FC<KeyboardShortcutsHelpModalProps> = ({
     </div>
   );
 };
+
+  const renderPlayAiQaModal = () => {
+    if (!uiState.showPlayAiQaModal) return null;
+    return (
+      <div className={`fixed inset-0 ${(!surfaceState.backdropOwner || surfaceState.backdropOwner === "ask_game_ai") ? "bg-black/70 backdrop-blur-xs" : "bg-transparent"} flex items-center justify-center p-4`} style={{ zIndex: globalUISurfaceManager.getZIndex("ask_game_ai") }} onClick={() => resumePlayAfterAiQa()}>
+        <div className={`${themeStyles.card} ${themeStyles.border} ${themeStyles.text} border rounded-xl p-6 max-w-lg w-full max-h-[calc(100dvh-2rem)] flex flex-col overflow-hidden ${themeStyles.shadow}`} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="play-ai-qa-title" data-testid="play-ai-qa-modal">
+          <div className="flex justify-between items-start gap-3 mb-4">
+            <div>
+              <h3 id="play-ai-qa-title" className="text-xl font-bold">Ask the Game</h3>
+              <p className="text-xs opacity-75 mt-1">Match paused — answers use Ask-the-Game (deterministic, no LLM).</p>
+            </div>
+            <button type="button" className="text-lg opacity-70 hover:opacity-100" aria-label="Close" onClick={() => resumePlayAfterAiQa()}>✕</button>
+          </div>
+          <form className="flex flex-col sm:flex-row gap-2 mb-4" onSubmit={(e) => { e.preventDefault(); void submitPlayAiQa(); }}>
+            <label htmlFor="play-ai-qa-input" className="sr-only">Your question</label>
+            <input
+              id="play-ai-qa-input"
+              type="text"
+              value={playAiQaQuery}
+              onChange={(e) => setPlayAiQaQuery(e.target.value)}
+              placeholder="What should I focus on this turn?"
+              className={`flex-1 ${themeStyles.border} border rounded-lg px-3 py-2 text-sm bg-transparent`}
+              autoComplete="off"
+              disabled={playAiQaBusy}
+            />
+            <button type="submit" disabled={playAiQaBusy || !playAiQaQuery.trim()} className={`${themeStyles.button} px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50`}>
+              {playAiQaBusy ? 'Thinking…' : 'Submit'}
+            </button>
+          </form>
+          {(playAiQaResponse || playAiQaBusy) && (
+            <div className={`${themeStyles.border} border rounded-lg p-3 text-sm flex-1 overflow-y-auto min-h-[4rem] whitespace-pre-wrap`} data-testid="play-ai-qa-answer">
+              {playAiQaBusy ? 'Thinking…' : playAiQaResponse}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-gray-700/40">
+            <button type="button" onClick={() => resumePlayAfterAiQa()} className={`${themeStyles.buttonSecondary} px-4 py-2 rounded-lg font-semibold`}>
+              Close & Resume
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const renderHelpModal = () => {
     return (
