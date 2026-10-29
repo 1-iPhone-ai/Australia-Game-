@@ -101,3 +101,7 @@ export function buildAgent17EndorsementAccord(
 export function endorsementAccordBlocksLedger(snapshot: Agent17EndorsementAccordSnapshot): boolean {
   return snapshot.band === 'withdrawn' || !snapshot.endorsementSigned;
 }
+
+export function endorsementAccordBlocksCustody(snapshot: Agent17EndorsementAccordSnapshot): boolean {
+  return snapshot.band === 'withdrawn' || !snapshot.endorsementSigned;
+}

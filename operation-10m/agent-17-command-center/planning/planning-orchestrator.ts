@@ -83,6 +83,8 @@ import { buildAgent17RegistryIndex } from './registry-index.ts';
 import { buildAgent17CredentialAccord } from './credential-accord.ts';
 import { buildAgent17LedgerIndex } from './ledger-index.ts';
 import { buildAgent17EndorsementAccord } from './endorsement-accord.ts';
+import { buildAgent17CustodyIndex } from './custody-index.ts';
+import { buildAgent17ReleaseAccord } from './release-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -487,6 +489,16 @@ export function buildAgent17PlanningDepthSnapshot(
     credentialAccord,
     registryIndex,
   });
+  const custodyIndex = buildAgent17CustodyIndex({
+    endorsementAccord,
+    ledgerIndex,
+    credentialAccord,
+  });
+  const releaseAccord = buildAgent17ReleaseAccord({
+    custodyIndex,
+    endorsementAccord,
+    ledgerIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -552,6 +564,8 @@ export function buildAgent17PlanningDepthSnapshot(
     credentialAccord,
     ledgerIndex,
     endorsementAccord,
+    custodyIndex,
+    releaseAccord,
   };
 }
 

@@ -800,6 +800,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Closed ledger or void credential yields endorsementAccordBlocksLedger.',
     severity: 'major',
   },
+  {
+    id: 'G17-115',
+    title: 'Custody index on planning depth',
+    category: 'telemetry',
+    acceptance: 'custodyIndex reports custodyScore 0–100 with held/partial/breached band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-116',
+    title: 'Release accord gates complete',
+    category: 'telemetry',
+    acceptance: 'releaseAccord exposes ≥5 gates and releaseScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-117',
+    title: 'Breached custody blocks release accord',
+    category: 'integration',
+    acceptance: 'Breached custody or withdrawn endorsement yields releaseAccordBlocksCustody.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

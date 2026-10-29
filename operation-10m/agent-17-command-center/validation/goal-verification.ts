@@ -252,7 +252,16 @@ import {
 import {
   buildAgent17EndorsementAccord,
   endorsementAccordBlocksLedger,
+  endorsementAccordBlocksCustody,
 } from '../planning/endorsement-accord.ts';
+import {
+  buildAgent17CustodyIndex,
+  custodyIndexBlocksRelease,
+} from '../planning/custody-index.ts';
+import {
+  buildAgent17ReleaseAccord,
+  releaseAccordBlocksCustody,
+} from '../planning/release-accord.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -1987,6 +1996,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const custodyIndex = depthEval.snapshot.planningDepth?.custodyIndex;
+  goalResults.push(
+    result(
+      'G17-115',
+      !!custodyIndex &&
+        custodyIndex.holds.length >= 5 &&
+        custodyIndex.custodyScore >= 0 &&
+        custodyIndex.custodyScore <= 100 &&
+        (custodyIndex.band === 'held' ||
+          custodyIndex.band === 'partial' ||
+          custodyIndex.band === 'breached'),
+      `holds=${custodyIndex?.holds.length} score=${custodyIndex?.custodyScore}`
+    )
+  );
+
+  const releaseAccord = depthEval.snapshot.planningDepth?.releaseAccord;
+  goalResults.push(
+    result(
+      'G17-116',
+      !!releaseAccord &&
+        releaseAccord.gates.length >= 5 &&
+        releaseAccord.releaseScore >= 0 &&
+        releaseAccord.releaseScore <= 100,
+      `gates=${releaseAccord?.gates.length} score=${releaseAccord?.releaseScore}`
+    )
+  );
+
+  const breachedCustody = buildAgent17CustodyIndex({
+    endorsementAccord: withdrawnEndorsement,
+    ledgerIndex: closedLedger,
+    credentialAccord: voidCredential,
+  });
+  const blockedRelease = buildAgent17ReleaseAccord({
+    custodyIndex: breachedCustody,
+    endorsementAccord: withdrawnEndorsement,
+    ledgerIndex: closedLedger,
+  });
+  goalResults.push(
+    result(
+      'G17-117',
+      endorsementAccordBlocksCustody(withdrawnEndorsement) ||
+        custodyIndexBlocksRelease(breachedCustody) ||
+        releaseAccordBlocksCustody(blockedRelease),
+      `${breachedCustody.band}/${blockedRelease.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2131,6 +2187,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-112',
     'G17-113',
     'G17-114',
+    'G17-115',
+    'G17-116',
+    'G17-117',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

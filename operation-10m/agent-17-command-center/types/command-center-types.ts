@@ -243,6 +243,8 @@ export interface Agent17PlanningDepthSnapshot {
   credentialAccord: Agent17CredentialAccordSnapshot;
   ledgerIndex: Agent17LedgerIndexSnapshot;
   endorsementAccord: Agent17EndorsementAccordSnapshot;
+  custodyIndex: Agent17CustodyIndexSnapshot;
+  releaseAccord: Agent17ReleaseAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1255,6 +1257,40 @@ export interface Agent17EndorsementAccordSnapshot {
   ledgerBand: Agent17LedgerIndexSnapshot['band'];
   credentialBand: Agent17CredentialAccordSnapshot['band'];
   endorsementSigned: boolean;
+  headline: string;
+}
+
+export interface Agent17CustodyHold {
+  id: string;
+  label: string;
+  secured: boolean;
+  weight: number;
+}
+
+export interface Agent17CustodyIndexSnapshot {
+  custodyScore: number;
+  band: 'held' | 'partial' | 'breached';
+  holds: Agent17CustodyHold[];
+  endorsementBand: Agent17EndorsementAccordSnapshot['band'];
+  ledgerBand: Agent17LedgerIndexSnapshot['band'];
+  custodyHeld: boolean;
+  headline: string;
+}
+
+export interface Agent17ReleaseGate {
+  id: string;
+  label: string;
+  cleared: boolean;
+  weight: number;
+}
+
+export interface Agent17ReleaseAccordSnapshot {
+  releaseScore: number;
+  band: 'cleared' | 'queued' | 'blocked';
+  gates: Agent17ReleaseGate[];
+  custodyBand: Agent17CustodyIndexSnapshot['band'];
+  endorsementBand: Agent17EndorsementAccordSnapshot['band'];
+  releaseCleared: boolean;
   headline: string;
 }
 
