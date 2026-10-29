@@ -1,0 +1,31 @@
+import type { V1024DgovDataSovereigntyEdge } from '../../types/core.ts';
+
+/** Data sovereignty graph shard 089 (residency/liability/audit corridor coupling). */
+export const V1024_DGOV_DATA_SOVEREIGNTY_SHARD_089: readonly V1024DgovDataSovereigntyEdge[] = [
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.274, lagTurns: 10, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.28, lagTurns: 11, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.286, lagTurns: 12, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.292, lagTurns: 13, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.298, lagTurns: 10, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.304, lagTurns: 11, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.31, lagTurns: 12, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.316, lagTurns: 13, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.322, lagTurns: 10, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.328, lagTurns: 11, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.334, lagTurns: 12, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.34, lagTurns: 13, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.346, lagTurns: 10, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.352, lagTurns: 11, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.358, lagTurns: 12, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.364, lagTurns: 13, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.268, lagTurns: 10, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.274, lagTurns: 11, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.28, lagTurns: 12, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.286, lagTurns: 13, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.292, lagTurns: 10, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.298, lagTurns: 11, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.304, lagTurns: 12, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.31, lagTurns: 13, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.316, lagTurns: 10, nodeId: 'platform_node_17' },
+  { fromChannel: 'remote', toChannel: 'algo_audit', weight: 0.322, lagTurns: 11, nodeId: 'platform_node_17' },
+];

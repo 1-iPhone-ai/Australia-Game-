@@ -1,0 +1,31 @@
+import type { V1024DgovDataSovereigntyEdge } from '../../types/core.ts';
+
+/** Data sovereignty graph shard 001 (residency/liability/audit corridor coupling). */
+export const V1024_DGOV_DATA_SOVEREIGNTY_SHARD_001: readonly V1024DgovDataSovereigntyEdge[] = [
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.25, lagTurns: 3, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.256, lagTurns: 4, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.262, lagTurns: 5, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.268, lagTurns: 6, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.172, lagTurns: 3, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.178, lagTurns: 4, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.184, lagTurns: 5, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.19, lagTurns: 6, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.196, lagTurns: 3, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.202, lagTurns: 4, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.208, lagTurns: 5, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.214, lagTurns: 6, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.22, lagTurns: 3, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.226, lagTurns: 4, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.232, lagTurns: 5, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.238, lagTurns: 6, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.244, lagTurns: 3, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.25, lagTurns: 4, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.256, lagTurns: 5, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.262, lagTurns: 6, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.268, lagTurns: 3, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.172, lagTurns: 4, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.178, lagTurns: 5, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.184, lagTurns: 6, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.19, lagTurns: 3, nodeId: 'platform_node_01' },
+  { fromChannel: 'platform_liability', toChannel: 'child_safety', weight: 0.196, lagTurns: 4, nodeId: 'platform_node_01' },
+];
