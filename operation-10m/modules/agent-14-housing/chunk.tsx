@@ -5,7 +5,7 @@
 // --- source: types.ts ---
 /** V10.14 Agent 14 — public service capacity & delayed spending (modular slice). */
 
-export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.32-scale-wave-32' as const;
+export const AGENT14_WELLBEING_SCHEMA_VERSION = '10.14.33-scale-wave-33' as const;
 
 export type PublicServicePillar = 'housing' | 'healthcare' | 'education';
 
@@ -184,6 +184,9 @@ export interface EnrichedPublicServiceTurnInputs extends CapacityAndSpendingInpu
   wave32GateTrajectory?: Wave32GateTrajectorySnapshot;
   wave32IntegrationMonitor?: Wave32IntegrationMonitor;
   agent25Wave32ProjectionHandoffBrief?: Agent25Wave32ProjectionHandoffBrief;
+  wave33GateTrajectory?: Wave33GateTrajectorySnapshot;
+  wave33IntegrationMonitor?: Wave33IntegrationMonitor;
+  agent25Wave33ProjectionHandoffBrief?: Agent25Wave33ProjectionHandoffBrief;
 }
 
 export type CouplingTrajectoryTrend = 'improving' | 'flat' | 'deteriorating';
@@ -1272,6 +1275,41 @@ export interface Agent25Wave32ProjectionHandoffBrief {
   summary: string;
 }
 
+export type Wave33GateBand = 'ready' | 'pending' | 'blocked';
+
+export interface Wave33GateTrajectorySnapshot {
+  turn: number;
+  wave33GateEma: number;
+  instantaneousGate: number;
+  band: Wave33GateBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
+
+export interface Wave33GateTrajectoryPersisted {
+  schemaVersion: typeof AGENT14_WELLBEING_SCHEMA_VERSION;
+  lastTurn: number;
+  emaAlpha: number;
+  wave33GateEma: number;
+  priorEma?: number;
+}
+
+export interface Wave33IntegrationMonitor {
+  turn: number;
+  shouldRunO10m198DryRun: boolean;
+  wave33GateBand: Wave33GateBand;
+  blockingReasons: string[];
+  summary: string;
+}
+
+export interface Agent25Wave33ProjectionHandoffBrief {
+  turn: number;
+  shouldProjectWave33: boolean;
+  shouldRunO10m198DryRun: boolean;
+  headlines: string[];
+  summary: string;
+}
+
 export type CouplingStressBand = 'stable' | 'watch' | 'strained' | 'critical';
 
 export interface PillarCouplingSlice {
@@ -1569,6 +1607,8 @@ export const AGENT14_HEALTH_ED_PROGRAM_STUBS: readonly {
   { id: 'ps_xp_NT_o10m194_gate', pillar: 'education', regionId: 'NT', fiscalLoadPoints: 17, durationTurns: 4, baseImpact: 8, effectLagTurns: 3 },
   { id: 'ps_xp_NSW_wave32_projection', pillar: 'healthcare', regionId: 'NSW', fiscalLoadPoints: 17, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
   { id: 'ps_xp_WA_o10m196_gate', pillar: 'housing', regionId: 'WA', fiscalLoadPoints: 16, durationTurns: 4, baseImpact: 7, effectLagTurns: 2 },
+  { id: 'ps_xp_QLD_wave33_projection', pillar: 'education', regionId: 'QLD', fiscalLoadPoints: 18, durationTurns: 5, baseImpact: 8, effectLagTurns: 2 },
+  { id: 'ps_xp_SA_o10m198_gate', pillar: 'healthcare', regionId: 'SA', fiscalLoadPoints: 17, durationTurns: 4, baseImpact: 8, effectLagTurns: 2 },
 ];
 
 export const AGENT14_ALL_PROGRAM_STUBS = [
@@ -1912,7 +1952,7 @@ export function canAcceptSpendingCommitment(
 // --- source: delayed-spending-effects.ts ---
 export function createInitialDelayedSpendingPersisted(): DelayedSpendingPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active: [],
     history: [],
   };
@@ -1934,7 +1974,7 @@ export function sanitizeDelayedSpendingPersisted(
         .slice(0, AGENT14_LIMITS.maxActiveCommitments)
     : [];
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     active,
     history: Array.isArray(raw.history) ? raw.history.slice(-AGENT14_LIMITS.maxHistory) : [],
   };
@@ -2494,7 +2534,7 @@ const DEFAULT_EMA_ALPHA = 0.35;
 
 export function createInitialRegionalWellbeingMemory(): RegionalWellbeingMemoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     affordabilityEma: {},
@@ -2511,7 +2551,7 @@ export function sanitizeRegionalWellbeingMemory(
       ? raw.emaAlpha
       : DEFAULT_EMA_ALPHA;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     affordabilityEma:
@@ -2579,7 +2619,7 @@ const DEFAULT_EMA_ALPHA = 0.4;
 
 export function createInitialCouplingTrajectory(): CouplingTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     nationalCouplingEma: 58,
@@ -2600,7 +2640,7 @@ export function sanitizeCouplingTrajectory(
       ? Math.max(0, Math.min(100, raw.nationalCouplingEma))
       : 58;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     nationalCouplingEma,
@@ -2850,7 +2890,7 @@ const DEFAULT_EMA_ALPHA = 0.35;
 
 export function createInitialAccountabilityTrajectory(): AccountabilityTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     overallScoreEma: 62,
@@ -2871,7 +2911,7 @@ export function sanitizeAccountabilityTrajectory(
       ? Math.max(0, Math.min(100, raw.overallScoreEma))
       : 62;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     overallScoreEma,
@@ -3014,7 +3054,7 @@ const DEFAULT_EMA_ALPHA = 0.32;
 
 export function createInitialResilienceTrajectory(): ResilienceTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     resilienceIndexEma: 58,
@@ -3035,7 +3075,7 @@ export function sanitizeResilienceTrajectory(
       ? Math.max(0, Math.min(100, raw.resilienceIndexEma))
       : 58;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     resilienceIndexEma,
@@ -3344,7 +3384,7 @@ const DEFAULT_EMA_ALPHA = 0.3;
 
 export function createInitialGovernanceTrajectory(): GovernanceTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     governanceScoreEma: 60,
@@ -3365,7 +3405,7 @@ export function sanitizeGovernanceTrajectory(
       ? Math.max(0, Math.min(100, raw.governanceScoreEma))
       : 60;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     governanceScoreEma,
@@ -3560,7 +3600,7 @@ function engagementSample(brief: StakeholderCoordinationBrief): number {
 
 export function createInitialCoordinationTrajectory(): CoordinationTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     engagementPressureEma: 45,
@@ -3581,7 +3621,7 @@ export function sanitizeCoordinationTrajectory(
       ? Math.max(0, Math.min(100, raw.engagementPressureEma))
       : 45;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     engagementPressureEma,
@@ -3770,7 +3810,7 @@ function stressSample(brief: PortfolioStabilizationBrief): number {
 
 export function createInitialStabilizationTrajectory(): StabilizationTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     stabilizationStressEma: 50,
@@ -3791,7 +3831,7 @@ export function sanitizeStabilizationTrajectory(
       ? Math.max(0, Math.min(100, raw.stabilizationStressEma))
       : 50;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     stabilizationStressEma,
@@ -3866,7 +3906,7 @@ function actionKey(action: ReliefDispatchAction): string {
 
 export function createInitialReliefFulfillment(): ReliefFulfillmentPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     openActions: [],
     cumulativeFulfilled: 0,
@@ -3883,7 +3923,7 @@ export function sanitizeReliefFulfillment(
       )
     : [];
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     openActions,
     cumulativeFulfilled:
@@ -4058,7 +4098,7 @@ function gapSample(brief: WellbeingRecoveryReadinessBrief): number {
 
 export function createInitialReadinessTrajectory(): ReadinessTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     readinessGapEma: 48,
@@ -4079,7 +4119,7 @@ export function sanitizeReadinessTrajectory(
       ? Math.max(0, Math.min(100, raw.readinessGapEma))
       : 48;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     readinessGapEma,
@@ -4242,7 +4282,7 @@ function frictionSample(plan: PortfolioResumptionPlan): number {
 
 export function createInitialResumptionTrajectory(): ResumptionTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     resumptionFrictionEma: 50,
@@ -4263,7 +4303,7 @@ export function sanitizeResumptionTrajectory(
       ? Math.max(0, Math.min(100, raw.resumptionFrictionEma))
       : 50;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     resumptionFrictionEma,
@@ -4432,7 +4472,7 @@ function readinessSample(brief: PortfolioHandoffBrief): number {
 
 export function createInitialHandoffTrajectory(): HandoffTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     handoffReadinessEma: 52,
@@ -4453,7 +4493,7 @@ export function sanitizeHandoffTrajectory(
       ? Math.max(0, Math.min(100, raw.handoffReadinessEma))
       : 52;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     handoffReadinessEma,
@@ -4635,7 +4675,7 @@ function publishSample(brief: WellbeingIntegrationHandoffBrief): number {
 
 export function createInitialIntegrationTrajectory(): IntegrationTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     integrationReadinessEma: 50,
@@ -4656,7 +4696,7 @@ export function sanitizeIntegrationTrajectory(
       ? Math.max(0, Math.min(100, raw.integrationReadinessEma))
       : 50;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     integrationReadinessEma,
@@ -4809,7 +4849,7 @@ function activationSample(brief: NationalWireInReadinessBrief): number {
 
 export function createInitialWireInTrajectory(): WireInTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wireInActivationEma: 50,
@@ -4830,7 +4870,7 @@ export function sanitizeWireInTrajectory(
       ? Math.max(0, Math.min(100, raw.wireInActivationEma))
       : 50;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wireInActivationEma,
@@ -4993,7 +5033,7 @@ function mergeSample(brief: Agent25AssemblyHandoffBrief): number {
 
 export function createInitialAssemblyMergeTrajectory(): AssemblyMergeTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     assemblyMergeEma: 48,
@@ -5014,7 +5054,7 @@ export function sanitizeAssemblyMergeTrajectory(
       ? Math.max(0, Math.min(100, raw.assemblyMergeEma))
       : 48;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     assemblyMergeEma,
@@ -5188,7 +5228,7 @@ function inlineSample(brief: Agent25InlineReadinessBrief): number {
 
 export function createInitialInlineMergeTrajectory(): InlineMergeTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     inlineMergeEma: 46,
@@ -5209,7 +5249,7 @@ export function sanitizeInlineMergeTrajectory(
       ? Math.max(0, Math.min(100, raw.inlineMergeEma))
       : 46;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     inlineMergeEma,
@@ -5368,7 +5408,7 @@ function gateSample(brief: Agent25Wave17ProjectionHandoffBrief): number {
 
 export function createInitialProjectionGateTrajectory(): ProjectionGateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     projectionGateEma: 44,
@@ -5389,7 +5429,7 @@ export function sanitizeProjectionGateTrajectory(
       ? Math.max(0, Math.min(100, raw.projectionGateEma))
       : 44;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     projectionGateEma,
@@ -5550,7 +5590,7 @@ function gateSample(brief: Agent25Wave18ProjectionHandoffBrief): number {
 
 export function createInitialWave19GateTrajectory(): Wave19GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave19GateEma: 42,
@@ -5571,7 +5611,7 @@ export function sanitizeWave19GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave19GateEma))
       : 42;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave19GateEma,
@@ -5730,7 +5770,7 @@ function gateSample(brief: Agent25Wave19ProjectionHandoffBrief): number {
 
 export function createInitialWave20GateTrajectory(): Wave20GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave20GateEma: 40,
@@ -5751,7 +5791,7 @@ export function sanitizeWave20GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave20GateEma))
       : 40;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave20GateEma,
@@ -5910,7 +5950,7 @@ function gateSample(brief: Agent25Wave20ProjectionHandoffBrief): number {
 
 export function createInitialWave21GateTrajectory(): Wave21GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave21GateEma: 38,
@@ -5931,7 +5971,7 @@ export function sanitizeWave21GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave21GateEma))
       : 38;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave21GateEma,
@@ -6090,7 +6130,7 @@ function gateSample(brief: Agent25Wave21ProjectionHandoffBrief): number {
 
 export function createInitialWave22GateTrajectory(): Wave22GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave22GateEma: 36,
@@ -6111,7 +6151,7 @@ export function sanitizeWave22GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave22GateEma))
       : 36;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave22GateEma,
@@ -6270,7 +6310,7 @@ function gateSample(brief: Agent25Wave22ProjectionHandoffBrief): number {
 
 export function createInitialWave23GateTrajectory(): Wave23GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave23GateEma: 34,
@@ -6291,7 +6331,7 @@ export function sanitizeWave23GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave23GateEma))
       : 34;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave23GateEma,
@@ -6450,7 +6490,7 @@ function gateSample(brief: Agent25Wave23ProjectionHandoffBrief): number {
 
 export function createInitialWave24GateTrajectory(): Wave24GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave24GateEma: 32,
@@ -6471,7 +6511,7 @@ export function sanitizeWave24GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave24GateEma))
       : 32;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave24GateEma,
@@ -6630,7 +6670,7 @@ function gateSample(brief: Agent25Wave24ProjectionHandoffBrief): number {
 
 export function createInitialWave25GateTrajectory(): Wave25GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave25GateEma: 30,
@@ -6651,7 +6691,7 @@ export function sanitizeWave25GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave25GateEma))
       : 30;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave25GateEma,
@@ -6810,7 +6850,7 @@ function gateSample(brief: Agent25Wave25ProjectionHandoffBrief): number {
 
 export function createInitialWave26GateTrajectory(): Wave26GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave26GateEma: 29,
@@ -6831,7 +6871,7 @@ export function sanitizeWave26GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave26GateEma))
       : 29;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave26GateEma,
@@ -6990,7 +7030,7 @@ function gateSample(brief: Agent25Wave26ProjectionHandoffBrief): number {
 
 export function createInitialWave27GateTrajectory(): Wave27GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave27GateEma: 28,
@@ -7011,7 +7051,7 @@ export function sanitizeWave27GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave27GateEma))
       : 28;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave27GateEma,
@@ -7170,7 +7210,7 @@ function gateSample(brief: Agent25Wave27ProjectionHandoffBrief): number {
 
 export function createInitialWave28GateTrajectory(): Wave28GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave28GateEma: 27,
@@ -7191,7 +7231,7 @@ export function sanitizeWave28GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave28GateEma))
       : 27;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave28GateEma,
@@ -7350,7 +7390,7 @@ function gateSample(brief: Agent25Wave28ProjectionHandoffBrief): number {
 
 export function createInitialWave29GateTrajectory(): Wave29GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave29GateEma: 26,
@@ -7371,7 +7411,7 @@ export function sanitizeWave29GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave29GateEma))
       : 26;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave29GateEma,
@@ -7530,7 +7570,7 @@ function gateSample(brief: Agent25Wave29ProjectionHandoffBrief): number {
 
 export function createInitialWave30GateTrajectory(): Wave30GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave30GateEma: 25,
@@ -7551,7 +7591,7 @@ export function sanitizeWave30GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave30GateEma))
       : 25;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave30GateEma,
@@ -7710,7 +7750,7 @@ function gateSample(brief: Agent25Wave30ProjectionHandoffBrief): number {
 
 export function createInitialWave31GateTrajectory(): Wave31GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave31GateEma: 24,
@@ -7731,7 +7771,7 @@ export function sanitizeWave31GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave31GateEma))
       : 24;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave31GateEma,
@@ -7890,7 +7930,7 @@ function gateSample(brief: Agent25Wave31ProjectionHandoffBrief): number {
 
 export function createInitialWave32GateTrajectory(): Wave32GateTrajectoryPersisted {
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: 0,
     emaAlpha: DEFAULT_EMA_ALPHA,
     wave32GateEma: 23,
@@ -7911,7 +7951,7 @@ export function sanitizeWave32GateTrajectory(
       ? Math.max(0, Math.min(100, raw.wave32GateEma))
       : 23;
   return {
-    schemaVersion: '10.14.32-scale-wave-32' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
     lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
     emaAlpha: alpha,
     wave32GateEma,
@@ -8056,6 +8096,186 @@ export function composeAgent25Wave32ProjectionHandoffBrief(args: {
 }
 
 
+// --- source: wave33-gate-trajectory.ts ---
+const DEFAULT_EMA_ALPHA = 0.3;
+
+function gateSample(brief: Agent25Wave32ProjectionHandoffBrief): number {
+  let sample = brief.shouldProjectWave32 ? 12 : 66;
+  if (!brief.shouldRunO10m196DryRun) {
+    sample += 8;
+  }
+  sample -= Math.min(brief.headlines.length * 2, 6);
+  return Math.max(0, Math.min(100, sample));
+}
+
+export function createInitialWave33GateTrajectory(): Wave33GateTrajectoryPersisted {
+  return {
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: 0,
+    emaAlpha: DEFAULT_EMA_ALPHA,
+    wave33GateEma: 22,
+    priorEma: undefined,
+  };
+}
+
+export function sanitizeWave33GateTrajectory(
+  raw?: Wave33GateTrajectoryPersisted | null
+): Wave33GateTrajectoryPersisted {
+  if (!raw || typeof raw !== 'object') return createInitialWave33GateTrajectory();
+  const alpha =
+    typeof raw.emaAlpha === 'number' && raw.emaAlpha > 0 && raw.emaAlpha <= 1
+      ? raw.emaAlpha
+      : DEFAULT_EMA_ALPHA;
+  const wave33GateEma =
+    typeof raw.wave33GateEma === 'number' && Number.isFinite(raw.wave33GateEma)
+      ? Math.max(0, Math.min(100, raw.wave33GateEma))
+      : 22;
+  return {
+    schemaVersion: '10.14.33-scale-wave-33' as typeof AGENT14_WELLBEING_SCHEMA_VERSION,
+    lastTurn: typeof raw.lastTurn === 'number' ? Math.max(0, Math.floor(raw.lastTurn)) : 0,
+    emaAlpha: alpha,
+    wave33GateEma,
+    priorEma:
+      typeof raw.priorEma === 'number' && Number.isFinite(raw.priorEma)
+        ? Math.max(0, Math.min(100, raw.priorEma))
+        : undefined,
+  };
+}
+
+function trajectoryFromDelta(
+  current: number,
+  previous: number | undefined,
+  epsilon = 0.85
+): CouplingTrajectoryTrend {
+  if (previous === undefined) return 'flat';
+  if (previous - current > epsilon) return 'improving';
+  if (current - previous > epsilon) return 'deteriorating';
+  return 'flat';
+}
+
+function bandFromGate(score: number, brief: Agent25Wave32ProjectionHandoffBrief): Wave33GateBand {
+  if (brief.shouldProjectWave32 && score <= 18) return 'ready';
+  if (score >= 60) return 'blocked';
+  return 'pending';
+}
+
+export function advanceWave33GateTrajectory(
+  turn: number,
+  brief: Agent25Wave32ProjectionHandoffBrief,
+  persisted?: Wave33GateTrajectoryPersisted | null
+): { snapshot: Wave33GateTrajectorySnapshot; persisted: Wave33GateTrajectoryPersisted } {
+  const base = sanitizeWave33GateTrajectory(persisted);
+  const alpha = base.emaAlpha;
+  const sample = gateSample(brief);
+  const priorEma = base.wave33GateEma;
+  const wave33GateEma = Math.round((alpha * sample + (1 - alpha) * priorEma) * 10) / 10;
+  const trajectory = trajectoryFromDelta(wave33GateEma, base.priorEma ?? priorEma);
+  const evidence: string[] = [];
+  if (trajectory === 'improving') {
+    evidence.push(`Wave 33 gate EMA improving (${priorEma} → ${wave33GateEma})`);
+  } else if (trajectory === 'deteriorating') {
+    evidence.push(`Wave 33 gate EMA softening (${priorEma} → ${wave33GateEma})`);
+  }
+  if (brief.shouldProjectWave32) {
+    evidence.push('Agent 25 wave 32 projection signal active');
+  }
+
+  return {
+    snapshot: {
+      turn,
+      wave33GateEma,
+      instantaneousGate: sample,
+      band: bandFromGate(wave33GateEma, brief),
+      trajectory,
+      evidence,
+    },
+    persisted: {
+      ...base,
+      lastTurn: turn,
+      priorEma: priorEma,
+      wave33GateEma,
+    },
+  };
+}
+
+
+// --- source: wave33-integration-monitor.ts ---
+export function buildWave33IntegrationMonitor(args: {
+  turn: number;
+  wave32ProjectionBrief: Agent25Wave32ProjectionHandoffBrief;
+  wave33GateTrajectory?: Wave33GateTrajectorySnapshot;
+  wave32IntegrationMonitor: Wave32IntegrationMonitor;
+}): Wave33IntegrationMonitor {
+  const reasons: string[] = [];
+  let shouldRunO10m198DryRun =
+    args.wave32ProjectionBrief.shouldProjectWave32 &&
+    args.wave33GateTrajectory?.band === 'ready' &&
+    args.wave32IntegrationMonitor.shouldRunO10m196DryRun;
+
+  if (!args.wave32ProjectionBrief.shouldProjectWave32) {
+    reasons.push('Wave 32 projection not cleared');
+    shouldRunO10m198DryRun = false;
+  }
+  if (args.wave33GateTrajectory?.band !== 'ready') {
+    reasons.push(`Wave 33 gate band ${args.wave33GateTrajectory?.band ?? 'missing'} (need ready)`);
+    shouldRunO10m198DryRun = false;
+  }
+  if (!args.wave32IntegrationMonitor.shouldRunO10m196DryRun) {
+    reasons.push('O10-196 dry-run path blocked for wave 33 gate');
+    shouldRunO10m198DryRun = false;
+  }
+
+  const summary = shouldRunO10m198DryRun
+    ? `Wave 33 O10-198 dry-run gate ready (gate EMA ${args.wave33GateTrajectory?.wave33GateEma ?? 'n/a'})`
+    : reasons.length > 0
+      ? `Wave 33 integration deferred — ${reasons[0]}`
+      : 'Wave 33 integration pending';
+
+  return {
+    turn: args.turn,
+    shouldRunO10m198DryRun,
+    wave33GateBand: args.wave33GateTrajectory?.band ?? 'pending',
+    blockingReasons: reasons.slice(0, 3),
+    summary,
+  };
+}
+
+
+// --- source: agent25-wave33-projection-handoff-brief.ts ---
+export function composeAgent25Wave33ProjectionHandoffBrief(args: {
+  turn: number;
+  wave33IntegrationMonitor: Wave33IntegrationMonitor;
+  wave33GateTrajectory?: Wave33GateTrajectorySnapshot;
+}): Agent25Wave33ProjectionHandoffBrief {
+  const shouldProjectWave33 =
+    args.wave33IntegrationMonitor.shouldRunO10m198DryRun &&
+    args.wave33GateTrajectory?.trajectory !== 'deteriorating';
+
+  const headlines: string[] = [];
+  if (shouldProjectWave33) {
+    headlines.push('Agent 25: project wave 33 module gate / O10-198 dry-run');
+  } else {
+    headlines.push('Agent 25 wave 33 projection deferred — integration gate not stable');
+  }
+  if (args.wave33GateTrajectory?.band === 'ready') {
+    headlines.push('Wave 33 gate trajectory ready for O10-198 projection handoff');
+  }
+  if (args.wave33IntegrationMonitor.wave33GateBand === 'blocked') {
+    headlines.push('Wave 33 gate blocked — hold O10-198 handoff');
+  }
+
+  const summary = `project=${shouldProjectWave33} o10m198=${args.wave33IntegrationMonitor.shouldRunO10m198DryRun} band=${args.wave33GateTrajectory?.band ?? 'n/a'}`;
+
+  return {
+    turn: args.turn,
+    shouldProjectWave33,
+    shouldRunO10m198DryRun: args.wave33IntegrationMonitor.shouldRunO10m198DryRun,
+    headlines: headlines.slice(0, 3),
+    summary,
+  };
+}
+
+
 // --- source: wellbeing-executive-brief.ts ---
 export function composeAgent14WellbeingExecutiveBrief(args: {
   turn: number;
@@ -8146,6 +8366,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   wave32GateTrajectory?: Wave32GateTrajectorySnapshot;
   wave32IntegrationMonitor?: Wave32IntegrationMonitor;
   agent25Wave32ProjectionHandoffBrief?: Agent25Wave32ProjectionHandoffBrief;
+  wave33GateTrajectory?: Wave33GateTrajectorySnapshot;
+  wave33IntegrationMonitor?: Wave33IntegrationMonitor;
+  agent25Wave33ProjectionHandoffBrief?: Agent25Wave33ProjectionHandoffBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -8479,6 +8702,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   if (args.agent25Wave32ProjectionHandoffBrief?.shouldProjectWave32) {
     giNotes.push(args.agent25Wave32ProjectionHandoffBrief.summary);
   }
+  if (args.wave33GateTrajectory?.band === 'blocked') {
+    giNotes.push(
+      `Wave 33 gate ${args.wave33GateTrajectory.band} (EMA ${args.wave33GateTrajectory.wave33GateEma})`
+    );
+  }
+  if (args.wave33IntegrationMonitor && !args.wave33IntegrationMonitor.shouldRunO10m198DryRun) {
+    giNotes.push(args.wave33IntegrationMonitor.summary);
+  }
+  if (args.agent25Wave33ProjectionHandoffBrief?.shouldProjectWave33) {
+    giNotes.push(args.agent25Wave33ProjectionHandoffBrief.summary);
+  }
 
   const headlineParts: string[] = [];
   if (args.coupling.band === 'critical' || args.coupling.band === 'strained') {
@@ -8544,6 +8778,8 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
     headlineParts.push('Agent 25 wave 31 / O10-194 projection ready');
   } else if (args.agent25Wave32ProjectionHandoffBrief?.shouldProjectWave32) {
     headlineParts.push('Agent 25 wave 32 / O10-196 projection ready');
+  } else if (args.agent25Wave33ProjectionHandoffBrief?.shouldProjectWave33) {
+    headlineParts.push('Agent 25 wave 33 / O10-198 projection ready');
   }
 
   return {
@@ -8592,6 +8828,7 @@ export interface AdvancePublicServicesTurnArgs {
   wave30GateTrajectoryPersisted?: Wave30GateTrajectoryPersisted | null;
   wave31GateTrajectoryPersisted?: Wave31GateTrajectoryPersisted | null;
   wave32GateTrajectoryPersisted?: Wave32GateTrajectoryPersisted | null;
+  wave33GateTrajectoryPersisted?: Wave33GateTrajectoryPersisted | null;
   /** New commitments queued this turn (already validated or not). */
   newCommitments?: SpendingCommitment[];
   /** When true, reject commitments that fail capacity gate. */
@@ -8631,6 +8868,7 @@ export interface AdvancePublicServicesTurnResult {
   wave30GateTrajectoryPersisted: Wave30GateTrajectoryPersisted;
   wave31GateTrajectoryPersisted: Wave31GateTrajectoryPersisted;
   wave32GateTrajectoryPersisted: Wave32GateTrajectoryPersisted;
+  wave33GateTrajectoryPersisted: Wave33GateTrajectoryPersisted;
   rejectedCommitments: Array<{ commitment: SpendingCommitment; reason: string }>;
 }
 
@@ -9258,6 +9496,25 @@ export function advancePublicServicesTurn(
     wave32GateTrajectory: wave32GateTrajectoryAdvance.snapshot,
   });
 
+  const wave33GateTrajectoryAdvance = advanceWave33GateTrajectory(
+    turn,
+    agent25Wave32ProjectionHandoffBrief,
+    args.wave33GateTrajectoryPersisted
+  );
+
+  const wave33IntegrationMonitor = buildWave33IntegrationMonitor({
+    turn,
+    wave32ProjectionBrief: agent25Wave32ProjectionHandoffBrief,
+    wave33GateTrajectory: wave33GateTrajectoryAdvance.snapshot,
+    wave32IntegrationMonitor,
+  });
+
+  const agent25Wave33ProjectionHandoffBrief = composeAgent25Wave33ProjectionHandoffBrief({
+    turn,
+    wave33IntegrationMonitor,
+    wave33GateTrajectory: wave33GateTrajectoryAdvance.snapshot,
+  });
+
   const executiveBrief = composeAgent14WellbeingExecutiveBrief({
     turn,
     warnings: wellbeingWarnings,
@@ -9346,6 +9603,9 @@ export function advancePublicServicesTurn(
     wave32GateTrajectory: wave32GateTrajectoryAdvance.snapshot,
     wave32IntegrationMonitor,
     agent25Wave32ProjectionHandoffBrief,
+    wave33GateTrajectory: wave33GateTrajectoryAdvance.snapshot,
+    wave33IntegrationMonitor,
+    agent25Wave33ProjectionHandoffBrief,
   });
 
   const enriched: EnrichedPublicServiceTurnInputs = {
@@ -9451,6 +9711,9 @@ export function advancePublicServicesTurn(
     wave32GateTrajectory: wave32GateTrajectoryAdvance.snapshot,
     wave32IntegrationMonitor,
     agent25Wave32ProjectionHandoffBrief,
+    wave33GateTrajectory: wave33GateTrajectoryAdvance.snapshot,
+    wave33IntegrationMonitor,
+    agent25Wave33ProjectionHandoffBrief,
   };
 
   return {
@@ -9486,6 +9749,7 @@ export function advancePublicServicesTurn(
     wave30GateTrajectoryPersisted: wave30GateTrajectoryAdvance.persisted,
     wave31GateTrajectoryPersisted: wave31GateTrajectoryAdvance.persisted,
     wave32GateTrajectoryPersisted: wave32GateTrajectoryAdvance.persisted,
+    wave33GateTrajectoryPersisted: wave33GateTrajectoryAdvance.persisted,
     rejectedCommitments,
   };
 }
@@ -9558,7 +9822,9 @@ export type Agent14HousingScenarioId =
   | 'wave31_gate_trajectory_arc'
   | 'wave31_integration_stress'
   | 'wave32_gate_trajectory_arc'
-  | 'wave32_integration_stress';
+  | 'wave32_integration_stress'
+  | 'wave33_gate_trajectory_arc'
+  | 'wave33_integration_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -10268,6 +10534,29 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
       'ps_h_WA_remote_housing',
     ],
   },
+  {
+    id: 'wave33_gate_trajectory_arc',
+    label: 'Wave 33 gate trajectory arc',
+    baseInputs: { fiscalHeadroom: 72, stateCapacityLoad: 23, workforceReadiness: 'strong' },
+    launchProgramIds: [
+      'ps_xp_QLD_wave33_projection',
+      'ps_xp_NSW_wave32_projection',
+      'ps_xp_WA_wave31_projection',
+      'ps_h_QLD_regional_release',
+    ],
+  },
+  {
+    id: 'wave33_integration_stress',
+    label: 'Wave 33 integration stress',
+    baseInputs: { fiscalHeadroom: 0, stateCapacityLoad: 99, workforceReadiness: 'blocking', workforceSpecialistGap: 100 },
+    launchProgramIds: [
+      'ps_xp_SA_o10m198_gate',
+      'ps_xp_WA_o10m196_gate',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_NSW_skills',
+      'ps_h_SA_modular',
+    ],
+  },
 ];
 
 export function simulateAgent14HousingScenario(
@@ -10311,6 +10600,7 @@ export function simulateAgent14HousingScenario(
   let wave30GateTrajectoryPersisted = null;
   let wave31GateTrajectoryPersisted = null;
   let wave32GateTrajectoryPersisted = null;
+  let wave33GateTrajectoryPersisted = null;
   const turns: EnrichedPublicServiceTurnInputs[] = [];
 
   for (let t = 1; t <= maxTurns; t += 1) {
@@ -10354,6 +10644,7 @@ export function simulateAgent14HousingScenario(
       wave30GateTrajectoryPersisted,
       wave31GateTrajectoryPersisted,
       wave32GateTrajectoryPersisted,
+      wave33GateTrajectoryPersisted,
       newCommitments,
       enforceCapacity: true,
     });
@@ -10388,6 +10679,7 @@ export function simulateAgent14HousingScenario(
     wave30GateTrajectoryPersisted = result.wave30GateTrajectoryPersisted;
     wave31GateTrajectoryPersisted = result.wave31GateTrajectoryPersisted;
     wave32GateTrajectoryPersisted = result.wave32GateTrajectoryPersisted;
+    wave33GateTrajectoryPersisted = result.wave33GateTrajectoryPersisted;
     turns.push(result.inputs);
   }
 
@@ -10921,8 +11213,8 @@ export function runAgent14WellbeingSelfTests(): {
   check(
     results,
     'wave3_scenario_catalog_size',
-    'Sixty-six housing scenarios registered',
-    listAgent14ScenarioIds().length === 66,
+    'Sixty-eight housing scenarios registered',
+    listAgent14ScenarioIds().length === 68,
     `ids=${listAgent14ScenarioIds().join(',')}`
   );
 
@@ -11151,7 +11443,7 @@ export function runAgent14WellbeingSelfTests(): {
     results,
     'wave5_schema_version',
     'Wellbeing schema version is wave 15',
-    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.32-scale-wave-32',
+    AGENT14_WELLBEING_SCHEMA_VERSION === '10.14.33-scale-wave-33',
     AGENT14_WELLBEING_SCHEMA_VERSION
   );
 
@@ -15437,6 +15729,217 @@ export function runAgent14WellbeingSelfTests(): {
       listAgent14ScenarioIds().includes('wave31_integration_stress'),
     '64 scenarios'
   );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 12, fiscalHeadroom: 70, stateCapacityLoad: 26, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave32_gate_trajectory',
+      'Turn advance attaches wave 32 gate trajectory',
+      adv.inputs.wave32GateTrajectory !== undefined &&
+        adv.wave32GateTrajectoryPersisted.lastTurn === 12,
+      `band=${adv.inputs.wave32GateTrajectory?.band}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 11, fiscalHeadroom: 64, stateCapacityLoad: 34, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave32_integration_monitor',
+      'Wave 32 integration monitor present',
+      adv.inputs.wave32IntegrationMonitor !== undefined &&
+        adv.inputs.wave32IntegrationMonitor!.summary.length > 10,
+      adv.inputs.wave32IntegrationMonitor?.summary.slice(0, 72) ?? 'missing'
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 16, fiscalHeadroom: 75, stateCapacityLoad: 21, workforceReadiness: 'strong' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(
+      results,
+      'wave32_projection_handoff_brief',
+      'Agent 25 wave 32 projection handoff attached',
+      adv.inputs.agent25Wave32ProjectionHandoffBrief !== undefined &&
+        adv.inputs.agent25Wave32ProjectionHandoffBrief!.summary.length > 10,
+      `project=${adv.inputs.agent25Wave32ProjectionHandoffBrief?.shouldProjectWave32}`
+    );
+  }
+
+  {
+    const raw = sanitizeWave32GateTrajectory({
+      schemaVersion: AGENT14_WELLBEING_SCHEMA_VERSION,
+      lastTurn: 10,
+      emaAlpha: 0.3,
+      wave32GateEma: 15,
+    });
+    check(
+      results,
+      'wave32_gate_sanitize',
+      'Wave 32 gate trajectory sanitize preserves schema',
+      raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.wave32GateEma === 15,
+      `ema=${raw.wave32GateEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 14, fiscalHeadroom: 59, stateCapacityLoad: 26, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const wave32 = composeAgent25Wave32ProjectionHandoffBrief({
+      turn: 14,
+      wave32IntegrationMonitor: adv.inputs.wave32IntegrationMonitor!,
+      wave32GateTrajectory: adv.inputs.wave32GateTrajectory,
+    });
+    check(
+      results,
+      'wave32_projection_composer',
+      'Standalone wave 32 projection composer returns headlines',
+      wave32.headlines.length > 0 && wave32.summary.length > 10,
+      wave32.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 10, fiscalHeadroom: 66, stateCapacityLoad: 29, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const snap = advanceWave32GateTrajectory(
+      10,
+      adv.inputs.agent25Wave31ProjectionHandoffBrief!,
+      createInitialWave32GateTrajectory()
+    );
+    check(
+      results,
+      'wave32_gate_advance_unit',
+      'Wave 32 gate advance updates persisted EMA',
+      snap.persisted.lastTurn === 10 && snap.snapshot.wave32GateEma > 0,
+      `ema=${snap.snapshot.wave32GateEma}`
+    );
+  }
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 9, fiscalHeadroom: 61, stateCapacityLoad: 32, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    const monitor = buildWave32IntegrationMonitor({
+      turn: 9,
+      wave31ProjectionBrief: adv.inputs.agent25Wave31ProjectionHandoffBrief!,
+      wave32GateTrajectory: adv.inputs.wave32GateTrajectory,
+      wave31IntegrationMonitor: adv.inputs.wave31IntegrationMonitor!,
+    });
+    check(
+      results,
+      'wave32_integration_monitor_unit',
+      'Standalone wave 32 integration monitor returns summary',
+      monitor.summary.length > 10,
+      monitor.summary.slice(0, 64)
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('wave32_gate_trajectory_arc', 10);
+    const last = sim.turns[sim.turns.length - 1]!;
+    check(
+      results,
+      'wave32_gate_arc_scenario',
+      'Wave 32 gate arc scenario attaches wave 32 chain',
+      last.wave32GateTrajectory !== undefined &&
+        last.wave32IntegrationMonitor !== undefined &&
+        last.agent25Wave32ProjectionHandoffBrief !== undefined,
+      `gate=${last.wave32GateTrajectory?.band}`
+    );
+  }
+
+  {
+    const sim = simulateAgent14HousingScenario('wave32_integration_stress', 8);
+    const last = sim.turns[sim.turns.length - 1]!;
+    check(
+      results,
+      'wave32_integration_stress_scenario',
+      'Wave 32 integration stress keeps O10-196 gated under stress',
+      !last.agent25Wave32ProjectionHandoffBrief!.shouldProjectWave32 ||
+        last.wave32IntegrationMonitor!.shouldRunO10m196DryRun,
+      `project=${last.agent25Wave32ProjectionHandoffBrief?.shouldProjectWave32} o10m196=${last.wave32IntegrationMonitor?.shouldRunO10m196DryRun}`
+    );
+  }
+
+  check(
+    results,
+    'wave32_projection_stub_catalog',
+    'Round 32 projection stubs registered',
+    AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_NSW_wave32_projection') &&
+      AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_WA_o10m196_gate'),
+    'wave32_projection+o10m196_gate'
+  );
+
+  check(
+    results,
+    'wave32_scenario_registry',
+    'Round 32 scenarios registered',
+    listAgent14ScenarioIds().includes('wave32_gate_trajectory_arc') &&
+      listAgent14ScenarioIds().includes('wave32_integration_stress'),
+    '66 scenarios'
+  );
+
+  {
+    const adv = advancePublicServicesTurn({
+      inputs: { turn: 12, fiscalHeadroom: 71, stateCapacityLoad: 25, workforceReadiness: 'balanced' },
+      spendingPersisted: createInitialDelayedSpendingPersisted(),
+    });
+    check(results, 'wave33_gate_trajectory', 'Turn advance attaches wave 33 gate trajectory', adv.inputs.wave33GateTrajectory !== undefined && adv.wave33GateTrajectoryPersisted.lastTurn === 12, `band=${adv.inputs.wave33GateTrajectory?.band}`);
+  }
+  {
+    const adv = advancePublicServicesTurn({ inputs: { turn: 11, fiscalHeadroom: 65, stateCapacityLoad: 33, workforceReadiness: 'balanced' }, spendingPersisted: createInitialDelayedSpendingPersisted() });
+    check(results, 'wave33_integration_monitor', 'Wave 33 integration monitor present', adv.inputs.wave33IntegrationMonitor !== undefined && adv.inputs.wave33IntegrationMonitor!.summary.length > 10, adv.inputs.wave33IntegrationMonitor?.summary.slice(0, 72) ?? 'missing');
+  }
+  {
+    const adv = advancePublicServicesTurn({ inputs: { turn: 16, fiscalHeadroom: 76, stateCapacityLoad: 20, workforceReadiness: 'strong' }, spendingPersisted: createInitialDelayedSpendingPersisted() });
+    check(results, 'wave33_projection_handoff_brief', 'Agent 25 wave 33 projection handoff attached', adv.inputs.agent25Wave33ProjectionHandoffBrief !== undefined && adv.inputs.agent25Wave33ProjectionHandoffBrief!.summary.length > 10, `project=${adv.inputs.agent25Wave33ProjectionHandoffBrief?.shouldProjectWave33}`);
+  }
+  {
+    const raw = sanitizeWave33GateTrajectory({ schemaVersion: AGENT14_WELLBEING_SCHEMA_VERSION, lastTurn: 10, emaAlpha: 0.3, wave33GateEma: 14 });
+    check(results, 'wave33_gate_sanitize', 'Wave 33 gate trajectory sanitize preserves schema', raw.schemaVersion === AGENT14_WELLBEING_SCHEMA_VERSION && raw.wave33GateEma === 14, `ema=${raw.wave33GateEma}`);
+  }
+  {
+    const adv = advancePublicServicesTurn({ inputs: { turn: 14, fiscalHeadroom: 60, stateCapacityLoad: 25, workforceReadiness: 'balanced' }, spendingPersisted: createInitialDelayedSpendingPersisted() });
+    const wave33 = composeAgent25Wave33ProjectionHandoffBrief({ turn: 14, wave33IntegrationMonitor: adv.inputs.wave33IntegrationMonitor!, wave33GateTrajectory: adv.inputs.wave33GateTrajectory });
+    check(results, 'wave33_projection_composer', 'Standalone wave 33 projection composer returns headlines', wave33.headlines.length > 0 && wave33.summary.length > 10, wave33.summary.slice(0, 64));
+  }
+  {
+    const adv = advancePublicServicesTurn({ inputs: { turn: 10, fiscalHeadroom: 67, stateCapacityLoad: 28, workforceReadiness: 'balanced' }, spendingPersisted: createInitialDelayedSpendingPersisted() });
+    const snap = advanceWave33GateTrajectory(10, adv.inputs.agent25Wave32ProjectionHandoffBrief!, createInitialWave33GateTrajectory());
+    check(results, 'wave33_gate_advance_unit', 'Wave 33 gate advance updates persisted EMA', snap.persisted.lastTurn === 10 && snap.snapshot.wave33GateEma > 0, `ema=${snap.snapshot.wave33GateEma}`);
+  }
+  {
+    const adv = advancePublicServicesTurn({ inputs: { turn: 9, fiscalHeadroom: 62, stateCapacityLoad: 31, workforceReadiness: 'balanced' }, spendingPersisted: createInitialDelayedSpendingPersisted() });
+    const monitor = buildWave33IntegrationMonitor({ turn: 9, wave32ProjectionBrief: adv.inputs.agent25Wave32ProjectionHandoffBrief!, wave33GateTrajectory: adv.inputs.wave33GateTrajectory, wave32IntegrationMonitor: adv.inputs.wave32IntegrationMonitor! });
+    check(results, 'wave33_integration_monitor_unit', 'Standalone wave 33 integration monitor returns summary', monitor.summary.length > 10, monitor.summary.slice(0, 64));
+  }
+  {
+    const sim = simulateAgent14HousingScenario('wave33_gate_trajectory_arc', 10);
+    const last = sim.turns[sim.turns.length - 1]!;
+    check(results, 'wave33_gate_arc_scenario', 'Wave 33 gate arc scenario attaches wave 33 chain', last.wave33GateTrajectory !== undefined && last.wave33IntegrationMonitor !== undefined && last.agent25Wave33ProjectionHandoffBrief !== undefined, `gate=${last.wave33GateTrajectory?.band}`);
+  }
+  {
+    const sim = simulateAgent14HousingScenario('wave33_integration_stress', 8);
+    const last = sim.turns[sim.turns.length - 1]!;
+    check(results, 'wave33_integration_stress_scenario', 'Wave 33 integration stress keeps O10-198 gated under stress', !last.agent25Wave33ProjectionHandoffBrief!.shouldProjectWave33 || last.wave33IntegrationMonitor!.shouldRunO10m198DryRun, `project=${last.agent25Wave33ProjectionHandoffBrief?.shouldProjectWave33} o10m198=${last.wave33IntegrationMonitor?.shouldRunO10m198DryRun}`);
+  }
+  check(results, 'wave33_projection_stub_catalog', 'Round 33 projection stubs registered', AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_QLD_wave33_projection') && AGENT14_HEALTH_ED_PROGRAM_STUBS.some((s) => s.id === 'ps_xp_SA_o10m198_gate'), 'wave33_projection+o10m198_gate');
+  check(results, 'wave33_scenario_registry', 'Round 33 scenarios registered', listAgent14ScenarioIds().includes('wave33_gate_trajectory_arc') && listAgent14ScenarioIds().includes('wave33_integration_stress'), '68 scenarios');
 
   const passed = results.filter((r) => r.passed).length;
   return { passed, failed: results.length - passed, total: results.length, results };
