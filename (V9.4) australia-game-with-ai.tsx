@@ -10930,6 +10930,68 @@ export function canonicalStateFromLiveRuntime(
   };
 }
 
+/** O111-A4: React slice inputs that feed the live runtime actorsById map (see game-state-ownership-registry). */
+export interface LiveActorSliceInput {
+  player: ActorState | PlayerStateSnapshot | null | undefined;
+  aiPlayer?: ActorState | PlayerStateSnapshot | null;
+  additionalActors?: Record<string, ActorState>;
+}
+
+/**
+ * Merges authoritative React actor slices into one actorsById map for reduceGameAction /
+ * canonicalStateFromLiveRuntime. Registers each actor under its real id and keeps legacy
+ * `player` / `ai` alias keys when ids differ (team / custom seat ids).
+ */
+export function buildLiveActorsByIdFromSlices(input: LiveActorSliceInput): Record<string, ActorState> {
+  const player = input.player;
+  const aiPlayer = input.aiPlayer;
+  const additionalActors = input.additionalActors || {};
+  const out: Record<string, ActorState> = {
+    ...(player ? { player: player as ActorState } : {}),
+    ...(aiPlayer ? { ai: aiPlayer as ActorState } : {}),
+    ...additionalActors
+  };
+  if (player) {
+    const pid = String(player.id || 'player');
+    const existing = out[pid];
+    out[pid] = (existing && String(existing.id || pid) === pid ? existing : player) as ActorState;
+    if (pid !== 'player') out.player = player as ActorState;
+  }
+  if (aiPlayer && aiPlayer.id && aiPlayer.id !== player?.id) {
+    const aid = String(aiPlayer.id);
+    const existing = out[aid];
+    out[aid] = (existing && String(existing.id || aid) === aid ? existing : aiPlayer) as ActorState;
+    if (aid !== 'ai') out.ai = aiPlayer as ActorState;
+  }
+  return out;
+}
+
+/** Bundles React authoritative slices into the shape expected by canonicalStateFromLiveRuntime. */
+export function buildLiveRuntimeInputFromReactSlices(
+  slices: LiveActorSliceInput & {
+    gameState: GameStateSnapshot | any;
+    teamsById?: Record<string, TeamState>;
+    gameSettings?: GameSettingsState;
+    takeoverSession?: CoPilotTakeoverSession | null;
+  }
+): CanonicalRuntimeInput {
+  return {
+    gameState: slices.gameState,
+    player: slices.player,
+    aiPlayer: slices.aiPlayer,
+    actorsById: buildLiveActorsByIdFromSlices(slices),
+    teamsById: slices.teamsById,
+    gameSettings: slices.gameSettings,
+    takeoverSession: slices.takeoverSession ?? undefined
+  };
+}
+
+export function canonicalStateFromReactSlices(
+  slices: Parameters<typeof buildLiveRuntimeInputFromReactSlices>[0]
+): CanonicalGameState {
+  return canonicalStateFromLiveRuntime(buildLiveRuntimeInputFromReactSlices(slices));
+}
+
 /**
  * Computes exact travel cost between two regions based on base distances,
  * weather/season modifiers, active events, character traits (Explorer),
@@ -182067,6 +182129,22 @@ export function runReliabilityUpgradeSelfTests(): V9SelfTestResult[] {
     const after: any = (r.nextState as any).actorsById.player;
     return (canon.actorsById.player.money === 123456 && canon.actorsById.player.currentRegion === 'WA' && after.money === 123456 + 50) || `canon ${canon.actorsById.player.money}@${canon.actorsById.player.currentRegion} after ${after.money}`;
   });
+  check('ru_live_actors_by_id_slices', 'buildLiveActorsByIdFromSlices keeps real actor ids and legacy player/ai aliases for canonical reducers', () => {
+    const human: any = { ...createActorSnapshot({ id: 'human_seat', name: 'H', teamId: TEAM_PLAYER_ID, kind: 'human', role: 'leader', character: CHARACTERS[0] }), money: 42 };
+    const rival: any = createActorSnapshot({ id: 'rival_x', name: 'R', teamId: TEAM_OPPONENT_ID, kind: 'ai', role: 'leader', character: CHARACTERS[1] });
+    const ally: any = createActorSnapshot({ id: 'ally_ai', name: 'A', teamId: TEAM_PLAYER_ID, kind: 'ai', role: 'ally', character: CHARACTERS[2] });
+    const map = buildLiveActorsByIdFromSlices({ player: human, aiPlayer: rival, additionalActors: { ally_ai: ally } });
+    const canon = canonicalStateFromReactSlices({ gameState: initialGameState, player: human, aiPlayer: rival, additionalActors: { ally_ai: ally }, gameSettings: settings });
+    return (
+      map.human_seat?.money === 42 &&
+      map.player?.money === 42 &&
+      map.rival_x?.id === 'rival_x' &&
+      map.ai?.id === 'rival_x' &&
+      map.ally_ai?.id === 'ally_ai' &&
+      canon.actorsById.human_seat?.money === 42 &&
+      canon.actorsById.rival_x?.id === 'rival_x'
+    ) || JSON.stringify({ keys: Object.keys(map), canonKeys: Object.keys(canon.actorsById || {}) });
+  });
   return results;
 }
 
@@ -183096,11 +183174,10 @@ function AustraliaGame() {
     }
   }, [gameSettings.worldRngMode, gameSettings.worldRngSeed]);
 
-  const actorsById = useMemo<Record<string, ActorState>>(() => ({
-    player: player as ActorState,
-    ai: aiPlayer as ActorState,
-    ...additionalActors
-  }), [additionalActors, aiPlayer, player]);
+  const actorsById = useMemo<Record<string, ActorState>>(
+    () => buildLiveActorsByIdFromSlices({ player, aiPlayer, additionalActors }),
+    [additionalActors, aiPlayer, player]
+  );
 
   const aiMemoriesRef = useRef<AiMemoriesByActor>(gameState.aiMemoriesByActor || {});
   aiMemoriesRef.current = gameState.aiMemoriesByActor || {};
