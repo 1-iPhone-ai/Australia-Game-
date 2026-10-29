@@ -1047,6 +1047,18 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
+  if (includeWave40UiDashboardExportStress && prev) {
+    checks.push({
+      id: 'transmission_envelope_finite',
+      passed: Number.isFinite(prev.transmissionEnvelope.envelopeIndex),
+      detail: String(prev.transmissionEnvelope.envelopeIndex)
+    });
+    checks.push({
+      id: 'seventy_six_transmission_layers_wave40',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 76,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
   checks.push({
     id: 'input_hash_stable_replay',
     passed: lastHash.length > 8,
