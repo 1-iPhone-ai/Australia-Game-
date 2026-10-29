@@ -189,8 +189,10 @@ export interface FleetCapacitySnapshot {
   nationalComposite: number;
 }
 
+export type SeasonalDemandBand = 'low' | 'normal' | 'peak';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/4';
+  schemaVersion: 'agent12/5';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -209,6 +211,12 @@ export interface TransportInfrastructureState {
   climateModifierFactor: number;
   pipelineUnlockPoints: number;
   activePipelineStageIds: string[];
+  freightLatencyByRegion: Record<AuRegionCode, number>;
+  nationalFreightLatencyMedian: number;
+  supplyChainResilienceIndex: number;
+  supplyChainResilienceByRegion: Record<AuRegionCode, number>;
+  weakestSupplyChainRegion: AuRegionCode;
+  disruptionRecoveryFactor: number;
   computeMs: number;
 }
 
@@ -220,6 +228,7 @@ export interface TransportInfrastructureOptions {
   maintenanceSpendIndex?: number;
   fundedPipelineStageIds?: ReadonlySet<string>;
   climateBand?: ClimateTransportBand;
+  seasonalDemandBand?: SeasonalDemandBand;
 }
 
 export interface V94ProjectSnapshot {

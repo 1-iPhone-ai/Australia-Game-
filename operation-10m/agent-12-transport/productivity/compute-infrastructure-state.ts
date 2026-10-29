@@ -39,7 +39,20 @@ import {
 import { computeIntermodalSynergyByRegion } from './intermodal-synergy.ts';
 import { computeFleetCapacitySnapshot } from './fleet-capacity-planner.ts';
 import { computeNationalTransportProductivity } from './compute-national-productivity.ts';
+import { computeSupplyChainResilienceIndex } from './supply-chain-resilience.ts';
 import { clamp } from './formulas.ts';
+import {
+  computeFreightLatencyByRegion,
+  nationalMedianFreightLatency,
+} from '../network/freight-latency-index.ts';
+import { computeDisruptionRecovery } from '../operations/disruption-recovery.ts';
+import type { SeasonalDemandBand } from '../types.ts';
+
+function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
+  if (band === 'low') return -0.06;
+  if (band === 'peak') return 0.09;
+  return 0;
+}
 
 const CONDITION_RANK: TransportAssetCondition[] = [
   'excellent',
@@ -115,6 +128,15 @@ export function computeTransportInfrastructureState(
     networkUtilization: applyScenarioStackToUtilization(scenarioInputs.networkUtilization, scenarioStackFactor),
   };
 
+  const seasonalDelta = seasonalFreightUtilizationDelta(options?.seasonalDemandBand);
+  if (seasonalDelta !== 0) {
+    const freight = clamp((inputs.networkUtilization?.freight ?? 0.5) + seasonalDelta, 0.05, 1.15);
+    inputs = {
+      ...inputs,
+      networkUtilization: { ...inputs.networkUtilization, freight },
+    };
+  }
+
   const climateApplied = applyClimateBandToInputs(inputs, options?.climateBand);
   inputs = climateApplied.inputs;
   const climateModifierFactor = climateApplied.climateModifierFactor;
@@ -178,8 +200,35 @@ export function computeTransportInfrastructureState(
 
   const fleetCapacity = computeFleetCapacitySnapshot(ops);
 
+  const freightLatencyByRegion = computeFreightLatencyByRegion(
+    ops,
+    inputs.networkUtilization?.freight ?? 0.5,
+  );
+  const nationalFreightLatencyMedian = nationalMedianFreightLatency(freightLatencyByRegion);
+
   const maintenanceWarnings = maintenanceWarningsFromBacklog(options?.maintenanceBacklogByAssetId);
   const bottleneckAssetIds = detectBottlenecks(productivity, ops, inputs);
+  const recovery = computeDisruptionRecovery(ops, resilienceScoreByRegion, bottleneckAssetIds.length);
+
+  for (const code of AU_REGION_CODES) {
+    productivity.byRegion[code].productivityIndexBonus *= 0.92 + recovery.nationalRecoveryFactor * 0.08;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints;
+
+  const supplyChain = computeSupplyChainResilienceIndex({
+    resilienceScoreByRegion,
+    freightLatencyByRegion,
+    recoveryFactor: recovery.nationalRecoveryFactor,
+    corridorSynergyPoints,
+  });
+
+  for (const code of AU_REGION_CODES) {
+    productivity.byRegion[code].productivityIndexBonus += supplyChain.byRegion[code] * 2.5;
+  }
+  productivity.nationalProductivityIndexBonus += supplyChain.nationalIndex * 3;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -193,7 +242,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/4',
+    schemaVersion: 'agent12/5',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -212,6 +261,12 @@ export function computeTransportInfrastructureState(
     climateModifierFactor,
     pipelineUnlockPoints: pipeline.productivityPoints,
     activePipelineStageIds: pipeline.activeStageIds,
+    freightLatencyByRegion,
+    nationalFreightLatencyMedian,
+    supplyChainResilienceIndex: supplyChain.nationalIndex,
+    supplyChainResilienceByRegion: supplyChain.byRegion,
+    weakestSupplyChainRegion: supplyChain.weakestRegion,
+    disruptionRecoveryFactor: recovery.nationalRecoveryFactor,
     computeMs,
   };
 }

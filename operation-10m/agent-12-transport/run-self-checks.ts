@@ -14,7 +14,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   const integrity = getCatalogIntegrityReport();
   results.push({
     id: 'catalog_integrity',
-    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 71,
+    ok: integrity.duplicateIds.length === 0 && integrity.invalidRegions.length === 0 && integrity.totalAssets >= 80,
     detail: JSON.stringify(integrity),
   });
 
@@ -66,13 +66,15 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
 
   const infra = computeTransportInfrastructureState(defaultInfrastructureInputs(5));
   results.push({
-    id: 'infrastructure_state_v4',
+    id: 'infrastructure_state_v5',
     ok:
-      infra.schemaVersion === 'agent12/4' &&
+      infra.schemaVersion === 'agent12/5' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
-      infra.scenarioStackFactor >= 1,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} resilience=${Object.values(infra.resilienceScoreByRegion).reduce((a, b) => a + b, 0).toFixed(0)}`,
+      infra.scenarioStackFactor >= 1 &&
+      infra.supplyChainResilienceIndex > 0.2 &&
+      infra.nationalFreightLatencyMedian > 0,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} scri=${infra.supplyChainResilienceIndex.toFixed(2)} latency=${infra.nationalFreightLatencyMedian.toFixed(1)}h`,
   });
 
   return results;
