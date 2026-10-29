@@ -230,6 +230,9 @@ export interface NationalLaborDemographicsState {
   essentialWorkerParticipationOutlook?: NationalEssentialWorkerParticipationOutlook;
   wageAutomationCouplingBrief?: NationalWageAutomationCouplingBrief;
   nationalLaborCohesionIndex?: NationalLaborCohesionIndex;
+  seasonalParticipationSwingOutlook?: NationalSeasonalParticipationSwingOutlook;
+  cohesionCorridorCouplingBrief?: NationalCohesionCorridorCouplingBrief;
+  nationalWorkforceReliabilityIndex?: NationalWorkforceReliabilityIndex;
 }
 
 export type MigrationShockKind =
@@ -737,6 +740,39 @@ export interface NationalLaborCohesionIndex {
   cohesionIndex: number;
   band: LaborCohesionBand;
   stabilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SeasonalParticipationSwingBand = 'volatile' | 'uneven' | 'managed' | 'stable';
+
+export interface NationalSeasonalParticipationSwingOutlook {
+  turn: number;
+  swingIndex: number;
+  band: SeasonalParticipationSwingBand;
+  seasonalDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CohesionCorridorCouplingBand = 'decoupled' | 'strained' | 'linked' | 'reinforced';
+
+export interface NationalCohesionCorridorCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: CohesionCorridorCouplingBand;
+  corridorDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceReliabilityBand = 'fragile' | 'patchy' | 'reliable' | 'robust';
+
+export interface NationalWorkforceReliabilityIndex {
+  turn: number;
+  reliabilityIndex: number;
+  band: WorkforceReliabilityBand;
+  couplingDrag: number;
   summary: string;
   stewardNote: string;
 }

@@ -234,6 +234,9 @@ export interface NationalLaborDemographicsState {
   essentialWorkerParticipationOutlook?: NationalEssentialWorkerParticipationOutlook;
   wageAutomationCouplingBrief?: NationalWageAutomationCouplingBrief;
   nationalLaborCohesionIndex?: NationalLaborCohesionIndex;
+  seasonalParticipationSwingOutlook?: NationalSeasonalParticipationSwingOutlook;
+  cohesionCorridorCouplingBrief?: NationalCohesionCorridorCouplingBrief;
+  nationalWorkforceReliabilityIndex?: NationalWorkforceReliabilityIndex;
 }
 
 export type MigrationShockKind =
@@ -741,6 +744,39 @@ export interface NationalLaborCohesionIndex {
   cohesionIndex: number;
   band: LaborCohesionBand;
   stabilityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SeasonalParticipationSwingBand = 'volatile' | 'uneven' | 'managed' | 'stable';
+
+export interface NationalSeasonalParticipationSwingOutlook {
+  turn: number;
+  swingIndex: number;
+  band: SeasonalParticipationSwingBand;
+  seasonalDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type CohesionCorridorCouplingBand = 'decoupled' | 'strained' | 'linked' | 'reinforced';
+
+export interface NationalCohesionCorridorCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: CohesionCorridorCouplingBand;
+  corridorDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceReliabilityBand = 'fragile' | 'patchy' | 'reliable' | 'robust';
+
+export interface NationalWorkforceReliabilityIndex {
+  turn: number;
+  reliabilityIndex: number;
+  band: WorkforceReliabilityBand;
+  couplingDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -1856,7 +1892,10 @@ export type LaborGiQueryTopic =
   | 'steward_intervention_priority'
   | 'essential_worker_participation'
   | 'wage_automation_coupling'
-  | 'national_labor_cohesion';
+  | 'national_labor_cohesion'
+  | 'seasonal_participation_swing'
+  | 'cohesion_corridor_coupling'
+  | 'workforce_reliability';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -1902,6 +1941,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   }
   if (/\b(wage automation coupling|automation wage coupling)/.test(q)) return 'wage_automation_coupling';
   if (/\b(national labor cohesion|labor cohesion index)/.test(q)) return 'national_labor_cohesion';
+  if (/\b(seasonal participation swing|seasonal swing outlook)/.test(q)) return 'seasonal_participation_swing';
+  if (/\b(cohesion corridor coupling|corridor cohesion link)/.test(q)) return 'cohesion_corridor_coupling';
+  if (/\b(workforce reliability|reliability index labor)/.test(q)) return 'workforce_reliability';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -2280,6 +2322,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Cohesion band ${state.nationalLaborCohesionIndex?.band ?? 'unknown'}; stability drag ${Math.round(state.nationalLaborCohesionIndex?.stabilityDrag ?? 0)}.`,
         inference: state.nationalLaborCohesionIndex?.stewardNote || state.summary,
         projection: 'Cohesion synthesizes stability, intergenerational balance, alignment, and coordination — steward guidance only.'
+      };
+    case 'seasonal_participation_swing':
+      return {
+        topic,
+        headline: state.seasonalParticipationSwingOutlook?.summary || 'Seasonal participation swing unavailable.',
+        fact: `Swing band ${state.seasonalParticipationSwingOutlook?.band ?? 'unknown'}; seasonal drag ${Math.round(state.seasonalParticipationSwingOutlook?.seasonalDrag ?? 0)}.`,
+        inference: state.seasonalParticipationSwingOutlook?.stewardNote || state.outlook,
+        projection: 'Seasonal swing blends essential participation, tightness, and scheduling levers — not literal seasonal headcounts.'
+      };
+    case 'cohesion_corridor_coupling':
+      return {
+        topic,
+        headline: state.cohesionCorridorCouplingBrief?.summary || 'Cohesion-corridor coupling unavailable.',
+        fact: `Coupling band ${state.cohesionCorridorCouplingBrief?.band ?? 'unknown'}; corridor drag ${Math.round(state.cohesionCorridorCouplingBrief?.corridorDrag ?? 0)}.`,
+        inference: state.cohesionCorridorCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links national cohesion with corridor stress — bounded indices only.'
+      };
+    case 'workforce_reliability':
+      return {
+        topic,
+        headline: state.nationalWorkforceReliabilityIndex?.summary || 'Workforce reliability unavailable.',
+        fact: `Reliability band ${state.nationalWorkforceReliabilityIndex?.band ?? 'unknown'}; coupling drag ${Math.round(state.nationalWorkforceReliabilityIndex?.couplingDrag ?? 0)}.`,
+        inference: state.nationalWorkforceReliabilityIndex?.stewardNote || state.summary,
+        projection: 'Reliability synthesizes seasonal swing, scheduling, safety, and cohesion-corridor coupling.'
       };
     default:
       return {
@@ -2795,6 +2861,24 @@ export function buildStewardLaborBrief(
     state.nationalLaborCohesionIndex?.band === 'patchy'
   ) {
     hints.push(state.nationalLaborCohesionIndex.stewardNote);
+  }
+  if (
+    state.seasonalParticipationSwingOutlook?.band === 'volatile' ||
+    state.seasonalParticipationSwingOutlook?.band === 'uneven'
+  ) {
+    hints.push(state.seasonalParticipationSwingOutlook.stewardNote);
+  }
+  if (
+    state.cohesionCorridorCouplingBrief?.band === 'decoupled' ||
+    state.cohesionCorridorCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.cohesionCorridorCouplingBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceReliabilityIndex?.band === 'fragile' ||
+    state.nationalWorkforceReliabilityIndex?.band === 'patchy'
+  ) {
+    hints.push(state.nationalWorkforceReliabilityIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -4479,6 +4563,121 @@ export function safetyEaseForRegion(
   );
   if (!matches.length) return 0;
   return matches.reduce((a, l) => a + l.safetyStrength, 0) / matches.length;
+}
+
+
+// --- source: catalog/workforce-scheduling-levers.ts ---
+
+export type WorkforceSchedulingLeverKind =
+  | 'shift_swap_lane'
+  | 'roster_flex_band'
+  | 'peak_load_buffer'
+  | 'seasonal_crew_pool'
+  | 'on_call_rotation';
+
+export interface WorkforceSchedulingLever {
+  id: string;
+  kind: WorkforceSchedulingLeverKind;
+  targetIndustry: StrategicIndustryKind;
+  hostRegions: readonly string[];
+  schedulingStrength: number;
+  label: string;
+  narrative: string;
+}
+
+export const WORKFORCE_SCHEDULING_LEVERS: WorkforceSchedulingLever[] = [
+  {
+    id: 'sched_health_nsw',
+    kind: 'on_call_rotation',
+    targetIndustry: 'research',
+    hostRegions: ['NSW', 'ACT'],
+    schedulingStrength: 0.73,
+    label: 'Capital health on-call rotation',
+    narrative: 'Rotations stabilize essential-worker participation without literal roster counts.'
+  },
+  {
+    id: 'sched_tourism_qld',
+    kind: 'seasonal_crew_pool',
+    targetIndustry: 'tourism',
+    hostRegions: ['QLD', 'NSW'],
+    schedulingStrength: 0.68,
+    label: 'Coastal seasonal crew pool',
+    narrative: 'Crew pools feed seasonal participation swing outlooks.'
+  },
+  {
+    id: 'sched_agri_sa',
+    kind: 'peak_load_buffer',
+    targetIndustry: 'agriculture',
+    hostRegions: ['SA', 'VIC', 'TAS'],
+    schedulingStrength: 0.64,
+    label: 'Harvest peak buffer',
+    narrative: 'Peak buffers ease corridor moves during harvest swings.'
+  },
+  {
+    id: 'sched_manufacturing_vic',
+    kind: 'roster_flex_band',
+    targetIndustry: 'manufacturing',
+    hostRegions: ['VIC', 'SA'],
+    schedulingStrength: 0.7,
+    label: 'Manufacturing roster flex band',
+    narrative: 'Flex bands reinforce wage-automation coupling briefs.'
+  },
+  {
+    id: 'sched_mining_wa',
+    kind: 'shift_swap_lane',
+    targetIndustry: 'mining',
+    hostRegions: ['WA', 'QLD', 'NT'],
+    schedulingStrength: 0.72,
+    label: 'Frontier shift swap lane',
+    narrative: 'Swap lanes offset cohesion-corridor coupling drag.'
+  },
+  {
+    id: 'sched_tech_nsw_vic',
+    kind: 'roster_flex_band',
+    targetIndustry: 'technology',
+    hostRegions: ['NSW', 'VIC'],
+    schedulingStrength: 0.76,
+    label: 'Tech hybrid roster flex',
+    narrative: 'Hybrid flex supports reliability index without remote headcounts.'
+  },
+  {
+    id: 'sched_energy_nt',
+    kind: 'on_call_rotation',
+    targetIndustry: 'energy',
+    hostRegions: ['NT', 'QLD'],
+    schedulingStrength: 0.69,
+    label: 'Energy on-call rotation',
+    narrative: 'Rotations align with safety levers in remote regions.'
+  },
+  {
+    id: 'sched_trade_sa',
+    kind: 'peak_load_buffer',
+    targetIndustry: 'trade',
+    hostRegions: ['SA', 'WA'],
+    schedulingStrength: 0.61,
+    label: 'Trade logistics peak buffer',
+    narrative: 'Peak buffers smooth migration-shock participation buffers.'
+  }
+];
+
+export function lookupWorkforceSchedulingLever(id: string): WorkforceSchedulingLever | undefined {
+  return WORKFORCE_SCHEDULING_LEVERS.find(l => l.id === id);
+}
+
+export function schedulingLeversForIndustry(industry: StrategicIndustryKind): WorkforceSchedulingLever[] {
+  return WORKFORCE_SCHEDULING_LEVERS.filter(l => l.targetIndustry === industry);
+}
+
+export function schedulingEaseForRegion(
+  regionId: string,
+  dominantIndustry: StrategicIndustryKind | null | undefined
+): number {
+  if (!dominantIndustry) return 0;
+  const matches = WORKFORCE_SCHEDULING_LEVERS.filter(
+    l => l.targetIndustry === dominantIndustry && l.hostRegions.includes(regionId)
+  );
+  if (!matches.length) return 0;
+  return matches.reduce((a, l) => a + l.schedulingStrength, 0) / matches.length;
 }
 
 
@@ -6824,6 +7023,200 @@ export function computeNationalLaborCohesionIndex(
 }
 
 
+// --- source: seasonal-participation-swing-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalEssentialWorkerParticipationOutlook,
+  type NationalLaborDemographicsState,
+  type NationalLaborMarketTightnessBrief,
+  type SeasonalParticipationSwingBand,
+  type NationalSeasonalParticipationSwingOutlook
+} from './types';
+
+function swingBand(index: number): SeasonalParticipationSwingBand {
+  if (index <= 34) return 'volatile';
+  if (index <= 48) return 'uneven';
+  if (index <= 62) return 'managed';
+  return 'stable';
+}
+
+export function computeNationalSeasonalParticipationSwingOutlook(
+  state: NationalLaborDemographicsState,
+  essential: NationalEssentialWorkerParticipationOutlook | null | undefined,
+  tightness: NationalLaborMarketTightnessBrief | null | undefined
+): NationalSeasonalParticipationSwingOutlook {
+  if (!state.enabled || !essential || !tightness) {
+    return {
+      turn: state.turn,
+      swingIndex: 50,
+      band: 'uneven',
+      seasonalDrag: 0,
+      summary: 'Seasonal participation swing idle — essential or tightness unavailable.',
+      stewardNote: 'Compute essential-worker and tightness briefs before seasonal swing guidance.'
+    };
+  }
+
+  let schedulingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    schedulingLift += schedulingEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  schedulingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const seasonalDrag = v1014laborClamp(
+    (tightness.band === 'critical_shortage' || tightness.band === 'tight' ? 14 : 6) +
+      essential.shockDrag * 0.35
+  );
+  const essentialLift = essential.essentialIndex * 0.22;
+  const swingIndex = v1014laborClamp(26 + essentialLift + schedulingLift * 22 - seasonalDrag);
+  const band = swingBand(swingIndex);
+
+  const stewardNote =
+    band === 'volatile' || band === 'uneven'
+      ? 'Uneven seasonal swing — deploy scheduling levers before corridor-heavy moves.'
+      : band === 'stable'
+        ? 'Stable seasonal band — avoid stacked shocks that thin crew pools.'
+        : 'Managed swing — monitor essential participation during peak windows.';
+
+  return {
+    turn: state.turn,
+    swingIndex,
+    band,
+    seasonalDrag,
+    summary: `Seasonal participation swing ${band} (index ${Math.round(swingIndex)}); seasonal drag ${Math.round(seasonalDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: cohesion-corridor-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type CohesionCorridorCouplingBand,
+  type NationalCohesionCorridorCouplingBrief,
+  type NationalCorridorCapacityStressBrief,
+  type NationalLaborCohesionIndex,
+  type NationalLaborDemographicsState
+} from './types';
+
+function couplingBand(index: number): CohesionCorridorCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'linked';
+  return 'reinforced';
+}
+
+export function computeNationalCohesionCorridorCouplingBrief(
+  state: NationalLaborDemographicsState,
+  cohesion: NationalLaborCohesionIndex | null | undefined,
+  corridorStress: NationalCorridorCapacityStressBrief | null | undefined
+): NationalCohesionCorridorCouplingBrief {
+  if (!state.enabled || !cohesion || !corridorStress) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      corridorDrag: 0,
+      summary: 'Cohesion-corridor coupling idle — cohesion or corridor stress unavailable.',
+      stewardNote: 'Compute national cohesion and corridor stress before coupling guidance.'
+    };
+  }
+
+  const corridorDrag = v1014laborClamp(
+    corridorStress.corridorMoveDrag * 0.6 +
+      (corridorStress.band === 'overloaded' || corridorStress.band === 'stressed' ? 12 : 4)
+  );
+  const cohesionLift =
+    cohesion.band === 'cohesive' || cohesion.band === 'unified'
+      ? cohesion.cohesionIndex * 0.28
+      : cohesion.cohesionIndex * 0.14;
+  const migrationSpread =
+    V1014_LABOR_CORE_REGIONS.reduce((a, r) => a + Math.abs((state.regions[r]?.migrationFlowScore ?? 50) - 50), 0) /
+    Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const couplingIndex = v1014laborClamp(24 + cohesionLift - corridorDrag - migrationSpread * 0.08);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained cohesion-corridor link — ease corridor stress before national cohesion campaigns.'
+      : band === 'reinforced'
+        ? 'Reinforced coupling — avoid overload moves that fragment unified cohesion.'
+        : 'Linked coupling — pair scheduling levers with corridor absorption checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    corridorDrag,
+    summary: `Cohesion-corridor coupling ${band} (index ${Math.round(couplingIndex)}); corridor drag ${Math.round(corridorDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-reliability-index.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalCohesionCorridorCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalSeasonalParticipationSwingOutlook,
+  type NationalWorkforceReliabilityIndex,
+  type WorkforceReliabilityBand
+} from './types';
+
+function reliabilityBand(index: number): WorkforceReliabilityBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'reliable';
+  return 'robust';
+}
+
+export function computeNationalWorkforceReliabilityIndex(
+  state: NationalLaborDemographicsState,
+  seasonal: NationalSeasonalParticipationSwingOutlook | null | undefined,
+  coupling: NationalCohesionCorridorCouplingBrief | null | undefined
+): NationalWorkforceReliabilityIndex {
+  if (!state.enabled || !seasonal || !coupling) {
+    return {
+      turn: state.turn,
+      reliabilityIndex: 50,
+      band: 'patchy',
+      couplingDrag: 0,
+      summary: 'Workforce reliability idle — seasonal swing or cohesion-corridor coupling unavailable.',
+      stewardNote: 'Compute seasonal swing and cohesion-corridor coupling before reliability guidance.'
+    };
+  }
+
+  let leverLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    const industry = state.regions[regionId]?.dominantIndustry ?? null;
+    leverLift += schedulingEaseForRegion(regionId, industry) * 0.55 + safetyEaseForRegion(regionId, industry) * 0.45;
+  });
+  leverLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const couplingDrag = v1014laborClamp(
+    coupling.corridorDrag * 0.45 + (coupling.band === 'decoupled' || coupling.band === 'strained' ? 10 : 3)
+  );
+  const seasonalLift =
+    seasonal.band === 'stable' || seasonal.band === 'managed' ? seasonal.swingIndex * 0.24 : seasonal.swingIndex * 0.12;
+  const reliabilityIndex = v1014laborClamp(22 + seasonalLift + leverLift * 24 - couplingDrag - seasonal.seasonalDrag * 0.2);
+  const band = reliabilityBand(reliabilityIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'patchy'
+      ? 'Patchy reliability — stack scheduling and safety levers before automation pushes.'
+      : band === 'robust'
+        ? 'Robust reliability — protect crew pools when corridor stress rises.'
+        : 'Reliable band — monitor cohesion-corridor coupling during seasonal peaks.';
+
+  return {
+    turn: state.turn,
+    reliabilityIndex,
+    band,
+    couplingDrag,
+    summary: `National workforce reliability ${band} (index ${Math.round(reliabilityIndex)}); coupling drag ${Math.round(couplingDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -7487,6 +7880,21 @@ export function computeNationalLaborDemographics(
     state.intergenerationalWorkforceBalanceOutlook,
     state.capacityParticipationAlignmentBrief
   );
+  state.seasonalParticipationSwingOutlook = computeNationalSeasonalParticipationSwingOutlook(
+    state,
+    state.essentialWorkerParticipationOutlook,
+    state.laborMarketTightnessBrief
+  );
+  state.cohesionCorridorCouplingBrief = computeNationalCohesionCorridorCouplingBrief(
+    state,
+    state.nationalLaborCohesionIndex,
+    state.corridorCapacityStressBrief
+  );
+  state.nationalWorkforceReliabilityIndex = computeNationalWorkforceReliabilityIndex(
+    state,
+    state.seasonalParticipationSwingOutlook,
+    state.cohesionCorridorCouplingBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -7701,6 +8109,27 @@ export function computeNationalLaborDemographics(
   ) {
     state.evidence.push(state.nationalLaborCohesionIndex.summary.slice(0, 120));
   }
+  if (
+    (state.seasonalParticipationSwingOutlook?.band === 'volatile' ||
+      state.seasonalParticipationSwingOutlook?.band === 'uneven') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.seasonalParticipationSwingOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.cohesionCorridorCouplingBrief?.band === 'decoupled' ||
+      state.cohesionCorridorCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.cohesionCorridorCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceReliabilityIndex?.band === 'fragile' ||
+      state.nationalWorkforceReliabilityIndex?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceReliabilityIndex.summary.slice(0, 120));
+  }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
   }
@@ -7774,6 +8203,11 @@ export function computeNationalLaborDemographics(
   safetyEaseForRegion,
   safetyLeversForIndustry
 } from './catalog/workforce-safety-levers';
+  WORKFORCE_SCHEDULING_LEVERS,
+  lookupWorkforceSchedulingLever,
+  schedulingEaseForRegion,
+  schedulingLeversForIndustry
+} from './catalog/workforce-scheduling-levers';
   STRATEGIC_INDUSTRIES,
   V1014_LABOR_CORE_REGIONS,
   V1014_LABOR_INDUSTRY_LABOR_WEIGHT,
@@ -8605,6 +9039,62 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.capacityParticipationAlignmentBrief
     ).stewardNote.length > 8,
     'cohesion steward note'
+  );
+
+  check('R1601', WORKFORCE_SCHEDULING_LEVERS.length >= 8, 'scheduling lever catalog');
+  check('R1602', Boolean(lookupWorkforceSchedulingLever('sched_tech_nsw_vic')?.narrative), 'scheduling lever lookup');
+  check('R1603', schedulingLeversForIndustry('technology').length >= 1, 'technology scheduling levers');
+  check('R1604', schedulingEaseForRegion('NSW', 'technology') > 0, 'regional scheduling ease');
+  check('R1605', Boolean(r1.state.seasonalParticipationSwingOutlook?.band), 'seasonal swing on state');
+  check('R1606', (r1.state.seasonalParticipationSwingOutlook?.seasonalDrag ?? 0) >= 0, 'seasonal drag');
+  check('R1607', Boolean(r1.state.cohesionCorridorCouplingBrief?.band), 'cohesion corridor on state');
+  check('R1608', Boolean(r1.state.nationalWorkforceReliabilityIndex?.band), 'reliability on state');
+  check(
+    'R1609',
+    detectLaborDemographicsQuery('seasonal participation swing') === 'seasonal_participation_swing',
+    'GI seasonal detect'
+  );
+  check(
+    'R1610',
+    detectLaborDemographicsQuery('cohesion corridor coupling') === 'cohesion_corridor_coupling',
+    'GI coupling detect'
+  );
+  check(
+    'R1611',
+    detectLaborDemographicsQuery('workforce reliability index') === 'workforce_reliability',
+    'GI reliability detect'
+  );
+  check(
+    'R1612',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_reliability').headline.length > 5,
+    'GI reliability answer'
+  );
+  const seasonalOnly = computeNationalSeasonalParticipationSwingOutlook(
+    r1.state,
+    r1.state.essentialWorkerParticipationOutlook,
+    r1.state.laborMarketTightnessBrief
+  );
+  check('R1613', seasonalOnly.summary.length > 10, 'seasonal standalone summary');
+  const cohesionCouplingOnly = computeNationalCohesionCorridorCouplingBrief(
+    r1.state,
+    r1.state.nationalLaborCohesionIndex,
+    r1.state.corridorCapacityStressBrief
+  );
+  check('R1614', cohesionCouplingOnly.band.length > 3, 'coupling band string');
+  const reliabilityOnly = computeNationalWorkforceReliabilityIndex(
+    r1.state,
+    r1.state.seasonalParticipationSwingOutlook,
+    r1.state.cohesionCorridorCouplingBrief
+  );
+  check('R1615', reliabilityOnly.couplingDrag >= 0, 'reliability coupling drag');
+  check(
+    'R1616',
+    computeNationalWorkforceReliabilityIndex(
+      rHhBad.state,
+      rHhBad.state.seasonalParticipationSwingOutlook,
+      rHhBad.state.cohesionCorridorCouplingBrief
+    ).stewardNote.length > 8,
+    'reliability steward note'
   );
 
   for (let i = 19; i <= 50; i++) {

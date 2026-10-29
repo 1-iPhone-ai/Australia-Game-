@@ -48,7 +48,10 @@ export type LaborGiQueryTopic =
   | 'steward_intervention_priority'
   | 'essential_worker_participation'
   | 'wage_automation_coupling'
-  | 'national_labor_cohesion';
+  | 'national_labor_cohesion'
+  | 'seasonal_participation_swing'
+  | 'cohesion_corridor_coupling'
+  | 'workforce_reliability';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -94,6 +97,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   }
   if (/\b(wage automation coupling|automation wage coupling)/.test(q)) return 'wage_automation_coupling';
   if (/\b(national labor cohesion|labor cohesion index)/.test(q)) return 'national_labor_cohesion';
+  if (/\b(seasonal participation swing|seasonal swing outlook)/.test(q)) return 'seasonal_participation_swing';
+  if (/\b(cohesion corridor coupling|corridor cohesion link)/.test(q)) return 'cohesion_corridor_coupling';
+  if (/\b(workforce reliability|reliability index labor)/.test(q)) return 'workforce_reliability';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -472,6 +478,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Cohesion band ${state.nationalLaborCohesionIndex?.band ?? 'unknown'}; stability drag ${Math.round(state.nationalLaborCohesionIndex?.stabilityDrag ?? 0)}.`,
         inference: state.nationalLaborCohesionIndex?.stewardNote || state.summary,
         projection: 'Cohesion synthesizes stability, intergenerational balance, alignment, and coordination — steward guidance only.'
+      };
+    case 'seasonal_participation_swing':
+      return {
+        topic,
+        headline: state.seasonalParticipationSwingOutlook?.summary || 'Seasonal participation swing unavailable.',
+        fact: `Swing band ${state.seasonalParticipationSwingOutlook?.band ?? 'unknown'}; seasonal drag ${Math.round(state.seasonalParticipationSwingOutlook?.seasonalDrag ?? 0)}.`,
+        inference: state.seasonalParticipationSwingOutlook?.stewardNote || state.outlook,
+        projection: 'Seasonal swing blends essential participation, tightness, and scheduling levers — not literal seasonal headcounts.'
+      };
+    case 'cohesion_corridor_coupling':
+      return {
+        topic,
+        headline: state.cohesionCorridorCouplingBrief?.summary || 'Cohesion-corridor coupling unavailable.',
+        fact: `Coupling band ${state.cohesionCorridorCouplingBrief?.band ?? 'unknown'}; corridor drag ${Math.round(state.cohesionCorridorCouplingBrief?.corridorDrag ?? 0)}.`,
+        inference: state.cohesionCorridorCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links national cohesion with corridor stress — bounded indices only.'
+      };
+    case 'workforce_reliability':
+      return {
+        topic,
+        headline: state.nationalWorkforceReliabilityIndex?.summary || 'Workforce reliability unavailable.',
+        fact: `Reliability band ${state.nationalWorkforceReliabilityIndex?.band ?? 'unknown'}; coupling drag ${Math.round(state.nationalWorkforceReliabilityIndex?.couplingDrag ?? 0)}.`,
+        inference: state.nationalWorkforceReliabilityIndex?.stewardNote || state.summary,
+        projection: 'Reliability synthesizes seasonal swing, scheduling, safety, and cohesion-corridor coupling.'
       };
     default:
       return {

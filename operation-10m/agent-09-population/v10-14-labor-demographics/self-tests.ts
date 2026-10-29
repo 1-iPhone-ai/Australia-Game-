@@ -109,6 +109,15 @@ import {
 import { computeNationalEssentialWorkerParticipationOutlook } from './essential-worker-participation-outlook';
 import { computeNationalWageAutomationCouplingBrief } from './wage-automation-coupling-brief';
 import { computeNationalLaborCohesionIndex } from './national-labor-cohesion-index';
+import {
+  WORKFORCE_SCHEDULING_LEVERS,
+  lookupWorkforceSchedulingLever,
+  schedulingEaseForRegion,
+  schedulingLeversForIndustry
+} from './catalog/workforce-scheduling-levers';
+import { computeNationalSeasonalParticipationSwingOutlook } from './seasonal-participation-swing-outlook';
+import { computeNationalCohesionCorridorCouplingBrief } from './cohesion-corridor-coupling-brief';
+import { computeNationalWorkforceReliabilityIndex } from './national-workforce-reliability-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -950,6 +959,62 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.capacityParticipationAlignmentBrief
     ).stewardNote.length > 8,
     'cohesion steward note'
+  );
+
+  check('R1601', WORKFORCE_SCHEDULING_LEVERS.length >= 8, 'scheduling lever catalog');
+  check('R1602', Boolean(lookupWorkforceSchedulingLever('sched_tech_nsw_vic')?.narrative), 'scheduling lever lookup');
+  check('R1603', schedulingLeversForIndustry('technology').length >= 1, 'technology scheduling levers');
+  check('R1604', schedulingEaseForRegion('NSW', 'technology') > 0, 'regional scheduling ease');
+  check('R1605', Boolean(r1.state.seasonalParticipationSwingOutlook?.band), 'seasonal swing on state');
+  check('R1606', (r1.state.seasonalParticipationSwingOutlook?.seasonalDrag ?? 0) >= 0, 'seasonal drag');
+  check('R1607', Boolean(r1.state.cohesionCorridorCouplingBrief?.band), 'cohesion corridor on state');
+  check('R1608', Boolean(r1.state.nationalWorkforceReliabilityIndex?.band), 'reliability on state');
+  check(
+    'R1609',
+    detectLaborDemographicsQuery('seasonal participation swing') === 'seasonal_participation_swing',
+    'GI seasonal detect'
+  );
+  check(
+    'R1610',
+    detectLaborDemographicsQuery('cohesion corridor coupling') === 'cohesion_corridor_coupling',
+    'GI coupling detect'
+  );
+  check(
+    'R1611',
+    detectLaborDemographicsQuery('workforce reliability index') === 'workforce_reliability',
+    'GI reliability detect'
+  );
+  check(
+    'R1612',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_reliability').headline.length > 5,
+    'GI reliability answer'
+  );
+  const seasonalOnly = computeNationalSeasonalParticipationSwingOutlook(
+    r1.state,
+    r1.state.essentialWorkerParticipationOutlook,
+    r1.state.laborMarketTightnessBrief
+  );
+  check('R1613', seasonalOnly.summary.length > 10, 'seasonal standalone summary');
+  const cohesionCouplingOnly = computeNationalCohesionCorridorCouplingBrief(
+    r1.state,
+    r1.state.nationalLaborCohesionIndex,
+    r1.state.corridorCapacityStressBrief
+  );
+  check('R1614', cohesionCouplingOnly.band.length > 3, 'coupling band string');
+  const reliabilityOnly = computeNationalWorkforceReliabilityIndex(
+    r1.state,
+    r1.state.seasonalParticipationSwingOutlook,
+    r1.state.cohesionCorridorCouplingBrief
+  );
+  check('R1615', reliabilityOnly.couplingDrag >= 0, 'reliability coupling drag');
+  check(
+    'R1616',
+    computeNationalWorkforceReliabilityIndex(
+      rHhBad.state,
+      rHhBad.state.seasonalParticipationSwingOutlook,
+      rHhBad.state.cohesionCorridorCouplingBrief
+    ).stewardNote.length > 8,
+    'reliability steward note'
   );
 
   for (let i = 19; i <= 50; i++) {
