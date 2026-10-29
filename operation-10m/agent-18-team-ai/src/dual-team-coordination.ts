@@ -53,6 +53,9 @@ import { combineDualTeamStackFrictionConvergence } from './stack-friction-conver
 import { combineDualTeamFusionResonanceCoupling } from './fusion-resonance-coupling-index.ts';
 import { combineDualTeamConvergenceFusionStack } from './convergence-fusion-stack-index.ts';
 import { combineDualTeamResonanceAuditCascade } from './resonance-audit-cascade-index.ts';
+import { combineDualTeamCouplingStackCascade } from './coupling-stack-cascade-index.ts';
+import { combineDualTeamStackCascadeAmplification } from './stack-cascade-amplification-index.ts';
+import { combineDualTeamCascadeCouplingSynthesis } from './cascade-coupling-synthesis-index.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -123,6 +126,9 @@ export interface DualTeamMultiAgentResult {
   fusionResonanceCouplingCombined: number;
   convergenceFusionStackCombined: number;
   resonanceAuditCascadeCombined: number;
+  couplingStackCascadeCombined: number;
+  stackCascadeAmplificationCombined: number;
+  cascadeCouplingSynthesisCombined: number;
 }
 
 /**
@@ -209,6 +215,9 @@ export function evaluateDualTeamMultiAgentLayers(
       fusionResonanceCouplingCombined: friendly.state.meta.fusionResonanceCouplingIndex ?? 0,
       convergenceFusionStackCombined: friendly.state.meta.convergenceFusionStackIndex ?? 0,
       resonanceAuditCascadeCombined: friendly.state.meta.resonanceAuditCascadeIndex ?? 0,
+      couplingStackCascadeCombined: friendly.state.meta.couplingStackCascadeIndex ?? 0,
+      stackCascadeAmplificationCombined: friendly.state.meta.stackCascadeAmplificationIndex ?? 0,
+      cascadeCouplingSynthesisCombined: friendly.state.meta.cascadeCouplingSynthesisIndex ?? 0,
     };
   }
 
@@ -504,6 +513,18 @@ export function evaluateDualTeamMultiAgentLayers(
     resonanceAuditCascadeCombined: combineDualTeamResonanceAuditCascade(
       friendly.state.meta.resonanceAuditCascadeIndex ?? 0,
       enemy.state.meta.resonanceAuditCascadeIndex ?? 0,
+    ),
+    couplingStackCascadeCombined: combineDualTeamCouplingStackCascade(
+      friendly.state.meta.couplingStackCascadeIndex ?? 0,
+      enemy.state.meta.couplingStackCascadeIndex ?? 0,
+    ),
+    stackCascadeAmplificationCombined: combineDualTeamStackCascadeAmplification(
+      friendly.state.meta.stackCascadeAmplificationIndex ?? 0,
+      enemy.state.meta.stackCascadeAmplificationIndex ?? 0,
+    ),
+    cascadeCouplingSynthesisCombined: combineDualTeamCascadeCouplingSynthesis(
+      friendly.state.meta.cascadeCouplingSynthesisIndex ?? 0,
+      enemy.state.meta.cascadeCouplingSynthesisIndex ?? 0,
     ),
   };
 }

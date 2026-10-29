@@ -94,6 +94,9 @@ import { computeStackFrictionConvergenceIndex } from './stack-friction-convergen
 import { computeFusionResonanceCouplingIndex } from './fusion-resonance-coupling-index.ts';
 import { computeConvergenceFusionStackIndex } from './convergence-fusion-stack-index.ts';
 import { computeResonanceAuditCascadeIndex } from './resonance-audit-cascade-index.ts';
+import { computeCouplingStackCascadeIndex } from './coupling-stack-cascade-index.ts';
+import { computeStackCascadeAmplificationIndex } from './stack-cascade-amplification-index.ts';
+import { computeCascadeCouplingSynthesisIndex } from './cascade-coupling-synthesis-index.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -2531,6 +2534,56 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.fusionResonanceCouplingCombined === 'number' &&
       typeof dual.convergenceFusionStackCombined === 'number' &&
       typeof dual.resonanceAuditCascadeCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_coupling_stack_cascade', 'Coupling–stack cascade: fusion coupling plus convergence stack scores high', () => {
+    const report = computeCouplingStackCascadeIndex(50, 48, 3);
+    return report.cascadeIndex >= 48;
+  });
+
+  check(results, 'a18_stack_cascade_amplification', 'Stack–cascade amplification: stack plus audit cascade scores high', () => {
+    const report = computeStackCascadeAmplificationIndex(48, 46, 42);
+    return report.amplificationIndex >= 47;
+  });
+
+  check(results, 'a18_cascade_coupling_synthesis', 'Cascade–coupling synthesis: audit cascade plus fusion coupling scores high', () => {
+    const report = computeCascadeCouplingSynthesisIndex(48, 50, 48);
+    return report.synthesisIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round23_meta', 'Layer: round-23 meta exposes stack cascade, amplification, synthesis', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.couplingStackCascadeIndex === 'number' &&
+      typeof m.stackCascadeAmplificationIndex === 'number' &&
+      typeof m.cascadeCouplingSynthesisIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_coupling_stack_cascade', 'Audit: coupling–stack cascade surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, couplingStackCascadeIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Coupling–stack cascade/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round23_combined', 'Dual team: round-23 combined cascade, amplification, synthesis exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.couplingStackCascadeCombined === 'number' &&
+      typeof dual.stackCascadeAmplificationCombined === 'number' &&
+      typeof dual.cascadeCouplingSynthesisCombined === 'number'
     );
   });
 

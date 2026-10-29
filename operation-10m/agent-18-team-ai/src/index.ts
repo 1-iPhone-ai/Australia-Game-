@@ -72,4 +72,7 @@ export * from './stack-friction-convergence-index.ts';
 export * from './fusion-resonance-coupling-index.ts';
 export * from './convergence-fusion-stack-index.ts';
 export * from './resonance-audit-cascade-index.ts';
+export * from './coupling-stack-cascade-index.ts';
+export * from './stack-cascade-amplification-index.ts';
+export * from './cascade-coupling-synthesis-index.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';
