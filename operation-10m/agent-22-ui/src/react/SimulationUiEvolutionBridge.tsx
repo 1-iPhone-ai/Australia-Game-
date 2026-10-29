@@ -480,6 +480,18 @@ export function SimulationUiEvolutionBridge({
       {result.pacingDeferredSextDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-pacing-deferred-sext-day">{result.pacingDeferredSextDayCoachCopy}</div>
       ) : null}
+      {result.twelfthUnlockHeadlineDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-twelfth-unlock-headline-day">{result.twelfthUnlockHeadlineDayCoachCopy}</div>
+      ) : null}
+      {result.decemDeferredQueueDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-decem-deferred-day">{result.decemDeferredQueueDayCoachCopy}</div>
+      ) : null}
+      {result.previewFractionBreadthDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-preview-fraction-breadth-day">{result.previewFractionBreadthDayCoachCopy}</div>
+      ) : null}
+      {result.pacingDeferredSeptDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-pacing-deferred-sept-day">{result.pacingDeferredSeptDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
