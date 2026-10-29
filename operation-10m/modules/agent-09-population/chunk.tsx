@@ -305,6 +305,10 @@ export interface NationalLaborDemographicsState {
   schedulingResonanceOutlook?: NationalSchedulingResonanceOutlook;
   subjectConvergenceReadinessBrief?: NationalSubjectConvergenceReadinessBrief;
   nationalWorkforceConvergenceIndex?: NationalWorkforceConvergenceIndex;
+  convergenceSafetyCouplingBrief?: NationalConvergenceSafetyCouplingBrief;
+  safetyHarmonyOutlook?: NationalSafetyHarmonyOutlook;
+  subjectUnificationReadinessBrief?: NationalSubjectUnificationReadinessBrief;
+  nationalWorkforceUnificationIndex?: NationalWorkforceUnificationIndex;
 }
 
 export type MigrationShockKind =
@@ -1601,6 +1605,54 @@ export interface NationalWorkforceConvergenceIndex {
   stewardNote: string;
 }
 
+export type ConvergenceSafetyCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalConvergenceSafetyCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ConvergenceSafetyCouplingBand;
+  convergenceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SafetyHarmonyBand = 'ebbing' | 'patchy' | 'rising' | 'harmony';
+
+export interface NationalSafetyHarmonyOutlook {
+  turn: number;
+  harmonyIndex: number;
+  band: SafetyHarmonyBand;
+  resonanceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectUnificationReadinessBand =
+  | 'below_unification'
+  | 'approaching'
+  | 'unification_ready'
+  | 'convergence_locked';
+
+export interface NationalSubjectUnificationReadinessBrief {
+  turn: number;
+  unificationIndex: number;
+  band: SubjectUnificationReadinessBand;
+  unificationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceUnificationBand = 'fragile' | 'thin' | 'elevated' | 'unification';
+
+export interface NationalWorkforceUnificationIndex {
+  turn: number;
+  unificationIndex: number;
+  band: WorkforceUnificationBand;
+  unificationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -2783,7 +2835,11 @@ export type LaborGiQueryTopic =
   | 'nexus_scheduling_coupling'
   | 'scheduling_resonance'
   | 'subject_convergence_readiness'
-  | 'workforce_convergence';
+  | 'workforce_convergence'
+  | 'convergence_safety_coupling'
+  | 'safety_harmony'
+  | 'subject_unification_readiness'
+  | 'workforce_unification';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2902,6 +2958,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_convergence_readiness';
   }
   if (/\b(workforce convergence|convergence index labor)/.test(q)) return 'workforce_convergence';
+  if (/\b(convergence safety|convergence-safety coupling)/.test(q)) return 'convergence_safety_coupling';
+  if (/\b(safety harmony|safety pipeline harmony)/.test(q)) return 'safety_harmony';
+  if (/\b(subject unification readiness|unification readiness subject)/.test(q)) {
+    return 'subject_unification_readiness';
+  }
+  if (/\b(workforce unification|unification index labor)/.test(q)) return 'workforce_unification';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -3849,6 +3911,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceConvergenceIndex?.stewardNote || state.summary,
         projection: 'Workforce convergence synthesizes scheduling coupling, scheduling resonance, and subject convergence.'
       };
+    case 'convergence_safety_coupling':
+      return {
+        topic,
+        headline: state.convergenceSafetyCouplingBrief?.summary || 'Convergence-safety coupling unavailable.',
+        fact: `Coupling band ${state.convergenceSafetyCouplingBrief?.band ?? 'unknown'}; convergence drag ${Math.round(state.convergenceSafetyCouplingBrief?.convergenceDrag ?? 0)}.`,
+        inference: state.convergenceSafetyCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce convergence with safety levers — wave 34 / O10-199 depth.'
+      };
+    case 'safety_harmony':
+      return {
+        topic,
+        headline: state.safetyHarmonyOutlook?.summary || 'Safety harmony unavailable.',
+        fact: `Harmony band ${state.safetyHarmonyOutlook?.band ?? 'unknown'}; resonance drag ${Math.round(state.safetyHarmonyOutlook?.resonanceDrag ?? 0)}.`,
+        inference: state.safetyHarmonyOutlook?.stewardNote || state.outlook,
+        projection: 'Harmony blends safety levers with scheduling resonance — bounded indices only.'
+      };
+    case 'subject_unification_readiness':
+      return {
+        topic,
+        headline: state.subjectUnificationReadinessBrief?.summary || 'Subject unification readiness unavailable.',
+        fact: `Unification band ${state.subjectUnificationReadinessBrief?.band ?? 'unknown'}; unification drag ${Math.round(state.subjectUnificationReadinessBrief?.unificationDrag ?? 0)}.`,
+        inference: state.subjectUnificationReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject unification readiness gates subject convergence against workforce convergence for O10-199 wave 34.'
+      };
+    case 'workforce_unification':
+      return {
+        topic,
+        headline: state.nationalWorkforceUnificationIndex?.summary || 'Workforce unification unavailable.',
+        fact: `Unification band ${state.nationalWorkforceUnificationIndex?.band ?? 'unknown'}; unification drag ${Math.round(state.nationalWorkforceUnificationIndex?.unificationDrag ?? 0)}.`,
+        inference: state.nationalWorkforceUnificationIndex?.stewardNote || state.summary,
+        projection: 'Workforce unification synthesizes safety coupling, safety harmony, and subject unification.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -4789,6 +4883,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceConvergenceIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceConvergenceIndex.stewardNote);
+  }
+  if (
+    state.convergenceSafetyCouplingBrief?.band === 'decoupled' ||
+    state.convergenceSafetyCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.convergenceSafetyCouplingBrief.stewardNote);
+  }
+  if (
+    state.safetyHarmonyOutlook?.band === 'ebbing' ||
+    state.safetyHarmonyOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.safetyHarmonyOutlook.stewardNote);
+  }
+  if (
+    state.subjectUnificationReadinessBrief?.band === 'below_unification' ||
+    state.subjectUnificationReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectUnificationReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceUnificationIndex?.band === 'fragile' ||
+    state.nationalWorkforceUnificationIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceUnificationIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -13754,6 +13872,278 @@ export function computeNationalWorkforceConvergenceIndex(
 }
 
 
+// --- source: convergence-safety-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type ConvergenceSafetyCouplingBand,
+  type NationalConvergenceSafetyCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceConvergenceIndex
+} from './types';
+
+function couplingBand(index: number): ConvergenceSafetyCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-34 / wave-34 convergence-safety coupling — convergence × safety levers (O10-199). */
+export function computeNationalConvergenceSafetyCouplingBrief(
+  state: NationalLaborDemographicsState,
+  convergence: NationalWorkforceConvergenceIndex | null | undefined
+): NationalConvergenceSafetyCouplingBrief {
+  if (!state.enabled || !convergence) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      convergenceDrag: 0,
+      summary: 'Convergence-safety coupling idle — workforce convergence unavailable.',
+      stewardNote: 'Compute workforce convergence before safety coupling guidance.'
+    };
+  }
+
+  let safetyLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    safetyLift += safetyEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  safetyLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const convergenceDrag = v1014laborClamp(
+    convergence.convergenceDrag * 0.48 + (convergence.band === 'fragile' || convergence.band === 'thin' ? 11 : 3)
+  );
+  const convergenceLift =
+    convergence.band === 'elevated' || convergence.band === 'convergence'
+      ? convergence.convergenceIndex * 0.24
+      : convergence.convergenceIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + safetyLift * 21 + convergenceLift - convergenceDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained convergence-safety link — deploy safety levers before wave-34 unification commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard safety harmony spikes that drain convergence buffers.'
+        : 'Amplified coupling — pair safety packs with subject unification readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    convergenceDrag,
+    summary: `Convergence-safety coupling ${band} (index ${Math.round(couplingIndex)}); convergence drag ${Math.round(convergenceDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: safety-harmony-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalSafetyHarmonyOutlook,
+  type NationalSchedulingResonanceOutlook,
+  type SafetyHarmonyBand
+} from './types';
+
+function harmonyBand(index: number): SafetyHarmonyBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'harmony';
+}
+
+export function computeNationalSafetyHarmonyOutlook(
+  state: NationalLaborDemographicsState,
+  schedulingResonance: NationalSchedulingResonanceOutlook | null | undefined
+): NationalSafetyHarmonyOutlook {
+  if (!state.enabled || !schedulingResonance) {
+    return {
+      turn: state.turn,
+      harmonyIndex: 50,
+      band: 'patchy',
+      resonanceDrag: 0,
+      summary: 'Safety harmony idle — scheduling resonance unavailable.',
+      stewardNote: 'Compute scheduling resonance before safety harmony guidance.'
+    };
+  }
+
+  let safetyLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    safetyLift += safetyEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  safetyLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const resonanceDrag = v1014laborClamp(
+    schedulingResonance.equilibriumDrag * 0.46 +
+      (schedulingResonance.band === 'ebbing' || schedulingResonance.band === 'patchy' ? 10 : 3)
+  );
+  const resonanceLift =
+    schedulingResonance.band === 'rising' || schedulingResonance.band === 'resonance'
+      ? schedulingResonance.resonanceIndex * 0.2
+      : schedulingResonance.resonanceIndex * 0.1;
+
+  const harmonyIndex = v1014laborClamp(24 + safetyLift * 22 + resonanceLift - resonanceDrag);
+  const band = harmonyBand(harmonyIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy safety harmony — deploy safety levers before subject unification assembly.'
+      : band === 'harmony'
+        ? 'Harmony band — verify convergence-safety coupling before auto workforce pushes.'
+        : 'Rising harmony — align with safety-cohesion outlook checks.';
+
+  return {
+    turn: state.turn,
+    harmonyIndex,
+    band,
+    resonanceDrag,
+    summary: `National safety harmony ${band} (index ${Math.round(harmonyIndex)}); resonance drag ${Math.round(resonanceDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-unification-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectConvergenceReadinessBrief,
+  type NationalSubjectUnificationReadinessBrief,
+  type NationalWorkforceConvergenceIndex,
+  type SubjectUnificationReadinessBand
+} from './types';
+
+function unificationBand(index: number): SubjectUnificationReadinessBand {
+  if (index <= 34) return 'below_unification';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'unification_ready';
+  return 'convergence_locked';
+}
+
+/** Round-34 / wave-34 subject unification readiness — convergence × workforce convergence (O10-199). */
+export function computeNationalSubjectUnificationReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectConvergence: NationalSubjectConvergenceReadinessBrief | null | undefined,
+  workforceConvergence: NationalWorkforceConvergenceIndex | null | undefined
+): NationalSubjectUnificationReadinessBrief {
+  if (!state.enabled || !subjectConvergence || !workforceConvergence) {
+    return {
+      turn: state.turn,
+      unificationIndex: 50,
+      band: 'approaching',
+      unificationDrag: 0,
+      summary: 'Subject unification readiness idle — subject convergence or workforce convergence unavailable.',
+      stewardNote: 'Compute subject convergence and workforce convergence before unification guidance.'
+    };
+  }
+
+  const unificationDrag = v1014laborClamp(
+    subjectConvergence.convergenceDrag * 0.38 +
+      workforceConvergence.convergenceDrag * 0.38 +
+      (subjectConvergence.band === 'below_convergence' || workforceConvergence.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectConvergence.band === 'convergence_ready' || subjectConvergence.band === 'nexus_locked'
+      ? subjectConvergence.convergenceIndex * 0.27
+      : subjectConvergence.convergenceIndex * 0.14;
+  const workforceLift =
+    workforceConvergence.band === 'elevated' || workforceConvergence.band === 'convergence'
+      ? workforceConvergence.convergenceIndex * 0.25
+      : workforceConvergence.convergenceIndex * 0.12;
+
+  const unificationIndex = v1014laborClamp(20 + subjectLift + workforceLift - unificationDrag);
+  const band = unificationBand(unificationIndex);
+
+  const stewardNote =
+    band === 'below_unification' || band === 'approaching'
+      ? 'Approaching unification — hold O10-199 wave-34 scale until convergence-safety syncs.'
+      : band === 'convergence_locked'
+        ? 'Convergence-locked unification — still monitor safety harmony during corridor peaks.'
+        : 'Unification-ready — pair with workforce unification index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    unificationIndex,
+    band,
+    unificationDrag,
+    summary: `Subject unification readiness ${band} (index ${Math.round(unificationIndex)}); unification drag ${Math.round(unificationDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-unification-index.ts ---
+  type NationalConvergenceSafetyCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalSafetyHarmonyOutlook,
+  type NationalSubjectUnificationReadinessBrief,
+  type NationalWorkforceUnificationIndex,
+  type WorkforceUnificationBand
+} from './types';
+
+function unificationBand(index: number): WorkforceUnificationBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'unification';
+}
+
+export function computeNationalWorkforceUnificationIndex(
+  state: NationalLaborDemographicsState,
+  safetyCoupling: NationalConvergenceSafetyCouplingBrief | null | undefined,
+  safetyHarmony: NationalSafetyHarmonyOutlook | null | undefined,
+  subjectUnification: NationalSubjectUnificationReadinessBrief | null | undefined
+): NationalWorkforceUnificationIndex {
+  if (!state.enabled || !safetyCoupling || !safetyHarmony || !subjectUnification) {
+    return {
+      turn: state.turn,
+      unificationIndex: 50,
+      band: 'thin',
+      unificationDrag: 0,
+      summary: 'Workforce unification idle — safety coupling, safety harmony, or subject unification unavailable.',
+      stewardNote: 'Compute O10-199 wave-34 depth stack before unification guidance.'
+    };
+  }
+
+  const unificationDrag = v1014laborClamp(
+    subjectUnification.unificationDrag * 0.35 +
+      safetyCoupling.convergenceDrag * 0.3 +
+      safetyHarmony.resonanceDrag * 0.25 +
+      (subjectUnification.band === 'below_unification' || safetyCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const safetyLift =
+    safetyCoupling.band === 'amplified' || safetyCoupling.band === 'elevated'
+      ? safetyCoupling.couplingIndex * 0.2
+      : safetyCoupling.couplingIndex * 0.1;
+  const harmonyLift =
+    safetyHarmony.band === 'rising' || safetyHarmony.band === 'harmony'
+      ? safetyHarmony.harmonyIndex * 0.18
+      : safetyHarmony.harmonyIndex * 0.09;
+  const subjectLift =
+    subjectUnification.band === 'unification_ready' || subjectUnification.band === 'convergence_locked'
+      ? subjectUnification.unificationIndex * 0.22
+      : subjectUnification.unificationIndex * 0.11;
+
+  const unificationIndex = v1014laborClamp(18 + safetyLift + harmonyLift + subjectLift - unificationDrag);
+  const band = unificationBand(unificationIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce unification — sequence convergence-safety, safety harmony, and subject unification before post-2187b54 tranche.'
+      : band === 'unification'
+        ? 'Unification band — avoid corridor overload that breaks subject unification bands.'
+        : 'Elevated unification — refresh subject unification checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    unificationIndex,
+    band,
+    unificationDrag,
+    summary: `National workforce unification ${band} (index ${Math.round(unificationIndex)}); unification drag ${Math.round(unificationDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -14748,6 +15138,25 @@ export function computeNationalLaborDemographics(
     state.schedulingResonanceOutlook,
     state.subjectConvergenceReadinessBrief
   );
+  state.convergenceSafetyCouplingBrief = computeNationalConvergenceSafetyCouplingBrief(
+    state,
+    state.nationalWorkforceConvergenceIndex
+  );
+  state.safetyHarmonyOutlook = computeNationalSafetyHarmonyOutlook(
+    state,
+    state.schedulingResonanceOutlook
+  );
+  state.subjectUnificationReadinessBrief = computeNationalSubjectUnificationReadinessBrief(
+    state,
+    state.subjectConvergenceReadinessBrief,
+    state.nationalWorkforceConvergenceIndex
+  );
+  state.nationalWorkforceUnificationIndex = computeNationalWorkforceUnificationIndex(
+    state,
+    state.convergenceSafetyCouplingBrief,
+    state.safetyHarmonyOutlook,
+    state.subjectUnificationReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -15458,6 +15867,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceConvergenceIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.convergenceSafetyCouplingBrief?.band === 'decoupled' ||
+      state.convergenceSafetyCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.convergenceSafetyCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.safetyHarmonyOutlook?.band === 'ebbing' ||
+      state.safetyHarmonyOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.safetyHarmonyOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectUnificationReadinessBrief?.band === 'below_unification' ||
+      state.subjectUnificationReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectUnificationReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceUnificationIndex?.band === 'fragile' ||
+      state.nationalWorkforceUnificationIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceUnificationIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -17389,6 +17826,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'convergence steward note'
   );
   check('R3316', schedulingEaseForRegion('NSW', 'technology') > 0, 'scheduling ease for region');
+
+  check('R3401', Boolean(r1.state.convergenceSafetyCouplingBrief?.band), 'convergence safety on state');
+  check('R3402', (r1.state.convergenceSafetyCouplingBrief?.convergenceDrag ?? 0) >= 0, 'convergence safety drag');
+  check('R3403', Boolean(r1.state.safetyHarmonyOutlook?.band), 'safety harmony on state');
+  check('R3404', (r1.state.safetyHarmonyOutlook?.resonanceDrag ?? 0) >= 0, 'safety harmony resonance drag');
+  check('R3405', Boolean(r1.state.subjectUnificationReadinessBrief?.band), 'subject unification on state');
+  check('R3406', Boolean(r1.state.nationalWorkforceUnificationIndex?.band), 'workforce unification on state');
+  check(
+    'R3407',
+    detectLaborDemographicsQuery('convergence safety coupling') === 'convergence_safety_coupling',
+    'GI convergence safety detect'
+  );
+  check(
+    'R3408',
+    detectLaborDemographicsQuery('safety harmony') === 'safety_harmony',
+    'GI safety harmony detect'
+  );
+  check(
+    'R3409',
+    detectLaborDemographicsQuery('subject unification readiness') === 'subject_unification_readiness',
+    'GI subject unification detect'
+  );
+  check(
+    'R3410',
+    detectLaborDemographicsQuery('workforce unification') === 'workforce_unification',
+    'GI workforce unification detect'
+  );
+  check(
+    'R3411',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_unification').headline.length > 5,
+    'GI workforce unification answer'
+  );
+  const convergenceSafetyOnly = computeNationalConvergenceSafetyCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceConvergenceIndex
+  );
+  check('R3412', convergenceSafetyOnly.summary.length > 10, 'convergence safety standalone summary');
+  const safetyHarmonyOnly = computeNationalSafetyHarmonyOutlook(r1.state, r1.state.schedulingResonanceOutlook);
+  check('R3413', safetyHarmonyOnly.band.length > 3, 'safety harmony band string');
+  const subjectUnificationOnly = computeNationalSubjectUnificationReadinessBrief(
+    r1.state,
+    r1.state.subjectConvergenceReadinessBrief,
+    r1.state.nationalWorkforceConvergenceIndex
+  );
+  check('R3414', subjectUnificationOnly.unificationDrag >= 0, 'subject unification drag');
+  check(
+    'R3415',
+    computeNationalWorkforceUnificationIndex(
+      rHhBad.state,
+      rHhBad.state.convergenceSafetyCouplingBrief,
+      rHhBad.state.safetyHarmonyOutlook,
+      rHhBad.state.subjectUnificationReadinessBrief
+    ).stewardNote.length > 8,
+    'unification steward note'
+  );
+  check('R3416', safetyEaseForRegion('NSW', 'technology') > 0, 'safety ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

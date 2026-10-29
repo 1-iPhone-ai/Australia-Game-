@@ -186,6 +186,10 @@ import { computeNationalNexusSchedulingCouplingBrief } from './nexus-scheduling-
 import { computeNationalSchedulingResonanceOutlook } from './scheduling-resonance-outlook';
 import { computeNationalSubjectConvergenceReadinessBrief } from './subject-convergence-readiness-brief';
 import { computeNationalWorkforceConvergenceIndex } from './national-workforce-convergence-index';
+import { computeNationalConvergenceSafetyCouplingBrief } from './convergence-safety-coupling-brief';
+import { computeNationalSafetyHarmonyOutlook } from './safety-harmony-outlook';
+import { computeNationalSubjectUnificationReadinessBrief } from './subject-unification-readiness-brief';
+import { computeNationalWorkforceUnificationIndex } from './national-workforce-unification-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2048,6 +2052,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'convergence steward note'
   );
   check('R3316', schedulingEaseForRegion('NSW', 'technology') > 0, 'scheduling ease for region');
+
+  check('R3401', Boolean(r1.state.convergenceSafetyCouplingBrief?.band), 'convergence safety on state');
+  check('R3402', (r1.state.convergenceSafetyCouplingBrief?.convergenceDrag ?? 0) >= 0, 'convergence safety drag');
+  check('R3403', Boolean(r1.state.safetyHarmonyOutlook?.band), 'safety harmony on state');
+  check('R3404', (r1.state.safetyHarmonyOutlook?.resonanceDrag ?? 0) >= 0, 'safety harmony resonance drag');
+  check('R3405', Boolean(r1.state.subjectUnificationReadinessBrief?.band), 'subject unification on state');
+  check('R3406', Boolean(r1.state.nationalWorkforceUnificationIndex?.band), 'workforce unification on state');
+  check(
+    'R3407',
+    detectLaborDemographicsQuery('convergence safety coupling') === 'convergence_safety_coupling',
+    'GI convergence safety detect'
+  );
+  check(
+    'R3408',
+    detectLaborDemographicsQuery('safety harmony') === 'safety_harmony',
+    'GI safety harmony detect'
+  );
+  check(
+    'R3409',
+    detectLaborDemographicsQuery('subject unification readiness') === 'subject_unification_readiness',
+    'GI subject unification detect'
+  );
+  check(
+    'R3410',
+    detectLaborDemographicsQuery('workforce unification') === 'workforce_unification',
+    'GI workforce unification detect'
+  );
+  check(
+    'R3411',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_unification').headline.length > 5,
+    'GI workforce unification answer'
+  );
+  const convergenceSafetyOnly = computeNationalConvergenceSafetyCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceConvergenceIndex
+  );
+  check('R3412', convergenceSafetyOnly.summary.length > 10, 'convergence safety standalone summary');
+  const safetyHarmonyOnly = computeNationalSafetyHarmonyOutlook(r1.state, r1.state.schedulingResonanceOutlook);
+  check('R3413', safetyHarmonyOnly.band.length > 3, 'safety harmony band string');
+  const subjectUnificationOnly = computeNationalSubjectUnificationReadinessBrief(
+    r1.state,
+    r1.state.subjectConvergenceReadinessBrief,
+    r1.state.nationalWorkforceConvergenceIndex
+  );
+  check('R3414', subjectUnificationOnly.unificationDrag >= 0, 'subject unification drag');
+  check(
+    'R3415',
+    computeNationalWorkforceUnificationIndex(
+      rHhBad.state,
+      rHhBad.state.convergenceSafetyCouplingBrief,
+      rHhBad.state.safetyHarmonyOutlook,
+      rHhBad.state.subjectUnificationReadinessBrief
+    ).stewardNote.length > 8,
+    'unification steward note'
+  );
+  check('R3416', safetyEaseForRegion('NSW', 'technology') > 0, 'safety ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

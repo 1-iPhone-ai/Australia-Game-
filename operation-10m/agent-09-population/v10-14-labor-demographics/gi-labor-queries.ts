@@ -119,7 +119,11 @@ export type LaborGiQueryTopic =
   | 'nexus_scheduling_coupling'
   | 'scheduling_resonance'
   | 'subject_convergence_readiness'
-  | 'workforce_convergence';
+  | 'workforce_convergence'
+  | 'convergence_safety_coupling'
+  | 'safety_harmony'
+  | 'subject_unification_readiness'
+  | 'workforce_unification';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -238,6 +242,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_convergence_readiness';
   }
   if (/\b(workforce convergence|convergence index labor)/.test(q)) return 'workforce_convergence';
+  if (/\b(convergence safety|convergence-safety coupling)/.test(q)) return 'convergence_safety_coupling';
+  if (/\b(safety harmony|safety pipeline harmony)/.test(q)) return 'safety_harmony';
+  if (/\b(subject unification readiness|unification readiness subject)/.test(q)) {
+    return 'subject_unification_readiness';
+  }
+  if (/\b(workforce unification|unification index labor)/.test(q)) return 'workforce_unification';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1184,6 +1194,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Convergence band ${state.nationalWorkforceConvergenceIndex?.band ?? 'unknown'}; convergence drag ${Math.round(state.nationalWorkforceConvergenceIndex?.convergenceDrag ?? 0)}.`,
         inference: state.nationalWorkforceConvergenceIndex?.stewardNote || state.summary,
         projection: 'Workforce convergence synthesizes scheduling coupling, scheduling resonance, and subject convergence.'
+      };
+    case 'convergence_safety_coupling':
+      return {
+        topic,
+        headline: state.convergenceSafetyCouplingBrief?.summary || 'Convergence-safety coupling unavailable.',
+        fact: `Coupling band ${state.convergenceSafetyCouplingBrief?.band ?? 'unknown'}; convergence drag ${Math.round(state.convergenceSafetyCouplingBrief?.convergenceDrag ?? 0)}.`,
+        inference: state.convergenceSafetyCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce convergence with safety levers — wave 34 / O10-199 depth.'
+      };
+    case 'safety_harmony':
+      return {
+        topic,
+        headline: state.safetyHarmonyOutlook?.summary || 'Safety harmony unavailable.',
+        fact: `Harmony band ${state.safetyHarmonyOutlook?.band ?? 'unknown'}; resonance drag ${Math.round(state.safetyHarmonyOutlook?.resonanceDrag ?? 0)}.`,
+        inference: state.safetyHarmonyOutlook?.stewardNote || state.outlook,
+        projection: 'Harmony blends safety levers with scheduling resonance — bounded indices only.'
+      };
+    case 'subject_unification_readiness':
+      return {
+        topic,
+        headline: state.subjectUnificationReadinessBrief?.summary || 'Subject unification readiness unavailable.',
+        fact: `Unification band ${state.subjectUnificationReadinessBrief?.band ?? 'unknown'}; unification drag ${Math.round(state.subjectUnificationReadinessBrief?.unificationDrag ?? 0)}.`,
+        inference: state.subjectUnificationReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject unification readiness gates subject convergence against workforce convergence for O10-199 wave 34.'
+      };
+    case 'workforce_unification':
+      return {
+        topic,
+        headline: state.nationalWorkforceUnificationIndex?.summary || 'Workforce unification unavailable.',
+        fact: `Unification band ${state.nationalWorkforceUnificationIndex?.band ?? 'unknown'}; unification drag ${Math.round(state.nationalWorkforceUnificationIndex?.unificationDrag ?? 0)}.`,
+        inference: state.nationalWorkforceUnificationIndex?.stewardNote || state.summary,
+        projection: 'Workforce unification synthesizes safety coupling, safety harmony, and subject unification.'
       };
     default:
       return {

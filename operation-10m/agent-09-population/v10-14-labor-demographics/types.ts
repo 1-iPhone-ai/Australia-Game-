@@ -301,6 +301,10 @@ export interface NationalLaborDemographicsState {
   schedulingResonanceOutlook?: NationalSchedulingResonanceOutlook;
   subjectConvergenceReadinessBrief?: NationalSubjectConvergenceReadinessBrief;
   nationalWorkforceConvergenceIndex?: NationalWorkforceConvergenceIndex;
+  convergenceSafetyCouplingBrief?: NationalConvergenceSafetyCouplingBrief;
+  safetyHarmonyOutlook?: NationalSafetyHarmonyOutlook;
+  subjectUnificationReadinessBrief?: NationalSubjectUnificationReadinessBrief;
+  nationalWorkforceUnificationIndex?: NationalWorkforceUnificationIndex;
 }
 
 export type MigrationShockKind =
@@ -1593,6 +1597,54 @@ export interface NationalWorkforceConvergenceIndex {
   convergenceIndex: number;
   band: WorkforceConvergenceBand;
   convergenceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ConvergenceSafetyCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalConvergenceSafetyCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ConvergenceSafetyCouplingBand;
+  convergenceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SafetyHarmonyBand = 'ebbing' | 'patchy' | 'rising' | 'harmony';
+
+export interface NationalSafetyHarmonyOutlook {
+  turn: number;
+  harmonyIndex: number;
+  band: SafetyHarmonyBand;
+  resonanceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectUnificationReadinessBand =
+  | 'below_unification'
+  | 'approaching'
+  | 'unification_ready'
+  | 'convergence_locked';
+
+export interface NationalSubjectUnificationReadinessBrief {
+  turn: number;
+  unificationIndex: number;
+  band: SubjectUnificationReadinessBand;
+  unificationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceUnificationBand = 'fragile' | 'thin' | 'elevated' | 'unification';
+
+export interface NationalWorkforceUnificationIndex {
+  turn: number;
+  unificationIndex: number;
+  band: WorkforceUnificationBand;
+  unificationDrag: number;
   summary: string;
   stewardNote: string;
 }
