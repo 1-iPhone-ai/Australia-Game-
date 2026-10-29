@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
 // @ts-nocheck
-// content-sha256-prefix: f204783f6e70c78e
+// content-sha256-prefix: 9e064af554afb01a
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -5209,6 +5209,95 @@ export function auditBatchNationalTickSessionWaveAssemblyBatchIntegration(
   };
 }
 
+// --- src/batch-national-tick-session-wave-assembly-batch-integration-audit-export.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditExport {
+  ok: boolean;
+  integrationDigest: string;
+  gateDigest: string;
+  batchDigest: string;
+  exportAllOk: boolean;
+  parityOk: boolean;
+}
+
+/**
+ * Round 23: flatten integration audit for Agent 25 assembly manifest hooks.
+ */
+export function exportBatchNationalTickSessionWaveAssemblyBatchIntegrationAudit(
+  audit: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditResult,
+): BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditExport {
+  return {
+    ok: audit.ok,
+    integrationDigest: audit.integrationDigest,
+    gateDigest: audit.gateExport.gateDigest,
+    batchDigest: audit.gateExport.batchDigest,
+    exportAllOk: audit.gate.exportAllOk,
+    parityOk: audit.gate.parityOk,
+  };
+}
+
+// --- src/batch-national-tick-session-wave-assembly-batch-integration-audit-export-compare.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditExportCompareResult {
+  ok: boolean;
+  integrationDigestMatch: boolean;
+  gateDigestMatch: boolean;
+  okFlagMatch: boolean;
+}
+
+/**
+ * Round 23: compare two integration audit exports (twin-run / regression checks).
+ */
+export function compareBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditExports(
+  baseline: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditExport,
+  candidate: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditExport,
+): BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditExportCompareResult {
+  const integrationDigestMatch = baseline.integrationDigest === candidate.integrationDigest;
+  const gateDigestMatch = baseline.gateDigest === candidate.gateDigest;
+  const okFlagMatch = baseline.ok === candidate.ok;
+  return {
+    ok: integrationDigestMatch && gateDigestMatch && okFlagMatch,
+    integrationDigestMatch,
+    gateDigestMatch,
+    okFlagMatch,
+  };
+}
+
+// --- src/batch-national-tick-session-wave-assembly-batch-integration-audit-replay-parity.ts ---
+
+export interface BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditReplayParityResult {
+  parityOk: boolean;
+  baseline: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditResult;
+  replay: BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditResult;
+}
+
+/**
+ * Round 23: deterministic replay — two integration audits from the same starting snapshot.
+ */
+export function verifyBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditReplayParity(
+  engine: TurnTimeEngine,
+  budget: TurnAdvanceBudgetState,
+  tickBatches: readonly (readonly NationalTickSessionWaveTickSpec[])[],
+): BatchNationalTickSessionWaveAssemblyBatchIntegrationAuditReplayParityResult {
+  const snapshot = engine.snapshot();
+  const baseline = auditBatchNationalTickSessionWaveAssemblyBatchIntegration(
+    engine,
+    budget,
+    tickBatches,
+  );
+  const replayEngine = TurnTimeEngine.fromSnapshot(snapshot);
+  const replay = auditBatchNationalTickSessionWaveAssemblyBatchIntegration(
+    replayEngine,
+    budget,
+    tickBatches,
+  );
+  const parityOk =
+    baseline.integrationDigest === replay.integrationDigest &&
+    baseline.ok === replay.ok &&
+    baseline.gateExport.batchDigest === replay.gateExport.batchDigest;
+  return { parityOk, baseline, replay };
+}
+
 // --- src/fast-forward.ts ---
 
 export interface FastForwardResult {
@@ -5359,7 +5448,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '3.1.0';
+export const AGENT_02_MODULE_VERSION = '3.2.0';
 
 
 
@@ -6144,6 +6233,24 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
       [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],
 
     ).ok,
+
+  });
+
+  results.push({
+
+    id: 'agent02_national_tick_session_wave_assembly_batch_integration_audit_replay_parity',
+
+    name: 'assembly batch integration audit replay parity',
+
+    passed: verifyBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditReplayParity(
+
+      new TurnTimeEngine(),
+
+      createTurnAdvanceBudget(2),
+
+      [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],
+
+    ).parityOk,
 
   });
 

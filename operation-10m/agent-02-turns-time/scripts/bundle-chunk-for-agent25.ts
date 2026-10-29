@@ -103,6 +103,9 @@ const SOURCE_FILES = [
   'src/batch-national-tick-session-wave-assembly-batch-gate-export.ts',
   'src/batch-national-tick-session-wave-assembly-batch-gate-export-compare.ts',
   'src/batch-national-tick-session-wave-assembly-batch-integration-audit.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-integration-audit-export.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-integration-audit-export-compare.ts',
+  'src/batch-national-tick-session-wave-assembly-batch-integration-audit-replay-parity.ts',
   'src/fast-forward.ts',
 ] as const;
 
@@ -152,7 +155,7 @@ function bundleSources(): string {
 
   parts.push(
     `export const AGENT_02_MODULE_ID = 'operation-10m/${moduleId}';`,
-    `export const AGENT_02_MODULE_VERSION = '3.1.0';`,
+    `export const AGENT_02_MODULE_VERSION = '3.2.0';`,
     '',
     `export function runOp10mAgent02TurnsTimeSelfTests(): {`,
     `  passed: number;`,
@@ -545,6 +548,15 @@ function bundleSources(): string {
     `      createTurnAdvanceBudget(2),`,
     `      [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],`,
     `    ).ok,`,
+    `  });`,
+    `  results.push({`,
+    `    id: 'agent02_national_tick_session_wave_assembly_batch_integration_audit_replay_parity',`,
+    `    name: 'assembly batch integration audit replay parity',`,
+    `    passed: verifyBatchNationalTickSessionWaveAssemblyBatchIntegrationAuditReplayParity(`,
+    `      new TurnTimeEngine(),`,
+    `      createTurnAdvanceBudget(2),`,
+    `      [[{ maxSteps: 1, input: { stabilizationByTurn: { 1: { postQueueCalm: true, pendingStabilizationWave: false } } } }]],`,
+    `    ).parityOk,`,
     `  });`,
     `  const failed = results.filter((r) => !r.passed).length;`,
     `  return { passed: results.length - failed, failed, results };`,
