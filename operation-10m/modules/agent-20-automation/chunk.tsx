@@ -1,12 +1,12 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 78db3ccf6473f6788e43b7fe753c02270be51a986733770a22e7b06e2ebb8c50
-// OP10M_MODULE_VERSION: 10m.1.3.0-agent20
+// OP10M_MANIFEST_SHA256: 1db2d5a4c950d7540b94fe4b45f8390a1469b316428a9951f7873cb8c2da271a
+// OP10M_MODULE_VERSION: 10m.1.4.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
 /** Operation 10M Agent 20 — shared types (mirror V9.4 SECTION 20AN + HA2). */
 
-export const O10_AGENT20_MODULE_VERSION = '10m.1.3.0-agent20';
+export const O10_AGENT20_MODULE_VERSION = '10m.1.4.0-agent20';
 export const O10_AGENT20_SCHEMA_VERSION = '10.14.0-agent20';
 
 export const O10_AUTOMATION_PATH_IDS = [
@@ -2646,6 +2646,484 @@ export function runO10Agent20ScenarioSelfTests(): O10SelfTestResult[] {
 }
 
 
+// --- source: automation-soak-projection.ts ---
+  createDefaultO10TurnComputeState,
+  type O10TurnComputeInput,
+} from './turn-compute-engine.js';
+
+export interface O10SoakProjectionOptions {
+  turnCount: number;
+  idleMsStart?: number;
+  idleMsStep?: number;
+  humanCommittedEvery?: number;
+}
+
+export interface O10SoakProjectionResult {
+  turnCount: number;
+  bandCounts: Record<IdleAutomationBand, number>;
+  stewardTickTurns: number;
+  blockedEndTurns: number;
+  blockedAdvanceDays: number;
+  digestChain: string;
+  lastTurnKey: string;
+}
+
+/** Synthetic multi-turn soak: ramps idle telemetry and aggregates band / gate metrics. */
+export function projectO10IdleAutomationSoak(
+  baseInput: O10TurnComputeInput,
+  options: O10SoakProjectionOptions
+): O10SoakProjectionResult {
+  const turnCount = Math.max(1, Math.min(options.turnCount, 64));
+  const idleMsStart = options.idleMsStart ?? 30_000;
+  const idleMsStep = options.idleMsStep ?? 25_000;
+  const humanEvery = options.humanCommittedEvery ?? 0;
+
+  const bandCounts: Record<IdleAutomationBand, number> = {
+    active: 0,
+    drifting: 0,
+    idle: 0,
+    deep_idle: 0,
+    steward_tick: 0,
+  };
+
+  let state = createDefaultO10TurnComputeState();
+  let stewardTickTurns = 0;
+  let blockedEndTurns = 0;
+  let blockedAdvanceDays = 0;
+  const digests: string[] = [];
+
+  for (let i = 1; i <= turnCount; i++) {
+    const idleMs = idleMsStart + idleMsStep * (i - 1);
+    const consecutiveIdleTurns = humanEvery > 0 && i % humanEvery === 0 ? 0 : i - 1;
+    const input: O10TurnComputeInput = {
+      ...baseInput,
+      turn: i,
+      day: baseInput.day + Math.floor((i - 1) / 8),
+      humanCommittedThisTurn: humanEvery > 0 && i % humanEvery === 0,
+      msSinceLastHumanInput: idleMs,
+      msSinceLastCommittedAction: idleMs,
+      conditionalCtx: {
+        ...baseInput.conditionalCtx,
+        currentTurn: i,
+        currentDay: baseInput.conditionalCtx.currentDay + Math.floor((i - 1) / 8),
+        consecutiveIdleTurns,
+      },
+    };
+
+    const band = classifyIdleAutomationBand({
+      idleMs,
+      consecutiveIdleTurns,
+      stewardEnabled: true,
+      playerPaused: false,
+    });
+    bandCounts[band] += 1;
+
+    const turn = simulateO10IdleAutomationTurn(input, state);
+    digests.push(turn.digest);
+    state = turn.state;
+
+    if (turn.effects.stewardStep?.automationPath === 'v94_idle_steward_national_tick') {
+      stewardTickTurns += 1;
+    }
+    if (!turn.effects.endTurnAllowed) blockedEndTurns += 1;
+    if (!turn.effects.advanceDayAllowed) blockedAdvanceDays += 1;
+  }
+
+  let chain = 2166136261;
+  const joined = digests.join('|');
+  for (let i = 0; i < joined.length; i++) {
+    chain ^= joined.charCodeAt(i);
+    chain = Math.imul(chain, 16777619);
+  }
+
+  return {
+    turnCount,
+    bandCounts,
+    stewardTickTurns,
+    blockedEndTurns,
+    blockedAdvanceDays,
+    digestChain: `o10soak_${(chain >>> 0).toString(16).padStart(8, '0')}`,
+    lastTurnKey: state.lastTurnKey,
+  };
+}
+
+export function runO10Agent20SoakProjectionSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const base: O10TurnComputeInput = {
+    turn: 0,
+    day: 1,
+    actorId: 'player',
+    gameMode: 'game',
+    humanCommittedThisTurn: false,
+    msSinceLastHumanInput: 0,
+    msSinceLastCommittedAction: 0,
+    playerInTransit: false,
+    humanAutomationEnabled: true,
+    humanAutomationExecuting: false,
+    pendingHumanAutomationApprovals: 0,
+    pendingGenericApprovals: 0,
+    copilotTakeoverActive: false,
+    copilotStepInFlight: false,
+    autoModeReplayRecording: false,
+    dialogBlockingTime: false,
+    gameState: { turnCounter: 1 },
+    settings: { playerControlMode: 'manual' },
+    automationRules: [],
+    conditionalCtx: {
+      actor: { money: 500, inventory: [], currentRegion: 'NSW' },
+      currentDay: 1,
+      currentTurn: 1,
+      isNewDayForActor: false,
+      extendedTriggersEnabled: true,
+      settingsFlags: {},
+    },
+  };
+
+  const soak = projectO10IdleAutomationSoak(base, { turnCount: 6, idleMsStart: 50_000, idleMsStep: 40_000 });
+  const bandTotal = Object.values(soak.bandCounts).reduce((a, b) => a + b, 0);
+  push('soak_turns', 'soak runs requested turns', soak.turnCount === 6 && bandTotal === 6);
+  push('soak_digest', 'soak yields stable chain id', soak.digestChain.startsWith('o10soak_'));
+  push(
+    'soak_deep_bands',
+    'ramping idle reaches deep bands',
+    soak.bandCounts.steward_tick + soak.bandCounts.deep_idle >= 2
+  );
+
+  const reset = projectO10IdleAutomationSoak(base, {
+    turnCount: 4,
+    idleMsStart: 10_000,
+    idleMsStep: 0,
+    humanCommittedEvery: 2,
+  });
+  push(
+    'soak_human_reset',
+    'periodic human commit keeps bands shallow',
+    reset.bandCounts.active + reset.bandCounts.drifting >= 2
+  );
+
+  return results;
+}
+
+
+// --- source: automation-replay-tape.ts ---
+
+export interface O10AutomationReplayFrame {
+  label: string;
+  turn: number;
+  day: number;
+  digest: string;
+}
+
+export interface O10AutomationReplayTape {
+  schema: '10m.agent20.replay-tape.v1';
+  frameCount: number;
+  frames: O10AutomationReplayFrame[];
+  violationCount: number;
+}
+
+export function buildAutomationReplayTapeFromScenario(
+  baseInput: O10TurnComputeInput,
+  steps: O10ScenarioTurnSpec[],
+  options?: Parameters<typeof runO10IdleAutomationScenario>[2]
+): O10AutomationReplayTape {
+  const run = runO10IdleAutomationScenario(baseInput, steps, options);
+  const frames: O10AutomationReplayFrame[] = run.labels.map((label, idx) => ({
+    label,
+    turn: steps[idx]?.patch.turn ?? baseInput.turn,
+    day: steps[idx]?.patch.day ?? baseInput.day,
+    digest: run.digests[idx] ?? '',
+  }));
+  return {
+    schema: '10m.agent20.replay-tape.v1',
+    frameCount: frames.length,
+    frames,
+    violationCount: run.violations.length,
+  };
+}
+
+export function verifyAutomationReplayTapeDeterminism(
+  baseInput: O10TurnComputeInput,
+  steps: O10ScenarioTurnSpec[],
+  tape: O10AutomationReplayTape,
+  options?: Parameters<typeof runO10IdleAutomationScenario>[2]
+): { ok: boolean; mismatches: string[] } {
+  const rerun = buildAutomationReplayTapeFromScenario(baseInput, steps, options);
+  const mismatches: string[] = [];
+  if (rerun.frameCount !== tape.frameCount) {
+    mismatches.push(`frame_count:${rerun.frameCount}!=${tape.frameCount}`);
+  }
+  const n = Math.min(rerun.frames.length, tape.frames.length);
+  for (let i = 0; i < n; i++) {
+    const a = rerun.frames[i];
+    const b = tape.frames[i];
+    if (a.digest !== b.digest) {
+      mismatches.push(`${b.label}:digest`);
+    }
+  }
+  if (rerun.violationCount !== tape.violationCount) {
+    mismatches.push(`violations:${rerun.violationCount}!=${tape.violationCount}`);
+  }
+  return { ok: mismatches.length === 0, mismatches };
+}
+
+export function summarizeAutomationReplayTape(tape: O10AutomationReplayTape): string {
+  const uniq = new Set(tape.frames.map(f => f.digest)).size;
+  return `replay ${tape.frameCount} frames, ${uniq} unique digests, ${tape.violationCount} violations`;
+}
+
+export function runO10Agent20ReplayTapeSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const base: O10TurnComputeInput = {
+    turn: 0,
+    day: 1,
+    actorId: 'player',
+    gameMode: 'game',
+    humanCommittedThisTurn: false,
+    msSinceLastHumanInput: 5000,
+    msSinceLastCommittedAction: 5000,
+    playerInTransit: false,
+    humanAutomationEnabled: true,
+    humanAutomationExecuting: false,
+    pendingHumanAutomationApprovals: 0,
+    pendingGenericApprovals: 0,
+    copilotTakeoverActive: false,
+    copilotStepInFlight: false,
+    autoModeReplayRecording: false,
+    dialogBlockingTime: false,
+    gameState: { turnCounter: 1 },
+    settings: { playerControlMode: 'manual' },
+    automationRules: [
+      {
+        id: 'auto1',
+        name: 'Auto',
+        enabled: true,
+        authorityDisabled: false,
+        priority: 2,
+        activeFromDay: 0,
+        activeUntilDay: 99,
+        trigger: { type: 'turn_start' },
+        conditions: null,
+        limits: { maxRunsPerDay: 9, maxRunsTotal: null, cooldownTurns: 0 },
+        safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 9 },
+        stats: {
+          totalRuns: 0,
+          totalSuccesses: 0,
+          totalSkipped: 0,
+          totalFailed: 0,
+          lastRunDay: null,
+          lastRunTurn: null,
+          runsToday: 0,
+          runsTodayDay: -1,
+          consecutiveNoChangeCount: 0,
+          lastResultSummary: '',
+        },
+        actionType: 'wait',
+        resolvedCost: 0,
+        spendableCash: 200,
+      },
+    ],
+    conditionalCtx: {
+      actor: { money: 200, inventory: [], currentRegion: 'NSW' },
+      currentDay: 1,
+      currentTurn: 1,
+      isNewDayForActor: false,
+      extendedTriggersEnabled: true,
+      settingsFlags: {},
+    },
+  };
+
+  const steps: O10ScenarioTurnSpec[] = [
+    { label: 'r1', patch: { turn: 1, day: 1 } },
+    { label: 'r2', patch: { turn: 2, day: 1 } },
+  ];
+
+  const tape = buildAutomationReplayTapeFromScenario(base, steps, { queueIntents: true });
+  push('tape_frames', 'tape captures scenario frames', tape.frameCount === 2 && tape.frames[0].digest.startsWith('o10tc_'));
+  const verify = verifyAutomationReplayTapeDeterminism(base, steps, tape, { queueIntents: true });
+  push('tape_deterministic', 'scenario replay is deterministic', verify.ok);
+  const summary = summarizeAutomationReplayTape(tape);
+  push('tape_summary', 'summary includes frame count', summary.includes('2 frames'));
+
+  return results;
+}
+
+
+// --- source: intent-schedule-coordinator.ts ---
+  completeAutomationIntent,
+  createEmptyAutomationIntentQueue,
+  dequeueHighestPriorityIntent,
+  enqueueAutomationIntent,
+  intentFromSelectedRule,
+} from './automation-intent-queue.js';
+  O10AutomationIntentQueue,
+  O10SelfTestResult,
+  PortableHumanAutomationRule,
+} from './types.js';
+
+export interface O10IntentScheduleDecision {
+  action: 'execute_now' | 'defer' | 'drop';
+  reason: string;
+  intentId?: string;
+}
+
+export interface O10IntentScheduleResult {
+  queue: O10AutomationIntentQueue;
+  decision: O10IntentScheduleDecision;
+}
+
+/** Gate intent dequeue against rule limits; defer when cooldown or caps block execution. */
+export function coordinateAutomationIntentSchedule(
+  queue: O10AutomationIntentQueue,
+  rule: PortableHumanAutomationRule,
+  turn: number,
+  day: number
+): O10IntentScheduleResult {
+  const elig = evaluateHumanAutomationExecutionEligibility(
+    rule.enabled,
+    rule.authorityDisabled,
+    rule.activeFromDay,
+    rule.activeUntilDay,
+    rule.limits,
+    rule.safety,
+    rule.stats,
+    day,
+    turn
+  );
+  if (!elig.eligible) {
+    return {
+      queue,
+      decision: { action: 'defer', reason: elig.reason },
+    };
+  }
+  const { queue: q2, intent } = dequeueHighestPriorityIntent(queue, turn);
+  if (!intent || intent.ruleId !== rule.id) {
+    return {
+      queue,
+      decision: { action: 'drop', reason: intent ? 'Head intent rule mismatch.' : 'No queued intent.' },
+    };
+  }
+  return {
+    queue: completeAutomationIntent(q2, intent.id, 'completed'),
+    decision: { action: 'execute_now', reason: '', intentId: intent.id },
+  };
+}
+
+/** Enqueue selected rule when eligible; otherwise surface defer reason without mutating queue. */
+export function scheduleAutomationIntentFromRule(
+  queue: O10AutomationIntentQueue,
+  rule: PortableHumanAutomationRule,
+  turn: number,
+  day: number,
+  label = 'sched'
+): O10IntentScheduleResult {
+  const elig = evaluateHumanAutomationExecutionEligibility(
+    rule.enabled,
+    rule.authorityDisabled,
+    rule.activeFromDay,
+    rule.activeUntilDay,
+    rule.limits,
+    rule.safety,
+    rule.stats,
+    day,
+    turn
+  );
+  if (!elig.eligible) {
+    return { queue, decision: { action: 'defer', reason: elig.reason } };
+  }
+  const enq = enqueueAutomationIntent(queue, intentFromSelectedRule(rule, turn, day, label));
+  if (!enq.accepted) {
+    return { queue, decision: { action: 'drop', reason: enq.reason || 'Enqueue rejected.' } };
+  }
+  return {
+    queue: enq.queue,
+    decision: { action: 'execute_now', reason: 'Intent enqueued for immediate dequeue.' },
+  };
+}
+
+function sampleRule(overrides: Partial<PortableHumanAutomationRule> = {}): PortableHumanAutomationRule {
+  return {
+    id: 'r1',
+    name: 'Sample',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 2, maxRunsTotal: null, cooldownTurns: 2 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: 1,
+      lastRunTurn: 5,
+      runsToday: 0,
+      runsTodayDay: 1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+    ...overrides,
+  };
+}
+
+export function runO10Agent20IntentScheduleSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const rule = sampleRule({ stats: { ...sampleRule().stats, lastRunTurn: null, lastRunDay: null } });
+  let q = createEmptyAutomationIntentQueue(4);
+  const sched = scheduleAutomationIntentFromRule(q, rule, 6, 1);
+  q = sched.queue;
+  push('sched_enqueue', 'eligible rule enqueues intent', sched.decision.action === 'execute_now' && q.items.length === 1);
+
+  const cooldownRule = sampleRule({
+    stats: {
+      ...sampleRule().stats,
+      lastRunTurn: 8,
+      runsToday: 0,
+    },
+  });
+  const defer = scheduleAutomationIntentFromRule(q, cooldownRule, 9, 1);
+  push('sched_defer_cooldown', 'cooldown defers scheduling', defer.decision.action === 'defer');
+
+  q = enqueueAutomationIntent(q, intentFromSelectedRule(rule, 10, 1, 'x')).queue;
+  const exec = coordinateAutomationIntentSchedule(q, rule, 10, 1);
+  push(
+    'sched_execute',
+    'coordinate completes head intent when eligible',
+    exec.decision.action === 'execute_now' &&
+      exec.queue.items.find(i => i.id === exec.decision.intentId)?.status === 'completed'
+  );
+
+  const capRule = sampleRule({
+    limits: { maxRunsPerDay: 1, maxRunsTotal: null, cooldownTurns: 0 },
+    stats: { ...sampleRule().stats, runsToday: 1, runsTodayDay: 2 },
+  });
+  const cap = coordinateAutomationIntentSchedule(
+    enqueueAutomationIntent(createEmptyAutomationIntentQueue(), intentFromSelectedRule(capRule, 3, 2)).queue,
+    capRule,
+    3,
+    2
+  );
+  push('sched_cap_defer', 'daily cap defers execution', cap.decision.action === 'defer');
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -2690,6 +3168,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IntentQueueSelfTests());
   results.push(...runO10Agent20DayBoundarySelfTests());
   results.push(...runO10Agent20ScenarioSelfTests());
+  results.push(...runO10Agent20SoakProjectionSelfTests());
+  results.push(...runO10Agent20ReplayTapeSelfTests());
+  results.push(...runO10Agent20IntentScheduleSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

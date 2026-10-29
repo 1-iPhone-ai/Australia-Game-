@@ -1,6 +1,6 @@
 /** Operation 10M Agent 20 — shared types (mirror V9.4 SECTION 20AN + HA2). */
 
-export const O10_AGENT20_MODULE_VERSION = '10m.1.3.0-agent20';
+export const O10_AGENT20_MODULE_VERSION = '10m.1.4.0-agent20';
 export const O10_AGENT20_SCHEMA_VERSION = '10.14.0-agent20';
 
 export const O10_AUTOMATION_PATH_IDS = [

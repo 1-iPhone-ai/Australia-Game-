@@ -9,6 +9,10 @@ Portable TypeScript module for Operation 10M. Covers:
 
 National steward planning logic mirrors canonical **SECTION 20AN** (`V1014_*`) for Agent 25 inline assembly.
 
+**Round 4** adds soak projection (`projectO10IdleAutomationSoak`), scenario replay tapes (`buildAutomationReplayTapeFromScenario`), and intent schedule coordination (`coordinateAutomationIntentSchedule`).
+
+Module version: `10m.1.4.0-agent20`.
+
 Run tests:
 
 ```bash
