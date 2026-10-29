@@ -301,5 +301,3 @@ export class TurnTimeEngine {
     }
   }
 }
-
-export { createInitialClock };

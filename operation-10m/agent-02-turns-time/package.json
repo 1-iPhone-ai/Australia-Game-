@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/**/*.test.ts"
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "bundle:chunk": "tsx scripts/bundle-chunk-for-agent25.ts"
   },
   "devDependencies": {
     "@types/node": "22.10.0",

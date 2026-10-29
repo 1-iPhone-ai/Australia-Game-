@@ -24,6 +24,17 @@ Provide a **pure**, replay-safe turn/time layer that mirrors V9.4 concepts (`tur
 3. Map `engine.consumeTrace()` into existing diag hooks (`recordDiag2Event`).
 4. Abort reducer commit if `engine.validate()` reports `duplicateFired` or `skippedDue`.
 
+## Assembly chunk
+
+Regenerate the Agent 25 slice:
+
+```bash
+cd operation-10m/agent-02-turns-time
+npm run bundle:chunk
+```
+
+Output: `chunk.tsx` with `OP10M_MODULE_BEGIN agent-02-turns-time` … `OP10M_MODULE_END` markers and embedded `runOp10mAgent02TurnsTimeSelfTests()`.
+
 ## Invariants (must hold)
 
 - Effect sequence numbers are strictly increasing and never reused.

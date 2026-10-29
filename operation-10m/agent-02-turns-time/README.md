@@ -9,6 +9,7 @@ cd operation-10m/agent-02-turns-time
 npm install
 npm run typecheck
 npm test
+npm run bundle:chunk
 ```
 
 ## Layout
