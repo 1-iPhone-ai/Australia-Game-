@@ -1,0 +1,1852 @@
+import type { MacroConsistencyGate, MacroEconomyInputs, NationalMacroEconomyState } from './types.ts';
+
+export function evaluateMacroConsistencyGates(
+  state: NationalMacroEconomyState,
+  inputs: MacroEconomyInputs
+): MacroConsistencyGate[] {
+  const gates: MacroConsistencyGate[] = [];
+  if (!state.accounting.identityOk) {
+    gates.push({
+      id: 'accounting_identity',
+      triggered: true,
+      severity: 'warn',
+      summary: `Regional share accounting residual ${state.accounting.identityResidual.toFixed(6)}`
+    });
+  }
+  const pf: any = inputs.publicFinance;
+  const hh: any = inputs.households;
+  const fiscalPressure = String(pf?.pressure ?? pf?.fiscalPosition?.pressure ?? '');
+  const demand = String(hh?.domesticDemand?.level ?? hh?.domesticDemand?.band ?? '');
+  if (fiscalPressure === 'critical' && (demand === 'strong' || demand === 'surging' || demand === 'very_strong')) {
+    gates.push({
+      id: 'fiscal_household_tension',
+      triggered: true,
+      severity: 'info',
+      summary: 'Critical fiscal capacity coexists with strong household demand — interpret macro signals carefully.'
+    });
+  }
+  if (state.investmentClimate === 'frozen' && state.utilizationBand === 'tight') {
+    gates.push({
+      id: 'investment_utilization_mismatch',
+      triggered: true,
+      severity: 'info',
+      summary: 'Frozen investment climate despite tight utilization — binding constraint may be financial, not capacity.'
+    });
+  }
+  if (state.regionalDivergence.band === 'wide_spread' && state.cyclePhase === 'expansion') {
+    gates.push({
+      id: 'regional_divergence_expansion',
+      triggered: true,
+      severity: 'info',
+      summary: 'National expansion masks wide regional productivity dispersion.'
+    });
+  }
+  const tr: any = inputs.trade;
+  const terms = String(tr?.termsOfTrade?.band ?? tr?.termsBand ?? '');
+  if (terms === 'weak' && (fiscalPressure === 'critical' || fiscalPressure === 'strained')) {
+    gates.push({
+      id: 'trade_fiscal_stress',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Weak external terms coincide with strained fiscal capacity — macro downside risk elevated.'
+    });
+  }
+  if (state.transmissionReport?.dominantLayerId === 'v10.15_trade' && state.cyclePhase === 'contraction') {
+    gates.push({
+      id: 'external_led_contraction',
+      triggered: true,
+      severity: 'info',
+      summary: 'External demand layer dominates transmission while cycle is in contraction.'
+    });
+  }
+  const cm: any = inputs.creditMarkets ?? inputs.monetaryPolicy;
+  const spread = String(cm?.spreadBand ?? cm?.creditSpread?.band ?? '');
+  if (
+    (spread === 'wide' || spread === 'stressed' || spread === 'frozen' || inputs.creditShockActive) &&
+    state.investmentClimate === 'frozen'
+  ) {
+    gates.push({
+      id: 'credit_investment_squeeze',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Tight credit conditions coincide with frozen investment climate — financing constraint likely binding.'
+    });
+  }
+  const creditTight =
+    inputs.creditShockActive ||
+    spread === 'wide' ||
+    spread === 'stressed' ||
+    spread === 'frozen' ||
+    String(cm?.policyStance ?? cm?.stance ?? '') === 'restrictive';
+  if ((fiscalPressure === 'critical' || fiscalPressure === 'strained') && creditTight) {
+    gates.push({
+      id: 'monetary_fiscal_clamp',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fiscal strain plus simultaneous credit tightening — composite policy stance is conflicted.'
+    });
+  }
+  if (
+    state.transmissionReport?.dominantLayerId === 'v10.16_credit' &&
+    (creditTight || state.investmentClimate === 'frozen')
+  ) {
+    gates.push({
+      id: 'credit_led_stress',
+      triggered: true,
+      severity: 'info',
+      summary: 'Credit layer dominates macro transmission under tight financial conditions.'
+    });
+  }
+  const wf: any = inputs.workforce;
+  const readiness = String(wf?.nationalReadinessBand ?? wf?.readiness?.band ?? '');
+  if (
+    (readiness === 'critical' || readiness === 'shortage') &&
+    (state.utilizationBand === 'tight' || state.utilizationBand === 'overextended')
+  ) {
+    gates.push({
+      id: 'workforce_utilization_bind',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Labor shortages coincide with tight utilization — capacity constraint likely binding.'
+    });
+  }
+  const inn: any = inputs.innovation;
+  const innMomentum = String(inn?.momentum?.band ?? inn?.rAndDMomentum ?? '');
+  if (
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'trough') &&
+    (innMomentum === 'stalled' || innMomentum === 'weak' || innMomentum === 'contracting')
+  ) {
+    gates.push({
+      id: 'innovation_contraction_drag',
+      triggered: true,
+      severity: 'info',
+      summary: 'Innovation pipeline weakness amplifies macro contraction read.'
+    });
+  }
+  if (state.capacitySnapshot?.band === 'binding' && state.investmentClimate === 'frozen') {
+    gates.push({
+      id: 'capacity_investment_paradox',
+      triggered: true,
+      severity: 'info',
+      summary: 'Binding capacity read coexists with frozen investment — financing or policy may be the bind, not physical capacity.'
+    });
+  }
+  const hw: any = inputs.housingWellbeing ?? inputs.housing;
+  const housingStress = String(hw?.affordability?.band ?? hw?.affordabilityBand ?? hw?.stressBand ?? '');
+  if (
+    (housingStress === 'severe' || housingStress === 'critical' || housingStress === 'stressed') &&
+    (creditTight || spread === 'stressed' || spread === 'frozen')
+  ) {
+    gates.push({
+      id: 'housing_credit_stress',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Housing affordability stress coincides with tight credit — domestic macro downside risk elevated.'
+    });
+  }
+  const sc: any = inputs.strategicCapital;
+  const stratAlloc = String(sc?.allocationBand ?? sc?.capitalBand ?? '');
+  if (
+    (stratAlloc === 'expansionary' || stratAlloc === 'growth' || stratAlloc === 'active') &&
+    state.investmentClimate === 'frozen'
+  ) {
+    gates.push({
+      id: 'strategic_investment_divergence',
+      triggered: true,
+      severity: 'info',
+      summary: 'Strategic capital stance is expansionary while macro investment climate reads frozen — execution or financing gap likely.'
+    });
+  }
+  if (
+    state.transmissionBalance?.band === 'cross_current' ||
+    state.transmissionBalance?.band === 'fragmented'
+  ) {
+    gates.push({
+      id: 'transmission_cross_current',
+      triggered: true,
+      severity: 'info',
+      summary: 'Cross-current transmission layers — headline macro scores may mask offsetting sector forces.'
+    });
+  }
+  const nf: any = inputs.nationalFinance ?? inputs.monetaryPolicy;
+  const inflBand = String(nf?.inflation?.band ?? nf?.inflationBand ?? nf?.cpiBand ?? '');
+  if (
+    (inflBand === 'elevated' || inflBand === 'high' || inflBand === 'very_high' || inputs.highInflationScenarioActive) &&
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'slowdown' || state.cyclePhase === 'trough')
+  ) {
+    gates.push({
+      id: 'inflation_cycle_drag',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Elevated inflation coincides with macro downturn — stagflation-style read elevated.'
+    });
+  }
+  const en: any = inputs.industrialEnergy ?? inputs.energyEnvironment ?? inputs.nationalSystems?.industrialEnergy;
+  const supply = String(en?.supplyReliability?.band ?? en?.reliabilityBand ?? en?.gridBand ?? '');
+  if (
+    (supply === 'critical' || supply === 'fragile' || supply === 'stressed') &&
+    (state.utilizationBand === 'tight' || state.utilizationBand === 'overextended')
+  ) {
+    gates.push({
+      id: 'energy_transition_bind',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fragile energy supply with tight utilization — physical energy constraint may bind capacity.'
+    });
+  }
+  const energyCost = String(en?.energyCost?.band ?? en?.inputCostBand ?? '');
+  if (
+    (energyCost === 'spike' || energyCost === 'severe' || energyCost === 'elevated') &&
+    (inflBand === 'elevated' || inflBand === 'high' || inflBand === 'very_high' || inputs.highInflationScenarioActive)
+  ) {
+    gates.push({
+      id: 'inflation_energy_stagflation',
+      triggered: true,
+      severity: 'info',
+      summary: 'Energy cost shock aligns with elevated inflation — composite price-pressure macro risk.'
+    });
+  }
+  if (
+    state.transmissionCoherence?.band === 'contradictory' ||
+    state.transmissionCoherence?.band === 'mixed'
+  ) {
+    gates.push({
+      id: 'transmission_phase_incoherence',
+      triggered: true,
+      severity: 'info',
+      summary: 'Transmission layer nudges partially contradict the headline cycle phase.'
+    });
+  }
+  const ev: any = inputs.dynamicEvents ?? inputs.narrativeEvents ?? inputs.op10mEvents;
+  const stability = String(ev?.nationalStabilityBand ?? ev?.stabilityBand ?? '');
+  if (
+    (stability === 'critical' || stability === 'fragile' || stability === 'stressed') &&
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'trough' || state.cyclePhase === 'slowdown')
+  ) {
+    gates.push({
+      id: 'events_cycle_drag',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fragile national narrative stability coincides with macro downturn — event-layer downside risk elevated.'
+    });
+  }
+  const co: any = inputs.companies ?? inputs.privateSector ?? inputs.nationalPrivateSector;
+  const utilization = String(co?.nationalUtilizationBand ?? co?.utilization?.band ?? co?.productionUtilization?.band ?? '');
+  const overloaded = Math.max(0, Math.floor(Number(co?.overloadedFirmCount ?? co?.overloadedCount ?? 0)));
+  if (
+    (utilization === 'overextended' || utilization === 'saturated' || overloaded >= 3) &&
+    (state.utilizationBand === 'tight' || state.utilizationBand === 'overextended')
+  ) {
+    gates.push({
+      id: 'companies_capacity_bind',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Private-sector production strain coincides with tight macro utilization — capacity bind likely.'
+    });
+  }
+  const backlog = String(ev?.pendingBacklogBand ?? ev?.backlogBand ?? '');
+  if (
+    (backlog === 'surging' || backlog === 'critical') &&
+    (utilization === 'slack' || utilization === 'depressed' || utilization === 'critical')
+  ) {
+    gates.push({
+      id: 'events_production_disruption',
+      triggered: true,
+      severity: 'info',
+      summary: 'Event backlog pressure aligns with slack production utilization — narrative-production macro tension.'
+    });
+  }
+  if (
+    state.transmissionConcentration?.band === 'dominant_single' ||
+    state.transmissionConcentration?.band === 'concentrated'
+  ) {
+    gates.push({
+      id: 'transmission_concentration_risk',
+      triggered: true,
+      severity: 'info',
+      summary: 'Macro transmission is concentrated in a narrow layer set — headline scores may be brittle.'
+    });
+  }
+  const tt: any = inputs.turnsTime ?? inputs.temporalCadence ?? inputs.gameClock;
+  const pace = String(tt?.paceBand ?? tt?.turnPace?.band ?? '');
+  if (
+    (pace === 'stalled' || pace === 'frozen' || pace === 'deferred') &&
+    (state.cyclePhase === 'expansion' || state.cyclePhase === 'recovery')
+  ) {
+    gates.push({
+      id: 'turns_cycle_desync',
+      triggered: true,
+      severity: 'info',
+      summary: 'Stalled turn cadence coexists with expansionary macro phase — temporal desync elevated.'
+    });
+  }
+  const infra: any = inputs.transportInfrastructure ?? inputs.infrastructure ?? inputs.nationalInfrastructure;
+  const connectivity = String(infra?.connectivityBand ?? infra?.connectivity?.band ?? '');
+  if (
+    (connectivity === 'fragmented' || connectivity === 'critical' || connectivity === 'degraded') &&
+    (state.productivityBand === 'strong' || state.productivityBand === 'leading')
+  ) {
+    gates.push({
+      id: 'transport_productivity_tension',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Strong macro productivity read conflicts with degraded transport connectivity — logistics bind likely.'
+    });
+  }
+  if (
+    state.transmissionAsymmetry?.band === 'restrict_skewed' &&
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'trough')
+  ) {
+    gates.push({
+      id: 'transmission_asymmetry_downside',
+      triggered: true,
+      severity: 'info',
+      summary: 'Restrictive transmission skew aligns with macro downturn — downside reinforcement elevated.'
+    });
+  }
+  const rs: any = inputs.researchTech ?? inputs.research ?? inputs.nationalResearch;
+  const pipeline = String(rs?.pipelineBand ?? rs?.techPipeline?.band ?? '');
+  if (
+    (pipeline === 'stalled' || pipeline === 'blocked' || pipeline === 'weak') &&
+    (state.productivityBand === 'strong' || state.productivityBand === 'leading')
+  ) {
+    gates.push({
+      id: 'research_productivity_divergence',
+      triggered: true,
+      severity: 'info',
+      summary: 'Strong macro productivity read conflicts with weak research pipeline — tech drag may be latent.'
+    });
+  }
+  const pop: any = inputs.population ?? inputs.demographics ?? inputs.nationalPopulation;
+  const growth = String(pop?.growthBand ?? pop?.populationGrowth?.band ?? '');
+  if (
+    (growth === 'contracting' || growth === 'critical' || growth === 'stagnant') &&
+    (state.investmentClimate === 'active' || state.investmentClimate === 'overheating')
+  ) {
+    gates.push({
+      id: 'population_investment_tension',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Weak demographic momentum coexists with overheating investment read — sustainability risk elevated.'
+    });
+  }
+  if (state.transmissionVolatility?.band === 'turbulent' || state.transmissionVolatility?.band === 'elevated') {
+    gates.push({
+      id: 'transmission_volatility_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated cross-layer transmission volatility — composite macro scores may swing turn-to-turn.'
+    });
+  }
+  const md: any = inputs.modesScenarios ?? inputs.gameModes ?? inputs.scenarioRuntime;
+  const difficulty = String(md?.difficultyBand ?? md?.scenarioDifficulty?.band ?? '');
+  if (
+    (difficulty === 'extreme' || difficulty === 'crisis') &&
+    (state.stressIndex?.band === 'acute' || state.stressIndex?.band === 'elevated')
+  ) {
+    gates.push({
+      id: 'modes_stress_alignment',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Extreme scenario difficulty aligns with elevated macro stress index — composite downside risk.'
+    });
+  }
+  const grd: any = inputs.guardianCopilot ?? inputs.guardian ?? inputs.coPilotWarnings;
+  const alert = String(grd?.alertBand ?? grd?.riskBand ?? '');
+  if (
+    (alert === 'critical' || alert === 'severe' || alert === 'red') &&
+    state.transmissionResilience?.band === 'fragile'
+  ) {
+    gates.push({
+      id: 'guardian_resilience_fragility',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Critical guardian alerts with fragile transmission resilience — macro read highly brittle.'
+    });
+  }
+  const ct: any = inputs.citiesRegions ?? inputs.urbanRegions ?? inputs.metropolitanSystems;
+  const urban = String(ct?.urbanizationBand ?? ct?.urbanGrowth?.band ?? '');
+  if (
+    (urban === 'declining' || urban === 'stagnant') &&
+    state.regionalDivergence?.band === 'wide_spread'
+  ) {
+    gates.push({
+      id: 'cities_regional_divergence',
+      triggered: true,
+      severity: 'info',
+      summary: 'Weak urban momentum with wide regional divergence — metro-regional macro tension elevated.'
+    });
+  }
+  const fc: any = inputs.forecastingLab ?? inputs.macroForecasts ?? inputs.nationalForecasts;
+  const outlook = String(fc?.outlookBand ?? fc?.consensusOutlook?.band ?? '');
+  if (
+    (outlook === 'downside' || outlook === 'recession' || outlook === 'contraction') &&
+    (state.cyclePhase === 'expansion' || state.cyclePhase === 'peak')
+  ) {
+    gates.push({
+      id: 'forecast_cycle_divergence',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Downside forecast consensus conflicts with headline expansion phase — interpret macro signals carefully.'
+    });
+  }
+  if (state.transmissionCoverage?.band === 'sparse' || state.transmissionCoverage?.band === 'narrow') {
+    gates.push({
+      id: 'transmission_coverage_gap',
+      triggered: true,
+      severity: 'info',
+      summary: 'Few transmission layers materially active — composite macro read may omit cross-system forces.'
+    });
+  }
+  const cmd: any = inputs.commandCenter ?? inputs.nationalCommand ?? inputs.aiCommandCenter;
+  const posture = String(cmd?.postureBand ?? cmd?.operationalPosture?.band ?? '');
+  if (
+    (posture === 'crisis' || posture === 'red' || posture === 'critical') &&
+    state.stressIndex?.band === 'acute'
+  ) {
+    gates.push({
+      id: 'command_stress_lockstep',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Crisis command posture aligns with acute macro stress — policy room likely constrained.'
+    });
+  }
+  const au: any = inputs.idleAutomation ?? inputs.automation ?? inputs.nationalAutomation;
+  const throughput = String(au?.throughputBand ?? au?.automationThroughput?.band ?? '');
+  if (
+    (throughput === 'stalled' || throughput === 'critical') &&
+    (state.productivityBand === 'weak' || state.productivityBand === 'critical')
+  ) {
+    gates.push({
+      id: 'automation_productivity_bind',
+      triggered: true,
+      severity: 'info',
+      summary: 'Stalled automation throughput coincides with weak macro productivity — operational drag likely binding.'
+    });
+  }
+  if (state.transmissionAmplification?.band === 'restrictive' || state.transmissionAmplification?.band === 'mild_restrict') {
+    gates.push({
+      id: 'transmission_amplification_downside',
+      triggered: true,
+      severity: 'info',
+      summary: 'Restrictive transmission amplification — downside nudges dominate supportive layers.'
+    });
+  }
+  const ti: any = inputs.teamIntelligence ?? inputs.teamAi ?? inputs.nationalTeamAi;
+  const cohesion = String(ti?.cohesionBand ?? ti?.teamCohesion?.band ?? '');
+  if (
+    (cohesion === 'fractured' || cohesion === 'critical') &&
+    state.transmissionCoherence?.band === 'contradictory'
+  ) {
+    gates.push({
+      id: 'team_transmission_incoherence',
+      triggered: true,
+      severity: 'info',
+      summary: 'Fractured team AI cohesion aligns with contradictory transmission phase read.'
+    });
+  }
+  const rp: any = inputs.historyReplay ?? inputs.replayArchive ?? inputs.nationalHistory;
+  const stressMemory = String(rp?.stressMemory?.band ?? rp?.priorShockMemory?.band ?? '');
+  if (
+    (stressMemory === 'persistent' || stressMemory === 'scarring') &&
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'trough')
+  ) {
+    gates.push({
+      id: 'replay_stress_memory',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Persistent replay stress memory reinforces macro downturn interpretation.'
+    });
+  }
+  if (state.transmissionTension?.band === 'acute' || state.transmissionTension?.band === 'elevated') {
+    gates.push({
+      id: 'transmission_tension_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission tension — restrictive layer mass dominates supportive nudges.'
+    });
+  }
+  const mem: any = inputs.aiMemory ?? inputs.explainability ?? inputs.nationalAiMemory;
+  const drift = String(mem?.driftBand ?? mem?.memoryDrift?.band ?? '');
+  if (
+    (drift === 'runaway' || drift === 'critical') &&
+    (state.transmissionCoherence?.band === 'contradictory' || state.transmissionCoherence?.band === 'mixed')
+  ) {
+    gates.push({
+      id: 'memory_explainability_drift',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Runaway AI memory drift aligns with contradictory transmission coherence read.'
+    });
+  }
+  const dash: any = inputs.dashboardsMaps ?? inputs.nationalDashboards ?? inputs.mapsTelemetry;
+  const refreshLag = String(dash?.refreshLag?.band ?? dash?.dataLagBand ?? '');
+  if (
+    (refreshLag === 'stale' || refreshLag === 'critical') &&
+    (state.investmentClimate === 'cautious' || state.investmentClimate === 'frozen')
+  ) {
+    gates.push({
+      id: 'dashboard_signal_lag',
+      triggered: true,
+      severity: 'info',
+      summary: 'Stale dashboard refresh coincides with cautious macro investment climate.'
+    });
+  }
+  if (state.transmissionDivergence?.band === 'wide' || state.transmissionDivergence?.band === 'elevated') {
+    gates.push({
+      id: 'transmission_divergence_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated cycle vs investment transmission divergence — layer reads may conflict.'
+    });
+  }
+  const ui: any = inputs.gameUi ?? inputs.uiShell ?? inputs.nationalUi;
+  const panelLatency = String(ui?.panelLatency?.band ?? ui?.renderLatencyBand ?? '');
+  if (
+    (panelLatency === 'severe' || panelLatency === 'critical') &&
+    (state.transmissionStability?.band === 'fragile' || state.transmissionStability?.band === 'unstable')
+  ) {
+    gates.push({
+      id: 'ui_shell_latency_stress',
+      triggered: true,
+      severity: 'info',
+      summary: 'Severe UI panel latency aligns with fragile cycle/productivity transmission stability.'
+    });
+  }
+  const util: any = inputs.utilitiesGrid ?? inputs.publicUtilities ?? inputs.nationalUtilities;
+  const outageBand = String(util?.outageBand ?? util?.outageRisk?.band ?? '');
+  if (
+    (outageBand === 'rolling' || outageBand === 'severe') &&
+    (state.productivityBand === 'critical' || state.productivityBand === 'weak')
+  ) {
+    gates.push({
+      id: 'utilities_outage_productivity',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Rolling utility outages reinforce stagnant macro productivity band.'
+    });
+  }
+  if (state.transmissionStability?.band === 'unstable' || state.transmissionStability?.band === 'fragile') {
+    gates.push({
+      id: 'transmission_stability_fragile',
+      triggered: true,
+      severity: 'info',
+      summary: 'Fragile cycle vs productivity transmission stability — interpret headline scores cautiously.'
+    });
+  }
+  const trLog: any = inputs.trade?.logistics ?? inputs.trade?.supplyChain ?? inputs.trade;
+  const portBacklog = String(trLog?.portBacklogBand ?? trLog?.backlogBand ?? trLog?.congestionBand ?? '');
+  if (
+    (portBacklog === 'gridlocked' || portBacklog === 'critical') &&
+    (state.cyclePhase === 'contraction' || state.cyclePhase === 'slowdown')
+  ) {
+    gates.push({
+      id: 'trade_logistics_gridlock',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Gridlocked trade logistics reinforce macro slowdown / contraction read.'
+    });
+  }
+  const neg: any = inputs.negotiationState ?? inputs.diplomacy;
+  const deadlock = String(neg?.deadlockBand ?? neg?.stalemateBand ?? '');
+  if (
+    (deadlock === 'entrenched' || deadlock === 'critical') &&
+    (state.investmentClimate === 'frozen' || state.investmentClimate === 'cautious')
+  ) {
+    gates.push({
+      id: 'negotiation_deadlock_investment',
+      triggered: true,
+      severity: 'info',
+      summary: 'Entrenched negotiation deadlock aligns with cautious macro investment climate.'
+    });
+  }
+  if (state.transmissionAlignment?.band === 'misaligned' || state.transmissionAlignment?.band === 'strained') {
+    gates.push({
+      id: 'transmission_alignment_strained',
+      triggered: true,
+      severity: 'info',
+      summary: 'Strained investment vs productivity transmission alignment — layer reads may conflict.'
+    });
+  }
+  const hhConf: any = inputs.households?.consumerConfidence ?? inputs.consumerConfidence;
+  const confBand = String(hhConf?.band ?? hhConf?.level ?? inputs.households?.confidenceBand ?? '');
+  if (
+    (confBand === 'collapsed' || confBand === 'critical') &&
+    (state.cyclePhase === 'contraction' || state.investmentClimate === 'frozen')
+  ) {
+    gates.push({
+      id: 'consumer_confidence_collapse',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Collapsed consumer confidence aligns with contractionary macro read.'
+    });
+  }
+  const capex: any = inputs.privateCapex ?? inputs.companies?.capexCycle ?? inputs.privateSector?.capitalExpenditure;
+  const capexPipe = String(capex?.pipelineBand ?? capex?.backlogBand ?? inputs.companies?.capexPipelineBand ?? '');
+  if (
+    (capexPipe === 'frozen' || capexPipe === 'collapsed') &&
+    state.transmissionSynchronization?.band === 'fractured'
+  ) {
+    gates.push({
+      id: 'capex_freeze_desync',
+      triggered: true,
+      severity: 'info',
+      summary: 'Frozen private capex pipeline coincides with fractured transmission synchronization.'
+    });
+  }
+  if (state.transmissionSynchronization?.band === 'fractured') {
+    gates.push({
+      id: 'transmission_synchronization_fractured',
+      triggered: true,
+      severity: 'info',
+      summary: 'Fractured cross-layer transmission synchronization — interpret composite scores cautiously.'
+    });
+  }
+  const mp: any = inputs.monetaryPolicy ?? inputs.creditMarkets;
+  const stance = String(mp?.policyStance ?? mp?.stance ?? '');
+  if (
+    (stance === 'restrictive' || stance === 'aggressive_tightening') &&
+    (state.investmentClimate === 'frozen' || state.investmentClimate === 'cautious')
+  ) {
+    gates.push({
+      id: 'monetary_stance_restrictive',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Restrictive monetary stance aligns with cautious macro investment climate.'
+    });
+  }
+  const rental: any = inputs.rentalMarket ?? inputs.housingWellbeing?.rental;
+  const rentalPressure = String(rental?.pressureBand ?? rental?.stressBand ?? '');
+  if (
+    (rentalPressure === 'severe' || rentalPressure === 'critical') &&
+    (state.housingSpilloverSummary != null || state.productivityBand === 'weak')
+  ) {
+    gates.push({
+      id: 'rental_stress_housing',
+      triggered: true,
+      severity: 'info',
+      summary: 'Severe rental pressure reinforces weak housing-linked macro read.'
+    });
+  }
+  if (state.transmissionIntensity?.band === 'elevated' || state.transmissionIntensity?.band === 'acute') {
+    gates.push({
+      id: 'transmission_intensity_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission intensity — many layers carry material nudges simultaneously.'
+    });
+  }
+  const climate: any = inputs.climatePolicy ?? inputs.energyEnvironment?.climatePolicy;
+  const transition = String(climate?.transitionBand ?? climate?.transition?.band ?? '');
+  if (
+    (transition === 'disruptive' || transition === 'shock') &&
+    (state.energySpilloverSummary != null || state.productivityBand === 'weak')
+  ) {
+    gates.push({
+      id: 'climate_transition_shock',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Disruptive climate transition aligns with strained energy/productivity macro read.'
+    });
+  }
+  const fl: any = inputs.forecastingLab ?? inputs.nationalForecasts;
+  const dispersion = String(fl?.dispersionBand ?? fl?.forecastSpread?.band ?? '');
+  if (
+    (dispersion === 'wide' || dispersion === 'extreme') &&
+    (state.investmentClimate === 'cautious' || state.investmentClimate === 'frozen')
+  ) {
+    gates.push({
+      id: 'forecast_dispersion_wide',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide forecast dispersion coincides with cautious macro investment climate.'
+    });
+  }
+  if (
+    state.transmissionPolarization?.band === 'restrictive_dominant' ||
+    state.transmissionPolarization?.band === 'elevated'
+  ) {
+    gates.push({
+      id: 'transmission_polarization_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission polarization — restrictive layer mass dominates supportive mass.'
+    });
+  }
+  const acc: any = inputs.uiAccessibility ?? inputs.gameUi?.accessibility;
+  const contrast = String(acc?.contrastBand ?? acc?.contrast?.band ?? '');
+  if (
+    (contrast === 'failing' || contrast === 'critical') &&
+    (state.productivityBand === 'weak' || state.productivityBand === 'critical')
+  ) {
+    gates.push({
+      id: 'ui_accessibility_failing',
+      triggered: true,
+      severity: 'info',
+      summary: 'Failing UI accessibility aligns with weak macro productivity band.'
+    });
+  }
+  const tl: any = inputs.historyTimeline ?? inputs.historyReplay?.timeline;
+  const gap = String(tl?.gapBand ?? tl?.continuityBand ?? '');
+  if (
+    (gap === 'broken' || gap === 'discontinuous') &&
+    (state.replaySpilloverSummary != null || state.cyclePhase === 'contraction')
+  ) {
+    gates.push({
+      id: 'history_timeline_broken',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Broken history timeline continuity reinforces contractionary macro read.'
+    });
+  }
+  if (state.transmissionCoupling?.band === 'tight' || state.transmissionCoupling?.band === 'firm') {
+    gates.push({
+      id: 'transmission_coupling_firm',
+      triggered: true,
+      severity: 'info',
+      summary: 'Firm cycle/investment transmission coupling — shocks may propagate quickly across layers.'
+    });
+  }
+  const liq: any = inputs.systemLiquidity ?? inputs.creditMarkets?.liquidity;
+  const liqBand = String(liq?.band ?? liq?.stressBand ?? liq?.stance ?? '');
+  if (
+    (liqBand === 'frozen' || liqBand === 'critical') &&
+    (state.investmentClimate === 'frozen' || state.creditSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'system_liquidity_frozen',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Frozen system liquidity aligns with tight macro investment/credit read.'
+    });
+  }
+  const mt: any = inputs.mapsTelemetry ?? inputs.dashboardsMaps?.telemetry;
+  const mapFidelity = String(mt?.geoFidelityBand ?? mt?.fidelityBand ?? '');
+  if (
+    (mapFidelity === 'distorted' || mapFidelity === 'critical') &&
+    (state.regionalDivergence?.band === 'wide_spread' || state.transmissionImbalance?.band === 'tilted')
+  ) {
+    gates.push({
+      id: 'maps_telemetry_distorted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Distorted maps telemetry coincides with wide regional or tilted transmission imbalance.'
+    });
+  }
+  if (
+    state.transmissionImbalance?.band === 'restrictive_heavy' ||
+    state.transmissionImbalance?.band === 'tilted'
+  ) {
+    gates.push({
+      id: 'transmission_imbalance_tilted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Tilted transmission imbalance — restrictive mass dominates supportive spillover.'
+    });
+  }
+  const gp: any = inputs.strategicGameplay ?? inputs.strategicCapital?.gameplayCadence;
+  const pacing = String(gp?.pacingBand ?? gp?.cadenceBand ?? '');
+  if (
+    (pacing === 'gridlocked' || pacing === 'critical') &&
+    (state.investmentClimate === 'frozen' || state.cyclePhase === 'contraction')
+  ) {
+    gates.push({
+      id: 'strategic_gameplay_gridlocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Gridlocked strategic gameplay aligns with contractionary or frozen macro read.'
+    });
+  }
+  const arch: any = inputs.historyArchiveIntegrity ?? inputs.replayArchive?.integrity;
+  const integrity = String(arch?.integrityBand ?? arch?.checksumBand ?? '');
+  if (
+    (integrity === 'corrupt' || integrity === 'compromised') &&
+    (state.archiveIntegritySpilloverSummary != null || state.replaySpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'history_archive_corrupt',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Corrupt history archive integrity reinforces fragile macro evidence read.'
+    });
+  }
+  if (state.transmissionHarmonic?.band === 'dissonant' || state.transmissionHarmonic?.band === 'mixed') {
+    gates.push({
+      id: 'transmission_harmonic_dissonant',
+      triggered: true,
+      severity: 'info',
+      summary: 'Dissonant cross-channel transmission harmonic — layer nudges disagree across cycle/investment/productivity.'
+    });
+  }
+  const ih: any = inputs.integrationHealth ?? inputs.op10mIntegration?.health;
+  const mesh = String(ih?.meshBand ?? ih?.syncBand ?? '');
+  if (
+    (mesh === 'fractured' || mesh === 'desynced') &&
+    (state.integrationHealthSpilloverSummary != null || state.stressIndex.band !== 'calm')
+  ) {
+    gates.push({
+      id: 'integration_mesh_fractured',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fractured integration mesh coincides with elevated macro stress read.'
+    });
+  }
+  const cd: any = inputs.turnCadenceDrift ?? inputs.turnsTime?.cadenceDrift;
+  const jitter = String(cd?.jitterBand ?? cd?.clockJitter?.band ?? '');
+  if (
+    (jitter === 'chaotic' || jitter === 'extreme') &&
+    (state.cadenceDriftSpilloverSummary != null || state.turnsSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'turn_cadence_chaotic',
+      triggered: true,
+      severity: 'info',
+      summary: 'Chaotic turn cadence jitter aligns with strained temporal spillover read.'
+    });
+  }
+  if (state.transmissionGradient?.band === 'steep' || state.transmissionGradient?.band === 'sloped') {
+    gates.push({
+      id: 'transmission_gradient_steep',
+      triggered: true,
+      severity: 'info',
+      summary: 'Steep transmission gradient — a few layers dominate macro spillover mass.'
+    });
+  }
+  const rm: any = inputs.researchMomentum ?? inputs.researchTech?.momentum;
+  const velocity = String(rm?.velocityBand ?? rm?.momentumBand ?? '');
+  if (
+    (velocity === 'collapsed' || velocity === 'critical') &&
+    (state.productivityBand === 'weak' || state.productivityBand === 'critical')
+  ) {
+    gates.push({
+      id: 'research_momentum_collapsed',
+      triggered: true,
+      severity: 'info',
+      summary: 'Collapsed research momentum aligns with weak macro productivity band.'
+    });
+  }
+  const bo: any = inputs.budgetOutlook ?? inputs.publicFinance?.outlook;
+  const capexRoom = String(bo?.capexRoomBand ?? bo?.capitalHeadroom?.band ?? '');
+  if (
+    (capexRoom === 'exhausted' || capexRoom === 'none') &&
+    (state.investmentClimate === 'frozen' || state.fiscalSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'budget_capex_exhausted',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Exhausted public capex room coincides with tight macro investment/fiscal read.'
+    });
+  }
+  if (state.transmissionAttenuation?.band === 'muted' || state.transmissionAttenuation?.band === 'balanced') {
+    gates.push({
+      id: 'transmission_attenuation_soft',
+      triggered: true,
+      severity: 'info',
+      summary: 'Soft transmission attenuation — tail layers carry less spillover mass vs peak layer.'
+    });
+  }
+  const ms: any = inputs.modeShift ?? inputs.modesScenarios?.shift;
+  const vol = String(ms?.volatilityBand ?? ms?.shiftBand ?? '');
+  if (
+    (vol === 'chaotic' || vol === 'disruptive') &&
+    (state.modesSpilloverSummary != null || state.cyclePhase === 'contraction')
+  ) {
+    gates.push({
+      id: 'mode_shift_disruptive',
+      triggered: true,
+      severity: 'info',
+      summary: 'Disruptive mode shift aligns with contractionary or modes spillover stress read.'
+    });
+  }
+  const chainStress: any = inputs.supplyChainStress ?? inputs.companies?.supplyChain;
+  const frag = String(chainStress?.fragilityBand ?? chainStress?.stressBand ?? '');
+  if (
+    (frag === 'broken' || frag === 'severe') &&
+    (state.companiesSpilloverSummary != null || state.productivityBand === 'weak')
+  ) {
+    gates.push({
+      id: 'supply_chain_broken',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Broken corporate supply chains reinforce weak macro productivity/companies read.'
+    });
+  }
+  if (state.transmissionEnvelope?.band === 'wide') {
+    gates.push({
+      id: 'transmission_envelope_wide',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide transmission envelope — peak layer spillover magnitude is elevated.'
+    });
+  }
+  const eventCascade: any = inputs.eventCascade ?? inputs.dynamicEvents?.cascade;
+  const cascadeIntensity = String(eventCascade?.intensityBand ?? eventCascade?.cascadeBand ?? '');
+  if (
+    (cascadeIntensity === 'runaway' || cascadeIntensity === 'extreme') &&
+    (state.eventsSpilloverSummary != null || state.stressIndex.band !== 'calm')
+  ) {
+    gates.push({
+      id: 'event_cascade_runaway',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Runaway event cascade coincides with elevated narrative or macro stress read.'
+    });
+  }
+  const demoShift: any = inputs.demographicShift ?? inputs.population?.shift;
+  const participation = String(demoShift?.participationBand ?? demoShift?.laborParticipation?.band ?? '');
+  if (
+    (participation === 'collapsed' || participation === 'falling') &&
+    (state.populationSpilloverSummary != null || state.workforceSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'demographic_participation_falling',
+      triggered: true,
+      severity: 'info',
+      summary: 'Falling demographic participation aligns with strained workforce/population spillover.'
+    });
+  }
+  if (state.transmissionPersistence?.band === 'fragile') {
+    gates.push({
+      id: 'transmission_persistence_fragile',
+      triggered: true,
+      severity: 'info',
+      summary: 'Fragile transmission persistence — layer signs diverge from aggregate spillover direction.'
+    });
+  }
+  const inflAnchor: any = inputs.inflationExpectationsAnchor ?? inputs.nationalFinance?.expectationsAnchor;
+  const anchorBand = String(inflAnchor?.anchorBand ?? inflAnchor?.stabilityBand ?? '');
+  if (
+    (anchorBand === 'deanchored' || anchorBand === 'unmoored') &&
+    (state.inflationSpilloverSummary != null || inputs.highInflationScenarioActive)
+  ) {
+    gates.push({
+      id: 'expectations_deanchored',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Deanchored inflation expectations align with elevated inflation macro read.'
+    });
+  }
+  const metroMom: any = inputs.metroMomentum ?? inputs.citiesRegions?.momentum;
+  const metroGrowth = String(metroMom?.growthBand ?? metroMom?.momentumBand ?? '');
+  if (
+    (metroGrowth === 'contracting' || metroGrowth === 'stalled') &&
+    (state.citiesSpilloverSummary != null || state.regionalDivergence?.band === 'wide_spread')
+  ) {
+    gates.push({
+      id: 'metro_growth_stalled',
+      triggered: true,
+      severity: 'info',
+      summary: 'Stalled metro momentum coincides with wide regional or cities spillover stress.'
+    });
+  }
+  if (state.transmissionCentrality?.band === 'concentrated') {
+    gates.push({
+      id: 'transmission_centrality_concentrated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Concentrated transmission centrality — top layers dominate spillover mass.'
+    });
+  }
+  const transportTp: any = inputs.transportThroughput ?? inputs.transportInfrastructure?.throughput;
+  const flow = String(transportTp?.flowBand ?? transportTp?.throughputBand ?? '');
+  if (
+    (flow === 'collapsed' || flow === 'critical') &&
+    (state.transportSpilloverSummary != null || state.productivityBand === 'weak')
+  ) {
+    gates.push({
+      id: 'transport_throughput_collapsed',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Collapsed transport throughput aligns with weak macro productivity/transport read.'
+    });
+  }
+  const etp: any = inputs.energyTransitionPace ?? inputs.industrialEnergy?.transitionPace;
+  const transitionPaceBand = String(etp?.paceBand ?? etp?.transitionBand ?? '');
+  if (
+    (transitionPaceBand === 'forced' || transitionPaceBand === 'disruptive') &&
+    (state.energySpilloverSummary != null || state.climateSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'energy_transition_disruptive',
+      triggered: true,
+      severity: 'info',
+      summary: 'Disruptive energy transition pace coincides with strained energy/climate spillover.'
+    });
+  }
+  if (state.transmissionSynthesis?.band === 'elevated') {
+    gates.push({
+      id: 'transmission_synthesis_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission synthesis — gross spillover mass is high across layers.'
+    });
+  }
+  const haAff: any = inputs.housingAffordability ?? inputs.housingWellbeing?.affordability;
+  const affordStress = String(haAff?.stressBand ?? haAff?.affordabilityBand ?? '');
+  if (
+    (affordStress === 'crushed' || affordStress === 'critical') &&
+    (state.housingSpilloverSummary != null || state.rentalSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'housing_affordability_crushed',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Crushed housing affordability aligns with strained housing/rental spillover read.'
+    });
+  }
+  const tradeExpIn: any = inputs.tradeExposure ?? inputs.trade?.exposure;
+  const exposureShock = String(tradeExpIn?.shockBand ?? tradeExpIn?.vulnerabilityBand ?? '');
+  if (
+    (exposureShock === 'dislocated' || exposureShock === 'critical') &&
+    (state.tradeSpilloverSummary != null || state.tradeExposureSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'trade_exposure_dislocated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Dislocated trade exposure coincides with strained external/trade spillover.'
+    });
+  }
+  if (state.transmissionDispersion?.band === 'wide') {
+    gates.push({
+      id: 'transmission_dispersion_wide',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide transmission dispersion — spillover mass is uneven across layers.'
+    });
+  }
+  const gvIn: any = inputs.guardianVigilance ?? inputs.guardianCopilot?.vigilance;
+  const vigilanceAlert = String(gvIn?.alertBand ?? gvIn?.vigilanceBand ?? '');
+  if (
+    (vigilanceAlert === 'red' || vigilanceAlert === 'critical') &&
+    (state.guardianSpilloverSummary != null || state.guardianVigilanceSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'guardian_vigilance_elevated',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Elevated guardian vigilance aligns with strained guardian spillover read.'
+    });
+  }
+  const cmdIn: any = inputs.commandCoordination ?? inputs.commandCenter?.coordination;
+  const syncBand = String(cmdIn?.syncBand ?? cmdIn?.coordinationBand ?? '');
+  if (
+    (syncBand === 'broken' || syncBand === 'fragmented') &&
+    (state.commandSpilloverSummary != null || state.commandCoordinationSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'command_coordination_fragmented',
+      triggered: true,
+      severity: 'info',
+      summary: 'Fragmented command coordination coincides with strained command spillover.'
+    });
+  }
+  if (state.transmissionFragmentation?.band === 'fragmented') {
+    gates.push({
+      id: 'transmission_fragmentation_high',
+      triggered: true,
+      severity: 'info',
+      summary: 'High transmission fragmentation — many layers carry negligible spillover mass.'
+    });
+  }
+  const teamCohesionIn: any = inputs.teamAiCohesion ?? inputs.teamIntelligence?.cohesion;
+  const cohesionAlign = String(teamCohesionIn?.alignmentBand ?? teamCohesionIn?.cohesionBand ?? '');
+  if (
+    (cohesionAlign === 'split' || cohesionAlign === 'fractured') &&
+    (state.teamAiSpilloverSummary != null || state.teamAiCohesionSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'team_ai_cohesion_fractured',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fractured team AI cohesion aligns with strained team AI spillover read.'
+    });
+  }
+  const memRetIn: any = inputs.memoryRetention ?? inputs.aiMemory?.retention;
+  const retentionBand = String(memRetIn?.retentionBand ?? memRetIn?.holdBand ?? '');
+  if (
+    (retentionBand === 'lost' || retentionBand === 'volatile') &&
+    (state.memorySpilloverSummary != null || state.memoryRetentionSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'memory_retention_volatile',
+      triggered: true,
+      severity: 'info',
+      summary: 'Volatile memory retention coincides with strained AI memory spillover.'
+    });
+  }
+  if (state.transmissionRedundancy?.band === 'stacked') {
+    gates.push({
+      id: 'transmission_redundancy_stacked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Stacked transmission redundancy — aligned layers dominate spillover mass.'
+    });
+  }
+  const autoTp: any = inputs.automationThroughput ?? inputs.idleAutomation?.throughput;
+  const autoPace = String(autoTp?.paceBand ?? autoTp?.throughputBand ?? '');
+  if (
+    (autoPace === 'collapsed' || autoPace === 'stalled') &&
+    (state.automationSpilloverSummary != null || state.automationThroughputSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_throughput_collapsed',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Collapsed automation throughput aligns with strained automation spillover read.'
+    });
+  }
+  const fcIn: any = inputs.forecastCalibration ?? inputs.forecastingLab?.calibration;
+  const calBias = String(fcIn?.biasBand ?? fcIn?.calibrationBand ?? '');
+  if (
+    (calBias === 'runaway' || calBias === 'severe') &&
+    (state.forecastingSpilloverSummary != null || state.forecastCalibrationSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_calibration_runaway',
+      triggered: true,
+      severity: 'info',
+      summary: 'Runaway forecast calibration bias coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionSaturation?.band === 'saturated') {
+    gates.push({
+      id: 'transmission_saturation_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission saturation — a single layer dominates active mass.'
+    });
+  }
+  const idleGov: any = inputs.automationIdleGovernance ?? inputs.idleAutomation?.governance;
+  const govBand = String(idleGov?.governanceBand ?? idleGov?.policyBand ?? '');
+  if (
+    (govBand === 'runaway' || govBand === 'escalated') &&
+    (state.automationSpilloverSummary != null || state.automationIdleGovernanceSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_idle_governance_escalated',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Escalated automation idle governance aligns with strained automation spillover read.'
+    });
+  }
+  const projSync: any = inputs.forecastProjectionSync ?? inputs.forecastingLab?.projectionSync;
+  const driftBand = String(projSync?.driftBand ?? projSync?.offsetBand ?? '');
+  if (
+    (driftBand === 'runaway' || driftBand === 'critical') &&
+    (state.forecastingSpilloverSummary != null || state.forecastProjectionSyncSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_projection_sync_drifted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Runaway forecast projection drift coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionElasticity?.band === 'rigid') {
+    gates.push({
+      id: 'transmission_elasticity_rigid',
+      triggered: true,
+      severity: 'info',
+      summary: 'Rigid transmission elasticity — active spillover mass concentrates in few layers.'
+    });
+  }
+  const wave36Export: any =
+    inputs.automationIdleGovernanceWave36Export ?? inputs.idleAutomation?.governanceWave36Export;
+  const round36Ready = Boolean(
+    wave36Export?.round36Ready ?? wave36Export?.payload?.round36Ready ?? wave36Export?.exportReady
+  );
+  if (
+    wave36Export &&
+    !round36Ready &&
+    (state.automationSpilloverSummary != null || state.automationIdleGovernanceWave36ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_idle_governance_wave36_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Automation idle governance wave 36 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave36Sync: any =
+    inputs.forecastWave36ProjectionSync ?? inputs.forecastingLab?.wave36ProjectionSync;
+  const syncStatus = String(wave36Sync?.status ?? wave36Sync?.syncStatus ?? '').toLowerCase();
+  if (
+    syncStatus === 'drift' &&
+    (state.forecastingSpilloverSummary != null || state.forecastWave36ProjectionSyncSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_wave36_projection_sync_drifted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Forecast wave 36 projection sync drifted coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionDispersion?.band === 'moderate') {
+    gates.push({
+      id: 'transmission_dispersion_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission dispersion — spillover mass is uneven across active layers.'
+    });
+  }
+  const wave37Ui: any =
+    inputs.uiResponsivenessWave37Export ?? inputs.uiResponsiveness?.wave37Export ?? inputs.gameUi?.responsivenessWave37Export;
+  const round37Ready = Boolean(
+    wave37Ui?.round37Ready ?? wave37Ui?.payload?.round37Ready ?? wave37Ui?.exportReady
+  );
+  if (
+    wave37Ui &&
+    !round37Ready &&
+    (state.uiSpilloverSummary != null || state.uiResponsivenessWave37ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'ui_responsiveness_wave37_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'UI responsiveness wave 37 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave37Dash: any =
+    inputs.dashboardClarityWave37Export ?? inputs.dashboardClarity?.wave37Export ?? inputs.dashboards?.clarityWave37Export;
+  const clarityReady = Boolean(
+    wave37Dash?.clarityReady ?? wave37Dash?.round37Ready ?? wave37Dash?.payload?.clarityReady
+  );
+  if (
+    wave37Dash &&
+    !clarityReady &&
+    (state.dashboardsSpilloverSummary != null || state.dashboardClarityWave37ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'dashboard_clarity_wave37_export_blocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Dashboard clarity wave 37 export not ready coincides with strained dashboards spillover.'
+    });
+  }
+  if (state.transmissionRedundancy?.band === 'stacked') {
+    gates.push({
+      id: 'transmission_redundancy_stacked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Stacked transmission redundancy — aligned spillover mass concentrates across active layers.'
+    });
+  }
+  const wave38Replay: any =
+    inputs.replayWave38Export ?? inputs.historyReplay?.wave38Export ?? inputs.replay?.wave38Export;
+  const round38Ready = Boolean(
+    wave38Replay?.round38Ready ?? wave38Replay?.payload?.round38Ready ?? wave38Replay?.exportReady
+  );
+  if (
+    wave38Replay &&
+    !round38Ready &&
+    (state.replaySpilloverSummary != null || state.replayWave38ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'replay_wave38_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'History replay wave 38 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave38Health: any =
+    inputs.integrationHealthWave38Export ??
+    inputs.integrationHealth?.wave38Export ??
+    inputs.assembly?.integrationHealthWave38Export;
+  const healthReady = Boolean(
+    wave38Health?.healthReady ?? wave38Health?.round38Ready ?? wave38Health?.payload?.healthReady
+  );
+  if (
+    wave38Health &&
+    !healthReady &&
+    (state.integrationHealthSpilloverSummary != null || state.integrationHealthWave38ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'integration_health_wave38_export_blocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Integration health wave 38 export not ready coincides with strained integration health spillover.'
+    });
+  }
+  if (state.transmissionSynthesis?.band === 'elevated') {
+    gates.push({
+      id: 'transmission_synthesis_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated transmission synthesis — net spillover impulse is concentrated across layers.'
+    });
+  }
+  const wave39Auto: any =
+    inputs.automationIdleGovernanceWave39Export ??
+    inputs.automationIdleGovernance?.wave39Export ??
+    inputs.idleAutomation?.governanceWave39Export;
+  const round39Ready = Boolean(
+    wave39Auto?.round39Ready ?? wave39Auto?.payload?.round39Ready ?? wave39Auto?.exportReady
+  );
+  if (
+    wave39Auto &&
+    !round39Ready &&
+    (state.automationSpilloverSummary != null || state.automationIdleGovernanceWave39ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_idle_governance_wave39_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Automation idle governance wave 39 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave39Forecast: any =
+    inputs.forecastWave39Export ?? inputs.forecastingLab?.wave39Export ?? inputs.macroForecasts?.wave39Export;
+  const exportStatus = String(wave39Forecast?.status ?? wave39Forecast?.syncStatus ?? '').toLowerCase();
+  if (
+    exportStatus === 'drift' &&
+    (state.forecastingSpilloverSummary != null || state.forecastWave39ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_wave39_export_drifted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Forecast wave 39 export drifted coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionCentrality?.band === 'concentrated') {
+    gates.push({
+      id: 'transmission_centrality_concentrated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Concentrated transmission centrality — top layers carry most active spillover mass.'
+    });
+  }
+  const wave40Ui: any =
+    inputs.uiResponsivenessWave40Export ??
+    inputs.uiResponsiveness?.wave40Export ??
+    inputs.gameUi?.responsivenessWave40Export;
+  const round40Ready = Boolean(
+    wave40Ui?.round40Ready ?? wave40Ui?.payload?.round40Ready ?? wave40Ui?.exportReady
+  );
+  if (
+    wave40Ui &&
+    !round40Ready &&
+    (state.uiSpilloverSummary != null || state.uiResponsivenessWave40ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'ui_responsiveness_wave40_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'UI responsiveness wave 40 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave40Dash: any =
+    inputs.dashboardClarityWave40Export ??
+    inputs.dashboardClarity?.wave40Export ??
+    inputs.dashboards?.clarityWave40Export;
+  const clarity40Ready = Boolean(
+    wave40Dash?.clarityReady ?? wave40Dash?.round40Ready ?? wave40Dash?.payload?.clarityReady
+  );
+  if (
+    wave40Dash &&
+    !clarity40Ready &&
+    (state.dashboardsSpilloverSummary != null || state.dashboardClarityWave40ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'dashboard_clarity_wave40_export_blocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Dashboard clarity wave 40 export not ready coincides with strained dashboards spillover.'
+    });
+  }
+  if (state.transmissionEnvelope?.band === 'wide') {
+    gates.push({
+      id: 'transmission_envelope_wide',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide transmission envelope — peak active-layer spillover magnitude is elevated.'
+    });
+  }
+  const wave41Replay: any =
+    inputs.replayWave41Export ?? inputs.historyReplay?.wave41Export ?? inputs.replay?.wave41Export;
+  const round41Ready = Boolean(
+    wave41Replay?.round41Ready ?? wave41Replay?.payload?.round41Ready ?? wave41Replay?.exportReady
+  );
+  if (
+    wave41Replay &&
+    !round41Ready &&
+    (state.replaySpilloverSummary != null || state.replayWave41ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'replay_wave41_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'History replay wave 41 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave41Health: any =
+    inputs.integrationHealthWave41Export ??
+    inputs.integrationHealth?.wave41Export ??
+    inputs.assembly?.integrationHealthWave41Export;
+  const health41Ready = Boolean(
+    wave41Health?.healthReady ?? wave41Health?.round41Ready ?? wave41Health?.payload?.healthReady
+  );
+  if (
+    wave41Health &&
+    !health41Ready &&
+    (state.integrationHealthSpilloverSummary != null || state.integrationHealthWave41ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'integration_health_wave41_export_blocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Integration health wave 41 export not ready coincides with strained integration health spillover.'
+    });
+  }
+  const wave42Auto: any =
+    inputs.automationIdleGovernanceWave42Export ??
+    inputs.automationIdleGovernance?.wave42Export ??
+    inputs.idleAutomation?.governanceWave42Export;
+  const round42Ready = Boolean(
+    wave42Auto?.round42Ready ?? wave42Auto?.payload?.round42Ready ?? wave42Auto?.exportReady
+  );
+  if (
+    wave42Auto &&
+    !round42Ready &&
+    (state.automationSpilloverSummary != null || state.automationIdleGovernanceWave42ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_idle_governance_wave42_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Automation idle governance wave 42 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave42Forecast: any =
+    inputs.forecastWave42Export ?? inputs.forecastingLab?.wave42Export ?? inputs.macroForecasts?.wave42Export;
+  const export42Status = String(wave42Forecast?.status ?? wave42Forecast?.syncStatus ?? '').toLowerCase();
+  if (
+    export42Status === 'drift' &&
+    (state.forecastingSpilloverSummary != null || state.forecastWave42ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_wave42_export_drifted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Forecast wave 42 export drifted coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionGradient?.band === 'steep' || state.transmissionGradient?.band === 'sloped') {
+    gates.push({
+      id: 'transmission_gradient_steep_wave42',
+      triggered: true,
+      severity: 'info',
+      summary: 'Steep transmission gradient after wave 42 export layers — spillover mass is concentrated.'
+    });
+  }
+  const wave43Ui: any =
+    inputs.uiResponsivenessWave43Export ??
+    inputs.uiResponsiveness?.wave43Export ??
+    inputs.gameUi?.responsivenessWave43Export;
+  const round43Ready = Boolean(
+    wave43Ui?.round43Ready ?? wave43Ui?.payload?.round43Ready ?? wave43Ui?.exportReady
+  );
+  if (
+    wave43Ui &&
+    !round43Ready &&
+    (state.uiSpilloverSummary != null || state.uiResponsivenessWave43ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'ui_responsiveness_wave43_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'UI responsiveness wave 43 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave43Dash: any =
+    inputs.dashboardClarityWave43Export ??
+    inputs.dashboardClarity?.wave43Export ??
+    inputs.dashboards?.clarityWave43Export;
+  const clarity43Ready = Boolean(
+    wave43Dash?.clarityReady ?? wave43Dash?.round43Ready ?? wave43Dash?.payload?.clarityReady
+  );
+  if (
+    wave43Dash &&
+    !clarity43Ready &&
+    (state.dashboardsSpilloverSummary != null || state.dashboardClarityWave43ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'dashboard_clarity_wave43_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Dashboard clarity wave 43 export not ready — macro spillover read is strained.'
+    });
+  }
+  if (state.transmissionEnvelope?.band === 'wide') {
+    gates.push({
+      id: 'transmission_envelope_wide_wave43',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide transmission envelope after wave 43 UI/dashboard export layers — spillover spread is elevated.'
+    });
+  }
+  const wave44Auto: any =
+    inputs.automationIdleGovernanceWave44Export ??
+    inputs.automationIdleGovernance?.wave44Export ??
+    inputs.idleAutomation?.governanceWave44Export;
+  const round44Ready = Boolean(
+    wave44Auto?.round44Ready ?? wave44Auto?.payload?.round44Ready ?? wave44Auto?.exportReady
+  );
+  if (
+    wave44Auto &&
+    !round44Ready &&
+    (state.automationSpilloverSummary != null || state.automationIdleGovernanceWave44ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_idle_governance_wave44_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Automation idle governance wave 44 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave44Forecast: any =
+    inputs.forecastWave44Export ?? inputs.forecastingLab?.wave44Export ?? inputs.macroForecasts?.wave44Export;
+  const export44Status = String(wave44Forecast?.status ?? wave44Forecast?.syncStatus ?? '').toLowerCase();
+  if (
+    export44Status === 'drift' &&
+    (state.forecastingSpilloverSummary != null || state.forecastWave44ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_wave44_export_drifted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Forecast wave 44 export drifted coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionGradient?.band === 'steep' || state.transmissionGradient?.band === 'sloped') {
+    gates.push({
+      id: 'transmission_gradient_steep_wave44',
+      triggered: true,
+      severity: 'info',
+      summary: 'Steep transmission gradient after wave 44 export layers — spillover mass is concentrated.'
+    });
+  }
+  const wave45Replay: any =
+    inputs.replayWave45Export ?? inputs.historyReplay?.wave45Export ?? inputs.replay?.wave45Export;
+  const round45Ready = Boolean(
+    wave45Replay?.round45Ready ?? wave45Replay?.payload?.round45Ready ?? wave45Replay?.exportReady
+  );
+  if (
+    wave45Replay &&
+    !round45Ready &&
+    (state.replaySpilloverSummary != null || state.replayWave45ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'replay_wave45_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'History replay wave 45 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave45Health: any =
+    inputs.integrationHealthWave45Export ??
+    inputs.integrationHealth?.wave45Export ??
+    inputs.assembly?.integrationHealthWave45Export;
+  const health45Ready = Boolean(
+    wave45Health?.healthReady ?? wave45Health?.round45Ready ?? wave45Health?.payload?.healthReady
+  );
+  if (
+    wave45Health &&
+    !health45Ready &&
+    (state.integrationHealthSpilloverSummary != null || state.integrationHealthWave45ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'integration_health_wave45_export_blocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Integration health wave 45 export not ready coincides with strained integration health spillover.'
+    });
+  }
+  const wave46Ui: any =
+    inputs.uiResponsivenessWave46Export ??
+    inputs.uiResponsiveness?.wave46Export ??
+    inputs.gameUi?.responsivenessWave46Export;
+  const round46Ready = Boolean(
+    wave46Ui?.round46Ready ?? wave46Ui?.payload?.round46Ready ?? wave46Ui?.exportReady
+  );
+  if (
+    wave46Ui &&
+    !round46Ready &&
+    (state.uiSpilloverSummary != null || state.uiResponsivenessWave46ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'ui_responsiveness_wave46_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'UI responsiveness wave 46 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave46Dash: any =
+    inputs.dashboardClarityWave46Export ??
+    inputs.dashboardClarity?.wave46Export ??
+    inputs.dashboards?.clarityWave46Export;
+  const clarity46Ready = Boolean(
+    wave46Dash?.clarityReady ?? wave46Dash?.round46Ready ?? wave46Dash?.payload?.clarityReady
+  );
+  if (
+    wave46Dash &&
+    !clarity46Ready &&
+    (state.dashboardsSpilloverSummary != null || state.dashboardClarityWave46ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'dashboard_clarity_wave46_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Dashboard clarity wave 46 export not ready — macro spillover read is strained.'
+    });
+  }
+  if (state.transmissionEnvelope?.band === 'wide') {
+    gates.push({
+      id: 'transmission_envelope_wide_wave46',
+      triggered: true,
+      severity: 'info',
+      summary: 'Wide transmission envelope after wave 46 UI/dashboard export layers — spillover spread is elevated.'
+    });
+  }
+  const wave47Replay: any =
+    inputs.replayWave47Export ??
+    inputs.historyReplay?.wave47Export ??
+    inputs.replay?.wave47Export;
+  const round47Ready = Boolean(
+    wave47Replay?.round47Ready ?? wave47Replay?.payload?.round47Ready ?? wave47Replay?.exportReady
+  );
+  if (
+    wave47Replay &&
+    !round47Ready &&
+    (state.replaySpilloverSummary != null || state.replayWave47ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'replay_wave47_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'History replay wave 47 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave47Health: any =
+    inputs.integrationHealthWave47Export ??
+    inputs.integrationHealth?.wave47Export ??
+    inputs.assembly?.integrationHealthWave47Export;
+  const health47Ready = Boolean(
+    wave47Health?.healthReady ?? wave47Health?.round47Ready ?? wave47Health?.payload?.healthReady
+  );
+  if (
+    wave47Health &&
+    !health47Ready &&
+    (state.integrationHealthSpilloverSummary != null || state.integrationHealthWave47ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'integration_health_wave47_export_blocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Integration health wave 47 export not ready coincides with strained integration health spillover.'
+    });
+  }
+  if (state.transmissionPersistence?.band === 'cohesive') {
+    gates.push({
+      id: 'transmission_persistence_cohesive_wave47',
+      triggered: true,
+      severity: 'info',
+      summary: 'Cohesive transmission persistence after wave 47 replay/integration export layers.'
+    });
+  }
+  const wave48Replay: any =
+    inputs.replayWave48Export ??
+    inputs.historyReplay?.wave48Export ??
+    inputs.replay?.wave48Export;
+  const round48Ready = Boolean(
+    wave48Replay?.round48Ready ?? wave48Replay?.payload?.round48Ready ?? wave48Replay?.exportReady
+  );
+  if (
+    wave48Replay &&
+    !round48Ready &&
+    (state.replaySpilloverSummary != null || state.replayWave48ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'replay_wave48_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'History replay wave 48 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave48Health: any =
+    inputs.integrationHealthWave48Export ??
+    inputs.integrationHealth?.wave48Export ??
+    inputs.assembly?.integrationHealthWave48Export;
+  const health48Ready = Boolean(
+    wave48Health?.healthReady ?? wave48Health?.round48Ready ?? wave48Health?.payload?.healthReady
+  );
+  if (
+    wave48Health &&
+    !health48Ready &&
+    (state.integrationHealthSpilloverSummary != null || state.integrationHealthWave48ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'integration_health_wave48_export_blocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Integration health wave 48 export not ready coincides with strained integration health spillover.'
+    });
+  }
+  if (state.transmissionPersistence?.band === 'cohesive') {
+    gates.push({
+      id: 'transmission_persistence_cohesive_wave48',
+      triggered: true,
+      severity: 'info',
+      summary: 'Cohesive transmission persistence after wave 48 replay/integration export layers.'
+    });
+  }
+  const wave49Replay: any =
+    inputs.replayWave49Export ??
+    inputs.historyReplay?.wave49Export ??
+    inputs.replay?.wave49Export;
+  const round49Ready = Boolean(
+    wave49Replay?.round49Ready ?? wave49Replay?.payload?.round49Ready ?? wave49Replay?.exportReady
+  );
+  if (
+    wave49Replay &&
+    !round49Ready &&
+    (state.replaySpilloverSummary != null || state.replayWave49ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'replay_wave49_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'History replay wave 49 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave49Health: any =
+    inputs.integrationHealthWave49Export ??
+    inputs.integrationHealth?.wave49Export ??
+    inputs.assembly?.integrationHealthWave49Export;
+  const health49Ready = Boolean(
+    wave49Health?.healthReady ?? wave49Health?.round49Ready ?? wave49Health?.payload?.healthReady
+  );
+  if (
+    wave49Health &&
+    !health49Ready &&
+    (state.integrationHealthSpilloverSummary != null || state.integrationHealthWave49ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'integration_health_wave49_export_blocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Integration health wave 49 export not ready coincides with strained integration health spillover.'
+    });
+  }
+  if (state.transmissionPersistence?.band === 'cohesive') {
+    gates.push({
+      id: 'transmission_persistence_cohesive_wave49',
+      triggered: true,
+      severity: 'info',
+      summary: 'Cohesive transmission persistence after wave 49 replay/integration export layers.'
+    });
+  }
+  const wave50Replay: any =
+    inputs.replayWave50Export ??
+    inputs.historyReplay?.wave50Export ??
+    inputs.replay?.wave50Export;
+  const round50Ready = Boolean(
+    wave50Replay?.round50Ready ?? wave50Replay?.payload?.round50Ready ?? wave50Replay?.exportReady
+  );
+  if (
+    wave50Replay &&
+    !round50Ready &&
+    (state.replaySpilloverSummary != null || state.replayWave50ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'replay_wave50_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'History replay wave 50 export not ready — macro spillover read is strained.'
+    });
+  }
+  const wave50Health: any =
+    inputs.integrationHealthWave50Export ??
+    inputs.integrationHealth?.wave50Export ??
+    inputs.assembly?.integrationHealthWave50Export;
+  const health50Ready = Boolean(
+    wave50Health?.healthReady ?? wave50Health?.round50Ready ?? wave50Health?.payload?.healthReady
+  );
+  if (
+    wave50Health &&
+    !health50Ready &&
+    (state.integrationHealthSpilloverSummary != null || state.integrationHealthWave50ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'integration_health_wave50_export_blocked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Integration health wave 50 export not ready coincides with strained integration health spillover.'
+    });
+  }
+  if (state.transmissionPersistence?.band === 'cohesive') {
+    gates.push({
+      id: 'transmission_persistence_cohesive_wave50',
+      triggered: true,
+      severity: 'info',
+      summary: 'Cohesive transmission persistence after wave 50 replay/integration export layers.'
+    });
+  }
+  const wave51Replay: any =
+    inputs.replayWave51Export ??
+    inputs.historyReplay?.wave51Export ??
+    inputs.replay?.wave51Export;
+  const round51Ready = Boolean(
+    wave51Replay?.round51Ready ?? wave51Replay?.payload?.round51Ready ?? wave51Replay?.exportReady
+  );
+  if (
+    wave51Replay &&
+    !round51Ready &&
+    (state.replaySpilloverSummary != null || state.replayWave51ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'replay_wave51_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'History replay wave 51 export not ready coincides with strained replay spillover.'
+    });
+  }
+  const wave51Health: any =
+    inputs.integrationHealthWave51Export ??
+    inputs.integrationHealth?.wave51Export ??
+    inputs.assembly?.integrationHealthWave51Export;
+  const wave51HealthReady = Boolean(
+    wave51Health?.healthReady ?? wave51Health?.round51Ready ?? wave51Health?.payload?.healthReady
+  );
+  if (
+    wave51Health &&
+    !wave51HealthReady &&
+    (state.integrationHealthSpilloverSummary != null || state.integrationHealthWave51ExportSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'integration_health_wave51_export_blocked',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Integration health wave 51 export not ready coincides with strained integration health spillover.'
+    });
+  }
+  if (state.transmissionPersistence?.band === 'cohesive') {
+    gates.push({
+      id: 'transmission_persistence_cohesive_wave51',
+      triggered: true,
+      severity: 'info',
+      summary: 'Cohesive transmission persistence after wave 51 replay/integration export layers.'
+    });
+  }
+  if (state.transmissionPersistence?.band === 'cohesive') {
+    gates.push({
+      id: 'transmission_persistence_cohesive',
+      triggered: true,
+      severity: 'info',
+      summary: 'Cohesive transmission persistence — active layers align with aggregate spillover sign.'
+    });
+  }
+  return gates;
+}

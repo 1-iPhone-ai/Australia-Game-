@@ -1,0 +1,1058 @@
+import { buildNationalAccountingLedger } from './accounting/ledger.ts';
+import { applyMacroFiscalSpillover, readMacroFiscalSpilloverFromV1012 } from './bridge-v1012-fiscal.ts';
+import { applyMacroHouseholdSpillover, readMacroHouseholdSpilloverFromV1013 } from './bridge-v1013-households.ts';
+import { applyMacroIndustrySpillover, readMacroIndustrySpilloverFromV101 } from './bridge-v101-industries.ts';
+import { applyMacroTradeSpillover, readMacroTradeSpilloverFromV1015 } from './bridge-v1015-trade.ts';
+import { applyMacroGeographySpillover, readMacroGeographySpillover } from './bridge-economic-geography.ts';
+import { applyMacroCreditSpillover, readMacroCreditSpilloverFromV1016 } from './bridge-v1016-credit.ts';
+import { applyMacroInnovationSpillover, readMacroInnovationSpilloverFromV104 } from './bridge-v104-innovation.ts';
+import { applyMacroWorkforceSpillover, readMacroWorkforceSpilloverFromV107 } from './bridge-v107-workforce.ts';
+import { applyMacroStrategicSpillover, readMacroStrategicSpilloverFromV109 } from './bridge-v109-strategic.ts';
+import { applyMacroHousingSpillover, readMacroHousingSpilloverFromV1014Housing } from './bridge-v1014-housing.ts';
+import { applyMacroInflationSpillover, readMacroInflationSpilloverFromV1010 } from './bridge-v1010-inflation.ts';
+import { applyMacroEnergySpillover, readMacroEnergySpilloverFromV1018 } from './bridge-v1018-energy.ts';
+import { applyMacroEventsSpillover, readMacroEventsSpilloverFromV105 } from './bridge-v105-events.ts';
+import { applyMacroCompaniesSpillover, readMacroCompaniesSpilloverFromV108 } from './bridge-v108-companies.ts';
+import { applyMacroTurnsSpillover, readMacroTurnsSpilloverFromV102 } from './bridge-v102-turns.ts';
+import { applyMacroTransportSpillover, readMacroTransportSpilloverFromV1017 } from './bridge-v1017-transport.ts';
+import { applyMacroResearchSpillover, readMacroResearchSpilloverFromV103 } from './bridge-v103-research.ts';
+import { applyMacroPopulationSpillover, readMacroPopulationSpilloverFromV109Pop } from './bridge-v109-population.ts';
+import { applyMacroModesSpillover, readMacroModesSpilloverFromV1006 } from './bridge-v1006-modes.ts';
+import { applyMacroGuardianSpillover, readMacroGuardianSpilloverFromV1016Guardian } from './bridge-v1016-guardian.ts';
+import { applyMacroCitiesSpillover, readMacroCitiesSpilloverFromV1011Cities } from './bridge-v1011-cities.ts';
+import { applyMacroForecastingSpillover, readMacroForecastingSpilloverFromV1021 } from './bridge-v1021-forecasting.ts';
+import { applyMacroCommandSpillover, readMacroCommandSpilloverFromV1017Command } from './bridge-v1017-command.ts';
+import { applyMacroAutomationSpillover, readMacroAutomationSpilloverFromV1020 } from './bridge-v1020-automation.ts';
+import { applyMacroTeamAiSpillover, readMacroTeamAiSpilloverFromV1018Team } from './bridge-v1018-team-ai.ts';
+import { applyMacroReplaySpillover, readMacroReplaySpilloverFromV1024 } from './bridge-v1024-replay.ts';
+import { applyMacroMemorySpillover, readMacroMemorySpilloverFromV1019 } from './bridge-v1019-memory.ts';
+import { applyMacroDashboardsSpillover, readMacroDashboardsSpilloverFromV1023 } from './bridge-v1023-dashboards.ts';
+import { applyMacroUiSpillover, readMacroUiSpilloverFromV1022 } from './bridge-v1022-ui.ts';
+import { applyMacroUtilitiesSpillover, readMacroUtilitiesSpilloverFromV1012Utilities } from './bridge-v1012-utilities.ts';
+import { applyMacroTradeLogisticsSpillover, readMacroTradeLogisticsSpilloverFromV1015 } from './bridge-v1015-logistics.ts';
+import { applyMacroNegotiationSpillover, readMacroNegotiationSpilloverFromV1005 } from './bridge-v1005-negotiation.ts';
+import { applyMacroHouseholdConfidenceSpillover, readMacroHouseholdConfidenceSpilloverFromV1013 } from './bridge-v1013-confidence.ts';
+import { applyMacroCapexSpillover, readMacroCapexSpilloverFromV1008 } from './bridge-v1008-capex.ts';
+import { applyMacroMonetarySpillover, readMacroMonetarySpilloverFromV1010Monetary } from './bridge-v1010-monetary.ts';
+import { applyMacroRentalSpillover, readMacroRentalSpilloverFromV1014Rental } from './bridge-v1014-rental.ts';
+import { applyMacroClimatePolicySpillover, readMacroClimatePolicySpilloverFromV1018Climate } from './bridge-v1018-climate-policy.ts';
+import { applyMacroForecastDispersionSpillover, readMacroForecastDispersionSpilloverFromV1021 } from './bridge-v1021-forecast-dispersion.ts';
+import { applyMacroAccessibilitySpillover, readMacroAccessibilitySpilloverFromV1022 } from './bridge-v1022-accessibility.ts';
+import { applyMacroTimelineSpillover, readMacroTimelineSpilloverFromV1024 } from './bridge-v1024-timeline.ts';
+import { applyMacroLiquiditySpillover, readMacroLiquiditySpilloverFromV1016Liquidity } from './bridge-v1016-liquidity.ts';
+import { applyMacroMapsTelemetrySpillover, readMacroMapsTelemetrySpilloverFromV1023 } from './bridge-v1023-maps-telemetry.ts';
+import {
+  applyMacroStrategicGameplaySpillover,
+  readMacroStrategicGameplaySpilloverFromV1001
+} from './bridge-v1001-strategic-gameplay.ts';
+import {
+  applyMacroArchiveIntegritySpillover,
+  readMacroArchiveIntegritySpilloverFromV1024
+} from './bridge-v1024-archive-integrity.ts';
+import {
+  applyMacroIntegrationHealthSpillover,
+  readMacroIntegrationHealthSpilloverFromV1025
+} from './bridge-v1025-integration-health.ts';
+import {
+  applyMacroCadenceDriftSpillover,
+  readMacroCadenceDriftSpilloverFromV1002
+} from './bridge-v1002-cadence-drift.ts';
+import {
+  applyMacroResearchMomentumSpillover,
+  readMacroResearchMomentumSpilloverFromV1003
+} from './bridge-v1003-research-momentum.ts';
+import {
+  applyMacroBudgetOutlookSpillover,
+  readMacroBudgetOutlookSpilloverFromV1007
+} from './bridge-v1007-budget-outlook.ts';
+import { applyMacroModeShiftSpillover, readMacroModeShiftSpilloverFromV1004 } from './bridge-v1004-mode-shift.ts';
+import {
+  applyMacroSupplyChainSpillover,
+  readMacroSupplyChainSpilloverFromV1008
+} from './bridge-v1008-supply-chain.ts';
+import {
+  applyMacroEventCascadeSpillover,
+  readMacroEventCascadeSpilloverFromV1005
+} from './bridge-v1005-event-cascade.ts';
+import {
+  applyMacroDemographicShiftSpillover,
+  readMacroDemographicShiftSpilloverFromV1009
+} from './bridge-v1009-demographic-shift.ts';
+import {
+  applyMacroExpectationsAnchorSpillover,
+  readMacroExpectationsAnchorSpilloverFromV1010
+} from './bridge-v1010-expectations-anchor.ts';
+import {
+  applyMacroMetroMomentumSpillover,
+  readMacroMetroMomentumSpilloverFromV1011
+} from './bridge-v1011-metro-momentum.ts';
+import {
+  applyMacroTransportThroughputSpillover,
+  readMacroTransportThroughputSpilloverFromV1012
+} from './bridge-v1012-transport-throughput.ts';
+import {
+  applyMacroEnergyTransitionPaceSpillover,
+  readMacroEnergyTransitionPaceSpilloverFromV1013
+} from './bridge-v1013-energy-transition-pace.ts';
+import {
+  applyMacroHousingAffordabilitySpillover,
+  readMacroHousingAffordabilitySpilloverFromV1014
+} from './bridge-v1014-housing-affordability.ts';
+import {
+  applyMacroTradeExposureSpillover,
+  readMacroTradeExposureSpilloverFromV1015
+} from './bridge-v1015-trade-exposure.ts';
+import {
+  applyMacroGuardianVigilanceSpillover,
+  readMacroGuardianVigilanceSpilloverFromV1016
+} from './bridge-v1016-guardian-vigilance.ts';
+import {
+  applyMacroCommandCoordinationSpillover,
+  readMacroCommandCoordinationSpilloverFromV1017
+} from './bridge-v1017-command-coordination.ts';
+import {
+  applyMacroTeamAiCohesionSpillover,
+  readMacroTeamAiCohesionSpilloverFromV1018
+} from './bridge-v1018-team-ai-cohesion.ts';
+import {
+  applyMacroMemoryRetentionSpillover,
+  readMacroMemoryRetentionSpilloverFromV1019
+} from './bridge-v1019-memory-retention.ts';
+import {
+  applyMacroAutomationThroughputSpillover,
+  readMacroAutomationThroughputSpilloverFromV1020
+} from './bridge-v1020-automation-throughput.ts';
+import {
+  applyMacroForecastCalibrationSpillover,
+  readMacroForecastCalibrationSpilloverFromV1021
+} from './bridge-v1021-forecast-calibration.ts';
+import {
+  applyMacroAutomationIdleGovernanceSpillover,
+  readMacroAutomationIdleGovernanceSpilloverFromV1020
+} from './bridge-v1020-automation-idle-governance.ts';
+import {
+  applyMacroForecastProjectionSyncSpillover,
+  readMacroForecastProjectionSyncSpilloverFromV1021
+} from './bridge-v1021-forecast-projection-sync.ts';
+import {
+  applyMacroAutomationIdleGovernanceWave36ExportSpillover,
+  readMacroAutomationIdleGovernanceWave36ExportSpilloverFromV1020
+} from './bridge-v1020-automation-idle-governance-wave-round36-export.ts';
+import {
+  applyMacroForecastWave36ProjectionSyncSpillover,
+  readMacroForecastWave36ProjectionSyncSpilloverFromV1021
+} from './bridge-v1021-forecast-wave36-projection-sync.ts';
+import {
+  applyMacroUiResponsivenessWave37ExportSpillover,
+  readMacroUiResponsivenessWave37ExportSpilloverFromV1022
+} from './bridge-v1022-ui-responsiveness-wave-round37-export.ts';
+import {
+  applyMacroDashboardClarityWave37ExportSpillover,
+  readMacroDashboardClarityWave37ExportSpilloverFromV1023
+} from './bridge-v1023-dashboard-clarity-wave-round37-export.ts';
+import {
+  applyMacroReplayWave38ExportSpillover,
+  readMacroReplayWave38ExportSpilloverFromV1024
+} from './bridge-v1024-replay-wave-round38-export.ts';
+import {
+  applyMacroIntegrationHealthWave38ExportSpillover,
+  readMacroIntegrationHealthWave38ExportSpilloverFromV1025
+} from './bridge-v1025-integration-health-wave-round38-export.ts';
+import {
+  applyMacroAutomationIdleGovernanceWave39ExportSpillover,
+  readMacroAutomationIdleGovernanceWave39ExportSpilloverFromV1020
+} from './bridge-v1020-automation-idle-governance-wave-round39-export.ts';
+import {
+  applyMacroForecastWave39ExportSpillover,
+  readMacroForecastWave39ExportSpilloverFromV1021
+} from './bridge-v1021-forecast-wave-round39-export.ts';
+import {
+  applyMacroUiResponsivenessWave40ExportSpillover,
+  readMacroUiResponsivenessWave40ExportSpilloverFromV1022
+} from './bridge-v1022-ui-responsiveness-wave-round40-export.ts';
+import {
+  applyMacroDashboardClarityWave40ExportSpillover,
+  readMacroDashboardClarityWave40ExportSpilloverFromV1023
+} from './bridge-v1023-dashboard-clarity-wave-round40-export.ts';
+import {
+  applyMacroReplayWave41ExportSpillover,
+  readMacroReplayWave41ExportSpilloverFromV1024
+} from './bridge-v1024-replay-wave-round41-export.ts';
+import {
+  applyMacroIntegrationHealthWave41ExportSpillover,
+  readMacroIntegrationHealthWave41ExportSpilloverFromV1025
+} from './bridge-v1025-integration-health-wave-round41-export.ts';
+import {
+  applyMacroAutomationIdleGovernanceWave42ExportSpillover,
+  readMacroAutomationIdleGovernanceWave42ExportSpilloverFromV1020
+} from './bridge-v1020-automation-idle-governance-wave-round42-export.ts';
+import {
+  applyMacroForecastWave42ExportSpillover,
+  readMacroForecastWave42ExportSpilloverFromV1021
+} from './bridge-v1021-forecast-wave-round42-export.ts';
+import {
+  applyMacroUiResponsivenessWave43ExportSpillover,
+  readMacroUiResponsivenessWave43ExportSpilloverFromV1022
+} from './bridge-v1022-ui-responsiveness-wave-round43-export.ts';
+import {
+  applyMacroDashboardClarityWave43ExportSpillover,
+  readMacroDashboardClarityWave43ExportSpilloverFromV1023
+} from './bridge-v1023-dashboard-clarity-wave-round43-export.ts';
+import {
+  applyMacroAutomationIdleGovernanceWave44ExportSpillover,
+  readMacroAutomationIdleGovernanceWave44ExportSpilloverFromV1020
+} from './bridge-v1020-automation-idle-governance-wave-round44-export.ts';
+import {
+  applyMacroForecastWave44ExportSpillover,
+  readMacroForecastWave44ExportSpilloverFromV1021
+} from './bridge-v1021-forecast-wave-round44-export.ts';
+import {
+  applyMacroReplayWave45ExportSpillover,
+  readMacroReplayWave45ExportSpilloverFromV1024
+} from './bridge-v1024-replay-wave-round45-export.ts';
+import {
+  applyMacroIntegrationHealthWave45ExportSpillover,
+  readMacroIntegrationHealthWave45ExportSpilloverFromV1025
+} from './bridge-v1025-integration-health-wave-round45-export.ts';
+import {
+  applyMacroUiResponsivenessWave46ExportSpillover,
+  readMacroUiResponsivenessWave46ExportSpilloverFromV1022
+} from './bridge-v1022-ui-responsiveness-wave-round46-export.ts';
+import {
+  applyMacroDashboardClarityWave46ExportSpillover,
+  readMacroDashboardClarityWave46ExportSpilloverFromV1023
+} from './bridge-v1023-dashboard-clarity-wave-round46-export.ts';
+import {
+  applyMacroReplayWave47ExportSpillover,
+  readMacroReplayWave47ExportSpilloverFromV1024
+} from './bridge-v1024-replay-wave-round47-export.ts';
+import {
+  applyMacroIntegrationHealthWave47ExportSpillover,
+  readMacroIntegrationHealthWave47ExportSpilloverFromV1025
+} from './bridge-v1025-integration-health-wave-round47-export.ts';
+import {
+  applyMacroReplayWave48ExportSpillover,
+  readMacroReplayWave48ExportSpilloverFromV1024
+} from './bridge-v1024-replay-wave-round48-export.ts';
+import {
+  applyMacroIntegrationHealthWave48ExportSpillover,
+  readMacroIntegrationHealthWave48ExportSpilloverFromV1025
+} from './bridge-v1025-integration-health-wave-round48-export.ts';
+import {
+  applyMacroReplayWave49ExportSpillover,
+  readMacroReplayWave49ExportSpilloverFromV1024
+} from './bridge-v1024-replay-wave-round49-export.ts';
+import {
+  applyMacroIntegrationHealthWave49ExportSpillover,
+  readMacroIntegrationHealthWave49ExportSpilloverFromV1025
+} from './bridge-v1025-integration-health-wave-round49-export.ts';
+import {
+  applyMacroReplayWave50ExportSpillover,
+  readMacroReplayWave50ExportSpilloverFromV1024
+} from './bridge-v1024-replay-wave-round50-export.ts';
+import {
+  applyMacroIntegrationHealthWave50ExportSpillover,
+  readMacroIntegrationHealthWave50ExportSpilloverFromV1025
+} from './bridge-v1025-integration-health-wave-round50-export.ts';
+import {
+  applyMacroReplayWave51ExportSpillover,
+  readMacroReplayWave51ExportSpilloverFromV1024
+} from './bridge-v1024-replay-wave-round51-export.ts';
+import {
+  applyMacroIntegrationHealthWave51ExportSpillover,
+  readMacroIntegrationHealthWave51ExportSpilloverFromV1025
+} from './bridge-v1025-integration-health-wave-round51-export.ts';
+import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
+import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
+import { buildMacroTransmissionReport } from './macro-transmission.ts';
+import { buildMacroStressIndexSnapshot } from './macro-stress-index.ts';
+import { buildMacroPolicyStanceSnapshot } from './policy-stance-snapshot.ts';
+import { buildMacroCapacitySnapshot } from './macro-capacity-snapshot.ts';
+import { buildMacroTransmissionBalanceSnapshot } from './macro-transmission-balance.ts';
+import { buildMacroTransmissionCoherenceSnapshot } from './macro-transmission-coherence.ts';
+import { buildMacroTransmissionConcentrationSnapshot } from './macro-transmission-concentration.ts';
+import { buildMacroTransmissionAsymmetrySnapshot } from './macro-transmission-asymmetry.ts';
+import { buildMacroTransmissionVolatilitySnapshot } from './macro-transmission-volatility.ts';
+import { buildMacroTransmissionResilienceSnapshot } from './macro-transmission-resilience.ts';
+import { buildMacroTransmissionCoverageSnapshot } from './macro-transmission-coverage.ts';
+import { buildMacroTransmissionAmplificationSnapshot } from './macro-transmission-amplification.ts';
+import { buildMacroTransmissionTensionSnapshot } from './macro-transmission-tension.ts';
+import { buildMacroTransmissionDivergenceSnapshot } from './macro-transmission-divergence.ts';
+import { buildMacroTransmissionStabilitySnapshot } from './macro-transmission-stability.ts';
+import { buildMacroTransmissionAlignmentSnapshot } from './macro-transmission-alignment.ts';
+import { buildMacroTransmissionSynchronizationSnapshot } from './macro-transmission-synchronization.ts';
+import { buildMacroTransmissionIntensitySnapshot } from './macro-transmission-intensity.ts';
+import { buildMacroTransmissionPolarizationSnapshot } from './macro-transmission-polarization.ts';
+import { buildMacroTransmissionCouplingSnapshot } from './macro-transmission-coupling.ts';
+import { buildMacroTransmissionImbalanceSnapshot } from './macro-transmission-imbalance.ts';
+import { buildMacroTransmissionHarmonicSnapshot } from './macro-transmission-harmonic.ts';
+import { buildMacroTransmissionGradientSnapshot } from './macro-transmission-gradient.ts';
+import { buildMacroTransmissionAttenuationSnapshot } from './macro-transmission-attenuation.ts';
+import { buildMacroTransmissionEnvelopeSnapshot } from './macro-transmission-envelope.ts';
+import { buildMacroTransmissionPersistenceSnapshot } from './macro-transmission-persistence.ts';
+import { buildMacroTransmissionCentralitySnapshot } from './macro-transmission-centrality.ts';
+import { buildMacroTransmissionSynthesisSnapshot } from './macro-transmission-synthesis.ts';
+import { buildMacroTransmissionDispersionSnapshot } from './macro-transmission-dispersion.ts';
+import { buildMacroTransmissionFragmentationSnapshot } from './macro-transmission-fragmentation.ts';
+import { buildMacroTransmissionRedundancySnapshot } from './macro-transmission-redundancy.ts';
+import { buildMacroTransmissionSaturationSnapshot } from './macro-transmission-saturation.ts';
+import { buildMacroTransmissionElasticitySnapshot } from './macro-transmission-elasticity.ts';
+import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
+import { V1014_MACRO_LIMITS } from './constants.ts';
+import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
+import { clampMacroScores } from './investment.ts';
+import {
+  v1014macroBandInvestment,
+  v1014macroBandProductivity,
+  v1014macroBandUtilization,
+  v1014macroClamp,
+  v1014macroCycleFromScore
+} from './math.ts';
+import { nationalSectorProductivityFromScore } from './productivity.ts';
+import { deriveUtilizationIndex } from './production.ts';
+import {
+  buildRegionalContributions,
+  computeRegionalWeightRows,
+  v1014macroNormalizeRegionalShares
+} from './regional-aggregation.ts';
+import { computeNationalSectorOutputMix } from './sector-decomposition.ts';
+import { computeRegionalDivergenceSnapshot } from './regional-divergence.ts';
+import { projectMacroEconomyOutlook } from './outlook-projection.ts';
+import { macroEconomyInputHash, sanitizeMacroEconomyPersisted } from './persisted.ts';
+import {
+  applyMacroShockAdjustments,
+  applyMacroStructuralAdjustments,
+  createMacroEvidencePush
+} from './shocks.ts';
+import {
+  V1014_MACRO_SCHEMA_VERSION,
+  type MacroEconomyEvidence,
+  type MacroEconomyInputs,
+  type MacroEconomyPersisted,
+  type NationalMacroEconomyState
+} from './types.ts';
+
+export function computeNationalMacroEconomy(
+  inputs: MacroEconomyInputs,
+  persistedIn: MacroEconomyPersisted | null | undefined,
+  prevState: NationalMacroEconomyState | null | undefined
+): { state: NationalMacroEconomyState; persisted: MacroEconomyPersisted } {
+  const persisted = sanitizeMacroEconomyPersisted(persistedIn, inputs.turn);
+  const hash = macroEconomyInputHash(inputs);
+  if (prevState && persisted.lastInputHash === hash && prevState.inputHash === hash) {
+    return { state: prevState, persisted };
+  }
+
+  const evList: MacroEconomyEvidence[] = [];
+  const pushEv = createMacroEvidencePush(evList, inputs.turn);
+  const activeShockIds = resolveActiveCyclicalShockIds(inputs);
+
+  let productivityScore = persisted.productivityScore;
+  let investmentScore = persisted.investmentScore;
+  let cycleScore = persisted.cycleScore;
+
+  const weights = computeRegionalWeightRows(inputs, pushEv);
+  const shares = v1014macroNormalizeRegionalShares(weights);
+  const shareSum = Object.values(shares).reduce((a, b) => a + b, 0);
+
+  const structural = applyMacroStructuralAdjustments(
+    inputs,
+    { productivityScore, investmentScore, cycleScore },
+    pushEv
+  );
+  const fiscalSpillover = readMacroFiscalSpilloverFromV1012(inputs);
+  const householdSpillover = readMacroHouseholdSpilloverFromV1013(inputs);
+  const industrySpillover = readMacroIndustrySpilloverFromV101(inputs);
+  const tradeSpillover = readMacroTradeSpilloverFromV1015(inputs);
+  const geographySpillover = readMacroGeographySpillover(inputs);
+  const creditSpillover = readMacroCreditSpilloverFromV1016(inputs);
+  const innovationSpillover = readMacroInnovationSpilloverFromV104(inputs);
+  const workforceSpillover = readMacroWorkforceSpilloverFromV107(inputs);
+  const strategicSpillover = readMacroStrategicSpilloverFromV109(inputs);
+  const housingSpillover = readMacroHousingSpilloverFromV1014Housing(inputs);
+  const inflationSpillover = readMacroInflationSpilloverFromV1010(inputs);
+  const energySpillover = readMacroEnergySpilloverFromV1018(inputs);
+  const eventsSpillover = readMacroEventsSpilloverFromV105(inputs);
+  const companiesSpillover = readMacroCompaniesSpilloverFromV108(inputs);
+  const turnsSpillover = readMacroTurnsSpilloverFromV102(inputs);
+  const transportSpillover = readMacroTransportSpilloverFromV1017(inputs);
+  const researchSpillover = readMacroResearchSpilloverFromV103(inputs);
+  const populationSpillover = readMacroPopulationSpilloverFromV109Pop(inputs);
+  const modesSpillover = readMacroModesSpilloverFromV1006(inputs);
+  const guardianSpillover = readMacroGuardianSpilloverFromV1016Guardian(inputs);
+  const citiesSpillover = readMacroCitiesSpilloverFromV1011Cities(inputs);
+  const forecastingSpillover = readMacroForecastingSpilloverFromV1021(inputs);
+  const commandSpillover = readMacroCommandSpilloverFromV1017Command(inputs);
+  const automationSpillover = readMacroAutomationSpilloverFromV1020(inputs);
+  const teamAiSpillover = readMacroTeamAiSpilloverFromV1018Team(inputs);
+  const replaySpillover = readMacroReplaySpilloverFromV1024(inputs);
+  const memorySpillover = readMacroMemorySpilloverFromV1019(inputs);
+  const dashboardsSpillover = readMacroDashboardsSpilloverFromV1023(inputs);
+  const uiSpillover = readMacroUiSpilloverFromV1022(inputs);
+  const utilitiesSpillover = readMacroUtilitiesSpilloverFromV1012Utilities(inputs);
+  const logisticsSpillover = readMacroTradeLogisticsSpilloverFromV1015(inputs);
+  const negotiationSpillover = readMacroNegotiationSpilloverFromV1005(inputs);
+  const confidenceSpillover = readMacroHouseholdConfidenceSpilloverFromV1013(inputs);
+  const capexSpillover = readMacroCapexSpilloverFromV1008(inputs);
+  const monetarySpillover = readMacroMonetarySpilloverFromV1010Monetary(inputs);
+  const rentalSpillover = readMacroRentalSpilloverFromV1014Rental(inputs);
+  const climateSpillover = readMacroClimatePolicySpilloverFromV1018Climate(inputs);
+  const forecastDispersionSpillover = readMacroForecastDispersionSpilloverFromV1021(inputs);
+  const accessibilitySpillover = readMacroAccessibilitySpilloverFromV1022(inputs);
+  const timelineSpillover = readMacroTimelineSpilloverFromV1024(inputs);
+  const liquiditySpillover = readMacroLiquiditySpilloverFromV1016Liquidity(inputs);
+  const mapsTelemetrySpillover = readMacroMapsTelemetrySpilloverFromV1023(inputs);
+  const strategicGameplaySpillover = readMacroStrategicGameplaySpilloverFromV1001(inputs);
+  const archiveIntegritySpillover = readMacroArchiveIntegritySpilloverFromV1024(inputs);
+  const integrationHealthSpillover = readMacroIntegrationHealthSpilloverFromV1025(inputs);
+  const cadenceDriftSpillover = readMacroCadenceDriftSpilloverFromV1002(inputs);
+  const researchMomentumSpillover = readMacroResearchMomentumSpilloverFromV1003(inputs);
+  const budgetOutlookSpillover = readMacroBudgetOutlookSpilloverFromV1007(inputs);
+  const modeShiftSpillover = readMacroModeShiftSpilloverFromV1004(inputs);
+  const supplyChainSpillover = readMacroSupplyChainSpilloverFromV1008(inputs);
+  const eventCascadeSpillover = readMacroEventCascadeSpilloverFromV1005(inputs);
+  const demographicShiftSpillover = readMacroDemographicShiftSpilloverFromV1009(inputs);
+  const expectationsAnchorSpillover = readMacroExpectationsAnchorSpilloverFromV1010(inputs);
+  const metroMomentumSpillover = readMacroMetroMomentumSpilloverFromV1011(inputs);
+  const transportThroughputSpillover = readMacroTransportThroughputSpilloverFromV1012(inputs);
+  const energyTransitionPaceSpillover = readMacroEnergyTransitionPaceSpilloverFromV1013(inputs);
+  const housingAffordabilitySpillover = readMacroHousingAffordabilitySpilloverFromV1014(inputs);
+  const tradeExposureSpillover = readMacroTradeExposureSpilloverFromV1015(inputs);
+  const guardianVigilanceSpillover = readMacroGuardianVigilanceSpilloverFromV1016(inputs);
+  const commandCoordinationSpillover = readMacroCommandCoordinationSpilloverFromV1017(inputs);
+  const teamAiCohesionSpillover = readMacroTeamAiCohesionSpilloverFromV1018(inputs);
+  const memoryRetentionSpillover = readMacroMemoryRetentionSpilloverFromV1019(inputs);
+  const automationThroughputSpillover = readMacroAutomationThroughputSpilloverFromV1020(inputs);
+  const forecastCalibrationSpillover = readMacroForecastCalibrationSpilloverFromV1021(inputs);
+  const automationIdleGovernanceSpillover = readMacroAutomationIdleGovernanceSpilloverFromV1020(inputs);
+  const forecastProjectionSyncSpillover = readMacroForecastProjectionSyncSpilloverFromV1021(inputs);
+  const automationIdleGovernanceWave36ExportSpillover =
+    readMacroAutomationIdleGovernanceWave36ExportSpilloverFromV1020(inputs);
+  const forecastWave36ProjectionSyncSpillover = readMacroForecastWave36ProjectionSyncSpilloverFromV1021(inputs);
+  const uiResponsivenessWave37ExportSpillover = readMacroUiResponsivenessWave37ExportSpilloverFromV1022(inputs);
+  const dashboardClarityWave37ExportSpillover = readMacroDashboardClarityWave37ExportSpilloverFromV1023(inputs);
+  const replayWave38ExportSpillover = readMacroReplayWave38ExportSpilloverFromV1024(inputs);
+  const integrationHealthWave38ExportSpillover = readMacroIntegrationHealthWave38ExportSpilloverFromV1025(inputs);
+  const automationIdleGovernanceWave39ExportSpillover =
+    readMacroAutomationIdleGovernanceWave39ExportSpilloverFromV1020(inputs);
+  const forecastWave39ExportSpillover = readMacroForecastWave39ExportSpilloverFromV1021(inputs);
+  const uiResponsivenessWave40ExportSpillover = readMacroUiResponsivenessWave40ExportSpilloverFromV1022(inputs);
+  const dashboardClarityWave40ExportSpillover = readMacroDashboardClarityWave40ExportSpilloverFromV1023(inputs);
+  const replayWave41ExportSpillover = readMacroReplayWave41ExportSpilloverFromV1024(inputs);
+  const integrationHealthWave41ExportSpillover = readMacroIntegrationHealthWave41ExportSpilloverFromV1025(inputs);
+  const automationIdleGovernanceWave42ExportSpillover =
+    readMacroAutomationIdleGovernanceWave42ExportSpilloverFromV1020(inputs);
+  const forecastWave42ExportSpillover = readMacroForecastWave42ExportSpilloverFromV1021(inputs);
+  const uiResponsivenessWave43ExportSpillover = readMacroUiResponsivenessWave43ExportSpilloverFromV1022(inputs);
+  const dashboardClarityWave43ExportSpillover = readMacroDashboardClarityWave43ExportSpilloverFromV1023(inputs);
+  const automationIdleGovernanceWave44ExportSpillover =
+    readMacroAutomationIdleGovernanceWave44ExportSpilloverFromV1020(inputs);
+  const forecastWave44ExportSpillover = readMacroForecastWave44ExportSpilloverFromV1021(inputs);
+  const replayWave45ExportSpillover = readMacroReplayWave45ExportSpilloverFromV1024(inputs);
+  const integrationHealthWave45ExportSpillover = readMacroIntegrationHealthWave45ExportSpilloverFromV1025(inputs);
+  const uiResponsivenessWave46ExportSpillover = readMacroUiResponsivenessWave46ExportSpilloverFromV1022(inputs);
+  const dashboardClarityWave46ExportSpillover = readMacroDashboardClarityWave46ExportSpilloverFromV1023(inputs);
+  const replayWave47ExportSpillover = readMacroReplayWave47ExportSpilloverFromV1024(inputs);
+  const integrationHealthWave47ExportSpillover = readMacroIntegrationHealthWave47ExportSpilloverFromV1025(inputs);
+  const replayWave48ExportSpillover = readMacroReplayWave48ExportSpilloverFromV1024(inputs);
+  const integrationHealthWave48ExportSpillover = readMacroIntegrationHealthWave48ExportSpilloverFromV1025(inputs);
+  const replayWave49ExportSpillover = readMacroReplayWave49ExportSpilloverFromV1024(inputs);
+  const integrationHealthWave49ExportSpillover = readMacroIntegrationHealthWave49ExportSpilloverFromV1025(inputs);
+  const replayWave50ExportSpillover = readMacroReplayWave50ExportSpilloverFromV1024(inputs);
+  const integrationHealthWave50ExportSpillover = readMacroIntegrationHealthWave50ExportSpilloverFromV1025(inputs);
+  const replayWave51ExportSpillover = readMacroReplayWave51ExportSpilloverFromV1024(inputs);
+  const integrationHealthWave51ExportSpillover = readMacroIntegrationHealthWave51ExportSpilloverFromV1025(inputs);
+  const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
+  const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
+  const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
+  const withTrade = applyMacroTradeSpillover(withIndustry, tradeSpillover);
+  const withGeography = applyMacroGeographySpillover(withTrade, geographySpillover);
+  const withCredit = applyMacroCreditSpillover(withGeography, creditSpillover);
+  const withInnovation = applyMacroInnovationSpillover(withCredit, innovationSpillover);
+  const withWorkforce = applyMacroWorkforceSpillover(withInnovation, workforceSpillover);
+  const withStrategic = applyMacroStrategicSpillover(withWorkforce, strategicSpillover);
+  const withHousing = applyMacroHousingSpillover(withStrategic, housingSpillover);
+  const withInflation = applyMacroInflationSpillover(withHousing, inflationSpillover);
+  const withEnergy = applyMacroEnergySpillover(withInflation, energySpillover);
+  const withEvents = applyMacroEventsSpillover(withEnergy, eventsSpillover);
+  const withCompanies = applyMacroCompaniesSpillover(withEvents, companiesSpillover);
+  const withTurns = applyMacroTurnsSpillover(withCompanies, turnsSpillover);
+  const withTransport = applyMacroTransportSpillover(withTurns, transportSpillover);
+  const withResearch = applyMacroResearchSpillover(withTransport, researchSpillover);
+  const withPopulation = applyMacroPopulationSpillover(withResearch, populationSpillover);
+  const withModes = applyMacroModesSpillover(withPopulation, modesSpillover);
+  const withGuardian = applyMacroGuardianSpillover(withModes, guardianSpillover);
+  const withCities = applyMacroCitiesSpillover(withGuardian, citiesSpillover);
+  const withForecasting = applyMacroForecastingSpillover(withCities, forecastingSpillover);
+  const withCommand = applyMacroCommandSpillover(withForecasting, commandSpillover);
+  const withAutomation = applyMacroAutomationSpillover(withCommand, automationSpillover);
+  const withTeamAi = applyMacroTeamAiSpillover(withAutomation, teamAiSpillover);
+  const withReplay = applyMacroReplaySpillover(withTeamAi, replaySpillover);
+  const withMemory = applyMacroMemorySpillover(withReplay, memorySpillover);
+  const withDashboards = applyMacroDashboardsSpillover(withMemory, dashboardsSpillover);
+  const withUi = applyMacroUiSpillover(withDashboards, uiSpillover);
+  const withUtilities = applyMacroUtilitiesSpillover(withUi, utilitiesSpillover);
+  const withLogistics = applyMacroTradeLogisticsSpillover(withUtilities, logisticsSpillover);
+  const withNegotiation = applyMacroNegotiationSpillover(withLogistics, negotiationSpillover);
+  const withConfidence = applyMacroHouseholdConfidenceSpillover(withNegotiation, confidenceSpillover);
+  const withCapex = applyMacroCapexSpillover(withConfidence, capexSpillover);
+  const withMonetary = applyMacroMonetarySpillover(withCapex, monetarySpillover);
+  const withRental = applyMacroRentalSpillover(withMonetary, rentalSpillover);
+  const withClimate = applyMacroClimatePolicySpillover(withRental, climateSpillover);
+  const withForecastDispersion = applyMacroForecastDispersionSpillover(withClimate, forecastDispersionSpillover);
+  const withAccessibility = applyMacroAccessibilitySpillover(withForecastDispersion, accessibilitySpillover);
+  const withTimeline = applyMacroTimelineSpillover(withAccessibility, timelineSpillover);
+  const withLiquidity = applyMacroLiquiditySpillover(withTimeline, liquiditySpillover);
+  const withMapsTelemetry = applyMacroMapsTelemetrySpillover(withLiquidity, mapsTelemetrySpillover);
+  const withStrategicGameplay = applyMacroStrategicGameplaySpillover(withMapsTelemetry, strategicGameplaySpillover);
+  const withArchiveIntegrity = applyMacroArchiveIntegritySpillover(withStrategicGameplay, archiveIntegritySpillover);
+  const withIntegrationHealth = applyMacroIntegrationHealthSpillover(withArchiveIntegrity, integrationHealthSpillover);
+  const withCadenceDrift = applyMacroCadenceDriftSpillover(withIntegrationHealth, cadenceDriftSpillover);
+  const withResearchMomentum = applyMacroResearchMomentumSpillover(withCadenceDrift, researchMomentumSpillover);
+  const withBudgetOutlook = applyMacroBudgetOutlookSpillover(withResearchMomentum, budgetOutlookSpillover);
+  const withModeShift = applyMacroModeShiftSpillover(withBudgetOutlook, modeShiftSpillover);
+  const withSupplyChain = applyMacroSupplyChainSpillover(withModeShift, supplyChainSpillover);
+  const withEventCascade = applyMacroEventCascadeSpillover(withSupplyChain, eventCascadeSpillover);
+  const withDemographicShift = applyMacroDemographicShiftSpillover(withEventCascade, demographicShiftSpillover);
+  const withExpectationsAnchor = applyMacroExpectationsAnchorSpillover(withDemographicShift, expectationsAnchorSpillover);
+  const withMetroMomentum = applyMacroMetroMomentumSpillover(withExpectationsAnchor, metroMomentumSpillover);
+  const withTransportThroughput = applyMacroTransportThroughputSpillover(withMetroMomentum, transportThroughputSpillover);
+  const withEnergyTransitionPace = applyMacroEnergyTransitionPaceSpillover(withTransportThroughput, energyTransitionPaceSpillover);
+  const withHousingAffordability = applyMacroHousingAffordabilitySpillover(withEnergyTransitionPace, housingAffordabilitySpillover);
+  const withTradeExposure = applyMacroTradeExposureSpillover(withHousingAffordability, tradeExposureSpillover);
+  const withGuardianVigilance = applyMacroGuardianVigilanceSpillover(withTradeExposure, guardianVigilanceSpillover);
+  const withCommandCoordination = applyMacroCommandCoordinationSpillover(withGuardianVigilance, commandCoordinationSpillover);
+  const withTeamAiCohesion = applyMacroTeamAiCohesionSpillover(withCommandCoordination, teamAiCohesionSpillover);
+  const withMemoryRetention = applyMacroMemoryRetentionSpillover(withTeamAiCohesion, memoryRetentionSpillover);
+  const withAutomationThroughput = applyMacroAutomationThroughputSpillover(withMemoryRetention, automationThroughputSpillover);
+  const withForecastCalibration = applyMacroForecastCalibrationSpillover(withAutomationThroughput, forecastCalibrationSpillover);
+  const withAutomationIdleGovernance = applyMacroAutomationIdleGovernanceSpillover(
+    withForecastCalibration,
+    automationIdleGovernanceSpillover
+  );
+  const withForecastProjectionSync = applyMacroForecastProjectionSyncSpillover(
+    withAutomationIdleGovernance,
+    forecastProjectionSyncSpillover
+  );
+  const withAutomationIdleGovernanceWave36Export = applyMacroAutomationIdleGovernanceWave36ExportSpillover(
+    withForecastProjectionSync,
+    automationIdleGovernanceWave36ExportSpillover
+  );
+  const withForecastWave36ProjectionSync = applyMacroForecastWave36ProjectionSyncSpillover(
+    withAutomationIdleGovernanceWave36Export,
+    forecastWave36ProjectionSyncSpillover
+  );
+  const withUiResponsivenessWave37Export = applyMacroUiResponsivenessWave37ExportSpillover(
+    withForecastWave36ProjectionSync,
+    uiResponsivenessWave37ExportSpillover
+  );
+  const withDashboardClarityWave37Export = applyMacroDashboardClarityWave37ExportSpillover(
+    withUiResponsivenessWave37Export,
+    dashboardClarityWave37ExportSpillover
+  );
+  const withReplayWave38Export = applyMacroReplayWave38ExportSpillover(
+    withDashboardClarityWave37Export,
+    replayWave38ExportSpillover
+  );
+  const withIntegrationHealthWave38Export = applyMacroIntegrationHealthWave38ExportSpillover(
+    withReplayWave38Export,
+    integrationHealthWave38ExportSpillover
+  );
+  const withAutomationIdleGovernanceWave39Export = applyMacroAutomationIdleGovernanceWave39ExportSpillover(
+    withIntegrationHealthWave38Export,
+    automationIdleGovernanceWave39ExportSpillover
+  );
+  const withForecastWave39Export = applyMacroForecastWave39ExportSpillover(
+    withAutomationIdleGovernanceWave39Export,
+    forecastWave39ExportSpillover
+  );
+  const withUiResponsivenessWave40Export = applyMacroUiResponsivenessWave40ExportSpillover(
+    withForecastWave39Export,
+    uiResponsivenessWave40ExportSpillover
+  );
+  const withDashboardClarityWave40Export = applyMacroDashboardClarityWave40ExportSpillover(
+    withUiResponsivenessWave40Export,
+    dashboardClarityWave40ExportSpillover
+  );
+  const withReplayWave41Export = applyMacroReplayWave41ExportSpillover(
+    withDashboardClarityWave40Export,
+    replayWave41ExportSpillover
+  );
+  const withIntegrationHealthWave41Export = applyMacroIntegrationHealthWave41ExportSpillover(
+    withReplayWave41Export,
+    integrationHealthWave41ExportSpillover
+  );
+  const withAutomationIdleGovernanceWave42Export = applyMacroAutomationIdleGovernanceWave42ExportSpillover(
+    withIntegrationHealthWave41Export,
+    automationIdleGovernanceWave42ExportSpillover
+  );
+  const withForecastWave42Export = applyMacroForecastWave42ExportSpillover(
+    withAutomationIdleGovernanceWave42Export,
+    forecastWave42ExportSpillover
+  );
+  const withUiResponsivenessWave43Export = applyMacroUiResponsivenessWave43ExportSpillover(
+    withForecastWave42Export,
+    uiResponsivenessWave43ExportSpillover
+  );
+  const withDashboardClarityWave43Export = applyMacroDashboardClarityWave43ExportSpillover(
+    withUiResponsivenessWave43Export,
+    dashboardClarityWave43ExportSpillover
+  );
+  const withAutomationIdleGovernanceWave44Export = applyMacroAutomationIdleGovernanceWave44ExportSpillover(
+    withDashboardClarityWave43Export,
+    automationIdleGovernanceWave44ExportSpillover
+  );
+  const withForecastWave44Export = applyMacroForecastWave44ExportSpillover(
+    withAutomationIdleGovernanceWave44Export,
+    forecastWave44ExportSpillover
+  );
+  const withReplayWave45Export = applyMacroReplayWave45ExportSpillover(
+    withForecastWave44Export,
+    replayWave45ExportSpillover
+  );
+  const withIntegrationHealthWave45Export = applyMacroIntegrationHealthWave45ExportSpillover(
+    withReplayWave45Export,
+    integrationHealthWave45ExportSpillover
+  );
+  const withUiResponsivenessWave46Export = applyMacroUiResponsivenessWave46ExportSpillover(
+    withIntegrationHealthWave45Export,
+    uiResponsivenessWave46ExportSpillover
+  );
+  const withDashboardClarityWave46Export = applyMacroDashboardClarityWave46ExportSpillover(
+    withUiResponsivenessWave46Export,
+    dashboardClarityWave46ExportSpillover
+  );
+  const withReplayWave47Export = applyMacroReplayWave47ExportSpillover(
+    withDashboardClarityWave46Export,
+    replayWave47ExportSpillover
+  );
+  const withIntegrationHealthWave47Export = applyMacroIntegrationHealthWave47ExportSpillover(
+    withReplayWave47Export,
+    integrationHealthWave47ExportSpillover
+  );
+  const withReplayWave48Export = applyMacroReplayWave48ExportSpillover(
+    withIntegrationHealthWave47Export,
+    replayWave48ExportSpillover
+  );
+  const withIntegrationHealthWave48Export = applyMacroIntegrationHealthWave48ExportSpillover(
+    withReplayWave48Export,
+    integrationHealthWave48ExportSpillover
+  );
+  const withReplayWave49Export = applyMacroReplayWave49ExportSpillover(
+    withIntegrationHealthWave48Export,
+    replayWave49ExportSpillover
+  );
+  const withIntegrationHealthWave49Export = applyMacroIntegrationHealthWave49ExportSpillover(
+    withReplayWave49Export,
+    integrationHealthWave49ExportSpillover
+  );
+  const withReplayWave50Export = applyMacroReplayWave50ExportSpillover(
+    withIntegrationHealthWave49Export,
+    replayWave50ExportSpillover
+  );
+  const withIntegrationHealthWave50Export = applyMacroIntegrationHealthWave50ExportSpillover(
+    withReplayWave50Export,
+    integrationHealthWave50ExportSpillover
+  );
+  const withReplayWave51Export = applyMacroReplayWave51ExportSpillover(
+    withIntegrationHealthWave50Export,
+    replayWave51ExportSpillover
+  );
+  const withIntegrationHealthWave51Export = applyMacroIntegrationHealthWave51ExportSpillover(
+    withReplayWave51Export,
+    integrationHealthWave51ExportSpillover
+  );
+  const shocked = applyMacroShockAdjustments(inputs, withIntegrationHealthWave51Export, pushEv);
+  ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
+
+  const productivityBand = v1014macroBandProductivity(productivityScore);
+  const investmentClimate = v1014macroBandInvestment(investmentScore);
+  const utilizationIndex = deriveUtilizationIndex(cycleScore, investmentScore);
+  const utilizationBand = v1014macroBandUtilization(utilizationIndex);
+  const cyclePhase = v1014macroCycleFromScore(cycleScore, persisted.cycleHysteresis);
+
+  const regionalContributions = buildRegionalContributions({
+    inputs,
+    shares,
+    investmentScore,
+    utilizationIndex,
+    evidence: evList
+  });
+
+  const accounting = buildNationalAccountingLedger({
+    productivityScore,
+    utilizationIndex,
+    investmentScore,
+    regionalSumShare: shareSum
+  });
+
+  const sectorProductivity = nationalSectorProductivityFromScore(productivityScore);
+  const sectorOutputMix = computeNationalSectorOutputMix(regionalContributions);
+  const regionalDivergence = computeRegionalDivergenceSnapshot(regionalContributions);
+  const transmissionReport = buildMacroTransmissionReport({
+    turn: inputs.turn,
+    fiscal: fiscalSpillover,
+    household: householdSpillover,
+    industry: industrySpillover,
+    trade: tradeSpillover,
+    geography: geographySpillover,
+    credit: creditSpillover,
+    innovation: innovationSpillover,
+    workforce: workforceSpillover,
+    strategic: strategicSpillover,
+    housing: housingSpillover,
+    inflation: inflationSpillover,
+    energy: energySpillover,
+    events: eventsSpillover,
+    companies: companiesSpillover,
+    turns: turnsSpillover,
+    transport: transportSpillover,
+    research: researchSpillover,
+    population: populationSpillover,
+    modes: modesSpillover,
+    guardian: guardianSpillover,
+    cities: citiesSpillover,
+    forecasting: forecastingSpillover,
+    command: commandSpillover,
+    automation: automationSpillover,
+    teamAi: teamAiSpillover,
+    replay: replaySpillover,
+    memory: memorySpillover,
+    dashboards: dashboardsSpillover,
+    ui: uiSpillover,
+    utilities: utilitiesSpillover,
+    logistics: logisticsSpillover,
+    negotiation: negotiationSpillover,
+    confidence: confidenceSpillover,
+    capex: capexSpillover,
+    monetary: monetarySpillover,
+    rental: rentalSpillover,
+    climate: climateSpillover,
+    forecastDispersion: forecastDispersionSpillover,
+    accessibility: accessibilitySpillover,
+    timeline: timelineSpillover,
+    liquidity: liquiditySpillover,
+    mapsTelemetry: mapsTelemetrySpillover,
+    strategicGameplay: strategicGameplaySpillover,
+    archiveIntegrity: archiveIntegritySpillover,
+    integrationHealth: integrationHealthSpillover,
+    cadenceDrift: cadenceDriftSpillover,
+    researchMomentum: researchMomentumSpillover,
+    budgetOutlook: budgetOutlookSpillover,
+    modeShift: modeShiftSpillover,
+    supplyChain: supplyChainSpillover,
+    eventCascade: eventCascadeSpillover,
+    demographicShift: demographicShiftSpillover,
+    expectationsAnchor: expectationsAnchorSpillover,
+    metroMomentum: metroMomentumSpillover,
+    transportThroughput: transportThroughputSpillover,
+    energyTransitionPace: energyTransitionPaceSpillover,
+    housingAffordability: housingAffordabilitySpillover,
+    tradeExposure: tradeExposureSpillover,
+    guardianVigilance: guardianVigilanceSpillover,
+    commandCoordination: commandCoordinationSpillover,
+    teamAiCohesion: teamAiCohesionSpillover,
+    memoryRetention: memoryRetentionSpillover,
+    automationThroughput: automationThroughputSpillover,
+    forecastCalibration: forecastCalibrationSpillover,
+    automationIdleGovernance: automationIdleGovernanceSpillover,
+    forecastProjectionSync: forecastProjectionSyncSpillover,
+    automationIdleGovernanceWave36Export: automationIdleGovernanceWave36ExportSpillover,
+    forecastWave36ProjectionSync: forecastWave36ProjectionSyncSpillover,
+    uiResponsivenessWave37Export: uiResponsivenessWave37ExportSpillover,
+    dashboardClarityWave37Export: dashboardClarityWave37ExportSpillover,
+    replayWave38Export: replayWave38ExportSpillover,
+    integrationHealthWave38Export: integrationHealthWave38ExportSpillover,
+    automationIdleGovernanceWave39Export: automationIdleGovernanceWave39ExportSpillover,
+    forecastWave39Export: forecastWave39ExportSpillover,
+    uiResponsivenessWave40Export: uiResponsivenessWave40ExportSpillover,
+    dashboardClarityWave40Export: dashboardClarityWave40ExportSpillover,
+    replayWave41Export: replayWave41ExportSpillover,
+    integrationHealthWave41Export: integrationHealthWave41ExportSpillover,
+    automationIdleGovernanceWave42Export: automationIdleGovernanceWave42ExportSpillover,
+    forecastWave42Export: forecastWave42ExportSpillover,
+    uiResponsivenessWave43Export: uiResponsivenessWave43ExportSpillover,
+    dashboardClarityWave43Export: dashboardClarityWave43ExportSpillover,
+    automationIdleGovernanceWave44Export: automationIdleGovernanceWave44ExportSpillover,
+    forecastWave44Export: forecastWave44ExportSpillover,
+    replayWave45Export: replayWave45ExportSpillover,
+    integrationHealthWave45Export: integrationHealthWave45ExportSpillover,
+    uiResponsivenessWave46Export: uiResponsivenessWave46ExportSpillover,
+    dashboardClarityWave46Export: dashboardClarityWave46ExportSpillover,
+    replayWave47Export: replayWave47ExportSpillover,
+    integrationHealthWave47Export: integrationHealthWave47ExportSpillover,
+    replayWave48Export: replayWave48ExportSpillover,
+    integrationHealthWave48Export: integrationHealthWave48ExportSpillover,
+    replayWave49Export: replayWave49ExportSpillover,
+    integrationHealthWave49Export: integrationHealthWave49ExportSpillover,
+    replayWave50Export: replayWave50ExportSpillover,
+    integrationHealthWave50Export: integrationHealthWave50ExportSpillover,
+    replayWave51Export: replayWave51ExportSpillover,
+    integrationHealthWave51Export: integrationHealthWave51ExportSpillover
+  });
+
+  const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
+  const transmissionCoherence = buildMacroTransmissionCoherenceSnapshot(transmissionReport, cyclePhase);
+  const transmissionConcentration = buildMacroTransmissionConcentrationSnapshot(transmissionReport);
+  const transmissionAsymmetry = buildMacroTransmissionAsymmetrySnapshot(transmissionReport);
+  const transmissionVolatility = buildMacroTransmissionVolatilitySnapshot(transmissionReport);
+  const transmissionResilience = buildMacroTransmissionResilienceSnapshot(transmissionReport);
+  const transmissionCoverage = buildMacroTransmissionCoverageSnapshot(transmissionReport);
+  const transmissionAmplification = buildMacroTransmissionAmplificationSnapshot(transmissionReport);
+  const transmissionTension = buildMacroTransmissionTensionSnapshot(transmissionReport);
+  const transmissionDivergence = buildMacroTransmissionDivergenceSnapshot(transmissionReport);
+  const transmissionStability = buildMacroTransmissionStabilitySnapshot(transmissionReport);
+  const transmissionAlignment = buildMacroTransmissionAlignmentSnapshot(transmissionReport);
+  const transmissionSynchronization = buildMacroTransmissionSynchronizationSnapshot(transmissionReport);
+  const transmissionIntensity = buildMacroTransmissionIntensitySnapshot(transmissionReport);
+  const transmissionPolarization = buildMacroTransmissionPolarizationSnapshot(transmissionReport);
+  const transmissionCoupling = buildMacroTransmissionCouplingSnapshot(transmissionReport);
+  const transmissionImbalance = buildMacroTransmissionImbalanceSnapshot(transmissionReport);
+  const transmissionHarmonic = buildMacroTransmissionHarmonicSnapshot(transmissionReport);
+  const transmissionGradient = buildMacroTransmissionGradientSnapshot(transmissionReport);
+  const transmissionAttenuation = buildMacroTransmissionAttenuationSnapshot(transmissionReport);
+  const transmissionEnvelope = buildMacroTransmissionEnvelopeSnapshot(transmissionReport);
+  const transmissionPersistence = buildMacroTransmissionPersistenceSnapshot(transmissionReport);
+  const transmissionCentrality = buildMacroTransmissionCentralitySnapshot(transmissionReport);
+  const transmissionSynthesis = buildMacroTransmissionSynthesisSnapshot(transmissionReport);
+  const transmissionDispersion = buildMacroTransmissionDispersionSnapshot(transmissionReport);
+  const transmissionFragmentation = buildMacroTransmissionFragmentationSnapshot(transmissionReport);
+  const transmissionRedundancy = buildMacroTransmissionRedundancySnapshot(transmissionReport);
+  const transmissionSaturation = buildMacroTransmissionSaturationSnapshot(transmissionReport);
+  const transmissionElasticity = buildMacroTransmissionElasticitySnapshot(transmissionReport);
+
+  const capacitySnapshot = buildMacroCapacitySnapshot({
+    state: {
+      utilizationIndex,
+      utilizationBand,
+      investmentClimate
+    },
+    industry: industrySpillover,
+    workforce: workforceSpillover
+  });
+
+  let nextPersisted: MacroEconomyPersisted = {
+    ...persisted,
+    revision: persisted.revision + 1,
+    initializedTurn: persisted.initializedTurn ?? inputs.turn,
+    lastUpdatedTurn: inputs.turn,
+    lastInputHash: hash,
+    cycleHysteresis: cyclePhase,
+    cycleScore,
+    productivityHysteresis: productivityBand,
+    productivityScore,
+    investmentHysteresis: investmentClimate,
+    investmentScore
+  };
+
+  nextPersisted = appendMacroCycleTransitionMemory(nextPersisted, {
+    turn: inputs.turn,
+    previousPhase: persisted.cycleHysteresis,
+    nextPhase: cyclePhase
+  });
+
+  const partialStateForOutlook: NationalMacroEconomyState = {
+    schemaVersion: V1014_MACRO_SCHEMA_VERSION,
+    revision: nextPersisted.revision,
+    turn: inputs.turn,
+    inputHash: hash,
+    cyclePhase,
+    cycleMomentum: v1014macroClamp((cycleScore - 50) / 50, -1, 1),
+    cycleDurationTurns: prevState?.cyclePhase === cyclePhase ? (prevState?.cycleDurationTurns ?? 0) + 1 : 1,
+    productivityBand,
+    productivityIndex: productivityScore,
+    investmentClimate,
+    grossInvestmentIndex: investmentScore,
+    utilizationBand,
+    utilizationIndex,
+    regionalContributions,
+    accounting,
+    sectorProductivity,
+    sectorOutputMix,
+    activeCyclicalShockIds: activeShockIds,
+    fiscalSpilloverSummary: fiscalSpillover.summary,
+    householdSpilloverSummary: householdSpillover.summary,
+    industrySpilloverSummary: industrySpillover.summary,
+    tradeSpilloverSummary: tradeSpillover.summary,
+    geographySpilloverSummary: geographySpillover.summary,
+    creditSpilloverSummary: creditSpillover.summary,
+    innovationSpilloverSummary: innovationSpillover.summary,
+    workforceSpilloverSummary: workforceSpillover.summary,
+    strategicSpilloverSummary: strategicSpillover.summary,
+    housingSpilloverSummary: housingSpillover.summary,
+    inflationSpilloverSummary: inflationSpillover.summary,
+    energySpilloverSummary: energySpillover.summary,
+    eventsSpilloverSummary: eventsSpillover.summary,
+    companiesSpilloverSummary: companiesSpillover.summary,
+    turnsSpilloverSummary: turnsSpillover.summary,
+    transportSpilloverSummary: transportSpillover.summary,
+    researchSpilloverSummary: researchSpillover.summary,
+    populationSpilloverSummary: populationSpillover.summary,
+    modesSpilloverSummary: modesSpillover.summary,
+    guardianSpilloverSummary: guardianSpillover.summary,
+    citiesSpilloverSummary: citiesSpillover.summary,
+    forecastingSpilloverSummary: forecastingSpillover.summary,
+    commandSpilloverSummary: commandSpillover.summary,
+    automationSpilloverSummary: automationSpillover.summary,
+    teamAiSpilloverSummary: teamAiSpillover.summary,
+    replaySpilloverSummary: replaySpillover.summary,
+    memorySpilloverSummary: memorySpillover.summary,
+    dashboardsSpilloverSummary: dashboardsSpillover.summary,
+    uiSpilloverSummary: uiSpillover.summary,
+    utilitiesSpilloverSummary: utilitiesSpillover.summary,
+    logisticsSpilloverSummary: logisticsSpillover.summary,
+    negotiationSpilloverSummary: negotiationSpillover.summary,
+    confidenceSpilloverSummary: confidenceSpillover.summary,
+    capexSpilloverSummary: capexSpillover.summary,
+    monetarySpilloverSummary: monetarySpillover.summary,
+    rentalSpilloverSummary: rentalSpillover.summary,
+    climateSpilloverSummary: climateSpillover.summary,
+    forecastDispersionSpilloverSummary: forecastDispersionSpillover.summary,
+    accessibilitySpilloverSummary: accessibilitySpillover.summary,
+    timelineSpilloverSummary: timelineSpillover.summary,
+    liquiditySpilloverSummary: liquiditySpillover.summary,
+    mapsTelemetrySpilloverSummary: mapsTelemetrySpillover.summary,
+    strategicGameplaySpilloverSummary: strategicGameplaySpillover.summary,
+    archiveIntegritySpilloverSummary: archiveIntegritySpillover.summary,
+    integrationHealthSpilloverSummary: integrationHealthSpillover.summary,
+    cadenceDriftSpilloverSummary: cadenceDriftSpillover.summary,
+    researchMomentumSpilloverSummary: researchMomentumSpillover.summary,
+    budgetOutlookSpilloverSummary: budgetOutlookSpillover.summary,
+    modeShiftSpilloverSummary: modeShiftSpillover.summary,
+    supplyChainSpilloverSummary: supplyChainSpillover.summary,
+    eventCascadeSpilloverSummary: eventCascadeSpillover.summary,
+    demographicShiftSpilloverSummary: demographicShiftSpillover.summary,
+    expectationsAnchorSpilloverSummary: expectationsAnchorSpillover.summary,
+    metroMomentumSpilloverSummary: metroMomentumSpillover.summary,
+    transportThroughputSpilloverSummary: transportThroughputSpillover.summary,
+    energyTransitionPaceSpilloverSummary: energyTransitionPaceSpillover.summary,
+    housingAffordabilitySpilloverSummary: housingAffordabilitySpillover.summary,
+    tradeExposureSpilloverSummary: tradeExposureSpillover.summary,
+    guardianVigilanceSpilloverSummary: guardianVigilanceSpillover.summary,
+    commandCoordinationSpilloverSummary: commandCoordinationSpillover.summary,
+    teamAiCohesionSpilloverSummary: teamAiCohesionSpillover.summary,
+    memoryRetentionSpilloverSummary: memoryRetentionSpillover.summary,
+    automationThroughputSpilloverSummary: automationThroughputSpillover.summary,
+    forecastCalibrationSpilloverSummary: forecastCalibrationSpillover.summary,
+    automationIdleGovernanceSpilloverSummary: automationIdleGovernanceSpillover.summary,
+    forecastProjectionSyncSpilloverSummary: forecastProjectionSyncSpillover.summary,
+    automationIdleGovernanceWave36ExportSpilloverSummary: automationIdleGovernanceWave36ExportSpillover.summary,
+    forecastWave36ProjectionSyncSpilloverSummary: forecastWave36ProjectionSyncSpillover.summary,
+    uiResponsivenessWave37ExportSpilloverSummary: uiResponsivenessWave37ExportSpillover.summary,
+    dashboardClarityWave37ExportSpilloverSummary: dashboardClarityWave37ExportSpillover.summary,
+    replayWave38ExportSpilloverSummary: replayWave38ExportSpillover.summary,
+    integrationHealthWave38ExportSpilloverSummary: integrationHealthWave38ExportSpillover.summary,
+    automationIdleGovernanceWave39ExportSpilloverSummary: automationIdleGovernanceWave39ExportSpillover.summary,
+    forecastWave39ExportSpilloverSummary: forecastWave39ExportSpillover.summary,
+    uiResponsivenessWave40ExportSpilloverSummary: uiResponsivenessWave40ExportSpillover.summary,
+    dashboardClarityWave40ExportSpilloverSummary: dashboardClarityWave40ExportSpillover.summary,
+    replayWave41ExportSpilloverSummary: replayWave41ExportSpillover.summary,
+    integrationHealthWave41ExportSpilloverSummary: integrationHealthWave41ExportSpillover.summary,
+    automationIdleGovernanceWave42ExportSpilloverSummary: automationIdleGovernanceWave42ExportSpillover.summary,
+    forecastWave42ExportSpilloverSummary: forecastWave42ExportSpillover.summary,
+    uiResponsivenessWave43ExportSpilloverSummary: uiResponsivenessWave43ExportSpillover.summary,
+    dashboardClarityWave43ExportSpilloverSummary: dashboardClarityWave43ExportSpillover.summary,
+    automationIdleGovernanceWave44ExportSpilloverSummary: automationIdleGovernanceWave44ExportSpillover.summary,
+    forecastWave44ExportSpilloverSummary: forecastWave44ExportSpillover.summary,
+    replayWave45ExportSpilloverSummary: replayWave45ExportSpillover.summary,
+    integrationHealthWave45ExportSpilloverSummary: integrationHealthWave45ExportSpillover.summary,
+    uiResponsivenessWave46ExportSpilloverSummary: uiResponsivenessWave46ExportSpillover.summary,
+    dashboardClarityWave46ExportSpilloverSummary: dashboardClarityWave46ExportSpillover.summary,
+    replayWave47ExportSpilloverSummary: replayWave47ExportSpillover.summary,
+    integrationHealthWave47ExportSpilloverSummary: integrationHealthWave47ExportSpillover.summary,
+    replayWave48ExportSpilloverSummary: replayWave48ExportSpillover.summary,
+    integrationHealthWave48ExportSpilloverSummary: integrationHealthWave48ExportSpillover.summary,
+    replayWave49ExportSpilloverSummary: replayWave49ExportSpillover.summary,
+    integrationHealthWave49ExportSpilloverSummary: integrationHealthWave49ExportSpillover.summary,
+    replayWave50ExportSpilloverSummary: replayWave50ExportSpillover.summary,
+    integrationHealthWave50ExportSpilloverSummary: integrationHealthWave50ExportSpillover.summary,
+    replayWave51ExportSpilloverSummary: replayWave51ExportSpillover.summary,
+    integrationHealthWave51ExportSpilloverSummary: integrationHealthWave51ExportSpillover.summary,
+    capacitySnapshot,
+    transmissionBalance,
+    transmissionCoherence,
+    transmissionConcentration,
+    transmissionAsymmetry,
+    transmissionVolatility,
+    transmissionResilience,
+    transmissionCoverage,
+    transmissionAmplification,
+    transmissionTension,
+    transmissionDivergence,
+    transmissionStability,
+    transmissionAlignment,
+    transmissionSynchronization,
+    transmissionIntensity,
+    transmissionPolarization,
+    transmissionCoupling,
+    transmissionImbalance,
+    transmissionHarmonic,
+    transmissionGradient,
+    transmissionAttenuation,
+    transmissionEnvelope,
+    transmissionPersistence,
+    transmissionCentrality,
+    transmissionSynthesis,
+    transmissionDispersion,
+    transmissionFragmentation,
+    transmissionRedundancy,
+    transmissionSaturation,
+    transmissionElasticity,
+    transmissionReport,
+    stressIndex: {
+      score: 0,
+      band: 'calm',
+      drivers: [],
+      transmissionStress: 0,
+      gateStress: 0
+    },
+    policyStance: {
+      stance: 'neutral',
+      fiscalTilt: 0,
+      creditTilt: 0,
+      summary: ''
+    },
+    regionalDivergence,
+    outlookProjection: {
+      horizonTurns: 3,
+      projectedCyclePhase: cyclePhase,
+      projectedInvestmentClimate: investmentClimate,
+      projectedProductivityBand: productivityBand,
+      projectedOutputIndex: accounting.grossOutputIndex,
+      confidence: 0.9
+    },
+    consistencyGates: [],
+    debrief: { headline: '', bullets: [] },
+    derivedSignals: [],
+    evidence: evList.slice(0, V1014_MACRO_LIMITS.maxEvidence),
+    outlook: { phase: cyclePhase, productivity: productivityBand, investment: investmentClimate }
+  };
+
+  const outlookProjection = projectMacroEconomyOutlook(partialStateForOutlook, inputs, 3);
+
+  const stateBase: NationalMacroEconomyState = {
+    ...partialStateForOutlook,
+    outlookProjection
+  };
+  const consistencyGates = evaluateMacroConsistencyGates(stateBase, inputs);
+  const stressIndex = buildMacroStressIndexSnapshot({ ...stateBase, consistencyGates });
+  const policyStance = buildMacroPolicyStanceSnapshot({
+    inputs,
+    state: stateBase,
+    fiscal: fiscalSpillover,
+    credit: creditSpillover
+  });
+  const debrief = composeMacroEconomyDebrief({ ...stateBase, consistencyGates, stressIndex, policyStance });
+  const derivedSignals = buildMacroDerivedSignals(stateBase, persisted.cycleHysteresis);
+
+  const state: NationalMacroEconomyState = {
+    ...stateBase,
+    consistencyGates,
+    stressIndex,
+    policyStance,
+    debrief,
+    derivedSignals
+  };
+
+  return { state, persisted: nextPersisted };
+}

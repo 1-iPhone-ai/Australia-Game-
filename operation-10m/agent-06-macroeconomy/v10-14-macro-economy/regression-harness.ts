@@ -1,0 +1,1405 @@
+import { macroStressScenarioShockIds } from './catalog/stress-scenarios.ts';
+import { computeNationalMacroEconomy } from './compute.ts';
+import { makeDefaultV1014_MACRO_TestInputs } from './inputs.ts';
+import { validateNationalMacroEconomyState } from './accounting/validate-state.ts';
+import type { MacroEconomyInputs, MacroEconomyPersisted, NationalMacroEconomyState } from './types.ts';
+
+export interface MacroRegressionCheck {
+  id: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface MacroRegressionHarnessResult {
+  scenarioId: string;
+  turnsRun: number;
+  allPassed: boolean;
+  checks: MacroRegressionCheck[];
+}
+
+/** Deterministic multi-turn macro regression (warn-only; no canonical mutation). */
+export function runMacroEconomyRegressionHarness(options?: {
+  turns?: number;
+  scenarioId?: string;
+  includeCreditStress?: boolean;
+  includeLaborInnovationStress?: boolean;
+  includeHousingStrategicStress?: boolean;
+  includeInflationEnergyStress?: boolean;
+  includeEventsCompaniesStress?: boolean;
+  includeTurnsTransportStress?: boolean;
+  includeResearchPopulationStress?: boolean;
+  includeModesGuardianStress?: boolean;
+  includeCitiesForecastingStress?: boolean;
+  includeCommandAutomationStress?: boolean;
+  includeTeamReplayStress?: boolean;
+  includeMemoryDashboardStress?: boolean;
+  includeUiUtilitiesStress?: boolean;
+  includeLogisticsNegotiationStress?: boolean;
+  includeConfidenceCapexStress?: boolean;
+  includeMonetaryRentalStress?: boolean;
+  includeClimateForecastStress?: boolean;
+  includeAccessibilityTimelineStress?: boolean;
+  includeLiquidityMapsStress?: boolean;
+  includeGameplayArchiveStress?: boolean;
+  includeIntegrationCadenceStress?: boolean;
+  includeResearchBudgetStress?: boolean;
+  includeModeSupplyStress?: boolean;
+  includeEventDemographicStress?: boolean;
+  includeExpectationsMetroStress?: boolean;
+  includeTransportEnergyStress?: boolean;
+  includeHousingTradeStress?: boolean;
+  includeGuardianCommandStress?: boolean;
+  includeTeamMemoryStress?: boolean;
+  includeAutomationForecastStress?: boolean;
+  includeGovernanceProjectionStress?: boolean;
+  includeWave36ExportProjectionStress?: boolean;
+  includeWave37UiDashboardExportStress?: boolean;
+  includeWave38ReplayIntegrationStress?: boolean;
+  includeWave39AutomationForecastExportStress?: boolean;
+  includeWave40UiDashboardExportStress?: boolean;
+  includeWave41ReplayIntegrationStress?: boolean;
+  includeWave42AutomationForecastExportStress?: boolean;
+  includeWave43UiDashboardExportStress?: boolean;
+  includeWave44AutomationForecastExportStress?: boolean;
+  includeWave45ReplayIntegrationStress?: boolean;
+  includeWave46UiDashboardExportStress?: boolean;
+  includeWave47ReplayIntegrationStress?: boolean;
+  includeWave48ReplayIntegrationStress?: boolean;
+  includeWave49ReplayIntegrationStress?: boolean;
+  includeWave50ReplayIntegrationStress?: boolean;
+  includeWave51ReplayIntegrationStress?: boolean;
+}): MacroRegressionHarnessResult {
+  const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
+  const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
+  const includeCreditStress = Boolean(options?.includeCreditStress);
+  const includeLaborInnovationStress = Boolean(options?.includeLaborInnovationStress);
+  const includeHousingStrategicStress = Boolean(options?.includeHousingStrategicStress);
+  const includeInflationEnergyStress = Boolean(options?.includeInflationEnergyStress);
+  const includeEventsCompaniesStress = Boolean(options?.includeEventsCompaniesStress);
+  const includeTurnsTransportStress = Boolean(options?.includeTurnsTransportStress);
+  const includeResearchPopulationStress = Boolean(options?.includeResearchPopulationStress);
+  const includeModesGuardianStress = Boolean(options?.includeModesGuardianStress);
+  const includeCitiesForecastingStress = Boolean(options?.includeCitiesForecastingStress);
+  const includeCommandAutomationStress = Boolean(options?.includeCommandAutomationStress);
+  const includeTeamReplayStress = Boolean(options?.includeTeamReplayStress);
+  const includeMemoryDashboardStress = Boolean(options?.includeMemoryDashboardStress);
+  const includeUiUtilitiesStress = Boolean(options?.includeUiUtilitiesStress);
+  const includeLogisticsNegotiationStress = Boolean(options?.includeLogisticsNegotiationStress);
+  const includeConfidenceCapexStress = Boolean(options?.includeConfidenceCapexStress);
+  const includeMonetaryRentalStress = Boolean(options?.includeMonetaryRentalStress);
+  const includeClimateForecastStress = Boolean(options?.includeClimateForecastStress);
+  const includeAccessibilityTimelineStress = Boolean(options?.includeAccessibilityTimelineStress);
+  const includeLiquidityMapsStress = Boolean(options?.includeLiquidityMapsStress);
+  const includeGameplayArchiveStress = Boolean(options?.includeGameplayArchiveStress);
+  const includeIntegrationCadenceStress = Boolean(options?.includeIntegrationCadenceStress);
+  const includeResearchBudgetStress = Boolean(options?.includeResearchBudgetStress);
+  const includeModeSupplyStress = Boolean(options?.includeModeSupplyStress);
+  const includeEventDemographicStress = Boolean(options?.includeEventDemographicStress);
+  const includeExpectationsMetroStress = Boolean(options?.includeExpectationsMetroStress);
+  const includeTransportEnergyStress = Boolean(options?.includeTransportEnergyStress);
+  const includeHousingTradeStress = Boolean(options?.includeHousingTradeStress);
+  const includeGuardianCommandStress = Boolean(options?.includeGuardianCommandStress);
+  const includeTeamMemoryStress = Boolean(options?.includeTeamMemoryStress);
+  const includeAutomationForecastStress = Boolean(options?.includeAutomationForecastStress);
+  const includeGovernanceProjectionStress = Boolean(options?.includeGovernanceProjectionStress);
+  const includeWave36ExportProjectionStress = Boolean(options?.includeWave36ExportProjectionStress);
+  const includeWave37UiDashboardExportStress = Boolean(options?.includeWave37UiDashboardExportStress);
+  const includeWave38ReplayIntegrationStress = Boolean(options?.includeWave38ReplayIntegrationStress);
+  const includeWave39AutomationForecastExportStress = Boolean(options?.includeWave39AutomationForecastExportStress);
+  const includeWave40UiDashboardExportStress = Boolean(options?.includeWave40UiDashboardExportStress);
+  const includeWave41ReplayIntegrationStress = Boolean(options?.includeWave41ReplayIntegrationStress);
+  const includeWave42AutomationForecastExportStress = Boolean(options?.includeWave42AutomationForecastExportStress);
+  const includeWave43UiDashboardExportStress = Boolean(options?.includeWave43UiDashboardExportStress);
+  const includeWave44AutomationForecastExportStress = Boolean(options?.includeWave44AutomationForecastExportStress);
+  const includeWave45ReplayIntegrationStress = Boolean(options?.includeWave45ReplayIntegrationStress);
+  const includeWave46UiDashboardExportStress = Boolean(options?.includeWave46UiDashboardExportStress);
+  const includeWave47ReplayIntegrationStress = Boolean(options?.includeWave47ReplayIntegrationStress);
+  const includeWave48ReplayIntegrationStress = Boolean(options?.includeWave48ReplayIntegrationStress);
+  const includeWave49ReplayIntegrationStress = Boolean(options?.includeWave49ReplayIntegrationStress);
+  const includeWave50ReplayIntegrationStress = Boolean(options?.includeWave50ReplayIntegrationStress);
+  const includeWave51ReplayIntegrationStress = Boolean(options?.includeWave51ReplayIntegrationStress);
+  const shockIds = macroStressScenarioShockIds(scenarioId);
+  const checks: MacroRegressionCheck[] = [];
+  let persisted: MacroEconomyPersisted | null = null;
+  let prev: NationalMacroEconomyState | null = null;
+  let lastHash = '';
+
+  for (let t = 1; t <= turns; t++) {
+    const inputs: MacroEconomyInputs = makeDefaultV1014_MACRO_TestInputs({
+      turn: t,
+      activeCyclicalShockIds: shockIds,
+      creditMarkets: includeCreditStress
+        ? { spreadBand: t % 5 === 0 ? 'stressed' : 'elevated', policyStance: 'restrictive' }
+        : undefined,
+      economicGeography: { connectivity: { band: t % 11 === 0 ? 'fragmented' : 'moderate' }, urbanizationIndex: 58 },
+      workforce: includeLaborInnovationStress
+        ? {
+            nationalReadinessBand: t % 6 === 0 ? 'critical' : 'strained',
+            laborMarket: { slack: t % 4 === 0 ? 'tight' : 'moderate' }
+          }
+        : undefined,
+      innovation: includeLaborInnovationStress
+        ? { momentum: { band: t % 5 === 0 ? 'stalled' : 'moderate' }, nationalProductivityBonus: t % 8 === 0 }
+        : undefined,
+      strategicCapital: includeHousingStrategicStress
+        ? {
+            allocationBand: t % 6 === 0 ? 'expansionary' : 'balanced',
+            nationalPriority: t % 9 === 0 ? 'infrastructure' : 'stabilization'
+          }
+        : undefined,
+      housingWellbeing: includeHousingStrategicStress
+        ? {
+            affordability: { band: t % 7 === 0 ? 'stressed' : 'balanced' },
+            construction: { band: t % 5 === 0 ? 'correction' : 'strong' }
+          }
+        : undefined,
+      nationalFinance: includeInflationEnergyStress
+        ? {
+            inflation: { band: t % 6 === 0 ? 'elevated' : 'moderate' },
+            inflationExpectations: { band: t % 8 === 0 ? 'rising' : 'anchored' }
+          }
+        : undefined,
+      industrialEnergy: includeInflationEnergyStress
+        ? {
+            supplyReliability: { band: t % 5 === 0 ? 'stressed' : 'robust' },
+            energyCost: { band: t % 7 === 0 ? 'elevated' : 'favorable' },
+            transition: { band: t % 9 === 0 ? 'accelerating' : 'steady' }
+          }
+        : undefined,
+      dynamicEvents: includeEventsCompaniesStress
+        ? {
+            nationalStabilityBand: t % 6 === 0 ? 'fragile' : 'stable',
+            pendingBacklogBand: t % 5 === 0 ? 'elevated' : 'calm',
+            activeCrisisCount: t % 8 === 0 ? 2 : 0
+          }
+        : undefined,
+      privateSector: includeEventsCompaniesStress
+        ? {
+            nationalUtilizationBand: t % 7 === 0 ? 'slack' : 'balanced',
+            overloadedFirmCount: t % 6 === 0 ? 3 : 0,
+            productionMomentum: { band: t % 9 === 0 ? 'contracting' : 'steady' }
+          }
+        : undefined,
+      turnsTime: includeTurnsTransportStress
+        ? {
+            paceBand: t % 6 === 0 ? 'stalled' : 'steady',
+            season: t % 4 === 0 ? 'Winter' : 'Spring',
+            macroPhaseBand: t % 8 === 0 ? 'late_cycle' : 'expansionary_cadence'
+          }
+        : undefined,
+      transportInfrastructure: includeTurnsTransportStress
+        ? {
+            connectivityBand: t % 5 === 0 ? 'fragmented' : 'robust',
+            throughputBand: t % 7 === 0 ? 'constrained' : 'ample',
+            investmentPipeline: { band: t % 9 === 0 ? 'active' : 'steady' }
+          }
+        : undefined,
+      researchTech: includeResearchPopulationStress
+        ? {
+            pipelineBand: t % 6 === 0 ? 'stalled' : 'strong',
+            adoptionBand: t % 7 === 0 ? 'fragmented' : 'scaling',
+            fundingBand: t % 8 === 0 ? 'cut' : 'expansionary'
+          }
+        : undefined,
+      population: includeResearchPopulationStress
+        ? {
+            growthBand: t % 5 === 0 ? 'stagnant' : 'strong',
+            dependencyBand: t % 6 === 0 ? 'elevated' : 'favorable',
+            netMigrationBand: t % 9 === 0 ? 'outflow' : 'strong_inflow'
+          }
+        : undefined,
+      modesScenarios: includeModesGuardianStress
+        ? {
+            difficultyBand: t % 6 === 0 ? 'extreme' : 'standard',
+            campaignMomentum: { band: t % 7 === 0 ? 'stalled' : 'summit_push' },
+            scenarioVolatility: { band: t % 5 === 0 ? 'high' : 'stable' }
+          }
+        : undefined,
+      guardianCopilot: includeModesGuardianStress
+        ? {
+            alertBand: t % 8 === 0 ? 'critical' : 'calm',
+            openWarningCount: t % 6 === 0 ? 4 : 1,
+            guidanceConfidence: { band: t % 9 === 0 ? 'low' : 'high' }
+          }
+        : undefined,
+      citiesRegions: includeCitiesForecastingStress
+        ? {
+            urbanizationBand: t % 6 === 0 ? 'declining' : 'rapid',
+            housingPressure: { band: t % 7 === 0 ? 'severe' : 'balanced' },
+            hubStrength: { band: t % 5 === 0 ? 'weak' : 'strong' }
+          }
+        : undefined,
+      forecastingLab: includeCitiesForecastingStress
+        ? {
+            outlookBand: t % 6 === 0 ? 'recession' : 'expansion',
+            confidenceBand: t % 8 === 0 ? 'low' : 'high',
+            dispersionBand: t % 5 === 0 ? 'wide' : 'tight'
+          }
+        : undefined,
+      commandCenter: includeCommandAutomationStress
+        ? {
+            postureBand: t % 7 === 0 ? 'crisis' : 'steady',
+            coordinationBand: t % 6 === 0 ? 'fragmented' : 'integrated',
+            decisionBacklog: { band: t % 5 === 0 ? 'elevated' : 'clear' }
+          }
+        : undefined,
+      idleAutomation: includeCommandAutomationStress
+        ? {
+            throughputBand: t % 6 === 0 ? 'stalled' : 'high',
+            reliabilityBand: t % 8 === 0 ? 'fragile' : 'robust',
+            adoptionBand: t % 9 === 0 ? 'minimal' : 'broad' }
+        : undefined,
+      teamIntelligence: includeTeamReplayStress
+        ? {
+            cohesionBand: t % 6 === 0 ? 'fractured' : 'strong',
+            analysisThroughput: { band: t % 7 === 0 ? 'blocked' : 'high' },
+            internalConflict: { band: t % 5 === 0 ? 'severe' : 'low' }
+          }
+        : undefined,
+      historyReplay: includeTeamReplayStress
+        ? {
+            volatilityBand: t % 5 === 0 ? 'extreme' : 'stable',
+            stressMemory: { band: t % 6 === 0 ? 'scarring' : 'fading' },
+            recoveryArc: { band: t % 8 === 0 ? 'l-shaped' : 'strong' }
+          }
+        : undefined,
+      aiMemory: includeMemoryDashboardStress
+        ? {
+            driftBand: t % 6 === 0 ? 'runaway' : 'stable',
+            recallFidelity: { band: t % 7 === 0 ? 'degraded' : 'high' },
+            auditGap: { band: t % 5 === 0 ? 'wide' : 'narrow' }
+          }
+        : undefined,
+      dashboardsMaps: includeMemoryDashboardStress
+        ? {
+            refreshLag: { band: t % 5 === 0 ? 'stale' : 'fresh' },
+            signalCoherence: { band: t % 6 === 0 ? 'fragmented' : 'aligned' },
+            alertDensity: { band: t % 7 === 0 ? 'flooded' : 'calm' }
+          }
+        : undefined,
+      gameUi: includeUiUtilitiesStress
+        ? {
+            panelLatency: { band: t % 6 === 0 ? 'critical' : 'snappy' },
+            navigationClutter: { band: t % 5 === 0 ? 'overloaded' : 'clear' },
+            renderHealth: { band: t % 7 === 0 ? 'unstable' : 'stable' }
+          }
+        : undefined,
+      utilitiesGrid: includeUiUtilitiesStress
+        ? {
+            serviceReliability: { band: t % 6 === 0 ? 'fragile' : 'robust' },
+            outageBand: t % 5 === 0 ? 'rolling' : 'rare',
+            capacityMargin: { band: t % 8 === 0 ? 'thin' : 'ample' }
+          }
+        : undefined,
+      trade: includeLogisticsNegotiationStress
+        ? {
+            termsOfTrade: { band: t % 7 === 0 ? 'weak' : 'stable' },
+            logistics: {
+              portBacklogBand: t % 6 === 0 ? 'gridlocked' : 'clear',
+              routeReliability: { band: t % 5 === 0 ? 'disrupted' : 'robust' },
+              leadTimeBand: t % 8 === 0 ? 'extended' : 'normal'
+            }
+          }
+        : t % 7 === 0
+          ? { termsOfTrade: { band: 'weak' }, exportMomentum: -4 }
+          : { termsOfTrade: { band: 'stable' }, exportMomentum: 1 },
+      negotiationState: includeLogisticsNegotiationStress
+        ? {
+            deadlockBand: t % 6 === 0 ? 'entrenched' : 'clear',
+            trustBand: t % 7 === 0 ? 'collapsed' : 'robust',
+            claimPressureBand: t % 5 === 0 ? 'surging' : 'calm'
+          }
+        : undefined,
+      households: includeConfidenceCapexStress
+        ? {
+            consumerConfidence: {
+              band: t % 6 === 0 ? 'collapsed' : 'strong',
+              volatilityBand: t % 5 === 0 ? 'whipsaw' : 'stable'
+            }
+          }
+        : undefined,
+      privateSector: includeConfidenceCapexStress
+        ? {
+            capexCycle: {
+              pipelineBand: t % 6 === 0 ? 'frozen' : 'expansionary',
+              freezeBand: t % 7 === 0 ? 'binding' : 'none',
+              paybackBand: t % 8 === 0 ? 'stretched' : 'attractive'
+            }
+          }
+        : undefined,
+      monetaryPolicy: includeMonetaryRentalStress
+        ? {
+            policyStance: t % 6 === 0 ? 'restrictive' : 'neutral',
+            realRateBand: t % 7 === 0 ? 'elevated' : 'moderate',
+            liquidityBand: t % 5 === 0 ? 'strained' : 'ample'
+          }
+        : undefined,
+      rentalMarket: includeMonetaryRentalStress
+        ? {
+            pressureBand: t % 6 === 0 ? 'severe' : 'balanced',
+            vacancyBand: t % 5 === 0 ? 'tight' : 'moderate',
+            rentGrowthBand: t % 7 === 0 ? 'surging' : 'stable'
+          }
+        : undefined,
+      climatePolicy: includeClimateForecastStress
+        ? {
+            transitionBand: t % 6 === 0 ? 'disruptive' : 'steady',
+            carbonPriceBand: t % 7 === 0 ? 'punitive' : 'moderate',
+            complianceBand: t % 5 === 0 ? 'binding' : 'light'
+          }
+        : undefined,
+      forecastingLab: includeClimateForecastStress
+        ? {
+            dispersionBand: t % 6 === 0 ? 'wide' : 'tight',
+            confidenceBand: t % 7 === 0 ? 'low' : 'high',
+            disagreementBand: t % 5 === 0 ? 'polarized' : 'aligned'
+          }
+        : undefined,
+      uiAccessibility: includeAccessibilityTimelineStress
+        ? {
+            contrastBand: t % 6 === 0 ? 'failing' : 'strong',
+            inputLagBand: t % 5 === 0 ? 'severe' : 'snappy',
+            coverageBand: t % 7 === 0 ? 'gaps' : 'full'
+          }
+        : undefined,
+      historyTimeline: includeAccessibilityTimelineStress
+        ? {
+            gapBand: t % 6 === 0 ? 'broken' : 'coherent',
+            narrativeDriftBand: t % 5 === 0 ? 'runaway' : 'stable',
+            shockMemoryBand: t % 7 === 0 ? 'scarring' : 'fading'
+          }
+        : undefined,
+      systemLiquidity: includeLiquidityMapsStress
+        ? {
+            band: t % 6 === 0 ? 'frozen' : 'ample',
+            marketDepthBand: t % 5 === 0 ? 'thin' : 'deep',
+            rolloverRiskBand: t % 7 === 0 ? 'severe' : 'low'
+          }
+        : undefined,
+      mapsTelemetry: includeLiquidityMapsStress
+        ? {
+            geoFidelityBand: t % 6 === 0 ? 'distorted' : 'high',
+            tileLatencyBand: t % 5 === 0 ? 'stale' : 'realtime',
+            coverageBand: t % 7 === 0 ? 'gaps' : 'complete'
+          }
+        : undefined,
+      strategicGameplay: includeGameplayArchiveStress
+        ? {
+            pacingBand: t % 6 === 0 ? 'gridlocked' : 'fluid',
+            coherenceBand: t % 5 === 0 ? 'fragmented' : 'aligned',
+            frictionBand: t % 7 === 0 ? 'severe' : 'low'
+          }
+        : undefined,
+      historyArchiveIntegrity: includeGameplayArchiveStress
+        ? {
+            integrityBand: t % 6 === 0 ? 'corrupt' : 'verified',
+            lineageBand: t % 5 === 0 ? 'broken' : 'continuous',
+            retentionBand: t % 7 === 0 ? 'truncated' : 'durable'
+          }
+        : undefined,
+      integrationHealth: includeIntegrationCadenceStress
+        ? {
+            meshBand: t % 6 === 0 ? 'fractured' : 'healthy',
+            contractDriftBand: t % 5 === 0 ? 'runaway' : 'stable',
+            smokeBand: t % 7 === 0 ? 'failing' : 'green'
+          }
+        : undefined,
+      turnCadenceDrift: includeIntegrationCadenceStress
+        ? {
+            skewBand: t % 6 === 0 ? 'runaway' : 'anchored',
+            jitterBand: t % 5 === 0 ? 'chaotic' : 'low',
+            resolutionBand: t % 7 === 0 ? 'missed' : 'on_time'
+          }
+        : undefined,
+      researchMomentum: includeResearchBudgetStress
+        ? {
+            velocityBand: t % 6 === 0 ? 'collapsed' : 'moderate',
+            diffusionBand: t % 5 === 0 ? 'siloed' : 'broad',
+            fundingBand: t % 7 === 0 ? 'starved' : 'strong'
+          }
+        : undefined,
+      budgetOutlook: includeResearchBudgetStress
+        ? {
+            trajectoryBand: t % 6 === 0 ? 'deteriorating' : 'stable',
+            consolidationBand: t % 5 === 0 ? 'severe' : 'moderate',
+            capexRoomBand: t % 7 === 0 ? 'exhausted' : 'ample'
+          }
+        : undefined,
+      modeShift: includeModeSupplyStress
+        ? {
+            volatilityBand: t % 6 === 0 ? 'chaotic' : 'stable',
+            alignmentBand: t % 5 === 0 ? 'misaligned' : 'aligned',
+            handoffBand: t % 7 === 0 ? 'failed' : 'smooth'
+          }
+        : undefined,
+      supplyChainStress: includeModeSupplyStress
+        ? {
+            fragilityBand: t % 6 === 0 ? 'broken' : 'resilient',
+            leadTimeBand: t % 5 === 0 ? 'extreme' : 'normal',
+            inventoryBand: t % 7 === 0 ? 'empty' : 'healthy'
+          }
+        : undefined,
+      eventCascade: includeEventDemographicStress
+        ? {
+            intensityBand: t % 6 === 0 ? 'runaway' : 'contained',
+            propagationBand: t % 5 === 0 ? 'accelerating' : 'local',
+            durationBand: t % 7 === 0 ? 'chronic' : 'fading'
+          }
+        : undefined,
+      demographicShift: includeEventDemographicStress
+        ? {
+            migrationBand: t % 6 === 0 ? 'brain_drain' : 'balanced',
+            agingBand: t % 5 === 0 ? 'accelerating' : 'gradual',
+            participationBand: t % 7 === 0 ? 'collapsed' : 'stable'
+          }
+        : undefined,
+      inflationExpectationsAnchor: includeExpectationsMetroStress
+        ? {
+            anchorBand: t % 6 === 0 ? 'deanchored' : 'well_anchored',
+            driftBand: t % 5 === 0 ? 'runaway' : 'stable',
+            credibilityBand: t % 7 === 0 ? 'lost' : 'strong'
+          }
+        : undefined,
+      metroMomentum: includeExpectationsMetroStress
+        ? {
+            growthBand: t % 6 === 0 ? 'contracting' : 'strong',
+            congestionBand: t % 5 === 0 ? 'gridlocked' : 'moderate',
+            spreadBand: t % 7 === 0 ? 'wide' : 'narrow'
+          }
+        : undefined,
+      transportThroughput: includeTransportEnergyStress
+        ? {
+            flowBand: t % 6 === 0 ? 'collapsed' : 'fluid',
+            backlogBand: t % 5 === 0 ? 'severe' : 'moderate',
+            reliabilityBand: t % 7 === 0 ? 'failing' : 'robust'
+          }
+        : undefined,
+      energyTransitionPace: includeTransportEnergyStress
+        ? {
+            paceBand: t % 6 === 0 ? 'forced' : 'orderly',
+            costBand: t % 5 === 0 ? 'spiking' : 'manageable',
+            gridBand: t % 7 === 0 ? 'unstable' : 'stable'
+          }
+        : undefined,
+      housingAffordability: includeHousingTradeStress
+        ? {
+            stressBand: t % 6 === 0 ? 'crushed' : 'balanced',
+            tenureBand: t % 5 === 0 ? 'precarious' : 'stable',
+            serviceBand: t % 7 === 0 ? 'strained' : 'adequate'
+          }
+        : undefined,
+      tradeExposure: includeHousingTradeStress
+        ? {
+            shockBand: t % 6 === 0 ? 'dislocated' : 'muted',
+            balanceBand: t % 5 === 0 ? 'unsustainable' : 'neutral',
+            opennessBand: t % 7 === 0 ? 'fragile' : 'diversified'
+          }
+        : undefined,
+      guardianVigilance: includeGuardianCommandStress
+        ? {
+            alertBand: t % 6 === 0 ? 'red' : 'green',
+            coverageBand: t % 5 === 0 ? 'blind' : 'full',
+            trustBand: t % 7 === 0 ? 'eroded' : 'strong'
+          }
+        : undefined,
+      commandCoordination: includeGuardianCommandStress
+        ? {
+            syncBand: t % 6 === 0 ? 'broken' : 'aligned',
+            latencyBand: t % 5 === 0 ? 'unbounded' : 'low',
+            loadBand: t % 7 === 0 ? 'saturated' : 'balanced'
+          }
+        : undefined,
+      teamAiCohesion: includeTeamMemoryStress
+        ? {
+            alignmentBand: t % 6 === 0 ? 'split' : 'unified',
+            driftBand: t % 5 === 0 ? 'unbounded' : 'stable',
+            qualityBand: t % 7 === 0 ? 'hallucinating' : 'reliable'
+          }
+        : undefined,
+      memoryRetention: includeTeamMemoryStress
+        ? {
+            retentionBand: t % 6 === 0 ? 'lost' : 'durable',
+            decayBand: t % 5 === 0 ? 'runaway' : 'slow',
+            recallBand: t % 7 === 0 ? 'corrupted' : 'accurate'
+          }
+        : undefined,
+      automationThroughput: includeAutomationForecastStress
+        ? {
+            paceBand: t % 6 === 0 ? 'collapsed' : 'strong',
+            reliabilityBand: t % 5 === 0 ? 'failing' : 'robust',
+            backlogBand: t % 7 === 0 ? 'unbounded' : 'light'
+          }
+        : undefined,
+      forecastCalibration: includeAutomationForecastStress
+        ? {
+            biasBand: t % 6 === 0 ? 'runaway' : 'well_calibrated',
+            horizonBand: t % 5 === 0 ? 'collapsed' : 'stable',
+            confidenceBand: t % 7 === 0 ? 'misplaced' : 'grounded'
+          }
+        : undefined,
+      automationIdleGovernance: includeGovernanceProjectionStress
+        ? {
+            governanceBand: t % 6 === 0 ? 'runaway' : 'grounded',
+            idleBand: t % 5 === 0 ? 'frozen' : 'bounded',
+            escrowBand: t % 7 === 0 ? 'misaligned' : 'latched'
+          }
+        : undefined,
+      forecastProjectionSync: includeGovernanceProjectionStress
+        ? {
+            ledgerBand: t % 6 === 0 ? 'orphaned' : 'synced',
+            driftBand: t % 5 === 0 ? 'runaway' : 'stable',
+            syncBand: t % 7 === 0 ? 'desynced' : 'latched'
+          }
+        : undefined,
+      automationIdleGovernanceWave36Export: includeWave36ExportProjectionStress
+        ? {
+            round36Ready: t % 6 !== 0,
+            o10TaskId: 'O10-203',
+            waveRound: 36,
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 1_962_828,
+            wave36HookLines: t % 6 === 0 ? ['O10_AGENT20_WAVE36 round36_ready=false'] : ['O10_AGENT20_WAVE36 round36_ready=true']
+          }
+        : undefined,
+      forecastWave36ProjectionSync: includeWave36ExportProjectionStress
+        ? {
+            status: t % 5 === 0 ? 'drift' : t % 7 === 0 ? 'unknown' : 'aligned',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : 'ea2bb03',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 1_962_828
+          }
+        : undefined,
+      uiResponsivenessWave37Export: includeWave37UiDashboardExportStress
+        ? {
+            round37Ready: t % 6 !== 0,
+            o10TaskId: 'O10-205',
+            waveRound: 37,
+            latencyBand: t % 5 === 0 ? 'critical' : 'fast',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_001_028
+          }
+        : undefined,
+      dashboardClarityWave37Export: includeWave37UiDashboardExportStress
+        ? {
+            clarityReady: t % 6 !== 0,
+            signalBand: t % 5 === 0 ? 'misleading' : 'clear',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : 'cfb4603',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_001_028
+          }
+        : undefined,
+      replayWave38Export: includeWave38ReplayIntegrationStress
+        ? {
+            round38Ready: t % 6 !== 0,
+            o10TaskId: 'O10-207',
+            waveRound: 38,
+            integrityBand: t % 5 === 0 ? 'corrupt' : 'sound',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_039_227
+          }
+        : undefined,
+      integrationHealthWave38Export: includeWave38ReplayIntegrationStress
+        ? {
+            healthReady: t % 6 !== 0,
+            slotBand: t % 5 === 0 ? 'red' : 'latched',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : 'b44b36f',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_039_227
+          }
+        : undefined,
+      automationIdleGovernanceWave39Export: includeWave39AutomationForecastExportStress
+        ? {
+            round39Ready: t % 6 !== 0,
+            o10TaskId: 'O10-209',
+            waveRound: 39,
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_082_720
+          }
+        : undefined,
+      forecastWave39Export: includeWave39AutomationForecastExportStress
+        ? {
+            status: t % 5 === 0 ? 'drift' : t % 7 === 0 ? 'unknown' : 'aligned',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '6134c6a',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_082_720
+          }
+        : undefined,
+      uiResponsivenessWave40Export: includeWave40UiDashboardExportStress
+        ? {
+            round40Ready: t % 6 !== 0,
+            o10TaskId: 'O10-211',
+            waveRound: 40,
+            latencyBand: t % 5 === 0 ? 'critical' : 'fast',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_121_263
+          }
+        : undefined,
+      dashboardClarityWave40Export: includeWave40UiDashboardExportStress
+        ? {
+            clarityReady: t % 6 !== 0,
+            signalBand: t % 5 === 0 ? 'misleading' : 'clear',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '6f7fa49',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_121_263
+          }
+        : undefined,
+      replayWave41Export: includeWave41ReplayIntegrationStress
+        ? {
+            round41Ready: t % 6 !== 0,
+            o10TaskId: 'O10-213',
+            waveRound: 41,
+            integrityBand: t % 5 === 0 ? 'corrupt' : 'sound',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_165_132
+          }
+        : undefined,
+      integrationHealthWave41Export: includeWave41ReplayIntegrationStress
+        ? {
+            healthReady: t % 6 !== 0,
+            slotBand: t % 5 === 0 ? 'red' : 'latched',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '875d6f3',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_165_132
+          }
+        : undefined,
+      automationIdleGovernanceWave42Export: includeWave42AutomationForecastExportStress
+        ? {
+            round42Ready: t % 6 !== 0,
+            o10TaskId: 'O10-215',
+            waveRound: 42,
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_207_543
+          }
+        : undefined,
+      forecastWave42Export: includeWave42AutomationForecastExportStress
+        ? {
+            status: t % 5 === 0 ? 'drift' : t % 7 === 0 ? 'unknown' : 'aligned',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '431df5d',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_207_543
+          }
+        : undefined,
+      uiResponsivenessWave43Export: includeWave43UiDashboardExportStress
+        ? {
+            round43Ready: t % 6 !== 0,
+            o10TaskId: 'O10-217',
+            waveRound: 43,
+            latencyBand: t % 5 === 0 ? 'critical' : 'fast',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_253_960
+          }
+        : undefined,
+      dashboardClarityWave43Export: includeWave43UiDashboardExportStress
+        ? {
+            clarityReady: t % 6 !== 0,
+            signalBand: t % 5 === 0 ? 'misleading' : 'clear',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '641d7d16',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_253_960
+          }
+        : undefined,
+      automationIdleGovernanceWave44Export: includeWave44AutomationForecastExportStress
+        ? {
+            round44Ready: t % 6 !== 0,
+            o10TaskId: 'O10-219',
+            waveRound: 44,
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_503_353
+          }
+        : undefined,
+      forecastWave44Export: includeWave44AutomationForecastExportStress
+        ? {
+            status: t % 5 === 0 ? 'drift' : t % 7 === 0 ? 'unknown' : 'aligned',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : 'bca7e0a3',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_503_353
+          }
+        : undefined,
+      replayWave45Export: includeWave45ReplayIntegrationStress
+        ? {
+            round45Ready: t % 6 !== 0,
+            o10TaskId: 'O10-221',
+            waveRound: 45,
+            integrityBand: t % 5 === 0 ? 'corrupt' : 'sound',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_548_579
+          }
+        : undefined,
+      integrationHealthWave45Export: includeWave45ReplayIntegrationStress
+        ? {
+            healthReady: t % 6 !== 0,
+            slotBand: t % 5 === 0 ? 'red' : 'latched',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '98bcd652',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_548_579
+          }
+        : undefined,
+      uiResponsivenessWave46Export: includeWave46UiDashboardExportStress
+        ? {
+            round46Ready: t % 6 !== 0,
+            o10TaskId: 'O10-223',
+            waveRound: 46,
+            latencyBand: t % 5 === 0 ? 'critical' : 'fast',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_593_189
+          }
+        : undefined,
+      dashboardClarityWave46Export: includeWave46UiDashboardExportStress
+        ? {
+            clarityReady: t % 6 !== 0,
+            signalBand: t % 5 === 0 ? 'misleading' : 'clear',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : 'a9bb07e5',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_593_189
+          }
+        : undefined,
+      replayWave47Export: includeWave47ReplayIntegrationStress
+        ? {
+            round47Ready: t % 6 !== 0,
+            o10TaskId: 'O10-225',
+            waveRound: 47,
+            integrityBand: t % 5 === 0 ? 'corrupt' : 'sound',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_637_258
+          }
+        : undefined,
+      integrationHealthWave47Export: includeWave47ReplayIntegrationStress
+        ? {
+            healthReady: t % 6 !== 0,
+            slotBand: t % 5 === 0 ? 'red' : 'latched',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '456efb9',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_637_258
+          }
+        : undefined,
+      replayWave48Export: includeWave48ReplayIntegrationStress
+        ? {
+            round48Ready: t % 6 !== 0,
+            o10TaskId: 'O10-227',
+            waveRound: 48,
+            integrityBand: t % 5 === 0 ? 'corrupt' : 'sound',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_684_235
+          }
+        : undefined,
+      integrationHealthWave48Export: includeWave48ReplayIntegrationStress
+        ? {
+            healthReady: t % 6 !== 0,
+            slotBand: t % 5 === 0 ? 'red' : 'latched',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '4404bf0f',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_684_235
+          }
+        : undefined,
+      replayWave49Export: includeWave49ReplayIntegrationStress
+        ? {
+            round49Ready: t % 6 !== 0,
+            o10TaskId: 'O10-229',
+            waveRound: 49,
+            integrityBand: t % 5 === 0 ? 'corrupt' : 'sound',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_727_364
+          }
+        : undefined,
+      integrationHealthWave49Export: includeWave49ReplayIntegrationStress
+        ? {
+            healthReady: t % 6 !== 0,
+            slotBand: t % 5 === 0 ? 'red' : 'latched',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '73e5e01e',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_727_364
+          }
+        : undefined,
+      replayWave50Export: includeWave50ReplayIntegrationStress
+        ? {
+            round50Ready: t % 6 !== 0,
+            o10TaskId: 'O10-231',
+            waveRound: 50,
+            integrityBand: t % 5 === 0 ? 'corrupt' : 'sound',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_771_207
+          }
+        : undefined,
+      integrationHealthWave50Export: includeWave50ReplayIntegrationStress
+        ? {
+            healthReady: t % 6 !== 0,
+            slotBand: t % 5 === 0 ? 'red' : 'latched',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : '8aaaf700',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_771_207
+          }
+        : undefined,
+      replayWave51Export: includeWave51ReplayIntegrationStress
+        ? {
+            round51Ready: t % 6 !== 0,
+            o10TaskId: 'O10-233',
+            waveRound: 51,
+            integrityBand: t % 5 === 0 ? 'corrupt' : 'sound',
+            projectedLocHint: t % 5 === 0 ? 1_800_000 : 2_887_600
+          }
+        : undefined,
+      integrationHealthWave51Export: includeWave51ReplayIntegrationStress
+        ? {
+            healthReady: t % 6 !== 0,
+            slotBand: t % 5 === 0 ? 'red' : 'latched',
+            baselineSha: t % 7 === 0 ? 'deadbeef' : 'a32b2b15',
+            projectedFunctionalLoc: t % 5 === 0 ? 1_800_000 : 2_887_600
+          }
+        : undefined
+    });
+    const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
+    persisted = nextP;
+    prev = state;
+    lastHash = state.inputHash;
+    const validation = validateNationalMacroEconomyState(state);
+    if (!validation.valid) {
+      checks.push({ id: `turn_${t}_valid`, passed: false, detail: validation.issues.join(';') });
+      break;
+    }
+    if (!Number.isFinite(state.accounting.grossOutputIndex)) {
+      checks.push({ id: `turn_${t}_finite`, passed: false, detail: 'non-finite output' });
+      break;
+    }
+  }
+
+  checks.push({
+    id: 'completed_turns',
+    passed: prev != null && prev.turn === turns,
+    detail: prev ? `last turn ${prev.turn}` : 'no state'
+  });
+  checks.push({
+    id: 'identity_stable',
+    passed: Boolean(prev?.accounting.identityOk),
+    detail: String(prev?.accounting.identityOk)
+  });
+  checks.push({
+    id: 'transmission_present',
+    passed: Boolean(prev?.transmissionReport?.layers?.length && prev.transmissionReport.layers.length >= 10),
+    detail: String(prev?.transmissionReport?.layers?.length ?? 0)
+  });
+  if (includeCreditStress && prev) {
+    checks.push({
+      id: 'stress_index_present',
+      passed: Number.isFinite(prev.stressIndex.score),
+      detail: String(prev.stressIndex.score)
+    });
+  }
+  if (includeLaborInnovationStress && prev) {
+    checks.push({
+      id: 'capacity_snapshot_finite',
+      passed: Number.isFinite(prev.capacitySnapshot.index),
+      detail: String(prev.capacitySnapshot.index)
+    });
+  }
+  if (includeHousingStrategicStress && prev) {
+    checks.push({
+      id: 'transmission_balance_finite',
+      passed: Number.isFinite(prev.transmissionBalance.dispersionIndex),
+      detail: String(prev.transmissionBalance.dispersionIndex)
+    });
+  }
+  if (includeInflationEnergyStress && prev) {
+    checks.push({
+      id: 'transmission_coherence_finite',
+      passed: Number.isFinite(prev.transmissionCoherence.coherenceIndex),
+      detail: String(prev.transmissionCoherence.coherenceIndex)
+    });
+    checks.push({
+      id: 'twenty_six_transmission_layers',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeEventsCompaniesStress && prev) {
+    checks.push({
+      id: 'transmission_concentration_finite',
+      passed: Number.isFinite(prev.transmissionConcentration.concentrationIndex),
+      detail: String(prev.transmissionConcentration.concentrationIndex)
+    });
+    checks.push({
+      id: 'twenty_six_transmission_layers_events',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeTurnsTransportStress && prev) {
+    checks.push({
+      id: 'transmission_asymmetry_finite',
+      passed: Number.isFinite(prev.transmissionAsymmetry.asymmetryIndex),
+      detail: String(prev.transmissionAsymmetry.asymmetryIndex)
+    });
+    checks.push({
+      id: 'twenty_six_transmission_layers_turns',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeResearchPopulationStress && prev) {
+    checks.push({
+      id: 'transmission_volatility_finite',
+      passed: Number.isFinite(prev.transmissionVolatility.volatilityIndex),
+      detail: String(prev.transmissionVolatility.volatilityIndex)
+    });
+    checks.push({
+      id: 'twenty_six_transmission_layers_research',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeModesGuardianStress && prev) {
+    checks.push({
+      id: 'transmission_resilience_finite',
+      passed: Number.isFinite(prev.transmissionResilience.resilienceIndex),
+      detail: String(prev.transmissionResilience.resilienceIndex)
+    });
+    checks.push({
+      id: 'twenty_six_transmission_layers_modes',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeCitiesForecastingStress && prev) {
+    checks.push({
+      id: 'transmission_coverage_finite',
+      passed: Number.isFinite(prev.transmissionCoverage.coverageIndex),
+      detail: String(prev.transmissionCoverage.coverageIndex)
+    });
+    checks.push({
+      id: 'twenty_six_transmission_layers_cities',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeCommandAutomationStress && prev) {
+    checks.push({
+      id: 'transmission_amplification_finite',
+      passed: Number.isFinite(prev.transmissionAmplification.amplificationIndex),
+      detail: String(prev.transmissionAmplification.amplificationIndex)
+    });
+    checks.push({
+      id: 'twenty_six_transmission_layers_command',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeTeamReplayStress && prev) {
+    checks.push({
+      id: 'transmission_tension_finite',
+      passed: Number.isFinite(prev.transmissionTension.tensionIndex),
+      detail: String(prev.transmissionTension.tensionIndex)
+    });
+    checks.push({
+      id: 'twenty_six_transmission_layers_team',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeMemoryDashboardStress && prev) {
+    checks.push({
+      id: 'transmission_divergence_finite',
+      passed: Number.isFinite(prev.transmissionDivergence.divergenceIndex),
+      detail: String(prev.transmissionDivergence.divergenceIndex)
+    });
+    checks.push({
+      id: 'thirty_transmission_layers_memory',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeUiUtilitiesStress && prev) {
+    checks.push({
+      id: 'transmission_stability_finite',
+      passed: Number.isFinite(prev.transmissionStability.stabilityIndex),
+      detail: String(prev.transmissionStability.stabilityIndex)
+    });
+    checks.push({
+      id: 'thirty_transmission_layers_ui',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeLogisticsNegotiationStress && prev) {
+    checks.push({
+      id: 'transmission_alignment_finite',
+      passed: Number.isFinite(prev.transmissionAlignment.alignmentIndex),
+      detail: String(prev.transmissionAlignment.alignmentIndex)
+    });
+    checks.push({
+      id: 'thirty_two_transmission_layers_logistics',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeConfidenceCapexStress && prev) {
+    checks.push({
+      id: 'transmission_synchronization_finite',
+      passed: Number.isFinite(prev.transmissionSynchronization.synchronizationIndex),
+      detail: String(prev.transmissionSynchronization.synchronizationIndex)
+    });
+    checks.push({
+      id: 'thirty_four_transmission_layers_confidence',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeMonetaryRentalStress && prev) {
+    checks.push({
+      id: 'transmission_intensity_finite',
+      passed: Number.isFinite(prev.transmissionIntensity.intensityIndex),
+      detail: String(prev.transmissionIntensity.intensityIndex)
+    });
+    checks.push({
+      id: 'thirty_six_transmission_layers_monetary',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeClimateForecastStress && prev) {
+    checks.push({
+      id: 'transmission_polarization_finite',
+      passed: Number.isFinite(prev.transmissionPolarization.polarizationIndex),
+      detail: String(prev.transmissionPolarization.polarizationIndex)
+    });
+    checks.push({
+      id: 'thirty_eight_transmission_layers_climate',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeAccessibilityTimelineStress && prev) {
+    checks.push({
+      id: 'transmission_coupling_finite',
+      passed: Number.isFinite(prev.transmissionCoupling.couplingIndex),
+      detail: String(prev.transmissionCoupling.couplingIndex)
+    });
+    checks.push({
+      id: 'forty_transmission_layers_accessibility',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 42,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeLiquidityMapsStress && prev) {
+    checks.push({
+      id: 'transmission_imbalance_finite',
+      passed: Number.isFinite(prev.transmissionImbalance.imbalanceIndex),
+      detail: String(prev.transmissionImbalance.imbalanceIndex)
+    });
+    checks.push({
+      id: 'forty_two_transmission_layers_liquidity',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeGameplayArchiveStress && prev) {
+    checks.push({
+      id: 'transmission_harmonic_finite',
+      passed: Number.isFinite(prev.transmissionHarmonic.harmonicIndex),
+      detail: String(prev.transmissionHarmonic.harmonicIndex)
+    });
+    checks.push({
+      id: 'forty_four_transmission_layers_gameplay',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeIntegrationCadenceStress && prev) {
+    checks.push({
+      id: 'transmission_gradient_finite',
+      passed: Number.isFinite(prev.transmissionGradient.gradientIndex),
+      detail: String(prev.transmissionGradient.gradientIndex)
+    });
+    checks.push({
+      id: 'forty_six_transmission_layers_integration',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeResearchBudgetStress && prev) {
+    checks.push({
+      id: 'transmission_attenuation_finite',
+      passed: Number.isFinite(prev.transmissionAttenuation.attenuationIndex),
+      detail: String(prev.transmissionAttenuation.attenuationIndex)
+    });
+    checks.push({
+      id: 'forty_eight_transmission_layers_research',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeModeSupplyStress && prev) {
+    checks.push({
+      id: 'transmission_envelope_finite',
+      passed: Number.isFinite(prev.transmissionEnvelope.envelopeIndex),
+      detail: String(prev.transmissionEnvelope.envelopeIndex)
+    });
+    checks.push({
+      id: 'fifty_transmission_layers_mode',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeEventDemographicStress && prev) {
+    checks.push({
+      id: 'transmission_persistence_finite',
+      passed: Number.isFinite(prev.transmissionPersistence.persistenceIndex),
+      detail: String(prev.transmissionPersistence.persistenceIndex)
+    });
+    checks.push({
+      id: 'fifty_two_transmission_layers_event',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeExpectationsMetroStress && prev) {
+    checks.push({
+      id: 'transmission_centrality_finite',
+      passed: Number.isFinite(prev.transmissionCentrality.centralityIndex),
+      detail: String(prev.transmissionCentrality.centralityIndex)
+    });
+    checks.push({
+      id: 'fifty_four_transmission_layers_expectations',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeTransportEnergyStress && prev) {
+    checks.push({
+      id: 'transmission_synthesis_finite',
+      passed: Number.isFinite(prev.transmissionSynthesis.synthesisIndex),
+      detail: String(prev.transmissionSynthesis.synthesisIndex)
+    });
+    checks.push({
+      id: 'fifty_six_transmission_layers_transport',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeHousingTradeStress && prev) {
+    checks.push({
+      id: 'transmission_dispersion_finite',
+      passed: Number.isFinite(prev.transmissionDispersion.dispersionIndex),
+      detail: String(prev.transmissionDispersion.dispersionIndex)
+    });
+    checks.push({
+      id: 'fifty_eight_transmission_layers_housing',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeGuardianCommandStress && prev) {
+    checks.push({
+      id: 'transmission_fragmentation_finite',
+      passed: Number.isFinite(prev.transmissionFragmentation.fragmentationIndex),
+      detail: String(prev.transmissionFragmentation.fragmentationIndex)
+    });
+    checks.push({
+      id: 'sixty_transmission_layers_guardian',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeTeamMemoryStress && prev) {
+    checks.push({
+      id: 'transmission_redundancy_finite',
+      passed: Number.isFinite(prev.transmissionRedundancy.redundancyIndex),
+      detail: String(prev.transmissionRedundancy.redundancyIndex)
+    });
+    checks.push({
+      id: 'sixty_two_transmission_layers_team',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeAutomationForecastStress && prev) {
+    checks.push({
+      id: 'transmission_saturation_finite',
+      passed: Number.isFinite(prev.transmissionSaturation.saturationIndex),
+      detail: String(prev.transmissionSaturation.saturationIndex)
+    });
+    checks.push({
+      id: 'sixty_four_transmission_layers_automation',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeGovernanceProjectionStress && prev) {
+    checks.push({
+      id: 'transmission_elasticity_finite',
+      passed: Number.isFinite(prev.transmissionElasticity.elasticityIndex),
+      detail: String(prev.transmissionElasticity.elasticityIndex)
+    });
+    checks.push({
+      id: 'sixty_six_transmission_layers_governance',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave36ExportProjectionStress && prev) {
+    checks.push({
+      id: 'transmission_dispersion_finite',
+      passed: Number.isFinite(prev.transmissionDispersion.dispersionIndex),
+      detail: String(prev.transmissionDispersion.dispersionIndex)
+    });
+    checks.push({
+      id: 'sixty_eight_transmission_layers_wave36',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave37UiDashboardExportStress && prev) {
+    checks.push({
+      id: 'transmission_redundancy_finite',
+      passed: Number.isFinite(prev.transmissionRedundancy.redundancyIndex),
+      detail: String(prev.transmissionRedundancy.redundancyIndex)
+    });
+    checks.push({
+      id: 'seventy_transmission_layers_wave37',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave38ReplayIntegrationStress && prev) {
+    checks.push({
+      id: 'transmission_synthesis_finite',
+      passed: Number.isFinite(prev.transmissionSynthesis.synthesisIndex),
+      detail: String(prev.transmissionSynthesis.synthesisIndex)
+    });
+    checks.push({
+      id: 'seventy_two_transmission_layers_wave38',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave39AutomationForecastExportStress && prev) {
+    checks.push({
+      id: 'transmission_centrality_finite',
+      passed: Number.isFinite(prev.transmissionCentrality.centralityIndex),
+      detail: String(prev.transmissionCentrality.centralityIndex)
+    });
+    checks.push({
+      id: 'seventy_four_transmission_layers_wave39',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave40UiDashboardExportStress && prev) {
+    checks.push({
+      id: 'transmission_envelope_finite',
+      passed: Number.isFinite(prev.transmissionEnvelope.envelopeIndex),
+      detail: String(prev.transmissionEnvelope.envelopeIndex)
+    });
+    checks.push({
+      id: 'seventy_six_transmission_layers_wave40',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave41ReplayIntegrationStress && prev) {
+    checks.push({
+      id: 'transmission_persistence_finite',
+      passed: Number.isFinite(prev.transmissionPersistence.persistenceIndex),
+      detail: String(prev.transmissionPersistence.persistenceIndex)
+    });
+    checks.push({
+      id: 'seventy_eight_transmission_layers_wave41',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave42AutomationForecastExportStress && prev) {
+    checks.push({
+      id: 'transmission_gradient_finite',
+      passed: Number.isFinite(prev.transmissionGradient.gradientIndex),
+      detail: String(prev.transmissionGradient.gradientIndex)
+    });
+    checks.push({
+      id: 'eighty_transmission_layers_wave42',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave43UiDashboardExportStress && prev) {
+    checks.push({
+      id: 'transmission_envelope_finite',
+      passed: Number.isFinite(prev.transmissionEnvelope.envelopeIndex),
+      detail: String(prev.transmissionEnvelope.envelopeIndex)
+    });
+    checks.push({
+      id: 'eighty_two_transmission_layers_wave43',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave44AutomationForecastExportStress && prev) {
+    checks.push({
+      id: 'transmission_gradient_finite',
+      passed: Number.isFinite(prev.transmissionGradient.gradientIndex),
+      detail: String(prev.transmissionGradient.gradientIndex)
+    });
+    checks.push({
+      id: 'eighty_four_transmission_layers_wave44',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave45ReplayIntegrationStress && prev) {
+    checks.push({
+      id: 'transmission_persistence_finite',
+      passed: Number.isFinite(prev.transmissionPersistence.persistenceIndex),
+      detail: String(prev.transmissionPersistence.persistenceIndex)
+    });
+    checks.push({
+      id: 'eighty_six_transmission_layers_wave45',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave46UiDashboardExportStress && prev) {
+    checks.push({
+      id: 'transmission_envelope_finite',
+      passed: Number.isFinite(prev.transmissionEnvelope.envelopeIndex),
+      detail: String(prev.transmissionEnvelope.envelopeIndex)
+    });
+    checks.push({
+      id: 'eighty_eight_transmission_layers_wave46',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave47ReplayIntegrationStress && prev) {
+    checks.push({
+      id: 'transmission_persistence_finite',
+      passed: Number.isFinite(prev.transmissionPersistence.persistenceIndex),
+      detail: String(prev.transmissionPersistence.persistenceIndex)
+    });
+    checks.push({
+      id: 'ninety_transmission_layers_wave47',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 90,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave48ReplayIntegrationStress && prev) {
+    checks.push({
+      id: 'transmission_persistence_finite',
+      passed: Number.isFinite(prev.transmissionPersistence.persistenceIndex),
+      detail: String(prev.transmissionPersistence.persistenceIndex)
+    });
+    checks.push({
+      id: 'ninety_two_transmission_layers_wave48',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 92,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave50ReplayIntegrationStress && prev) {
+    checks.push({
+      id: 'transmission_persistence_finite',
+      passed: Number.isFinite(prev.transmissionPersistence.persistenceIndex),
+      detail: String(prev.transmissionPersistence.persistenceIndex)
+    });
+    checks.push({
+      id: 'ninety_six_transmission_layers_wave50',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 94,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeWave51ReplayIntegrationStress && prev) {
+    checks.push({
+      id: 'transmission_persistence_finite',
+      passed: Number.isFinite(prev.transmissionPersistence.persistenceIndex),
+      detail: String(prev.transmissionPersistence.persistenceIndex)
+    });
+    checks.push({
+      id: 'ninety_eight_transmission_layers_wave51',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 96,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  checks.push({
+    passed: lastHash.length > 8,
+    detail: lastHash.slice(0, 12)
+  });
+  if (prev) {
+    checks.push({
+      id: 'debrief_headline',
+      passed: prev.debrief.headline.includes(`T${turns}`),
+      detail: prev.debrief.headline.slice(0, 40)
+    });
+  }
+
+  return {
+    scenarioId,
+    turnsRun: turns,
+    allPassed: checks.every(c => c.passed),
+    checks
+  };
+}
