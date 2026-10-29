@@ -90,6 +90,11 @@ import {
   V1014_BATTERY_SECOND_LIFE_TURN_SCENARIOS,
 } from '../modules/battery-recycling-second-life-storage-ledger.ts';
 import {
+  runAgent13CurtailmentFlexScaleSelfTests,
+  runAgent13CurtailmentFlexTurnScenario,
+  V1014_CURTAILMENT_FLEX_TURN_SCENARIOS,
+} from '../modules/curtailment-recovery-flex-load-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -305,6 +310,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const brTurn = runAgent13BatterySecondLifeTurnScenario(V1014_BATTERY_SECOND_LIFE_TURN_SCENARIOS[0]);
   ok(brTurn.passed);
+
+  const curtailmentFlex = runAgent13CurtailmentFlexScaleSelfTests();
+  ok(curtailmentFlex.failed === 0 && curtailmentFlex.passed >= 7);
+
+  const cfTurn = runAgent13CurtailmentFlexTurnScenario(V1014_CURTAILMENT_FLEX_TURN_SCENARIOS[0]);
+  ok(cfTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

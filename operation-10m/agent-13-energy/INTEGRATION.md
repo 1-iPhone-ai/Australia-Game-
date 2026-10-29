@@ -27,6 +27,7 @@ operation-10m/agent-13-energy/
   modules/csp-molten-salt-thermal-dispatch-ledger.ts  # scale wave round 19
   modules/grid-forming-inertia-orchestration-ledger.ts  # scale wave round 20
   modules/battery-recycling-second-life-storage-ledger.ts  # scale wave round 21
+  modules/curtailment-recovery-flex-load-ledger.ts  # scale wave round 22
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge
@@ -59,6 +60,7 @@ operation-10m/agent-13-energy/
 - Round 19 slices: `regionalCspMemory`, `regionalThermalDispatchMemory`
 - Round 20 slices: `regionalGridFormingMemory`, `regionalSyntheticInertiaMemory`
 - Round 21 slices: `regionalBatteryRecyclingMemory`, `regionalSecondLifeMemory`
+- Round 22 slices: `regionalCurtailmentMemory`, `regionalFlexLoadMemory`
 - Regression id: `v1014_energy` → `runV1014IndustrialEnergyEnvironmentalSelfTests()`
 
 ## Boundaries

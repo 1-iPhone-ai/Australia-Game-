@@ -41,6 +41,7 @@ const FILES = [
   'csp-molten-salt-thermal-dispatch-ledger.ts',
   'grid-forming-inertia-orchestration-ledger.ts',
   'battery-recycling-second-life-storage-ledger.ts',
+  'curtailment-recovery-flex-load-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -83,6 +84,8 @@ const EXPORT_MANIFEST = [
   'V1014_SYNTHETIC_INERTIA_CATALOG',
   'V1014_BATTERY_RECYCLING_CATALOG',
   'V1014_SECOND_LIFE_STORAGE_CATALOG',
+  'V1014_CURTAILMENT_RECOVERY_CATALOG',
+  'V1014_FLEXIBLE_LOAD_ORCHESTRATION_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -152,6 +155,9 @@ const EXPORT_MANIFEST = [
   'runAgent13BatterySecondLifeScaleSelfTests',
   'runAgent13BatterySecondLifeTurnScenario',
   'V1014_BATTERY_SECOND_LIFE_TURN_SCENARIOS',
+  'runAgent13CurtailmentFlexScaleSelfTests',
+  'runAgent13CurtailmentFlexTurnScenario',
+  'V1014_CURTAILMENT_FLEX_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

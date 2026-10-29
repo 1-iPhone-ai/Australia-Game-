@@ -156,6 +156,13 @@ import {
   type V1014RegionalSecondLifeStorageLedger,
 } from './battery-recycling-second-life-storage-ledger';
 import {
+  advanceRegionalFlexibleLoadOrchestration,
+  computeRegionalCurtailmentRecoveryLedger,
+  scoreAgent13CurtailmentFlexGIAlignment,
+  type V1014RegionalCurtailmentRecoveryLedger,
+  type V1014RegionalFlexibleLoadOrchestrationLedger,
+} from './curtailment-recovery-flex-load-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25692,6 +25699,10 @@ export interface V1014RegionalEnergyProfile {
   batteryRecyclingRelief: number;
   secondLifeStorageBand: string;
   secondLifeStorageRelief: number;
+  curtailmentRecoveryBand: string;
+  curtailmentRecoveryRelief: number;
+  flexibleLoadOrchestrationBand: string;
+  flexibleLoadRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25768,6 +25779,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalSyntheticInertiaLedgers: Record<string, V1014RegionalSyntheticInertiaLedger>;
   regionalBatteryRecyclingLedgers: Record<string, V1014RegionalBatteryRecyclingLedger>;
   regionalSecondLifeStorageLedgers: Record<string, V1014RegionalSecondLifeStorageLedger>;
+  regionalCurtailmentRecoveryLedgers: Record<string, V1014RegionalCurtailmentRecoveryLedger>;
+  regionalFlexibleLoadOrchestrationLedgers: Record<string, V1014RegionalFlexibleLoadOrchestrationLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25815,6 +25828,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalSyntheticInertiaMemory: Record<string, { inertiaIndex: number }>;
   regionalBatteryRecyclingMemory: Record<string, { recoveryBalance: number; recyclingIndex: number }>;
   regionalSecondLifeMemory: Record<string, { reuseIndex: number }>;
+  regionalCurtailmentMemory: Record<string, { spillBalance: number; recoveryIndex: number }>;
+  regionalFlexLoadMemory: Record<string, { flexIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -25874,6 +25889,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalSyntheticInertiaMemory: {},
     regionalBatteryRecyclingMemory: {},
     regionalSecondLifeMemory: {},
+    regionalCurtailmentMemory: {},
+    regionalFlexLoadMemory: {},
     history: [],
   };
 }
@@ -25964,6 +25981,9 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
         : {},
     regionalSecondLifeMemory:
       typeof raw.regionalSecondLifeMemory === 'object' && raw.regionalSecondLifeMemory ? raw.regionalSecondLifeMemory : {},
+    regionalCurtailmentMemory:
+      typeof raw.regionalCurtailmentMemory === 'object' && raw.regionalCurtailmentMemory ? raw.regionalCurtailmentMemory : {},
+    regionalFlexLoadMemory: typeof raw.regionalFlexLoadMemory === 'object' && raw.regionalFlexLoadMemory ? raw.regionalFlexLoadMemory : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26110,6 +26130,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalSyntheticInertiaLedgers: {},
       regionalBatteryRecyclingLedgers: {},
       regionalSecondLifeStorageLedgers: {},
+      regionalCurtailmentRecoveryLedgers: {},
+      regionalFlexibleLoadOrchestrationLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26160,6 +26182,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const syntheticInertiaLedgers: Record<string, V1014RegionalSyntheticInertiaLedger> = {};
   const batteryRecyclingLedgers: Record<string, V1014RegionalBatteryRecyclingLedger> = {};
   const secondLifeStorageLedgers: Record<string, V1014RegionalSecondLifeStorageLedger> = {};
+  const curtailmentRecoveryLedgers: Record<string, V1014RegionalCurtailmentRecoveryLedger> = {};
+  const flexibleLoadOrchestrationLedgers: Record<string, V1014RegionalFlexibleLoadOrchestrationLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26237,6 +26261,10 @@ export function computeIndustrialEnergyEnvironmentalState(
     ...persisted.regionalBatteryRecyclingMemory,
   };
   const nextSecondLifeMemory: Record<string, { reuseIndex: number }> = { ...persisted.regionalSecondLifeMemory };
+  const nextCurtailmentMemory: Record<string, { spillBalance: number; recoveryIndex: number }> = {
+    ...persisted.regionalCurtailmentMemory,
+  };
+  const nextFlexLoadMemory: Record<string, { flexIndex: number }> = { ...persisted.regionalFlexLoadMemory };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
 
@@ -26712,6 +26740,29 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextSecondLifeMemory[regionId] = secondLifeStep.next;
     secondLifeStorageLedgers[regionId] = secondLifeStep.ledger;
 
+    const curtailmentStep = computeRegionalCurtailmentRecoveryLedger({
+      regionId,
+      seasonalArbitrageRelief: seasonalArbStep.ledger.seasonalArbitrageRelief,
+      demandFlexRelief: demandStep.ledger.demandFlexRelief,
+      secondLifeStorageRelief: secondLifeStep.ledger.secondLifeStorageRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextCurtailmentMemory[regionId] || null,
+    });
+    nextCurtailmentMemory[regionId] = curtailmentStep.next;
+    curtailmentRecoveryLedgers[regionId] = curtailmentStep.ledger;
+
+    const flexLoadStep = advanceRegionalFlexibleLoadOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      curtailmentBand: curtailmentStep.ledger.band,
+      rezSpillRelief: rezStep.ledger.rezSpillRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextFlexLoadMemory[regionId] || null,
+    });
+    nextFlexLoadMemory[regionId] = flexLoadStep.next;
+    flexibleLoadOrchestrationLedgers[regionId] = flexLoadStep.ledger;
+
     const activeRules = V1014_ENVIRONMENTAL_RULES.filter(rule => {
       if (rule.regionId !== regionId) return false;
       const str = rule.industry === 'mining' ? miningStr : rule.industry === 'energy' ? energyStr : mfgStr;
@@ -26757,6 +26808,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     pressure -= syntheticInertiaStep.ledger.syntheticInertiaRelief;
     pressure -= batteryRecyclingStep.ledger.batteryRecyclingRelief;
     pressure -= secondLifeStep.ledger.secondLifeStorageRelief;
+    pressure -= curtailmentStep.ledger.curtailmentRecoveryRelief;
+    pressure -= flexLoadStep.ledger.flexibleLoadRelief;
     if (biodiversityStep.ledger.band === 'critical_loss') pressure += 5;
     pressure -= gridRecovery.pressureRelief;
     pressure -= storageFlex.gridStressRelief;
@@ -26827,6 +26880,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       syntheticInertiaStep.ledger.summary,
       batteryRecyclingStep.ledger.summary,
       secondLifeStep.ledger.summary,
+      curtailmentStep.ledger.summary,
+      flexLoadStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -26983,6 +27038,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       batteryRecyclingRelief: batteryRecyclingStep.ledger.batteryRecyclingRelief,
       secondLifeStorageBand: secondLifeStep.ledger.band,
       secondLifeStorageRelief: secondLifeStep.ledger.secondLifeStorageRelief,
+      curtailmentRecoveryBand: curtailmentStep.ledger.band,
+      curtailmentRecoveryRelief: curtailmentStep.ledger.curtailmentRecoveryRelief,
+      flexibleLoadOrchestrationBand: flexLoadStep.ledger.band,
+      flexibleLoadRelief: flexLoadStep.ledger.flexibleLoadRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -27088,6 +27147,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalSyntheticInertiaLedgers: syntheticInertiaLedgers,
     regionalBatteryRecyclingLedgers: batteryRecyclingLedgers,
     regionalSecondLifeStorageLedgers: secondLifeStorageLedgers,
+    regionalCurtailmentRecoveryLedgers: curtailmentRecoveryLedgers,
+    regionalFlexibleLoadOrchestrationLedgers: flexibleLoadOrchestrationLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -27135,6 +27196,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalSyntheticInertiaMemory: nextSyntheticInertiaMemory,
     regionalBatteryRecyclingMemory: nextBatteryRecyclingMemory,
     regionalSecondLifeMemory: nextSecondLifeMemory,
+    regionalCurtailmentMemory: nextCurtailmentMemory,
+    regionalFlexLoadMemory: nextFlexLoadMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -27864,6 +27927,46 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     secondLifeBand: rr21.state.regions.SA?.secondLifeStorageBand,
   });
   check('BATTERY SECOND LIFE GI alignment', giBr.relevanceDelta > 0.5, giBr.reason || '');
+
+  const cfInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'summer_winter_shift_orchestration',
+      'interconnect_spill_arbitrage_loop',
+      'industrial_demand_response',
+      'battery_aggregation_hub',
+      'industrial_peak_shave_second_life',
+      'rez_transmission_backbone',
+      'renewable_hub_switchyard',
+      'rez_spill_soak_recovery_loop',
+      'export_corridor_curtailment_shift',
+      'storage_soak_curtailment_recovery',
+      'smelter_flexible_load_orchestration',
+      'industrial_demand_orchestration_hub',
+    ],
+  };
+  const rr22 = computeIndustrialEnergyEnvironmentalState(cfInp, createInitialIndustrialEnergyEnvironmentalPersisted(), null);
+  check(
+    'CURTAILMENT ledger tracked',
+    !!rr22.state.regionalCurtailmentRecoveryLedgers.QLD?.band,
+    rr22.state.regionalCurtailmentRecoveryLedgers.QLD?.band || '',
+  );
+  check(
+    'FLEX LOAD relief',
+    (rr22.state.regions.QLD?.flexibleLoadRelief || 0) > 0,
+    String(rr22.state.regions.QLD?.flexibleLoadRelief),
+  );
+  check(
+    'CURTAILMENT memory persisted',
+    !!rr22.persisted.regionalCurtailmentMemory.QLD,
+    String(rr22.persisted.regionalCurtailmentMemory.QLD?.recoveryIndex),
+  );
+  const giCf = scoreAgent13CurtailmentFlexGIAlignment({
+    actionText: 'REZ spill soak recovery with smelter flexible load orchestration',
+    recoveryBand: rr22.state.regions.QLD?.curtailmentRecoveryBand,
+    flexBand: rr22.state.regions.QLD?.flexibleLoadOrchestrationBand,
+  });
+  check('CURTAILMENT FLEX GI alignment', giCf.relevanceDelta > 0.5, giCf.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
