@@ -95,6 +95,8 @@ import { runRevenueIntegrityOutlookBridgeSelfTests } from './modules/revenue-int
 import { runEfficiencyDividendForwardBridgeSelfTests } from './modules/efficiency-dividend-forward-bridge/self-tests';
 import { runFederalStateOutlookCoherenceSelfTests } from './modules/federal-state-outlook-coherence/self-tests';
 import { runDebtRolloverOutlookBridgeSelfTests } from './modules/debt-rollover-outlook-bridge/self-tests';
+import { runTransparencyOutlookBridgeSelfTests } from './modules/transparency-outlook-bridge/self-tests';
+import { runBalanceSheetOutlookCoherenceSelfTests } from './modules/balance-sheet-outlook-coherence/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -199,6 +201,8 @@ ok = runSuite('Revenue integrity outlook bridge', runRevenueIntegrityOutlookBrid
 ok = runSuite('Efficiency dividend forward bridge', runEfficiencyDividendForwardBridgeSelfTests) && ok;
 ok = runSuite('Federal state outlook coherence', runFederalStateOutlookCoherenceSelfTests) && ok;
 ok = runSuite('Debt rollover outlook bridge', runDebtRolloverOutlookBridgeSelfTests) && ok;
+ok = runSuite('Transparency outlook bridge', runTransparencyOutlookBridgeSelfTests) && ok;
+ok = runSuite('Balance sheet outlook coherence', runBalanceSheetOutlookCoherenceSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

@@ -87,6 +87,8 @@ import { buildRevenueIntegrityOutlookBridgeReport } from '../revenue-integrity-o
 import { buildEfficiencyDividendForwardBridgeReport } from '../efficiency-dividend-forward-bridge/compute';
 import { buildFederalStateOutlookCoherenceReport } from '../federal-state-outlook-coherence/compute';
 import { buildDebtRolloverOutlookBridgeReport } from '../debt-rollover-outlook-bridge/compute';
+import { buildTransparencyOutlookBridgeReport } from '../transparency-outlook-bridge/compute';
+import { buildBalanceSheetOutlookCoherenceReport } from '../balance-sheet-outlook-coherence/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -605,6 +607,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     v1012,
     debtRolloverCoverageBridge,
     debtServiceCoverage,
+    outlook
+  );
+  const transparencyOutlookBridge = buildTransparencyOutlookBridgeReport(
+    turn,
+    v1012,
+    transparency,
+    transparencyForwardCoherence,
+    outlook
+  );
+  const balanceSheetOutlookCoherence = buildBalanceSheetOutlookCoherenceReport(
+    turn,
+    v1012,
+    publicBalanceSheet,
+    balanceSheetFiscalCoherence,
     outlook
   );
 
@@ -1800,12 +1816,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `coverage=${debtServiceCoverage.coverageRatio}, rollover=${debtRolloverCoverageBridge.bridgeGapPoints}`
   });
 
+  checks.push({
+    id: 'CF169',
+    label: 'Transparency outlook bridge within band',
+    passed: transparencyOutlookBridge.withinTransparencyOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${transparencyOutlookBridge.bridgeGapPoints}, checks=${transparencyOutlookBridge.checks.filter(c => c.passed).length}/${transparencyOutlookBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF170',
+    label: 'Balance sheet outlook coherence within band',
+    passed: balanceSheetOutlookCoherence.withinBalanceSheetOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${balanceSheetOutlookCoherence.aggregateCoherenceGapPoints}, checks=${balanceSheetOutlookCoherence.checks.filter(c => c.passed).length}/${balanceSheetOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF171',
+    label: 'Transparency outlook aligned with forward coherence',
+    passed: transparencyOutlookBridge.alignedWithTransparencyForward,
+    detail: `score=${transparency.compositeScore}, forward=${transparencyForwardCoherence.aggregateCoherenceGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF172',
+    label: 'Balance sheet aligned with fiscal coherence',
+    passed: balanceSheetOutlookCoherence.alignedWithBalanceFiscalCoherence,
+    detail: `netWorth=${publicBalanceSheet.netWorthPoints}, fiscal=${balanceSheetFiscalCoherence.aggregateCoherenceGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 112
+    layerCount: 114
   };
 }

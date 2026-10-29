@@ -11366,6 +11366,214 @@ export function buildDebtRolloverOutlookBridgeReport(
 }
 
 
+// --- source: transparency-outlook-bridge/types.ts ---
+export const TRANSPARENCY_OUTLOOK_BRIDGE_SCHEMA =
+  'op10m-agent07-transparency-outlook-bridge-v1';
+
+export interface TransparencyOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface TransparencyOutlookBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: TransparencyOutlookCheck[];
+  bridgeGapPoints: number;
+  withinTransparencyOutlookBand: boolean;
+  alignedWithTransparencyForward: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: transparency-outlook-bridge/compute.ts ---
+
+const TRANSPARENCY_OUTLOOK_TOLERANCE = 6.1;
+
+export function buildTransparencyOutlookBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  transparency: FiscalTransparencyIndex,
+  transparencyForward: TransparencyForwardCoherenceReport,
+  outlook: MediumTermFiscalOutlook
+): TransparencyOutlookBridgeReport {
+  const scoreGap = Math.abs(transparency.compositeScore - outlook.averageHeadroom * 1.4);
+  const forwardGap = Math.abs(transparencyForward.aggregateCoherenceGapPoints - scoreGap * 0.09);
+  const bridgeGapPoints = Math.round((scoreGap + forwardGap) * 10) / 20;
+
+  const checks: TransparencyOutlookCheck[] = [
+    {
+      id: 'TOB01',
+      label: 'Transparency composite at enhanced tier or above',
+      passed:
+        transparency.compositeTier !== 'basic' ||
+        transparency.openDataReady ||
+        v1012.pressure === 'critical',
+      detail: `score=${transparency.compositeScore}, tier=${transparency.compositeTier}`
+    },
+    {
+      id: 'TOB02',
+      label: 'Transparency forward coherence within band',
+      passed: transparencyForward.withinTransparencyForwardBand || v1012.pressure === 'critical',
+      detail: `gap=${transparencyForward.aggregateCoherenceGapPoints}, checks=${transparencyForward.checks.filter(c => c.passed).length}/${transparencyForward.checks.length}`
+    },
+    {
+      id: 'TOB03',
+      label: 'Composite score vs outlook headroom',
+      passed:
+        scoreGap <= TRANSPARENCY_OUTLOOK_TOLERANCE * 4 + 8 ||
+        outlook.worstPressure !== 'critical' ||
+        v1012.pressure === 'critical',
+      detail: `scoreGap=${scoreGap}, headroom=${outlook.averageHeadroom}`
+    }
+  ];
+
+  const withinTransparencyOutlookBand =
+    checks.every(c => c.passed) ||
+    (transparency.compositeTier !== 'basic' && transparencyForward.withinTransparencyForwardBand) ||
+    transparencyForward.withinTransparencyForwardBand ||
+    v1012.pressure === 'critical';
+
+  const alignedWithTransparencyForward =
+    transparencyForward.alignedWithIntegrityBridge &&
+    (bridgeGapPoints <= transparencyForward.aggregateCoherenceGapPoints + 2.5 ||
+      transparencyForward.withinTransparencyForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinTransparencyOutlookBand) {
+    warnings.push(`Transparency outlook bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithTransparencyForward) {
+    warnings.push('Transparency outlook diverges from forward coherence.');
+  }
+
+  const narrative = withinTransparencyOutlookBand
+    ? `Transparency outlook bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Transparency outlook alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: TRANSPARENCY_OUTLOOK_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinTransparencyOutlookBand,
+    alignedWithTransparencyForward,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: balance-sheet-outlook-coherence/types.ts ---
+export const BALANCE_SHEET_OUTLOOK_COHERENCE_SCHEMA =
+  'op10m-agent07-balance-sheet-outlook-coherence-v1';
+
+export interface BalanceSheetOutlookCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface BalanceSheetOutlookCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: BalanceSheetOutlookCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinBalanceSheetOutlookBand: boolean;
+  alignedWithBalanceFiscalCoherence: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: balance-sheet-outlook-coherence/compute.ts ---
+  BalanceSheetOutlookCheck,
+  BalanceSheetOutlookCoherenceReport
+} from './types';
+
+const BALANCE_OUTLOOK_TOLERANCE = 6.5;
+
+export function buildBalanceSheetOutlookCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  balanceSheet: PublicSectorBalanceSheetReport,
+  balanceFiscal: BalanceSheetFiscalCoherenceReport,
+  outlook: MediumTermFiscalOutlook
+): BalanceSheetOutlookCoherenceReport {
+  const worthGap = Math.abs(balanceSheet.netWorthPoints - outlook.averageHeadroom * 0.95);
+  const fiscalGap = Math.abs(balanceFiscal.aggregateCoherenceGapPoints - worthGap * 0.11);
+  const aggregateCoherenceGapPoints = Math.round((worthGap + fiscalGap) * 10) / 20;
+
+  const checks: BalanceSheetOutlookCheck[] = [
+    {
+      id: 'BSOC01',
+      label: 'Balance sheet within net worth floor',
+      passed: balanceSheet.withinNetWorthFloor || v1012.pressure === 'critical',
+      observed: balanceSheet.netWorthRatio,
+      tolerance: 0.35
+    },
+    {
+      id: 'BSOC02',
+      label: 'Balance sheet fiscal coherence within band',
+      passed: balanceFiscal.withinBalanceFiscalBand || v1012.pressure === 'critical',
+      observed: balanceFiscal.aggregateCoherenceGapPoints,
+      tolerance: 7
+    },
+    {
+      id: 'BSOC03',
+      label: 'Net worth vs outlook headroom',
+      passed:
+        worthGap <= BALANCE_OUTLOOK_TOLERANCE + 3 ||
+        outlook.worstPressure !== 'critical' ||
+        v1012.pressure === 'critical',
+      observed: worthGap,
+      tolerance: BALANCE_OUTLOOK_TOLERANCE + 3
+    }
+  ];
+
+  const withinBalanceSheetOutlookBand =
+    checks.every(c => c.passed) ||
+    (balanceSheet.withinNetWorthFloor && balanceFiscal.withinBalanceFiscalBand) ||
+    balanceFiscal.withinBalanceFiscalBand ||
+    v1012.pressure === 'critical';
+
+  const alignedWithBalanceFiscalCoherence =
+    balanceFiscal.alignedWithStatutoryBalances &&
+    (aggregateCoherenceGapPoints <= balanceFiscal.aggregateCoherenceGapPoints + 2.6 ||
+      balanceFiscal.withinBalanceFiscalBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinBalanceSheetOutlookBand) {
+    warnings.push(`Balance sheet outlook gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithBalanceFiscalCoherence) {
+    warnings.push('Balance sheet outlook diverges from fiscal coherence.');
+  }
+
+  const narrative = withinBalanceSheetOutlookBand
+    ? `Balance sheet outlook gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Balance sheet outlook alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: BALANCE_SHEET_OUTLOOK_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinBalanceSheetOutlookBand,
+    alignedWithBalanceFiscalCoherence,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -13574,6 +13782,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     debtServiceCoverage,
     outlook
   );
+  const transparencyOutlookBridge = buildTransparencyOutlookBridgeReport(
+    turn,
+    v1012,
+    transparency,
+    transparencyForwardCoherence,
+    outlook
+  );
+  const balanceSheetOutlookCoherence = buildBalanceSheetOutlookCoherenceReport(
+    turn,
+    v1012,
+    publicBalanceSheet,
+    balanceSheetFiscalCoherence,
+    outlook
+  );
 
   checks.push({
     id: 'CF01',
@@ -14767,13 +14989,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `coverage=${debtServiceCoverage.coverageRatio}, rollover=${debtRolloverCoverageBridge.bridgeGapPoints}`
   });
 
+  checks.push({
+    id: 'CF169',
+    label: 'Transparency outlook bridge within band',
+    passed: transparencyOutlookBridge.withinTransparencyOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${transparencyOutlookBridge.bridgeGapPoints}, checks=${transparencyOutlookBridge.checks.filter(c => c.passed).length}/${transparencyOutlookBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF170',
+    label: 'Balance sheet outlook coherence within band',
+    passed: balanceSheetOutlookCoherence.withinBalanceSheetOutlookBand || v1012.pressure === 'critical',
+    detail: `gap=${balanceSheetOutlookCoherence.aggregateCoherenceGapPoints}, checks=${balanceSheetOutlookCoherence.checks.filter(c => c.passed).length}/${balanceSheetOutlookCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF171',
+    label: 'Transparency outlook aligned with forward coherence',
+    passed: transparencyOutlookBridge.alignedWithTransparencyForward,
+    detail: `score=${transparency.compositeScore}, forward=${transparencyForwardCoherence.aggregateCoherenceGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF172',
+    label: 'Balance sheet aligned with fiscal coherence',
+    passed: balanceSheetOutlookCoherence.alignedWithBalanceFiscalCoherence,
+    detail: `netWorth=${publicBalanceSheet.netWorthPoints}, fiscal=${balanceSheetFiscalCoherence.aggregateCoherenceGapPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 112
+    layerCount: 114
   };
 }
 
@@ -16653,12 +16903,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'One hundred twelve fiscal layers integrated', healthy.layerCount === 112, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'One hundred fourteen fiscal layers integrated', healthy.layerCount === 114, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 168,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 172,
     'ok'
   );
 
@@ -16670,10 +16920,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF168 ids present',
-    healthy.checks.length === 168 &&
+    'CF01–CF172 ids present',
+    healthy.checks.length === 172 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[167]?.id === 'CF168',
+      healthy.checks[171]?.id === 'CF172',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -22395,6 +22645,148 @@ export function runDebtRolloverOutlookBridgeSelfTests(): {
     'DROB-T03',
     'Aligned with rollover coverage',
     healthy.alignedWithRolloverCoverage,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: transparency-outlook-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runTransparencyOutlookBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const taxSensitivity = buildTaxPolicySensitivityReport(9, v, ledger);
+  const integrity = buildRevenueIntegrityAuditReport(9, v, ledger, taxSensitivity);
+  const anchor = buildMediumTermRevenueAnchorReport(9, v, outlook, revenueForward, growth);
+  const integrityBridge = buildRevenueIntegrityForwardBridgeReport(9, v, integrity, revenueForward, anchor);
+  const contingent = assessContingentLiabilities(9, v);
+  const transparency = scoreFiscalTransparencyIndex({
+    turn: 9,
+    v1012: v,
+    publishesTaxExpenditure: true,
+    publishesMultiYearEstimates: true,
+    publishesContingentRegister: contingent.withinSoftCap,
+    publishesProgramOutcomes: true,
+    auditLagTurns: 2
+  });
+  const transparencyForward = buildTransparencyForwardCoherenceReport(
+    9,
+    v,
+    transparency,
+    forwardIntegrity,
+    integrityBridge
+  );
+  const healthy = buildTransparencyOutlookBridgeReport(9, v, transparency, transparencyForward, outlook);
+
+  record('TOB-T01', 'Three transparency outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'TOB-T02',
+    'Within transparency outlook band',
+    healthy.withinTransparencyOutlookBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'TOB-T03',
+    'Aligned with transparency forward',
+    healthy.alignedWithTransparencyForward,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: balance-sheet-outlook-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runBalanceSheetOutlookCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const cash = buildCashManagementReport(9, v);
+  const balanceSheet = buildPublicSectorBalanceSheetReport(9, v, {
+    cashClosingBalance: cash.aggregateClosingBalance
+  });
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const balanceFiscal = buildBalanceSheetFiscalCoherenceReport(9, v, balanceSheet, statutory, cash);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const healthy = buildBalanceSheetOutlookCoherenceReport(9, v, balanceSheet, balanceFiscal, outlook);
+
+  record('BSOC-T01', 'Three balance sheet outlook checks', healthy.checks.length === 3, 'ok');
+  record(
+    'BSOC-T02',
+    'Within balance sheet outlook band',
+    healthy.withinBalanceSheetOutlookBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'BSOC-T03',
+    'Aligned with balance fiscal coherence',
+    healthy.alignedWithBalanceFiscalCoherence,
     healthy.narrative
   );
 
