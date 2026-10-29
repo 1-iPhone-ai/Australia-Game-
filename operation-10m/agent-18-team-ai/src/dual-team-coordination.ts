@@ -29,6 +29,9 @@ import { combineDualTeamEscalationRecoveryAlignment } from './escalation-recover
 import { combineDualTeamAuditPressure } from './audit-pressure-index.ts';
 import { combineDualTeamRoleLockFriction } from './role-lock-friction-index.ts';
 import { combineDualTeamDirectiveConstraintDensity } from './directive-constraint-density.ts';
+import { combineDualTeamCrossTeamRejection } from './cross-team-rejection-index.ts';
+import { combineDualTeamHandoffSlaVelocity } from './handoff-sla-velocity-index.ts';
+import { combineDualTeamRecoveryActionBreadth } from './recovery-action-breadth.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -75,6 +78,9 @@ export interface DualTeamMultiAgentResult {
   auditPressureCombined: number;
   roleLockFrictionCombined: number;
   directiveConstraintDensityCombined: number;
+  crossTeamRejectionCombined: number;
+  handoffSlaVelocityCombined: number;
+  recoveryActionBreadthCombined: number;
 }
 
 /**
@@ -137,6 +143,9 @@ export function evaluateDualTeamMultiAgentLayers(
       auditPressureCombined: friendly.state.meta.auditPressureIndex ?? 0,
       roleLockFrictionCombined: friendly.state.meta.roleLockFrictionIndex ?? 0,
       directiveConstraintDensityCombined: friendly.state.meta.directiveConstraintDensityIndex ?? 0,
+      crossTeamRejectionCombined: friendly.state.meta.crossTeamRejectionIndex ?? 0,
+      handoffSlaVelocityCombined: friendly.state.meta.handoffSlaVelocityIndex ?? 0,
+      recoveryActionBreadthCombined: friendly.state.meta.recoveryActionBreadthIndex ?? 0,
     };
   }
 
@@ -336,6 +345,18 @@ export function evaluateDualTeamMultiAgentLayers(
     directiveConstraintDensityCombined: combineDualTeamDirectiveConstraintDensity(
       friendly.state.meta.directiveConstraintDensityIndex ?? 0,
       enemy.state.meta.directiveConstraintDensityIndex ?? 0,
+    ),
+    crossTeamRejectionCombined: combineDualTeamCrossTeamRejection(
+      friendly.state.meta.crossTeamRejectionIndex ?? 0,
+      enemy.state.meta.crossTeamRejectionIndex ?? 0,
+    ),
+    handoffSlaVelocityCombined: combineDualTeamHandoffSlaVelocity(
+      friendly.state.meta.handoffSlaVelocityIndex ?? 0,
+      enemy.state.meta.handoffSlaVelocityIndex ?? 0,
+    ),
+    recoveryActionBreadthCombined: combineDualTeamRecoveryActionBreadth(
+      friendly.state.meta.recoveryActionBreadthIndex ?? 0,
+      enemy.state.meta.recoveryActionBreadthIndex ?? 0,
     ),
   };
 }

@@ -48,4 +48,7 @@ export * from './escalation-recovery-alignment.ts';
 export * from './audit-pressure-index.ts';
 export * from './role-lock-friction-index.ts';
 export * from './directive-constraint-density.ts';
+export * from './cross-team-rejection-index.ts';
+export * from './handoff-sla-velocity-index.ts';
+export * from './recovery-action-breadth.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

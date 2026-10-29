@@ -290,6 +290,9 @@ export interface TeamMultiAgentCoordinationMeta {
   lockedRoleActorIds?: string[];
   directiveConstraintDensityIndex?: number;
   directiveConstrainedActorIds?: string[];
+  crossTeamRejectionIndex?: number;
+  handoffSlaVelocityIndex?: number;
+  recoveryActionBreadthIndex?: number;
 }
 
 export const AGENT18_LIMITS = {

@@ -70,6 +70,9 @@ import { computeEscalationRecoveryAlignment } from './escalation-recovery-alignm
 import { computeAuditPressureIndex } from './audit-pressure-index.ts';
 import { computeRoleLockFrictionIndex } from './role-lock-friction-index.ts';
 import { computeDirectiveConstraintDensity } from './directive-constraint-density.ts';
+import { computeCrossTeamRejectionIndex } from './cross-team-rejection-index.ts';
+import { computeHandoffSlaVelocityIndex } from './handoff-sla-velocity-index.ts';
+import { measureRecoveryActionBreadth } from './recovery-action-breadth.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -2084,6 +2087,69 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.auditPressureCombined === 'number' &&
       typeof dual.roleLockFrictionCombined === 'number' &&
       typeof dual.directiveConstraintDensityCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_cross_team_rejection', 'Cross-team rejection: rejected proposals raise index', () => {
+    const report = computeCrossTeamRejectionIndex(2, 5);
+    return report.rejectionIndex >= 40;
+  });
+
+  check(results, 'a18_handoff_sla_velocity', 'Handoff SLA velocity: overdue pending share scores high', () => {
+    const report = computeHandoffSlaVelocityIndex(4, ['h1', 'h2', 'h3']);
+    return report.velocityIndex >= 50;
+  });
+
+  check(results, 'a18_handoff_sla_velocity_clear', 'Handoff SLA velocity: no pending stays zero', () => {
+    const report = computeHandoffSlaVelocityIndex(0, ['h1']);
+    return report.velocityIndex === 0;
+  });
+
+  check(results, 'a18_recovery_action_breadth_gap', 'Recovery breadth: tier shortfall scores gap', () => {
+    const report = measureRecoveryActionBreadth(3, ['halt_noncritical_directives']);
+    return report.breadthGapIndex >= 45;
+  });
+
+  check(results, 'a18_recovery_action_breadth_ok', 'Recovery breadth: adequate actions stay low gap', () => {
+    const report = measureRecoveryActionBreadth(
+      2,
+      ['a', 'b', 'c', 'd', 'e'].map(x => `action_${x}`),
+    );
+    return report.breadthGapIndex < 30;
+  });
+
+  check(results, 'a18_eval_round15_meta', 'Layer: round-15 meta exposes rejection, SLA velocity, recovery breadth', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.crossTeamRejectionIndex === 'number' &&
+      typeof m.handoffSlaVelocityIndex === 'number' &&
+      typeof m.recoveryActionBreadthIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_handoff_sla_velocity', 'Audit: handoff SLA velocity stress surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, handoffSlaVelocityIndex: 80 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /SLA velocity/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round15_combined', 'Dual team: round-15 combined rejection, velocity, breadth exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.crossTeamRejectionCombined === 'number' &&
+      typeof dual.handoffSlaVelocityCombined === 'number' &&
+      typeof dual.recoveryActionBreadthCombined === 'number'
     );
   });
 

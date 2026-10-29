@@ -62,6 +62,9 @@ import { computeEscalationRecoveryAlignment } from './escalation-recovery-alignm
 import { computeAuditPressureIndex } from './audit-pressure-index.ts';
 import { computeRoleLockFrictionIndex } from './role-lock-friction-index.ts';
 import { computeDirectiveConstraintDensity } from './directive-constraint-density.ts';
+import { computeCrossTeamRejectionIndex } from './cross-team-rejection-index.ts';
+import { computeHandoffSlaVelocityIndex } from './handoff-sla-velocity-index.ts';
+import { measureRecoveryActionBreadth } from './recovery-action-breadth.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -340,6 +343,18 @@ export function sanitizeTeamMultiAgentCoordinationState(
       directiveConstrainedActorIds: Array.isArray(metaRaw.directiveConstrainedActorIds)
         ? metaRaw.directiveConstrainedActorIds.map(String).slice(0, 8)
         : undefined,
+      crossTeamRejectionIndex:
+        typeof metaRaw.crossTeamRejectionIndex === 'number'
+          ? metaRaw.crossTeamRejectionIndex
+          : undefined,
+      handoffSlaVelocityIndex:
+        typeof metaRaw.handoffSlaVelocityIndex === 'number'
+          ? metaRaw.handoffSlaVelocityIndex
+          : undefined,
+      recoveryActionBreadthIndex:
+        typeof metaRaw.recoveryActionBreadthIndex === 'number'
+          ? metaRaw.recoveryActionBreadthIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -382,6 +397,11 @@ export function evaluateTeamMultiAgentLayer(
   scoped.rejected.forEach(r =>
     diagnostics.push(`Rejected cross-team directive ${r.proposal.id}: ${r.reason}`),
   );
+  const crossTeamRejection = computeCrossTeamRejectionIndex(
+    scoped.rejected.length,
+    rawProposals.length,
+  );
+  crossTeamRejection.notes.forEach(n => diagnostics.push(n));
   const quota = applyDirectiveQuotaGuard(scoped.inTeam, {
     maxPerActorPerTurn: AGENT18_LIMITS.maxDirectivesPerActorPerTurn,
     maxPerTeamPerTurn: AGENT18_LIMITS.maxDirectivesPerTeamPerTurn,
@@ -410,6 +430,11 @@ export function evaluateTeamMultiAgentLayer(
     maxPendingTurns: AGENT18_LIMITS.handoffSlaMaxPendingTurns,
   });
   handoffSla.notes.forEach(n => diagnostics.push(n));
+  const handoffSlaVelocity = computeHandoffSlaVelocityIndex(
+    coordination.handoffs.filter(h => h.status === 'pending').length,
+    handoffSla.overdueHandoffIds,
+  );
+  handoffSlaVelocity.notes.forEach(n => diagnostics.push(n));
   const handoffReadiness = scoreHandoffReadiness(
     coordination.handoffs,
     inputs.actors,
@@ -616,6 +641,8 @@ export function evaluateTeamMultiAgentLayer(
       lockedRoleActorIds: roleLockFriction.lockedRoleActorIds,
       directiveConstraintDensityIndex: directiveConstraintDensity.densityIndex,
       directiveConstrainedActorIds: directiveConstraintDensity.constrainedActorIds,
+      crossTeamRejectionIndex: crossTeamRejection.rejectionIndex,
+      handoffSlaVelocityIndex: handoffSlaVelocity.velocityIndex,
     },
   };
 
@@ -643,6 +670,11 @@ export function evaluateTeamMultiAgentLayer(
   escalationAlignment.notes.forEach(n => diagnostics.push(n));
   const auditPressure = computeAuditPressureIndex(auditFindings);
   auditPressure.notes.forEach(n => diagnostics.push(n));
+  const recoveryBreadth = measureRecoveryActionBreadth(
+    escalation.tier,
+    recoveryPlaybook.recommendedActions,
+  );
+  recoveryBreadth.notes.forEach(n => diagnostics.push(n));
   state = attachAuditToState(state, auditFindings, {
     coordinationEscalationTier: escalation.tier,
     coordinationEscalationLabel: escalation.label,
@@ -650,6 +682,7 @@ export function evaluateTeamMultiAgentLayer(
     coordinationRecoveryActions: recoveryPlaybook.recommendedActions,
     escalationRecoveryAlignmentIndex: escalationAlignment.alignmentIndex,
     auditPressureIndex: auditPressure.pressureIndex,
+    recoveryActionBreadthIndex: recoveryBreadth.breadthGapIndex,
   });
   state = { ...state, diagnostics };
 

@@ -483,6 +483,36 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (typeof state.meta.crossTeamRejectionIndex === 'number' && state.meta.crossTeamRejectionIndex >= 40) {
+    push({
+      severity: 'warning',
+      message: `Cross-team directive rejections (${state.meta.crossTeamRejectionIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.handoffSlaVelocityIndex === 'number' && state.meta.handoffSlaVelocityIndex >= 50) {
+    push({
+      severity: 'warning',
+      message: `Handoff SLA velocity stress (${state.meta.handoffSlaVelocityIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.recoveryActionBreadthIndex === 'number' &&
+    state.meta.recoveryActionBreadthIndex >= 45
+  ) {
+    push({
+      severity: 'warning',
+      message: `Recovery action breadth gap (${state.meta.recoveryActionBreadthIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
