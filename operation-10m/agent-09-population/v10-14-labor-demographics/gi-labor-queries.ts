@@ -143,7 +143,11 @@ export type LaborGiQueryTopic =
   | 'reengagement_mentorship_coupling'
   | 'mentorship_sustain'
   | 'subject_mentorship_readiness'
-  | 'workforce_mentorship';
+  | 'workforce_mentorship'
+  | 'mentorship_advocacy_coupling'
+  | 'advocacy_resonance'
+  | 'subject_advocacy_readiness'
+  | 'workforce_advocacy';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -296,6 +300,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_mentorship_readiness';
   }
   if (/\b(workforce mentorship|mentorship index labor workforce)/.test(q)) return 'workforce_mentorship';
+  if (/\b(mentorship advocacy|mentorship-advocacy coupling)/.test(q)) return 'mentorship_advocacy_coupling';
+  if (/\b(advocacy resonance|advocacy pipeline resonance)/.test(q)) return 'advocacy_resonance';
+  if (/\b(subject advocacy readiness|advocacy readiness subject)/.test(q)) {
+    return 'subject_advocacy_readiness';
+  }
+  if (/\b(workforce advocacy|advocacy index labor workforce)/.test(q)) return 'workforce_advocacy';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1434,6 +1444,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Mentorship band ${state.nationalWorkforceMentorshipIndex?.band ?? 'unknown'}; mentorship drag ${Math.round(state.nationalWorkforceMentorshipIndex?.mentorshipDrag ?? 0)}.`,
         inference: state.nationalWorkforceMentorshipIndex?.stewardNote || state.summary,
         projection: 'Workforce mentorship synthesizes reengagement-mentorship coupling, mentorship sustain, and subject mentorship.'
+      };
+    case 'mentorship_advocacy_coupling':
+      return {
+        topic,
+        headline: state.mentorshipAdvocacyCouplingBrief?.summary || 'Mentorship-advocacy coupling unavailable.',
+        fact: `Coupling band ${state.mentorshipAdvocacyCouplingBrief?.band ?? 'unknown'}; mentorship drag ${Math.round(state.mentorshipAdvocacyCouplingBrief?.mentorshipDrag ?? 0)}.`,
+        inference: state.mentorshipAdvocacyCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce mentorship with advocacy levers — wave 40 / O10-211 depth.'
+      };
+    case 'advocacy_resonance':
+      return {
+        topic,
+        headline: state.advocacyResonanceOutlook?.summary || 'Advocacy resonance unavailable.',
+        fact: `Resonance band ${state.advocacyResonanceOutlook?.band ?? 'unknown'}; mentorship drag ${Math.round(state.advocacyResonanceOutlook?.mentorshipDrag ?? 0)}.`,
+        inference: state.advocacyResonanceOutlook?.stewardNote || state.outlook,
+        projection: 'Resonance blends advocacy levers with mentorship sustain — bounded indices only.'
+      };
+    case 'subject_advocacy_readiness':
+      return {
+        topic,
+        headline: state.subjectAdvocacyReadinessBrief?.summary || 'Subject advocacy readiness unavailable.',
+        fact: `Advocacy band ${state.subjectAdvocacyReadinessBrief?.band ?? 'unknown'}; advocacy drag ${Math.round(state.subjectAdvocacyReadinessBrief?.advocacyDrag ?? 0)}.`,
+        inference: state.subjectAdvocacyReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject advocacy readiness gates subject mentorship against workforce mentorship for O10-211 wave 40.'
+      };
+    case 'workforce_advocacy':
+      return {
+        topic,
+        headline: state.nationalWorkforceAdvocacyIndex?.summary || 'Workforce advocacy unavailable.',
+        fact: `Advocacy band ${state.nationalWorkforceAdvocacyIndex?.band ?? 'unknown'}; advocacy drag ${Math.round(state.nationalWorkforceAdvocacyIndex?.advocacyDrag ?? 0)}.`,
+        inference: state.nationalWorkforceAdvocacyIndex?.stewardNote || state.summary,
+        projection: 'Workforce advocacy synthesizes mentorship-advocacy coupling, advocacy resonance, and subject advocacy.'
       };
     default:
       return {

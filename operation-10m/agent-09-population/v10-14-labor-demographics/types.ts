@@ -325,6 +325,10 @@ export interface NationalLaborDemographicsState {
   mentorshipSustainOutlook?: NationalMentorshipSustainOutlook;
   subjectMentorshipReadinessBrief?: NationalSubjectMentorshipReadinessBrief;
   nationalWorkforceMentorshipIndex?: NationalWorkforceMentorshipIndex;
+  mentorshipAdvocacyCouplingBrief?: NationalMentorshipAdvocacyCouplingBrief;
+  advocacyResonanceOutlook?: NationalAdvocacyResonanceOutlook;
+  subjectAdvocacyReadinessBrief?: NationalSubjectAdvocacyReadinessBrief;
+  nationalWorkforceAdvocacyIndex?: NationalWorkforceAdvocacyIndex;
 }
 
 export type MigrationShockKind =
@@ -1905,6 +1909,54 @@ export interface NationalWorkforceMentorshipIndex {
   mentorshipIndex: number;
   band: WorkforceMentorshipBand;
   mentorshipDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type MentorshipAdvocacyCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalMentorshipAdvocacyCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: MentorshipAdvocacyCouplingBand;
+  mentorshipDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type AdvocacyResonanceBand = 'ebbing' | 'patchy' | 'rising' | 'resonant';
+
+export interface NationalAdvocacyResonanceOutlook {
+  turn: number;
+  resonanceIndex: number;
+  band: AdvocacyResonanceBand;
+  mentorshipDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectAdvocacyReadinessBand =
+  | 'below_advocacy'
+  | 'approaching'
+  | 'advocacy_ready'
+  | 'mentorship_locked';
+
+export interface NationalSubjectAdvocacyReadinessBrief {
+  turn: number;
+  advocacyIndex: number;
+  band: SubjectAdvocacyReadinessBand;
+  advocacyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceAdvocacyBand = 'fragile' | 'thin' | 'elevated' | 'advocacy';
+
+export interface NationalWorkforceAdvocacyIndex {
+  turn: number;
+  advocacyIndex: number;
+  band: WorkforceAdvocacyBand;
+  advocacyDrag: number;
   summary: string;
   stewardNote: string;
 }

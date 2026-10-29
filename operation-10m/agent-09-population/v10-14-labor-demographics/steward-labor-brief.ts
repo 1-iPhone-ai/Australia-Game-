@@ -773,6 +773,30 @@ export function buildStewardLaborBrief(
   ) {
     hints.push(state.nationalWorkforceMentorshipIndex.stewardNote);
   }
+  if (
+    state.mentorshipAdvocacyCouplingBrief?.band === 'decoupled' ||
+    state.mentorshipAdvocacyCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.mentorshipAdvocacyCouplingBrief.stewardNote);
+  }
+  if (
+    state.advocacyResonanceOutlook?.band === 'ebbing' ||
+    state.advocacyResonanceOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.advocacyResonanceOutlook.stewardNote);
+  }
+  if (
+    state.subjectAdvocacyReadinessBrief?.band === 'below_advocacy' ||
+    state.subjectAdvocacyReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectAdvocacyReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceAdvocacyIndex?.band === 'fragile' ||
+    state.nationalWorkforceAdvocacyIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceAdvocacyIndex.stewardNote);
+  }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
   }

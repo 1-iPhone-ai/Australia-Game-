@@ -210,6 +210,10 @@ import { computeNationalReengagementMentorshipCouplingBrief } from './reengageme
 import { computeNationalMentorshipSustainOutlook } from './mentorship-sustain-outlook';
 import { computeNationalSubjectMentorshipReadinessBrief } from './subject-mentorship-readiness-brief';
 import { computeNationalWorkforceMentorshipIndex } from './national-workforce-mentorship-index';
+import { computeNationalMentorshipAdvocacyCouplingBrief } from './mentorship-advocacy-coupling-brief';
+import { computeNationalAdvocacyResonanceOutlook } from './advocacy-resonance-outlook';
+import { computeNationalSubjectAdvocacyReadinessBrief } from './subject-advocacy-readiness-brief';
+import { computeNationalWorkforceAdvocacyIndex } from './national-workforce-advocacy-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2452,6 +2456,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'mentorship steward note'
   );
   check('R3916', mentorshipEaseForRegion('NSW', 'technology') > 0, 'mentorship ease for region');
+
+  check('R4001', Boolean(r1.state.mentorshipAdvocacyCouplingBrief?.band), 'mentorship advocacy on state');
+  check(
+    'R4002',
+    (r1.state.mentorshipAdvocacyCouplingBrief?.mentorshipDrag ?? 0) >= 0,
+    'mentorship advocacy drag'
+  );
+  check('R4003', Boolean(r1.state.advocacyResonanceOutlook?.band), 'advocacy resonance on state');
+  check(
+    'R4004',
+    (r1.state.advocacyResonanceOutlook?.mentorshipDrag ?? 0) >= 0,
+    'advocacy resonance mentorship drag'
+  );
+  check('R4005', Boolean(r1.state.subjectAdvocacyReadinessBrief?.band), 'subject advocacy on state');
+  check('R4006', Boolean(r1.state.nationalWorkforceAdvocacyIndex?.band), 'workforce advocacy on state');
+  check(
+    'R4007',
+    detectLaborDemographicsQuery('mentorship advocacy coupling') === 'mentorship_advocacy_coupling',
+    'GI mentorship advocacy detect'
+  );
+  check(
+    'R4008',
+    detectLaborDemographicsQuery('advocacy resonance') === 'advocacy_resonance',
+    'GI advocacy resonance detect'
+  );
+  check(
+    'R4009',
+    detectLaborDemographicsQuery('subject advocacy readiness') === 'subject_advocacy_readiness',
+    'GI subject advocacy detect'
+  );
+  check(
+    'R4010',
+    detectLaborDemographicsQuery('workforce advocacy') === 'workforce_advocacy',
+    'GI workforce advocacy detect'
+  );
+  check(
+    'R4011',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_advocacy').headline.length > 5,
+    'GI workforce advocacy answer'
+  );
+  const mentorshipAdvocacyOnly = computeNationalMentorshipAdvocacyCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceMentorshipIndex
+  );
+  check('R4012', mentorshipAdvocacyOnly.summary.length > 10, 'mentorship advocacy standalone summary');
+  const advocacyResonanceOnly = computeNationalAdvocacyResonanceOutlook(
+    r1.state,
+    r1.state.mentorshipSustainOutlook
+  );
+  check('R4013', advocacyResonanceOnly.band.length > 3, 'advocacy resonance band string');
+  const subjectAdvocacyOnly = computeNationalSubjectAdvocacyReadinessBrief(
+    r1.state,
+    r1.state.subjectMentorshipReadinessBrief,
+    r1.state.nationalWorkforceMentorshipIndex
+  );
+  check('R4014', subjectAdvocacyOnly.advocacyDrag >= 0, 'subject advocacy drag');
+  check(
+    'R4015',
+    computeNationalWorkforceAdvocacyIndex(
+      rHhBad.state,
+      rHhBad.state.mentorshipAdvocacyCouplingBrief,
+      rHhBad.state.advocacyResonanceOutlook,
+      rHhBad.state.subjectAdvocacyReadinessBrief
+    ).stewardNote.length > 8,
+    'advocacy steward note'
+  );
+  check('R4016', advocacyEaseForRegion('NSW', 'technology') > 0, 'advocacy ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
