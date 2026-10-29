@@ -3,6 +3,7 @@ import type { GTELAccessBand, GTELCommodityId, GTELPartnerId, GTELPersisted, Par
 import { gtelClamp, gtelNum } from './util.ts';
 import { sanitizePartnerSanctionRegime } from './sanctions.ts';
 import { createEmptyTradeComplianceRecord, sanitizeTradeComplianceRecord } from './trade-compliance.ts';
+import { sanitizeImportDependencySmoothing } from './import-dependency.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -23,6 +24,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     tradePolicies: [],
     tradeDisputes: [],
     tradeCompliance: createEmptyTradeComplianceRecord(),
+    importDependencySmoothing: {},
+    diplomaticEngagement: {},
   };
 }
 
@@ -163,5 +166,17 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
       })) as TradeDisputeCase[];
   }
   base.tradeCompliance = sanitizeTradeComplianceRecord(r.tradeCompliance, turn);
+  base.importDependencySmoothing = sanitizeImportDependencySmoothing(r.importDependencySmoothing);
+  if (r.diplomaticEngagement && typeof r.diplomaticEngagement === 'object') {
+    Object.entries(r.diplomaticEngagement as Record<string, unknown>).slice(0, 6).forEach(([k, v]) => {
+      if (!GTEL_PARTNER_DEFS.some(p => p.id === k) || !v || typeof v !== 'object') return;
+      const row = v as Record<string, unknown>;
+      base.diplomaticEngagement![k as GTELPartnerId] = {
+        momentum: gtelClamp(gtelNum(row.momentum, 0.4), 0.08, 0.98),
+        lastEventTurn: Math.max(1, Math.floor(gtelNum(row.lastEventTurn, turn))),
+        highlights: (Array.isArray(row.highlights) ? row.highlights : []).map(String).slice(0, 4),
+      };
+    });
+  }
   return base;
 }

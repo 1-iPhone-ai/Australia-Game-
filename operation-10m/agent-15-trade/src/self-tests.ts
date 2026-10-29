@@ -14,6 +14,8 @@ import { advanceTradeDisputes, openTradeDispute } from './trade-disputes.ts';
 import { advanceTradeComplianceRecord } from './trade-compliance.ts';
 import { computeLogisticsStress } from './export-logistics.ts';
 import { computeTradeBalanceSnapshot } from './trade-balance.ts';
+import { computeImportDependencySnapshot, importDependencyConsumerPressure } from './import-dependency.ts';
+import { advanceDiplomaticEngagement, deriveEngagementPartnerModifiers } from './diplomatic-engagement.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
   validateScenarioShockCatalog,
@@ -270,6 +272,54 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     });
     const bal = computeTradeBalanceSnapshot({ commodities, partners, logistics, exportThroughput: 180 });
     gtelAssert(bal.currentAccountTone === 'surplus' || bal.currentAccountTone === 'mild_surplus', 'expected surplus tone');
+  });
+
+  ok('import dependency rises when partners restricted', () => {
+    const partners = GTEL_PARTNER_DEFS.map(p => ({
+      ...p,
+      access: p.id === 'asia_pacific' ? ('blocked' as const) : ('normal' as const),
+      accessScore: p.id === 'asia_pacific' ? 0.15 : 0.55,
+    }));
+    const commodities = GTEL_COMMODITIES.map(c => ({
+      commodity: c,
+      baseIndex: 100,
+      partnerModifier: 0,
+      diplomacyModifier: 0,
+      networkModifier: 0,
+      shockModifier: 0,
+      agreementModifier: 0,
+      effectiveIndex: 108,
+      trend: 'rising' as const,
+      evidence: [],
+    }));
+    const step = computeImportDependencySnapshot({
+      partners,
+      commodities,
+      persisted: createEmptyGTELPersisted(),
+    });
+    gtelAssert(step.snapshot.lines.length === GTEL_COMMODITIES.length, 'missing dependency lines');
+    gtelAssert(step.snapshot.aggregateRisk > 0.25, 'expected elevated aggregate risk');
+    gtelAssert(importDependencyConsumerPressure(step.snapshot) > 0, 'expected consumer pressure');
+  });
+
+  ok('diplomatic engagement boosts partner under active deals', () => {
+    const dip = {
+      deals: [
+        {
+          id: 'd1',
+          type: 'resource_trade',
+          status: 'active',
+          participants: ['player', 'rival_east'],
+          compliance: 'compliant',
+        },
+      ],
+    };
+    const step = advanceDiplomaticEngagement(createEmptyGTELPersisted(), dip, 9);
+    const asiaTrack = step.state.tracks?.asia_pacific;
+    gtelAssert(Boolean(asiaTrack), 'missing asia track');
+    gtelAssert(asiaTrack!.momentum > 0.45, 'expected engagement momentum lift');
+    const mods = deriveEngagementPartnerModifiers(step.state);
+    gtelAssert((mods.partnerDeltas.asia_pacific || 0) >= 0, 'asia engagement should not penalize active deal');
   });
 
   return { passed, failed };

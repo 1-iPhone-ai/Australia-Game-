@@ -20,6 +20,8 @@ npm run build:agent15-chunk
 | `sanctions.ts` | Partner sanction tiers and commodity scopes |
 | `domestic-consequences.ts` | Regional employment / CPI / stability spillover |
 | `diplomacy-linkage.ts` | Deal → partner/commodity deltas |
+| `import-dependency.ts` | Import exposure snapshot & domestic CPI pressure |
+| `diplomatic-engagement.ts` | Partner engagement tracks & summit pulse |
 | `household-bridge.ts` | Household economy input overrides |
 
 See `integration-contract.md`.

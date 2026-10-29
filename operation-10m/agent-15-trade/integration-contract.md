@@ -12,6 +12,8 @@ Deterministic **global trade economy linkage (GTEL)** between:
 - **Commodity shock scenarios** (multi-shock bundles, deduped schedule)
 - **Partner sanctions depth** (tiered escalation / de-escalation tied to diplomacy)
 - **Domestic consequences** (regional employment / price / stability spillover)
+- **Import dependency** (commodity import exposure vs partner access)
+- **Diplomatic engagement tracks** (momentum, summit pulse, outreach events)
 
 ## Merge targets (Agent 25)
 

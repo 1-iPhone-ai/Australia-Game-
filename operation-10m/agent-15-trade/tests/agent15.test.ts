@@ -162,3 +162,39 @@ test('round 3: critical network can emit logistics trade event', () => {
   });
   assert.ok(r.worldEvents.some(e => e.id.includes('logistics')) || r.state.logistics.band !== 'fluid');
 });
+
+test('round 4: import dependency and diplomatic engagement on state', () => {
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 18,
+    diplomacyState: {
+      deals: [
+        {
+          id: 'd1',
+          type: 'resource_trade',
+          status: 'active',
+          participants: ['player', 'rival_east'],
+          compliance: 'compliant',
+        },
+      ],
+    },
+    nationalSystems: { national: { trade: { condition: 'strained', exportedCapacity: 75 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  assert.ok(r.state.importDependency);
+  assert.ok(r.state.importDependency.lines.length >= 6);
+  assert.ok(r.state.diplomaticEngagement);
+  assert.equal(typeof r.state.diplomaticEngagement.summitPulse, 'number');
+  assert.ok(r.persisted.importDependencySmoothing);
+});
+
+test('round 4: blocked partner elevates import risk band', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.partnerAccess = { asia_pacific: 'blocked', europe: 'restricted' };
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 19,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'bottlenecked', exportedCapacity: 90 } } },
+    persisted,
+  });
+  assert.ok(['elevated', 'critical', 'moderate'].includes(r.state.importDependency.band));
+});

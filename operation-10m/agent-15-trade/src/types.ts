@@ -112,6 +112,12 @@ export interface GTELPersisted {
   tradeDisputes: TradeDisputeCase[];
   /** Rolling rules-based trade compliance posture. */
   tradeCompliance: TradeComplianceRecord;
+  /** Smoothed import-exposure indices per commodity. */
+  importDependencySmoothing: Partial<Record<GTELCommodityId, number>>;
+  /** Partner engagement momentum memory. */
+  diplomaticEngagement: Partial<
+    Record<GTELPartnerId, { momentum: number; lastEventTurn: number; highlights?: string[] }>
+  >;
 }
 
 export interface GTELState {
@@ -131,6 +137,8 @@ export interface GTELState {
   logistics: GTELLogisticsStress;
   tradeBalance: GTELTradeBalanceSnapshot;
   tradeCompliance: TradeComplianceRecord;
+  importDependency: GTELImportDependencySnapshot;
+  diplomaticEngagement: GTELDiplomaticEngagementState;
   inputHash: string;
 }
 
@@ -305,6 +313,37 @@ export interface GTELTradeBalanceSnapshot {
   currentAccountTone: GTELCurrentAccountTone;
   effectiveThroughput: number;
   narrative: string;
+}
+
+export type GTELImportRiskBand = 'low' | 'moderate' | 'elevated' | 'critical';
+
+export interface GTELImportDependencyLine {
+  commodity: GTELCommodityId;
+  importExposure: number;
+  band: GTELImportRiskBand;
+  dominantPartnerId: GTELPartnerId | null;
+  narrative: string;
+}
+
+export interface GTELImportDependencySnapshot {
+  aggregateRisk: number;
+  band: GTELImportRiskBand;
+  lines: GTELImportDependencyLine[];
+  summary: string;
+}
+
+export interface DiplomaticEngagementTrack {
+  partnerId: GTELPartnerId;
+  momentum: number;
+  band: 'stalled' | 'cautious' | 'active' | 'breakthrough';
+  lastEventTurn: number;
+  highlights: string[];
+}
+
+export interface GTELDiplomaticEngagementState {
+  tracks: Partial<Record<GTELPartnerId, DiplomaticEngagementTrack>>;
+  summitPulse: number;
+  summary: string;
 }
 
 export interface GlobalTradeEconomyPanelProps {

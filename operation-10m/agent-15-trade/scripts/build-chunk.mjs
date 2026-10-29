@@ -29,6 +29,8 @@ const FILES = [
   'trade-compliance.ts',
   'export-logistics.ts',
   'trade-balance.ts',
+  'import-dependency.ts',
+  'diplomatic-engagement.ts',
   'domestic-consequences.ts',
   'household-bridge.ts',
   'trade-turn.ts',

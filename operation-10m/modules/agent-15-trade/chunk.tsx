@@ -116,6 +116,12 @@ export interface GTELPersisted {
   tradeDisputes: TradeDisputeCase[];
   /** Rolling rules-based trade compliance posture. */
   tradeCompliance: TradeComplianceRecord;
+  /** Smoothed import-exposure indices per commodity. */
+  importDependencySmoothing: Partial<Record<GTELCommodityId, number>>;
+  /** Partner engagement momentum memory. */
+  diplomaticEngagement: Partial<
+    Record<GTELPartnerId, { momentum: number; lastEventTurn: number; highlights?: string[] }>
+  >;
 }
 
 export interface GTELState {
@@ -135,6 +141,8 @@ export interface GTELState {
   logistics: GTELLogisticsStress;
   tradeBalance: GTELTradeBalanceSnapshot;
   tradeCompliance: TradeComplianceRecord;
+  importDependency: GTELImportDependencySnapshot;
+  diplomaticEngagement: GTELDiplomaticEngagementState;
   inputHash: string;
 }
 
@@ -311,6 +319,37 @@ export interface GTELTradeBalanceSnapshot {
   narrative: string;
 }
 
+export type GTELImportRiskBand = 'low' | 'moderate' | 'elevated' | 'critical';
+
+export interface GTELImportDependencyLine {
+  commodity: GTELCommodityId;
+  importExposure: number;
+  band: GTELImportRiskBand;
+  dominantPartnerId: GTELPartnerId | null;
+  narrative: string;
+}
+
+export interface GTELImportDependencySnapshot {
+  aggregateRisk: number;
+  band: GTELImportRiskBand;
+  lines: GTELImportDependencyLine[];
+  summary: string;
+}
+
+export interface DiplomaticEngagementTrack {
+  partnerId: GTELPartnerId;
+  momentum: number;
+  band: 'stalled' | 'cautious' | 'active' | 'breakthrough';
+  lastEventTurn: number;
+  highlights: string[];
+}
+
+export interface GTELDiplomaticEngagementState {
+  tracks: Partial<Record<GTELPartnerId, DiplomaticEngagementTrack>>;
+  summitPulse: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -462,6 +501,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     tradePolicies: [],
     tradeDisputes: [],
     tradeCompliance: createEmptyTradeComplianceRecord(),
+    importDependencySmoothing: {},
+    diplomaticEngagement: {},
   };
 }
 
@@ -602,6 +643,18 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
       })) as TradeDisputeCase[];
   }
   base.tradeCompliance = sanitizeTradeComplianceRecord(r.tradeCompliance, turn);
+  base.importDependencySmoothing = sanitizeImportDependencySmoothing(r.importDependencySmoothing);
+  if (r.diplomaticEngagement && typeof r.diplomaticEngagement === 'object') {
+    Object.entries(r.diplomaticEngagement as Record<string, unknown>).slice(0, 6).forEach(([k, v]) => {
+      if (!GTEL_PARTNER_DEFS.some(p => p.id === k) || !v || typeof v !== 'object') return;
+      const row = v as Record<string, unknown>;
+      base.diplomaticEngagement![k as GTELPartnerId] = {
+        momentum: gtelClamp(gtelNum(row.momentum, 0.4), 0.08, 0.98),
+        lastEventTurn: Math.max(1, Math.floor(gtelNum(row.lastEventTurn, turn))),
+        highlights: (Array.isArray(row.highlights) ? row.highlights : []).map(String).slice(0, 4),
+      };
+    });
+  }
   return base;
 }
 
@@ -2071,6 +2124,339 @@ export function tradeBalanceGiNotes(balance: GTELTradeBalanceSnapshot | null | u
 }
 
 
+// --- source: import-dependency.ts ---
+  GTELCommodityId,
+  GTELCommodityQuote,
+  GTELImportDependencyLine,
+  GTELImportDependencySnapshot,
+  GTELImportRiskBand,
+  GTELPartnerId,
+  GTELPartnerMarket,
+  GTELPersisted,
+} from './types.ts';
+
+/** Commodities where Australia is structurally import-exposed (inputs / manufactured goods). */
+export const GTEL_IMPORT_EXPOSURE_WEIGHT: Partial<Record<GTELCommodityId, number>> = {
+  manufacturing: 0.92,
+  services: 0.35,
+  aluminium: 0.28,
+  coal: 0.12,
+  lng: 0.18,
+  iron_ore: 0.08,
+  wheat: 0.15,
+  beef: 0.1,
+};
+
+function riskBandFromScore(score: number): GTELImportRiskBand {
+  if (score >= 0.72) return 'critical';
+  if (score >= 0.52) return 'elevated';
+  if (score >= 0.32) return 'moderate';
+  return 'low';
+}
+
+export function createEmptyImportDependencySnapshot(): GTELImportDependencySnapshot {
+  return {
+    aggregateRisk: 0.25,
+    band: 'moderate',
+    lines: [],
+    summary: 'Import exposure baseline.',
+  };
+}
+
+export function sanitizeImportDependencySmoothing(raw: unknown): Partial<Record<GTELCommodityId, number>> {
+  const out: Partial<Record<GTELCommodityId, number>> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  GTEL_COMMODITIES.forEach(c => {
+    const v = gtelNum((raw as Record<string, number>)[c], 0.25);
+    out[c] = gtelClamp(v, 0.05, 0.95);
+  });
+  return out;
+}
+
+function partnerImportStress(partners: GTELPartnerMarket[]): Partial<Record<GTELPartnerId, number>> {
+  const stress: Partial<Record<GTELPartnerId, number>> = {};
+  partners.forEach(p => {
+    if (p.id === 'domestic_premium') return;
+    const accessStress = 1 - GTEL_ACCESS_RANK[p.access] / 4;
+    stress[p.id] = gtelClamp(accessStress * 0.85 + (1 - p.accessScore) * 0.35, 0, 1);
+  });
+  return stress;
+}
+
+export function computeImportDependencySnapshot(input: {
+  partners: GTELPartnerMarket[];
+  commodities: GTELCommodityQuote[];
+  persisted: GTELPersisted;
+}): { snapshot: GTELImportDependencySnapshot; persisted: GTELPersisted } {
+  const partnerStress = partnerImportStress(input.partners);
+  const smoothing = sanitizeImportDependencySmoothing(input.persisted.importDependencySmoothing);
+  const lines: GTELImportDependencyLine[] = [];
+
+  GTEL_COMMODITIES.forEach(commodity => {
+    const baseExposure = gtelNum(GTEL_IMPORT_EXPOSURE_WEIGHT[commodity], 0.2);
+    let weightedPartnerStress = 0;
+    let weightSum = 0;
+    let dominantPartnerId: GTELPartnerId | null = null;
+    let dominantStress = -1;
+
+    input.partners.forEach(p => {
+      if (p.id === 'domestic_premium') return;
+      const w = gtelNum(p.demandWeights[commodity], 0.45) * p.priceSensitivity;
+      const stress = gtelNum(partnerStress[p.id], 0.3);
+      weightedPartnerStress += stress * w;
+      weightSum += w;
+      if (stress > dominantStress) {
+        dominantStress = stress;
+        dominantPartnerId = p.id;
+      }
+    });
+
+    const partnerComponent = weightSum > 0 ? weightedPartnerStress / weightSum : 0.35;
+    const blockedPartners = input.partners.filter(
+      p => p.id !== 'domestic_premium' && (p.access === 'blocked' || p.access === 'restricted'),
+    ).length;
+    const accessPenalty = gtelClamp(blockedPartners * 0.06, 0, 0.18);
+    const quote = input.commodities.find(c => c.commodity === commodity);
+    const priceStress = quote ? gtelClamp((quote.effectiveIndex - 100) / 90, -0.15, 0.35) : 0;
+    const rawExposure = gtelClamp(
+      baseExposure * 0.55 + partnerComponent * 0.35 + Math.max(0, priceStress) * 0.25 + accessPenalty,
+      0.08,
+      0.95,
+    );
+    const prev = gtelNum(smoothing[commodity], rawExposure);
+    const importExposure = gtelClamp(prev * 0.65 + rawExposure * 0.35, 0.08, 0.95);
+    smoothing[commodity] = Math.round(importExposure * 1000) / 1000;
+
+    const band = riskBandFromScore(importExposure);
+    const partnerLabel = dominantPartnerId
+      ? GTEL_PARTNER_DEFS.find(p => p.id === dominantPartnerId)?.label || dominantPartnerId
+      : 'external partners';
+    const narrative =
+      band === 'critical'
+        ? `${GTEL_COMMODITY_LABEL[commodity]} import channels are fragile via ${partnerLabel}.`
+        : band === 'elevated'
+          ? `${GTEL_COMMODITY_LABEL[commodity]} faces elevated import reliance on ${partnerLabel}.`
+          : `${GTEL_COMMODITY_LABEL[commodity]} import exposure is ${band}.`;
+
+    lines.push({ commodity, importExposure, band, dominantPartnerId, narrative });
+  });
+
+  const aggregateRisk =
+    lines.reduce((acc, l) => acc + l.importExposure, 0) / Math.max(1, lines.length);
+  const band = riskBandFromScore(aggregateRisk);
+  const hot = lines.filter(l => l.band === 'critical' || l.band === 'elevated').slice(0, 2);
+  const summary =
+    hot.length === 0
+      ? 'Import dependency is manageable across major commodity lanes.'
+      : `Import vulnerability concentrates on ${hot.map(h => GTEL_COMMODITY_LABEL[h.commodity]).join(' and ')}.`;
+
+  return {
+    snapshot: {
+      aggregateRisk: Math.round(aggregateRisk * 1000) / 1000,
+      band,
+      lines,
+      summary,
+    },
+    persisted: { ...input.persisted, importDependencySmoothing: smoothing },
+  };
+}
+
+export function importDependencyConsumerPressure(snapshot: GTELImportDependencySnapshot): number {
+  const base = gtelClamp(snapshot.aggregateRisk * 0.22, 0, 0.18);
+  const criticalLines = snapshot.lines.filter(l => l.band === 'critical').length;
+  return gtelClamp(base + criticalLines * 0.025, 0, 0.28);
+}
+
+export function importDependencyGiNotes(snapshot: GTELImportDependencySnapshot | null | undefined): string[] {
+  if (!snapshot) return [];
+  const lines = [snapshot.summary];
+  if (snapshot.band === 'elevated' || snapshot.band === 'critical') {
+    lines.push(`Import risk band: ${snapshot.band} (aggregate ${Math.round(snapshot.aggregateRisk * 100)}%).`);
+  }
+  return lines;
+}
+
+
+// --- source: diplomatic-engagement.ts ---
+  DiplomaticEngagementTrack,
+  GTELDiplomacyState,
+  GTELDiplomaticEngagementState,
+  GTELPartnerId,
+  GTELPersisted,
+  GTELTurnResult,
+} from './types.ts';
+
+export type EngagementBand = DiplomaticEngagementTrack['band'];
+
+function engagementBand(momentum: number): EngagementBand {
+  if (momentum >= 0.78) return 'breakthrough';
+  if (momentum >= 0.55) return 'active';
+  if (momentum >= 0.32) return 'cautious';
+  return 'stalled';
+}
+
+function sanitizeTrack(raw: unknown, partnerId: GTELPartnerId, turn: number): DiplomaticEngagementTrack {
+  const base: DiplomaticEngagementTrack = {
+    partnerId,
+    momentum: 0.45,
+    band: 'cautious',
+    lastEventTurn: turn,
+    highlights: [],
+  };
+  if (!raw || typeof raw !== 'object') return base;
+  const r = raw as Record<string, unknown>;
+  const momentum = gtelClamp(gtelNum(r.momentum, base.momentum), 0.08, 0.98);
+  return {
+    partnerId,
+    momentum: Math.round(momentum * 1000) / 1000,
+    band: engagementBand(momentum),
+    lastEventTurn: Math.max(1, Math.floor(gtelNum(r.lastEventTurn, turn))),
+    highlights: (Array.isArray(r.highlights) ? r.highlights : []).map(String).slice(0, 4),
+  };
+}
+
+export function advanceDiplomaticEngagement(
+  persisted: GTELPersisted,
+  diplomacy: GTELDiplomacyState | null,
+  turn: number,
+): { persisted: GTELPersisted; state: GTELDiplomaticEngagementState; events: GTELTurnResult['worldEvents'] } {
+  const events: GTELTurnResult['worldEvents'] = [];
+  const tracks: Partial<Record<GTELPartnerId, DiplomaticEngagementTrack>> = {};
+  const violations = gtelRecentViolations(diplomacy, turn);
+  const openDisputes = countOpenTradeDisputes(persisted);
+  const activeDeals = gtelActiveDeals(diplomacy);
+  const prevMemory = persisted.diplomaticEngagement || {};
+
+  GTEL_PARTNER_DEFS.forEach(def => {
+    if (def.id === 'domestic_premium') return;
+    const prev = sanitizeTrack(prevMemory[def.id], def.id, turn);
+    let momentum = prev.momentum;
+    const highlights: string[] = [];
+
+    const partnerDeals = activeDeals.filter(d =>
+      d.participants.some(pid => def.diplomaticActorIds.includes(pid)),
+    );
+    if (partnerDeals.length > 0) {
+      momentum += 0.04 * Math.min(3, partnerDeals.length);
+      highlights.push(`${partnerDeals.length} active trade-linked deal(s) with ${def.label}.`);
+    }
+
+    const ratified = persisted.agreements.filter(a => a.status === 'ratified' && a.partnerId === def.id).length;
+    if (ratified > 0) {
+      momentum += 0.03 * ratified;
+      highlights.push('Ratified agreement supports engagement.');
+    }
+
+    const sanction = persisted.partnerSanctions?.[def.id];
+    if (sanction && sanction.tier !== 'none') {
+      momentum -= sanction.tier === 'comprehensive' ? 0.12 : sanction.tier === 'sectoral' ? 0.07 : 0.04;
+      highlights.push(`${sanction.tier} sanctions dampen engagement.`);
+    }
+
+    const partnerDisputes = (persisted.tradeDisputes || []).filter(
+      d => d.partnerId === def.id && (d.status === 'open' || d.status === 'mediation'),
+    );
+    if (partnerDisputes.length > 0) {
+      momentum -= 0.05 * partnerDisputes.length;
+      highlights.push(`${partnerDisputes.length} open dispute(s) need mediation.`);
+    }
+
+    if (violations > 0) momentum -= 0.025 * violations;
+
+    momentum = gtelClamp(momentum * 0.92 + 0.04, 0.1, 0.95);
+    const band = engagementBand(momentum);
+    const track: DiplomaticEngagementTrack = {
+      partnerId: def.id,
+      momentum: Math.round(momentum * 1000) / 1000,
+      band,
+      lastEventTurn: turn,
+      highlights: highlights.slice(0, 3),
+    };
+    tracks[def.id] = track;
+
+    if (band === 'breakthrough' && prev.band !== 'breakthrough') {
+      events.push({
+        id: `gtel_engagement_breakthrough_${def.id}_${turn}`,
+        turn,
+        kind: 'diplomacy',
+        title: `Engagement breakthrough — ${def.label}`,
+        summary: `Diplomatic momentum with ${def.label} opens room for dispute de-escalation and market confidence.`,
+        regionIds: ['ACT', 'NSW'],
+      });
+    }
+  });
+
+  const momentumValues = Object.values(tracks).map(t => t?.momentum || 0);
+  const summitPulse =
+    momentumValues.length > 0 ? momentumValues.reduce((a, b) => a + b, 0) / momentumValues.length : 0.4;
+  const stalled = Object.values(tracks).filter(t => t?.band === 'stalled').length;
+  const summary =
+    stalled >= 3
+      ? 'Multiple partner engagement tracks are stalled; trade diplomacy needs active outreach.'
+      : summitPulse >= 0.62
+        ? 'Cross-partner engagement pulse is constructive for trade normalization.'
+        : 'Engagement is mixed — selective partner outreach recommended.';
+
+  if (openDisputes >= 2 && summitPulse < 0.45 && turn % 5 === 0) {
+    events.push({
+      id: `gtel_engagement_summit_${turn}`,
+      turn,
+      kind: 'diplomacy',
+      title: 'Trade diplomacy summit window',
+      summary: 'Low engagement momentum coincides with open disputes — a coordinated outreach push could unlock mediation.',
+      regionIds: ['ACT'],
+    });
+  }
+
+  const memory: GTELPersisted['diplomaticEngagement'] = {};
+  Object.entries(tracks).forEach(([k, v]) => {
+    if (!v) return;
+    memory[k as GTELPartnerId] = { momentum: v.momentum, lastEventTurn: v.lastEventTurn, highlights: v.highlights };
+  });
+
+  return {
+    persisted: { ...persisted, diplomaticEngagement: memory },
+    state: { tracks, summitPulse: Math.round(summitPulse * 1000) / 1000, summary },
+    events,
+  };
+}
+
+export function deriveEngagementPartnerModifiers(
+  engagement: GTELDiplomaticEngagementState | null | undefined,
+): { partnerDeltas: Partial<Record<GTELPartnerId, number>>; notes: string[] } {
+  const partnerDeltas: Partial<Record<GTELPartnerId, number>> = {};
+  const notes: string[] = [];
+  if (!engagement?.tracks) return { partnerDeltas, notes };
+
+  Object.values(engagement.tracks).forEach(track => {
+    if (!track) return;
+    if (track.band === 'breakthrough') partnerDeltas[track.partnerId] = (partnerDeltas[track.partnerId] || 0) + 0.05;
+    else if (track.band === 'active') partnerDeltas[track.partnerId] = (partnerDeltas[track.partnerId] || 0) + 0.025;
+    else if (track.band === 'stalled') partnerDeltas[track.partnerId] = (partnerDeltas[track.partnerId] || 0) - 0.04;
+  });
+
+  if (engagement.summitPulse >= 0.65) notes.push('Strong engagement pulse supports partner access normalization.');
+  else if (engagement.summitPulse < 0.38) notes.push('Stalled engagement tracks are weighing on trade diplomacy.');
+
+  return { partnerDeltas, notes };
+}
+
+export function engagementTrustRecoveryBonus(engagement: GTELDiplomaticEngagementState | null | undefined): number {
+  if (!engagement) return 0;
+  return gtelClamp((engagement.summitPulse - 0.45) * 0.08, -0.02, 0.04);
+}
+
+export function diplomaticEngagementGiNotes(engagement: GTELDiplomaticEngagementState | null | undefined): string[] {
+  if (!engagement) return [];
+  const lines = [engagement.summary];
+  const active = Object.values(engagement.tracks || {}).filter(t => t?.band === 'active' || t?.band === 'breakthrough');
+  if (active.length >= 2) {
+    lines.push(`Active engagement: ${active.map(t => GTEL_PARTNER_DEFS.find(p => p.id === t!.partnerId)?.label || t!.partnerId).join(', ')}.`);
+  }
+  return lines;
+}
+
+
 // --- source: domestic-consequences.ts ---
   GTELCommodityQuote,
   GTELDomesticCoupling,
@@ -2207,6 +2593,14 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   computeLogisticsStress,
   logisticsWorldEvent,
 } from './export-logistics.ts';
+  advanceDiplomaticEngagement,
+  deriveEngagementPartnerModifiers,
+  diplomaticEngagementGiNotes,
+} from './diplomatic-engagement.ts';
+  computeImportDependencySnapshot,
+  importDependencyConsumerPressure,
+  importDependencyGiNotes,
+} from './import-dependency.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -2239,6 +2633,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const disputeStep = advanceTradeDisputes(persisted, turn, preSanctions.activeTiers);
   persisted = disputeStep.persisted;
   persisted = advanceTradeComplianceRecord(persisted, input.diplomacyState, turn);
+  const engagementStep = advanceDiplomaticEngagement(persisted, input.diplomacyState, turn);
+  persisted = engagementStep.persisted;
 
   const names = input.actorNames || {};
   const dip = deriveDiplomaticTradeModifiers(input.diplomacyState, turn, names);
@@ -2248,13 +2644,17 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const trust = deriveTrustAccessModifiers(persisted);
   const policy = deriveTradePolicyModifiers(persisted);
   const compliancePenalty = deriveCompliancePartnerPenalty(persisted.tradeCompliance);
+  const engagement = deriveEngagementPartnerModifiers(engagementStep.state);
 
   const partnerDeltas = mergePartnerDeltas(
     mergePartnerDeltas(
       mergePartnerDeltas(mergePartnerDeltas(dip.partnerDeltas, agr.partnerDeltas), shock.partnerDeltas),
       sanctions.partnerDeltas,
     ),
-    mergePartnerDeltas(trust.partnerDeltas, policy.partnerDeltas),
+    mergePartnerDeltas(
+      mergePartnerDeltas(trust.partnerDeltas, policy.partnerDeltas),
+      engagement.partnerDeltas,
+    ),
   );
   const commodityDeltas = mergeCommodityDeltas(
     mergeCommodityDeltas(
@@ -2272,6 +2672,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     ...trust.notes,
     ...policy.notes,
     ...complianceReviewNotes(persisted.tradeCompliance),
+    ...engagement.notes,
   ];
   const net = gtelNetworkModifier(input.nationalSystems);
   const worldEvents: GTELTurnResult['worldEvents'] = [];
@@ -2295,6 +2696,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   });
   worldEvents.push(...sanctionStep.events);
   worldEvents.push(...disputeStep.events);
+  worldEvents.push(...engagementStep.events);
 
   const partners: GTELPartnerMarket[] = GTEL_PARTNER_DEFS.map(def => {
     const prevBand = persisted.partnerAccess[def.id] || 'normal';
@@ -2381,6 +2783,11 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     exportThroughput: net.throughput,
   });
 
+  const dependencyStep = computeImportDependencySnapshot({ partners, commodities, persisted });
+  persisted = dependencyStep.persisted;
+  const importDependency = dependencyStep.snapshot;
+  const importPressure = importDependencyConsumerPressure(importDependency);
+
   const exportLedPressure = gtelClamp(
     (net.throughput / 120) * 0.4 + partners.filter(p => p.id !== 'domestic_premium' && GTEL_ACCESS_RANK[p.access] >= 3).length * 0.08,
     0,
@@ -2421,7 +2828,11 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     partners,
     domestic,
     nationalSystems: input.nationalSystems,
-    shockStress: shock.domesticStress + sanctions.domesticStress + Math.max(0, policy.domesticStress),
+    shockStress:
+      shock.domesticStress +
+      sanctions.domesticStress +
+      Math.max(0, policy.domesticStress) +
+      importPressure,
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -2438,6 +2849,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.partnerTrust,
     persisted.tradePolicies?.length,
     persisted.tradeCompliance?.score,
+    persisted.importDependencySmoothing,
+    engagementStep.state.summitPulse,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -2486,6 +2899,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     logistics,
     tradeBalance,
     tradeCompliance: persisted.tradeCompliance,
+    importDependency,
+    diplomaticEngagement: engagementStep.state,
     inputHash,
   };
 
@@ -2513,6 +2928,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   const stressed = state.regionalImpacts?.filter(r => r.stabilityDelta < -0.05).slice(0, 2);
   if (stressed?.length) lines.push(`Regional stress: ${stressed.map(r => r.regionId).join(', ')}.`);
   lines.push(...tradeBalanceGiNotes(state.tradeBalance));
+  lines.push(...importDependencyGiNotes(state.importDependency));
+  lines.push(...diplomaticEngagementGiNotes(state.diplomaticEngagement));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -2778,6 +3195,54 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     });
     const bal = computeTradeBalanceSnapshot({ commodities, partners, logistics, exportThroughput: 180 });
     gtelAssert(bal.currentAccountTone === 'surplus' || bal.currentAccountTone === 'mild_surplus', 'expected surplus tone');
+  });
+
+  ok('import dependency rises when partners restricted', () => {
+    const partners = GTEL_PARTNER_DEFS.map(p => ({
+      ...p,
+      access: p.id === 'asia_pacific' ? ('blocked' as const) : ('normal' as const),
+      accessScore: p.id === 'asia_pacific' ? 0.15 : 0.55,
+    }));
+    const commodities = GTEL_COMMODITIES.map(c => ({
+      commodity: c,
+      baseIndex: 100,
+      partnerModifier: 0,
+      diplomacyModifier: 0,
+      networkModifier: 0,
+      shockModifier: 0,
+      agreementModifier: 0,
+      effectiveIndex: 108,
+      trend: 'rising' as const,
+      evidence: [],
+    }));
+    const step = computeImportDependencySnapshot({
+      partners,
+      commodities,
+      persisted: createEmptyGTELPersisted(),
+    });
+    gtelAssert(step.snapshot.lines.length === GTEL_COMMODITIES.length, 'missing dependency lines');
+    gtelAssert(step.snapshot.aggregateRisk > 0.25, 'expected elevated aggregate risk');
+    gtelAssert(importDependencyConsumerPressure(step.snapshot) > 0, 'expected consumer pressure');
+  });
+
+  ok('diplomatic engagement boosts partner under active deals', () => {
+    const dip = {
+      deals: [
+        {
+          id: 'd1',
+          type: 'resource_trade',
+          status: 'active',
+          participants: ['player', 'rival_east'],
+          compliance: 'compliant',
+        },
+      ],
+    };
+    const step = advanceDiplomaticEngagement(createEmptyGTELPersisted(), dip, 9);
+    const asiaTrack = step.state.tracks?.asia_pacific;
+    gtelAssert(Boolean(asiaTrack), 'missing asia track');
+    gtelAssert(asiaTrack!.momentum > 0.45, 'expected engagement momentum lift');
+    const mods = deriveEngagementPartnerModifiers(step.state);
+    gtelAssert((mods.partnerDeltas.asia_pacific || 0) >= 0, 'asia engagement should not penalize active deal');
   });
 
   return { passed, failed };
