@@ -15,15 +15,15 @@ import {
 } from '../src/index.ts';
 
 describe('Tranche 41 handoff-closure-seal-sync-commit lattice catalog', () => {
-  it('adds 320 closure-seal-sync-commit chains at 17920 total', () => {
+  it('adds 320 closure-seal-sync-commit chains at 18140 total', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE41_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche41Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 17920);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 18140);
   });
 
   it('uses op10m_t41 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 17920);
+    assert.equal(ids.size, 18140);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE41) {
       assert.match(c.chainId, /^op10m_t41_/);
     }

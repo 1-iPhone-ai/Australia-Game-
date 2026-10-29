@@ -18,12 +18,12 @@ describe('Tranche 25 scale-wave-tranche-ready-commit lattice catalog', () => {
   it('adds 320 scale-wave-tranche-ready-commit lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE25_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche25Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 17920);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 18140);
   });
 
   it('uses op10m_t25 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 17920);
+    assert.equal(ids.size, 18140);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE25) {
       assert.match(c.chainId, /^op10m_t25_/);
     }
