@@ -2165,6 +2165,230 @@ export function nrDashBuildPeripheralCorridorGap(ns: NationalSystemsState | null
   };
 }
 
+// --- bundled from core/risk-exposure-concentration.ts ---
+export interface NrDashRiskExposureConcentration {
+  totalExposure: number;
+  topRegionId: string | null;
+  concentrationIndex: number;
+  topRegionShare: number;
+}
+
+/** Herfindahl clustering of LR risk exposure scores across regions. */
+export function nrDashBuildRiskExposureConcentration(
+  snap: NrDashAuthSnapshot | null
+): NrDashRiskExposureConcentration | null {
+  const exposure = nrDashBuildRiskExposure(snap);
+  if (!exposure || exposure.totalExposure <= 0) return null;
+  let topRegionId: string | null = null;
+  let topScore = 0;
+  let concentrationIndex = 0;
+  exposure.rows.forEach(r => {
+    if (r.exposureScore > topScore) {
+      topScore = r.exposureScore;
+      topRegionId = r.regionId;
+    }
+    const share = r.exposureScore / exposure.totalExposure;
+    concentrationIndex += share * share;
+  });
+  return {
+    totalExposure: exposure.totalExposure,
+    topRegionId,
+    concentrationIndex: Math.round(concentrationIndex * 1000) / 1000,
+    topRegionShare: Math.round((topScore / exposure.totalExposure) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/high-risk-region-density.ts ---
+export interface NrDashHighRiskRegionDensity {
+  regionCount: number;
+  highRiskRegionCount: number;
+  density: number;
+}
+
+/** Share of LR regions reporting at least one high-severity risk. */
+export function nrDashBuildHighRiskRegionDensity(
+  snap: NrDashAuthSnapshot | null
+): NrDashHighRiskRegionDensity | null {
+  if (!snap?.regions.length) return null;
+  const highRiskRegionCount = snap.regions.filter(r => r.highRisks > 0).length;
+  return {
+    regionCount: snap.regions.length,
+    highRiskRegionCount,
+    density: Math.round((highRiskRegionCount / snap.regions.length) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/dependency-outbound-concentration.ts ---
+export interface NrDashDependencyOutboundConcentration {
+  edgeCount: number;
+  topProviderId: string | null;
+  concentrationIndex: number;
+  topProviderShare: number;
+}
+
+/** Herfindahl clustering of weighted outbound dependency push by provider region. */
+export function nrDashBuildDependencyOutboundConcentration(
+  ns: NationalSystemsState | null
+): NrDashDependencyOutboundConcentration | null {
+  const asym = nrDashBuildDependencyAsymmetry(ns);
+  if (!asym || !ns?.dependencies?.length) return null;
+  const total = asym.rows.reduce((s, r) => s + r.outboundWeight, 0);
+  if (total <= 0) return null;
+  let topProviderId: string | null = null;
+  let topWeight = 0;
+  let concentrationIndex = 0;
+  asym.rows.forEach(r => {
+    if (r.outboundWeight > topWeight) {
+      topWeight = r.outboundWeight;
+      topProviderId = r.regionId;
+    }
+    const share = r.outboundWeight / total;
+    concentrationIndex += share * share;
+  });
+  return {
+    edgeCount: ns.dependencies.length,
+    topProviderId,
+    concentrationIndex: Math.round(concentrationIndex * 1000) / 1000,
+    topProviderShare: Math.round((topWeight / total) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/national-network-util-spread.ts ---
+export interface NrDashNationalNetworkUtilSpread {
+  networkCount: number;
+  meanUtilization: number;
+  stdDev: number;
+  maxUtilNetwork: string | null;
+}
+
+/** Dispersion of authoritative national-level network utilization (NS national row). */
+export function nrDashBuildNationalNetworkUtilSpread(
+  ns: NationalSystemsState | null
+): NrDashNationalNetworkUtilSpread | null {
+  if (!ns?.national) return null;
+  const utils = NATIONAL_NETWORKS.map(n => ns.national[n]?.utilization ?? 0);
+  if (!utils.length) return null;
+  const meanUtilization = utils.reduce((s, u) => s + u, 0) / utils.length;
+  const variance =
+    utils.reduce((s, u) => s + (u - meanUtilization) ** 2, 0) / Math.max(utils.length, 1);
+  let maxUtilNetwork: string | null = null;
+  let maxUtil = -1;
+  NATIONAL_NETWORKS.forEach((n, i) => {
+    if (utils[i] > maxUtil) {
+      maxUtil = utils[i];
+      maxUtilNetwork = n;
+    }
+  });
+  return {
+    networkCount: utils.length,
+    meanUtilization: Math.round(meanUtilization * 1000) / 1000,
+    stdDev: Math.round(Math.sqrt(variance) * 1000) / 1000,
+    maxUtilNetwork,
+  };
+}
+
+// --- bundled from core/resilience-utilization-gap.ts ---
+export interface NrDashResilienceUtilizationGap {
+  sampleSize: number;
+  meanAbsGap: number;
+  maxGapRegionId: string | null;
+}
+
+function meanNetworkUtil(reg: NationalSystemsState['regions'][string]): number {
+  let sum = 0;
+  NATIONAL_NETWORKS.forEach(n => {
+    sum += reg.networks[n]?.utilization ?? 0;
+  });
+  return sum / NATIONAL_NETWORKS.length;
+}
+
+/** Mean |NS resilience − mean regional network util×100| per authoritative region row. */
+export function nrDashBuildResilienceUtilizationGap(
+  ns: NationalSystemsState | null
+): NrDashResilienceUtilizationGap | null {
+  if (!ns?.regions) return null;
+  const gaps: { regionId: string; absGap: number }[] = [];
+  Object.values(ns.regions).forEach(reg => {
+    if (!Number.isFinite(reg.resilience)) return;
+    const utilPct = meanNetworkUtil(reg) * 100;
+    const gap = Math.abs(reg.resilience - utilPct);
+    gaps.push({ regionId: reg.regionId, absGap: Math.round(gap * 10) / 10 });
+  });
+  if (!gaps.length) return null;
+  gaps.sort((a, b) => b.absGap - a.absGap || a.regionId.localeCompare(b.regionId));
+  const meanAbsGap =
+    Math.round((gaps.reduce((s, g) => s + g.absGap, 0) / gaps.length) * 100) / 100;
+  return {
+    sampleSize: gaps.length,
+    meanAbsGap,
+    maxGapRegionId: gaps[0]?.regionId ?? null,
+  };
+}
+
+// --- bundled from core/link-stress-dispersion.ts ---
+export interface NrDashLinkStressDispersion {
+  linkCount: number;
+  meanStress: number;
+  stdDev: number;
+  hottestLinkId: string | null;
+}
+
+/** Dispersion of enriched map link stress levels (corridor + dependency). */
+export function nrDashBuildLinkStressDispersion(ns: NationalSystemsState | null): NrDashLinkStressDispersion | null {
+  if (!ns) return null;
+  const links = nrDashEnrichMapLinkStress(
+    nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT)
+    ),
+    ns
+  );
+  const stresses = links.map(l => l.stressLevel ?? 0).filter(s => Number.isFinite(s));
+  if (!stresses.length) return null;
+  const meanStress = stresses.reduce((s, n) => s + n, 0) / stresses.length;
+  const variance =
+    stresses.reduce((s, n) => s + (n - meanStress) ** 2, 0) / Math.max(stresses.length, 1);
+  const ranked = [...links].sort((a, b) => (b.stressLevel ?? 0) - (a.stressLevel ?? 0));
+  return {
+    linkCount: stresses.length,
+    meanStress: Math.round(meanStress * 1000) / 1000,
+    stdDev: Math.round(Math.sqrt(variance) * 1000) / 1000,
+    hottestLinkId: ranked[0]?.id ?? null,
+  };
+}
+
+// --- bundled from core/momentum-delta-spread.ts ---
+export interface NrDashMomentumDeltaSpread {
+  sampleSize: number;
+  meanAbsDelta: number;
+  stdDev: number;
+  outlierRegionId: string | null;
+}
+
+/** Cross-region dispersion of LR momentum history deltas (last − first). */
+export function nrDashBuildMomentumDeltaSpread(snap: NrDashAuthSnapshot | null): NrDashMomentumDeltaSpread | null {
+  if (!snap?.regions.length) return null;
+  const deltas = nrDashBuildTrendDeltas(snap.regions)
+    .filter(r => r.delta != null)
+    .map(r => ({ regionId: r.regionId, delta: r.delta as number }));
+  if (!deltas.length) return null;
+  const absValues = deltas.map(d => Math.abs(d.delta));
+  const meanAbsDelta =
+    Math.round((absValues.reduce((s, n) => s + n, 0) / absValues.length) * 1000) / 1000;
+  const mean = absValues.reduce((s, n) => s + n, 0) / absValues.length;
+  const variance =
+    absValues.reduce((s, n) => s + (n - mean) ** 2, 0) / Math.max(absValues.length, 1);
+  const ranked = [...deltas].sort(
+    (a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.regionId.localeCompare(b.regionId)
+  );
+  return {
+    sampleSize: deltas.length,
+    meanAbsDelta,
+    stdDev: Math.round(Math.sqrt(variance) * 1000) / 1000,
+    outlierRegionId: ranked[0]?.regionId ?? null,
+  };
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -2737,6 +2961,22 @@ export const NrDashOpenNeedsConcentrationCard: React.FC<{ conc: NrDashOpenNeedsC
   );
 };
 
+// --- bundled from ui/risk-exposure-concentration-card.tsx ---
+export const NrDashRiskExposureConcentrationCard: React.FC<{
+  conc: NrDashRiskExposureConcentration | null;
+}> = ({ conc }) => {
+  if (!conc) return null;
+  return (
+    <div className="rounded-lg border border-slate-600/50 p-3 text-xs" data-testid="nr-dash-risk-exposure-concentration">
+      <div className="font-semibold mb-1">Risk exposure concentration</div>
+      <div className="opacity-80">
+        HHI {conc.concentrationIndex} · top {conc.topRegionId ?? '—'} ({Math.round(conc.topRegionShare * 100)}% of{' '}
+        {conc.totalExposure})
+      </div>
+    </div>
+  );
+};
+
 // --- bundled from ui/economy-momentum-drift-strip.tsx ---
 export const NrDashEconomyMomentumDriftStrip: React.FC<{
   meanAbsDrift: number;
@@ -2884,6 +3124,15 @@ export const NrDashOverviewTab: React.FC<{
     <NrDashNeedsImbalanceCard imbalance={nrDashBuildNeedsImbalance(snap)} />
     <NrDashOpenNeedsConcentrationCard conc={nrDashBuildOpenNeedsConcentration(snap)} />
     <NrDashRiskExposureCard exposure={nrDashBuildRiskExposure(snap)} />
+    <NrDashRiskExposureConcentrationCard conc={nrDashBuildRiskExposureConcentration(snap)} />
+    {(() => {
+      const density = nrDashBuildHighRiskRegionDensity(snap);
+      return density ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-high-risk-density">
+          High-risk region density {density.density} · {density.highRiskRegionCount}/{density.regionCount} regions
+        </div>
+      ) : null;
+    })()}
     <NrDashOwnerStressGapCard gap={nrDashBuildOwnerStressGap(snap)} />
     <NrDashOwnedMomentumSkewCard skew={nrDashBuildOwnedMomentumSkew(snap)} />
     <div className="grid md:grid-cols-3 gap-3 text-sm">
@@ -2945,6 +3194,15 @@ export const NrDashRegionsTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-inbound-concentration">
           Dependency inbound concentration {inboundConc.concentrationIndex} · top consumer {inboundConc.topConsumerId ?? '—'} (
           {Math.round(inboundConc.topConsumerShare * 100)}%)
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const outboundConc = nrDashBuildDependencyOutboundConcentration(nsState);
+      return outboundConc ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-outbound-concentration">
+          Dependency outbound concentration {outboundConc.concentrationIndex} · top provider {outboundConc.topProviderId ?? '—'} (
+          {Math.round(outboundConc.topProviderShare * 100)}%)
         </div>
       ) : null;
     })()}
@@ -3034,6 +3292,8 @@ export const NrDashNetworksTab: React.FC<{
   const bottleneckConc = nrDashBuildBottleneckConcentration(ns);
   const utilDrift = nrDashBuildUtilAlignmentDrift(ns);
   const criticalDensity = nrDashBuildCriticalCellDensity(ns);
+  const nationalSpread = nrDashBuildNationalNetworkUtilSpread(ns);
+  const resilienceUtilGap = nrDashBuildResilienceUtilizationGap(ns);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
       <NrDashUtilAlignmentStrip drift={utilDrift} />
@@ -3049,6 +3309,18 @@ export const NrDashNetworksTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-critical-cell-density">
           Critical+ cell density {criticalDensity.density} · {criticalDensity.criticalPlusCount}/{criticalDensity.cellCount}
           {criticalDensity.worstRegionId ? ` · worst ${criticalDensity.worstRegionId}` : ''}
+        </div>
+      )}
+      {nationalSpread && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-network-spread">
+          National network util spread σ {nationalSpread.stdDev} · μ {nationalSpread.meanUtilization}
+          {nationalSpread.maxUtilNetwork ? ` · peak ${nationalSpread.maxUtilNetwork}` : ''}
+        </div>
+      )}
+      {resilienceUtilGap && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-resilience-util-gap">
+          Resilience ↔ util gap μ |Δ| {resilienceUtilGap.meanAbsGap}
+          {resilienceUtilGap.maxGapRegionId ? ` · max ${resilienceUtilGap.maxGapRegionId}` : ''}
         </div>
       )}
       {bottleneckConc && (
@@ -3112,6 +3384,7 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
   const coherence = nrDashBuildTrendCoherence(snap);
   const acceleration = nrDashBuildTrendAcceleration(snap);
   const historyVol = nrDashBuildMomentumHistoryVolatility(snap);
+  const deltaSpread = nrDashBuildMomentumDeltaSpread(snap);
   return (
     <div data-testid="nr-dash-tab-trends">
       <NrDashProvenanceStrip items={snap.provenance} />
@@ -3130,6 +3403,15 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
           <div>
             μ range {historyVol.meanVolatility} · max {historyVol.maxVolatility}
             {historyVol.outlierRegionId ? ` · outlier ${historyVol.outlierRegionId}` : ''}
+          </div>
+        </div>
+      )}
+      {deltaSpread && (
+        <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-momentum-delta-spread">
+          <div className="font-semibold mb-1">Momentum delta spread</div>
+          <div>
+            μ |Δ| {deltaSpread.meanAbsDelta} · σ {deltaSpread.stdDev}
+            {deltaSpread.outlierRegionId ? ` · mover ${deltaSpread.outlierRegionId}` : ''}
           </div>
         </div>
       )}
@@ -3197,6 +3479,7 @@ export const NrDashMapTab: React.FC<{
   const primaryHub = useMemo(() => nrDashPrimaryMapHub(nsState), [nsState]);
   const hubLoad = useMemo(() => nrDashBuildHubCorridorLoad(nsState), [nsState]);
   const peripheralGap = useMemo(() => nrDashBuildPeripheralCorridorGap(nsState), [nsState]);
+  const linkDispersion = useMemo(() => nrDashBuildLinkStressDispersion(nsState), [nsState]);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
@@ -3219,6 +3502,12 @@ export const NrDashMapTab: React.FC<{
       {hottestLink && (
         <p className="text-[10px] opacity-75" data-testid="nr-dash-map-link-stress-hot">
           Hottest link stress: {hottestLink.label} ({Math.round((hottestLink.stressLevel ?? 0) * 100)}%)
+        </p>
+      )}
+      {linkDispersion && linkDispersion.linkCount > 0 && (
+        <p className="text-[10px] opacity-75" data-testid="nr-dash-link-stress-dispersion">
+          Link stress dispersion: μ {Math.round(linkDispersion.meanStress * 100)}% · σ{' '}
+          {Math.round(linkDispersion.stdDev * 100)}% across {linkDispersion.linkCount} links
         </p>
       )}
       {nrDashHottestBorderRegion(nsState) && (
@@ -3750,6 +4039,44 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_peripheral_gap', 'Peripheral corridor gap compares hub vs rim stress', () => {
     const gap = nrDashBuildPeripheralCorridorGap(createAgent23NsFixture())!;
     return gap.hubRegionId != null && gap.peripheralLinkCount >= 1;
+  });
+
+  check('a23_risk_exposure_conc', 'Risk exposure concentration peaks on NSW fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const conc = nrDashBuildRiskExposureConcentration(snap)!;
+    return conc.topRegionId === 'NSW' && conc.concentrationIndex === 0.16;
+  });
+
+  check('a23_high_risk_density', 'High-risk region density counts one NSW hotspot', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const density = nrDashBuildHighRiskRegionDensity(snap)!;
+    return density.highRiskRegionCount === 1 && density.density === 0.125;
+  });
+
+  check('a23_dep_outbound_conc', 'Dependency outbound concentration peaks on QLD fixture', () => {
+    const conc = nrDashBuildDependencyOutboundConcentration(createAgent23NsFixture())!;
+    return conc.edgeCount === 3 && conc.topProviderId === 'QLD' && conc.concentrationIndex > 0;
+  });
+
+  check('a23_national_util_spread', 'National network util spread spans five networks', () => {
+    const spread = nrDashBuildNationalNetworkUtilSpread(createAgent23NsFixture())!;
+    return spread.networkCount === 5 && spread.stdDev > 0 && spread.maxUtilNetwork === 'digital';
+  });
+
+  check('a23_resilience_util_gap', 'Resilience utilization gap covers eight NS regions', () => {
+    const gap = nrDashBuildResilienceUtilizationGap(createAgent23NsFixture())!;
+    return gap.sampleSize === 8 && gap.meanAbsGap > 0 && gap.maxGapRegionId != null;
+  });
+
+  check('a23_link_stress_disp', 'Link stress dispersion aggregates map links', () => {
+    const disp = nrDashBuildLinkStressDispersion(createAgent23NsFixture())!;
+    return disp.linkCount >= 10 && disp.stdDev >= 0 && disp.hottestLinkId != null;
+  });
+
+  check('a23_momentum_delta_spread', 'Momentum delta spread covers eight LR regions', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const spread = nrDashBuildMomentumDeltaSpread(snap)!;
+    return spread.sampleSize === 8 && spread.meanAbsDelta === 0.15 && spread.stdDev === 0;
   });
 
   return results;

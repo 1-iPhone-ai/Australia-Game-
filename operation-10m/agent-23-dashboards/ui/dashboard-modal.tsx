@@ -47,6 +47,13 @@ import { nrDashTopEconomyMomentumDrift, nrDashBuildEconomyMomentumDrift } from '
 import { nrDashBuildMomentumHistoryVolatility } from '../core/momentum-history-volatility.ts';
 import { nrDashBuildDependencyInboundConcentration } from '../core/dependency-inbound-concentration.ts';
 import { nrDashBuildPeripheralCorridorGap } from '../core/peripheral-corridor-gap.ts';
+import { nrDashBuildRiskExposureConcentration } from '../core/risk-exposure-concentration.ts';
+import { nrDashBuildHighRiskRegionDensity } from '../core/high-risk-region-density.ts';
+import { nrDashBuildDependencyOutboundConcentration } from '../core/dependency-outbound-concentration.ts';
+import { nrDashBuildNationalNetworkUtilSpread } from '../core/national-network-util-spread.ts';
+import { nrDashBuildResilienceUtilizationGap } from '../core/resilience-utilization-gap.ts';
+import { nrDashBuildLinkStressDispersion } from '../core/link-stress-dispersion.ts';
+import { nrDashBuildMomentumDeltaSpread } from '../core/momentum-delta-spread.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -83,6 +90,7 @@ import { NrDashOwnedMomentumSkewCard } from './owned-momentum-skew-card.tsx';
 import { NrDashDependencyAsymmetryStrip } from './dependency-asymmetry-strip.tsx';
 import { NrDashUtilAlignmentStrip } from './util-alignment-strip.tsx';
 import { NrDashOpenNeedsConcentrationCard } from './open-needs-concentration-card.tsx';
+import { NrDashRiskExposureConcentrationCard } from './risk-exposure-concentration-card.tsx';
 import { NrDashEconomyMomentumDriftStrip } from './economy-momentum-drift-strip.tsx';
 import { RegionPositionMap } from './region-position-map.tsx';
 
@@ -111,6 +119,15 @@ export const NrDashOverviewTab: React.FC<{
     <NrDashNeedsImbalanceCard imbalance={nrDashBuildNeedsImbalance(snap)} />
     <NrDashOpenNeedsConcentrationCard conc={nrDashBuildOpenNeedsConcentration(snap)} />
     <NrDashRiskExposureCard exposure={nrDashBuildRiskExposure(snap)} />
+    <NrDashRiskExposureConcentrationCard conc={nrDashBuildRiskExposureConcentration(snap)} />
+    {(() => {
+      const density = nrDashBuildHighRiskRegionDensity(snap);
+      return density ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-high-risk-density">
+          High-risk region density {density.density} · {density.highRiskRegionCount}/{density.regionCount} regions
+        </div>
+      ) : null;
+    })()}
     <NrDashOwnerStressGapCard gap={nrDashBuildOwnerStressGap(snap)} />
     <NrDashOwnedMomentumSkewCard skew={nrDashBuildOwnedMomentumSkew(snap)} />
     <div className="grid md:grid-cols-3 gap-3 text-sm">
@@ -172,6 +189,15 @@ export const NrDashRegionsTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-inbound-concentration">
           Dependency inbound concentration {inboundConc.concentrationIndex} · top consumer {inboundConc.topConsumerId ?? '—'} (
           {Math.round(inboundConc.topConsumerShare * 100)}%)
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const outboundConc = nrDashBuildDependencyOutboundConcentration(nsState);
+      return outboundConc ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dep-outbound-concentration">
+          Dependency outbound concentration {outboundConc.concentrationIndex} · top provider {outboundConc.topProviderId ?? '—'} (
+          {Math.round(outboundConc.topProviderShare * 100)}%)
         </div>
       ) : null;
     })()}
@@ -261,6 +287,8 @@ export const NrDashNetworksTab: React.FC<{
   const bottleneckConc = nrDashBuildBottleneckConcentration(ns);
   const utilDrift = nrDashBuildUtilAlignmentDrift(ns);
   const criticalDensity = nrDashBuildCriticalCellDensity(ns);
+  const nationalSpread = nrDashBuildNationalNetworkUtilSpread(ns);
+  const resilienceUtilGap = nrDashBuildResilienceUtilizationGap(ns);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
       <NrDashUtilAlignmentStrip drift={utilDrift} />
@@ -276,6 +304,18 @@ export const NrDashNetworksTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-critical-cell-density">
           Critical+ cell density {criticalDensity.density} · {criticalDensity.criticalPlusCount}/{criticalDensity.cellCount}
           {criticalDensity.worstRegionId ? ` · worst ${criticalDensity.worstRegionId}` : ''}
+        </div>
+      )}
+      {nationalSpread && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-network-spread">
+          National network util spread σ {nationalSpread.stdDev} · μ {nationalSpread.meanUtilization}
+          {nationalSpread.maxUtilNetwork ? ` · peak ${nationalSpread.maxUtilNetwork}` : ''}
+        </div>
+      )}
+      {resilienceUtilGap && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-resilience-util-gap">
+          Resilience ↔ util gap μ |Δ| {resilienceUtilGap.meanAbsGap}
+          {resilienceUtilGap.maxGapRegionId ? ` · max ${resilienceUtilGap.maxGapRegionId}` : ''}
         </div>
       )}
       {bottleneckConc && (
@@ -339,6 +379,7 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
   const coherence = nrDashBuildTrendCoherence(snap);
   const acceleration = nrDashBuildTrendAcceleration(snap);
   const historyVol = nrDashBuildMomentumHistoryVolatility(snap);
+  const deltaSpread = nrDashBuildMomentumDeltaSpread(snap);
   return (
     <div data-testid="nr-dash-tab-trends">
       <NrDashProvenanceStrip items={snap.provenance} />
@@ -357,6 +398,15 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
           <div>
             μ range {historyVol.meanVolatility} · max {historyVol.maxVolatility}
             {historyVol.outlierRegionId ? ` · outlier ${historyVol.outlierRegionId}` : ''}
+          </div>
+        </div>
+      )}
+      {deltaSpread && (
+        <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-momentum-delta-spread">
+          <div className="font-semibold mb-1">Momentum delta spread</div>
+          <div>
+            μ |Δ| {deltaSpread.meanAbsDelta} · σ {deltaSpread.stdDev}
+            {deltaSpread.outlierRegionId ? ` · mover ${deltaSpread.outlierRegionId}` : ''}
           </div>
         </div>
       )}
@@ -424,6 +474,7 @@ export const NrDashMapTab: React.FC<{
   const primaryHub = useMemo(() => nrDashPrimaryMapHub(nsState), [nsState]);
   const hubLoad = useMemo(() => nrDashBuildHubCorridorLoad(nsState), [nsState]);
   const peripheralGap = useMemo(() => nrDashBuildPeripheralCorridorGap(nsState), [nsState]);
+  const linkDispersion = useMemo(() => nrDashBuildLinkStressDispersion(nsState), [nsState]);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
@@ -446,6 +497,12 @@ export const NrDashMapTab: React.FC<{
       {hottestLink && (
         <p className="text-[10px] opacity-75" data-testid="nr-dash-map-link-stress-hot">
           Hottest link stress: {hottestLink.label} ({Math.round((hottestLink.stressLevel ?? 0) * 100)}%)
+        </p>
+      )}
+      {linkDispersion && linkDispersion.linkCount > 0 && (
+        <p className="text-[10px] opacity-75" data-testid="nr-dash-link-stress-dispersion">
+          Link stress dispersion: μ {Math.round(linkDispersion.meanStress * 100)}% · σ{' '}
+          {Math.round(linkDispersion.stdDev * 100)}% across {linkDispersion.linkCount} links
         </p>
       )}
       {nrDashHottestBorderRegion(nsState) && (

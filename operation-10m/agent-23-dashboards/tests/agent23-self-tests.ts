@@ -43,6 +43,13 @@ import { nrDashBuildEconomyMomentumDrift, nrDashTopEconomyMomentumDrift } from '
 import { nrDashBuildMomentumHistoryVolatility } from '../core/momentum-history-volatility.ts';
 import { nrDashBuildDependencyInboundConcentration } from '../core/dependency-inbound-concentration.ts';
 import { nrDashBuildPeripheralCorridorGap } from '../core/peripheral-corridor-gap.ts';
+import { nrDashBuildRiskExposureConcentration } from '../core/risk-exposure-concentration.ts';
+import { nrDashBuildHighRiskRegionDensity } from '../core/high-risk-region-density.ts';
+import { nrDashBuildDependencyOutboundConcentration } from '../core/dependency-outbound-concentration.ts';
+import { nrDashBuildNationalNetworkUtilSpread } from '../core/national-network-util-spread.ts';
+import { nrDashBuildResilienceUtilizationGap } from '../core/resilience-utilization-gap.ts';
+import { nrDashBuildLinkStressDispersion } from '../core/link-stress-dispersion.ts';
+import { nrDashBuildMomentumDeltaSpread } from '../core/momentum-delta-spread.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -458,6 +465,44 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_peripheral_gap', 'Peripheral corridor gap compares hub vs rim stress', () => {
     const gap = nrDashBuildPeripheralCorridorGap(createAgent23NsFixture())!;
     return gap.hubRegionId != null && gap.peripheralLinkCount >= 1;
+  });
+
+  check('a23_risk_exposure_conc', 'Risk exposure concentration peaks on NSW fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const conc = nrDashBuildRiskExposureConcentration(snap)!;
+    return conc.topRegionId === 'NSW' && conc.concentrationIndex === 0.16;
+  });
+
+  check('a23_high_risk_density', 'High-risk region density counts one NSW hotspot', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const density = nrDashBuildHighRiskRegionDensity(snap)!;
+    return density.highRiskRegionCount === 1 && density.density === 0.125;
+  });
+
+  check('a23_dep_outbound_conc', 'Dependency outbound concentration peaks on QLD fixture', () => {
+    const conc = nrDashBuildDependencyOutboundConcentration(createAgent23NsFixture())!;
+    return conc.edgeCount === 3 && conc.topProviderId === 'QLD' && conc.concentrationIndex > 0;
+  });
+
+  check('a23_national_util_spread', 'National network util spread spans five networks', () => {
+    const spread = nrDashBuildNationalNetworkUtilSpread(createAgent23NsFixture())!;
+    return spread.networkCount === 5 && spread.stdDev > 0 && spread.maxUtilNetwork === 'digital';
+  });
+
+  check('a23_resilience_util_gap', 'Resilience utilization gap covers eight NS regions', () => {
+    const gap = nrDashBuildResilienceUtilizationGap(createAgent23NsFixture())!;
+    return gap.sampleSize === 8 && gap.meanAbsGap > 0 && gap.maxGapRegionId != null;
+  });
+
+  check('a23_link_stress_disp', 'Link stress dispersion aggregates map links', () => {
+    const disp = nrDashBuildLinkStressDispersion(createAgent23NsFixture())!;
+    return disp.linkCount >= 10 && disp.stdDev >= 0 && disp.hottestLinkId != null;
+  });
+
+  check('a23_momentum_delta_spread', 'Momentum delta spread covers eight LR regions', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const spread = nrDashBuildMomentumDeltaSpread(snap)!;
+    return spread.sampleSize === 8 && spread.meanAbsDelta === 0.15 && spread.stdDev === 0;
   });
 
   return results;
