@@ -142,5 +142,8 @@ export * from './settlement-existential-absolute-nullity-ratification.ts';
 export * from './regional-collapse-omni-singularity-pantheism.ts';
 export * from './interregional-void-total-erosion-exhaustion.ts';
 export * from './settlement-existential-absolute-nullity-canonization.ts';
+export * from './regional-collapse-omni-singularity-panentheism.ts';
+export * from './interregional-void-total-erosion-enervation.ts';
+export * from './settlement-existential-absolute-nullity-sanctification.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

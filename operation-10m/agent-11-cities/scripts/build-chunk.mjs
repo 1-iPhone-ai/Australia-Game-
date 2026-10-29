@@ -13,70 +13,28 @@ const srcRoot = path.join(repoRoot, 'operation-10m/agent-11-cities/src');
 const outDir = path.join(repoRoot, 'operation-10m/modules/agent-11-cities');
 const outFile = path.join(outDir, 'chunk.tsx');
 
-const FILES = [
-  'types.ts',
-  'constants.ts',
-  'regional-inequality.ts',
-  'urban-growth-dynamics.ts',
-  'urban-national-links.ts',
-  'infrastructure-bottlenecks.ts',
-  'intercity-dependencies.ts',
-  'recompute.ts',
-  'recompute-intercity-infra.ts',
-  'urban-hierarchy.ts',
-  'regional-linkage-matrix.ts',
-  'relief-playbook.ts',
-  'urban-corridor-flow.ts',
-  'linkage-hub-centrality.ts',
-  'regional-migration-pressure.ts',
-  'settlement-vulnerability.ts',
-  'fiscal-urban-coupling.ts',
-  'metropolitan-absorption-stress.ts',
-  'regional-service-equity.ts',
-  'regional-convergence-velocity.ts',
-  'peri-urban-expansion-pressure.ts',
-  'regional-infrastructure-backlog.ts',
-  'multi-tier-governance-friction.ts',
-  'regional-housing-spillover-pressure.ts',
-  'interregional-talent-retention-stress.ts',
-  'climate-settlement-displacement-risk.ts',
-  'regional-amenity-cost-pressure.ts',
-  'digital-connectivity-decentralization-shift.ts',
-  'settlement-relocation-burden.ts',
-  'regional-employment-anchor-stress.ts',
-  'interregional-commute-affordability-wedge.ts',
-  'settlement-reception-capacity-strain.ts',
-  'regional-land-use-regulatory-gridlock.ts',
-  'interregional-mobility-affordability-trap.ts',
-  'settlement-infrastructure-absorption-gap.ts',
-  'regional-relief-coordination-overhead.ts',
-  'interregional-corridor-equity-drift.ts',
-  'settlement-climate-adaptation-lag.ts',
-  'regional-fiscal-capacity-strain.ts',
-  'interregional-network-resilience-erosion.ts',
-  'settlement-long-horizon-capacity-risk.ts',
-  'regional-cohesion-integrity-pressure.ts',
-  'interregional-relief-delivery-equity-gap.ts',
-  'settlement-systemic-fragility-composite.ts',
-  'regional-governance-resilience-decay.ts',
-  'interregional-migration-stability-erosion.ts',
-  'settlement-adaptive-capacity-ceiling.ts',
-  'regional-fiscal-governance-coupling-strain.ts',
-  'interregional-network-equity-tension.ts',
-  'settlement-resilience-frontier-pressure.ts',
-  'regional-meta-governance-coordination-fatigue.ts',
-  'interregional-capital-mobility-asymmetry.ts',
-  'settlement-compound-shock-saturation.ts',
-  'regional-institutional-trust-erosion.ts',
-  'interregional-liquidity-fragmentation-stress.ts',
-  'settlement-cascading-failure-risk.ts',
-  'regional-collapse-omni-singularity-unification.ts',
-  'interregional-void-total-erosion-elimination.ts',
-  'settlement-existential-absolute-nullity-perpetuity.ts',
-  'composite-recompute.ts',
-  'integration/regional-regression-harness.ts',
-  'self-tests.ts',
-];
+const TAIL_FILES = ['composite-recompute.ts', 'integration/regional-regression-harness.ts', 'self-tests.ts'];
+const HEAD_FILES = ['types.ts', 'constants.ts'];
+
+function walkTsFiles(dir, base = '') {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const out = [];
+  for (const entry of entries) {
+    const rel = base ? `${base}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      out.push(...walkTsFiles(path.join(dir, entry.name), rel));
+    } else if (entry.name.endsWith('.ts') && entry.name !== 'index.ts') {
+      out.push(rel);
+    }
+  }
+  return out;
+}
+
+const discovered = walkTsFiles(srcRoot);
+const middle = discovered
+  .filter((f) => !HEAD_FILES.includes(f) && !TAIL_FILES.includes(f))
+  .sort((a, b) => a.localeCompare(b));
+const FILES = [...HEAD_FILES, ...middle, ...TAIL_FILES];
 
 function stripModulePreamble(source) {
   const lines = source.split('\n');

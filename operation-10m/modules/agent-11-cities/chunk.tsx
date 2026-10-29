@@ -219,7 +219,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.45' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.46' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -360,7 +360,10 @@ export type OP10M_A11_CompositeDerivedKind =
   | 'existential_absolute_nullity_ratification'
   | 'collapse_omni_singularity_pantheism'
   | 'void_total_erosion_exhaustion'
-  | 'existential_absolute_nullity_canonization';
+  | 'existential_absolute_nullity_canonization'
+  | 'collapse_omni_singularity_panentheism'
+  | 'void_total_erosion_enervation'
+  | 'existential_absolute_nullity_sanctification';
 
 export type OP10M_A11_AbsorptionStressBand = 'comfortable' | 'tightening' | 'strained' | 'breached';
 
@@ -1621,6 +1624,36 @@ export interface OP10M_A11_ExistentialAbsoluteNullityCanonizationRow {
   narrative: string;
 }
 
+export type OP10M_A11_CollapseOmniSingularityPanentheismBand = 'latent' | 'aligning' | 'total' | 'panentheism';
+
+export interface OP10M_A11_CollapseOmniSingularityPanentheismRow {
+  regionId: OP10M_A11_RegionId;
+  panentheismScore: number;
+  band: OP10M_A11_CollapseOmniSingularityPanentheismBand;
+  marks: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_VoidTotalErosionEnervationBand = 'dormant' | 'enervating' | 'total' | 'complete_enervation';
+
+export interface OP10M_A11_VoidTotalErosionEnervationRow {
+  regionId: OP10M_A11_RegionId;
+  enervationScore: number;
+  band: OP10M_A11_VoidTotalErosionEnervationBand;
+  phases: string[];
+  narrative: string;
+}
+
+export type OP10M_A11_ExistentialAbsoluteNullitySanctificationBand = 'trace' | 'sanctifying' | 'absolute' | 'total_sanctification';
+
+export interface OP10M_A11_ExistentialAbsoluteNullitySanctificationRow {
+  regionId: OP10M_A11_RegionId;
+  sanctificationScore: number;
+  band: OP10M_A11_ExistentialAbsoluteNullitySanctificationBand;
+  marks: string[];
+  narrative: string;
+}
+
 export interface OP10M_A11_ExistentialAbsoluteNullityContinuityRow {
   regionId: OP10M_A11_RegionId;
   continuityScore: number;
@@ -1991,6 +2024,12 @@ export interface OP10M_A11_CompositeState {
   nationalVoidTotalErosionExhaustionIndex: number;
   existentialAbsoluteNullityCanonization: OP10M_A11_ExistentialAbsoluteNullityCanonizationRow[];
   nationalExistentialAbsoluteNullityCanonizationIndex: number;
+  collapseOmniSingularityPanentheism: OP10M_A11_CollapseOmniSingularityPanentheismRow[];
+  nationalCollapseOmniSingularityPanentheismIndex: number;
+  voidTotalErosionEnervation: OP10M_A11_VoidTotalErosionEnervationRow[];
+  nationalVoidTotalErosionEnervationIndex: number;
+  existentialAbsoluteNullitySanctification: OP10M_A11_ExistentialAbsoluteNullitySanctificationRow[];
+  nationalExistentialAbsoluteNullitySanctificationIndex: number;
   summary: string;
   inputHash: string;
 }
@@ -2126,6 +2165,9 @@ export interface OP10M_A11_CompositePersisted {
   lastCollapseOmniSingularityPantheismIndex: number;
   lastVoidTotalErosionExhaustionIndex: number;
   lastExistentialAbsoluteNullityCanonizationIndex: number;
+  lastCollapseOmniSingularityPanentheismIndex: number;
+  lastVoidTotalErosionEnervationIndex: number;
+  lastExistentialAbsoluteNullitySanctificationIndex: number;
   inputHash: string;
 }
 
@@ -2205,217 +2247,204 @@ export function op10mA11HashInputs(payload: {
 }
 
 
-// --- source: regional-inequality.ts ---
+// --- source: climate-settlement-displacement-risk.ts ---
 
-export function op10mA11RelativeStanding(scores: Record<OP10M_A11_RegionId, number>): Record<OP10M_A11_RegionId, number> {
-  const vals = OP10M_A11_CORE_REGIONS.map((r) => scores[r]);
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
-  const span = Math.max(1, max - min);
-  const out = {} as Record<OP10M_A11_RegionId, number>;
+function displacementBand(score: number): OP10M_A11_ClimateDisplacementBand {
+  if (score < 26) return 'low';
+  if (score < 46) return 'elevated';
+  if (score < 64) return 'acute';
+  return 'critical';
+}
+
+export function op10mA11ComputeClimateSettlementDisplacementRisk(args: {
+  settlementVulnerability: OP10M_A11_SettlementVulnerabilityRow[];
+  bottlenecks: OP10M_A11_RegionalBottleneck[];
+  networkDigital: number;
+  corridorStressIndex: number;
+}): { rows: OP10M_A11_ClimateDisplacementRow[]; nationalIndex: number } {
+  const settlementByRegion = new Map(args.settlementVulnerability.map((s) => [s.regionId, s]));
+  const bottleneckByRegion = new Map(args.bottlenecks.map((b) => [b.regionId, b]));
+  const resilienceGap = op10mA11Clamp(78 - args.networkDigital * 0.65);
+  const networkStress = op10mA11Clamp(args.corridorStressIndex * 0.28);
+
+  const rows: OP10M_A11_ClimateDisplacementRow[] = [];
+  let weighted = 0;
+
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    out[rid] = op10mA11Clamp(((scores[rid] - min) / span) * 100);
-  }
-  return out;
-}
+    const settlement = settlementByRegion.get(rid);
+    const bottleneck = bottleneckByRegion.get(rid);
 
-export function op10mA11LeadingLaggingFlags(
-  relative: Record<OP10M_A11_RegionId, number>,
-): Record<OP10M_A11_RegionId, { leading: boolean; lagging: boolean }> {
-  const out = {} as Record<OP10M_A11_RegionId, { leading: boolean; lagging: boolean }>;
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    out[rid] = {
-      leading: relative[rid] >= 72,
-      lagging: relative[rid] <= 28,
-    };
-  }
-  return out;
-}
+    const exposureBase = settlement ? op10mA11Clamp(settlement.vulnerabilityScore * 0.62) : 18;
+    const evacDrag = bottleneck ? op10mA11Clamp(bottleneck.bindScore * 0.38) : 12;
+    const displacementScore = op10mA11Clamp(exposureBase + evacDrag + resilienceGap * 0.35 + networkStress);
 
-export function op10mA11SummarizeInequality(args: {
-  inequalityIndex: number;
-  inequalityBand: string;
-  metroGap: number;
-  leading: OP10M_A11_RegionId[];
-  lagging: OP10M_A11_RegionId[];
-}): string {
-  const lead = args.leading.slice(0, 2).join('/') || 'none';
-  const lag = args.lagging.slice(0, 2).join('/') || 'none';
-  return `Regional inequality ${args.inequalityBand} (index ${op10mA11Round(args.inequalityIndex)}); metro gap ${op10mA11Round(args.metroGap)}; leaders ${lead}; lagging ${lag}.`;
-}
+    weighted += displacementScore;
 
-
-// --- source: urban-growth-dynamics.ts ---
-
-const MOMENTUM_BOOST: Record<string, number> = {
-  declining: -10,
-  weakening: -4,
-  stable: 0,
-  growing: 6,
-  rapid_growth: 12,
-  booming: 18,
-};
-
-const DEV_BOOST: Record<string, number> = {
-  underdeveloped: -6,
-  emerging: -1,
-  developing: 3,
-  advanced: 8,
-  highly_developed: 12,
-};
-
-export function op10mA11AggregateUrbanGrowthByRegion(
-  cities: OP10M_A11_CityGrowthSlice[],
-): Record<OP10M_A11_RegionId, { avgGrowth: number; maxGrowth: number; cityCount: number; gatewayAvg: number }> {
-  const acc: Partial<
-    Record<
-      OP10M_A11_RegionId,
-      { sum: number; max: number; n: number; gatewaySum: number; gatewayN: number }
-    >
-  > = {};
-
-  for (const c of cities) {
-    const rid = c.regionId as OP10M_A11_RegionId;
-    if (!OP10M_A11_CORE_REGIONS.includes(rid)) continue;
-    const row = acc[rid] || { sum: 0, max: 0, n: 0, gatewaySum: 0, gatewayN: 0 };
-    row.sum += c.growthScore;
-    row.max = Math.max(row.max, c.growthScore);
-    row.n += 1;
-    if (c.gateway) {
-      row.gatewaySum += c.growthScore;
-      row.gatewayN += 1;
+    const hazards: string[] = [];
+    if (settlement && (settlement.band === 'fragile' || settlement.band === 'critical')) {
+      hazards.push('settlement exposure');
     }
-    acc[rid] = row;
+    if (bottleneck && bottleneck.bindScore >= 42) hazards.push('evacuation corridor bind');
+    if (resilienceGap >= 28) hazards.push('digital resilience gap');
+    if (args.corridorStressIndex >= 52) hazards.push('network stress amplification');
+    if (!hazards.length) hazards.push('routine hazard monitoring');
+
+    rows.push({
+      regionId: rid,
+      displacementScore: op10mA11Round(displacementScore),
+      band: displacementBand(displacementScore),
+      hazards: hazards.slice(0, 3),
+      narrative: `${rid} climate displacement ${displacementBand(displacementScore)} (${op10mA11Round(displacementScore)}); ${hazards.slice(0, 2).join('; ')}.`,
+    });
   }
 
-  const out = {} as Record<
-    OP10M_A11_RegionId,
-    { avgGrowth: number; maxGrowth: number; cityCount: number; gatewayAvg: number }
-  >;
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.displacementScore - a.displacementScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCriticalClimateDisplacement(rows: OP10M_A11_ClimateDisplacementRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'acute' || r.band === 'critical').map((r) => r.regionId);
+}
+
+
+// --- source: digital-connectivity-decentralization-shift.ts ---
+
+function decentralizationBand(score: number): OP10M_A11_DecentralizationBand {
+  if (score < 22) return 'metro_locked';
+  if (score < 40) return 'partial_shift';
+  if (score < 58) return 'broadening';
+  return 'accelerating';
+}
+
+export function op10mA11ComputeDigitalConnectivityDecentralizationShift(args: {
+  networkDigital: number;
+  migrationPressure: OP10M_A11_MigrationPressureRow[];
+  linkageHubs: OP10M_A11_LinkageHubProfile[];
+  hierarchy: OP10M_A11_UrbanHierarchyRow[];
+}): { rows: OP10M_A11_DecentralizationShiftRow[]; nationalIndex: number } {
+  const migrationByRegion = new Map(args.migrationPressure.map((m) => [m.regionId, m]));
+  const hubByRegion = new Map(args.linkageHubs.map((h) => [h.regionId, h]));
+  const hierarchyByRegion = new Map(args.hierarchy.map((h) => [h.regionId, h]));
+  const digitalLift = op10mA11Clamp(args.networkDigital * 0.48);
+
+  const rows: OP10M_A11_DecentralizationShiftRow[] = [];
+  let weighted = 0;
 
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const row = acc[rid];
-    if (!row || !row.n) {
-      out[rid] = { avgGrowth: 40, maxGrowth: 40, cityCount: 0, gatewayAvg: 40 };
-      continue;
-    }
-    out[rid] = {
-      avgGrowth: op10mA11Round(row.sum / row.n),
-      maxGrowth: op10mA11Round(row.max),
-      cityCount: row.n,
-      gatewayAvg: op10mA11Round(row.gatewayN ? row.gatewaySum / row.gatewayN : row.sum / row.n),
-    };
+    const migration = migrationByRegion.get(rid);
+    const hub = hubByRegion.get(rid);
+    const hier = hierarchyByRegion.get(rid);
+
+    const remoteEnablement = op10mA11Clamp(digitalLift * (hub && hub.role === 'peripheral' ? 1.08 : 0.92));
+    const outboundRelief =
+      migration && migration.primaryDirection === 'outbound'
+        ? op10mA11Clamp(migration.netPressure * 0.35)
+        : migration && migration.primaryDirection === 'inbound'
+          ? op10mA11Clamp(-migration.netPressure * 0.18)
+          : 0;
+    const primateDrag = hier
+      ? op10mA11Clamp(
+          (hier.primateBand === 'concentrated' || hier.primateBand === 'hyper_concentrated' ? 18 : 6) -
+            hier.secondaryMomentum * 0.12,
+        )
+      : 10;
+
+    const shiftScore = op10mA11Clamp(remoteEnablement + outboundRelief + (100 - primateDrag) * 0.22);
+    weighted += shiftScore;
+
+    const signals: string[] = [];
+    if (remoteEnablement >= 32) signals.push('digital connectivity lift');
+    if (outboundRelief >= 12) signals.push('outbound migration relief');
+    if (hub && (hub.role === 'connector' || hub.role === 'regional_hub')) signals.push('secondary hub pull');
+    if (hier && hier.primateBand === 'decentralized') signals.push('balanced hierarchy');
+    if (!signals.length) signals.push('metro-centric default');
+
+    rows.push({
+      regionId: rid,
+      shiftScore: op10mA11Round(shiftScore),
+      band: decentralizationBand(shiftScore),
+      signals: signals.slice(0, 3),
+      narrative: `${rid} decentralization ${decentralizationBand(shiftScore)} (${op10mA11Round(shiftScore)}); ${signals.slice(0, 2).join('; ')}.`,
+    });
   }
-  return out;
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.shiftScore - a.shiftScore), nationalIndex };
 }
 
-export function op10mA11BlendRegionalUrbanScore(
-  urban: { avgGrowth: number; gatewayAvg: number },
-  region: OP10M_A11_RegionSlice | undefined,
-): number {
-  const mom = MOMENTUM_BOOST[region?.momentumBand || 'stable'] ?? 0;
-  const dev = DEV_BOOST[region?.developmentTier || 'emerging'] ?? 0;
-  const infra = region?.infrastructureQuality ?? 45;
-  const econ = region?.economyScore ?? 50;
-  const base = urban.avgGrowth * 0.55 + urban.gatewayAvg * 0.2 + econ * 0.15;
-  return op10mA11Clamp(base + mom + dev + (infra - 50) * 0.12);
-}
-
-export function op10mA11MetroRegionalGap(
-  byRegion: Record<OP10M_A11_RegionId, { avgGrowth: number; gatewayAvg: number }>,
-): number {
-  const gatewayScores = OP10M_A11_CORE_REGIONS.map((r) => byRegion[r].gatewayAvg);
-  const regionalScores = OP10M_A11_CORE_REGIONS.map((r) => byRegion[r].avgGrowth);
-  const gMean = gatewayScores.reduce((a, b) => a + b, 0) / gatewayScores.length;
-  const rMean = regionalScores.reduce((a, b) => a + b, 0) / regionalScores.length;
-  return op10mA11Clamp(Math.abs(gMean - rMean) * 1.1);
+export function op10mA11RegionsWithAcceleratingDecentralization(
+  rows: OP10M_A11_DecentralizationShiftRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'broadening' || r.band === 'accelerating').map((r) => r.regionId);
 }
 
 
-// --- source: urban-national-links.ts ---
+// --- source: fiscal-urban-coupling.ts ---
 
-const NATIONAL_GROWTH_MOD: Record<OP10M_A11_NationalSlice['nationalGrowthBand'], number> = {
-  contraction: -8,
-  slow: -3,
-  steady: 0,
-  strong: 5,
-  overheating: 8,
+const DISTRIBUTION_FISCAL_WEIGHT: Record<OP10M_A11_NationalSlice['distributionBand'], number> = {
+  broad_based: 78,
+  mixed: 58,
+  uneven: 38,
+  highly_uneven: 22,
 };
 
-const DISTRIBUTION_DRAG: Record<OP10M_A11_NationalSlice['distributionBand'], number> = {
-  broad_based: -4,
-  mixed: 0,
-  uneven: 5,
-  highly_uneven: 10,
-};
-
-export function op10mA11NationalLocalCoupling(national: OP10M_A11_NationalSlice): number {
-  const network = (national.networkFreight + national.networkDigital) / 2;
-  const biasPenalty = op10mA11Clamp(national.capitalCityBias * 0.35, 0, 18);
-  return op10mA11Clamp(network * 0.72 + NATIONAL_GROWTH_MOD[national.nationalGrowthBand] - biasPenalty);
+function fiscalBand(score: number): OP10M_A11_FiscalCouplingBand {
+  if (score >= 68) return 'aligned';
+  if (score >= 48) return 'partial';
+  if (score >= 28) return 'strained';
+  return 'misaligned';
 }
 
-export function op10mA11SpilloverBand(coupling: number, relativeStanding: number): OP10M_A11_SpilloverBand {
-  const adjusted = coupling + (relativeStanding < 45 ? 8 : relativeStanding > 62 ? -4 : 0);
-  if (adjusted < OP10M_A11_THRESHOLDS.spilloverWeak) return 'isolated';
-  if (adjusted < OP10M_A11_THRESHOLDS.spilloverConnected) return 'weak';
-  if (adjusted < OP10M_A11_THRESHOLDS.spilloverIntegrated) return 'connected';
-  return 'integrated';
-}
-
-export function op10mA11ApplyNationalSpilloverToStanding(
-  urbanIndex: number,
-  regionId: OP10M_A11_RegionId,
-  national: OP10M_A11_NationalSlice,
-  coupling: number,
-): number {
-  const distDrag = DISTRIBUTION_DRAG[national.distributionBand];
-  const lagBonus =
-    urbanIndex < 48 ? op10mA11Clamp(coupling * 0.22, 0, 12) : op10mA11Clamp(coupling * 0.08, 0, 6);
-  const hotspotTax =
-    urbanIndex > 68 && national.distributionBand !== 'broad_based'
-      ? op10mA11Clamp(distDrag * 0.6 + national.capitalCityBias * 0.08, 0, 10)
-      : 0;
-  const remote =
-    regionId === 'NT' || regionId === 'TAS' ? op10mA11Clamp(coupling * 0.05, 0, 4) : 0;
-  return op10mA11Clamp(urbanIndex + lagBonus - hotspotTax + remote - distDrag * 0.35);
-}
-
-export function op10mA11BuildRegionInequalityRow(args: {
-  regionId: OP10M_A11_RegionId;
-  urbanIndex: number;
-  relativeStanding: number;
-  coupling: number;
+export function op10mA11ComputeFiscalUrbanCoupling(args: {
   national: OP10M_A11_NationalSlice;
-  leading: boolean;
-  lagging: boolean;
-}): OP10M_A11_RegionInequalityRow {
-  const adjusted = op10mA11ApplyNationalSpilloverToStanding(
-    args.urbanIndex,
-    args.regionId,
-    args.national,
-    args.coupling,
-  );
-  const band = op10mA11GrowthBandFromScore(adjusted);
-  const spilloverBand = op10mA11SpilloverBand(args.coupling, args.relativeStanding);
-  const narrativeParts = [
-    `${args.regionId} urban index ${op10mA11Round(adjusted)} (${band})`,
-    spilloverBand !== 'isolated'
-      ? `national–local link ${spilloverBand}`
-      : 'limited national spillover',
-  ];
-  if (args.lagging) narrativeParts.push('lagging vs national peers');
-  if (args.leading) narrativeParts.push('leading peer regions');
-  return {
-    regionId: args.regionId,
-    urbanGrowthIndex: op10mA11Round(adjusted),
-    relativeStanding: op10mA11Round(args.relativeStanding),
-    band,
-    lagging: args.lagging,
-    leading: args.leading,
-    spilloverBand,
-    narrative: narrativeParts.join('; '),
-  };
+  regions: Record<OP10M_A11_RegionId, OP10M_A11_RegionInequalityRow>;
+}): { rows: OP10M_A11_FiscalUrbanCouplingRow[]; nationalIndex: number } {
+  const baseFiscal = DISTRIBUTION_FISCAL_WEIGHT[args.national.distributionBand];
+  const biasDrag = op10mA11Clamp(args.national.capitalCityBias * 0.42, 0, 24);
+
+  const rows: OP10M_A11_FiscalUrbanCouplingRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const region = args.regions[rid];
+    const lagNeed = region.lagging ? 18 : region.leading ? -6 : 4;
+    const spilloverBoost =
+      region.spilloverBand === 'integrated' ? 10 : region.spilloverBand === 'connected' ? 5 : 0;
+
+    const couplingScore = op10mA11Clamp(
+      baseFiscal + spilloverBoost + lagNeed - biasDrag - (region.leading ? biasDrag * 0.25 : 0),
+    );
+
+    weighted += couplingScore;
+
+    rows.push({
+      regionId: rid,
+      couplingScore: op10mA11Round(couplingScore),
+      band: fiscalBand(couplingScore),
+      catchUpPotential: op10mA11Clamp(couplingScore * 0.65 + (region.lagging ? 12 : 0)),
+      narrative: `${rid} fiscal–urban ${fiscalBand(couplingScore)} (${op10mA11Round(couplingScore)}); catch-up potential ${op10mA11Round(op10mA11Clamp(couplingScore * 0.65 + (region.lagging ? 12 : 0)))}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows, nationalIndex };
+}
+
+export function op10mA11RegionalCohesionIndex(args: {
+  inequalityIndex: number;
+  fragilityIndex: number;
+  fiscalNationalIndex: number;
+  maxMigrationPressure: number;
+}): number {
+  const inequalityDrag = op10mA11Clamp(args.inequalityIndex * 0.35);
+  const fragilityDrag = op10mA11Clamp(args.fragilityIndex * 0.28);
+  const fiscalLift = op10mA11Clamp(args.fiscalNationalIndex * 0.45);
+  const migrationDrag = op10mA11Clamp(args.maxMigrationPressure * 0.22);
+  return op10mA11Clamp(72 + fiscalLift - inequalityDrag - fragilityDrag - migrationDrag);
+}
+
+export function op10mA11MisalignedFiscalRegions(rows: OP10M_A11_FiscalUrbanCouplingRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'misaligned' || r.band === 'strained').map((r) => r.regionId);
 }
 
 
@@ -2564,6 +2593,3277 @@ export function op10mA11SummarizeDependencies(
   const essential = deps.filter((d) => d.criticality === 'essential' || d.criticality === 'high').length;
   const choke = deps.filter((d) => d.chokePoint).length;
   return `Intercity stress ${stress}; ${essential} high/essential deps; ${choke} choke points.`;
+}
+
+
+// --- source: interregional-capital-flight-panic.ts ---
+
+function panicBand(score: number): OP10M_A11_CapitalFlightPanicBand {
+  if (score < 25) return 'stable';
+  if (score < 43) return 'nervous';
+  if (score < 60) return 'panicked';
+  return 'stampede';
+}
+
+export function op10mA11ComputeInterregionalCapitalFlightPanic(args: {
+  liquidityFragmentation: OP10M_A11_LiquidityFragmentationRow[];
+  institutionalTrustErosion: OP10M_A11_InstitutionalTrustErosionRow[];
+  capitalMobilityAsymmetry: OP10M_A11_CapitalMobilityAsymmetryRow[];
+}): { rows: OP10M_A11_CapitalFlightPanicRow[]; nationalIndex: number } {
+  const liquidityByRegion = new Map(args.liquidityFragmentation.map((l) => [l.regionId, l]));
+  const trustByRegion = new Map(args.institutionalTrustErosion.map((t) => [t.regionId, t]));
+  const mobilityByRegion = new Map(args.capitalMobilityAsymmetry.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_CapitalFlightPanicRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const liquidity = liquidityByRegion.get(rid);
+    const trust = trustByRegion.get(rid);
+    const mobility = mobilityByRegion.get(rid);
+
+    const liquidityDrag = liquidity ? op10mA11Clamp(liquidity.fragmentationScore * 0.44) : 13;
+    const trustDrag = trust ? op10mA11Clamp(trust.erosionScore * 0.37) : 11;
+    const mobilityDrag = mobility ? op10mA11Clamp(mobility.asymmetryScore * 0.4) : 10;
+
+    const panicScore = op10mA11Clamp(liquidityDrag + trustDrag + mobilityDrag * 0.48);
+    weighted += panicScore;
+
+    const drivers: string[] = [];
+    if (liquidity && (liquidity.band === 'fractured' || liquidity.band === 'frozen')) {
+      drivers.push('fragmented liquidity');
+    }
+    if (trust && (trust.band === 'brittle' || trust.band === 'breakdown')) {
+      drivers.push('trust collapse');
+    }
+    if (mobility && (mobility.band === 'polarized' || mobility.band === 'locked')) {
+      drivers.push('locked capital lanes');
+    }
+    if (!drivers.length) drivers.push('capital stability');
+
+    rows.push({
+      regionId: rid,
+      panicScore: op10mA11Round(panicScore),
+      band: panicBand(panicScore),
+      drivers: drivers.slice(0, 3),
+      narrative: `${rid} capital flight panic ${panicBand(panicScore)} (${op10mA11Round(panicScore)}); ${drivers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.panicScore - a.panicScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCapitalFlightStampede(
+  rows: OP10M_A11_CapitalFlightPanicRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'panicked' || r.band === 'stampede').map((r) => r.regionId);
+}
+
+export function op10mA11CapitalFlightPanicEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 50;
+  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-capital-mobility-asymmetry.ts ---
+
+function asymmetryBand(score: number): OP10M_A11_CapitalMobilityAsymmetryBand {
+  if (score < 22) return 'balanced';
+  if (score < 40) return 'skewed';
+  if (score < 57) return 'polarized';
+  return 'locked';
+}
+
+export function op10mA11ComputeInterregionalCapitalMobilityAsymmetry(args: {
+  networkEquityTension: OP10M_A11_NetworkEquityTensionRow[];
+  fiscalGovernanceCoupling: OP10M_A11_FiscalGovernanceCouplingRow[];
+  corridorEquityDrift: OP10M_A11_CorridorEquityDriftRow[];
+}): { rows: OP10M_A11_CapitalMobilityAsymmetryRow[]; nationalIndex: number } {
+  const equityByRegion = new Map(args.networkEquityTension.map((n) => [n.regionId, n]));
+  const couplingByRegion = new Map(args.fiscalGovernanceCoupling.map((f) => [f.regionId, f]));
+  const driftByRegion = new Map(args.corridorEquityDrift.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_CapitalMobilityAsymmetryRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const equity = equityByRegion.get(rid);
+    const coupling = couplingByRegion.get(rid);
+    const drift = driftByRegion.get(rid);
+
+    const equityDrag = equity ? op10mA11Clamp(equity.tensionScore * 0.42) : 13;
+    const couplingDrag = coupling ? op10mA11Clamp(coupling.strainScore * 0.36) : 11;
+    const driftDrag = drift ? op10mA11Clamp(drift.driftScore * 0.4) : 10;
+
+    const asymmetryScore = op10mA11Clamp(equityDrag + couplingDrag + driftDrag * 0.55);
+    weighted += asymmetryScore;
+
+    const drivers: string[] = [];
+    if (equity && (equity.band === 'polarized' || equity.band === 'fractured')) drivers.push('network equity fracture');
+    if (coupling && (coupling.band === 'misaligned' || coupling.band === 'ruptured')) {
+      drivers.push('fiscal lock-in');
+    }
+    if (drift && (drift.band === 'polarized' || drift.band === 'fractured')) drivers.push('corridor drift');
+    if (!drivers.length) drivers.push('mobility balance');
+
+    rows.push({
+      regionId: rid,
+      asymmetryScore: op10mA11Round(asymmetryScore),
+      band: asymmetryBand(asymmetryScore),
+      drivers: drivers.slice(0, 3),
+      narrative: `${rid} capital mobility asymmetry ${asymmetryBand(asymmetryScore)} (${op10mA11Round(asymmetryScore)}); ${drivers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.asymmetryScore - a.asymmetryScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithLockedCapitalMobility(
+  rows: OP10M_A11_CapitalMobilityAsymmetryRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'polarized' || r.band === 'locked').map((r) => r.regionId);
+}
+
+export function op10mA11CapitalMobilityAsymmetryEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 45;
+  return currentIndex >= 39 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-commute-affordability-wedge.ts ---
+
+function wedgeBand(score: number): OP10M_A11_CommuteWedgeBand {
+  if (score < 24) return 'balanced';
+  if (score < 42) return 'widening';
+  if (score < 60) return 'severe';
+  return 'unsustainable';
+}
+
+export function op10mA11ComputeInterregionalCommuteAffordabilityWedge(args: {
+  amenityCost: OP10M_A11_AmenityCostRow[];
+  periUrbanPressure: OP10M_A11_PeriUrbanPressureRow[];
+  corridorFlows: OP10M_A11_CorridorFlowRow[];
+}): { rows: OP10M_A11_CommuteWedgeRow[]; nationalIndex: number } {
+  const amenityByRegion = new Map(args.amenityCost.map((a) => [a.regionId, a]));
+  const periByRegion = new Map(args.periUrbanPressure.map((p) => [p.regionId, p]));
+
+  const outboundPressure = new Map<OP10M_A11_RegionId, number>();
+  for (const flow of args.corridorFlows) {
+    const prev = outboundPressure.get(flow.fromRegion) ?? 0;
+    outboundPressure.set(flow.fromRegion, Math.max(prev, flow.flowPressure));
+  }
+
+  const rows: OP10M_A11_CommuteWedgeRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const amenity = amenityByRegion.get(rid);
+    const peri = periByRegion.get(rid);
+    const corridorLoad = outboundPressure.get(rid) ?? 22;
+
+    const costDrag = amenity ? op10mA11Clamp(amenity.amenityScore * 0.5) : 16;
+    const sprawlDrag = peri ? op10mA11Clamp(peri.pressureScore * 0.38) : 12;
+    const commuteDrag = op10mA11Clamp(corridorLoad * 0.42);
+
+    const wedgeScore = op10mA11Clamp(costDrag + sprawlDrag + commuteDrag * 0.62);
+    weighted += wedgeScore;
+
+    const pressures: string[] = [];
+    if (amenity && (amenity.band === 'strained' || amenity.band === 'crisis')) pressures.push('amenity cost');
+    if (peri && (peri.band === 'sprawl_risk' || peri.band === 'unchecked')) pressures.push('peri-urban stretch');
+    if (corridorLoad >= 58) pressures.push('corridor commute load');
+    if (!pressures.length) pressures.push('contained commute wedge');
+
+    rows.push({
+      regionId: rid,
+      wedgeScore: op10mA11Round(wedgeScore),
+      band: wedgeBand(wedgeScore),
+      pressures: pressures.slice(0, 3),
+      narrative: `${rid} commute affordability wedge ${wedgeBand(wedgeScore)} (${op10mA11Round(wedgeScore)}); ${pressures.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.wedgeScore - a.wedgeScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithSevereCommuteWedge(rows: OP10M_A11_CommuteWedgeRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'severe' || r.band === 'unsustainable').map((r) => r.regionId);
+}
+
+export function op10mA11CommuteWedgeWidening(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 50;
+  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-corridor-equity-drift.ts ---
+
+function driftBand(score: number): OP10M_A11_CorridorEquityDriftBand {
+  if (score < 22) return 'aligned';
+  if (score < 40) return 'drifting';
+  if (score < 58) return 'polarized';
+  return 'fractured';
+}
+
+export function op10mA11ComputeInterregionalCorridorEquityDrift(args: {
+  corridorFlows: OP10M_A11_CorridorFlowRow[];
+  serviceEquity: OP10M_A11_ServiceEquityRow[];
+  commuteWedge: OP10M_A11_CommuteWedgeRow[];
+}): { rows: OP10M_A11_CorridorEquityDriftRow[]; nationalIndex: number } {
+  const equityByRegion = new Map(args.serviceEquity.map((s) => [s.regionId, s]));
+  const wedgeByRegion = new Map(args.commuteWedge.map((c) => [c.regionId, c]));
+
+  const corridorLoad = new Map<OP10M_A11_RegionId, number>();
+  for (const flow of args.corridorFlows) {
+    for (const rid of [flow.fromRegion, flow.toRegion] as OP10M_A11_RegionId[]) {
+      const prev = corridorLoad.get(rid) ?? 0;
+      corridorLoad.set(rid, Math.max(prev, flow.flowPressure));
+    }
+  }
+
+  const rows: OP10M_A11_CorridorEquityDriftRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const equity = equityByRegion.get(rid);
+    const wedge = wedgeByRegion.get(rid);
+    const load = corridorLoad.get(rid) ?? 20;
+
+    const equityDrag = equity
+      ? op10mA11Clamp((100 - equity.equityScore) * 0.42 + (equity.band === 'critical_gap' ? 8 : 0))
+      : 14;
+    const commuteDrag = wedge ? op10mA11Clamp(wedge.wedgeScore * 0.36) : 11;
+    const corridorDrag = op10mA11Clamp(load * 0.44);
+
+    const driftScore = op10mA11Clamp(equityDrag + commuteDrag + corridorDrag * 0.58);
+    weighted += driftScore;
+
+    const signals: string[] = [];
+    if (equity && (equity.band === 'uneven' || equity.band === 'critical_gap')) signals.push('service equity gap');
+    if (wedge && (wedge.band === 'severe' || wedge.band === 'unsustainable')) signals.push('commute wedge');
+    if (load >= 56) signals.push('corridor load asymmetry');
+    if (!signals.length) signals.push('balanced corridor equity');
+
+    rows.push({
+      regionId: rid,
+      driftScore: op10mA11Round(driftScore),
+      band: driftBand(driftScore),
+      signals: signals.slice(0, 3),
+      narrative: `${rid} corridor equity ${driftBand(driftScore)} (${op10mA11Round(driftScore)}); ${signals.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.driftScore - a.driftScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCorridorEquityFracture(
+  rows: OP10M_A11_CorridorEquityDriftRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'polarized' || r.band === 'fractured').map((r) => r.regionId);
+}
+
+export function op10mA11CorridorEquityDriftEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 47;
+  return currentIndex >= 41 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: interregional-fiscal-panic-contagion.ts ---
+
+function contagionBand(score: number): OP10M_A11_FiscalPanicContagionBand {
+  if (score < 24) return 'isolated';
+  if (score < 42) return 'spreading';
+  if (score < 59) return 'contagion';
+  return 'systemic';
+}
+
+export function op10mA11ComputeInterregionalFiscalPanicContagion(args: {
+  capitalFlightPanic: OP10M_A11_CapitalFlightPanicRow[];
+  liquidityFragmentation: OP10M_A11_LiquidityFragmentationRow[];
+  socialContractFragility: OP10M_A11_SocialContractFragilityRow[];
+}): { rows: OP10M_A11_FiscalPanicContagionRow[]; nationalIndex: number } {
+  const flightByRegion = new Map(args.capitalFlightPanic.map((c) => [c.regionId, c]));
+  const liquidityByRegion = new Map(args.liquidityFragmentation.map((l) => [l.regionId, l]));
+  const contractByRegion = new Map(args.socialContractFragility.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_FiscalPanicContagionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const flight = flightByRegion.get(rid);
+    const liquidity = liquidityByRegion.get(rid);
+    const contract = contractByRegion.get(rid);
+
+    const flightDrag = flight ? op10mA11Clamp(flight.panicScore * 0.43) : 13;
+    const liquidityDrag = liquidity ? op10mA11Clamp(liquidity.fragmentationScore * 0.41) : 11;
+    const contractDrag = contract ? op10mA11Clamp(contract.fragilityScore * 0.36) : 10;
+
+    const contagionScore = op10mA11Clamp(flightDrag + liquidityDrag + contractDrag * 0.49);
+    weighted += contagionScore;
+
+    const channels: string[] = [];
+    if (flight && (flight.band === 'panicked' || flight.band === 'stampede')) {
+      channels.push('flight panic channel');
+    }
+    if (liquidity && (liquidity.band === 'fractured' || liquidity.band === 'frozen')) {
+      channels.push('liquidity fracture');
+    }
+    if (contract && (contract.band === 'fraying' || contract.band === 'ruptured')) {
+      channels.push('contract stress spillover');
+    }
+    if (!channels.length) channels.push('fiscal stability');
+
+    rows.push({
+      regionId: rid,
+      contagionScore: op10mA11Round(contagionScore),
+      band: contagionBand(contagionScore),
+      channels: channels.slice(0, 3),
+      narrative: `${rid} fiscal panic contagion ${contagionBand(contagionScore)} (${op10mA11Round(contagionScore)}); ${channels.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.contagionScore - a.contagionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithSystemicFiscalPanicContagion(
+  rows: OP10M_A11_FiscalPanicContagionRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'contagion' || r.band === 'systemic').map((r) => r.regionId);
+}
+
+export function op10mA11FiscalPanicContagionEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 51;
+  return currentIndex >= 45 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-hollow-region-contagion.ts ---
+
+function hollowBand(score: number): OP10M_A11_HollowRegionContagionBand {
+  if (score < 25) return 'contained';
+  if (score < 43) return 'hollowing';
+  if (score < 60) return 'contagion';
+  return 'voided';
+}
+
+export function op10mA11ComputeInterregionalHollowRegionContagion(args: {
+  settlementAbandonmentSpiral: OP10M_A11_SettlementAbandonmentSpiralRow[];
+  fiscalPanicContagion: OP10M_A11_FiscalPanicContagionRow[];
+  governanceVacuumEscalation: OP10M_A11_GovernanceVacuumEscalationRow[];
+}): { rows: OP10M_A11_HollowRegionContagionRow[]; nationalIndex: number } {
+  const spiralByRegion = new Map(args.settlementAbandonmentSpiral.map((s) => [s.regionId, s]));
+  const fiscalByRegion = new Map(args.fiscalPanicContagion.map((f) => [f.regionId, f]));
+  const vacuumByRegion = new Map(args.governanceVacuumEscalation.map((g) => [g.regionId, g]));
+
+  const rows: OP10M_A11_HollowRegionContagionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const spiral = spiralByRegion.get(rid);
+    const fiscal = fiscalByRegion.get(rid);
+    const vacuum = vacuumByRegion.get(rid);
+
+    const spiralDrag = spiral ? op10mA11Clamp(spiral.spiralScore * 0.44) : 13;
+    const fiscalDrag = fiscal ? op10mA11Clamp(fiscal.contagionScore * 0.39) : 11;
+    const vacuumDrag = vacuum ? op10mA11Clamp(vacuum.vacuumScore * 0.37) : 10;
+
+    const contagionScore = op10mA11Clamp(spiralDrag + fiscalDrag + vacuumDrag * 0.47);
+    weighted += contagionScore;
+
+    const channels: string[] = [];
+    if (spiral && (spiral.band === 'exodus' || spiral.band === 'abandoned')) {
+      channels.push('depopulation channel');
+    }
+    if (fiscal && (fiscal.band === 'contagion' || fiscal.band === 'systemic')) {
+      channels.push('fiscal hollow-out');
+    }
+    if (vacuum && (vacuum.band === 'hollow' || vacuum.band === 'vacuum')) {
+      channels.push('governance void');
+    }
+    if (!channels.length) channels.push('regional cohesion');
+
+    rows.push({
+      regionId: rid,
+      contagionScore: op10mA11Round(contagionScore),
+      band: hollowBand(contagionScore),
+      channels: channels.slice(0, 3),
+      narrative: `${rid} hollow region contagion ${hollowBand(contagionScore)} (${op10mA11Round(contagionScore)}); ${channels.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.contagionScore - a.contagionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithVoidedHollowContagion(
+  rows: OP10M_A11_HollowRegionContagionRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'contagion' || r.band === 'voided').map((r) => r.regionId);
+}
+
+export function op10mA11HollowRegionContagionEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 53;
+  return currentIndex >= 47 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-liquidity-fragmentation-stress.ts ---
+
+function fragmentationBand(score: number): OP10M_A11_LiquidityFragmentationBand {
+  if (score < 24) return 'integrated';
+  if (score < 42) return 'segmented';
+  if (score < 59) return 'fractured';
+  return 'frozen';
+}
+
+export function op10mA11ComputeInterregionalLiquidityFragmentationStress(args: {
+  capitalMobilityAsymmetry: OP10M_A11_CapitalMobilityAsymmetryRow[];
+  networkEquityTension: OP10M_A11_NetworkEquityTensionRow[];
+  fiscalCapacityStrain: OP10M_A11_FiscalCapacityStrainRow[];
+}): { rows: OP10M_A11_LiquidityFragmentationRow[]; nationalIndex: number } {
+  const mobilityByRegion = new Map(args.capitalMobilityAsymmetry.map((c) => [c.regionId, c]));
+  const equityByRegion = new Map(args.networkEquityTension.map((n) => [n.regionId, n]));
+  const fiscalByRegion = new Map(args.fiscalCapacityStrain.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_LiquidityFragmentationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const mobility = mobilityByRegion.get(rid);
+    const equity = equityByRegion.get(rid);
+    const fiscal = fiscalByRegion.get(rid);
+
+    const mobilityDrag = mobility ? op10mA11Clamp(mobility.asymmetryScore * 0.41) : 12;
+    const equityDrag = equity ? op10mA11Clamp(equity.tensionScore * 0.38) : 11;
+    const fiscalDrag = fiscal ? op10mA11Clamp(fiscal.strainScore * 0.37) : 10;
+
+    const fragmentationScore = op10mA11Clamp(mobilityDrag + equityDrag + fiscalDrag * 0.53);
+    weighted += fragmentationScore;
+
+    const drivers: string[] = [];
+    if (mobility && (mobility.band === 'polarized' || mobility.band === 'locked')) {
+      drivers.push('capital lock-in');
+    }
+    if (equity && (equity.band === 'polarized' || equity.band === 'fractured')) {
+      drivers.push('network equity fracture');
+    }
+    if (fiscal && (fiscal.band === 'fragile' || fiscal.band === 'exhausted')) {
+      drivers.push('fiscal drought');
+    }
+    if (!drivers.length) drivers.push('liquidity integration');
+
+    rows.push({
+      regionId: rid,
+      fragmentationScore: op10mA11Round(fragmentationScore),
+      band: fragmentationBand(fragmentationScore),
+      drivers: drivers.slice(0, 3),
+      narrative: `${rid} liquidity fragmentation ${fragmentationBand(fragmentationScore)} (${op10mA11Round(fragmentationScore)}); ${drivers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.fragmentationScore - a.fragmentationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithFrozenLiquidity(
+  rows: OP10M_A11_LiquidityFragmentationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'fractured' || r.band === 'frozen').map((r) => r.regionId);
+}
+
+export function op10mA11LiquidityFragmentationEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 46;
+  return currentIndex >= 40 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-migration-stability-erosion.ts ---
+
+function stabilityBand(score: number): OP10M_A11_MigrationStabilityBand {
+  if (score < 23) return 'stable';
+  if (score < 41) return 'volatile';
+  if (score < 59) return 'unstable';
+  return 'chaotic';
+}
+
+export function op10mA11ComputeInterregionalMigrationStabilityErosion(args: {
+  migrationPressure: OP10M_A11_MigrationPressureRow[];
+  mobilityTrap: OP10M_A11_MobilityTrapRow[];
+  cohesionIntegrity: OP10M_A11_CohesionIntegrityRow[];
+}): { rows: OP10M_A11_MigrationStabilityRow[]; nationalIndex: number } {
+  const migrationByRegion = new Map(args.migrationPressure.map((m) => [m.regionId, m]));
+  const trapByRegion = new Map(args.mobilityTrap.map((t) => [t.regionId, t]));
+  const integrityByRegion = new Map(args.cohesionIntegrity.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_MigrationStabilityRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const migration = migrationByRegion.get(rid);
+    const trap = trapByRegion.get(rid);
+    const integrity = integrityByRegion.get(rid);
+
+    const flowDrag = migration ? op10mA11Clamp(migration.netPressure * 0.46) : 14;
+    const trapDrag = trap ? op10mA11Clamp(trap.trapScore * 0.4) : 12;
+    const cohesionDrag = integrity ? op10mA11Clamp(integrity.pressureScore * 0.32) : 10;
+
+    const erosionScore = op10mA11Clamp(flowDrag + trapDrag + cohesionDrag * 0.55);
+    weighted += erosionScore;
+
+    const signals: string[] = [];
+    if (migration && (migration.band === 'high' || migration.band === 'surge')) signals.push('migration surge');
+    if (trap && (trap.band === 'trapped' || trap.band === 'immobilized')) signals.push('mobility trap');
+    if (integrity && (integrity.band === 'fractured' || integrity.band === 'disintegrating')) {
+      signals.push('cohesion fracture');
+    }
+    if (!signals.length) signals.push('migration stability holding');
+
+    rows.push({
+      regionId: rid,
+      erosionScore: op10mA11Round(erosionScore),
+      band: stabilityBand(erosionScore),
+      signals: signals.slice(0, 3),
+      narrative: `${rid} migration stability ${stabilityBand(erosionScore)} (${op10mA11Round(erosionScore)}); ${signals.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.erosionScore - a.erosionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithMigrationChaos(rows: OP10M_A11_MigrationStabilityRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'unstable' || r.band === 'chaotic').map((r) => r.regionId);
+}
+
+export function op10mA11MigrationStabilityErosionEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 48;
+  return currentIndex >= 42 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-mobility-affordability-trap.ts ---
+
+function trapBand(score: number): OP10M_A11_MobilityTrapBand {
+  if (score < 23) return 'mobile';
+  if (score < 41) return 'constrained';
+  if (score < 59) return 'trapped';
+  return 'immobilized';
+}
+
+export function op10mA11ComputeInterregionalMobilityAffordabilityTrap(args: {
+  commuteWedge: OP10M_A11_CommuteWedgeRow[];
+  migrationPressure: OP10M_A11_MigrationPressureRow[];
+  amenityCost: OP10M_A11_AmenityCostRow[];
+}): { rows: OP10M_A11_MobilityTrapRow[]; nationalIndex: number } {
+  const wedgeByRegion = new Map(args.commuteWedge.map((c) => [c.regionId, c]));
+  const migrationByRegion = new Map(args.migrationPressure.map((m) => [m.regionId, m]));
+  const amenityByRegion = new Map(args.amenityCost.map((a) => [a.regionId, a]));
+
+  const rows: OP10M_A11_MobilityTrapRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const wedge = wedgeByRegion.get(rid);
+    const migration = migrationByRegion.get(rid);
+    const amenity = amenityByRegion.get(rid);
+
+    const commuteDrag = wedge ? op10mA11Clamp(wedge.wedgeScore * 0.5) : 15;
+    const flowDrag = migration ? op10mA11Clamp(migration.netPressure * 0.42) : 12;
+    const costDrag = amenity ? op10mA11Clamp(amenity.amenityScore * 0.38) : 11;
+
+    const trapScore = op10mA11Clamp(commuteDrag + flowDrag + costDrag * 0.6);
+    weighted += trapScore;
+
+    const binds: string[] = [];
+    if (wedge && (wedge.band === 'severe' || wedge.band === 'unsustainable')) binds.push('commute wedge');
+    if (migration && (migration.band === 'high' || migration.band === 'surge')) binds.push('migration pressure');
+    if (amenity && (amenity.band === 'strained' || amenity.band === 'crisis')) binds.push('amenity lock-in');
+    if (!binds.length) binds.push('open mobility');
+
+    rows.push({
+      regionId: rid,
+      trapScore: op10mA11Round(trapScore),
+      band: trapBand(trapScore),
+      binds: binds.slice(0, 3),
+      narrative: `${rid} mobility affordability ${trapBand(trapScore)} (${op10mA11Round(trapScore)}); ${binds.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.trapScore - a.trapScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithMobilityTrap(rows: OP10M_A11_MobilityTrapRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'trapped' || r.band === 'immobilized').map((r) => r.regionId);
+}
+
+export function op10mA11MobilityTrapEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 49;
+  return currentIndex >= 43 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-network-equity-tension.ts ---
+
+function tensionBand(score: number): OP10M_A11_NetworkEquityTensionBand {
+  if (score < 21) return 'balanced';
+  if (score < 39) return 'stressed';
+  if (score < 57) return 'polarized';
+  return 'fractured';
+}
+
+export function op10mA11ComputeInterregionalNetworkEquityTension(args: {
+  networkResilienceErosion: OP10M_A11_NetworkErosionRow[];
+  reliefEquityGap: OP10M_A11_ReliefEquityGapRow[];
+  corridorEquityDrift: OP10M_A11_CorridorEquityDriftRow[];
+}): { rows: OP10M_A11_NetworkEquityTensionRow[]; nationalIndex: number } {
+  const erosionByRegion = new Map(args.networkResilienceErosion.map((n) => [n.regionId, n]));
+  const reliefByRegion = new Map(args.reliefEquityGap.map((r) => [r.regionId, r]));
+  const driftByRegion = new Map(args.corridorEquityDrift.map((d) => [d.regionId, d]));
+
+  const rows: OP10M_A11_NetworkEquityTensionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const erosion = erosionByRegion.get(rid);
+    const relief = reliefByRegion.get(rid);
+    const drift = driftByRegion.get(rid);
+
+    const networkDrag = erosion ? op10mA11Clamp(erosion.erosionScore * 0.44) : 13;
+    const reliefDrag = relief ? op10mA11Clamp(relief.gapScore * 0.38) : 11;
+    const corridorDrag = drift ? op10mA11Clamp(drift.driftScore * 0.36) : 10;
+
+    const tensionScore = op10mA11Clamp(networkDrag + reliefDrag + corridorDrag * 0.58);
+    weighted += tensionScore;
+
+    const drivers: string[] = [];
+    if (erosion && (erosion.band === 'eroding' || erosion.band === 'fracturing')) drivers.push('network erosion');
+    if (relief && (relief.band === 'skewed' || relief.band === 'polarized')) drivers.push('relief inequity');
+    if (drift && (drift.band === 'polarized' || drift.band === 'fractured')) drivers.push('corridor drift');
+    if (!drivers.length) drivers.push('network equity stable');
+
+    rows.push({
+      regionId: rid,
+      tensionScore: op10mA11Round(tensionScore),
+      band: tensionBand(tensionScore),
+      drivers: drivers.slice(0, 3),
+      narrative: `${rid} network equity tension ${tensionBand(tensionScore)} (${op10mA11Round(tensionScore)}); ${drivers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.tensionScore - a.tensionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithNetworkEquityFracture(
+  rows: OP10M_A11_NetworkEquityTensionRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'polarized' || r.band === 'fractured').map((r) => r.regionId);
+}
+
+export function op10mA11NetworkEquityTensionEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 45;
+  return currentIndex >= 39 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: interregional-network-resilience-erosion.ts ---
+
+function erosionBand(score: number): OP10M_A11_NetworkErosionBand {
+  if (score < 21) return 'robust';
+  if (score < 39) return 'thinning';
+  if (score < 57) return 'eroding';
+  return 'fracturing';
+}
+
+export function op10mA11ComputeInterregionalNetworkResilienceErosion(args: {
+  linkageHubs: OP10M_A11_LinkageHubProfile[];
+  corridorEquityDrift: OP10M_A11_CorridorEquityDriftRow[];
+  infrastructureBacklog: OP10M_A11_InfrastructureBacklogRow[];
+  fragilityIndex: number;
+}): { rows: OP10M_A11_NetworkErosionRow[]; nationalIndex: number } {
+  const driftByRegion = new Map(args.corridorEquityDrift.map((d) => [d.regionId, d]));
+  const backlogByRegion = new Map(args.infrastructureBacklog.map((b) => [b.regionId, b]));
+  const hubByRegion = new Map(args.linkageHubs.map((h) => [h.regionId, h]));
+
+  const rows: OP10M_A11_NetworkErosionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const hub = hubByRegion.get(rid);
+    const drift = driftByRegion.get(rid);
+    const backlog = backlogByRegion.get(rid);
+
+    const isolationDrag = hub
+      ? op10mA11Clamp(hub.isolationScore * 0.46 + (hub.role === 'peripheral' ? 12 : 0))
+      : 14;
+    const equityDrag = drift ? op10mA11Clamp(drift.driftScore * 0.4) : 11;
+    const infraDrag = backlog ? op10mA11Clamp(backlog.backlogScore * 0.34) : 10;
+    const nationalDrag = op10mA11Clamp(args.fragilityIndex * 0.12);
+
+    const erosionScore = op10mA11Clamp(isolationDrag + equityDrag + infraDrag + nationalDrag * 0.45);
+    weighted += erosionScore;
+
+    const signals: string[] = [];
+    if (hub && (hub.role === 'peripheral' || hub.isolationScore >= 50)) signals.push('hub isolation');
+    if (drift && (drift.band === 'polarized' || drift.band === 'fractured')) signals.push('corridor inequity');
+    if (backlog && (backlog.band === 'severe' || backlog.band === 'critical')) signals.push('network backlog');
+    if (!signals.length) signals.push('linkage resilience holding');
+
+    rows.push({
+      regionId: rid,
+      erosionScore: op10mA11Round(erosionScore),
+      band: erosionBand(erosionScore),
+      signals: signals.slice(0, 3),
+      narrative: `${rid} network resilience ${erosionBand(erosionScore)} (${op10mA11Round(erosionScore)}); ${signals.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.erosionScore - a.erosionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithNetworkFracture(rows: OP10M_A11_NetworkErosionRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'eroding' || r.band === 'fracturing').map((r) => r.regionId);
+}
+
+export function op10mA11NetworkErosionEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 46;
+  return currentIndex >= 40 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: interregional-relief-delivery-equity-gap.ts ---
+
+function gapBand(score: number): OP10M_A11_ReliefEquityGapBand {
+  if (score < 21) return 'aligned';
+  if (score < 39) return 'uneven';
+  if (score < 57) return 'skewed';
+  return 'polarized';
+}
+
+export function op10mA11ComputeInterregionalReliefDeliveryEquityGap(args: {
+  reliefOverhead: OP10M_A11_ReliefOverheadRow[];
+  corridorEquityDrift: OP10M_A11_CorridorEquityDriftRow[];
+  serviceEquity: OP10M_A11_ServiceEquityRow[];
+}): { rows: OP10M_A11_ReliefEquityGapRow[]; nationalIndex: number } {
+  const reliefByRegion = new Map(args.reliefOverhead.map((r) => [r.regionId, r]));
+  const driftByRegion = new Map(args.corridorEquityDrift.map((d) => [d.regionId, d]));
+  const equityByRegion = new Map(args.serviceEquity.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ReliefEquityGapRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const relief = reliefByRegion.get(rid);
+    const drift = driftByRegion.get(rid);
+    const equity = equityByRegion.get(rid);
+
+    const deliveryDrag = relief ? op10mA11Clamp(relief.overheadScore * 0.46) : 14;
+    const corridorDrag = drift ? op10mA11Clamp(drift.driftScore * 0.4) : 12;
+    const serviceDrag = equity
+      ? op10mA11Clamp((100 - equity.equityScore) * 0.3 + (equity.band === 'critical_gap' ? 8 : 0))
+      : 10;
+
+    const gapScore = op10mA11Clamp(deliveryDrag + corridorDrag + serviceDrag * 0.55);
+    weighted += gapScore;
+
+    const gaps: string[] = [];
+    if (relief && (relief.band === 'overloaded' || relief.band === 'paralytic')) gaps.push('relief delivery load');
+    if (drift && (drift.band === 'polarized' || drift.band === 'fractured')) gaps.push('corridor inequity');
+    if (equity && (equity.band === 'uneven' || equity.band === 'critical_gap')) gaps.push('service equity gap');
+    if (!gaps.length) gaps.push('balanced relief reach');
+
+    rows.push({
+      regionId: rid,
+      gapScore: op10mA11Round(gapScore),
+      band: gapBand(gapScore),
+      gaps: gaps.slice(0, 3),
+      narrative: `${rid} relief delivery equity ${gapBand(gapScore)} (${op10mA11Round(gapScore)}); ${gaps.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.gapScore - a.gapScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithPolarizedReliefEquity(rows: OP10M_A11_ReliefEquityGapRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'skewed' || r.band === 'polarized').map((r) => r.regionId);
+}
+
+export function op10mA11ReliefEquityGapEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 45;
+  return currentIndex >= 39 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: interregional-settlement-abandonment-spiral.ts ---
+
+function spiralBand(score: number): OP10M_A11_SettlementAbandonmentSpiralBand {
+  if (score < 26) return 'anchored';
+  if (score < 44) return 'drifting';
+  if (score < 61) return 'exodus';
+  return 'abandoned';
+}
+
+export function op10mA11ComputeInterregionalSettlementAbandonmentSpiral(args: {
+  terminalStateLockIn: OP10M_A11_TerminalStateLockInRow[];
+  irrecoverableCollapseThreshold: OP10M_A11_IrrecoverableCollapseThresholdRow[];
+  capitalFlightPanic: OP10M_A11_CapitalFlightPanicRow[];
+}): { rows: OP10M_A11_SettlementAbandonmentSpiralRow[]; nationalIndex: number } {
+  const lockInByRegion = new Map(args.terminalStateLockIn.map((t) => [t.regionId, t]));
+  const collapseByRegion = new Map(args.irrecoverableCollapseThreshold.map((i) => [i.regionId, i]));
+  const flightByRegion = new Map(args.capitalFlightPanic.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_SettlementAbandonmentSpiralRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const lockIn = lockInByRegion.get(rid);
+    const collapse = collapseByRegion.get(rid);
+    const flight = flightByRegion.get(rid);
+
+    const lockInDrag = lockIn ? op10mA11Clamp(lockIn.lockInScore * 0.44) : 13;
+    const collapseDrag = collapse ? op10mA11Clamp(collapse.thresholdScore * 0.42) : 12;
+    const flightDrag = flight ? op10mA11Clamp(flight.panicScore * 0.37) : 10;
+
+    const spiralScore = op10mA11Clamp(lockInDrag + collapseDrag + flightDrag * 0.48);
+    weighted += spiralScore;
+
+    const signals: string[] = [];
+    if (lockIn && (lockIn.band === 'locked' || lockIn.band === 'terminal')) {
+      signals.push('terminal lock-in');
+    }
+    if (collapse && (collapse.band === 'terminal' || collapse.band === 'irrecoverable')) {
+      signals.push('irrecoverable threshold');
+    }
+    if (flight && (flight.band === 'panicked' || flight.band === 'stampede')) {
+      signals.push('capital flight');
+    }
+    if (!signals.length) signals.push('settlement retention');
+
+    rows.push({
+      regionId: rid,
+      spiralScore: op10mA11Round(spiralScore),
+      band: spiralBand(spiralScore),
+      signals: signals.slice(0, 3),
+      narrative: `${rid} settlement abandonment spiral ${spiralBand(spiralScore)} (${op10mA11Round(spiralScore)}); ${signals.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.spiralScore - a.spiralScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithSettlementAbandonment(
+  rows: OP10M_A11_SettlementAbandonmentSpiralRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'exodus' || r.band === 'abandoned').map((r) => r.regionId);
+}
+
+export function op10mA11SettlementAbandonmentSpiralEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 52;
+  return currentIndex >= 46 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-talent-retention-stress.ts ---
+
+const HUB_RETENTION: Record<OP10M_A11_LinkageHubProfile['role'], number> = {
+  peripheral: 32,
+  connector: 22,
+  regional_hub: 14,
+  national_hub: 8,
+};
+
+function retentionBand(drainScore: number): OP10M_A11_TalentRetentionBand {
+  if (drainScore < 28) return 'stable';
+  if (drainScore < 48) return 'leaky';
+  if (drainScore < 66) return 'draining';
+  return 'collapse';
+}
+
+export function op10mA11ComputeInterregionalTalentRetentionStress(args: {
+  migrationPressure: OP10M_A11_MigrationPressureRow[];
+  linkageHubs: OP10M_A11_LinkageHubProfile[];
+  fiscalUrbanCoupling: OP10M_A11_FiscalUrbanCouplingRow[];
+}): { rows: OP10M_A11_TalentRetentionRow[]; nationalIndex: number } {
+  const migrationByRegion = new Map(args.migrationPressure.map((m) => [m.regionId, m]));
+  const hubByRegion = new Map(args.linkageHubs.map((h) => [h.regionId, h]));
+  const fiscalByRegion = new Map(args.fiscalUrbanCoupling.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_TalentRetentionRow[] = [];
+  let weightedDrain = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const mig = migrationByRegion.get(rid);
+    const hub = hubByRegion.get(rid);
+    const fiscal = fiscalByRegion.get(rid);
+
+    const outboundDrag =
+      mig && mig.primaryDirection === 'outbound' ? op10mA11Clamp(mig.pushScore * 0.58) : op10mA11Clamp((mig?.netPressure ?? 10) * 0.22);
+    const hubDrag = hub ? HUB_RETENTION[hub.role] : 18;
+    const fiscalDrag = fiscal ? op10mA11Clamp(68 - fiscal.couplingScore) * 0.42 : 16;
+
+    const drainScore = op10mA11Clamp(outboundDrag + hubDrag * 0.45 + fiscalDrag);
+    weightedDrain += drainScore;
+
+    const riskFactors: string[] = [];
+    if (mig && (mig.band === 'high' || mig.band === 'surge') && mig.primaryDirection === 'outbound') {
+      riskFactors.push('outbound migration pull');
+    }
+    if (hub && (hub.role === 'peripheral' || hub.isolationScore >= 55)) riskFactors.push('peripheral isolation');
+    if (fiscal && (fiscal.band === 'strained' || fiscal.band === 'misaligned')) riskFactors.push('fiscal catch-up gap');
+    if (!riskFactors.length) riskFactors.push('balanced labor market');
+
+    rows.push({
+      regionId: rid,
+      drainScore: op10mA11Round(drainScore),
+      band: retentionBand(drainScore),
+      riskFactors: riskFactors.slice(0, 3),
+      narrative: `${rid} talent retention ${retentionBand(drainScore)} (drain ${op10mA11Round(drainScore)}); ${riskFactors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weightedDrain / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.drainScore - a.drainScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTalentDrain(rows: OP10M_A11_TalentRetentionRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'draining' || r.band === 'collapse').map((r) => r.regionId);
+}
+
+
+// --- source: interregional-void-absolute-erosion-surge.ts ---
+
+function surgeBand(score: number): OP10M_A11_VoidAbsoluteErosionSurgeBand {
+  if (score < 17) return 'trace';
+  if (score < 33) return 'surging';
+  if (score < 50) return 'absolute';
+  return 'omni_erosion';
+}
+
+export function op10mA11ComputeInterregionalVoidAbsoluteErosionSurge(args: {
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+  collapseExistenceSingularityPoint: OP10M_A11_CollapseExistenceSingularityPointRow[];
+  voidAnnihilationConvergence: OP10M_A11_VoidAnnihilationConvergenceRow[];
+}): { rows: OP10M_A11_VoidAbsoluteErosionSurgeRow[]; nationalIndex: number } {
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+  const pointByRegion = new Map(args.collapseExistenceSingularityPoint.map((p) => [p.regionId, p]));
+  const annihilationByRegion = new Map(args.voidAnnihilationConvergence.map((v) => [v.regionId, v]));
+
+  const rows: OP10M_A11_VoidAbsoluteErosionSurgeRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const front = frontByRegion.get(rid);
+    const point = pointByRegion.get(rid);
+    const annihilation = annihilationByRegion.get(rid);
+
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.52) : 13;
+    const pointDrag = point ? op10mA11Clamp(point.pointScore * 0.46) : 12;
+    const annihilationDrag = annihilation ? op10mA11Clamp(annihilation.convergenceScore * 0.41) : 10;
+
+    const surgeScore = op10mA11Clamp(frontDrag + pointDrag + annihilationDrag * 0.51);
+    weighted += surgeScore;
+
+    const pulses: string[] = [];
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      pulses.push('front erosion');
+    }
+    if (point && (point.band === 'singular' || point.band === 'existential')) {
+      pulses.push('point erosion');
+    }
+    if (annihilation && (annihilation.band === 'annihilating' || annihilation.band === 'total')) {
+      pulses.push('annihilation pulse');
+    }
+    if (!pulses.length) pulses.push('erosion trace');
+
+    rows.push({
+      regionId: rid,
+      surgeScore: op10mA11Round(surgeScore),
+      band: surgeBand(surgeScore),
+      pulses: pulses.slice(0, 3),
+      narrative: `${rid} void absolute erosion surge ${surgeBand(surgeScore)} (${op10mA11Round(surgeScore)}); ${pulses.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.surgeScore - a.surgeScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithOmniVoidErosion(
+  rows: OP10M_A11_VoidAbsoluteErosionSurgeRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'omni_erosion').map((r) => r.regionId);
+}
+
+export function op10mA11VoidAbsoluteErosionSurgeEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 50;
+  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-absolute-erosion-termination.ts ---
+
+function terminationBand(score: number): OP10M_A11_VoidAbsoluteErosionTerminationBand {
+  if (score < 18) return 'inactive';
+  if (score < 34) return 'terminating';
+  if (score < 51) return 'absolute';
+  return 'total_termination';
+}
+
+export function op10mA11ComputeInterregionalVoidAbsoluteErosionTermination(args: {
+  voidTotalErosionFinality: OP10M_A11_VoidTotalErosionFinalityRow[];
+  collapseUltimateSingularityZenith: OP10M_A11_CollapseUltimateSingularityZenithRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidAbsoluteErosionTerminationRow[]; nationalIndex: number } {
+  const finalityByRegion = new Map(args.voidTotalErosionFinality.map((f) => [f.regionId, f]));
+  const zenithByRegion = new Map(args.collapseUltimateSingularityZenith.map((z) => [z.regionId, z]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidAbsoluteErosionTerminationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const finality = finalityByRegion.get(rid);
+    const zenith = zenithByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const finalityDrag = finality ? op10mA11Clamp(finality.finalityScore * 0.54) : 16;
+    const zenithDrag = zenith ? op10mA11Clamp(zenith.zenithScore * 0.5) : 14;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.47) : 13;
+
+    const terminationScore = op10mA11Clamp(finalityDrag + zenithDrag + frontDrag * 0.57);
+    weighted += terminationScore;
+
+    const phases: string[] = [];
+    if (finality && (finality.band === 'final' || finality.band === 'total_finality')) {
+      phases.push('finality term');
+    }
+    if (zenith && (zenith.band === 'total' || zenith.band === 'zenith')) {
+      phases.push('zenith term');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front term');
+    }
+    if (!phases.length) phases.push('termination inactive');
+
+    rows.push({
+      regionId: rid,
+      terminationScore: op10mA11Round(terminationScore),
+      band: terminationBand(terminationScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void absolute erosion termination ${terminationBand(terminationScore)} (${op10mA11Round(terminationScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.terminationScore - a.terminationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithAbsoluteErosionTermination(
+  rows: OP10M_A11_VoidAbsoluteErosionTerminationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_termination').map((r) => r.regionId);
+}
+
+export function op10mA11VoidAbsoluteErosionTerminationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 52;
+  return currentIndex >= 46 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-annihilation-convergence.ts ---
+
+function convergenceBand(score: number): OP10M_A11_VoidAnnihilationConvergenceBand {
+  if (score < 21) return 'diffuse';
+  if (score < 37) return 'focusing';
+  if (score < 54) return 'annihilating';
+  return 'total';
+}
+
+export function op10mA11ComputeInterregionalVoidAnnihilationConvergence(args: {
+  voidFinalizationCascade: OP10M_A11_VoidFinalizationCascadeRow[];
+  absoluteCollapseHorizonLock: OP10M_A11_AbsoluteCollapseHorizonLockRow[];
+  voidTotalizationSurge: OP10M_A11_VoidTotalizationSurgeRow[];
+}): { rows: OP10M_A11_VoidAnnihilationConvergenceRow[]; nationalIndex: number } {
+  const cascadeByRegion = new Map(args.voidFinalizationCascade.map((v) => [v.regionId, v]));
+  const lockByRegion = new Map(args.absoluteCollapseHorizonLock.map((a) => [a.regionId, a]));
+  const surgeByRegion = new Map(args.voidTotalizationSurge.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_VoidAnnihilationConvergenceRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const cascade = cascadeByRegion.get(rid);
+    const lock = lockByRegion.get(rid);
+    const surge = surgeByRegion.get(rid);
+
+    const cascadeDrag = cascade ? op10mA11Clamp(cascade.cascadeScore * 0.48) : 13;
+    const lockDrag = lock ? op10mA11Clamp(lock.lockScore * 0.43) : 12;
+    const surgeDrag = surge ? op10mA11Clamp(surge.surgeScore * 0.39) : 10;
+
+    const convergenceScore = op10mA11Clamp(cascadeDrag + lockDrag + surgeDrag * 0.49);
+    weighted += convergenceScore;
+
+    const vectors: string[] = [];
+    if (cascade && (cascade.band === 'finalizing' || cascade.band === 'complete')) {
+      vectors.push('finalization vector');
+    }
+    if (lock && (lock.band === 'sealed' || lock.band === 'absolute')) {
+      vectors.push('horizon clamp');
+    }
+    if (surge && (surge.band === 'totalizing' || surge.band === 'absolute')) {
+      vectors.push('totalization front');
+    }
+    if (!vectors.length) vectors.push('annihilation dormant');
+
+    rows.push({
+      regionId: rid,
+      convergenceScore: op10mA11Round(convergenceScore),
+      band: convergenceBand(convergenceScore),
+      vectors: vectors.slice(0, 3),
+      narrative: `${rid} void annihilation convergence ${convergenceBand(convergenceScore)} (${op10mA11Round(convergenceScore)}); ${vectors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.convergenceScore - a.convergenceScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalVoidAnnihilation(
+  rows: OP10M_A11_VoidAnnihilationConvergenceRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'annihilating' || r.band === 'total').map((r) => r.regionId);
+}
+
+export function op10mA11VoidAnnihilationConvergenceEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 52;
+  return currentIndex >= 46 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-complete-erosion-extinction.ts ---
+
+function extinctionBand(score: number): OP10M_A11_VoidCompleteErosionExtinctionBand {
+  if (score < 19) return 'inactive';
+  if (score < 35) return 'extinguishing';
+  if (score < 52) return 'complete';
+  return 'total_extinction';
+}
+
+export function op10mA11ComputeInterregionalVoidCompleteErosionExtinction(args: {
+  voidAbsoluteErosionTermination: OP10M_A11_VoidAbsoluteErosionTerminationRow[];
+  collapseTotalSingularityNexus: OP10M_A11_CollapseTotalSingularityNexusRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidCompleteErosionExtinctionRow[]; nationalIndex: number } {
+  const terminationByRegion = new Map(args.voidAbsoluteErosionTermination.map((t) => [t.regionId, t]));
+  const nexusByRegion = new Map(args.collapseTotalSingularityNexus.map((n) => [n.regionId, n]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidCompleteErosionExtinctionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const termination = terminationByRegion.get(rid);
+    const nexus = nexusByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const terminationDrag = termination ? op10mA11Clamp(termination.terminationScore * 0.55) : 17;
+    const nexusDrag = nexus ? op10mA11Clamp(nexus.nexusScore * 0.51) : 15;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.48) : 14;
+
+    const extinctionScore = op10mA11Clamp(terminationDrag + nexusDrag + frontDrag * 0.58);
+    weighted += extinctionScore;
+
+    const phases: string[] = [];
+    if (termination && (termination.band === 'absolute' || termination.band === 'total_termination')) {
+      phases.push('termination extinct');
+    }
+    if (nexus && (nexus.band === 'total' || nexus.band === 'nexus')) {
+      phases.push('nexus extinct');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front extinct');
+    }
+    if (!phases.length) phases.push('extinction inactive');
+
+    rows.push({
+      regionId: rid,
+      extinctionScore: op10mA11Round(extinctionScore),
+      band: extinctionBand(extinctionScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void complete erosion extinction ${extinctionBand(extinctionScore)} (${op10mA11Round(extinctionScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.extinctionScore - a.extinctionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCompleteErosionExtinction(
+  rows: OP10M_A11_VoidCompleteErosionExtinctionRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'complete' || r.band === 'total_extinction').map((r) => r.regionId);
+}
+
+export function op10mA11VoidCompleteErosionExtinctionEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 53;
+  return currentIndex >= 47 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-complete-erosion-terminality.ts ---
+
+function terminalityBand(score: number): OP10M_A11_VoidCompleteErosionTerminalityBand {
+  if (score < 16) return 'inactive';
+  if (score < 32) return 'completing';
+  if (score < 49) return 'terminal';
+  return 'total_terminality';
+}
+
+export function op10mA11ComputeInterregionalVoidCompleteErosionTerminality(args: {
+  voidTerminalErosionCascade: OP10M_A11_VoidTerminalErosionCascadeRow[];
+  collapseTotalSingularityVertex: OP10M_A11_CollapseTotalSingularityVertexRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidCompleteErosionTerminalityRow[]; nationalIndex: number } {
+  const cascadeByRegion = new Map(args.voidTerminalErosionCascade.map((c) => [c.regionId, c]));
+  const vertexByRegion = new Map(args.collapseTotalSingularityVertex.map((v) => [v.regionId, v]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidCompleteErosionTerminalityRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const cascade = cascadeByRegion.get(rid);
+    const vertex = vertexByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const cascadeDrag = cascade ? op10mA11Clamp(cascade.cascadeScore * 0.52) : 14;
+    const vertexDrag = vertex ? op10mA11Clamp(vertex.vertexScore * 0.48) : 12;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.45) : 11;
+
+    const terminalityScore = op10mA11Clamp(cascadeDrag + vertexDrag + frontDrag * 0.55);
+    weighted += terminalityScore;
+
+    const phases: string[] = [];
+    if (cascade && (cascade.band === 'cascade' || cascade.band === 'total_erosion')) {
+      phases.push('cascade terminal');
+    }
+    if (vertex && (vertex.band === 'total' || vertex.band === 'vertex')) {
+      phases.push('vertex terminal');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front terminal');
+    }
+    if (!phases.length) phases.push('terminality inactive');
+
+    rows.push({
+      regionId: rid,
+      terminalityScore: op10mA11Round(terminalityScore),
+      band: terminalityBand(terminalityScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void complete erosion terminality ${terminalityBand(terminalityScore)} (${op10mA11Round(terminalityScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.terminalityScore - a.terminalityScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCompleteErosionTerminality(
+  rows: OP10M_A11_VoidCompleteErosionTerminalityRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'terminal' || r.band === 'total_terminality').map((r) => r.regionId);
+}
+
+export function op10mA11VoidCompleteErosionTerminalityEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 50;
+  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-existence-annihilation-front.ts ---
+
+function frontBand(score: number): OP10M_A11_VoidExistenceAnnihilationFrontBand {
+  if (score < 19) return 'dormant';
+  if (score < 35) return 'advancing';
+  if (score < 52) return 'consuming';
+  return 'total_void';
+}
+
+export function op10mA11ComputeInterregionalVoidExistenceAnnihilationFront(args: {
+  voidAnnihilationConvergence: OP10M_A11_VoidAnnihilationConvergenceRow[];
+  ultimateCollapseSingularitySeal: OP10M_A11_UltimateCollapseSingularitySealRow[];
+  voidFinalizationCascade: OP10M_A11_VoidFinalizationCascadeRow[];
+}): { rows: OP10M_A11_VoidExistenceAnnihilationFrontRow[]; nationalIndex: number } {
+  const annihilationByRegion = new Map(args.voidAnnihilationConvergence.map((v) => [v.regionId, v]));
+  const sealByRegion = new Map(args.ultimateCollapseSingularitySeal.map((s) => [s.regionId, s]));
+  const cascadeByRegion = new Map(args.voidFinalizationCascade.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_VoidExistenceAnnihilationFrontRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const annihilation = annihilationByRegion.get(rid);
+    const seal = sealByRegion.get(rid);
+    const cascade = cascadeByRegion.get(rid);
+
+    const annihilationDrag = annihilation ? op10mA11Clamp(annihilation.convergenceScore * 0.5) : 13;
+    const sealDrag = seal ? op10mA11Clamp(seal.sealScore * 0.44) : 12;
+    const cascadeDrag = cascade ? op10mA11Clamp(cascade.cascadeScore * 0.4) : 10;
+
+    const frontScore = op10mA11Clamp(annihilationDrag + sealDrag + cascadeDrag * 0.5);
+    weighted += frontScore;
+
+    const waves: string[] = [];
+    if (annihilation && (annihilation.band === 'annihilating' || annihilation.band === 'total')) {
+      waves.push('annihilation wave');
+    }
+    if (seal && (seal.band === 'sealed' || seal.band === 'ultimate')) {
+      waves.push('seal compression');
+    }
+    if (cascade && (cascade.band === 'finalizing' || cascade.band === 'complete')) {
+      waves.push('finalization surge');
+    }
+    if (!waves.length) waves.push('front latent');
+
+    rows.push({
+      regionId: rid,
+      frontScore: op10mA11Round(frontScore),
+      band: frontBand(frontScore),
+      waves: waves.slice(0, 3),
+      narrative: `${rid} void existence annihilation front ${frontBand(frontScore)} (${op10mA11Round(frontScore)}); ${waves.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.frontScore - a.frontScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalVoidExistenceFront(
+  rows: OP10M_A11_VoidExistenceAnnihilationFrontRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'consuming' || r.band === 'total_void').map((r) => r.regionId);
+}
+
+export function op10mA11VoidExistenceAnnihilationFrontEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 51;
+  return currentIndex >= 45 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-expansion-velocity.ts ---
+
+function velocityBand(score: number): OP10M_A11_VoidExpansionVelocityBand {
+  if (score < 25) return 'stable';
+  if (score < 43) return 'widening';
+  if (score < 60) return 'surging';
+  return 'unbounded';
+}
+
+export function op10mA11ComputeInterregionalVoidExpansionVelocity(args: {
+  hollowRegionContagion: OP10M_A11_HollowRegionContagionRow[];
+  settlementAbandonmentSpiral: OP10M_A11_SettlementAbandonmentSpiralRow[];
+  stateCollapseCascadeAmplification: OP10M_A11_StateCollapseCascadeAmplificationRow[];
+}): { rows: OP10M_A11_VoidExpansionVelocityRow[]; nationalIndex: number } {
+  const hollowByRegion = new Map(args.hollowRegionContagion.map((h) => [h.regionId, h]));
+  const spiralByRegion = new Map(args.settlementAbandonmentSpiral.map((s) => [s.regionId, s]));
+  const cascadeByRegion = new Map(args.stateCollapseCascadeAmplification.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_VoidExpansionVelocityRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const hollow = hollowByRegion.get(rid);
+    const spiral = spiralByRegion.get(rid);
+    const cascade = cascadeByRegion.get(rid);
+
+    const hollowDrag = hollow ? op10mA11Clamp(hollow.contagionScore * 0.44) : 13;
+    const spiralDrag = spiral ? op10mA11Clamp(spiral.spiralScore * 0.4) : 11;
+    const cascadeDrag = cascade ? op10mA11Clamp(cascade.amplificationScore * 0.36) : 10;
+
+    const velocityScore = op10mA11Clamp(hollowDrag + spiralDrag + cascadeDrag * 0.46);
+    weighted += velocityScore;
+
+    const vectors: string[] = [];
+    if (hollow && (hollow.band === 'contagion' || hollow.band === 'voided')) {
+      vectors.push('hollow expansion');
+    }
+    if (spiral && (spiral.band === 'exodus' || spiral.band === 'abandoned')) {
+      vectors.push('abandonment vector');
+    }
+    if (cascade && (cascade.band === 'runaway' || cascade.band === 'total')) {
+      vectors.push('cascade acceleration');
+    }
+    if (!vectors.length) vectors.push('void containment');
+
+    rows.push({
+      regionId: rid,
+      velocityScore: op10mA11Round(velocityScore),
+      band: velocityBand(velocityScore),
+      vectors: vectors.slice(0, 3),
+      narrative: `${rid} void expansion velocity ${velocityBand(velocityScore)} (${op10mA11Round(velocityScore)}); ${vectors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.velocityScore - a.velocityScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithUnboundedVoidExpansion(
+  rows: OP10M_A11_VoidExpansionVelocityRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'surging' || r.band === 'unbounded').map((r) => r.regionId);
+}
+
+export function op10mA11VoidExpansionVelocityEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 55;
+  return currentIndex >= 49 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-finalization-cascade.ts ---
+
+function cascadeBand(score: number): OP10M_A11_VoidFinalizationCascadeBand {
+  if (score < 23) return 'latent';
+  if (score < 39) return 'cascading';
+  if (score < 56) return 'finalizing';
+  return 'complete';
+}
+
+export function op10mA11ComputeInterregionalVoidFinalizationCascade(args: {
+  voidTotalizationSurge: OP10M_A11_VoidTotalizationSurgeRow[];
+  collapseHorizonConvergence: OP10M_A11_CollapseHorizonConvergenceRow[];
+  voidExpansionVelocity: OP10M_A11_VoidExpansionVelocityRow[];
+}): { rows: OP10M_A11_VoidFinalizationCascadeRow[]; nationalIndex: number } {
+  const surgeByRegion = new Map(args.voidTotalizationSurge.map((v) => [v.regionId, v]));
+  const horizonByRegion = new Map(args.collapseHorizonConvergence.map((c) => [c.regionId, c]));
+  const velocityByRegion = new Map(args.voidExpansionVelocity.map((v) => [v.regionId, v]));
+
+  const rows: OP10M_A11_VoidFinalizationCascadeRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const surge = surgeByRegion.get(rid);
+    const horizon = horizonByRegion.get(rid);
+    const velocity = velocityByRegion.get(rid);
+
+    const surgeDrag = surge ? op10mA11Clamp(surge.surgeScore * 0.46) : 13;
+    const horizonDrag = horizon ? op10mA11Clamp(horizon.convergenceScore * 0.41) : 12;
+    const velocityDrag = velocity ? op10mA11Clamp(velocity.velocityScore * 0.38) : 10;
+
+    const cascadeScore = op10mA11Clamp(surgeDrag + horizonDrag + velocityDrag * 0.48);
+    weighted += cascadeScore;
+
+    const stages: string[] = [];
+    if (surge && (surge.band === 'totalizing' || surge.band === 'absolute')) {
+      stages.push('totalization stage');
+    }
+    if (horizon && (horizon.band === 'imminent' || horizon.band === 'locked')) {
+      stages.push('horizon collapse');
+    }
+    if (velocity && (velocity.band === 'surging' || velocity.band === 'unbounded')) {
+      stages.push('velocity final');
+    }
+    if (!stages.length) stages.push('cascade dormant');
+
+    rows.push({
+      regionId: rid,
+      cascadeScore: op10mA11Round(cascadeScore),
+      band: cascadeBand(cascadeScore),
+      stages: stages.slice(0, 3),
+      narrative: `${rid} void finalization cascade ${cascadeBand(cascadeScore)} (${op10mA11Round(cascadeScore)}); ${stages.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.cascadeScore - a.cascadeScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCompleteVoidFinalization(
+  rows: OP10M_A11_VoidFinalizationCascadeRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'finalizing' || r.band === 'complete').map((r) => r.regionId);
+}
+
+export function op10mA11VoidFinalizationCascadeEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 53;
+  return currentIndex >= 47 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-terminal-erosion-cascade.ts ---
+
+function cascadeBand(score: number): OP10M_A11_VoidTerminalErosionCascadeBand {
+  if (score < 15) return 'inactive';
+  if (score < 31) return 'terminalizing';
+  if (score < 48) return 'cascade';
+  return 'total_erosion';
+}
+
+export function op10mA11ComputeInterregionalVoidTerminalErosionCascade(args: {
+  voidAbsoluteErosionSurge: OP10M_A11_VoidAbsoluteErosionSurgeRow[];
+  collapseOmniSingularityNode: OP10M_A11_CollapseOmniSingularityNodeRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTerminalErosionCascadeRow[]; nationalIndex: number } {
+  const surgeByRegion = new Map(args.voidAbsoluteErosionSurge.map((s) => [s.regionId, s]));
+  const nodeByRegion = new Map(args.collapseOmniSingularityNode.map((n) => [n.regionId, n]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTerminalErosionCascadeRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const surge = surgeByRegion.get(rid);
+    const node = nodeByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const surgeDrag = surge ? op10mA11Clamp(surge.surgeScore * 0.54) : 13;
+    const nodeDrag = node ? op10mA11Clamp(node.nodeScore * 0.48) : 12;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.44) : 10;
+
+    const cascadeScore = op10mA11Clamp(surgeDrag + nodeDrag + frontDrag * 0.52);
+    weighted += cascadeScore;
+
+    const phases: string[] = [];
+    if (surge && (surge.band === 'absolute' || surge.band === 'omni_erosion')) {
+      phases.push('surge terminal');
+    }
+    if (node && (node.band === 'omni' || node.band === 'total_node')) {
+      phases.push('node terminal');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front terminal');
+    }
+    if (!phases.length) phases.push('cascade inactive');
+
+    rows.push({
+      regionId: rid,
+      cascadeScore: op10mA11Round(cascadeScore),
+      band: cascadeBand(cascadeScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void terminal erosion cascade ${cascadeBand(cascadeScore)} (${op10mA11Round(cascadeScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.cascadeScore - a.cascadeScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalTerminalErosion(
+  rows: OP10M_A11_VoidTerminalErosionCascadeRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'cascade' || r.band === 'total_erosion').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTerminalErosionCascadeEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 49;
+  return currentIndex >= 43 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-ablation.ts ---
+
+function ablationBand(score: number): OP10M_A11_VoidTotalErosionAblationBand {
+  if (score < 29) return 'dormant';
+  if (score < 45) return 'ablating';
+  if (score < 62) return 'total';
+  return 'complete_ablation';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionAblation(args: {
+  voidTotalErosionAttrition: OP10M_A11_VoidTotalErosionAttritionRow[];
+  collapseOmniSingularityTotalism: OP10M_A11_CollapseOmniSingularityTotalismRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionAblationRow[]; nationalIndex: number } {
+  const attritionByRegion = new Map(args.voidTotalErosionAttrition.map((a) => [a.regionId, a]));
+  const totalismByRegion = new Map(args.collapseOmniSingularityTotalism.map((t) => [t.regionId, t]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionAblationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const attrition = attritionByRegion.get(rid);
+    const totalism = totalismByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const attritionDrag = attrition ? op10mA11Clamp(attrition.attritionScore * 0.51) : 21;
+    const totalismDrag = totalism ? op10mA11Clamp(totalism.totalismScore * 0.47) : 19;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.44) : 18;
+
+    const ablationScore = op10mA11Clamp(attritionDrag + totalismDrag + frontDrag * 0.54);
+    weighted += ablationScore;
+
+    const phases: string[] = [];
+    if (attrition && (attrition.band === 'total' || attrition.band === 'complete_attrition')) {
+      phases.push('attrition ablate');
+    }
+    if (totalism && (totalism.band === 'total' || totalism.band === 'totalism')) {
+      phases.push('totalism ablate');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front ablate');
+    }
+    if (!phases.length) phases.push('ablation dormant');
+
+    rows.push({
+      regionId: rid,
+      ablationScore: op10mA11Round(ablationScore),
+      band: ablationBand(ablationScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion ablation ${ablationBand(ablationScore)} (${op10mA11Round(ablationScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.ablationScore - a.ablationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionAblation(
+  rows: OP10M_A11_VoidTotalErosionAblationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_ablation').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionAblationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 63;
+  return currentIndex >= 57 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-annihilation.ts ---
+
+function annihilationBand(score: number): OP10M_A11_VoidTotalErosionAnnihilationBand {
+  if (score < 20) return 'inactive';
+  if (score < 36) return 'annihilating';
+  if (score < 53) return 'total';
+  return 'complete_annihilation';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionAnnihilation(args: {
+  voidCompleteErosionExtinction: OP10M_A11_VoidCompleteErosionExtinctionRow[];
+  collapseAbsoluteSingularityCulmination: OP10M_A11_CollapseAbsoluteSingularityCulminationRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionAnnihilationRow[]; nationalIndex: number } {
+  const extinctionByRegion = new Map(args.voidCompleteErosionExtinction.map((e) => [e.regionId, e]));
+  const culminationByRegion = new Map(args.collapseAbsoluteSingularityCulmination.map((c) => [c.regionId, c]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionAnnihilationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const extinction = extinctionByRegion.get(rid);
+    const culmination = culminationByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const extinctionDrag = extinction ? op10mA11Clamp(extinction.extinctionScore * 0.56) : 18;
+    const culminationDrag = culmination ? op10mA11Clamp(culmination.culminationScore * 0.52) : 16;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.49) : 15;
+
+    const annihilationScore = op10mA11Clamp(extinctionDrag + culminationDrag + frontDrag * 0.59);
+    weighted += annihilationScore;
+
+    const phases: string[] = [];
+    if (extinction && (extinction.band === 'complete' || extinction.band === 'total_extinction')) {
+      phases.push('extinction annihilate');
+    }
+    if (culmination && (culmination.band === 'total' || culmination.band === 'culmination')) {
+      phases.push('culmination annihilate');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front annihilate');
+    }
+    if (!phases.length) phases.push('annihilation inactive');
+
+    rows.push({
+      regionId: rid,
+      annihilationScore: op10mA11Round(annihilationScore),
+      band: annihilationBand(annihilationScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion annihilation ${annihilationBand(annihilationScore)} (${op10mA11Round(annihilationScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.annihilationScore - a.annihilationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionAnnihilation(
+  rows: OP10M_A11_VoidTotalErosionAnnihilationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_annihilation').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionAnnihilationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 54;
+  return currentIndex >= 48 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-atomization.ts ---
+
+function atomizationBand(score: number): OP10M_A11_VoidTotalErosionAtomizationBand {
+  if (score < 24) return 'dormant';
+  if (score < 40) return 'atomizing';
+  if (score < 57) return 'total';
+  return 'complete_atomization';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionAtomization(args: {
+  voidTotalErosionSublimation: OP10M_A11_VoidTotalErosionSublimationRow[];
+  collapseOmniSingularityCoalescence: OP10M_A11_CollapseOmniSingularityCoalescenceRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionAtomizationRow[]; nationalIndex: number } {
+  const sublimationByRegion = new Map(args.voidTotalErosionSublimation.map((s) => [s.regionId, s]));
+  const coalescenceByRegion = new Map(args.collapseOmniSingularityCoalescence.map((c) => [c.regionId, c]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionAtomizationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const sublimation = sublimationByRegion.get(rid);
+    const coalescence = coalescenceByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const sublimationDrag = sublimation ? op10mA11Clamp(sublimation.sublimationScore * 0.5) : 18;
+    const coalescenceDrag = coalescence ? op10mA11Clamp(coalescence.coalescenceScore * 0.46) : 16;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.43) : 15;
+
+    const atomizationScore = op10mA11Clamp(sublimationDrag + coalescenceDrag + frontDrag * 0.53);
+    weighted += atomizationScore;
+
+    const phases: string[] = [];
+    if (sublimation && (sublimation.band === 'total' || sublimation.band === 'complete_sublimation')) {
+      phases.push('sublimation atomize');
+    }
+    if (coalescence && (coalescence.band === 'total' || coalescence.band === 'coalescence')) {
+      phases.push('coalescence atomize');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front atomize');
+    }
+    if (!phases.length) phases.push('atomization dormant');
+
+    rows.push({
+      regionId: rid,
+      atomizationScore: op10mA11Round(atomizationScore),
+      band: atomizationBand(atomizationScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion atomization ${atomizationBand(atomizationScore)} (${op10mA11Round(atomizationScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.atomizationScore - a.atomizationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionAtomization(
+  rows: OP10M_A11_VoidTotalErosionAtomizationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_atomization').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionAtomizationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 58;
+  return currentIndex >= 52 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-attrition.ts ---
+
+function attritionBand(score: number): OP10M_A11_VoidTotalErosionAttritionBand {
+  if (score < 28) return 'dormant';
+  if (score < 44) return 'attriting';
+  if (score < 61) return 'total';
+  return 'complete_attrition';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionAttrition(args: {
+  voidTotalErosionComminution: OP10M_A11_VoidTotalErosionComminutionRow[];
+  collapseOmniSingularityMonism: OP10M_A11_CollapseOmniSingularityMonismRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionAttritionRow[]; nationalIndex: number } {
+  const comminutionByRegion = new Map(args.voidTotalErosionComminution.map((c) => [c.regionId, c]));
+  const monismByRegion = new Map(args.collapseOmniSingularityMonism.map((m) => [m.regionId, m]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionAttritionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const comminution = comminutionByRegion.get(rid);
+    const monism = monismByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const comminutionDrag = comminution ? op10mA11Clamp(comminution.comminutionScore * 0.5) : 20;
+    const monismDrag = monism ? op10mA11Clamp(monism.monismScore * 0.46) : 18;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.43) : 17;
+
+    const attritionScore = op10mA11Clamp(comminutionDrag + monismDrag + frontDrag * 0.53);
+    weighted += attritionScore;
+
+    const phases: string[] = [];
+    if (comminution && (comminution.band === 'total' || comminution.band === 'complete_comminution')) {
+      phases.push('comminution attrite');
+    }
+    if (monism && (monism.band === 'total' || monism.band === 'monism')) {
+      phases.push('monism attrite');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front attrite');
+    }
+    if (!phases.length) phases.push('attrition dormant');
+
+    rows.push({
+      regionId: rid,
+      attritionScore: op10mA11Round(attritionScore),
+      band: attritionBand(attritionScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion attrition ${attritionBand(attritionScore)} (${op10mA11Round(attritionScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.attritionScore - a.attritionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionAttrition(
+  rows: OP10M_A11_VoidTotalErosionAttritionRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_attrition').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionAttritionEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 62;
+  return currentIndex >= 56 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-comminution.ts ---
+
+function comminutionBand(score: number): OP10M_A11_VoidTotalErosionComminutionBand {
+  if (score < 27) return 'dormant';
+  if (score < 43) return 'comminuting';
+  if (score < 60) return 'total';
+  return 'complete_comminution';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionComminution(args: {
+  voidTotalErosionGranulation: OP10M_A11_VoidTotalErosionGranulationRow[];
+  collapseOmniSingularityHolism: OP10M_A11_CollapseOmniSingularityHolismRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionComminutionRow[]; nationalIndex: number } {
+  const granulationByRegion = new Map(args.voidTotalErosionGranulation.map((g) => [g.regionId, g]));
+  const holismByRegion = new Map(args.collapseOmniSingularityHolism.map((h) => [h.regionId, h]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionComminutionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const granulation = granulationByRegion.get(rid);
+    const holism = holismByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const granulationDrag = granulation ? op10mA11Clamp(granulation.granulationScore * 0.49) : 19;
+    const holismDrag = holism ? op10mA11Clamp(holism.holismScore * 0.45) : 17;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.42) : 16;
+
+    const comminutionScore = op10mA11Clamp(granulationDrag + holismDrag + frontDrag * 0.52);
+    weighted += comminutionScore;
+
+    const phases: string[] = [];
+    if (granulation && (granulation.band === 'total' || granulation.band === 'complete_granulation')) {
+      phases.push('granulation comminute');
+    }
+    if (holism && (holism.band === 'total' || holism.band === 'holism')) {
+      phases.push('holism comminute');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front comminute');
+    }
+    if (!phases.length) phases.push('comminution dormant');
+
+    rows.push({
+      regionId: rid,
+      comminutionScore: op10mA11Round(comminutionScore),
+      band: comminutionBand(comminutionScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion comminution ${comminutionBand(comminutionScore)} (${op10mA11Round(comminutionScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.comminutionScore - a.comminutionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionComminution(
+  rows: OP10M_A11_VoidTotalErosionComminutionRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_comminution').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionComminutionEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 61;
+  return currentIndex >= 55 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-depletion.ts ---
+
+function depletionBand(score: number): OP10M_A11_VoidTotalErosionDepletionBand {
+  if (score < 30) return 'dormant';
+  if (score < 46) return 'depleting';
+  if (score < 63) return 'total';
+  return 'complete_depletion';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionDepletion(args: {
+  voidTotalErosionAblation: OP10M_A11_VoidTotalErosionAblationRow[];
+  collapseOmniSingularityUniversalism: OP10M_A11_CollapseOmniSingularityUniversalismRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionDepletionRow[]; nationalIndex: number } {
+  const ablationByRegion = new Map(args.voidTotalErosionAblation.map((a) => [a.regionId, a]));
+  const universalismByRegion = new Map(args.collapseOmniSingularityUniversalism.map((u) => [u.regionId, u]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionDepletionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const ablation = ablationByRegion.get(rid);
+    const universalism = universalismByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const ablationDrag = ablation ? op10mA11Clamp(ablation.ablationScore * 0.52) : 22;
+    const universalismDrag = universalism ? op10mA11Clamp(universalism.universalismScore * 0.48) : 20;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.45) : 19;
+
+    const depletionScore = op10mA11Clamp(ablationDrag + universalismDrag + frontDrag * 0.55);
+    weighted += depletionScore;
+
+    const phases: string[] = [];
+    if (ablation && (ablation.band === 'total' || ablation.band === 'complete_ablation')) {
+      phases.push('ablation deplete');
+    }
+    if (universalism && (universalism.band === 'total' || universalism.band === 'universalism')) {
+      phases.push('universalism deplete');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front deplete');
+    }
+    if (!phases.length) phases.push('depletion dormant');
+
+    rows.push({
+      regionId: rid,
+      depletionScore: op10mA11Round(depletionScore),
+      band: depletionBand(depletionScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion depletion ${depletionBand(depletionScore)} (${op10mA11Round(depletionScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.depletionScore - a.depletionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionDepletion(
+  rows: OP10M_A11_VoidTotalErosionDepletionRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_depletion').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionDepletionEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 64;
+  return currentIndex >= 58 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-dissolution.ts ---
+
+function dissolutionBand(score: number): OP10M_A11_VoidTotalErosionDissolutionBand {
+  if (score < 22) return 'dormant';
+  if (score < 38) return 'dissolving';
+  if (score < 55) return 'total';
+  return 'complete_dissolution';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionDissolution(args: {
+  voidTotalErosionElimination: OP10M_A11_VoidTotalErosionEliminationRow[];
+  collapseOmniSingularityUnification: OP10M_A11_CollapseOmniSingularityUnificationRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionDissolutionRow[]; nationalIndex: number } {
+  const eliminationByRegion = new Map(args.voidTotalErosionElimination.map((e) => [e.regionId, e]));
+  const unificationByRegion = new Map(args.collapseOmniSingularityUnification.map((u) => [u.regionId, u]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionDissolutionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const elimination = eliminationByRegion.get(rid);
+    const unification = unificationByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const eliminationDrag = elimination ? op10mA11Clamp(elimination.eliminationScore * 0.52) : 18;
+    const unificationDrag = unification ? op10mA11Clamp(unification.unificationScore * 0.48) : 16;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.45) : 15;
+
+    const dissolutionScore = op10mA11Clamp(eliminationDrag + unificationDrag + frontDrag * 0.55);
+    weighted += dissolutionScore;
+
+    const phases: string[] = [];
+    if (elimination && (elimination.band === 'total' || elimination.band === 'complete_elimination')) {
+      phases.push('elimination dissolve');
+    }
+    if (unification && (unification.band === 'total' || unification.band === 'unification')) {
+      phases.push('unification dissolve');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front dissolve');
+    }
+    if (!phases.length) phases.push('dissolution dormant');
+
+    rows.push({
+      regionId: rid,
+      dissolutionScore: op10mA11Round(dissolutionScore),
+      band: dissolutionBand(dissolutionScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion dissolution ${dissolutionBand(dissolutionScore)} (${op10mA11Round(dissolutionScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.dissolutionScore - a.dissolutionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionDissolution(
+  rows: OP10M_A11_VoidTotalErosionDissolutionRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_dissolution').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionDissolutionEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 56;
+  return currentIndex >= 50 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-elimination.ts ---
+
+function eliminationBand(score: number): OP10M_A11_VoidTotalErosionEliminationBand {
+  if (score < 21) return 'dormant';
+  if (score < 37) return 'eliminating';
+  if (score < 54) return 'total';
+  return 'complete_elimination';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionElimination(args: {
+  voidTotalErosionEradication: OP10M_A11_VoidTotalErosionEradicationRow[];
+  collapseOmniSingularityIntegration: OP10M_A11_CollapseOmniSingularityIntegrationRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionEliminationRow[]; nationalIndex: number } {
+  const eradicationByRegion = new Map(args.voidTotalErosionEradication.map((e) => [e.regionId, e]));
+  const integrationByRegion = new Map(args.collapseOmniSingularityIntegration.map((i) => [i.regionId, i]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionEliminationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const eradication = eradicationByRegion.get(rid);
+    const integration = integrationByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const eradicationDrag = eradication ? op10mA11Clamp(eradication.eradicationScore * 0.53) : 18;
+    const integrationDrag = integration ? op10mA11Clamp(integration.integrationScore * 0.49) : 16;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.46) : 15;
+
+    const eliminationScore = op10mA11Clamp(eradicationDrag + integrationDrag + frontDrag * 0.56);
+    weighted += eliminationScore;
+
+    const phases: string[] = [];
+    if (eradication && (eradication.band === 'total' || eradication.band === 'complete_eradication')) {
+      phases.push('eradication eliminate');
+    }
+    if (integration && (integration.band === 'total' || integration.band === 'integration')) {
+      phases.push('integration eliminate');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front eliminate');
+    }
+    if (!phases.length) phases.push('elimination dormant');
+
+    rows.push({
+      regionId: rid,
+      eliminationScore: op10mA11Round(eliminationScore),
+      band: eliminationBand(eliminationScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion elimination ${eliminationBand(eliminationScore)} (${op10mA11Round(eliminationScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.eliminationScore - a.eliminationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionElimination(
+  rows: OP10M_A11_VoidTotalErosionEliminationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_elimination').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionEliminationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 55;
+  return currentIndex >= 49 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-enervation.ts ---
+
+function enervationBand(score: number): OP10M_A11_VoidTotalErosionEnervationBand {
+  if (score < 32) return 'dormant';
+  if (score < 48) return 'enervating';
+  if (score < 65) return 'total';
+  return 'complete_enervation';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionEnervation(args: {
+  voidTotalErosionExhaustion: OP10M_A11_VoidTotalErosionExhaustionRow[];
+  collapseOmniSingularityPantheism: OP10M_A11_CollapseOmniSingularityPantheismRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionEnervationRow[]; nationalIndex: number } {
+  const exhaustionByRegion = new Map(args.voidTotalErosionExhaustion.map((e) => [e.regionId, e]));
+  const pantheismByRegion = new Map(args.collapseOmniSingularityPantheism.map((p) => [p.regionId, p]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionEnervationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const exhaustion = exhaustionByRegion.get(rid);
+    const pantheism = pantheismByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const exhaustionDrag = exhaustion ? op10mA11Clamp(exhaustion.exhaustionScore * 0.54) : 23;
+    const pantheismDrag = pantheism ? op10mA11Clamp(pantheism.pantheismScore * 0.5) : 21;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.47) : 20;
+
+    const enervationScore = op10mA11Clamp(exhaustionDrag + pantheismDrag + frontDrag * 0.57);
+    weighted += enervationScore;
+
+    const phases: string[] = [];
+    if (exhaustion && (exhaustion.band === 'total' || exhaustion.band === 'complete_exhaustion')) {
+      phases.push('exhaustion enervate');
+    }
+    if (pantheism && (pantheism.band === 'total' || pantheism.band === 'pantheism')) {
+      phases.push('pantheism enervate');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front enervate');
+    }
+    if (!phases.length) phases.push('enervation dormant');
+
+    rows.push({
+      regionId: rid,
+      enervationScore: op10mA11Round(enervationScore),
+      band: enervationBand(enervationScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion enervation ${enervationBand(enervationScore)} (${op10mA11Round(enervationScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.enervationScore - a.enervationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionEnervation(
+  rows: OP10M_A11_VoidTotalErosionEnervationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_enervation').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionEnervationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 66;
+  return currentIndex >= 60 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-eradication.ts ---
+
+function eradicationBand(score: number): OP10M_A11_VoidTotalErosionEradicationBand {
+  if (score < 21) return 'dormant';
+  if (score < 37) return 'eradicating';
+  if (score < 54) return 'total';
+  return 'complete_eradication';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionEradication(args: {
+  voidTotalErosionObliteration: OP10M_A11_VoidTotalErosionObliterationRow[];
+  collapseOmniSingularityConvergence: OP10M_A11_CollapseOmniSingularityConvergenceRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionEradicationRow[]; nationalIndex: number } {
+  const obliterationByRegion = new Map(args.voidTotalErosionObliteration.map((o) => [o.regionId, o]));
+  const convergenceByRegion = new Map(args.collapseOmniSingularityConvergence.map((c) => [c.regionId, c]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionEradicationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const obliteration = obliterationByRegion.get(rid);
+    const convergence = convergenceByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const obliterationDrag = obliteration ? op10mA11Clamp(obliteration.obliterationScore * 0.54) : 18;
+    const convergenceDrag = convergence ? op10mA11Clamp(convergence.convergenceScore * 0.5) : 16;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.47) : 15;
+
+    const eradicationScore = op10mA11Clamp(obliterationDrag + convergenceDrag + frontDrag * 0.57);
+    weighted += eradicationScore;
+
+    const phases: string[] = [];
+    if (obliteration && (obliteration.band === 'total' || obliteration.band === 'complete_obliteration')) {
+      phases.push('obliteration eradicate');
+    }
+    if (convergence && (convergence.band === 'total' || convergence.band === 'convergence')) {
+      phases.push('convergence eradicate');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front eradicate');
+    }
+    if (!phases.length) phases.push('eradication dormant');
+
+    rows.push({
+      regionId: rid,
+      eradicationScore: op10mA11Round(eradicationScore),
+      band: eradicationBand(eradicationScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion eradication ${eradicationBand(eradicationScore)} (${op10mA11Round(eradicationScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.eradicationScore - a.eradicationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionEradication(
+  rows: OP10M_A11_VoidTotalErosionEradicationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_eradication').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionEradicationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 55;
+  return currentIndex >= 49 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-exhaustion.ts ---
+
+function exhaustionBand(score: number): OP10M_A11_VoidTotalErosionExhaustionBand {
+  if (score < 31) return 'dormant';
+  if (score < 47) return 'exhausting';
+  if (score < 64) return 'total';
+  return 'complete_exhaustion';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionExhaustion(args: {
+  voidTotalErosionDepletion: OP10M_A11_VoidTotalErosionDepletionRow[];
+  collapseOmniSingularityCosmism: OP10M_A11_CollapseOmniSingularityCosmismRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionExhaustionRow[]; nationalIndex: number } {
+  const depletionByRegion = new Map(args.voidTotalErosionDepletion.map((d) => [d.regionId, d]));
+  const cosmismByRegion = new Map(args.collapseOmniSingularityCosmism.map((c) => [c.regionId, c]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionExhaustionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const depletion = depletionByRegion.get(rid);
+    const cosmism = cosmismByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const depletionDrag = depletion ? op10mA11Clamp(depletion.depletionScore * 0.53) : 23;
+    const cosmismDrag = cosmism ? op10mA11Clamp(cosmism.cosmismScore * 0.49) : 21;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.46) : 20;
+
+    const exhaustionScore = op10mA11Clamp(depletionDrag + cosmismDrag + frontDrag * 0.56);
+    weighted += exhaustionScore;
+
+    const phases: string[] = [];
+    if (depletion && (depletion.band === 'total' || depletion.band === 'complete_depletion')) {
+      phases.push('depletion exhaust');
+    }
+    if (cosmism && (cosmism.band === 'total' || cosmism.band === 'cosmism')) {
+      phases.push('cosmism exhaust');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front exhaust');
+    }
+    if (!phases.length) phases.push('exhaustion dormant');
+
+    rows.push({
+      regionId: rid,
+      exhaustionScore: op10mA11Round(exhaustionScore),
+      band: exhaustionBand(exhaustionScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion exhaustion ${exhaustionBand(exhaustionScore)} (${op10mA11Round(exhaustionScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.exhaustionScore - a.exhaustionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionExhaustion(
+  rows: OP10M_A11_VoidTotalErosionExhaustionRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_exhaustion').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionExhaustionEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 65;
+  return currentIndex >= 59 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-finality.ts ---
+
+function finalityBand(score: number): OP10M_A11_VoidTotalErosionFinalityBand {
+  if (score < 17) return 'inactive';
+  if (score < 33) return 'finalizing';
+  if (score < 50) return 'final';
+  return 'total_finality';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionFinality(args: {
+  voidCompleteErosionTerminality: OP10M_A11_VoidCompleteErosionTerminalityRow[];
+  collapseAbsoluteSingularityApex: OP10M_A11_CollapseAbsoluteSingularityApexRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionFinalityRow[]; nationalIndex: number } {
+  const terminalityByRegion = new Map(args.voidCompleteErosionTerminality.map((t) => [t.regionId, t]));
+  const apexByRegion = new Map(args.collapseAbsoluteSingularityApex.map((a) => [a.regionId, a]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionFinalityRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const terminality = terminalityByRegion.get(rid);
+    const apex = apexByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const terminalityDrag = terminality ? op10mA11Clamp(terminality.terminalityScore * 0.53) : 15;
+    const apexDrag = apex ? op10mA11Clamp(apex.apexScore * 0.49) : 13;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.46) : 12;
+
+    const finalityScore = op10mA11Clamp(terminalityDrag + apexDrag + frontDrag * 0.56);
+    weighted += finalityScore;
+
+    const phases: string[] = [];
+    if (terminality && (terminality.band === 'terminal' || terminality.band === 'total_terminality')) {
+      phases.push('terminality final');
+    }
+    if (apex && (apex.band === 'total' || apex.band === 'apex')) {
+      phases.push('apex final');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front final');
+    }
+    if (!phases.length) phases.push('finality inactive');
+
+    rows.push({
+      regionId: rid,
+      finalityScore: op10mA11Round(finalityScore),
+      band: finalityBand(finalityScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion finality ${finalityBand(finalityScore)} (${op10mA11Round(finalityScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.finalityScore - a.finalityScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionFinality(
+  rows: OP10M_A11_VoidTotalErosionFinalityRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'final' || r.band === 'total_finality').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionFinalityEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 51;
+  return currentIndex >= 45 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-granulation.ts ---
+
+function granulationBand(score: number): OP10M_A11_VoidTotalErosionGranulationBand {
+  if (score < 26) return 'dormant';
+  if (score < 42) return 'granulating';
+  if (score < 59) return 'total';
+  return 'complete_granulation';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionGranulation(args: {
+  voidTotalErosionPulverization: OP10M_A11_VoidTotalErosionPulverizationRow[];
+  collapseOmniSingularitySymbiosis: OP10M_A11_CollapseOmniSingularitySymbiosisRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionGranulationRow[]; nationalIndex: number } {
+  const pulverizationByRegion = new Map(args.voidTotalErosionPulverization.map((p) => [p.regionId, p]));
+  const symbiosisByRegion = new Map(args.collapseOmniSingularitySymbiosis.map((s) => [s.regionId, s]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionGranulationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const pulverization = pulverizationByRegion.get(rid);
+    const symbiosis = symbiosisByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const pulverizationDrag = pulverization ? op10mA11Clamp(pulverization.pulverizationScore * 0.48) : 18;
+    const symbiosisDrag = symbiosis ? op10mA11Clamp(symbiosis.symbiosisScore * 0.44) : 16;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.41) : 15;
+
+    const granulationScore = op10mA11Clamp(pulverizationDrag + symbiosisDrag + frontDrag * 0.51);
+    weighted += granulationScore;
+
+    const phases: string[] = [];
+    if (pulverization && (pulverization.band === 'total' || pulverization.band === 'complete_pulverization')) {
+      phases.push('pulverization granulate');
+    }
+    if (symbiosis && (symbiosis.band === 'total' || symbiosis.band === 'symbiosis')) {
+      phases.push('symbiosis granulate');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front granulate');
+    }
+    if (!phases.length) phases.push('granulation dormant');
+
+    rows.push({
+      regionId: rid,
+      granulationScore: op10mA11Round(granulationScore),
+      band: granulationBand(granulationScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion granulation ${granulationBand(granulationScore)} (${op10mA11Round(granulationScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.granulationScore - a.granulationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionGranulation(
+  rows: OP10M_A11_VoidTotalErosionGranulationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_granulation').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionGranulationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 60;
+  return currentIndex >= 54 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-obliteration.ts ---
+
+function obliterationBand(score: number): OP10M_A11_VoidTotalErosionObliterationBand {
+  if (score < 21) return 'dormant';
+  if (score < 37) return 'obliterating';
+  if (score < 54) return 'total';
+  return 'complete_obliteration';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionObliteration(args: {
+  voidTotalErosionAnnihilation: OP10M_A11_VoidTotalErosionAnnihilationRow[];
+  collapseOmniSingularitySynthesis: OP10M_A11_CollapseOmniSingularitySynthesisRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionObliterationRow[]; nationalIndex: number } {
+  const annihilationByRegion = new Map(args.voidTotalErosionAnnihilation.map((a) => [a.regionId, a]));
+  const synthesisByRegion = new Map(args.collapseOmniSingularitySynthesis.map((s) => [s.regionId, s]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionObliterationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const annihilation = annihilationByRegion.get(rid);
+    const synthesis = synthesisByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const annihilationDrag = annihilation ? op10mA11Clamp(annihilation.annihilationScore * 0.55) : 18;
+    const synthesisDrag = synthesis ? op10mA11Clamp(synthesis.synthesisScore * 0.51) : 16;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.48) : 15;
+
+    const obliterationScore = op10mA11Clamp(annihilationDrag + synthesisDrag + frontDrag * 0.58);
+    weighted += obliterationScore;
+
+    const phases: string[] = [];
+    if (annihilation && (annihilation.band === 'total' || annihilation.band === 'complete_annihilation')) {
+      phases.push('annihilation obliterate');
+    }
+    if (synthesis && (synthesis.band === 'total' || synthesis.band === 'synthesis')) {
+      phases.push('synthesis obliterate');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front obliterate');
+    }
+    if (!phases.length) phases.push('obliteration dormant');
+
+    rows.push({
+      regionId: rid,
+      obliterationScore: op10mA11Round(obliterationScore),
+      band: obliterationBand(obliterationScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion obliteration ${obliterationBand(obliterationScore)} (${op10mA11Round(obliterationScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.obliterationScore - a.obliterationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionObliteration(
+  rows: OP10M_A11_VoidTotalErosionObliterationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_obliteration').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionObliterationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 55;
+  return currentIndex >= 49 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-pulverization.ts ---
+
+function pulverizationBand(score: number): OP10M_A11_VoidTotalErosionPulverizationBand {
+  if (score < 25) return 'dormant';
+  if (score < 41) return 'pulverizing';
+  if (score < 58) return 'total';
+  return 'complete_pulverization';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionPulverization(args: {
+  voidTotalErosionAtomization: OP10M_A11_VoidTotalErosionAtomizationRow[];
+  collapseOmniSingularityAmalgamation: OP10M_A11_CollapseOmniSingularityAmalgamationRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionPulverizationRow[]; nationalIndex: number } {
+  const atomizationByRegion = new Map(args.voidTotalErosionAtomization.map((a) => [a.regionId, a]));
+  const amalgamationByRegion = new Map(args.collapseOmniSingularityAmalgamation.map((a) => [a.regionId, a]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionPulverizationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const atomization = atomizationByRegion.get(rid);
+    const amalgamation = amalgamationByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const atomizationDrag = atomization ? op10mA11Clamp(atomization.atomizationScore * 0.49) : 18;
+    const amalgamationDrag = amalgamation ? op10mA11Clamp(amalgamation.amalgamationScore * 0.45) : 16;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.42) : 15;
+
+    const pulverizationScore = op10mA11Clamp(atomizationDrag + amalgamationDrag + frontDrag * 0.52);
+    weighted += pulverizationScore;
+
+    const phases: string[] = [];
+    if (atomization && (atomization.band === 'total' || atomization.band === 'complete_atomization')) {
+      phases.push('atomization pulverize');
+    }
+    if (amalgamation && (amalgamation.band === 'total' || amalgamation.band === 'amalgamation')) {
+      phases.push('amalgamation pulverize');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front pulverize');
+    }
+    if (!phases.length) phases.push('pulverization dormant');
+
+    rows.push({
+      regionId: rid,
+      pulverizationScore: op10mA11Round(pulverizationScore),
+      band: pulverizationBand(pulverizationScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion pulverization ${pulverizationBand(pulverizationScore)} (${op10mA11Round(pulverizationScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.pulverizationScore - a.pulverizationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionPulverization(
+  rows: OP10M_A11_VoidTotalErosionPulverizationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_pulverization').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionPulverizationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 59;
+  return currentIndex >= 53 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-total-erosion-sublimation.ts ---
+
+function sublimationBand(score: number): OP10M_A11_VoidTotalErosionSublimationBand {
+  if (score < 23) return 'dormant';
+  if (score < 39) return 'sublimating';
+  if (score < 56) return 'total';
+  return 'complete_sublimation';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalErosionSublimation(args: {
+  voidTotalErosionDissolution: OP10M_A11_VoidTotalErosionDissolutionRow[];
+  collapseOmniSingularityConsolidation: OP10M_A11_CollapseOmniSingularityConsolidationRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+}): { rows: OP10M_A11_VoidTotalErosionSublimationRow[]; nationalIndex: number } {
+  const dissolutionByRegion = new Map(args.voidTotalErosionDissolution.map((d) => [d.regionId, d]));
+  const consolidationByRegion = new Map(args.collapseOmniSingularityConsolidation.map((c) => [c.regionId, c]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_VoidTotalErosionSublimationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const dissolution = dissolutionByRegion.get(rid);
+    const consolidation = consolidationByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+
+    const dissolutionDrag = dissolution ? op10mA11Clamp(dissolution.dissolutionScore * 0.51) : 18;
+    const consolidationDrag = consolidation ? op10mA11Clamp(consolidation.consolidationScore * 0.47) : 16;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.44) : 15;
+
+    const sublimationScore = op10mA11Clamp(dissolutionDrag + consolidationDrag + frontDrag * 0.54);
+    weighted += sublimationScore;
+
+    const phases: string[] = [];
+    if (dissolution && (dissolution.band === 'total' || dissolution.band === 'complete_dissolution')) {
+      phases.push('dissolution sublimate');
+    }
+    if (consolidation && (consolidation.band === 'total' || consolidation.band === 'consolidation')) {
+      phases.push('consolidation sublimate');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      phases.push('front sublimate');
+    }
+    if (!phases.length) phases.push('sublimation dormant');
+
+    rows.push({
+      regionId: rid,
+      sublimationScore: op10mA11Round(sublimationScore),
+      band: sublimationBand(sublimationScore),
+      phases: phases.slice(0, 3),
+      narrative: `${rid} void total erosion sublimation ${sublimationBand(sublimationScore)} (${op10mA11Round(sublimationScore)}); ${phases.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.sublimationScore - a.sublimationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalErosionSublimation(
+  rows: OP10M_A11_VoidTotalErosionSublimationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'complete_sublimation').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalErosionSublimationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 57;
+  return currentIndex >= 51 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: interregional-void-totalization-surge.ts ---
+
+function surgeBand(score: number): OP10M_A11_VoidTotalizationSurgeBand {
+  if (score < 24) return 'contained';
+  if (score < 41) return 'spreading';
+  if (score < 58) return 'totalizing';
+  return 'absolute';
+}
+
+export function op10mA11ComputeInterregionalVoidTotalizationSurge(args: {
+  voidExpansionVelocity: OP10M_A11_VoidExpansionVelocityRow[];
+  totalCollapseSingularity: OP10M_A11_TotalCollapseSingularityRow[];
+  hollowRegionContagion: OP10M_A11_HollowRegionContagionRow[];
+}): { rows: OP10M_A11_VoidTotalizationSurgeRow[]; nationalIndex: number } {
+  const voidByRegion = new Map(args.voidExpansionVelocity.map((v) => [v.regionId, v]));
+  const singularityByRegion = new Map(args.totalCollapseSingularity.map((s) => [s.regionId, s]));
+  const hollowByRegion = new Map(args.hollowRegionContagion.map((h) => [h.regionId, h]));
+
+  const rows: OP10M_A11_VoidTotalizationSurgeRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const voidVel = voidByRegion.get(rid);
+    const singularity = singularityByRegion.get(rid);
+    const hollow = hollowByRegion.get(rid);
+
+    const voidDrag = voidVel ? op10mA11Clamp(voidVel.velocityScore * 0.45) : 13;
+    const singularityDrag = singularity ? op10mA11Clamp(singularity.singularityScore * 0.4) : 12;
+    const hollowDrag = hollow ? op10mA11Clamp(hollow.contagionScore * 0.37) : 10;
+
+    const surgeScore = op10mA11Clamp(voidDrag + singularityDrag + hollowDrag * 0.47);
+    weighted += surgeScore;
+
+    const fronts: string[] = [];
+    if (voidVel && (voidVel.band === 'surging' || voidVel.band === 'unbounded')) {
+      fronts.push('void front');
+    }
+    if (singularity && (singularity.band === 'singular' || singularity.band === 'total')) {
+      fronts.push('singularity pull');
+    }
+    if (hollow && (hollow.band === 'contagion' || hollow.band === 'voided')) {
+      fronts.push('hollow merge');
+    }
+    if (!fronts.length) fronts.push('void containment');
+
+    rows.push({
+      regionId: rid,
+      surgeScore: op10mA11Round(surgeScore),
+      band: surgeBand(surgeScore),
+      fronts: fronts.slice(0, 3),
+      narrative: `${rid} void totalization surge ${surgeBand(surgeScore)} (${op10mA11Round(surgeScore)}); ${fronts.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.surgeScore - a.surgeScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithAbsoluteVoidTotalization(
+  rows: OP10M_A11_VoidTotalizationSurgeRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'totalizing' || r.band === 'absolute').map((r) => r.regionId);
+}
+
+export function op10mA11VoidTotalizationSurgeEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 54;
+  return currentIndex >= 48 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: linkage-hub-centrality.ts ---
+
+function hubRole(weighted: number, degree: number): OP10M_A11_HubRole {
+  if (weighted >= 62 && degree >= 4) return 'national_hub';
+  if (weighted >= 42 && degree >= 3) return 'regional_hub';
+  if (degree >= 2) return 'connector';
+  return 'peripheral';
+}
+
+export function op10mA11AnalyzeLinkageHubs(
+  linkages: OP10M_A11_RegionalLinkageEdge[],
+): OP10M_A11_LinkageHubProfile[] {
+  const degree = {} as Record<OP10M_A11_RegionId, number>;
+  const weight = {} as Record<OP10M_A11_RegionId, number>;
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    degree[rid] = 0;
+    weight[rid] = 0;
+  }
+
+  for (const edge of linkages) {
+    degree[edge.fromRegion] += 1;
+    degree[edge.toRegion] += 1;
+    weight[edge.fromRegion] += edge.strength;
+    weight[edge.toRegion] += edge.strength;
+  }
+
+  const maxWeight = Math.max(...OP10M_A11_CORE_REGIONS.map((r) => weight[r]), 1);
+
+  return OP10M_A11_CORE_REGIONS.map((regionId) => {
+    const deg = degree[regionId];
+    const weightedCentrality = op10mA11Clamp((weight[regionId] / maxWeight) * 100);
+    const role = hubRole(weightedCentrality, deg);
+    const isolationScore = op10mA11Clamp(100 - weightedCentrality * 0.75 - deg * 6);
+    return {
+      regionId,
+      degree: deg,
+      weightedCentrality: op10mA11Round(weightedCentrality),
+      role,
+      isolationScore: op10mA11Round(isolationScore),
+      narrative: `${regionId} linkage role ${role} (degree ${deg}, isolation ${op10mA11Round(isolationScore)}).`,
+    };
+  }).sort((a, b) => b.weightedCentrality - a.weightedCentrality);
+}
+
+export function op10mA11OverloadedHubs(hubs: OP10M_A11_LinkageHubProfile[]): OP10M_A11_LinkageHubProfile[] {
+  return hubs.filter(
+    (h) =>
+      (h.role === 'national_hub' || h.role === 'regional_hub') &&
+      h.weightedCentrality >= 55 &&
+      h.degree >= 3,
+  );
+}
+
+export function op10mA11DeeplyIsolatedRegions(hubs: OP10M_A11_LinkageHubProfile[]): OP10M_A11_RegionId[] {
+  return hubs.filter((h) => h.isolationScore >= 72 && h.role === 'peripheral').map((h) => h.regionId);
+}
+
+
+// --- source: metropolitan-absorption-stress.ts ---
+
+const GROWTH_LOAD: Record<OP10M_A11_CityGrowthSlice['growthBand'], number> = {
+  contracting: 8,
+  slow: 18,
+  steady: 32,
+  fast: 52,
+  surging: 68,
+};
+
+function absorptionBand(stress: number): OP10M_A11_AbsorptionStressBand {
+  if (stress < 28) return 'comfortable';
+  if (stress < 48) return 'tightening';
+  if (stress < 68) return 'strained';
+  return 'breached';
+}
+
+export function op10mA11ComputeMetropolitanAbsorptionStress(
+  cities: OP10M_A11_CityGrowthSlice[],
+): OP10M_A11_AbsorptionStressRow[] {
+  const rows: OP10M_A11_AbsorptionStressRow[] = [];
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const regionCities = cities.filter((c) => c.regionId === rid);
+    if (!regionCities.length) {
+      rows.push({
+        regionId: rid,
+        stressScore: 22,
+        band: 'comfortable',
+        minHeadroom: 50,
+        gatewayLoad: 0,
+        narrative: `${rid} absorption comfortable — no tracked metros; neutral prior.`,
+      });
+      continue;
+    }
+
+    const minHeadroom = Math.min(...regionCities.map((c) => c.absorptionHeadroom));
+    const avgLoad =
+      regionCities.reduce((a, c) => a + GROWTH_LOAD[c.growthBand], 0) / regionCities.length;
+    const gatewayLoad = regionCities
+      .filter((c) => c.gateway)
+      .reduce((a, c) => a + GROWTH_LOAD[c.growthBand] * 1.15, 0);
+
+    const headroomPenalty = op10mA11Clamp(72 - minHeadroom);
+    const stressScore = op10mA11Clamp(avgLoad * 0.55 + headroomPenalty * 0.65 + gatewayLoad * 0.08);
+
+    rows.push({
+      regionId: rid,
+      stressScore: op10mA11Round(stressScore),
+      band: absorptionBand(stressScore),
+      minHeadroom: op10mA11Round(minHeadroom),
+      gatewayLoad: op10mA11Round(gatewayLoad),
+      narrative: `${rid} absorption ${absorptionBand(stressScore)} (stress ${op10mA11Round(stressScore)}); min headroom ${op10mA11Round(minHeadroom)}.`,
+    });
+  }
+
+  return rows.sort((a, b) => b.stressScore - a.stressScore);
+}
+
+export function op10mA11RegionsWithAbsorptionBreach(rows: OP10M_A11_AbsorptionStressRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'breached' || r.band === 'strained').map((r) => r.regionId);
+}
+
+export function op10mA11NationalMetropolitanSaturation(rows: OP10M_A11_AbsorptionStressRow[]): number {
+  if (!rows.length) return 0;
+  const avg = rows.reduce((a, r) => a + r.stressScore, 0) / rows.length;
+  const breached = rows.filter((r) => r.band === 'breached').length;
+  return op10mA11Round(op10mA11Clamp(avg + breached * 6));
+}
+
+
+// --- source: multi-tier-governance-friction.ts ---
+
+const DISTRIBUTION_FRICTION: Record<OP10M_A11_NationalUrbanInputs['distributionBand'], number> = {
+  balanced: 8,
+  mixed: 18,
+  uneven: 32,
+  highly_uneven: 44,
+};
+
+function frictionBand(score: number): OP10M_A11_GovernanceFrictionBand {
+  if (score < 30) return 'aligned';
+  if (score < 50) return 'strained';
+  if (score < 68) return 'fragmented';
+  return 'breakdown';
+}
+
+export function op10mA11ComputeMultiTierGovernanceFriction(args: {
+  national: OP10M_A11_NationalUrbanInputs;
+  reliefPlaybook: OP10M_A11_ReliefPlaybookItem[];
+  serviceEquity: OP10M_A11_ServiceEquityRow[];
+}): { rows: OP10M_A11_GovernanceFrictionRow[]; nationalIndex: number } {
+  const playbookByRegion = new Map(args.reliefPlaybook.map((p) => [p.regionId, p]));
+  const equityByRegion = new Map(args.serviceEquity.map((e) => [e.regionId, e]));
+  const nationalDrag = DISTRIBUTION_FRICTION[args.national.distributionBand];
+
+  const rows: OP10M_A11_GovernanceFrictionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const playbook = playbookByRegion.get(rid);
+    const equity = equityByRegion.get(rid);
+    const reliefUrgency =
+      playbook?.priority === 'urgent' ? 38 : playbook?.priority === 'high' ? 26 : playbook?.priority === 'medium' ? 14 : 6;
+    const equityGap = equity ? op10mA11Clamp(72 - equity.equityScore) : 20;
+
+    const frictionScore = op10mA11Clamp(reliefUrgency * 0.55 + equityGap * 0.42 + nationalDrag * 0.35);
+    weighted += frictionScore;
+
+    const coordinationGaps: string[] = [];
+    if (playbook && (playbook.priority === 'urgent' || playbook.priority === 'high')) {
+      coordinationGaps.push('relief coordination lag');
+    }
+    if (equity && (equity.band === 'critical_gap' || equity.band === 'uneven')) {
+      coordinationGaps.push('service tier mismatch');
+    }
+    if (nationalDrag >= 32) coordinationGaps.push('national distribution skew');
+    if (!coordinationGaps.length) coordinationGaps.push('routine intergovernmental sync');
+
+    rows.push({
+      regionId: rid,
+      frictionScore: op10mA11Round(frictionScore),
+      band: frictionBand(frictionScore),
+      coordinationGaps: coordinationGaps.slice(0, 3),
+      narrative: `${rid} governance ${frictionBand(frictionScore)} (friction ${op10mA11Round(frictionScore)}); ${coordinationGaps.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.frictionScore - a.frictionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithGovernanceBreakdown(rows: OP10M_A11_GovernanceFrictionRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'breakdown' || r.band === 'fragmented').map((r) => r.regionId);
+}
+
+export function op10mA11GovernanceFrictionEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 58;
+  return currentIndex >= 52 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: peri-urban-expansion-pressure.ts ---
+
+const GROWTH_SPRAWL: Record<OP10M_A11_CityGrowthSlice['growthBand'], number> = {
+  contracting: 6,
+  slow: 14,
+  steady: 28,
+  fast: 46,
+  surging: 62,
+};
+
+function periUrbanBand(score: number): OP10M_A11_PeriUrbanPressureBand {
+  if (score < 26) return 'contained';
+  if (score < 46) return 'expanding';
+  if (score < 66) return 'sprawl_risk';
+  return 'unchecked';
+}
+
+export function op10mA11ComputePeriUrbanExpansionPressure(args: {
+  cities: OP10M_A11_CityGrowthSlice[];
+  corridorFlows: OP10M_A11_CorridorFlowRow[];
+}): OP10M_A11_PeriUrbanPressureRow[] {
+  const inboundFlow = new Map<OP10M_A11_RegionId, number>();
+  for (const flow of args.corridorFlows) {
+    inboundFlow.set(flow.toRegion, (inboundFlow.get(flow.toRegion) ?? 0) + flow.flowPressure * 0.35);
+  }
+
+  const rows: OP10M_A11_PeriUrbanPressureRow[] = [];
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const regionCities = args.cities.filter((c) => c.regionId === rid);
+    const avgSprawl =
+      regionCities.length > 0
+        ? regionCities.reduce((a, c) => a + GROWTH_SPRAWL[c.growthBand], 0) / regionCities.length
+        : 18;
+    const corridorPull = op10mA11Clamp(inboundFlow.get(rid) ?? 0);
+    const nonGatewayPenalty = regionCities.filter((c) => !c.gateway).length * 4;
+
+    const pressureScore = op10mA11Clamp(avgSprawl * 0.62 + corridorPull * 0.48 + nonGatewayPenalty);
+    const band = periUrbanBand(pressureScore);
+
+    rows.push({
+      regionId: rid,
+      pressureScore: op10mA11Round(pressureScore),
+      band,
+      corridorPull: op10mA11Round(corridorPull),
+      metroCount: regionCities.length,
+      narrative: `${rid} peri-urban ${band} (pressure ${op10mA11Round(pressureScore)}); corridor pull ${op10mA11Round(corridorPull)}.`,
+    });
+  }
+
+  return rows.sort((a, b) => b.pressureScore - a.pressureScore);
+}
+
+export function op10mA11NationalPeriUrbanPressureIndex(rows: OP10M_A11_PeriUrbanPressureRow[]): number {
+  if (!rows.length) return 0;
+  const avg = rows.reduce((a, r) => a + r.pressureScore, 0) / rows.length;
+  const hot = rows.filter((r) => r.band === 'sprawl_risk' || r.band === 'unchecked').length;
+  return op10mA11Round(op10mA11Clamp(avg + hot * 5));
+}
+
+export function op10mA11RegionsWithPeriUrbanSprawl(rows: OP10M_A11_PeriUrbanPressureRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'sprawl_risk' || r.band === 'unchecked').map((r) => r.regionId);
+}
+
+
+// --- source: recompute-intercity-infra.ts ---
+
+export function createEmptyOP10M_A11_InfraPersisted(): OP10M_A11_InfraPersisted {
+  return {
+    schemaVersion: OP10M_A11_INFRA_SCHEMA_VERSION,
+    revision: 0,
+    initializedTurn: null,
+    lastStressIndex: 0,
+    stressedLinkIds: [],
+    inputHash: '',
+  };
+}
+
+export function validateOP10M_A11_InfraState(state: OP10M_A11_InfraState | null): string[] {
+  if (!state) return ['null infra state'];
+  const errs: string[] = [];
+  if (state.schemaVersion !== OP10M_A11_INFRA_SCHEMA_VERSION) errs.push('infra schema mismatch');
+  if (state.corridorStressIndex < 0 || state.corridorStressIndex > 100) errs.push('stress out of range');
+  for (const b of state.bottlenecks) {
+    if (b.bindScore < 0 || b.bindScore > 100) errs.push(`bind score ${b.regionId}`);
+  }
+  return errs;
+}
+
+function pushInfraDerived(
+  list: Omit<OP10M_A11_InfraDerivedEvent, 'id'>[],
+  turn: number,
+  kind: OP10M_A11_InfraDerivedEvent['kind'],
+  regionIds: OP10M_A11_RegionId[],
+  linkId: string | null,
+  text: string,
+  significance: OP10M_A11_InfraDerivedEvent['significance'] = 'meaningful',
+) {
+  if (list.length >= 16) return;
+  list.push({ turn, kind, regionIds, linkId, text, significance });
+}
+
+export function buildOP10M_A11_InfraInputsFromFixtures(
+  partial: Partial<OP10M_A11_InfraInputs> & { turn: number },
+): OP10M_A11_InfraInputs {
+  return {
+    turn: partial.turn,
+    links: partial.links ?? [],
+    cities: partial.cities ?? [],
+    transportNeeds: partial.transportNeeds ?? [],
+    regions: partial.regions ?? {},
+    networkFreight: partial.networkFreight ?? 50,
+    networkDigital: partial.networkDigital ?? 50,
+  };
+}
+
+export function recomputeOP10M_A11_IntercityInfraLayer(
+  inputs: OP10M_A11_InfraInputs,
+  persisted: OP10M_A11_InfraPersisted | null,
+): {
+  state: OP10M_A11_InfraState;
+  derived: OP10M_A11_InfraDerivedEvent[];
+  persisted: OP10M_A11_InfraPersisted;
+} {
+  const base = persisted ? { ...persisted, stressedLinkIds: [...persisted.stressedLinkIds] } : createEmptyOP10M_A11_InfraPersisted();
+  if (base.initializedTurn === null) base.initializedTurn = inputs.turn;
+
+  const infraByRegion = {} as Partial<Record<OP10M_A11_RegionId, number>>;
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    infraByRegion[rid] = inputs.regions[rid]?.infrastructureQuality ?? 45;
+  }
+
+  const bottlenecks = op10mA11DetectRegionalBottlenecks({
+    cities: inputs.cities,
+    transportNeeds: inputs.transportNeeds,
+    infraByRegion,
+  });
+  const dependencies = op10mA11BuildIntercityDependencies(
+    inputs.links,
+    inputs.networkFreight,
+    inputs.networkDigital,
+  );
+  const corridorStressIndex = op10mA11CorridorStressIndex(inputs.links);
+
+  const derivedRaw: Omit<OP10M_A11_InfraDerivedEvent, 'id'>[] = [];
+  if (base.revision > 0) {
+    for (const b of bottlenecks) {
+      if (b.severity === 'critical' || b.severity === 'meaningful') {
+        pushInfraDerived(
+          derivedRaw,
+          inputs.turn,
+          'regional_bottleneck_emerged',
+          [b.regionId],
+          null,
+          b.explanation,
+          b.severity === 'critical' ? 'major' : 'meaningful',
+        );
+      }
+    }
+    if (corridorStressIndex + 4 < base.lastStressIndex) {
+      pushInfraDerived(
+        derivedRaw,
+        inputs.turn,
+        'regional_bottleneck_eased',
+        OP10M_A11_CORE_REGIONS,
+        null,
+        'Corridor stress eased vs prior turn.',
+        'minor',
+      );
+    }
+  }
+
+  for (const dep of dependencies) {
+    if (dep.chokePoint) {
+      pushInfraDerived(
+        derivedRaw,
+        inputs.turn,
+        'intercity_chokepoint',
+        dep.dependentRegions,
+        dep.linkId,
+        dep.explanation,
+        'major',
+      );
+    } else if (dep.criticality === 'essential' || dep.criticality === 'high') {
+      pushInfraDerived(
+        derivedRaw,
+        inputs.turn,
+        'intercity_dependency_critical',
+        dep.dependentRegions,
+        dep.linkId,
+        dep.explanation,
+      );
+    }
+  }
+
+  const stressedNow = inputs.links.filter((l) => l.utilization >= 75 || l.health === 'degraded').map((l) => l.linkId);
+  base.revision += 1;
+  base.lastStressIndex = corridorStressIndex;
+  base.stressedLinkIds = stressedNow.slice(0, 32);
+  base.inputHash = op10mA11HashInputs({
+    turn: inputs.turn,
+    cityCount: inputs.cities.length,
+    regionKeys: Object.keys(inputs.regions).sort().join(','),
+    nationalGrowth: `${inputs.links.length}:${inputs.networkFreight}`,
+  });
+
+  const state: OP10M_A11_InfraState = {
+    schemaVersion: OP10M_A11_INFRA_SCHEMA_VERSION,
+    revision: base.revision,
+    turn: inputs.turn,
+    bottlenecks,
+    dependencies,
+    corridorStressIndex,
+    summary: `${op10mA11SummarizeBottlenecks(bottlenecks)} ${op10mA11SummarizeDependencies(dependencies, corridorStressIndex)}`,
+    inputHash: base.inputHash,
+  };
+
+  const derived: OP10M_A11_InfraDerivedEvent[] = derivedRaw.map((d, i) => ({
+    ...d,
+    id: `a11i_${inputs.turn}_${i}_${d.kind}`,
+  }));
+
+  return { state, derived, persisted: base };
+}
+
+export function op10mA11InfraBindPenalty(state: OP10M_A11_InfraState | null, regionId: OP10M_A11_RegionId): number {
+  if (!state) return 0;
+  const row = state.bottlenecks.find((b) => b.regionId === regionId);
+  if (!row) return 0;
+  return op10mA11Clamp(row.bindScore * 0.12, 0, 10);
 }
 
 
@@ -2776,1262 +6076,76 @@ export function buildOP10M_A11_InputsFromFixtures(
 }
 
 
-// --- source: recompute-intercity-infra.ts ---
+// --- source: regional-absolute-collapse-horizon-lock.ts ---
 
-export function createEmptyOP10M_A11_InfraPersisted(): OP10M_A11_InfraPersisted {
-  return {
-    schemaVersion: OP10M_A11_INFRA_SCHEMA_VERSION,
-    revision: 0,
-    initializedTurn: null,
-    lastStressIndex: 0,
-    stressedLinkIds: [],
-    inputHash: '',
-  };
+function lockBand(score: number): OP10M_A11_AbsoluteCollapseHorizonLockBand {
+  if (score < 24) return 'buffered';
+  if (score < 40) return 'compressing';
+  if (score < 57) return 'sealed';
+  return 'absolute';
 }
 
-export function validateOP10M_A11_InfraState(state: OP10M_A11_InfraState | null): string[] {
-  if (!state) return ['null infra state'];
-  const errs: string[] = [];
-  if (state.schemaVersion !== OP10M_A11_INFRA_SCHEMA_VERSION) errs.push('infra schema mismatch');
-  if (state.corridorStressIndex < 0 || state.corridorStressIndex > 100) errs.push('stress out of range');
-  for (const b of state.bottlenecks) {
-    if (b.bindScore < 0 || b.bindScore > 100) errs.push(`bind score ${b.regionId}`);
-  }
-  return errs;
-}
+export function op10mA11ComputeRegionalAbsoluteCollapseHorizonLock(args: {
+  collapseHorizonConvergence: OP10M_A11_CollapseHorizonConvergenceRow[];
+  voidTotalizationSurge: OP10M_A11_VoidTotalizationSurgeRow[];
+  existentialTerminusLock: OP10M_A11_ExistentialTerminusLockRow[];
+}): { rows: OP10M_A11_AbsoluteCollapseHorizonLockRow[]; nationalIndex: number } {
+  const horizonByRegion = new Map(args.collapseHorizonConvergence.map((c) => [c.regionId, c]));
+  const surgeByRegion = new Map(args.voidTotalizationSurge.map((v) => [v.regionId, v]));
+  const terminusByRegion = new Map(args.existentialTerminusLock.map((t) => [t.regionId, t]));
 
-function pushInfraDerived(
-  list: Omit<OP10M_A11_InfraDerivedEvent, 'id'>[],
-  turn: number,
-  kind: OP10M_A11_InfraDerivedEvent['kind'],
-  regionIds: OP10M_A11_RegionId[],
-  linkId: string | null,
-  text: string,
-  significance: OP10M_A11_InfraDerivedEvent['significance'] = 'meaningful',
-) {
-  if (list.length >= 16) return;
-  list.push({ turn, kind, regionIds, linkId, text, significance });
-}
-
-export function buildOP10M_A11_InfraInputsFromFixtures(
-  partial: Partial<OP10M_A11_InfraInputs> & { turn: number },
-): OP10M_A11_InfraInputs {
-  return {
-    turn: partial.turn,
-    links: partial.links ?? [],
-    cities: partial.cities ?? [],
-    transportNeeds: partial.transportNeeds ?? [],
-    regions: partial.regions ?? {},
-    networkFreight: partial.networkFreight ?? 50,
-    networkDigital: partial.networkDigital ?? 50,
-  };
-}
-
-export function recomputeOP10M_A11_IntercityInfraLayer(
-  inputs: OP10M_A11_InfraInputs,
-  persisted: OP10M_A11_InfraPersisted | null,
-): {
-  state: OP10M_A11_InfraState;
-  derived: OP10M_A11_InfraDerivedEvent[];
-  persisted: OP10M_A11_InfraPersisted;
-} {
-  const base = persisted ? { ...persisted, stressedLinkIds: [...persisted.stressedLinkIds] } : createEmptyOP10M_A11_InfraPersisted();
-  if (base.initializedTurn === null) base.initializedTurn = inputs.turn;
-
-  const infraByRegion = {} as Partial<Record<OP10M_A11_RegionId, number>>;
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    infraByRegion[rid] = inputs.regions[rid]?.infrastructureQuality ?? 45;
-  }
-
-  const bottlenecks = op10mA11DetectRegionalBottlenecks({
-    cities: inputs.cities,
-    transportNeeds: inputs.transportNeeds,
-    infraByRegion,
-  });
-  const dependencies = op10mA11BuildIntercityDependencies(
-    inputs.links,
-    inputs.networkFreight,
-    inputs.networkDigital,
-  );
-  const corridorStressIndex = op10mA11CorridorStressIndex(inputs.links);
-
-  const derivedRaw: Omit<OP10M_A11_InfraDerivedEvent, 'id'>[] = [];
-  if (base.revision > 0) {
-    for (const b of bottlenecks) {
-      if (b.severity === 'critical' || b.severity === 'meaningful') {
-        pushInfraDerived(
-          derivedRaw,
-          inputs.turn,
-          'regional_bottleneck_emerged',
-          [b.regionId],
-          null,
-          b.explanation,
-          b.severity === 'critical' ? 'major' : 'meaningful',
-        );
-      }
-    }
-    if (corridorStressIndex + 4 < base.lastStressIndex) {
-      pushInfraDerived(
-        derivedRaw,
-        inputs.turn,
-        'regional_bottleneck_eased',
-        OP10M_A11_CORE_REGIONS,
-        null,
-        'Corridor stress eased vs prior turn.',
-        'minor',
-      );
-    }
-  }
-
-  for (const dep of dependencies) {
-    if (dep.chokePoint) {
-      pushInfraDerived(
-        derivedRaw,
-        inputs.turn,
-        'intercity_chokepoint',
-        dep.dependentRegions,
-        dep.linkId,
-        dep.explanation,
-        'major',
-      );
-    } else if (dep.criticality === 'essential' || dep.criticality === 'high') {
-      pushInfraDerived(
-        derivedRaw,
-        inputs.turn,
-        'intercity_dependency_critical',
-        dep.dependentRegions,
-        dep.linkId,
-        dep.explanation,
-      );
-    }
-  }
-
-  const stressedNow = inputs.links.filter((l) => l.utilization >= 75 || l.health === 'degraded').map((l) => l.linkId);
-  base.revision += 1;
-  base.lastStressIndex = corridorStressIndex;
-  base.stressedLinkIds = stressedNow.slice(0, 32);
-  base.inputHash = op10mA11HashInputs({
-    turn: inputs.turn,
-    cityCount: inputs.cities.length,
-    regionKeys: Object.keys(inputs.regions).sort().join(','),
-    nationalGrowth: `${inputs.links.length}:${inputs.networkFreight}`,
-  });
-
-  const state: OP10M_A11_InfraState = {
-    schemaVersion: OP10M_A11_INFRA_SCHEMA_VERSION,
-    revision: base.revision,
-    turn: inputs.turn,
-    bottlenecks,
-    dependencies,
-    corridorStressIndex,
-    summary: `${op10mA11SummarizeBottlenecks(bottlenecks)} ${op10mA11SummarizeDependencies(dependencies, corridorStressIndex)}`,
-    inputHash: base.inputHash,
-  };
-
-  const derived: OP10M_A11_InfraDerivedEvent[] = derivedRaw.map((d, i) => ({
-    ...d,
-    id: `a11i_${inputs.turn}_${i}_${d.kind}`,
-  }));
-
-  return { state, derived, persisted: base };
-}
-
-export function op10mA11InfraBindPenalty(state: OP10M_A11_InfraState | null, regionId: OP10M_A11_RegionId): number {
-  if (!state) return 0;
-  const row = state.bottlenecks.find((b) => b.regionId === regionId);
-  if (!row) return 0;
-  return op10mA11Clamp(row.bindScore * 0.12, 0, 10);
-}
-
-
-// --- source: urban-hierarchy.ts ---
-
-function primateBand(index: number): OP10M_A11_PrimateBand {
-  if (index < 22) return 'decentralized';
-  if (index < 40) return 'balanced';
-  if (index < 62) return 'concentrated';
-  return 'hyper_concentrated';
-}
-
-export function op10mA11ComputeUrbanHierarchy(cities: OP10M_A11_CityGrowthSlice[]): OP10M_A11_UrbanHierarchyRow[] {
-  const rows: OP10M_A11_UrbanHierarchyRow[] = [];
+  const rows: OP10M_A11_AbsoluteCollapseHorizonLockRow[] = [];
+  let weighted = 0;
 
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const regionCities = cities.filter((c) => c.regionId === rid);
-    if (!regionCities.length) {
-      rows.push({
-        regionId: rid,
-        primateIndex: 30,
-        primateBand: 'balanced',
-        gatewayShare: 0,
-        secondaryMomentum: 40,
-        narrative: `${rid}: no tracked cities — neutral hierarchy prior.`,
-      });
-      continue;
+    const horizon = horizonByRegion.get(rid);
+    const surge = surgeByRegion.get(rid);
+    const terminus = terminusByRegion.get(rid);
+
+    const horizonDrag = horizon ? op10mA11Clamp(horizon.convergenceScore * 0.45) : 14;
+    const surgeDrag = surge ? op10mA11Clamp(surge.surgeScore * 0.43) : 12;
+    const terminusDrag = terminus ? op10mA11Clamp(terminus.terminusScore * 0.4) : 11;
+
+    const lockScore = op10mA11Clamp(horizonDrag + surgeDrag + terminusDrag * 0.49);
+    weighted += lockScore;
+
+    const clamps: string[] = [];
+    if (horizon && (horizon.band === 'imminent' || horizon.band === 'locked')) {
+      clamps.push('horizon sealed');
     }
-
-    const gateways = regionCities.filter((c) => c.gateway);
-    const secondaries = regionCities.filter((c) => !c.gateway);
-    const totalGrowth = regionCities.reduce((a, c) => a + c.growthScore, 0) || 1;
-    const gatewayGrowth = gateways.reduce((a, c) => a + c.growthScore, 0);
-    const gatewayShare = op10mA11Clamp((gatewayGrowth / totalGrowth) * 100);
-    const secondaryMomentum =
-      secondaries.length > 0
-        ? secondaries.reduce((a, c) => a + c.growthScore, 0) / secondaries.length
-        : gatewayGrowth / Math.max(1, gateways.length);
-
-    const top = Math.max(...regionCities.map((c) => c.growthScore));
-    const restAvg =
-      regionCities.length > 1
-        ? (totalGrowth - top) / (regionCities.length - 1)
-        : top * 0.6;
-    const primateIndex = op10mA11Clamp((top / Math.max(1, restAvg) - 1) * 28 + gatewayShare * 0.35);
-    const band = primateBand(primateIndex);
+    if (surge && (surge.band === 'totalizing' || surge.band === 'absolute')) {
+      clamps.push('void absolute');
+    }
+    if (terminus && (terminus.band === 'sealed' || terminus.band === 'terminal')) {
+      clamps.push('terminus clamp');
+    }
+    if (!clamps.length) clamps.push('horizon buffer');
 
     rows.push({
       regionId: rid,
-      primateIndex: op10mA11Round(primateIndex),
-      primateBand: band,
-      gatewayShare: op10mA11Round(gatewayShare),
-      secondaryMomentum: op10mA11Round(secondaryMomentum),
-      narrative: `${rid} primate ${band} (index ${op10mA11Round(primateIndex)}); gateway share ${op10mA11Round(gatewayShare)}%.`,
+      lockScore: op10mA11Round(lockScore),
+      band: lockBand(lockScore),
+      clamps: clamps.slice(0, 3),
+      narrative: `${rid} absolute collapse horizon lock ${lockBand(lockScore)} (${op10mA11Round(lockScore)}); ${clamps.slice(0, 2).join('; ')}.`,
     });
   }
 
-  return rows;
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.lockScore - a.lockScore), nationalIndex };
 }
 
-export function op10mA11NationalPrimateIndex(hierarchy: OP10M_A11_UrbanHierarchyRow[]): number {
-  if (!hierarchy.length) return 0;
-  const avg = hierarchy.reduce((a, h) => a + h.primateIndex, 0) / hierarchy.length;
-  const hyper = hierarchy.filter((h) => h.primateBand === 'hyper_concentrated' || h.primateBand === 'concentrated').length;
-  return op10mA11Round(op10mA11Clamp(avg + hyper * 4));
-}
-
-
-// --- source: regional-linkage-matrix.ts ---
-
-function linkageBand(strength: number): OP10M_A11_LinkageBand {
-  if (strength < 18) return 'weak';
-  if (strength < 38) return 'moderate';
-  if (strength < 58) return 'strong';
-  return 'structural';
-}
-
-export function op10mA11BuildRegionalLinkageMatrix(
-  links: OP10M_A11_IntercityLinkSlice[],
-): OP10M_A11_RegionalLinkageEdge[] {
-  const acc = new Map<string, { strength: number; count: number }>();
-
-  for (const link of links) {
-    if (link.regionA === link.regionB) continue;
-    const key = [link.regionA, link.regionB].sort().join('::');
-    const healthPenalty =
-      link.health === 'severed' ? 0.15 : link.health === 'degraded' ? 0.55 : link.health === 'operational' ? 0.85 : 1;
-    const add = op10mA11Clamp(link.utilization * 0.45 * healthPenalty + (link.strategic ? 8 : 0));
-    const prev = acc.get(key) || { strength: 0, count: 0 };
-    prev.strength += add;
-    prev.count += 1;
-    acc.set(key, prev);
-  }
-
-  const out: OP10M_A11_RegionalLinkageEdge[] = [];
-  for (const [key, val] of acc) {
-    const [fromRegion, toRegion] = key.split('::') as [OP10M_A11_RegionId, OP10M_A11_RegionId];
-    const strength = op10mA11Clamp(val.strength / Math.max(1, val.count) + val.count * 2);
-    out.push({
-      fromRegion,
-      toRegion,
-      strength: op10mA11Round(strength),
-      band: linkageBand(strength),
-      viaLinks: val.count,
-    });
-  }
-
-  return out.sort((a, b) => b.strength - a.strength);
-}
-
-export function op10mA11LinkageFragilityIndex(
-  linkages: OP10M_A11_RegionalLinkageEdge[],
-  corridorStress: number,
-): number {
-  const pairsPossible = (OP10M_A11_CORE_REGIONS.length * (OP10M_A11_CORE_REGIONS.length - 1)) / 2;
-  const weakShare = linkages.filter((l) => l.band === 'weak').length / Math.max(1, pairsPossible);
-  const strongShare = linkages.filter((l) => l.band === 'strong' || l.band === 'structural').length / Math.max(1, pairsPossible);
-  return op10mA11Round(op10mA11Clamp(weakShare * 55 + corridorStress * 0.35 - strongShare * 18 + 12));
-}
-
-export function op10mA11RegionsWithWeakLinkage(
-  linkages: OP10M_A11_RegionalLinkageEdge[],
+export function op10mA11RegionsWithAbsoluteCollapseHorizonLock(
+  rows: OP10M_A11_AbsoluteCollapseHorizonLockRow[],
 ): OP10M_A11_RegionId[] {
-  const weakCount = {} as Record<OP10M_A11_RegionId, number>;
-  for (const rid of OP10M_A11_CORE_REGIONS) weakCount[rid] = 0;
-  for (const l of linkages) {
-    if (l.band !== 'weak') continue;
-    weakCount[l.fromRegion] += 1;
-    weakCount[l.toRegion] += 1;
-  }
-  return OP10M_A11_CORE_REGIONS.filter((r) => weakCount[r] >= 2);
+  return rows.filter((r) => r.band === 'sealed' || r.band === 'absolute').map((r) => r.regionId);
 }
 
-
-// --- source: relief-playbook.ts ---
-
-export function op10mA11BuildReliefPlaybook(args: {
-  bottlenecks: OP10M_A11_RegionalBottleneck[];
-  hierarchy: OP10M_A11_UrbanHierarchyRow[];
-  weakLinkageRegions: OP10M_A11_RegionId[];
-}): OP10M_A11_ReliefPlaybookItem[] {
-  const out: OP10M_A11_ReliefPlaybookItem[] = [];
-
-  for (const rid of args.weakLinkageRegions) {
-    out.push({
-      regionId: rid,
-      priority: 'medium',
-      actions: [
-        'Restore redundant intercity corridor capacity',
-        'Prioritize strategic freight/digital backbone upgrades',
-      ],
-      rationale: `${rid} sits on multiple weak regional linkages — growth spillovers are fragile.`,
-    });
-  }
-
-  for (const b of args.bottlenecks) {
-    const h = args.hierarchy.find((x) => x.regionId === b.regionId);
-    const actions: string[] = [];
-    if (b.drivers.some((d) => d.includes('transport need'))) {
-      actions.push('Clear open transport infrastructure needs before new urban projects');
-    }
-    if (b.drivers.some((d) => d.includes('headroom'))) {
-      actions.push('Sequence housing/transport absorption projects in gateway cities');
-    }
-    if (b.drivers.some((d) => d.includes('infrastructure'))) {
-      actions.push('Target regional infrastructure quality uplift (not cash transfers)');
-    }
-    if (h && (h.primateBand === 'concentrated' || h.primateBand === 'hyper_concentrated')) {
-      actions.push('Seed secondary-city growth programs to reduce primate concentration');
-    }
-    if (!actions.length) actions.push('Monitor binding constraints; no automatic capital dispatch');
-
-    const priority =
-      b.severity === 'critical' ? 'urgent' : b.severity === 'meaningful' ? 'high' : 'medium';
-
-    out.push({
-      regionId: b.regionId,
-      priority,
-      actions: actions.slice(0, 4),
-      rationale: b.explanation,
-    });
-  }
-
-  const byRegion = new Map<OP10M_A11_RegionId, OP10M_A11_ReliefPlaybookItem>();
-  for (const item of out) {
-    const prev = byRegion.get(item.regionId);
-    if (!prev || item.priority === 'urgent' || (item.priority === 'high' && prev.priority !== 'urgent')) {
-      byRegion.set(item.regionId, item);
-    }
-  }
-  return [...byRegion.values()].sort((a, b) => {
-    const rank = { urgent: 4, high: 3, medium: 2, low: 1 };
-    return rank[b.priority] - rank[a.priority];
-  });
-}
-
-
-// --- source: urban-corridor-flow.ts ---
-
-function flowBand(pressure: number): OP10M_A11_FlowPressureBand {
-  if (pressure < 28) return 'light';
-  if (pressure < 48) return 'moderate';
-  if (pressure < 68) return 'heavy';
-  return 'surge';
-}
-
-function regionUrbanPulse(cities: OP10M_A11_CityGrowthSlice[], rid: OP10M_A11_RegionId): number {
-  const rows = cities.filter((c) => c.regionId === rid);
-  if (!rows.length) return 45;
-  return rows.reduce((a, c) => a + c.growthScore, 0) / rows.length;
-}
-
-export function op10mA11ComputeCorridorFlows(args: {
-  cities: OP10M_A11_CityGrowthSlice[];
-  links: OP10M_A11_IntercityLinkSlice[];
-  linkages: OP10M_A11_RegionalLinkageEdge[];
-}): OP10M_A11_CorridorFlowRow[] {
-  const pulse = {} as Record<OP10M_A11_RegionId, number>;
-  for (const rid of OP10M_A11_CORE_REGIONS) pulse[rid] = regionUrbanPulse(args.cities, rid);
-
-  const linkageByKey = new Map<string, OP10M_A11_RegionalLinkageEdge>();
-  for (const l of args.linkages) {
-    linkageByKey.set([l.fromRegion, l.toRegion].sort().join('::'), l);
-  }
-
-  const acc = new Map<string, { pressure: number; gradient: number; n: number }>();
-
-  for (const link of args.links) {
-    if (link.regionA === link.regionB) continue;
-    const key = [link.regionA, link.regionB].sort().join('::');
-    const grad = Math.abs(pulse[link.regionA] - pulse[link.regionB]);
-    const util = link.utilization;
-    const healthDrag =
-      link.health === 'severed' ? 0.2 : link.health === 'degraded' ? 0.65 : link.health === 'operational' ? 0.9 : 1;
-    const add = op10mA11Clamp(util * 0.58 * healthDrag + grad * 0.38 + (link.strategic ? 12 : 0));
-    const prev = acc.get(key) || { pressure: 0, gradient: 0, n: 0 };
-    prev.pressure += add;
-    prev.gradient = Math.max(prev.gradient, grad);
-    prev.n += 1;
-    acc.set(key, prev);
-  }
-
-  const out: OP10M_A11_CorridorFlowRow[] = [];
-  for (const [key, val] of acc) {
-    const [fromRegion, toRegion] = key.split('::') as [OP10M_A11_RegionId, OP10M_A11_RegionId];
-    const linkage = linkageByKey.get(key);
-    const linkageBoost = linkage ? linkage.strength * 0.08 : 0;
-    const flowPressure = op10mA11Clamp(val.pressure / Math.max(1, val.n) + linkageBoost);
-    const band = flowBand(flowPressure);
-    out.push({
-      fromRegion,
-      toRegion,
-      flowPressure: op10mA11Round(flowPressure),
-      band,
-      growthGradient: op10mA11Round(val.gradient),
-      explanation: `${fromRegion}↔${toRegion} corridor ${band} (pressure ${op10mA11Round(flowPressure)}, gradient ${op10mA11Round(val.gradient)}).`,
-    });
-  }
-
-  return out.sort((a, b) => b.flowPressure - a.flowPressure);
-}
-
-export function op10mA11MaxCorridorFlow(flows: OP10M_A11_CorridorFlowRow[]): number {
-  if (!flows.length) return 0;
-  return Math.max(...flows.map((f) => f.flowPressure));
-}
-
-export function op10mA11SurgeCorridors(flows: OP10M_A11_CorridorFlowRow[]): OP10M_A11_CorridorFlowRow[] {
-  return flows.filter((f) => f.band === 'surge' || f.band === 'heavy');
-}
-
-
-// --- source: linkage-hub-centrality.ts ---
-
-function hubRole(weighted: number, degree: number): OP10M_A11_HubRole {
-  if (weighted >= 62 && degree >= 4) return 'national_hub';
-  if (weighted >= 42 && degree >= 3) return 'regional_hub';
-  if (degree >= 2) return 'connector';
-  return 'peripheral';
-}
-
-export function op10mA11AnalyzeLinkageHubs(
-  linkages: OP10M_A11_RegionalLinkageEdge[],
-): OP10M_A11_LinkageHubProfile[] {
-  const degree = {} as Record<OP10M_A11_RegionId, number>;
-  const weight = {} as Record<OP10M_A11_RegionId, number>;
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    degree[rid] = 0;
-    weight[rid] = 0;
-  }
-
-  for (const edge of linkages) {
-    degree[edge.fromRegion] += 1;
-    degree[edge.toRegion] += 1;
-    weight[edge.fromRegion] += edge.strength;
-    weight[edge.toRegion] += edge.strength;
-  }
-
-  const maxWeight = Math.max(...OP10M_A11_CORE_REGIONS.map((r) => weight[r]), 1);
-
-  return OP10M_A11_CORE_REGIONS.map((regionId) => {
-    const deg = degree[regionId];
-    const weightedCentrality = op10mA11Clamp((weight[regionId] / maxWeight) * 100);
-    const role = hubRole(weightedCentrality, deg);
-    const isolationScore = op10mA11Clamp(100 - weightedCentrality * 0.75 - deg * 6);
-    return {
-      regionId,
-      degree: deg,
-      weightedCentrality: op10mA11Round(weightedCentrality),
-      role,
-      isolationScore: op10mA11Round(isolationScore),
-      narrative: `${regionId} linkage role ${role} (degree ${deg}, isolation ${op10mA11Round(isolationScore)}).`,
-    };
-  }).sort((a, b) => b.weightedCentrality - a.weightedCentrality);
-}
-
-export function op10mA11OverloadedHubs(hubs: OP10M_A11_LinkageHubProfile[]): OP10M_A11_LinkageHubProfile[] {
-  return hubs.filter(
-    (h) =>
-      (h.role === 'national_hub' || h.role === 'regional_hub') &&
-      h.weightedCentrality >= 55 &&
-      h.degree >= 3,
-  );
-}
-
-export function op10mA11DeeplyIsolatedRegions(hubs: OP10M_A11_LinkageHubProfile[]): OP10M_A11_RegionId[] {
-  return hubs.filter((h) => h.isolationScore >= 72 && h.role === 'peripheral').map((h) => h.regionId);
-}
-
-
-// --- source: regional-migration-pressure.ts ---
-
-function migrationBand(score: number): OP10M_A11_MigrationPressureBand {
-  if (score < 22) return 'stable';
-  if (score < 42) return 'elevated';
-  if (score < 62) return 'high';
-  return 'surge';
-}
-
-export function op10mA11ComputeMigrationPressure(args: {
-  regions: Record<OP10M_A11_RegionId, OP10M_A11_RegionInequalityRow>;
-  bottlenecks: OP10M_A11_RegionalBottleneck[];
-  linkageHubs: OP10M_A11_LinkageHubProfile[];
-  corridorFlows: OP10M_A11_CorridorFlowRow[];
-}): OP10M_A11_MigrationPressureRow[] {
-  const bottleneckByRegion = new Map(args.bottlenecks.map((b) => [b.regionId, b]));
-  const hubByRegion = new Map(args.linkageHubs.map((h) => [h.regionId, h]));
-
-  const inboundFlow = new Map<OP10M_A11_RegionId, number>();
-  for (const rid of OP10M_A11_CORE_REGIONS) inboundFlow.set(rid, 0);
-  for (const f of args.corridorFlows) {
-    if (f.band === 'heavy' || f.band === 'surge') {
-      inboundFlow.set(f.toRegion, (inboundFlow.get(f.toRegion) ?? 0) + f.flowPressure * 0.35);
-    }
-  }
-
-  const rows: OP10M_A11_MigrationPressureRow[] = [];
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const row = args.regions[rid];
-    const hub = hubByRegion.get(rid);
-    const bn = bottleneckByRegion.get(rid);
-
-    const pull =
-      row.leading && row.band !== 'contracting'
-        ? op10mA11Clamp(row.urbanGrowthIndex * 0.45 + (row.relativeStanding - 50) * 0.25)
-        : op10mA11Clamp(Math.max(0, 62 - row.urbanGrowthIndex) * 0.2);
-
-    const push =
-      (row.lagging ? 18 : 0) +
-      (bn?.severity === 'critical' ? 22 : bn?.severity === 'meaningful' ? 12 : 0) +
-      (hub ? hub.isolationScore * 0.28 : 0);
-
-    const corridorPull = op10mA11Clamp((inboundFlow.get(rid) ?? 0) * 0.4);
-    const netPressure = op10mA11Clamp(pull + corridorPull + push * 0.55 - (row.spilloverBand === 'integrated' ? 8 : 0));
-
-    const primaryDirection: OP10M_A11_MigrationPressureRow['primaryDirection'] =
-      pull + corridorPull > push + 12
-        ? 'inbound'
-        : push > pull + 10
-          ? 'outbound'
-          : 'balanced';
-
-    rows.push({
-      regionId: rid,
-      pullScore: op10mA11Round(pull + corridorPull),
-      pushScore: op10mA11Round(push),
-      netPressure: op10mA11Round(netPressure),
-      band: migrationBand(netPressure),
-      primaryDirection,
-      narrative: `${rid} migration ${migrationBand(netPressure)} (${primaryDirection}); pull ${op10mA11Round(pull + corridorPull)} vs push ${op10mA11Round(push)}.`,
-    });
-  }
-
-  return rows.sort((a, b) => b.netPressure - a.netPressure);
-}
-
-export function op10mA11RegionsWithMigrationSurge(rows: OP10M_A11_MigrationPressureRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'surge' || r.band === 'high').map((r) => r.regionId);
-}
-
-
-// --- source: settlement-vulnerability.ts ---
-
-function vulnerabilityBand(score: number): OP10M_A11_SettlementVulnerabilityBand {
-  if (score < 28) return 'resilient';
-  if (score < 48) return 'exposed';
-  if (score < 68) return 'fragile';
-  return 'critical';
-}
-
-export function op10mA11ComputeSettlementVulnerability(args: {
-  regions: Record<OP10M_A11_RegionId, OP10M_A11_RegionInequalityRow>;
-  bottlenecks: OP10M_A11_RegionalBottleneck[];
-  linkageHubs: OP10M_A11_LinkageHubProfile[];
-  fragilityIndex: number;
-}): OP10M_A11_SettlementVulnerabilityRow[] {
-  const bottleneckByRegion = new Map(args.bottlenecks.map((b) => [b.regionId, b]));
-  const hubByRegion = new Map(args.linkageHubs.map((h) => [h.regionId, h]));
-
-  const rows: OP10M_A11_SettlementVulnerabilityRow[] = [];
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const region = args.regions[rid];
-    const bn = bottleneckByRegion.get(rid);
-    const hub = hubByRegion.get(rid);
-
-    const inequalityStress = region.lagging ? 22 : region.leading ? 8 : 14;
-    const bottleneckStress =
-      bn?.severity === 'critical' ? 32 : bn?.severity === 'meaningful' ? 20 : bn ? 10 : 0;
-    const isolationStress = hub ? op10mA11Clamp(hub.isolationScore * 0.55) : 15;
-    const spilloverPenalty =
-      region.spilloverBand === 'isolated' ? 16 : region.spilloverBand === 'weak' ? 8 : 0;
-    const networkStress = op10mA11Clamp(args.fragilityIndex * 0.12);
-
-    const compositeScore = op10mA11Clamp(
-      inequalityStress + bottleneckStress + isolationStress + spilloverPenalty + networkStress,
-    );
-
-    const drivers: string[] = [];
-    if (region.lagging) drivers.push('lagging urban standing');
-    if (bn) drivers.push(`infrastructure bottleneck (${bn.severity})`);
-    if (hub && hub.isolationScore >= 55) drivers.push('linkage isolation');
-    if (region.spilloverBand === 'isolated') drivers.push('weak national spillover');
-    if (!drivers.length) drivers.push('baseline settlement exposure');
-
-    rows.push({
-      regionId: rid,
-      vulnerabilityScore: op10mA11Round(compositeScore),
-      band: vulnerabilityBand(compositeScore),
-      drivers: drivers.slice(0, 4),
-      narrative: `${rid} settlement ${vulnerabilityBand(compositeScore)} (score ${op10mA11Round(compositeScore)}): ${drivers.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  return rows.sort((a, b) => b.vulnerabilityScore - a.vulnerabilityScore);
-}
-
-export function op10mA11CriticalSettlementRegions(
-  rows: OP10M_A11_SettlementVulnerabilityRow[],
-): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'critical' || r.band === 'fragile').map((r) => r.regionId);
-}
-
-
-// --- source: fiscal-urban-coupling.ts ---
-
-const DISTRIBUTION_FISCAL_WEIGHT: Record<OP10M_A11_NationalSlice['distributionBand'], number> = {
-  broad_based: 78,
-  mixed: 58,
-  uneven: 38,
-  highly_uneven: 22,
-};
-
-function fiscalBand(score: number): OP10M_A11_FiscalCouplingBand {
-  if (score >= 68) return 'aligned';
-  if (score >= 48) return 'partial';
-  if (score >= 28) return 'strained';
-  return 'misaligned';
-}
-
-export function op10mA11ComputeFiscalUrbanCoupling(args: {
-  national: OP10M_A11_NationalSlice;
-  regions: Record<OP10M_A11_RegionId, OP10M_A11_RegionInequalityRow>;
-}): { rows: OP10M_A11_FiscalUrbanCouplingRow[]; nationalIndex: number } {
-  const baseFiscal = DISTRIBUTION_FISCAL_WEIGHT[args.national.distributionBand];
-  const biasDrag = op10mA11Clamp(args.national.capitalCityBias * 0.42, 0, 24);
-
-  const rows: OP10M_A11_FiscalUrbanCouplingRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const region = args.regions[rid];
-    const lagNeed = region.lagging ? 18 : region.leading ? -6 : 4;
-    const spilloverBoost =
-      region.spilloverBand === 'integrated' ? 10 : region.spilloverBand === 'connected' ? 5 : 0;
-
-    const couplingScore = op10mA11Clamp(
-      baseFiscal + spilloverBoost + lagNeed - biasDrag - (region.leading ? biasDrag * 0.25 : 0),
-    );
-
-    weighted += couplingScore;
-
-    rows.push({
-      regionId: rid,
-      couplingScore: op10mA11Round(couplingScore),
-      band: fiscalBand(couplingScore),
-      catchUpPotential: op10mA11Clamp(couplingScore * 0.65 + (region.lagging ? 12 : 0)),
-      narrative: `${rid} fiscal–urban ${fiscalBand(couplingScore)} (${op10mA11Round(couplingScore)}); catch-up potential ${op10mA11Round(op10mA11Clamp(couplingScore * 0.65 + (region.lagging ? 12 : 0)))}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows, nationalIndex };
-}
-
-export function op10mA11RegionalCohesionIndex(args: {
-  inequalityIndex: number;
-  fragilityIndex: number;
-  fiscalNationalIndex: number;
-  maxMigrationPressure: number;
-}): number {
-  const inequalityDrag = op10mA11Clamp(args.inequalityIndex * 0.35);
-  const fragilityDrag = op10mA11Clamp(args.fragilityIndex * 0.28);
-  const fiscalLift = op10mA11Clamp(args.fiscalNationalIndex * 0.45);
-  const migrationDrag = op10mA11Clamp(args.maxMigrationPressure * 0.22);
-  return op10mA11Clamp(72 + fiscalLift - inequalityDrag - fragilityDrag - migrationDrag);
-}
-
-export function op10mA11MisalignedFiscalRegions(rows: OP10M_A11_FiscalUrbanCouplingRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'misaligned' || r.band === 'strained').map((r) => r.regionId);
-}
-
-
-// --- source: metropolitan-absorption-stress.ts ---
-
-const GROWTH_LOAD: Record<OP10M_A11_CityGrowthSlice['growthBand'], number> = {
-  contracting: 8,
-  slow: 18,
-  steady: 32,
-  fast: 52,
-  surging: 68,
-};
-
-function absorptionBand(stress: number): OP10M_A11_AbsorptionStressBand {
-  if (stress < 28) return 'comfortable';
-  if (stress < 48) return 'tightening';
-  if (stress < 68) return 'strained';
-  return 'breached';
-}
-
-export function op10mA11ComputeMetropolitanAbsorptionStress(
-  cities: OP10M_A11_CityGrowthSlice[],
-): OP10M_A11_AbsorptionStressRow[] {
-  const rows: OP10M_A11_AbsorptionStressRow[] = [];
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const regionCities = cities.filter((c) => c.regionId === rid);
-    if (!regionCities.length) {
-      rows.push({
-        regionId: rid,
-        stressScore: 22,
-        band: 'comfortable',
-        minHeadroom: 50,
-        gatewayLoad: 0,
-        narrative: `${rid} absorption comfortable — no tracked metros; neutral prior.`,
-      });
-      continue;
-    }
-
-    const minHeadroom = Math.min(...regionCities.map((c) => c.absorptionHeadroom));
-    const avgLoad =
-      regionCities.reduce((a, c) => a + GROWTH_LOAD[c.growthBand], 0) / regionCities.length;
-    const gatewayLoad = regionCities
-      .filter((c) => c.gateway)
-      .reduce((a, c) => a + GROWTH_LOAD[c.growthBand] * 1.15, 0);
-
-    const headroomPenalty = op10mA11Clamp(72 - minHeadroom);
-    const stressScore = op10mA11Clamp(avgLoad * 0.55 + headroomPenalty * 0.65 + gatewayLoad * 0.08);
-
-    rows.push({
-      regionId: rid,
-      stressScore: op10mA11Round(stressScore),
-      band: absorptionBand(stressScore),
-      minHeadroom: op10mA11Round(minHeadroom),
-      gatewayLoad: op10mA11Round(gatewayLoad),
-      narrative: `${rid} absorption ${absorptionBand(stressScore)} (stress ${op10mA11Round(stressScore)}); min headroom ${op10mA11Round(minHeadroom)}.`,
-    });
-  }
-
-  return rows.sort((a, b) => b.stressScore - a.stressScore);
-}
-
-export function op10mA11RegionsWithAbsorptionBreach(rows: OP10M_A11_AbsorptionStressRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'breached' || r.band === 'strained').map((r) => r.regionId);
-}
-
-export function op10mA11NationalMetropolitanSaturation(rows: OP10M_A11_AbsorptionStressRow[]): number {
-  if (!rows.length) return 0;
-  const avg = rows.reduce((a, r) => a + r.stressScore, 0) / rows.length;
-  const breached = rows.filter((r) => r.band === 'breached').length;
-  return op10mA11Round(op10mA11Clamp(avg + breached * 6));
-}
-
-
-// --- source: regional-service-equity.ts ---
-
-function serviceEquityBand(score: number): OP10M_A11_ServiceEquityBand {
-  if (score >= 68) return 'equitable';
-  if (score >= 48) return 'mixed';
-  if (score >= 28) return 'uneven';
-  return 'critical_gap';
-}
-
-export function op10mA11ComputeRegionalServiceEquity(args: {
-  settlement: OP10M_A11_SettlementVulnerabilityRow[];
-  fiscal: OP10M_A11_FiscalUrbanCouplingRow[];
-}): { rows: OP10M_A11_ServiceEquityRow[]; nationalIndex: number } {
-  const settlementByRegion = new Map(args.settlement.map((s) => [s.regionId, s]));
-  const fiscalByRegion = new Map(args.fiscal.map((f) => [f.regionId, f]));
-
-  const rows: OP10M_A11_ServiceEquityRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const settle = settlementByRegion.get(rid);
-    const fiscal = fiscalByRegion.get(rid);
-    const vulnerabilityDrag = settle ? op10mA11Clamp(settle.vulnerabilityScore * 0.55) : 20;
-    const fiscalLift = fiscal ? op10mA11Clamp(fiscal.couplingScore * 0.42) : 24;
-    const catchUpBoost = fiscal ? op10mA11Clamp(fiscal.catchUpPotential * 0.18) : 0;
-
-    const equityScore = op10mA11Clamp(58 + fiscalLift + catchUpBoost - vulnerabilityDrag);
-    weighted += equityScore;
-
-    const gapDrivers: string[] = [];
-    if (settle && (settle.band === 'critical' || settle.band === 'fragile')) {
-      gapDrivers.push('settlement exposure');
-    }
-    if (fiscal && (fiscal.band === 'misaligned' || fiscal.band === 'strained')) {
-      gapDrivers.push('fiscal misalignment');
-    }
-    if (!gapDrivers.length) gapDrivers.push('balanced service delivery');
-
-    rows.push({
-      regionId: rid,
-      equityScore: op10mA11Round(equityScore),
-      band: serviceEquityBand(equityScore),
-      gapDrivers: gapDrivers.slice(0, 3),
-      narrative: `${rid} service equity ${serviceEquityBand(equityScore)} (${op10mA11Round(equityScore)}); ${gapDrivers.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => a.equityScore - b.equityScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithServiceEquityGap(rows: OP10M_A11_ServiceEquityRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'critical_gap' || r.band === 'uneven').map((r) => r.regionId);
-}
-
-
-// --- source: regional-convergence-velocity.ts ---
-
-function convergenceBand(velocity: number, spread: number): OP10M_A11_ConvergenceBand {
-  if (spread < 18) return 'balanced';
-  if (velocity >= 4) return 'catching_up';
-  if (velocity <= -3) return 'diverging';
-  return 'stalled';
-}
-
-export function op10mA11StandingSpread(regions: Record<OP10M_A11_RegionId, OP10M_A11_RegionInequalityRow>): number {
-  const standings = OP10M_A11_CORE_REGIONS.map((rid) => regions[rid].relativeStanding);
-  return op10mA11Round(Math.max(...standings) - Math.min(...standings));
-}
-
-export function op10mA11ComputeRegionalConvergence(args: {
-  regions: Record<OP10M_A11_RegionId, OP10M_A11_RegionInequalityRow>;
-  priorStandingSpread: number | null;
-}): OP10M_A11_ConvergenceVelocityRow {
-  const spread = op10mA11StandingSpread(args.regions);
-  const prior = args.priorStandingSpread ?? spread;
-  const velocity = op10mA11Round(prior - spread);
-
-  const lagging = OP10M_A11_CORE_REGIONS.filter((rid) => args.regions[rid].lagging);
-  const leading = OP10M_A11_CORE_REGIONS.filter((rid) => args.regions[rid].leading);
-  const band = convergenceBand(velocity, spread);
-
-  return {
-    standingSpread: spread,
-    velocity,
-    band,
-    laggingCount: lagging.length,
-    leadingCount: leading.length,
-    narrative: `Regional standing spread ${spread} (${band}); velocity ${velocity} vs prior ${prior}.`,
-  };
-}
-
-export function op10mA11ConvergenceStalled(row: OP10M_A11_ConvergenceVelocityRow): boolean {
-  return row.band === 'stalled' || row.band === 'diverging';
-}
-
-export function op10mA11LaggingRegionsNotClosing(
-  regions: Record<OP10M_A11_RegionId, OP10M_A11_RegionInequalityRow>,
-  row: OP10M_A11_ConvergenceVelocityRow,
-): OP10M_A11_RegionId[] {
-  if (row.band === 'catching_up' || row.band === 'balanced') return [];
-  return OP10M_A11_CORE_REGIONS.filter((rid) => regions[rid].lagging && regions[rid].relativeStanding < 42);
-}
-
-
-// --- source: peri-urban-expansion-pressure.ts ---
-
-const GROWTH_SPRAWL: Record<OP10M_A11_CityGrowthSlice['growthBand'], number> = {
-  contracting: 6,
-  slow: 14,
-  steady: 28,
-  fast: 46,
-  surging: 62,
-};
-
-function periUrbanBand(score: number): OP10M_A11_PeriUrbanPressureBand {
-  if (score < 26) return 'contained';
-  if (score < 46) return 'expanding';
-  if (score < 66) return 'sprawl_risk';
-  return 'unchecked';
-}
-
-export function op10mA11ComputePeriUrbanExpansionPressure(args: {
-  cities: OP10M_A11_CityGrowthSlice[];
-  corridorFlows: OP10M_A11_CorridorFlowRow[];
-}): OP10M_A11_PeriUrbanPressureRow[] {
-  const inboundFlow = new Map<OP10M_A11_RegionId, number>();
-  for (const flow of args.corridorFlows) {
-    inboundFlow.set(flow.toRegion, (inboundFlow.get(flow.toRegion) ?? 0) + flow.flowPressure * 0.35);
-  }
-
-  const rows: OP10M_A11_PeriUrbanPressureRow[] = [];
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const regionCities = args.cities.filter((c) => c.regionId === rid);
-    const avgSprawl =
-      regionCities.length > 0
-        ? regionCities.reduce((a, c) => a + GROWTH_SPRAWL[c.growthBand], 0) / regionCities.length
-        : 18;
-    const corridorPull = op10mA11Clamp(inboundFlow.get(rid) ?? 0);
-    const nonGatewayPenalty = regionCities.filter((c) => !c.gateway).length * 4;
-
-    const pressureScore = op10mA11Clamp(avgSprawl * 0.62 + corridorPull * 0.48 + nonGatewayPenalty);
-    const band = periUrbanBand(pressureScore);
-
-    rows.push({
-      regionId: rid,
-      pressureScore: op10mA11Round(pressureScore),
-      band,
-      corridorPull: op10mA11Round(corridorPull),
-      metroCount: regionCities.length,
-      narrative: `${rid} peri-urban ${band} (pressure ${op10mA11Round(pressureScore)}); corridor pull ${op10mA11Round(corridorPull)}.`,
-    });
-  }
-
-  return rows.sort((a, b) => b.pressureScore - a.pressureScore);
-}
-
-export function op10mA11NationalPeriUrbanPressureIndex(rows: OP10M_A11_PeriUrbanPressureRow[]): number {
-  if (!rows.length) return 0;
-  const avg = rows.reduce((a, r) => a + r.pressureScore, 0) / rows.length;
-  const hot = rows.filter((r) => r.band === 'sprawl_risk' || r.band === 'unchecked').length;
-  return op10mA11Round(op10mA11Clamp(avg + hot * 5));
-}
-
-export function op10mA11RegionsWithPeriUrbanSprawl(rows: OP10M_A11_PeriUrbanPressureRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'sprawl_risk' || r.band === 'unchecked').map((r) => r.regionId);
-}
-
-
-// --- source: regional-infrastructure-backlog.ts ---
-
-function backlogBand(score: number): OP10M_A11_InfrastructureBacklogBand {
-  if (score < 28) return 'manageable';
-  if (score < 48) return 'elevated';
-  if (score < 68) return 'severe';
-  return 'critical';
-}
-
-export function op10mA11ComputeRegionalInfrastructureBacklog(args: {
-  bottlenecks: OP10M_A11_RegionalBottleneck[];
-  absorptionStress: OP10M_A11_AbsorptionStressRow[];
-  corridorStressIndex: number;
-}): { rows: OP10M_A11_InfrastructureBacklogRow[]; nationalIndex: number } {
-  const bottleneckByRegion = new Map(args.bottlenecks.map((b) => [b.regionId, b]));
-  const absorptionByRegion = new Map(args.absorptionStress.map((a) => [a.regionId, a]));
-
-  const rows: OP10M_A11_InfrastructureBacklogRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const bn = bottleneckByRegion.get(rid);
-    const abs = absorptionByRegion.get(rid);
-    const bottleneckLoad = bn ? op10mA11Clamp(bn.bindScore * 0.72) : 16;
-    const absorptionDrag = abs ? op10mA11Clamp(abs.stressScore * 0.38) : 12;
-    const networkDrag = op10mA11Clamp(args.corridorStressIndex * 0.22);
-
-    const backlogScore = op10mA11Clamp(bottleneckLoad + absorptionDrag + networkDrag);
-    weighted += backlogScore;
-
-    const drivers: string[] = [];
-    if (bn && bn.bindScore >= 45) drivers.push('regional bottleneck');
-    if (abs && (abs.band === 'strained' || abs.band === 'breached')) drivers.push('absorption strain');
-    if (args.corridorStressIndex >= 50) drivers.push('network corridor stress');
-    if (!drivers.length) drivers.push('routine maintenance queue');
-
-    rows.push({
-      regionId: rid,
-      backlogScore: op10mA11Round(backlogScore),
-      band: backlogBand(backlogScore),
-      estimatedTurnsToClear: op10mA11Round(op10mA11Clamp(backlogScore / 12)),
-      drivers: drivers.slice(0, 3),
-      narrative: `${rid} infrastructure backlog ${backlogBand(backlogScore)} (${op10mA11Round(backlogScore)}); ~${op10mA11Round(op10mA11Clamp(backlogScore / 12))} turns to clear.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.backlogScore - a.backlogScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithCriticalBacklog(rows: OP10M_A11_InfrastructureBacklogRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'critical' || r.band === 'severe').map((r) => r.regionId);
-}
-
-
-// --- source: multi-tier-governance-friction.ts ---
-
-const DISTRIBUTION_FRICTION: Record<OP10M_A11_NationalUrbanInputs['distributionBand'], number> = {
-  balanced: 8,
-  mixed: 18,
-  uneven: 32,
-  highly_uneven: 44,
-};
-
-function frictionBand(score: number): OP10M_A11_GovernanceFrictionBand {
-  if (score < 30) return 'aligned';
-  if (score < 50) return 'strained';
-  if (score < 68) return 'fragmented';
-  return 'breakdown';
-}
-
-export function op10mA11ComputeMultiTierGovernanceFriction(args: {
-  national: OP10M_A11_NationalUrbanInputs;
-  reliefPlaybook: OP10M_A11_ReliefPlaybookItem[];
-  serviceEquity: OP10M_A11_ServiceEquityRow[];
-}): { rows: OP10M_A11_GovernanceFrictionRow[]; nationalIndex: number } {
-  const playbookByRegion = new Map(args.reliefPlaybook.map((p) => [p.regionId, p]));
-  const equityByRegion = new Map(args.serviceEquity.map((e) => [e.regionId, e]));
-  const nationalDrag = DISTRIBUTION_FRICTION[args.national.distributionBand];
-
-  const rows: OP10M_A11_GovernanceFrictionRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const playbook = playbookByRegion.get(rid);
-    const equity = equityByRegion.get(rid);
-    const reliefUrgency =
-      playbook?.priority === 'urgent' ? 38 : playbook?.priority === 'high' ? 26 : playbook?.priority === 'medium' ? 14 : 6;
-    const equityGap = equity ? op10mA11Clamp(72 - equity.equityScore) : 20;
-
-    const frictionScore = op10mA11Clamp(reliefUrgency * 0.55 + equityGap * 0.42 + nationalDrag * 0.35);
-    weighted += frictionScore;
-
-    const coordinationGaps: string[] = [];
-    if (playbook && (playbook.priority === 'urgent' || playbook.priority === 'high')) {
-      coordinationGaps.push('relief coordination lag');
-    }
-    if (equity && (equity.band === 'critical_gap' || equity.band === 'uneven')) {
-      coordinationGaps.push('service tier mismatch');
-    }
-    if (nationalDrag >= 32) coordinationGaps.push('national distribution skew');
-    if (!coordinationGaps.length) coordinationGaps.push('routine intergovernmental sync');
-
-    rows.push({
-      regionId: rid,
-      frictionScore: op10mA11Round(frictionScore),
-      band: frictionBand(frictionScore),
-      coordinationGaps: coordinationGaps.slice(0, 3),
-      narrative: `${rid} governance ${frictionBand(frictionScore)} (friction ${op10mA11Round(frictionScore)}); ${coordinationGaps.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.frictionScore - a.frictionScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithGovernanceBreakdown(rows: OP10M_A11_GovernanceFrictionRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'breakdown' || r.band === 'fragmented').map((r) => r.regionId);
-}
-
-export function op10mA11GovernanceFrictionEscalating(
+export function op10mA11AbsoluteCollapseHorizonLockEscalating(
   currentIndex: number,
   priorIndex: number | null,
 ): boolean {
-  if (priorIndex === null) return currentIndex >= 58;
-  return currentIndex >= 52 && currentIndex > priorIndex + 5;
-}
-
-
-// --- source: regional-housing-spillover-pressure.ts ---
-
-function spilloverBand(score: number): OP10M_A11_HousingSpilloverBand {
-  if (score < 28) return 'localized';
-  if (score < 48) return 'spreading';
-  if (score < 66) return 'cascade';
-  return 'systemic';
-}
-
-export function op10mA11ComputeRegionalHousingSpilloverPressure(args: {
-  absorptionStress: OP10M_A11_AbsorptionStressRow[];
-  periUrbanPressure: OP10M_A11_PeriUrbanPressureRow[];
-  corridorFlows: OP10M_A11_CorridorFlowRow[];
-}): { rows: OP10M_A11_HousingSpilloverRow[]; nationalIndex: number } {
-  const absorptionByRegion = new Map(args.absorptionStress.map((a) => [a.regionId, a]));
-  const periByRegion = new Map(args.periUrbanPressure.map((p) => [p.regionId, p]));
-  const outboundFlow = new Map<OP10M_A11_RegionId, number>();
-
-  for (const flow of args.corridorFlows) {
-    outboundFlow.set(flow.fromRegion, (outboundFlow.get(flow.fromRegion) ?? 0) + flow.flowPressure * 0.42);
-  }
-
-  const rows: OP10M_A11_HousingSpilloverRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const abs = absorptionByRegion.get(rid);
-    const peri = periByRegion.get(rid);
-    const saturationDrag = abs ? op10mA11Clamp(abs.stressScore * 0.55) : 14;
-    const fringeDrag = peri ? op10mA11Clamp(peri.pressureScore * 0.48) : 12;
-    const corridorPush = op10mA11Clamp(outboundFlow.get(rid) ?? 0);
-
-    const spilloverScore = op10mA11Clamp(saturationDrag + fringeDrag * 0.62 + corridorPush * 0.38);
-    weighted += spilloverScore;
-
-    const channels: string[] = [];
-    if (abs && (abs.band === 'strained' || abs.band === 'breached')) channels.push('metro saturation bleed');
-    if (peri && (peri.band === 'sprawl_risk' || peri.band === 'unchecked')) channels.push('peri-urban fringe');
-    if (corridorPush >= 28) channels.push('corridor price diffusion');
-    if (!channels.length) channels.push('contained local market');
-
-    rows.push({
-      regionId: rid,
-      spilloverScore: op10mA11Round(spilloverScore),
-      band: spilloverBand(spilloverScore),
-      corridorPush: op10mA11Round(corridorPush),
-      channels: channels.slice(0, 3),
-      narrative: `${rid} housing spillover ${spilloverBand(spilloverScore)} (${op10mA11Round(spilloverScore)}); ${channels.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.spilloverScore - a.spilloverScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithHousingSpilloverCascade(rows: OP10M_A11_HousingSpilloverRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'cascade' || r.band === 'systemic').map((r) => r.regionId);
-}
-
-export function op10mA11HousingSpilloverEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 54;
-  return currentIndex >= 48 && currentIndex > priorIndex + 6;
-}
-
-
-// --- source: interregional-talent-retention-stress.ts ---
-
-const HUB_RETENTION: Record<OP10M_A11_LinkageHubProfile['role'], number> = {
-  peripheral: 32,
-  connector: 22,
-  regional_hub: 14,
-  national_hub: 8,
-};
-
-function retentionBand(drainScore: number): OP10M_A11_TalentRetentionBand {
-  if (drainScore < 28) return 'stable';
-  if (drainScore < 48) return 'leaky';
-  if (drainScore < 66) return 'draining';
-  return 'collapse';
-}
-
-export function op10mA11ComputeInterregionalTalentRetentionStress(args: {
-  migrationPressure: OP10M_A11_MigrationPressureRow[];
-  linkageHubs: OP10M_A11_LinkageHubProfile[];
-  fiscalUrbanCoupling: OP10M_A11_FiscalUrbanCouplingRow[];
-}): { rows: OP10M_A11_TalentRetentionRow[]; nationalIndex: number } {
-  const migrationByRegion = new Map(args.migrationPressure.map((m) => [m.regionId, m]));
-  const hubByRegion = new Map(args.linkageHubs.map((h) => [h.regionId, h]));
-  const fiscalByRegion = new Map(args.fiscalUrbanCoupling.map((f) => [f.regionId, f]));
-
-  const rows: OP10M_A11_TalentRetentionRow[] = [];
-  let weightedDrain = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const mig = migrationByRegion.get(rid);
-    const hub = hubByRegion.get(rid);
-    const fiscal = fiscalByRegion.get(rid);
-
-    const outboundDrag =
-      mig && mig.primaryDirection === 'outbound' ? op10mA11Clamp(mig.pushScore * 0.58) : op10mA11Clamp((mig?.netPressure ?? 10) * 0.22);
-    const hubDrag = hub ? HUB_RETENTION[hub.role] : 18;
-    const fiscalDrag = fiscal ? op10mA11Clamp(68 - fiscal.couplingScore) * 0.42 : 16;
-
-    const drainScore = op10mA11Clamp(outboundDrag + hubDrag * 0.45 + fiscalDrag);
-    weightedDrain += drainScore;
-
-    const riskFactors: string[] = [];
-    if (mig && (mig.band === 'high' || mig.band === 'surge') && mig.primaryDirection === 'outbound') {
-      riskFactors.push('outbound migration pull');
-    }
-    if (hub && (hub.role === 'peripheral' || hub.isolationScore >= 55)) riskFactors.push('peripheral isolation');
-    if (fiscal && (fiscal.band === 'strained' || fiscal.band === 'misaligned')) riskFactors.push('fiscal catch-up gap');
-    if (!riskFactors.length) riskFactors.push('balanced labor market');
-
-    rows.push({
-      regionId: rid,
-      drainScore: op10mA11Round(drainScore),
-      band: retentionBand(drainScore),
-      riskFactors: riskFactors.slice(0, 3),
-      narrative: `${rid} talent retention ${retentionBand(drainScore)} (drain ${op10mA11Round(drainScore)}); ${riskFactors.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weightedDrain / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.drainScore - a.drainScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithTalentDrain(rows: OP10M_A11_TalentRetentionRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'draining' || r.band === 'collapse').map((r) => r.regionId);
-}
-
-
-// --- source: climate-settlement-displacement-risk.ts ---
-
-function displacementBand(score: number): OP10M_A11_ClimateDisplacementBand {
-  if (score < 26) return 'low';
-  if (score < 46) return 'elevated';
-  if (score < 64) return 'acute';
-  return 'critical';
-}
-
-export function op10mA11ComputeClimateSettlementDisplacementRisk(args: {
-  settlementVulnerability: OP10M_A11_SettlementVulnerabilityRow[];
-  bottlenecks: OP10M_A11_RegionalBottleneck[];
-  networkDigital: number;
-  corridorStressIndex: number;
-}): { rows: OP10M_A11_ClimateDisplacementRow[]; nationalIndex: number } {
-  const settlementByRegion = new Map(args.settlementVulnerability.map((s) => [s.regionId, s]));
-  const bottleneckByRegion = new Map(args.bottlenecks.map((b) => [b.regionId, b]));
-  const resilienceGap = op10mA11Clamp(78 - args.networkDigital * 0.65);
-  const networkStress = op10mA11Clamp(args.corridorStressIndex * 0.28);
-
-  const rows: OP10M_A11_ClimateDisplacementRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const settlement = settlementByRegion.get(rid);
-    const bottleneck = bottleneckByRegion.get(rid);
-
-    const exposureBase = settlement ? op10mA11Clamp(settlement.vulnerabilityScore * 0.62) : 18;
-    const evacDrag = bottleneck ? op10mA11Clamp(bottleneck.bindScore * 0.38) : 12;
-    const displacementScore = op10mA11Clamp(exposureBase + evacDrag + resilienceGap * 0.35 + networkStress);
-
-    weighted += displacementScore;
-
-    const hazards: string[] = [];
-    if (settlement && (settlement.band === 'fragile' || settlement.band === 'critical')) {
-      hazards.push('settlement exposure');
-    }
-    if (bottleneck && bottleneck.bindScore >= 42) hazards.push('evacuation corridor bind');
-    if (resilienceGap >= 28) hazards.push('digital resilience gap');
-    if (args.corridorStressIndex >= 52) hazards.push('network stress amplification');
-    if (!hazards.length) hazards.push('routine hazard monitoring');
-
-    rows.push({
-      regionId: rid,
-      displacementScore: op10mA11Round(displacementScore),
-      band: displacementBand(displacementScore),
-      hazards: hazards.slice(0, 3),
-      narrative: `${rid} climate displacement ${displacementBand(displacementScore)} (${op10mA11Round(displacementScore)}); ${hazards.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.displacementScore - a.displacementScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithCriticalClimateDisplacement(rows: OP10M_A11_ClimateDisplacementRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'acute' || r.band === 'critical').map((r) => r.regionId);
+  if (priorIndex === null) return currentIndex >= 52;
+  return currentIndex >= 46 && currentIndex > priorIndex + 6;
 }
 
 
@@ -4099,141 +6213,1793 @@ export function op10mA11AmenityCostEscalating(currentIndex: number, priorIndex: 
 }
 
 
-// --- source: digital-connectivity-decentralization-shift.ts ---
+// --- source: regional-cohesion-integrity-pressure.ts ---
 
-function decentralizationBand(score: number): OP10M_A11_DecentralizationBand {
-  if (score < 22) return 'metro_locked';
-  if (score < 40) return 'partial_shift';
-  if (score < 58) return 'broadening';
-  return 'accelerating';
+function integrityBand(score: number): OP10M_A11_CohesionIntegrityBand {
+  if (score < 22) return 'cohesive';
+  if (score < 40) return 'fraying';
+  if (score < 58) return 'fractured';
+  return 'disintegrating';
 }
 
-export function op10mA11ComputeDigitalConnectivityDecentralizationShift(args: {
-  networkDigital: number;
-  migrationPressure: OP10M_A11_MigrationPressureRow[];
-  linkageHubs: OP10M_A11_LinkageHubProfile[];
-  hierarchy: OP10M_A11_UrbanHierarchyRow[];
-}): { rows: OP10M_A11_DecentralizationShiftRow[]; nationalIndex: number } {
-  const migrationByRegion = new Map(args.migrationPressure.map((m) => [m.regionId, m]));
-  const hubByRegion = new Map(args.linkageHubs.map((h) => [h.regionId, h]));
-  const hierarchyByRegion = new Map(args.hierarchy.map((h) => [h.regionId, h]));
-  const digitalLift = op10mA11Clamp(args.networkDigital * 0.48);
+export function op10mA11ComputeRegionalCohesionIntegrityPressure(args: {
+  regionalCohesionIndex: number;
+  networkResilienceErosion: OP10M_A11_NetworkErosionRow[];
+  fiscalCapacityStrain: OP10M_A11_FiscalCapacityStrainRow[];
+}): { rows: OP10M_A11_CohesionIntegrityRow[]; nationalIndex: number } {
+  const erosionByRegion = new Map(args.networkResilienceErosion.map((n) => [n.regionId, n]));
+  const fiscalByRegion = new Map(args.fiscalCapacityStrain.map((f) => [f.regionId, f]));
+  const nationalCohesionDrag = op10mA11Clamp((100 - args.regionalCohesionIndex) * 0.22);
 
-  const rows: OP10M_A11_DecentralizationShiftRow[] = [];
+  const rows: OP10M_A11_CohesionIntegrityRow[] = [];
   let weighted = 0;
 
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const migration = migrationByRegion.get(rid);
-    const hub = hubByRegion.get(rid);
-    const hier = hierarchyByRegion.get(rid);
+    const erosion = erosionByRegion.get(rid);
+    const fiscal = fiscalByRegion.get(rid);
 
-    const remoteEnablement = op10mA11Clamp(digitalLift * (hub && hub.role === 'peripheral' ? 1.08 : 0.92));
-    const outboundRelief =
-      migration && migration.primaryDirection === 'outbound'
-        ? op10mA11Clamp(migration.netPressure * 0.35)
-        : migration && migration.primaryDirection === 'inbound'
-          ? op10mA11Clamp(-migration.netPressure * 0.18)
-          : 0;
-    const primateDrag = hier
-      ? op10mA11Clamp(
-          (hier.primateBand === 'concentrated' || hier.primateBand === 'hyper_concentrated' ? 18 : 6) -
-            hier.secondaryMomentum * 0.12,
-        )
-      : 10;
+    const networkDrag = erosion ? op10mA11Clamp(erosion.erosionScore * 0.44) : 13;
+    const fiscalDrag = fiscal ? op10mA11Clamp(fiscal.strainScore * 0.38) : 11;
 
-    const shiftScore = op10mA11Clamp(remoteEnablement + outboundRelief + (100 - primateDrag) * 0.22);
-    weighted += shiftScore;
+    const pressureScore = op10mA11Clamp(networkDrag + fiscalDrag + nationalCohesionDrag);
+    weighted += pressureScore;
 
-    const signals: string[] = [];
-    if (remoteEnablement >= 32) signals.push('digital connectivity lift');
-    if (outboundRelief >= 12) signals.push('outbound migration relief');
-    if (hub && (hub.role === 'connector' || hub.role === 'regional_hub')) signals.push('secondary hub pull');
-    if (hier && hier.primateBand === 'decentralized') signals.push('balanced hierarchy');
-    if (!signals.length) signals.push('metro-centric default');
+    const strains: string[] = [];
+    if (erosion && (erosion.band === 'eroding' || erosion.band === 'fracturing')) strains.push('network erosion');
+    if (fiscal && (fiscal.band === 'fragile' || fiscal.band === 'exhausted')) strains.push('fiscal strain');
+    if (args.regionalCohesionIndex < 42) strains.push('national cohesion slip');
+    if (!strains.length) strains.push('integrity holding');
 
     rows.push({
       regionId: rid,
-      shiftScore: op10mA11Round(shiftScore),
-      band: decentralizationBand(shiftScore),
-      signals: signals.slice(0, 3),
-      narrative: `${rid} decentralization ${decentralizationBand(shiftScore)} (${op10mA11Round(shiftScore)}); ${signals.slice(0, 2).join('; ')}.`,
+      pressureScore: op10mA11Round(pressureScore),
+      band: integrityBand(pressureScore),
+      strains: strains.slice(0, 3),
+      narrative: `${rid} cohesion integrity ${integrityBand(pressureScore)} (${op10mA11Round(pressureScore)}); ${strains.slice(0, 2).join('; ')}.`,
     });
   }
 
   const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.shiftScore - a.shiftScore), nationalIndex };
+  return { rows: rows.sort((a, b) => b.pressureScore - a.pressureScore), nationalIndex };
 }
 
-export function op10mA11RegionsWithAcceleratingDecentralization(
-  rows: OP10M_A11_DecentralizationShiftRow[],
+export function op10mA11RegionsWithCohesionIntegrityFracture(
+  rows: OP10M_A11_CohesionIntegrityRow[],
 ): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'broadening' || r.band === 'accelerating').map((r) => r.regionId);
+  return rows.filter((r) => r.band === 'fractured' || r.band === 'disintegrating').map((r) => r.regionId);
+}
+
+export function op10mA11CohesionIntegrityEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 46;
+  return currentIndex >= 40 && currentIndex > priorIndex + 5;
 }
 
 
-// --- source: settlement-relocation-burden.ts ---
+// --- source: regional-collapse-absolute-singularity-apex.ts ---
 
-function relocationBand(score: number): OP10M_A11_RelocationBurdenBand {
-  if (score < 24) return 'manageable';
-  if (score < 42) return 'elevated';
-  if (score < 60) return 'severe';
-  return 'overwhelming';
+function apexBand(score: number): OP10M_A11_CollapseAbsoluteSingularityApexBand {
+  if (score < 17) return 'latent';
+  if (score < 33) return 'forming';
+  if (score < 50) return 'total';
+  return 'apex';
 }
 
-export function op10mA11ComputeSettlementRelocationBurden(args: {
-  climateDisplacement: OP10M_A11_ClimateDisplacementRow[];
-  governanceFriction: OP10M_A11_GovernanceFrictionRow[];
-  housingSpillover: OP10M_A11_HousingSpilloverRow[];
-}): { rows: OP10M_A11_RelocationBurdenRow[]; nationalIndex: number } {
-  const climateByRegion = new Map(args.climateDisplacement.map((c) => [c.regionId, c]));
-  const governanceByRegion = new Map(args.governanceFriction.map((g) => [g.regionId, g]));
-  const housingByRegion = new Map(args.housingSpillover.map((h) => [h.regionId, h]));
+export function op10mA11ComputeRegionalCollapseAbsoluteSingularityApex(args: {
+  collapseTotalSingularityVertex: OP10M_A11_CollapseTotalSingularityVertexRow[];
+  voidTerminalErosionCascade: OP10M_A11_VoidTerminalErosionCascadeRow[];
+  existentialUltimateNullitySeal: OP10M_A11_ExistentialUltimateNullitySealRow[];
+}): { rows: OP10M_A11_CollapseAbsoluteSingularityApexRow[]; nationalIndex: number } {
+  const vertexByRegion = new Map(args.collapseTotalSingularityVertex.map((v) => [v.regionId, v]));
+  const cascadeByRegion = new Map(args.voidTerminalErosionCascade.map((c) => [c.regionId, c]));
+  const sealByRegion = new Map(args.existentialUltimateNullitySeal.map((s) => [s.regionId, s]));
 
-  const rows: OP10M_A11_RelocationBurdenRow[] = [];
+  const rows: OP10M_A11_CollapseAbsoluteSingularityApexRow[] = [];
   let weighted = 0;
 
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const climate = climateByRegion.get(rid);
-    const governance = governanceByRegion.get(rid);
-    const housing = housingByRegion.get(rid);
+    const vertex = vertexByRegion.get(rid);
+    const cascade = cascadeByRegion.get(rid);
+    const seal = sealByRegion.get(rid);
 
-    const displacementLoad = climate ? op10mA11Clamp(climate.displacementScore * 0.55) : 16;
-    const coordinationDrag = governance ? op10mA11Clamp(governance.frictionScore * 0.32) : 12;
-    const receptionStress = housing ? op10mA11Clamp(housing.spilloverScore * 0.28) : 10;
+    const vertexDrag = vertex ? op10mA11Clamp(vertex.vertexScore * 0.54) : 15;
+    const cascadeDrag = cascade ? op10mA11Clamp(cascade.cascadeScore * 0.5) : 13;
+    const sealDrag = seal ? op10mA11Clamp(seal.sealScore * 0.47) : 12;
 
-    const burdenScore = op10mA11Clamp(displacementLoad + coordinationDrag + receptionStress);
-    weighted += burdenScore;
+    const apexScore = op10mA11Clamp(vertexDrag + cascadeDrag + sealDrag * 0.57);
+    weighted += apexScore;
 
-    const factors: string[] = [];
-    if (climate && (climate.band === 'acute' || climate.band === 'critical')) factors.push('climate displacement');
-    if (governance && (governance.band === 'fragmented' || governance.band === 'breakdown')) {
-      factors.push('governance coordination gap');
+    const anchors: string[] = [];
+    if (vertex && (vertex.band === 'total' || vertex.band === 'vertex')) {
+      anchors.push('vertex apex');
     }
-    if (housing && (housing.band === 'cascade' || housing.band === 'systemic')) factors.push('host market saturation');
-    if (!factors.length) factors.push('routine relocation capacity');
+    if (cascade && (cascade.band === 'cascade' || cascade.band === 'total_erosion')) {
+      anchors.push('erosion apex');
+    }
+    if (seal && (seal.band === 'ultimate' || seal.band === 'total_seal')) {
+      anchors.push('nullity apex');
+    }
+    if (!anchors.length) anchors.push('apex latent');
 
     rows.push({
       regionId: rid,
-      burdenScore: op10mA11Round(burdenScore),
-      band: relocationBand(burdenScore),
-      factors: factors.slice(0, 3),
-      narrative: `${rid} relocation burden ${relocationBand(burdenScore)} (${op10mA11Round(burdenScore)}); ${factors.slice(0, 2).join('; ')}.`,
+      apexScore: op10mA11Round(apexScore),
+      band: apexBand(apexScore),
+      anchors: anchors.slice(0, 3),
+      narrative: `${rid} collapse absolute singularity apex ${apexBand(apexScore)} (${op10mA11Round(apexScore)}); ${anchors.slice(0, 2).join('; ')}.`,
     });
   }
 
   const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.burdenScore - a.burdenScore), nationalIndex };
+  return { rows: rows.sort((a, b) => b.apexScore - a.apexScore), nationalIndex };
 }
 
-export function op10mA11RegionsWithOverwhelmingRelocationBurden(
-  rows: OP10M_A11_RelocationBurdenRow[],
+export function op10mA11RegionsWithCollapseSingularityApex(
+  rows: OP10M_A11_CollapseAbsoluteSingularityApexRow[],
 ): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'severe' || r.band === 'overwhelming').map((r) => r.regionId);
+  return rows.filter((r) => r.band === 'total' || r.band === 'apex').map((r) => r.regionId);
 }
 
-export function op10mA11RelocationBurdenEscalating(currentIndex: number, priorIndex: number | null): boolean {
+export function op10mA11CollapseAbsoluteSingularityApexEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 49;
+  return currentIndex >= 43 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-absolute-singularity-culmination.ts ---
+
+function culminationBand(score: number): OP10M_A11_CollapseAbsoluteSingularityCulminationBand {
+  if (score < 20) return 'latent';
+  if (score < 36) return 'forming';
+  if (score < 53) return 'total';
+  return 'culmination';
+}
+
+export function op10mA11ComputeRegionalCollapseAbsoluteSingularityCulmination(args: {
+  collapseTotalSingularityNexus: OP10M_A11_CollapseTotalSingularityNexusRow[];
+  voidAbsoluteErosionTermination: OP10M_A11_VoidAbsoluteErosionTerminationRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_CollapseAbsoluteSingularityCulminationRow[]; nationalIndex: number } {
+  const nexusByRegion = new Map(args.collapseTotalSingularityNexus.map((n) => [n.regionId, n]));
+  const terminationByRegion = new Map(args.voidAbsoluteErosionTermination.map((t) => [t.regionId, t]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_CollapseAbsoluteSingularityCulminationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const nexus = nexusByRegion.get(rid);
+    const termination = terminationByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const nexusDrag = nexus ? op10mA11Clamp(nexus.nexusScore * 0.57) : 18;
+    const terminationDrag = termination ? op10mA11Clamp(termination.terminationScore * 0.53) : 16;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.5) : 15;
+
+    const culminationScore = op10mA11Clamp(nexusDrag + terminationDrag + sentenceDrag * 0.61);
+    weighted += culminationScore;
+
+    const anchors: string[] = [];
+    if (nexus && (nexus.band === 'total' || nexus.band === 'nexus')) {
+      anchors.push('nexus culmination');
+    }
+    if (termination && (termination.band === 'absolute' || termination.band === 'total_termination')) {
+      anchors.push('erosion culmination');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      anchors.push('nullity culmination');
+    }
+    if (!anchors.length) anchors.push('culmination latent');
+
+    rows.push({
+      regionId: rid,
+      culminationScore: op10mA11Round(culminationScore),
+      band: culminationBand(culminationScore),
+      anchors: anchors.slice(0, 3),
+      narrative: `${rid} collapse absolute singularity culmination ${culminationBand(culminationScore)} (${op10mA11Round(culminationScore)}); ${anchors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.culminationScore - a.culminationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityCulmination(
+  rows: OP10M_A11_CollapseAbsoluteSingularityCulminationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'culmination').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseAbsoluteSingularityCulminationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 52;
+  return currentIndex >= 46 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-existence-singularity-point.ts ---
+
+function pointBand(score: number): OP10M_A11_CollapseExistenceSingularityPointBand {
+  if (score < 20) return 'remote';
+  if (score < 36) return 'converging';
+  if (score < 53) return 'singular';
+  return 'existential';
+}
+
+export function op10mA11ComputeRegionalCollapseExistenceSingularityPoint(args: {
+  ultimateCollapseSingularitySeal: OP10M_A11_UltimateCollapseSingularitySealRow[];
+  voidAnnihilationConvergence: OP10M_A11_VoidAnnihilationConvergenceRow[];
+  existentialNullStateLock: OP10M_A11_ExistentialNullStateLockRow[];
+}): { rows: OP10M_A11_CollapseExistenceSingularityPointRow[]; nationalIndex: number } {
+  const sealByRegion = new Map(args.ultimateCollapseSingularitySeal.map((s) => [s.regionId, s]));
+  const annihilationByRegion = new Map(args.voidAnnihilationConvergence.map((v) => [v.regionId, v]));
+  const nullByRegion = new Map(args.existentialNullStateLock.map((n) => [n.regionId, n]));
+
+  const rows: OP10M_A11_CollapseExistenceSingularityPointRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const seal = sealByRegion.get(rid);
+    const annihilation = annihilationByRegion.get(rid);
+    const nullLock = nullByRegion.get(rid);
+
+    const sealDrag = seal ? op10mA11Clamp(seal.sealScore * 0.49) : 14;
+    const annihilationDrag = annihilation ? op10mA11Clamp(annihilation.convergenceScore * 0.46) : 12;
+    const nullDrag = nullLock ? op10mA11Clamp(nullLock.nullScore * 0.43) : 11;
+
+    const pointScore = op10mA11Clamp(sealDrag + annihilationDrag + nullDrag * 0.52);
+    weighted += pointScore;
+
+    const axes: string[] = [];
+    if (seal && (seal.band === 'sealed' || seal.band === 'ultimate')) {
+      axes.push('seal singularity');
+    }
+    if (annihilation && (annihilation.band === 'annihilating' || annihilation.band === 'total')) {
+      axes.push('void annihilation');
+    }
+    if (nullLock && (nullLock.band === 'null' || nullLock.band === 'absolute_null')) {
+      axes.push('null-state axis');
+    }
+    if (!axes.length) axes.push('existence stable');
+
+    rows.push({
+      regionId: rid,
+      pointScore: op10mA11Round(pointScore),
+      band: pointBand(pointScore),
+      axes: axes.slice(0, 3),
+      narrative: `${rid} collapse existence singularity point ${pointBand(pointScore)} (${op10mA11Round(pointScore)}); ${axes.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.pointScore - a.pointScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithExistentialSingularityPoint(
+  rows: OP10M_A11_CollapseExistenceSingularityPointRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'singular' || r.band === 'existential').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseExistenceSingularityPointEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
   if (priorIndex === null) return currentIndex >= 50;
   return currentIndex >= 44 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-horizon-convergence.ts ---
+
+function horizonBand(score: number): OP10M_A11_CollapseHorizonConvergenceBand {
+  if (score < 25) return 'distant';
+  if (score < 42) return 'narrowing';
+  if (score < 59) return 'imminent';
+  return 'locked';
+}
+
+export function op10mA11ComputeRegionalCollapseHorizonConvergence(args: {
+  totalCollapseSingularity: OP10M_A11_TotalCollapseSingularityRow[];
+  voidExpansionVelocity: OP10M_A11_VoidExpansionVelocityRow[];
+  existentialContinuityFracture: OP10M_A11_ExistentialContinuityFractureRow[];
+}): { rows: OP10M_A11_CollapseHorizonConvergenceRow[]; nationalIndex: number } {
+  const singularityByRegion = new Map(args.totalCollapseSingularity.map((s) => [s.regionId, s]));
+  const voidByRegion = new Map(args.voidExpansionVelocity.map((v) => [v.regionId, v]));
+  const fractureByRegion = new Map(args.existentialContinuityFracture.map((e) => [e.regionId, e]));
+
+  const rows: OP10M_A11_CollapseHorizonConvergenceRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const singularity = singularityByRegion.get(rid);
+    const voidVel = voidByRegion.get(rid);
+    const fracture = fractureByRegion.get(rid);
+
+    const singularityDrag = singularity ? op10mA11Clamp(singularity.singularityScore * 0.44) : 14;
+    const voidDrag = voidVel ? op10mA11Clamp(voidVel.velocityScore * 0.42) : 12;
+    const fractureDrag = fracture ? op10mA11Clamp(fracture.fractureScore * 0.39) : 11;
+
+    const convergenceScore = op10mA11Clamp(singularityDrag + voidDrag + fractureDrag * 0.48);
+    weighted += convergenceScore;
+
+    const signals: string[] = [];
+    if (singularity && (singularity.band === 'singular' || singularity.band === 'total')) {
+      signals.push('singularity horizon');
+    }
+    if (voidVel && (voidVel.band === 'surging' || voidVel.band === 'unbounded')) {
+      signals.push('void acceleration');
+    }
+    if (fracture && (fracture.band === 'shattered' || fracture.band === 'extinguished')) {
+      signals.push('continuity break');
+    }
+    if (!signals.length) signals.push('horizon stable');
+
+    rows.push({
+      regionId: rid,
+      convergenceScore: op10mA11Round(convergenceScore),
+      band: horizonBand(convergenceScore),
+      signals: signals.slice(0, 3),
+      narrative: `${rid} collapse horizon convergence ${horizonBand(convergenceScore)} (${op10mA11Round(convergenceScore)}); ${signals.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.convergenceScore - a.convergenceScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithLockedCollapseHorizon(
+  rows: OP10M_A11_CollapseHorizonConvergenceRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'imminent' || r.band === 'locked').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseHorizonConvergenceEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 53;
+  return currentIndex >= 47 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-amalgamation.ts ---
+
+function amalgamationBand(score: number): OP10M_A11_CollapseOmniSingularityAmalgamationBand {
+  if (score < 25) return 'latent';
+  if (score < 41) return 'aligning';
+  if (score < 58) return 'total';
+  return 'amalgamation';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityAmalgamation(args: {
+  collapseOmniSingularityCoalescence: OP10M_A11_CollapseOmniSingularityCoalescenceRow[];
+  voidTotalErosionSublimation: OP10M_A11_VoidTotalErosionSublimationRow[];
+  existentialAbsoluteNullityPermanence: OP10M_A11_ExistentialAbsoluteNullityPermanenceRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityAmalgamationRow[]; nationalIndex: number } {
+  const coalescenceByRegion = new Map(args.collapseOmniSingularityCoalescence.map((c) => [c.regionId, c]));
+  const sublimationByRegion = new Map(args.voidTotalErosionSublimation.map((s) => [s.regionId, s]));
+  const permanenceByRegion = new Map(args.existentialAbsoluteNullityPermanence.map((p) => [p.regionId, p]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityAmalgamationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const coalescence = coalescenceByRegion.get(rid);
+    const sublimation = sublimationByRegion.get(rid);
+    const permanence = permanenceByRegion.get(rid);
+
+    const coalescenceDrag = coalescence ? op10mA11Clamp(coalescence.coalescenceScore * 0.52) : 19;
+    const sublimationDrag = sublimation ? op10mA11Clamp(sublimation.sublimationScore * 0.48) : 17;
+    const permanenceDrag = permanence ? op10mA11Clamp(permanence.permanenceScore * 0.45) : 16;
+
+    const amalgamationScore = op10mA11Clamp(coalescenceDrag + sublimationDrag + permanenceDrag * 0.56);
+    weighted += amalgamationScore;
+
+    const marks: string[] = [];
+    if (coalescence && (coalescence.band === 'total' || coalescence.band === 'coalescence')) {
+      marks.push('coalescence amalgamate');
+    }
+    if (sublimation && (sublimation.band === 'total' || sublimation.band === 'complete_sublimation')) {
+      marks.push('sublimation amalgamate');
+    }
+    if (permanence && (permanence.band === 'absolute' || permanence.band === 'total_permanence')) {
+      marks.push('permanence amalgamate');
+    }
+    if (!marks.length) marks.push('amalgamation latent');
+
+    rows.push({
+      regionId: rid,
+      amalgamationScore: op10mA11Round(amalgamationScore),
+      band: amalgamationBand(amalgamationScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} collapse omni singularity amalgamation ${amalgamationBand(amalgamationScore)} (${op10mA11Round(amalgamationScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.amalgamationScore - a.amalgamationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityAmalgamation(
+  rows: OP10M_A11_CollapseOmniSingularityAmalgamationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'amalgamation').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityAmalgamationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 57;
+  return currentIndex >= 51 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-coalescence.ts ---
+
+function coalescenceBand(score: number): OP10M_A11_CollapseOmniSingularityCoalescenceBand {
+  if (score < 24) return 'latent';
+  if (score < 40) return 'aligning';
+  if (score < 57) return 'total';
+  return 'coalescence';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityCoalescence(args: {
+  collapseOmniSingularityConsolidation: OP10M_A11_CollapseOmniSingularityConsolidationRow[];
+  voidTotalErosionDissolution: OP10M_A11_VoidTotalErosionDissolutionRow[];
+  existentialAbsoluteNullityImmutability: OP10M_A11_ExistentialAbsoluteNullityImmutabilityRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityCoalescenceRow[]; nationalIndex: number } {
+  const consolidationByRegion = new Map(args.collapseOmniSingularityConsolidation.map((c) => [c.regionId, c]));
+  const dissolutionByRegion = new Map(args.voidTotalErosionDissolution.map((d) => [d.regionId, d]));
+  const immutabilityByRegion = new Map(args.existentialAbsoluteNullityImmutability.map((i) => [i.regionId, i]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityCoalescenceRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const consolidation = consolidationByRegion.get(rid);
+    const dissolution = dissolutionByRegion.get(rid);
+    const immutability = immutabilityByRegion.get(rid);
+
+    const consolidationDrag = consolidation ? op10mA11Clamp(consolidation.consolidationScore * 0.53) : 19;
+    const dissolutionDrag = dissolution ? op10mA11Clamp(dissolution.dissolutionScore * 0.49) : 17;
+    const immutabilityDrag = immutability ? op10mA11Clamp(immutability.immutabilityScore * 0.46) : 16;
+
+    const coalescenceScore = op10mA11Clamp(consolidationDrag + dissolutionDrag + immutabilityDrag * 0.57);
+    weighted += coalescenceScore;
+
+    const marks: string[] = [];
+    if (consolidation && (consolidation.band === 'total' || consolidation.band === 'consolidation')) {
+      marks.push('consolidation coalesce');
+    }
+    if (dissolution && (dissolution.band === 'total' || dissolution.band === 'complete_dissolution')) {
+      marks.push('dissolution coalesce');
+    }
+    if (immutability && (immutability.band === 'absolute' || immutability.band === 'total_immutability')) {
+      marks.push('immutability coalesce');
+    }
+    if (!marks.length) marks.push('coalescence latent');
+
+    rows.push({
+      regionId: rid,
+      coalescenceScore: op10mA11Round(coalescenceScore),
+      band: coalescenceBand(coalescenceScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} collapse omni singularity coalescence ${coalescenceBand(coalescenceScore)} (${op10mA11Round(coalescenceScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.coalescenceScore - a.coalescenceScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityCoalescence(
+  rows: OP10M_A11_CollapseOmniSingularityCoalescenceRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'coalescence').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityCoalescenceEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 56;
+  return currentIndex >= 50 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-consolidation.ts ---
+
+function consolidationBand(score: number): OP10M_A11_CollapseOmniSingularityConsolidationBand {
+  if (score < 23) return 'latent';
+  if (score < 39) return 'aligning';
+  if (score < 56) return 'total';
+  return 'consolidation';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityConsolidation(args: {
+  collapseOmniSingularityUnification: OP10M_A11_CollapseOmniSingularityUnificationRow[];
+  voidTotalErosionElimination: OP10M_A11_VoidTotalErosionEliminationRow[];
+  existentialAbsoluteNullityPerpetuity: OP10M_A11_ExistentialAbsoluteNullityPerpetuityRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityConsolidationRow[]; nationalIndex: number } {
+  const unificationByRegion = new Map(args.collapseOmniSingularityUnification.map((u) => [u.regionId, u]));
+  const eliminationByRegion = new Map(args.voidTotalErosionElimination.map((e) => [e.regionId, e]));
+  const perpetuityByRegion = new Map(args.existentialAbsoluteNullityPerpetuity.map((p) => [p.regionId, p]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityConsolidationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const unification = unificationByRegion.get(rid);
+    const elimination = eliminationByRegion.get(rid);
+    const perpetuity = perpetuityByRegion.get(rid);
+
+    const unificationDrag = unification ? op10mA11Clamp(unification.unificationScore * 0.54) : 19;
+    const eliminationDrag = elimination ? op10mA11Clamp(elimination.eliminationScore * 0.5) : 17;
+    const perpetuityDrag = perpetuity ? op10mA11Clamp(perpetuity.perpetuityScore * 0.47) : 16;
+
+    const consolidationScore = op10mA11Clamp(unificationDrag + eliminationDrag + perpetuityDrag * 0.58);
+    weighted += consolidationScore;
+
+    const marks: string[] = [];
+    if (unification && (unification.band === 'total' || unification.band === 'unification')) {
+      marks.push('unification consolidate');
+    }
+    if (elimination && (elimination.band === 'total' || elimination.band === 'complete_elimination')) {
+      marks.push('elimination consolidate');
+    }
+    if (perpetuity && (perpetuity.band === 'absolute' || perpetuity.band === 'total_perpetuity')) {
+      marks.push('perpetuity consolidate');
+    }
+    if (!marks.length) marks.push('consolidation latent');
+
+    rows.push({
+      regionId: rid,
+      consolidationScore: op10mA11Round(consolidationScore),
+      band: consolidationBand(consolidationScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} collapse omni singularity consolidation ${consolidationBand(consolidationScore)} (${op10mA11Round(consolidationScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.consolidationScore - a.consolidationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityConsolidation(
+  rows: OP10M_A11_CollapseOmniSingularityConsolidationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'consolidation').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityConsolidationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 55;
+  return currentIndex >= 49 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-convergence.ts ---
+
+function convergenceBand(score: number): OP10M_A11_CollapseOmniSingularityConvergenceBand {
+  if (score < 22) return 'dormant';
+  if (score < 38) return 'aligning';
+  if (score < 55) return 'total';
+  return 'convergence';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityConvergence(args: {
+  collapseOmniSingularitySynthesis: OP10M_A11_CollapseOmniSingularitySynthesisRow[];
+  voidTotalErosionAnnihilation: OP10M_A11_VoidTotalErosionAnnihilationRow[];
+  existentialAbsoluteNullityMandate: OP10M_A11_ExistentialAbsoluteNullityMandateRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityConvergenceRow[]; nationalIndex: number } {
+  const synthesisByRegion = new Map(args.collapseOmniSingularitySynthesis.map((s) => [s.regionId, s]));
+  const annihilationByRegion = new Map(args.voidTotalErosionAnnihilation.map((a) => [a.regionId, a]));
+  const mandateByRegion = new Map(args.existentialAbsoluteNullityMandate.map((m) => [m.regionId, m]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityConvergenceRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const synthesis = synthesisByRegion.get(rid);
+    const annihilation = annihilationByRegion.get(rid);
+    const mandate = mandateByRegion.get(rid);
+
+    const synthesisDrag = synthesis ? op10mA11Clamp(synthesis.synthesisScore * 0.57) : 19;
+    const annihilationDrag = annihilation ? op10mA11Clamp(annihilation.annihilationScore * 0.53) : 17;
+    const mandateDrag = mandate ? op10mA11Clamp(mandate.mandateScore * 0.5) : 16;
+
+    const convergenceScore = op10mA11Clamp(synthesisDrag + annihilationDrag + mandateDrag * 0.61);
+    weighted += convergenceScore;
+
+    const vectors: string[] = [];
+    if (synthesis && (synthesis.band === 'total' || synthesis.band === 'synthesis')) {
+      vectors.push('synthesis converge');
+    }
+    if (annihilation && (annihilation.band === 'total' || annihilation.band === 'complete_annihilation')) {
+      vectors.push('annihilation converge');
+    }
+    if (mandate && (mandate.band === 'absolute' || mandate.band === 'total_mandate')) {
+      vectors.push('mandate converge');
+    }
+    if (!vectors.length) vectors.push('convergence dormant');
+
+    rows.push({
+      regionId: rid,
+      convergenceScore: op10mA11Round(convergenceScore),
+      band: convergenceBand(convergenceScore),
+      vectors: vectors.slice(0, 3),
+      narrative: `${rid} collapse omni singularity convergence ${convergenceBand(convergenceScore)} (${op10mA11Round(convergenceScore)}); ${vectors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.convergenceScore - a.convergenceScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityConvergence(
+  rows: OP10M_A11_CollapseOmniSingularityConvergenceRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'convergence').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityConvergenceEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 54;
+  return currentIndex >= 48 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-cosmism.ts ---
+
+function cosmismBand(score: number): OP10M_A11_CollapseOmniSingularityCosmismBand {
+  if (score < 31) return 'latent';
+  if (score < 47) return 'aligning';
+  if (score < 64) return 'total';
+  return 'cosmism';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityCosmism(args: {
+  collapseOmniSingularityUniversalism: OP10M_A11_CollapseOmniSingularityUniversalismRow[];
+  voidTotalErosionAblation: OP10M_A11_VoidTotalErosionAblationRow[];
+  existentialAbsoluteNullitySealing: OP10M_A11_ExistentialAbsoluteNullitySealingRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityCosmismRow[]; nationalIndex: number } {
+  const universalismByRegion = new Map(args.collapseOmniSingularityUniversalism.map((u) => [u.regionId, u]));
+  const ablationByRegion = new Map(args.voidTotalErosionAblation.map((a) => [a.regionId, a]));
+  const sealingByRegion = new Map(args.existentialAbsoluteNullitySealing.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityCosmismRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const universalism = universalismByRegion.get(rid);
+    const ablation = ablationByRegion.get(rid);
+    const sealing = sealingByRegion.get(rid);
+
+    const universalismDrag = universalism ? op10mA11Clamp(universalism.universalismScore * 0.54) : 23;
+    const ablationDrag = ablation ? op10mA11Clamp(ablation.ablationScore * 0.5) : 21;
+    const sealingDrag = sealing ? op10mA11Clamp(sealing.sealingScore * 0.47) : 20;
+
+    const cosmismScore = op10mA11Clamp(universalismDrag + ablationDrag + sealingDrag * 0.58);
+    weighted += cosmismScore;
+
+    const marks: string[] = [];
+    if (universalism && (universalism.band === 'total' || universalism.band === 'universalism')) {
+      marks.push('universalism cosmism');
+    }
+    if (ablation && (ablation.band === 'total' || ablation.band === 'complete_ablation')) {
+      marks.push('ablation cosmism');
+    }
+    if (sealing && (sealing.band === 'absolute' || sealing.band === 'total_sealing')) {
+      marks.push('sealing cosmism');
+    }
+    if (!marks.length) marks.push('cosmism latent');
+
+    rows.push({
+      regionId: rid,
+      cosmismScore: op10mA11Round(cosmismScore),
+      band: cosmismBand(cosmismScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} collapse omni singularity cosmism ${cosmismBand(cosmismScore)} (${op10mA11Round(cosmismScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.cosmismScore - a.cosmismScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityCosmism(
+  rows: OP10M_A11_CollapseOmniSingularityCosmismRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'cosmism').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityCosmismEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 63;
+  return currentIndex >= 57 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-holism.ts ---
+
+function holismBand(score: number): OP10M_A11_CollapseOmniSingularityHolismBand {
+  if (score < 27) return 'latent';
+  if (score < 43) return 'aligning';
+  if (score < 60) return 'total';
+  return 'holism';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityHolism(args: {
+  collapseOmniSingularitySymbiosis: OP10M_A11_CollapseOmniSingularitySymbiosisRow[];
+  voidTotalErosionPulverization: OP10M_A11_VoidTotalErosionPulverizationRow[];
+  existentialAbsoluteNullityDeterminism: OP10M_A11_ExistentialAbsoluteNullityDeterminismRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityHolismRow[]; nationalIndex: number } {
+  const symbiosisByRegion = new Map(args.collapseOmniSingularitySymbiosis.map((s) => [s.regionId, s]));
+  const pulverizationByRegion = new Map(args.voidTotalErosionPulverization.map((p) => [p.regionId, p]));
+  const determinismByRegion = new Map(args.existentialAbsoluteNullityDeterminism.map((d) => [d.regionId, d]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityHolismRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const symbiosis = symbiosisByRegion.get(rid);
+    const pulverization = pulverizationByRegion.get(rid);
+    const determinism = determinismByRegion.get(rid);
+
+    const symbiosisDrag = symbiosis ? op10mA11Clamp(symbiosis.symbiosisScore * 0.5) : 19;
+    const pulverizationDrag = pulverization ? op10mA11Clamp(pulverization.pulverizationScore * 0.46) : 17;
+    const determinismDrag = determinism ? op10mA11Clamp(determinism.determinismScore * 0.43) : 16;
+
+    const holismScore = op10mA11Clamp(symbiosisDrag + pulverizationDrag + determinismDrag * 0.54);
+    weighted += holismScore;
+
+    const marks: string[] = [];
+    if (symbiosis && (symbiosis.band === 'total' || symbiosis.band === 'symbiosis')) {
+      marks.push('symbiosis holism');
+    }
+    if (pulverization && (pulverization.band === 'total' || pulverization.band === 'complete_pulverization')) {
+      marks.push('pulverization holism');
+    }
+    if (determinism && (determinism.band === 'absolute' || determinism.band === 'total_determinism')) {
+      marks.push('determinism holism');
+    }
+    if (!marks.length) marks.push('holism latent');
+
+    rows.push({
+      regionId: rid,
+      holismScore: op10mA11Round(holismScore),
+      band: holismBand(holismScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} collapse omni singularity holism ${holismBand(holismScore)} (${op10mA11Round(holismScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.holismScore - a.holismScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityHolism(
+  rows: OP10M_A11_CollapseOmniSingularityHolismRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'holism').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityHolismEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 59;
+  return currentIndex >= 53 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-integration.ts ---
+
+function integrationBand(score: number): OP10M_A11_CollapseOmniSingularityIntegrationBand {
+  if (score < 22) return 'dormant';
+  if (score < 38) return 'aligning';
+  if (score < 55) return 'total';
+  return 'integration';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityIntegration(args: {
+  collapseOmniSingularityConvergence: OP10M_A11_CollapseOmniSingularityConvergenceRow[];
+  voidTotalErosionObliteration: OP10M_A11_VoidTotalErosionObliterationRow[];
+  existentialAbsoluteNullityBinding: OP10M_A11_ExistentialAbsoluteNullityBindingRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityIntegrationRow[]; nationalIndex: number } {
+  const convergenceByRegion = new Map(args.collapseOmniSingularityConvergence.map((c) => [c.regionId, c]));
+  const obliterationByRegion = new Map(args.voidTotalErosionObliteration.map((o) => [o.regionId, o]));
+  const bindingByRegion = new Map(args.existentialAbsoluteNullityBinding.map((b) => [b.regionId, b]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityIntegrationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const convergence = convergenceByRegion.get(rid);
+    const obliteration = obliterationByRegion.get(rid);
+    const binding = bindingByRegion.get(rid);
+
+    const convergenceDrag = convergence ? op10mA11Clamp(convergence.convergenceScore * 0.56) : 19;
+    const obliterationDrag = obliteration ? op10mA11Clamp(obliteration.obliterationScore * 0.52) : 17;
+    const bindingDrag = binding ? op10mA11Clamp(binding.bindingScore * 0.49) : 16;
+
+    const integrationScore = op10mA11Clamp(convergenceDrag + obliterationDrag + bindingDrag * 0.6);
+    weighted += integrationScore;
+
+    const vectors: string[] = [];
+    if (convergence && (convergence.band === 'total' || convergence.band === 'convergence')) {
+      vectors.push('convergence integrate');
+    }
+    if (obliteration && (obliteration.band === 'total' || obliteration.band === 'complete_obliteration')) {
+      vectors.push('obliteration integrate');
+    }
+    if (binding && (binding.band === 'absolute' || binding.band === 'total_binding')) {
+      vectors.push('binding integrate');
+    }
+    if (!vectors.length) vectors.push('integration dormant');
+
+    rows.push({
+      regionId: rid,
+      integrationScore: op10mA11Round(integrationScore),
+      band: integrationBand(integrationScore),
+      vectors: vectors.slice(0, 3),
+      narrative: `${rid} collapse omni singularity integration ${integrationBand(integrationScore)} (${op10mA11Round(integrationScore)}); ${vectors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.integrationScore - a.integrationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityIntegration(
+  rows: OP10M_A11_CollapseOmniSingularityIntegrationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'integration').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityIntegrationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 54;
+  return currentIndex >= 48 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-monism.ts ---
+
+function monismBand(score: number): OP10M_A11_CollapseOmniSingularityMonismBand {
+  if (score < 28) return 'latent';
+  if (score < 44) return 'aligning';
+  if (score < 61) return 'total';
+  return 'monism';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityMonism(args: {
+  collapseOmniSingularityHolism: OP10M_A11_CollapseOmniSingularityHolismRow[];
+  voidTotalErosionGranulation: OP10M_A11_VoidTotalErosionGranulationRow[];
+  existentialAbsoluteNullityCertitude: OP10M_A11_ExistentialAbsoluteNullityCertitudeRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityMonismRow[]; nationalIndex: number } {
+  const holismByRegion = new Map(args.collapseOmniSingularityHolism.map((h) => [h.regionId, h]));
+  const granulationByRegion = new Map(args.voidTotalErosionGranulation.map((g) => [g.regionId, g]));
+  const certitudeByRegion = new Map(args.existentialAbsoluteNullityCertitude.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityMonismRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const holism = holismByRegion.get(rid);
+    const granulation = granulationByRegion.get(rid);
+    const certitude = certitudeByRegion.get(rid);
+
+    const holismDrag = holism ? op10mA11Clamp(holism.holismScore * 0.51) : 20;
+    const granulationDrag = granulation ? op10mA11Clamp(granulation.granulationScore * 0.47) : 18;
+    const certitudeDrag = certitude ? op10mA11Clamp(certitude.certitudeScore * 0.44) : 17;
+
+    const monismScore = op10mA11Clamp(holismDrag + granulationDrag + certitudeDrag * 0.55);
+    weighted += monismScore;
+
+    const marks: string[] = [];
+    if (holism && (holism.band === 'total' || holism.band === 'holism')) {
+      marks.push('holism monism');
+    }
+    if (granulation && (granulation.band === 'total' || granulation.band === 'complete_granulation')) {
+      marks.push('granulation monism');
+    }
+    if (certitude && (certitude.band === 'absolute' || certitude.band === 'total_certitude')) {
+      marks.push('certitude monism');
+    }
+    if (!marks.length) marks.push('monism latent');
+
+    rows.push({
+      regionId: rid,
+      monismScore: op10mA11Round(monismScore),
+      band: monismBand(monismScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} collapse omni singularity monism ${monismBand(monismScore)} (${op10mA11Round(monismScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.monismScore - a.monismScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityMonism(
+  rows: OP10M_A11_CollapseOmniSingularityMonismRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'monism').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityMonismEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 60;
+  return currentIndex >= 54 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-node.ts ---
+
+function nodeBand(score: number): OP10M_A11_CollapseOmniSingularityNodeBand {
+  if (score < 18) return 'peripheral';
+  if (score < 34) return 'convergent';
+  if (score < 51) return 'omni';
+  return 'total_node';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityNode(args: {
+  collapseExistenceSingularityPoint: OP10M_A11_CollapseExistenceSingularityPointRow[];
+  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
+  existentialAbsoluteZeroLock: OP10M_A11_ExistentialAbsoluteZeroLockRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityNodeRow[]; nationalIndex: number } {
+  const pointByRegion = new Map(args.collapseExistenceSingularityPoint.map((p) => [p.regionId, p]));
+  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+  const zeroByRegion = new Map(args.existentialAbsoluteZeroLock.map((z) => [z.regionId, z]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityNodeRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const point = pointByRegion.get(rid);
+    const front = frontByRegion.get(rid);
+    const zero = zeroByRegion.get(rid);
+
+    const pointDrag = point ? op10mA11Clamp(point.pointScore * 0.51) : 14;
+    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.47) : 12;
+    const zeroDrag = zero ? op10mA11Clamp(zero.zeroScore * 0.44) : 11;
+
+    const nodeScore = op10mA11Clamp(pointDrag + frontDrag + zeroDrag * 0.54);
+    weighted += nodeScore;
+
+    const facets: string[] = [];
+    if (point && (point.band === 'singular' || point.band === 'existential')) {
+      facets.push('existence node');
+    }
+    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
+      facets.push('void front node');
+    }
+    if (zero && (zero.band === 'zero' || zero.band === 'absolute_zero')) {
+      facets.push('zero node');
+    }
+    if (!facets.length) facets.push('node latent');
+
+    rows.push({
+      regionId: rid,
+      nodeScore: op10mA11Round(nodeScore),
+      band: nodeBand(nodeScore),
+      facets: facets.slice(0, 3),
+      narrative: `${rid} collapse omni singularity node ${nodeBand(nodeScore)} (${op10mA11Round(nodeScore)}); ${facets.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.nodeScore - a.nodeScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalOmniSingularityNode(
+  rows: OP10M_A11_CollapseOmniSingularityNodeRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'omni' || r.band === 'total_node').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityNodeEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 49;
+  return currentIndex >= 43 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-panentheism.ts ---
+
+function panentheismBand(score: number): OP10M_A11_CollapseOmniSingularityPanentheismBand {
+  if (score < 33) return 'latent';
+  if (score < 49) return 'aligning';
+  if (score < 66) return 'total';
+  return 'panentheism';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityPanentheism(args: {
+  collapseOmniSingularityPantheism: OP10M_A11_CollapseOmniSingularityPantheismRow[];
+  voidTotalErosionExhaustion: OP10M_A11_VoidTotalErosionExhaustionRow[];
+  existentialAbsoluteNullityCanonization: OP10M_A11_ExistentialAbsoluteNullityCanonizationRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityPanentheismRow[]; nationalIndex: number } {
+  const pantheismByRegion = new Map(args.collapseOmniSingularityPantheism.map((p) => [p.regionId, p]));
+  const exhaustionByRegion = new Map(args.voidTotalErosionExhaustion.map((e) => [e.regionId, e]));
+  const canonizationByRegion = new Map(args.existentialAbsoluteNullityCanonization.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityPanentheismRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const pantheism = pantheismByRegion.get(rid);
+    const exhaustion = exhaustionByRegion.get(rid);
+    const canonization = canonizationByRegion.get(rid);
+
+    const pantheismDrag = pantheism ? op10mA11Clamp(pantheism.pantheismScore * 0.54) : 24;
+    const exhaustionDrag = exhaustion ? op10mA11Clamp(exhaustion.exhaustionScore * 0.52) : 22;
+    const canonizationDrag = canonization ? op10mA11Clamp(canonization.canonizationScore * 0.47) : 21;
+
+    const panentheismScore = op10mA11Clamp(pantheismDrag + exhaustionDrag + canonizationDrag * 0.58);
+    weighted += panentheismScore;
+
+    const marks: string[] = [];
+    if (pantheism && (pantheism.band === 'total' || pantheism.band === 'pantheism')) {
+      marks.push('pantheism panentheism');
+    }
+    if (exhaustion && (exhaustion.band === 'total' || exhaustion.band === 'complete_exhaustion')) {
+      marks.push('exhaustion panentheism');
+    }
+    if (canonization && (canonization.band === 'absolute' || canonization.band === 'total_canonization')) {
+      marks.push('canonization panentheism');
+    }
+    if (!marks.length) marks.push('panentheism latent');
+
+    rows.push({
+      regionId: rid,
+      panentheismScore: op10mA11Round(panentheismScore),
+      band: panentheismBand(panentheismScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} collapse omni singularity panentheism ${panentheismBand(panentheismScore)} (${op10mA11Round(panentheismScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.panentheismScore - a.panentheismScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityPanentheism(
+  rows: OP10M_A11_CollapseOmniSingularityPanentheismRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'panentheism').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityPanentheismEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 65;
+  return currentIndex >= 59 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-pantheism.ts ---
+
+function pantheismBand(score: number): OP10M_A11_CollapseOmniSingularityPantheismBand {
+  if (score < 32) return 'latent';
+  if (score < 48) return 'aligning';
+  if (score < 65) return 'total';
+  return 'pantheism';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityPantheism(args: {
+  collapseOmniSingularityCosmism: OP10M_A11_CollapseOmniSingularityCosmismRow[];
+  voidTotalErosionDepletion: OP10M_A11_VoidTotalErosionDepletionRow[];
+  existentialAbsoluteNullityRatification: OP10M_A11_ExistentialAbsoluteNullityRatificationRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityPantheismRow[]; nationalIndex: number } {
+  const cosmismByRegion = new Map(args.collapseOmniSingularityCosmism.map((c) => [c.regionId, c]));
+  const depletionByRegion = new Map(args.voidTotalErosionDepletion.map((d) => [d.regionId, d]));
+  const ratificationByRegion = new Map(args.existentialAbsoluteNullityRatification.map((r) => [r.regionId, r]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityPantheismRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const cosmism = cosmismByRegion.get(rid);
+    const depletion = depletionByRegion.get(rid);
+    const ratification = ratificationByRegion.get(rid);
+
+    const cosmismDrag = cosmism ? op10mA11Clamp(cosmism.cosmismScore * 0.55) : 24;
+    const depletionDrag = depletion ? op10mA11Clamp(depletion.depletionScore * 0.51) : 22;
+    const ratificationDrag = ratification ? op10mA11Clamp(ratification.ratificationScore * 0.48) : 21;
+
+    const pantheismScore = op10mA11Clamp(cosmismDrag + depletionDrag + ratificationDrag * 0.59);
+    weighted += pantheismScore;
+
+    const marks: string[] = [];
+    if (cosmism && (cosmism.band === 'total' || cosmism.band === 'cosmism')) {
+      marks.push('cosmism pantheism');
+    }
+    if (depletion && (depletion.band === 'total' || depletion.band === 'complete_depletion')) {
+      marks.push('depletion pantheism');
+    }
+    if (ratification && (ratification.band === 'absolute' || ratification.band === 'total_ratification')) {
+      marks.push('ratification pantheism');
+    }
+    if (!marks.length) marks.push('pantheism latent');
+
+    rows.push({
+      regionId: rid,
+      pantheismScore: op10mA11Round(pantheismScore),
+      band: pantheismBand(pantheismScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} collapse omni singularity pantheism ${pantheismBand(pantheismScore)} (${op10mA11Round(pantheismScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.pantheismScore - a.pantheismScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityPantheism(
+  rows: OP10M_A11_CollapseOmniSingularityPantheismRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'pantheism').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityPantheismEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 64;
+  return currentIndex >= 58 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-symbiosis.ts ---
+
+function symbiosisBand(score: number): OP10M_A11_CollapseOmniSingularitySymbiosisBand {
+  if (score < 26) return 'latent';
+  if (score < 42) return 'aligning';
+  if (score < 59) return 'total';
+  return 'symbiosis';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularitySymbiosis(args: {
+  collapseOmniSingularityAmalgamation: OP10M_A11_CollapseOmniSingularityAmalgamationRow[];
+  voidTotalErosionAtomization: OP10M_A11_VoidTotalErosionAtomizationRow[];
+  existentialAbsoluteNullityInevitability: OP10M_A11_ExistentialAbsoluteNullityInevitabilityRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularitySymbiosisRow[]; nationalIndex: number } {
+  const amalgamationByRegion = new Map(args.collapseOmniSingularityAmalgamation.map((a) => [a.regionId, a]));
+  const atomizationByRegion = new Map(args.voidTotalErosionAtomization.map((a) => [a.regionId, a]));
+  const inevitabilityByRegion = new Map(args.existentialAbsoluteNullityInevitability.map((i) => [i.regionId, i]));
+
+  const rows: OP10M_A11_CollapseOmniSingularitySymbiosisRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const amalgamation = amalgamationByRegion.get(rid);
+    const atomization = atomizationByRegion.get(rid);
+    const inevitability = inevitabilityByRegion.get(rid);
+
+    const amalgamationDrag = amalgamation ? op10mA11Clamp(amalgamation.amalgamationScore * 0.51) : 19;
+    const atomizationDrag = atomization ? op10mA11Clamp(atomization.atomizationScore * 0.47) : 17;
+    const inevitabilityDrag = inevitability ? op10mA11Clamp(inevitability.inevitabilityScore * 0.44) : 16;
+
+    const symbiosisScore = op10mA11Clamp(amalgamationDrag + atomizationDrag + inevitabilityDrag * 0.55);
+    weighted += symbiosisScore;
+
+    const marks: string[] = [];
+    if (amalgamation && (amalgamation.band === 'total' || amalgamation.band === 'amalgamation')) {
+      marks.push('amalgamation symbiose');
+    }
+    if (atomization && (atomization.band === 'total' || atomization.band === 'complete_atomization')) {
+      marks.push('atomization symbiose');
+    }
+    if (inevitability && (inevitability.band === 'absolute' || inevitability.band === 'total_inevitability')) {
+      marks.push('inevitability symbiose');
+    }
+    if (!marks.length) marks.push('symbiosis latent');
+
+    rows.push({
+      regionId: rid,
+      symbiosisScore: op10mA11Round(symbiosisScore),
+      band: symbiosisBand(symbiosisScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} collapse omni singularity symbiosis ${symbiosisBand(symbiosisScore)} (${op10mA11Round(symbiosisScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.symbiosisScore - a.symbiosisScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularitySymbiosis(
+  rows: OP10M_A11_CollapseOmniSingularitySymbiosisRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'symbiosis').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularitySymbiosisEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 58;
+  return currentIndex >= 52 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-synthesis.ts ---
+
+function synthesisBand(score: number): OP10M_A11_CollapseOmniSingularitySynthesisBand {
+  if (score < 21) return 'latent';
+  if (score < 37) return 'forming';
+  if (score < 54) return 'total';
+  return 'synthesis';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularitySynthesis(args: {
+  collapseAbsoluteSingularityCulmination: OP10M_A11_CollapseAbsoluteSingularityCulminationRow[];
+  voidCompleteErosionExtinction: OP10M_A11_VoidCompleteErosionExtinctionRow[];
+  existentialTotalNullityDecree: OP10M_A11_ExistentialTotalNullityDecreeRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularitySynthesisRow[]; nationalIndex: number } {
+  const culminationByRegion = new Map(args.collapseAbsoluteSingularityCulmination.map((c) => [c.regionId, c]));
+  const extinctionByRegion = new Map(args.voidCompleteErosionExtinction.map((e) => [e.regionId, e]));
+  const decreeByRegion = new Map(args.existentialTotalNullityDecree.map((d) => [d.regionId, d]));
+
+  const rows: OP10M_A11_CollapseOmniSingularitySynthesisRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const culmination = culminationByRegion.get(rid);
+    const extinction = extinctionByRegion.get(rid);
+    const decree = decreeByRegion.get(rid);
+
+    const culminationDrag = culmination ? op10mA11Clamp(culmination.culminationScore * 0.58) : 19;
+    const extinctionDrag = extinction ? op10mA11Clamp(extinction.extinctionScore * 0.54) : 17;
+    const decreeDrag = decree ? op10mA11Clamp(decree.decreeScore * 0.51) : 16;
+
+    const synthesisScore = op10mA11Clamp(culminationDrag + extinctionDrag + decreeDrag * 0.62);
+    weighted += synthesisScore;
+
+    const anchors: string[] = [];
+    if (culmination && (culmination.band === 'total' || culmination.band === 'culmination')) {
+      anchors.push('culmination synthesis');
+    }
+    if (extinction && (extinction.band === 'complete' || extinction.band === 'total_extinction')) {
+      anchors.push('erosion synthesis');
+    }
+    if (decree && (decree.band === 'total' || decree.band === 'absolute_decree')) {
+      anchors.push('nullity synthesis');
+    }
+    if (!anchors.length) anchors.push('synthesis latent');
+
+    rows.push({
+      regionId: rid,
+      synthesisScore: op10mA11Round(synthesisScore),
+      band: synthesisBand(synthesisScore),
+      anchors: anchors.slice(0, 3),
+      narrative: `${rid} collapse omni singularity synthesis ${synthesisBand(synthesisScore)} (${op10mA11Round(synthesisScore)}); ${anchors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.synthesisScore - a.synthesisScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularitySynthesis(
+  rows: OP10M_A11_CollapseOmniSingularitySynthesisRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'synthesis').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularitySynthesisEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 53;
+  return currentIndex >= 47 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-totalism.ts ---
+
+function totalismBand(score: number): OP10M_A11_CollapseOmniSingularityTotalismBand {
+  if (score < 29) return 'latent';
+  if (score < 45) return 'aligning';
+  if (score < 62) return 'total';
+  return 'totalism';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityTotalism(args: {
+  collapseOmniSingularityMonism: OP10M_A11_CollapseOmniSingularityMonismRow[];
+  voidTotalErosionComminution: OP10M_A11_VoidTotalErosionComminutionRow[];
+  existentialAbsoluteNullityConviction: OP10M_A11_ExistentialAbsoluteNullityConvictionRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityTotalismRow[]; nationalIndex: number } {
+  const monismByRegion = new Map(args.collapseOmniSingularityMonism.map((m) => [m.regionId, m]));
+  const comminutionByRegion = new Map(args.voidTotalErosionComminution.map((c) => [c.regionId, c]));
+  const convictionByRegion = new Map(args.existentialAbsoluteNullityConviction.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityTotalismRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const monism = monismByRegion.get(rid);
+    const comminution = comminutionByRegion.get(rid);
+    const conviction = convictionByRegion.get(rid);
+
+    const monismDrag = monism ? op10mA11Clamp(monism.monismScore * 0.52) : 21;
+    const comminutionDrag = comminution ? op10mA11Clamp(comminution.comminutionScore * 0.48) : 19;
+    const convictionDrag = conviction ? op10mA11Clamp(conviction.convictionScore * 0.45) : 18;
+
+    const totalismScore = op10mA11Clamp(monismDrag + comminutionDrag + convictionDrag * 0.56);
+    weighted += totalismScore;
+
+    const marks: string[] = [];
+    if (monism && (monism.band === 'total' || monism.band === 'monism')) {
+      marks.push('monism totalism');
+    }
+    if (comminution && (comminution.band === 'total' || comminution.band === 'complete_comminution')) {
+      marks.push('comminution totalism');
+    }
+    if (conviction && (conviction.band === 'absolute' || conviction.band === 'total_conviction')) {
+      marks.push('conviction totalism');
+    }
+    if (!marks.length) marks.push('totalism latent');
+
+    rows.push({
+      regionId: rid,
+      totalismScore: op10mA11Round(totalismScore),
+      band: totalismBand(totalismScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} collapse omni singularity totalism ${totalismBand(totalismScore)} (${op10mA11Round(totalismScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.totalismScore - a.totalismScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityTotalism(
+  rows: OP10M_A11_CollapseOmniSingularityTotalismRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'totalism').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityTotalismEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 61;
+  return currentIndex >= 55 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-unification.ts ---
+
+function unificationBand(score: number): OP10M_A11_CollapseOmniSingularityUnificationBand {
+  if (score < 22) return 'dormant';
+  if (score < 38) return 'aligning';
+  if (score < 55) return 'total';
+  return 'unification';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityUnification(args: {
+  collapseOmniSingularityIntegration: OP10M_A11_CollapseOmniSingularityIntegrationRow[];
+  voidTotalErosionEradication: OP10M_A11_VoidTotalErosionEradicationRow[];
+  existentialAbsoluteNullityContinuity: OP10M_A11_ExistentialAbsoluteNullityContinuityRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityUnificationRow[]; nationalIndex: number } {
+  const integrationByRegion = new Map(args.collapseOmniSingularityIntegration.map((i) => [i.regionId, i]));
+  const eradicationByRegion = new Map(args.voidTotalErosionEradication.map((e) => [e.regionId, e]));
+  const continuityByRegion = new Map(args.existentialAbsoluteNullityContinuity.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityUnificationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const integration = integrationByRegion.get(rid);
+    const eradication = eradicationByRegion.get(rid);
+    const continuity = continuityByRegion.get(rid);
+
+    const integrationDrag = integration ? op10mA11Clamp(integration.integrationScore * 0.55) : 19;
+    const eradicationDrag = eradication ? op10mA11Clamp(eradication.eradicationScore * 0.51) : 17;
+    const continuityDrag = continuity ? op10mA11Clamp(continuity.continuityScore * 0.48) : 16;
+
+    const unificationScore = op10mA11Clamp(integrationDrag + eradicationDrag + continuityDrag * 0.59);
+    weighted += unificationScore;
+
+    const vectors: string[] = [];
+    if (integration && (integration.band === 'total' || integration.band === 'integration')) {
+      vectors.push('integration unify');
+    }
+    if (eradication && (eradication.band === 'total' || eradication.band === 'complete_eradication')) {
+      vectors.push('eradication unify');
+    }
+    if (continuity && (continuity.band === 'absolute' || continuity.band === 'total_continuity')) {
+      vectors.push('continuity unify');
+    }
+    if (!vectors.length) vectors.push('unification dormant');
+
+    rows.push({
+      regionId: rid,
+      unificationScore: op10mA11Round(unificationScore),
+      band: unificationBand(unificationScore),
+      vectors: vectors.slice(0, 3),
+      narrative: `${rid} collapse omni singularity unification ${unificationBand(unificationScore)} (${op10mA11Round(unificationScore)}); ${vectors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.unificationScore - a.unificationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityUnification(
+  rows: OP10M_A11_CollapseOmniSingularityUnificationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'unification').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityUnificationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 54;
+  return currentIndex >= 48 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-omni-singularity-universalism.ts ---
+
+function universalismBand(score: number): OP10M_A11_CollapseOmniSingularityUniversalismBand {
+  if (score < 30) return 'latent';
+  if (score < 46) return 'aligning';
+  if (score < 63) return 'total';
+  return 'universalism';
+}
+
+export function op10mA11ComputeRegionalCollapseOmniSingularityUniversalism(args: {
+  collapseOmniSingularityTotalism: OP10M_A11_CollapseOmniSingularityTotalismRow[];
+  voidTotalErosionAttrition: OP10M_A11_VoidTotalErosionAttritionRow[];
+  existentialAbsoluteNullityFinality: OP10M_A11_ExistentialAbsoluteNullityFinalityRow[];
+}): { rows: OP10M_A11_CollapseOmniSingularityUniversalismRow[]; nationalIndex: number } {
+  const totalismByRegion = new Map(args.collapseOmniSingularityTotalism.map((t) => [t.regionId, t]));
+  const attritionByRegion = new Map(args.voidTotalErosionAttrition.map((a) => [a.regionId, a]));
+  const finalityByRegion = new Map(args.existentialAbsoluteNullityFinality.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_CollapseOmniSingularityUniversalismRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const totalism = totalismByRegion.get(rid);
+    const attrition = attritionByRegion.get(rid);
+    const finality = finalityByRegion.get(rid);
+
+    const totalismDrag = totalism ? op10mA11Clamp(totalism.totalismScore * 0.53) : 22;
+    const attritionDrag = attrition ? op10mA11Clamp(attrition.attritionScore * 0.49) : 20;
+    const finalityDrag = finality ? op10mA11Clamp(finality.finalityScore * 0.46) : 19;
+
+    const universalismScore = op10mA11Clamp(totalismDrag + attritionDrag + finalityDrag * 0.57);
+    weighted += universalismScore;
+
+    const marks: string[] = [];
+    if (totalism && (totalism.band === 'total' || totalism.band === 'totalism')) {
+      marks.push('totalism universalism');
+    }
+    if (attrition && (attrition.band === 'total' || attrition.band === 'complete_attrition')) {
+      marks.push('attrition universalism');
+    }
+    if (finality && (finality.band === 'absolute' || finality.band === 'total_finality')) {
+      marks.push('finality universalism');
+    }
+    if (!marks.length) marks.push('universalism latent');
+
+    rows.push({
+      regionId: rid,
+      universalismScore: op10mA11Round(universalismScore),
+      band: universalismBand(universalismScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} collapse omni singularity universalism ${universalismBand(universalismScore)} (${op10mA11Round(universalismScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.universalismScore - a.universalismScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityUniversalism(
+  rows: OP10M_A11_CollapseOmniSingularityUniversalismRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'universalism').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseOmniSingularityUniversalismEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 62;
+  return currentIndex >= 56 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-total-singularity-nexus.ts ---
+
+function nexusBand(score: number): OP10M_A11_CollapseTotalSingularityNexusBand {
+  if (score < 19) return 'latent';
+  if (score < 35) return 'forming';
+  if (score < 52) return 'total';
+  return 'nexus';
+}
+
+export function op10mA11ComputeRegionalCollapseTotalSingularityNexus(args: {
+  collapseUltimateSingularityZenith: OP10M_A11_CollapseUltimateSingularityZenithRow[];
+  voidTotalErosionFinality: OP10M_A11_VoidTotalErosionFinalityRow[];
+  existentialAbsoluteNullityVerdict: OP10M_A11_ExistentialAbsoluteNullityVerdictRow[];
+}): { rows: OP10M_A11_CollapseTotalSingularityNexusRow[]; nationalIndex: number } {
+  const zenithByRegion = new Map(args.collapseUltimateSingularityZenith.map((z) => [z.regionId, z]));
+  const finalityByRegion = new Map(args.voidTotalErosionFinality.map((f) => [f.regionId, f]));
+  const verdictByRegion = new Map(args.existentialAbsoluteNullityVerdict.map((v) => [v.regionId, v]));
+
+  const rows: OP10M_A11_CollapseTotalSingularityNexusRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const zenith = zenithByRegion.get(rid);
+    const finality = finalityByRegion.get(rid);
+    const verdict = verdictByRegion.get(rid);
+
+    const zenithDrag = zenith ? op10mA11Clamp(zenith.zenithScore * 0.56) : 17;
+    const finalityDrag = finality ? op10mA11Clamp(finality.finalityScore * 0.52) : 15;
+    const verdictDrag = verdict ? op10mA11Clamp(verdict.verdictScore * 0.49) : 14;
+
+    const nexusScore = op10mA11Clamp(zenithDrag + finalityDrag + verdictDrag * 0.59);
+    weighted += nexusScore;
+
+    const anchors: string[] = [];
+    if (zenith && (zenith.band === 'total' || zenith.band === 'zenith')) {
+      anchors.push('zenith nexus');
+    }
+    if (finality && (finality.band === 'final' || finality.band === 'total_finality')) {
+      anchors.push('erosion nexus');
+    }
+    if (verdict && (verdict.band === 'absolute' || verdict.band === 'total_verdict')) {
+      anchors.push('nullity nexus');
+    }
+    if (!anchors.length) anchors.push('nexus latent');
+
+    rows.push({
+      regionId: rid,
+      nexusScore: op10mA11Round(nexusScore),
+      band: nexusBand(nexusScore),
+      anchors: anchors.slice(0, 3),
+      narrative: `${rid} collapse total singularity nexus ${nexusBand(nexusScore)} (${op10mA11Round(nexusScore)}); ${anchors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.nexusScore - a.nexusScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityNexus(
+  rows: OP10M_A11_CollapseTotalSingularityNexusRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'nexus').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseTotalSingularityNexusEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 51;
+  return currentIndex >= 45 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-total-singularity-vertex.ts ---
+
+function vertexBand(score: number): OP10M_A11_CollapseTotalSingularityVertexBand {
+  if (score < 16) return 'latent';
+  if (score < 32) return 'forming';
+  if (score < 49) return 'total';
+  return 'vertex';
+}
+
+export function op10mA11ComputeRegionalCollapseTotalSingularityVertex(args: {
+  collapseOmniSingularityNode: OP10M_A11_CollapseOmniSingularityNodeRow[];
+  voidAbsoluteErosionSurge: OP10M_A11_VoidAbsoluteErosionSurgeRow[];
+  existentialFinalNullityLock: OP10M_A11_ExistentialFinalNullityLockRow[];
+}): { rows: OP10M_A11_CollapseTotalSingularityVertexRow[]; nationalIndex: number } {
+  const nodeByRegion = new Map(args.collapseOmniSingularityNode.map((n) => [n.regionId, n]));
+  const surgeByRegion = new Map(args.voidAbsoluteErosionSurge.map((s) => [s.regionId, s]));
+  const nullityByRegion = new Map(args.existentialFinalNullityLock.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_CollapseTotalSingularityVertexRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const node = nodeByRegion.get(rid);
+    const surge = surgeByRegion.get(rid);
+    const nullity = nullityByRegion.get(rid);
+
+    const nodeDrag = node ? op10mA11Clamp(node.nodeScore * 0.53) : 14;
+    const surgeDrag = surge ? op10mA11Clamp(surge.surgeScore * 0.49) : 12;
+    const nullityDrag = nullity ? op10mA11Clamp(nullity.nullityScore * 0.46) : 11;
+
+    const vertexScore = op10mA11Clamp(nodeDrag + surgeDrag + nullityDrag * 0.56);
+    weighted += vertexScore;
+
+    const anchors: string[] = [];
+    if (node && (node.band === 'omni' || node.band === 'total_node')) {
+      anchors.push('omni vertex');
+    }
+    if (surge && (surge.band === 'absolute' || surge.band === 'omni_erosion')) {
+      anchors.push('erosion vertex');
+    }
+    if (nullity && (nullity.band === 'nullity' || nullity.band === 'final_nullity')) {
+      anchors.push('nullity vertex');
+    }
+    if (!anchors.length) anchors.push('vertex latent');
+
+    rows.push({
+      regionId: rid,
+      vertexScore: op10mA11Round(vertexScore),
+      band: vertexBand(vertexScore),
+      anchors: anchors.slice(0, 3),
+      narrative: `${rid} collapse total singularity vertex ${vertexBand(vertexScore)} (${op10mA11Round(vertexScore)}); ${anchors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.vertexScore - a.vertexScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityVertex(
+  rows: OP10M_A11_CollapseTotalSingularityVertexRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'vertex').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseTotalSingularityVertexEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 48;
+  return currentIndex >= 42 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-collapse-ultimate-singularity-zenith.ts ---
+
+function zenithBand(score: number): OP10M_A11_CollapseUltimateSingularityZenithBand {
+  if (score < 18) return 'latent';
+  if (score < 34) return 'forming';
+  if (score < 51) return 'total';
+  return 'zenith';
+}
+
+export function op10mA11ComputeRegionalCollapseUltimateSingularityZenith(args: {
+  collapseAbsoluteSingularityApex: OP10M_A11_CollapseAbsoluteSingularityApexRow[];
+  voidCompleteErosionTerminality: OP10M_A11_VoidCompleteErosionTerminalityRow[];
+  existentialFinalNullityClosure: OP10M_A11_ExistentialFinalNullityClosureRow[];
+}): { rows: OP10M_A11_CollapseUltimateSingularityZenithRow[]; nationalIndex: number } {
+  const apexByRegion = new Map(args.collapseAbsoluteSingularityApex.map((a) => [a.regionId, a]));
+  const terminalityByRegion = new Map(args.voidCompleteErosionTerminality.map((t) => [t.regionId, t]));
+  const closureByRegion = new Map(args.existentialFinalNullityClosure.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_CollapseUltimateSingularityZenithRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const apex = apexByRegion.get(rid);
+    const terminality = terminalityByRegion.get(rid);
+    const closure = closureByRegion.get(rid);
+
+    const apexDrag = apex ? op10mA11Clamp(apex.apexScore * 0.55) : 16;
+    const terminalityDrag = terminality ? op10mA11Clamp(terminality.terminalityScore * 0.51) : 14;
+    const closureDrag = closure ? op10mA11Clamp(closure.closureScore * 0.48) : 13;
+
+    const zenithScore = op10mA11Clamp(apexDrag + terminalityDrag + closureDrag * 0.58);
+    weighted += zenithScore;
+
+    const anchors: string[] = [];
+    if (apex && (apex.band === 'total' || apex.band === 'apex')) {
+      anchors.push('apex zenith');
+    }
+    if (terminality && (terminality.band === 'terminal' || terminality.band === 'total_terminality')) {
+      anchors.push('erosion zenith');
+    }
+    if (closure && (closure.band === 'final' || closure.band === 'total_closure')) {
+      anchors.push('nullity zenith');
+    }
+    if (!anchors.length) anchors.push('zenith latent');
+
+    rows.push({
+      regionId: rid,
+      zenithScore: op10mA11Round(zenithScore),
+      band: zenithBand(zenithScore),
+      anchors: anchors.slice(0, 3),
+      narrative: `${rid} collapse ultimate singularity zenith ${zenithBand(zenithScore)} (${op10mA11Round(zenithScore)}); ${anchors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.zenithScore - a.zenithScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCollapseSingularityZenith(
+  rows: OP10M_A11_CollapseUltimateSingularityZenithRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'zenith').map((r) => r.regionId);
+}
+
+export function op10mA11CollapseUltimateSingularityZenithEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 50;
+  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-convergence-velocity.ts ---
+
+function convergenceBand(velocity: number, spread: number): OP10M_A11_ConvergenceBand {
+  if (spread < 18) return 'balanced';
+  if (velocity >= 4) return 'catching_up';
+  if (velocity <= -3) return 'diverging';
+  return 'stalled';
+}
+
+export function op10mA11StandingSpread(regions: Record<OP10M_A11_RegionId, OP10M_A11_RegionInequalityRow>): number {
+  const standings = OP10M_A11_CORE_REGIONS.map((rid) => regions[rid].relativeStanding);
+  return op10mA11Round(Math.max(...standings) - Math.min(...standings));
+}
+
+export function op10mA11ComputeRegionalConvergence(args: {
+  regions: Record<OP10M_A11_RegionId, OP10M_A11_RegionInequalityRow>;
+  priorStandingSpread: number | null;
+}): OP10M_A11_ConvergenceVelocityRow {
+  const spread = op10mA11StandingSpread(args.regions);
+  const prior = args.priorStandingSpread ?? spread;
+  const velocity = op10mA11Round(prior - spread);
+
+  const lagging = OP10M_A11_CORE_REGIONS.filter((rid) => args.regions[rid].lagging);
+  const leading = OP10M_A11_CORE_REGIONS.filter((rid) => args.regions[rid].leading);
+  const band = convergenceBand(velocity, spread);
+
+  return {
+    standingSpread: spread,
+    velocity,
+    band,
+    laggingCount: lagging.length,
+    leadingCount: leading.length,
+    narrative: `Regional standing spread ${spread} (${band}); velocity ${velocity} vs prior ${prior}.`,
+  };
+}
+
+export function op10mA11ConvergenceStalled(row: OP10M_A11_ConvergenceVelocityRow): boolean {
+  return row.band === 'stalled' || row.band === 'diverging';
+}
+
+export function op10mA11LaggingRegionsNotClosing(
+  regions: Record<OP10M_A11_RegionId, OP10M_A11_RegionInequalityRow>,
+  row: OP10M_A11_ConvergenceVelocityRow,
+): OP10M_A11_RegionId[] {
+  if (row.band === 'catching_up' || row.band === 'balanced') return [];
+  return OP10M_A11_CORE_REGIONS.filter((rid) => regions[rid].lagging && regions[rid].relativeStanding < 42);
 }
 
 
@@ -4309,124 +8075,55 @@ export function op10mA11EmploymentAnchorStressEscalating(currentIndex: number, p
 }
 
 
-// --- source: interregional-commute-affordability-wedge.ts ---
+// --- source: regional-fiscal-capacity-strain.ts ---
 
-function wedgeBand(score: number): OP10M_A11_CommuteWedgeBand {
-  if (score < 24) return 'balanced';
-  if (score < 42) return 'widening';
-  if (score < 60) return 'severe';
-  return 'unsustainable';
+function strainBand(score: number): OP10M_A11_FiscalCapacityStrainBand {
+  if (score < 22) return 'sound';
+  if (score < 40) return 'stretched';
+  if (score < 58) return 'fragile';
+  return 'exhausted';
 }
 
-export function op10mA11ComputeInterregionalCommuteAffordabilityWedge(args: {
-  amenityCost: OP10M_A11_AmenityCostRow[];
-  periUrbanPressure: OP10M_A11_PeriUrbanPressureRow[];
-  corridorFlows: OP10M_A11_CorridorFlowRow[];
-}): { rows: OP10M_A11_CommuteWedgeRow[]; nationalIndex: number } {
-  const amenityByRegion = new Map(args.amenityCost.map((a) => [a.regionId, a]));
-  const periByRegion = new Map(args.periUrbanPressure.map((p) => [p.regionId, p]));
+export function op10mA11ComputeRegionalFiscalCapacityStrain(args: {
+  fiscalUrbanCoupling: OP10M_A11_FiscalUrbanCouplingRow[];
+  reliefOverhead: OP10M_A11_ReliefOverheadRow[];
+  governanceFriction: OP10M_A11_GovernanceFrictionRow[];
+}): { rows: OP10M_A11_FiscalCapacityStrainRow[]; nationalIndex: number } {
+  const fiscalByRegion = new Map(args.fiscalUrbanCoupling.map((f) => [f.regionId, f]));
+  const reliefByRegion = new Map(args.reliefOverhead.map((r) => [r.regionId, r]));
+  const governanceByRegion = new Map(args.governanceFriction.map((g) => [g.regionId, g]));
 
-  const outboundPressure = new Map<OP10M_A11_RegionId, number>();
-  for (const flow of args.corridorFlows) {
-    const prev = outboundPressure.get(flow.fromRegion) ?? 0;
-    outboundPressure.set(flow.fromRegion, Math.max(prev, flow.flowPressure));
-  }
-
-  const rows: OP10M_A11_CommuteWedgeRow[] = [];
+  const rows: OP10M_A11_FiscalCapacityStrainRow[] = [];
   let weighted = 0;
 
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const amenity = amenityByRegion.get(rid);
-    const peri = periByRegion.get(rid);
-    const corridorLoad = outboundPressure.get(rid) ?? 22;
+    const fiscal = fiscalByRegion.get(rid);
+    const relief = reliefByRegion.get(rid);
+    const governance = governanceByRegion.get(rid);
 
-    const costDrag = amenity ? op10mA11Clamp(amenity.amenityScore * 0.5) : 16;
-    const sprawlDrag = peri ? op10mA11Clamp(peri.pressureScore * 0.38) : 12;
-    const commuteDrag = op10mA11Clamp(corridorLoad * 0.42);
+    const mismatchDrag = fiscal
+      ? op10mA11Clamp((100 - fiscal.couplingScore) * 0.44 + (fiscal.band === 'misaligned' ? 10 : 0))
+      : 14;
+    const reliefDrag = relief ? op10mA11Clamp(relief.overheadScore * 0.38) : 11;
+    const governanceDrag = governance ? op10mA11Clamp(governance.frictionScore * 0.32) : 10;
 
-    const wedgeScore = op10mA11Clamp(costDrag + sprawlDrag + commuteDrag * 0.62);
-    weighted += wedgeScore;
-
-    const pressures: string[] = [];
-    if (amenity && (amenity.band === 'strained' || amenity.band === 'crisis')) pressures.push('amenity cost');
-    if (peri && (peri.band === 'sprawl_risk' || peri.band === 'unchecked')) pressures.push('peri-urban stretch');
-    if (corridorLoad >= 58) pressures.push('corridor commute load');
-    if (!pressures.length) pressures.push('contained commute wedge');
-
-    rows.push({
-      regionId: rid,
-      wedgeScore: op10mA11Round(wedgeScore),
-      band: wedgeBand(wedgeScore),
-      pressures: pressures.slice(0, 3),
-      narrative: `${rid} commute affordability wedge ${wedgeBand(wedgeScore)} (${op10mA11Round(wedgeScore)}); ${pressures.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.wedgeScore - a.wedgeScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithSevereCommuteWedge(rows: OP10M_A11_CommuteWedgeRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'severe' || r.band === 'unsustainable').map((r) => r.regionId);
-}
-
-export function op10mA11CommuteWedgeWidening(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 50;
-  return currentIndex >= 44 && currentIndex > priorIndex + 6;
-}
-
-
-// --- source: settlement-reception-capacity-strain.ts ---
-
-function strainBand(score: number): OP10M_A11_ReceptionStrainBand {
-  if (score < 23) return 'absorptive';
-  if (score < 41) return 'tight';
-  if (score < 59) return 'strained';
-  return 'saturated';
-}
-
-export function op10mA11ComputeSettlementReceptionCapacityStrain(args: {
-  relocationBurden: OP10M_A11_RelocationBurdenRow[];
-  absorptionStress: OP10M_A11_AbsorptionStressRow[];
-  serviceEquity: OP10M_A11_ServiceEquityRow[];
-}): { rows: OP10M_A11_ReceptionStrainRow[]; nationalIndex: number } {
-  const relocationByRegion = new Map(args.relocationBurden.map((r) => [r.regionId, r]));
-  const absorptionByRegion = new Map(args.absorptionStress.map((a) => [a.regionId, a]));
-  const equityByRegion = new Map(args.serviceEquity.map((s) => [s.regionId, s]));
-
-  const rows: OP10M_A11_ReceptionStrainRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const relocation = relocationByRegion.get(rid);
-    const absorption = absorptionByRegion.get(rid);
-    const equity = equityByRegion.get(rid);
-
-    const inflowLoad = relocation ? op10mA11Clamp(relocation.burdenScore * 0.52) : 15;
-    const capacityDrag = absorption ? op10mA11Clamp(absorption.stressScore * 0.4) : 12;
-    const serviceDrag = equity
-      ? op10mA11Clamp((100 - equity.equityScore) * 0.28 + (equity.band === 'critical_gap' ? 10 : 0))
-      : 8;
-
-    const strainScore = op10mA11Clamp(inflowLoad + capacityDrag + serviceDrag);
+    const strainScore = op10mA11Clamp(mismatchDrag + reliefDrag + governanceDrag * 0.55);
     weighted += strainScore;
 
-    const factors: string[] = [];
-    if (relocation && (relocation.band === 'severe' || relocation.band === 'overwhelming')) {
-      factors.push('relocation inflow');
+    const pressures: string[] = [];
+    if (fiscal && (fiscal.band === 'strained' || fiscal.band === 'misaligned')) pressures.push('fiscal mismatch');
+    if (relief && (relief.band === 'overloaded' || relief.band === 'paralytic')) pressures.push('relief spend');
+    if (governance && (governance.band === 'fragmented' || governance.band === 'breakdown')) {
+      pressures.push('coordination cost');
     }
-    if (absorption && (absorption.band === 'strained' || absorption.band === 'breached')) {
-      factors.push('absorption ceiling');
-    }
-    if (equity && (equity.band === 'uneven' || equity.band === 'critical_gap')) factors.push('service equity gap');
-    if (!factors.length) factors.push('routine reception headroom');
+    if (!pressures.length) pressures.push('fiscal headroom intact');
 
     rows.push({
       regionId: rid,
       strainScore: op10mA11Round(strainScore),
       band: strainBand(strainScore),
-      factors: factors.slice(0, 3),
-      narrative: `${rid} reception capacity ${strainBand(strainScore)} (${op10mA11Round(strainScore)}); ${factors.slice(0, 2).join('; ')}.`,
+      pressures: pressures.slice(0, 3),
+      narrative: `${rid} fiscal capacity ${strainBand(strainScore)} (${op10mA11Round(strainScore)}); ${pressures.slice(0, 2).join('; ')}.`,
     });
   }
 
@@ -4434,15 +8131,451 @@ export function op10mA11ComputeSettlementReceptionCapacityStrain(args: {
   return { rows: rows.sort((a, b) => b.strainScore - a.strainScore), nationalIndex };
 }
 
-export function op10mA11RegionsWithReceptionCapacityStrain(
-  rows: OP10M_A11_ReceptionStrainRow[],
+export function op10mA11RegionsWithFiscalCapacityFragility(
+  rows: OP10M_A11_FiscalCapacityStrainRow[],
 ): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'strained' || r.band === 'saturated').map((r) => r.regionId);
+  return rows.filter((r) => r.band === 'fragile' || r.band === 'exhausted').map((r) => r.regionId);
 }
 
-export function op10mA11ReceptionStrainEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 49;
-  return currentIndex >= 43 && currentIndex > priorIndex + 5;
+export function op10mA11FiscalCapacityStrainEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 47;
+  return currentIndex >= 41 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: regional-fiscal-governance-coupling-strain.ts ---
+
+function couplingBand(score: number): OP10M_A11_FiscalGovernanceCouplingBand {
+  if (score < 22) return 'aligned';
+  if (score < 40) return 'strained';
+  if (score < 58) return 'misaligned';
+  return 'ruptured';
+}
+
+export function op10mA11ComputeRegionalFiscalGovernanceCouplingStrain(args: {
+  fiscalCapacityStrain: OP10M_A11_FiscalCapacityStrainRow[];
+  governanceResilienceDecay: OP10M_A11_GovernanceResilienceRow[];
+  cohesionIntegrity: OP10M_A11_CohesionIntegrityRow[];
+}): { rows: OP10M_A11_FiscalGovernanceCouplingRow[]; nationalIndex: number } {
+  const fiscalByRegion = new Map(args.fiscalCapacityStrain.map((f) => [f.regionId, f]));
+  const governanceByRegion = new Map(args.governanceResilienceDecay.map((g) => [g.regionId, g]));
+  const integrityByRegion = new Map(args.cohesionIntegrity.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_FiscalGovernanceCouplingRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const fiscal = fiscalByRegion.get(rid);
+    const governance = governanceByRegion.get(rid);
+    const integrity = integrityByRegion.get(rid);
+
+    const fiscalDrag = fiscal ? op10mA11Clamp(fiscal.strainScore * 0.46) : 14;
+    const governanceDrag = governance ? op10mA11Clamp(governance.decayScore * 0.4) : 12;
+    const cohesionDrag = integrity ? op10mA11Clamp(integrity.pressureScore * 0.32) : 10;
+
+    const strainScore = op10mA11Clamp(fiscalDrag + governanceDrag + cohesionDrag * 0.55);
+    weighted += strainScore;
+
+    const tensions: string[] = [];
+    if (fiscal && (fiscal.band === 'fragile' || fiscal.band === 'exhausted')) tensions.push('fiscal exhaustion');
+    if (governance && (governance.band === 'brittle' || governance.band === 'collapsed')) {
+      tensions.push('governance decay');
+    }
+    if (integrity && (integrity.band === 'fractured' || integrity.band === 'disintegrating')) {
+      tensions.push('cohesion fracture');
+    }
+    if (!tensions.length) tensions.push('fiscal–governance balance');
+
+    rows.push({
+      regionId: rid,
+      strainScore: op10mA11Round(strainScore),
+      band: couplingBand(strainScore),
+      tensions: tensions.slice(0, 3),
+      narrative: `${rid} fiscal–governance coupling ${couplingBand(strainScore)} (${op10mA11Round(strainScore)}); ${tensions.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.strainScore - a.strainScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithFiscalGovernanceRupture(
+  rows: OP10M_A11_FiscalGovernanceCouplingRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'misaligned' || r.band === 'ruptured').map((r) => r.regionId);
+}
+
+export function op10mA11FiscalGovernanceCouplingEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 46;
+  return currentIndex >= 40 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: regional-governance-resilience-decay.ts ---
+
+function resilienceBand(score: number): OP10M_A11_GovernanceResilienceBand {
+  if (score < 22) return 'resilient';
+  if (score < 40) return 'eroding';
+  if (score < 58) return 'brittle';
+  return 'collapsed';
+}
+
+export function op10mA11ComputeRegionalGovernanceResilienceDecay(args: {
+  governanceFriction: OP10M_A11_GovernanceFrictionRow[];
+  systemicFragility: OP10M_A11_SystemicFragilityRow[];
+  reliefEquityGap: OP10M_A11_ReliefEquityGapRow[];
+}): { rows: OP10M_A11_GovernanceResilienceRow[]; nationalIndex: number } {
+  const governanceByRegion = new Map(args.governanceFriction.map((g) => [g.regionId, g]));
+  const systemicByRegion = new Map(args.systemicFragility.map((s) => [s.regionId, s]));
+  const equityByRegion = new Map(args.reliefEquityGap.map((r) => [r.regionId, r]));
+
+  const rows: OP10M_A11_GovernanceResilienceRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const governance = governanceByRegion.get(rid);
+    const systemic = systemicByRegion.get(rid);
+    const equity = equityByRegion.get(rid);
+
+    const frictionDrag = governance ? op10mA11Clamp(governance.frictionScore * 0.48) : 14;
+    const systemicDrag = systemic ? op10mA11Clamp(systemic.fragilityScore * 0.4) : 12;
+    const equityDrag = equity ? op10mA11Clamp(equity.gapScore * 0.34) : 10;
+
+    const decayScore = op10mA11Clamp(frictionDrag + systemicDrag + equityDrag * 0.55);
+    weighted += decayScore;
+
+    const drivers: string[] = [];
+    if (governance && (governance.band === 'fragmented' || governance.band === 'breakdown')) {
+      drivers.push('coordination breakdown');
+    }
+    if (systemic && (systemic.band === 'systemic' || systemic.band === 'cascade_risk')) {
+      drivers.push('systemic stress');
+    }
+    if (equity && (equity.band === 'skewed' || equity.band === 'polarized')) drivers.push('relief inequity');
+    if (!drivers.length) drivers.push('governance resilience intact');
+
+    rows.push({
+      regionId: rid,
+      decayScore: op10mA11Round(decayScore),
+      band: resilienceBand(decayScore),
+      drivers: drivers.slice(0, 3),
+      narrative: `${rid} governance resilience ${resilienceBand(decayScore)} (${op10mA11Round(decayScore)}); ${drivers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.decayScore - a.decayScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithGovernanceResilienceCollapse(
+  rows: OP10M_A11_GovernanceResilienceRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'brittle' || r.band === 'collapsed').map((r) => r.regionId);
+}
+
+export function op10mA11GovernanceResilienceDecayEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 47;
+  return currentIndex >= 41 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: regional-governance-vacuum-escalation.ts ---
+
+function vacuumBand(score: number): OP10M_A11_GovernanceVacuumEscalationBand {
+  if (score < 25) return 'staffed';
+  if (score < 43) return 'thinning';
+  if (score < 60) return 'hollow';
+  return 'vacuum';
+}
+
+export function op10mA11ComputeRegionalGovernanceVacuumEscalation(args: {
+  settlementLegitimacyCollapse: OP10M_A11_SettlementLegitimacyCollapseRow[];
+  fiscalPanicContagion: OP10M_A11_FiscalPanicContagionRow[];
+  institutionalTrustErosion: OP10M_A11_InstitutionalTrustErosionRow[];
+}): { rows: OP10M_A11_GovernanceVacuumEscalationRow[]; nationalIndex: number } {
+  const legitimacyByRegion = new Map(args.settlementLegitimacyCollapse.map((l) => [l.regionId, l]));
+  const contagionByRegion = new Map(args.fiscalPanicContagion.map((f) => [f.regionId, f]));
+  const trustByRegion = new Map(args.institutionalTrustErosion.map((t) => [t.regionId, t]));
+
+  const rows: OP10M_A11_GovernanceVacuumEscalationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const legitimacy = legitimacyByRegion.get(rid);
+    const contagion = contagionByRegion.get(rid);
+    const trust = trustByRegion.get(rid);
+
+    const legitimacyDrag = legitimacy ? op10mA11Clamp(legitimacy.collapseScore * 0.41) : 12;
+    const contagionDrag = contagion ? op10mA11Clamp(contagion.contagionScore * 0.4) : 11;
+    const trustDrag = trust ? op10mA11Clamp(trust.erosionScore * 0.38) : 10;
+
+    const vacuumScore = op10mA11Clamp(legitimacyDrag + contagionDrag + trustDrag * 0.5);
+    weighted += vacuumScore;
+
+    const drivers: string[] = [];
+    if (legitimacy && (legitimacy.band === 'delegitimized' || legitimacy.band === 'collapsed')) {
+      drivers.push('legitimacy void');
+    }
+    if (contagion && (contagion.band === 'contagion' || contagion.band === 'systemic')) {
+      drivers.push('fiscal panic spillover');
+    }
+    if (trust && (trust.band === 'brittle' || trust.band === 'breakdown')) {
+      drivers.push('institutional trust collapse');
+    }
+    if (!drivers.length) drivers.push('governance capacity');
+
+    rows.push({
+      regionId: rid,
+      vacuumScore: op10mA11Round(vacuumScore),
+      band: vacuumBand(vacuumScore),
+      drivers: drivers.slice(0, 3),
+      narrative: `${rid} governance vacuum escalation ${vacuumBand(vacuumScore)} (${op10mA11Round(vacuumScore)}); ${drivers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.vacuumScore - a.vacuumScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithGovernanceVacuum(
+  rows: OP10M_A11_GovernanceVacuumEscalationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'hollow' || r.band === 'vacuum').map((r) => r.regionId);
+}
+
+export function op10mA11GovernanceVacuumEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 51;
+  return currentIndex >= 45 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-housing-spillover-pressure.ts ---
+
+function spilloverBand(score: number): OP10M_A11_HousingSpilloverBand {
+  if (score < 28) return 'localized';
+  if (score < 48) return 'spreading';
+  if (score < 66) return 'cascade';
+  return 'systemic';
+}
+
+export function op10mA11ComputeRegionalHousingSpilloverPressure(args: {
+  absorptionStress: OP10M_A11_AbsorptionStressRow[];
+  periUrbanPressure: OP10M_A11_PeriUrbanPressureRow[];
+  corridorFlows: OP10M_A11_CorridorFlowRow[];
+}): { rows: OP10M_A11_HousingSpilloverRow[]; nationalIndex: number } {
+  const absorptionByRegion = new Map(args.absorptionStress.map((a) => [a.regionId, a]));
+  const periByRegion = new Map(args.periUrbanPressure.map((p) => [p.regionId, p]));
+  const outboundFlow = new Map<OP10M_A11_RegionId, number>();
+
+  for (const flow of args.corridorFlows) {
+    outboundFlow.set(flow.fromRegion, (outboundFlow.get(flow.fromRegion) ?? 0) + flow.flowPressure * 0.42);
+  }
+
+  const rows: OP10M_A11_HousingSpilloverRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const abs = absorptionByRegion.get(rid);
+    const peri = periByRegion.get(rid);
+    const saturationDrag = abs ? op10mA11Clamp(abs.stressScore * 0.55) : 14;
+    const fringeDrag = peri ? op10mA11Clamp(peri.pressureScore * 0.48) : 12;
+    const corridorPush = op10mA11Clamp(outboundFlow.get(rid) ?? 0);
+
+    const spilloverScore = op10mA11Clamp(saturationDrag + fringeDrag * 0.62 + corridorPush * 0.38);
+    weighted += spilloverScore;
+
+    const channels: string[] = [];
+    if (abs && (abs.band === 'strained' || abs.band === 'breached')) channels.push('metro saturation bleed');
+    if (peri && (peri.band === 'sprawl_risk' || peri.band === 'unchecked')) channels.push('peri-urban fringe');
+    if (corridorPush >= 28) channels.push('corridor price diffusion');
+    if (!channels.length) channels.push('contained local market');
+
+    rows.push({
+      regionId: rid,
+      spilloverScore: op10mA11Round(spilloverScore),
+      band: spilloverBand(spilloverScore),
+      corridorPush: op10mA11Round(corridorPush),
+      channels: channels.slice(0, 3),
+      narrative: `${rid} housing spillover ${spilloverBand(spilloverScore)} (${op10mA11Round(spilloverScore)}); ${channels.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.spilloverScore - a.spilloverScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithHousingSpilloverCascade(rows: OP10M_A11_HousingSpilloverRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'cascade' || r.band === 'systemic').map((r) => r.regionId);
+}
+
+export function op10mA11HousingSpilloverEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 54;
+  return currentIndex >= 48 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-inequality.ts ---
+
+export function op10mA11RelativeStanding(scores: Record<OP10M_A11_RegionId, number>): Record<OP10M_A11_RegionId, number> {
+  const vals = OP10M_A11_CORE_REGIONS.map((r) => scores[r]);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const span = Math.max(1, max - min);
+  const out = {} as Record<OP10M_A11_RegionId, number>;
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    out[rid] = op10mA11Clamp(((scores[rid] - min) / span) * 100);
+  }
+  return out;
+}
+
+export function op10mA11LeadingLaggingFlags(
+  relative: Record<OP10M_A11_RegionId, number>,
+): Record<OP10M_A11_RegionId, { leading: boolean; lagging: boolean }> {
+  const out = {} as Record<OP10M_A11_RegionId, { leading: boolean; lagging: boolean }>;
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    out[rid] = {
+      leading: relative[rid] >= 72,
+      lagging: relative[rid] <= 28,
+    };
+  }
+  return out;
+}
+
+export function op10mA11SummarizeInequality(args: {
+  inequalityIndex: number;
+  inequalityBand: string;
+  metroGap: number;
+  leading: OP10M_A11_RegionId[];
+  lagging: OP10M_A11_RegionId[];
+}): string {
+  const lead = args.leading.slice(0, 2).join('/') || 'none';
+  const lag = args.lagging.slice(0, 2).join('/') || 'none';
+  return `Regional inequality ${args.inequalityBand} (index ${op10mA11Round(args.inequalityIndex)}); metro gap ${op10mA11Round(args.metroGap)}; leaders ${lead}; lagging ${lag}.`;
+}
+
+
+// --- source: regional-infrastructure-backlog.ts ---
+
+function backlogBand(score: number): OP10M_A11_InfrastructureBacklogBand {
+  if (score < 28) return 'manageable';
+  if (score < 48) return 'elevated';
+  if (score < 68) return 'severe';
+  return 'critical';
+}
+
+export function op10mA11ComputeRegionalInfrastructureBacklog(args: {
+  bottlenecks: OP10M_A11_RegionalBottleneck[];
+  absorptionStress: OP10M_A11_AbsorptionStressRow[];
+  corridorStressIndex: number;
+}): { rows: OP10M_A11_InfrastructureBacklogRow[]; nationalIndex: number } {
+  const bottleneckByRegion = new Map(args.bottlenecks.map((b) => [b.regionId, b]));
+  const absorptionByRegion = new Map(args.absorptionStress.map((a) => [a.regionId, a]));
+
+  const rows: OP10M_A11_InfrastructureBacklogRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const bn = bottleneckByRegion.get(rid);
+    const abs = absorptionByRegion.get(rid);
+    const bottleneckLoad = bn ? op10mA11Clamp(bn.bindScore * 0.72) : 16;
+    const absorptionDrag = abs ? op10mA11Clamp(abs.stressScore * 0.38) : 12;
+    const networkDrag = op10mA11Clamp(args.corridorStressIndex * 0.22);
+
+    const backlogScore = op10mA11Clamp(bottleneckLoad + absorptionDrag + networkDrag);
+    weighted += backlogScore;
+
+    const drivers: string[] = [];
+    if (bn && bn.bindScore >= 45) drivers.push('regional bottleneck');
+    if (abs && (abs.band === 'strained' || abs.band === 'breached')) drivers.push('absorption strain');
+    if (args.corridorStressIndex >= 50) drivers.push('network corridor stress');
+    if (!drivers.length) drivers.push('routine maintenance queue');
+
+    rows.push({
+      regionId: rid,
+      backlogScore: op10mA11Round(backlogScore),
+      band: backlogBand(backlogScore),
+      estimatedTurnsToClear: op10mA11Round(op10mA11Clamp(backlogScore / 12)),
+      drivers: drivers.slice(0, 3),
+      narrative: `${rid} infrastructure backlog ${backlogBand(backlogScore)} (${op10mA11Round(backlogScore)}); ~${op10mA11Round(op10mA11Clamp(backlogScore / 12))} turns to clear.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.backlogScore - a.backlogScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCriticalBacklog(rows: OP10M_A11_InfrastructureBacklogRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'critical' || r.band === 'severe').map((r) => r.regionId);
+}
+
+
+// --- source: regional-institutional-trust-erosion.ts ---
+
+function trustBand(score: number): OP10M_A11_InstitutionalTrustErosionBand {
+  if (score < 23) return 'trusted';
+  if (score < 41) return 'thinning';
+  if (score < 58) return 'brittle';
+  return 'breakdown';
+}
+
+export function op10mA11ComputeRegionalInstitutionalTrustErosion(args: {
+  metaGovernanceFatigue: OP10M_A11_MetaGovernanceFatigueRow[];
+  governanceResilienceDecay: OP10M_A11_GovernanceResilienceRow[];
+  cohesionIntegrity: OP10M_A11_CohesionIntegrityRow[];
+}): { rows: OP10M_A11_InstitutionalTrustErosionRow[]; nationalIndex: number } {
+  const fatigueByRegion = new Map(args.metaGovernanceFatigue.map((m) => [m.regionId, m]));
+  const decayByRegion = new Map(args.governanceResilienceDecay.map((g) => [g.regionId, g]));
+  const cohesionByRegion = new Map(args.cohesionIntegrity.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_InstitutionalTrustErosionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const fatigue = fatigueByRegion.get(rid);
+    const decay = decayByRegion.get(rid);
+    const cohesion = cohesionByRegion.get(rid);
+
+    const fatigueDrag = fatigue ? op10mA11Clamp(fatigue.fatigueScore * 0.43) : 13;
+    const decayDrag = decay ? op10mA11Clamp(decay.decayScore * 0.4) : 11;
+    const cohesionDrag = cohesion ? op10mA11Clamp(cohesion.pressureScore * 0.35) : 10;
+
+    const erosionScore = op10mA11Clamp(fatigueDrag + decayDrag + cohesionDrag * 0.54);
+    weighted += erosionScore;
+
+    const signals: string[] = [];
+    if (fatigue && (fatigue.band === 'fatigued' || fatigue.band === 'exhausted')) {
+      signals.push('coordination exhaustion');
+    }
+    if (decay && (decay.band === 'brittle' || decay.band === 'collapsed')) {
+      signals.push('governance collapse risk');
+    }
+    if (cohesion && (cohesion.band === 'fractured' || cohesion.band === 'disintegrating')) {
+      signals.push('cohesion fracture');
+    }
+    if (!signals.length) signals.push('institutional trust');
+
+    rows.push({
+      regionId: rid,
+      erosionScore: op10mA11Round(erosionScore),
+      band: trustBand(erosionScore),
+      signals: signals.slice(0, 3),
+      narrative: `${rid} institutional trust erosion ${trustBand(erosionScore)} (${op10mA11Round(erosionScore)}); ${signals.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.erosionScore - a.erosionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithInstitutionalTrustBreakdown(
+  rows: OP10M_A11_InstitutionalTrustErosionRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'brittle' || r.band === 'breakdown').map((r) => r.regionId);
+}
+
+export function op10mA11InstitutionalTrustErosionEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 48;
+  return currentIndex >= 42 && currentIndex > priorIndex + 5;
 }
 
 
@@ -4510,127 +8643,210 @@ export function op10mA11LandUseGridlockEscalating(currentIndex: number, priorInd
 }
 
 
-// --- source: interregional-mobility-affordability-trap.ts ---
+// --- source: regional-linkage-matrix.ts ---
 
-function trapBand(score: number): OP10M_A11_MobilityTrapBand {
-  if (score < 23) return 'mobile';
-  if (score < 41) return 'constrained';
-  if (score < 59) return 'trapped';
-  return 'immobilized';
+function linkageBand(strength: number): OP10M_A11_LinkageBand {
+  if (strength < 18) return 'weak';
+  if (strength < 38) return 'moderate';
+  if (strength < 58) return 'strong';
+  return 'structural';
 }
 
-export function op10mA11ComputeInterregionalMobilityAffordabilityTrap(args: {
-  commuteWedge: OP10M_A11_CommuteWedgeRow[];
-  migrationPressure: OP10M_A11_MigrationPressureRow[];
-  amenityCost: OP10M_A11_AmenityCostRow[];
-}): { rows: OP10M_A11_MobilityTrapRow[]; nationalIndex: number } {
-  const wedgeByRegion = new Map(args.commuteWedge.map((c) => [c.regionId, c]));
-  const migrationByRegion = new Map(args.migrationPressure.map((m) => [m.regionId, m]));
-  const amenityByRegion = new Map(args.amenityCost.map((a) => [a.regionId, a]));
+export function op10mA11BuildRegionalLinkageMatrix(
+  links: OP10M_A11_IntercityLinkSlice[],
+): OP10M_A11_RegionalLinkageEdge[] {
+  const acc = new Map<string, { strength: number; count: number }>();
 
-  const rows: OP10M_A11_MobilityTrapRow[] = [];
+  for (const link of links) {
+    if (link.regionA === link.regionB) continue;
+    const key = [link.regionA, link.regionB].sort().join('::');
+    const healthPenalty =
+      link.health === 'severed' ? 0.15 : link.health === 'degraded' ? 0.55 : link.health === 'operational' ? 0.85 : 1;
+    const add = op10mA11Clamp(link.utilization * 0.45 * healthPenalty + (link.strategic ? 8 : 0));
+    const prev = acc.get(key) || { strength: 0, count: 0 };
+    prev.strength += add;
+    prev.count += 1;
+    acc.set(key, prev);
+  }
+
+  const out: OP10M_A11_RegionalLinkageEdge[] = [];
+  for (const [key, val] of acc) {
+    const [fromRegion, toRegion] = key.split('::') as [OP10M_A11_RegionId, OP10M_A11_RegionId];
+    const strength = op10mA11Clamp(val.strength / Math.max(1, val.count) + val.count * 2);
+    out.push({
+      fromRegion,
+      toRegion,
+      strength: op10mA11Round(strength),
+      band: linkageBand(strength),
+      viaLinks: val.count,
+    });
+  }
+
+  return out.sort((a, b) => b.strength - a.strength);
+}
+
+export function op10mA11LinkageFragilityIndex(
+  linkages: OP10M_A11_RegionalLinkageEdge[],
+  corridorStress: number,
+): number {
+  const pairsPossible = (OP10M_A11_CORE_REGIONS.length * (OP10M_A11_CORE_REGIONS.length - 1)) / 2;
+  const weakShare = linkages.filter((l) => l.band === 'weak').length / Math.max(1, pairsPossible);
+  const strongShare = linkages.filter((l) => l.band === 'strong' || l.band === 'structural').length / Math.max(1, pairsPossible);
+  return op10mA11Round(op10mA11Clamp(weakShare * 55 + corridorStress * 0.35 - strongShare * 18 + 12));
+}
+
+export function op10mA11RegionsWithWeakLinkage(
+  linkages: OP10M_A11_RegionalLinkageEdge[],
+): OP10M_A11_RegionId[] {
+  const weakCount = {} as Record<OP10M_A11_RegionId, number>;
+  for (const rid of OP10M_A11_CORE_REGIONS) weakCount[rid] = 0;
+  for (const l of linkages) {
+    if (l.band !== 'weak') continue;
+    weakCount[l.fromRegion] += 1;
+    weakCount[l.toRegion] += 1;
+  }
+  return OP10M_A11_CORE_REGIONS.filter((r) => weakCount[r] >= 2);
+}
+
+
+// --- source: regional-meta-governance-coordination-fatigue.ts ---
+
+function fatigueBand(score: number): OP10M_A11_MetaGovernanceFatigueBand {
+  if (score < 24) return 'rested';
+  if (score < 42) return 'tiring';
+  if (score < 58) return 'fatigued';
+  return 'exhausted';
+}
+
+export function op10mA11ComputeRegionalMetaGovernanceCoordinationFatigue(args: {
+  fiscalGovernanceCoupling: OP10M_A11_FiscalGovernanceCouplingRow[];
+  governanceFriction: OP10M_A11_GovernanceFrictionRow[];
+  reliefOverhead: OP10M_A11_ReliefOverheadRow[];
+}): { rows: OP10M_A11_MetaGovernanceFatigueRow[]; nationalIndex: number } {
+  const couplingByRegion = new Map(args.fiscalGovernanceCoupling.map((f) => [f.regionId, f]));
+  const frictionByRegion = new Map(args.governanceFriction.map((g) => [g.regionId, g]));
+  const overheadByRegion = new Map(args.reliefOverhead.map((r) => [r.regionId, r]));
+
+  const rows: OP10M_A11_MetaGovernanceFatigueRow[] = [];
   let weighted = 0;
 
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const wedge = wedgeByRegion.get(rid);
-    const migration = migrationByRegion.get(rid);
-    const amenity = amenityByRegion.get(rid);
+    const coupling = couplingByRegion.get(rid);
+    const friction = frictionByRegion.get(rid);
+    const overhead = overheadByRegion.get(rid);
 
-    const commuteDrag = wedge ? op10mA11Clamp(wedge.wedgeScore * 0.5) : 15;
-    const flowDrag = migration ? op10mA11Clamp(migration.netPressure * 0.42) : 12;
-    const costDrag = amenity ? op10mA11Clamp(amenity.amenityScore * 0.38) : 11;
+    const couplingDrag = coupling ? op10mA11Clamp(coupling.strainScore * 0.44) : 14;
+    const frictionDrag = friction ? op10mA11Clamp(friction.frictionScore * 0.38) : 12;
+    const overheadDrag = overhead ? op10mA11Clamp(overhead.overheadScore * 0.36) : 10;
 
-    const trapScore = op10mA11Clamp(commuteDrag + flowDrag + costDrag * 0.6);
-    weighted += trapScore;
+    const fatigueScore = op10mA11Clamp(couplingDrag + frictionDrag + overheadDrag * 0.5);
+    weighted += fatigueScore;
 
-    const binds: string[] = [];
-    if (wedge && (wedge.band === 'severe' || wedge.band === 'unsustainable')) binds.push('commute wedge');
-    if (migration && (migration.band === 'high' || migration.band === 'surge')) binds.push('migration pressure');
-    if (amenity && (amenity.band === 'strained' || amenity.band === 'crisis')) binds.push('amenity lock-in');
-    if (!binds.length) binds.push('open mobility');
+    const signals: string[] = [];
+    if (coupling && (coupling.band === 'misaligned' || coupling.band === 'ruptured')) {
+      signals.push('fiscal–governance rupture');
+    }
+    if (friction && (friction.band === 'fragmented' || friction.band === 'breakdown')) {
+      signals.push('coordination breakdown');
+    }
+    if (overhead && (overhead.band === 'overloaded' || overhead.band === 'paralytic')) {
+      signals.push('relief overhead');
+    }
+    if (!signals.length) signals.push('coordination headroom');
 
     rows.push({
       regionId: rid,
-      trapScore: op10mA11Round(trapScore),
-      band: trapBand(trapScore),
-      binds: binds.slice(0, 3),
-      narrative: `${rid} mobility affordability ${trapBand(trapScore)} (${op10mA11Round(trapScore)}); ${binds.slice(0, 2).join('; ')}.`,
+      fatigueScore: op10mA11Round(fatigueScore),
+      band: fatigueBand(fatigueScore),
+      signals: signals.slice(0, 3),
+      narrative: `${rid} meta-governance coordination ${fatigueBand(fatigueScore)} (${op10mA11Round(fatigueScore)}); ${signals.slice(0, 2).join('; ')}.`,
     });
   }
 
   const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.trapScore - a.trapScore), nationalIndex };
+  return { rows: rows.sort((a, b) => b.fatigueScore - a.fatigueScore), nationalIndex };
 }
 
-export function op10mA11RegionsWithMobilityTrap(rows: OP10M_A11_MobilityTrapRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'trapped' || r.band === 'immobilized').map((r) => r.regionId);
+export function op10mA11RegionsWithMetaGovernanceExhaustion(
+  rows: OP10M_A11_MetaGovernanceFatigueRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'fatigued' || r.band === 'exhausted').map((r) => r.regionId);
 }
 
-export function op10mA11MobilityTrapEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 49;
-  return currentIndex >= 43 && currentIndex > priorIndex + 6;
+export function op10mA11MetaGovernanceFatigueEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 47;
+  return currentIndex >= 41 && currentIndex > priorIndex + 5;
 }
 
 
-// --- source: settlement-infrastructure-absorption-gap.ts ---
+// --- source: regional-migration-pressure.ts ---
 
-function gapBand(score: number): OP10M_A11_AbsorptionGapBand {
-  if (score < 22) return 'aligned';
-  if (score < 40) return 'widening';
-  if (score < 58) return 'critical';
-  return 'rupture';
+function migrationBand(score: number): OP10M_A11_MigrationPressureBand {
+  if (score < 22) return 'stable';
+  if (score < 42) return 'elevated';
+  if (score < 62) return 'high';
+  return 'surge';
 }
 
-export function op10mA11ComputeSettlementInfrastructureAbsorptionGap(args: {
-  infrastructureBacklog: OP10M_A11_InfrastructureBacklogRow[];
-  receptionStrain: OP10M_A11_ReceptionStrainRow[];
-  absorptionStress: OP10M_A11_AbsorptionStressRow[];
-}): { rows: OP10M_A11_AbsorptionGapRow[]; nationalIndex: number } {
-  const backlogByRegion = new Map(args.infrastructureBacklog.map((b) => [b.regionId, b]));
-  const receptionByRegion = new Map(args.receptionStrain.map((r) => [r.regionId, r]));
-  const absorptionByRegion = new Map(args.absorptionStress.map((a) => [a.regionId, a]));
+export function op10mA11ComputeMigrationPressure(args: {
+  regions: Record<OP10M_A11_RegionId, OP10M_A11_RegionInequalityRow>;
+  bottlenecks: OP10M_A11_RegionalBottleneck[];
+  linkageHubs: OP10M_A11_LinkageHubProfile[];
+  corridorFlows: OP10M_A11_CorridorFlowRow[];
+}): OP10M_A11_MigrationPressureRow[] {
+  const bottleneckByRegion = new Map(args.bottlenecks.map((b) => [b.regionId, b]));
+  const hubByRegion = new Map(args.linkageHubs.map((h) => [h.regionId, h]));
 
-  const rows: OP10M_A11_AbsorptionGapRow[] = [];
-  let weighted = 0;
+  const inboundFlow = new Map<OP10M_A11_RegionId, number>();
+  for (const rid of OP10M_A11_CORE_REGIONS) inboundFlow.set(rid, 0);
+  for (const f of args.corridorFlows) {
+    if (f.band === 'heavy' || f.band === 'surge') {
+      inboundFlow.set(f.toRegion, (inboundFlow.get(f.toRegion) ?? 0) + f.flowPressure * 0.35);
+    }
+  }
 
+  const rows: OP10M_A11_MigrationPressureRow[] = [];
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const backlog = backlogByRegion.get(rid);
-    const reception = receptionByRegion.get(rid);
-    const absorption = absorptionByRegion.get(rid);
+    const row = args.regions[rid];
+    const hub = hubByRegion.get(rid);
+    const bn = bottleneckByRegion.get(rid);
 
-    const backlogDrag = backlog ? op10mA11Clamp(backlog.backlogScore * 0.48) : 14;
-    const inflowDrag = reception ? op10mA11Clamp(reception.strainScore * 0.44) : 12;
-    const capacityDrag = absorption ? op10mA11Clamp(absorption.stressScore * 0.36) : 10;
+    const pull =
+      row.leading && row.band !== 'contracting'
+        ? op10mA11Clamp(row.urbanGrowthIndex * 0.45 + (row.relativeStanding - 50) * 0.25)
+        : op10mA11Clamp(Math.max(0, 62 - row.urbanGrowthIndex) * 0.2);
 
-    const gapScore = op10mA11Clamp(backlogDrag + inflowDrag + capacityDrag * 0.55);
-    weighted += gapScore;
+    const push =
+      (row.lagging ? 18 : 0) +
+      (bn?.severity === 'critical' ? 22 : bn?.severity === 'meaningful' ? 12 : 0) +
+      (hub ? hub.isolationScore * 0.28 : 0);
 
-    const gaps: string[] = [];
-    if (backlog && (backlog.band === 'severe' || backlog.band === 'critical')) gaps.push('infra backlog');
-    if (reception && (reception.band === 'strained' || reception.band === 'saturated')) gaps.push('reception overload');
-    if (absorption && (absorption.band === 'strained' || absorption.band === 'breached')) gaps.push('absorption ceiling');
-    if (!gaps.length) gaps.push('capacity matched');
+    const corridorPull = op10mA11Clamp((inboundFlow.get(rid) ?? 0) * 0.4);
+    const netPressure = op10mA11Clamp(pull + corridorPull + push * 0.55 - (row.spilloverBand === 'integrated' ? 8 : 0));
+
+    const primaryDirection: OP10M_A11_MigrationPressureRow['primaryDirection'] =
+      pull + corridorPull > push + 12
+        ? 'inbound'
+        : push > pull + 10
+          ? 'outbound'
+          : 'balanced';
 
     rows.push({
       regionId: rid,
-      gapScore: op10mA11Round(gapScore),
-      band: gapBand(gapScore),
-      gaps: gaps.slice(0, 3),
-      narrative: `${rid} infrastructure absorption gap ${gapBand(gapScore)} (${op10mA11Round(gapScore)}); ${gaps.slice(0, 2).join('; ')}.`,
+      pullScore: op10mA11Round(pull + corridorPull),
+      pushScore: op10mA11Round(push),
+      netPressure: op10mA11Round(netPressure),
+      band: migrationBand(netPressure),
+      primaryDirection,
+      narrative: `${rid} migration ${migrationBand(netPressure)} (${primaryDirection}); pull ${op10mA11Round(pull + corridorPull)} vs push ${op10mA11Round(push)}.`,
     });
   }
 
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.gapScore - a.gapScore), nationalIndex };
+  return rows.sort((a, b) => b.netPressure - a.netPressure);
 }
 
-export function op10mA11RegionsWithCriticalAbsorptionGap(rows: OP10M_A11_AbsorptionGapRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'critical' || r.band === 'rupture').map((r) => r.regionId);
-}
-
-export function op10mA11AbsorptionGapEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 48;
-  return currentIndex >= 42 && currentIndex > priorIndex + 5;
+export function op10mA11RegionsWithMigrationSurge(rows: OP10M_A11_MigrationPressureRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'surge' || r.band === 'high').map((r) => r.regionId);
 }
 
 
@@ -4714,512 +8930,186 @@ export function op10mA11ReliefOverheadEscalating(currentIndex: number, priorInde
 }
 
 
-// --- source: interregional-corridor-equity-drift.ts ---
+// --- source: regional-service-equity.ts ---
 
-function driftBand(score: number): OP10M_A11_CorridorEquityDriftBand {
-  if (score < 22) return 'aligned';
-  if (score < 40) return 'drifting';
-  if (score < 58) return 'polarized';
-  return 'fractured';
+function serviceEquityBand(score: number): OP10M_A11_ServiceEquityBand {
+  if (score >= 68) return 'equitable';
+  if (score >= 48) return 'mixed';
+  if (score >= 28) return 'uneven';
+  return 'critical_gap';
 }
 
-export function op10mA11ComputeInterregionalCorridorEquityDrift(args: {
-  corridorFlows: OP10M_A11_CorridorFlowRow[];
-  serviceEquity: OP10M_A11_ServiceEquityRow[];
-  commuteWedge: OP10M_A11_CommuteWedgeRow[];
-}): { rows: OP10M_A11_CorridorEquityDriftRow[]; nationalIndex: number } {
-  const equityByRegion = new Map(args.serviceEquity.map((s) => [s.regionId, s]));
-  const wedgeByRegion = new Map(args.commuteWedge.map((c) => [c.regionId, c]));
+export function op10mA11ComputeRegionalServiceEquity(args: {
+  settlement: OP10M_A11_SettlementVulnerabilityRow[];
+  fiscal: OP10M_A11_FiscalUrbanCouplingRow[];
+}): { rows: OP10M_A11_ServiceEquityRow[]; nationalIndex: number } {
+  const settlementByRegion = new Map(args.settlement.map((s) => [s.regionId, s]));
+  const fiscalByRegion = new Map(args.fiscal.map((f) => [f.regionId, f]));
 
-  const corridorLoad = new Map<OP10M_A11_RegionId, number>();
-  for (const flow of args.corridorFlows) {
-    for (const rid of [flow.fromRegion, flow.toRegion] as OP10M_A11_RegionId[]) {
-      const prev = corridorLoad.get(rid) ?? 0;
-      corridorLoad.set(rid, Math.max(prev, flow.flowPressure));
-    }
-  }
-
-  const rows: OP10M_A11_CorridorEquityDriftRow[] = [];
+  const rows: OP10M_A11_ServiceEquityRow[] = [];
   let weighted = 0;
 
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const equity = equityByRegion.get(rid);
-    const wedge = wedgeByRegion.get(rid);
-    const load = corridorLoad.get(rid) ?? 20;
+    const settle = settlementByRegion.get(rid);
+    const fiscal = fiscalByRegion.get(rid);
+    const vulnerabilityDrag = settle ? op10mA11Clamp(settle.vulnerabilityScore * 0.55) : 20;
+    const fiscalLift = fiscal ? op10mA11Clamp(fiscal.couplingScore * 0.42) : 24;
+    const catchUpBoost = fiscal ? op10mA11Clamp(fiscal.catchUpPotential * 0.18) : 0;
 
-    const equityDrag = equity
-      ? op10mA11Clamp((100 - equity.equityScore) * 0.42 + (equity.band === 'critical_gap' ? 8 : 0))
-      : 14;
-    const commuteDrag = wedge ? op10mA11Clamp(wedge.wedgeScore * 0.36) : 11;
-    const corridorDrag = op10mA11Clamp(load * 0.44);
+    const equityScore = op10mA11Clamp(58 + fiscalLift + catchUpBoost - vulnerabilityDrag);
+    weighted += equityScore;
 
-    const driftScore = op10mA11Clamp(equityDrag + commuteDrag + corridorDrag * 0.58);
-    weighted += driftScore;
+    const gapDrivers: string[] = [];
+    if (settle && (settle.band === 'critical' || settle.band === 'fragile')) {
+      gapDrivers.push('settlement exposure');
+    }
+    if (fiscal && (fiscal.band === 'misaligned' || fiscal.band === 'strained')) {
+      gapDrivers.push('fiscal misalignment');
+    }
+    if (!gapDrivers.length) gapDrivers.push('balanced service delivery');
+
+    rows.push({
+      regionId: rid,
+      equityScore: op10mA11Round(equityScore),
+      band: serviceEquityBand(equityScore),
+      gapDrivers: gapDrivers.slice(0, 3),
+      narrative: `${rid} service equity ${serviceEquityBand(equityScore)} (${op10mA11Round(equityScore)}); ${gapDrivers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => a.equityScore - b.equityScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithServiceEquityGap(rows: OP10M_A11_ServiceEquityRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'critical_gap' || r.band === 'uneven').map((r) => r.regionId);
+}
+
+
+// --- source: regional-settlement-legitimacy-collapse.ts ---
+
+function legitimacyBand(score: number): OP10M_A11_SettlementLegitimacyCollapseBand {
+  if (score < 23) return 'legitimate';
+  if (score < 41) return 'contested';
+  if (score < 58) return 'delegitimized';
+  return 'collapsed';
+}
+
+export function op10mA11ComputeRegionalSettlementLegitimacyCollapse(args: {
+  socialContractFragility: OP10M_A11_SocialContractFragilityRow[];
+  capitalFlightPanic: OP10M_A11_CapitalFlightPanicRow[];
+  irrecoverableCollapseThreshold: OP10M_A11_IrrecoverableCollapseThresholdRow[];
+}): { rows: OP10M_A11_SettlementLegitimacyCollapseRow[]; nationalIndex: number } {
+  const contractByRegion = new Map(args.socialContractFragility.map((s) => [s.regionId, s]));
+  const flightByRegion = new Map(args.capitalFlightPanic.map((c) => [c.regionId, c]));
+  const collapseByRegion = new Map(args.irrecoverableCollapseThreshold.map((i) => [i.regionId, i]));
+
+  const rows: OP10M_A11_SettlementLegitimacyCollapseRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const contract = contractByRegion.get(rid);
+    const flight = flightByRegion.get(rid);
+    const collapse = collapseByRegion.get(rid);
+
+    const contractDrag = contract ? op10mA11Clamp(contract.fragilityScore * 0.42) : 12;
+    const flightDrag = flight ? op10mA11Clamp(flight.panicScore * 0.4) : 11;
+    const collapseDrag = collapse ? op10mA11Clamp(collapse.thresholdScore * 0.39) : 10;
+
+    const collapseScore = op10mA11Clamp(contractDrag + flightDrag + collapseDrag * 0.51);
+    weighted += collapseScore;
 
     const signals: string[] = [];
-    if (equity && (equity.band === 'uneven' || equity.band === 'critical_gap')) signals.push('service equity gap');
-    if (wedge && (wedge.band === 'severe' || wedge.band === 'unsustainable')) signals.push('commute wedge');
-    if (load >= 56) signals.push('corridor load asymmetry');
-    if (!signals.length) signals.push('balanced corridor equity');
+    if (contract && (contract.band === 'fraying' || contract.band === 'ruptured')) {
+      signals.push('social contract rupture');
+    }
+    if (flight && (flight.band === 'panicked' || flight.band === 'stampede')) {
+      signals.push('capital flight stampede');
+    }
+    if (collapse && (collapse.band === 'terminal' || collapse.band === 'irrecoverable')) {
+      signals.push('collapse threshold breach');
+    }
+    if (!signals.length) signals.push('settlement legitimacy');
 
     rows.push({
       regionId: rid,
-      driftScore: op10mA11Round(driftScore),
-      band: driftBand(driftScore),
+      collapseScore: op10mA11Round(collapseScore),
+      band: legitimacyBand(collapseScore),
       signals: signals.slice(0, 3),
-      narrative: `${rid} corridor equity ${driftBand(driftScore)} (${op10mA11Round(driftScore)}); ${signals.slice(0, 2).join('; ')}.`,
+      narrative: `${rid} settlement legitimacy collapse ${legitimacyBand(collapseScore)} (${op10mA11Round(collapseScore)}); ${signals.slice(0, 2).join('; ')}.`,
     });
   }
 
   const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.driftScore - a.driftScore), nationalIndex };
+  return { rows: rows.sort((a, b) => b.collapseScore - a.collapseScore), nationalIndex };
 }
 
-export function op10mA11RegionsWithCorridorEquityFracture(
-  rows: OP10M_A11_CorridorEquityDriftRow[],
+export function op10mA11RegionsWithCollapsedSettlementLegitimacy(
+  rows: OP10M_A11_SettlementLegitimacyCollapseRow[],
 ): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'polarized' || r.band === 'fractured').map((r) => r.regionId);
+  return rows.filter((r) => r.band === 'delegitimized' || r.band === 'collapsed').map((r) => r.regionId);
 }
 
-export function op10mA11CorridorEquityDriftEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 47;
-  return currentIndex >= 41 && currentIndex > priorIndex + 5;
-}
-
-
-// --- source: settlement-climate-adaptation-lag.ts ---
-
-function lagBand(score: number): OP10M_A11_AdaptationLagBand {
-  if (score < 23) return 'responsive';
-  if (score < 41) return 'lagging';
-  if (score < 59) return 'stalled';
-  return 'critical_lag';
-}
-
-export function op10mA11ComputeSettlementClimateAdaptationLag(args: {
-  climateDisplacement: OP10M_A11_ClimateDisplacementRow[];
-  absorptionGap: OP10M_A11_AbsorptionGapRow[];
-  infrastructureBacklog: OP10M_A11_InfrastructureBacklogRow[];
-}): { rows: OP10M_A11_AdaptationLagRow[]; nationalIndex: number } {
-  const climateByRegion = new Map(args.climateDisplacement.map((c) => [c.regionId, c]));
-  const gapByRegion = new Map(args.absorptionGap.map((g) => [g.regionId, g]));
-  const backlogByRegion = new Map(args.infrastructureBacklog.map((b) => [b.regionId, b]));
-
-  const rows: OP10M_A11_AdaptationLagRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const climate = climateByRegion.get(rid);
-    const gap = gapByRegion.get(rid);
-    const backlog = backlogByRegion.get(rid);
-
-    const exposureDrag = climate ? op10mA11Clamp(climate.displacementScore * 0.5) : 16;
-    const capacityDrag = gap ? op10mA11Clamp(gap.gapScore * 0.4) : 12;
-    const infraDrag = backlog ? op10mA11Clamp(backlog.backlogScore * 0.34) : 10;
-
-    const lagScore = op10mA11Clamp(exposureDrag + capacityDrag + infraDrag * 0.55);
-    weighted += lagScore;
-
-    const drivers: string[] = [];
-    if (climate && (climate.band === 'acute' || climate.band === 'critical')) drivers.push('climate exposure');
-    if (gap && (gap.band === 'critical' || gap.band === 'rupture')) drivers.push('absorption mismatch');
-    if (backlog && (backlog.band === 'severe' || backlog.band === 'critical')) drivers.push('adaptation backlog');
-    if (!drivers.length) drivers.push('adaptation on track');
-
-    rows.push({
-      regionId: rid,
-      lagScore: op10mA11Round(lagScore),
-      band: lagBand(lagScore),
-      drivers: drivers.slice(0, 3),
-      narrative: `${rid} climate adaptation ${lagBand(lagScore)} (${op10mA11Round(lagScore)}); ${drivers.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.lagScore - a.lagScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithCriticalAdaptationLag(rows: OP10M_A11_AdaptationLagRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'stalled' || r.band === 'critical_lag').map((r) => r.regionId);
-}
-
-export function op10mA11AdaptationLagEscalating(currentIndex: number, priorIndex: number | null): boolean {
+export function op10mA11SettlementLegitimacyCollapseEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
   if (priorIndex === null) return currentIndex >= 50;
-  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+  return currentIndex >= 44 && currentIndex > priorIndex + 5;
 }
 
 
-// --- source: regional-fiscal-capacity-strain.ts ---
+// --- source: regional-social-contract-fragility.ts ---
 
-function strainBand(score: number): OP10M_A11_FiscalCapacityStrainBand {
-  if (score < 22) return 'sound';
-  if (score < 40) return 'stretched';
-  if (score < 58) return 'fragile';
-  return 'exhausted';
+function contractBand(score: number): OP10M_A11_SocialContractFragilityBand {
+  if (score < 24) return 'honored';
+  if (score < 42) return 'strained';
+  if (score < 59) return 'fraying';
+  return 'ruptured';
 }
 
-export function op10mA11ComputeRegionalFiscalCapacityStrain(args: {
-  fiscalUrbanCoupling: OP10M_A11_FiscalUrbanCouplingRow[];
-  reliefOverhead: OP10M_A11_ReliefOverheadRow[];
-  governanceFriction: OP10M_A11_GovernanceFrictionRow[];
-}): { rows: OP10M_A11_FiscalCapacityStrainRow[]; nationalIndex: number } {
-  const fiscalByRegion = new Map(args.fiscalUrbanCoupling.map((f) => [f.regionId, f]));
-  const reliefByRegion = new Map(args.reliefOverhead.map((r) => [r.regionId, r]));
-  const governanceByRegion = new Map(args.governanceFriction.map((g) => [g.regionId, g]));
+export function op10mA11ComputeRegionalSocialContractFragility(args: {
+  institutionalTrustErosion: OP10M_A11_InstitutionalTrustErosionRow[];
+  liquidityFragmentation: OP10M_A11_LiquidityFragmentationRow[];
+  cascadingFailureRisk: OP10M_A11_CascadingFailureRiskRow[];
+}): { rows: OP10M_A11_SocialContractFragilityRow[]; nationalIndex: number } {
+  const trustByRegion = new Map(args.institutionalTrustErosion.map((t) => [t.regionId, t]));
+  const liquidityByRegion = new Map(args.liquidityFragmentation.map((l) => [l.regionId, l]));
+  const cascadeByRegion = new Map(args.cascadingFailureRisk.map((c) => [c.regionId, c]));
 
-  const rows: OP10M_A11_FiscalCapacityStrainRow[] = [];
+  const rows: OP10M_A11_SocialContractFragilityRow[] = [];
   let weighted = 0;
 
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const fiscal = fiscalByRegion.get(rid);
-    const relief = reliefByRegion.get(rid);
-    const governance = governanceByRegion.get(rid);
-
-    const mismatchDrag = fiscal
-      ? op10mA11Clamp((100 - fiscal.couplingScore) * 0.44 + (fiscal.band === 'misaligned' ? 10 : 0))
-      : 14;
-    const reliefDrag = relief ? op10mA11Clamp(relief.overheadScore * 0.38) : 11;
-    const governanceDrag = governance ? op10mA11Clamp(governance.frictionScore * 0.32) : 10;
-
-    const strainScore = op10mA11Clamp(mismatchDrag + reliefDrag + governanceDrag * 0.55);
-    weighted += strainScore;
-
-    const pressures: string[] = [];
-    if (fiscal && (fiscal.band === 'strained' || fiscal.band === 'misaligned')) pressures.push('fiscal mismatch');
-    if (relief && (relief.band === 'overloaded' || relief.band === 'paralytic')) pressures.push('relief spend');
-    if (governance && (governance.band === 'fragmented' || governance.band === 'breakdown')) {
-      pressures.push('coordination cost');
-    }
-    if (!pressures.length) pressures.push('fiscal headroom intact');
-
-    rows.push({
-      regionId: rid,
-      strainScore: op10mA11Round(strainScore),
-      band: strainBand(strainScore),
-      pressures: pressures.slice(0, 3),
-      narrative: `${rid} fiscal capacity ${strainBand(strainScore)} (${op10mA11Round(strainScore)}); ${pressures.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.strainScore - a.strainScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithFiscalCapacityFragility(
-  rows: OP10M_A11_FiscalCapacityStrainRow[],
-): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'fragile' || r.band === 'exhausted').map((r) => r.regionId);
-}
-
-export function op10mA11FiscalCapacityStrainEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 47;
-  return currentIndex >= 41 && currentIndex > priorIndex + 5;
-}
-
-
-// --- source: interregional-network-resilience-erosion.ts ---
-
-function erosionBand(score: number): OP10M_A11_NetworkErosionBand {
-  if (score < 21) return 'robust';
-  if (score < 39) return 'thinning';
-  if (score < 57) return 'eroding';
-  return 'fracturing';
-}
-
-export function op10mA11ComputeInterregionalNetworkResilienceErosion(args: {
-  linkageHubs: OP10M_A11_LinkageHubProfile[];
-  corridorEquityDrift: OP10M_A11_CorridorEquityDriftRow[];
-  infrastructureBacklog: OP10M_A11_InfrastructureBacklogRow[];
-  fragilityIndex: number;
-}): { rows: OP10M_A11_NetworkErosionRow[]; nationalIndex: number } {
-  const driftByRegion = new Map(args.corridorEquityDrift.map((d) => [d.regionId, d]));
-  const backlogByRegion = new Map(args.infrastructureBacklog.map((b) => [b.regionId, b]));
-  const hubByRegion = new Map(args.linkageHubs.map((h) => [h.regionId, h]));
-
-  const rows: OP10M_A11_NetworkErosionRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const hub = hubByRegion.get(rid);
-    const drift = driftByRegion.get(rid);
-    const backlog = backlogByRegion.get(rid);
-
-    const isolationDrag = hub
-      ? op10mA11Clamp(hub.isolationScore * 0.46 + (hub.role === 'peripheral' ? 12 : 0))
-      : 14;
-    const equityDrag = drift ? op10mA11Clamp(drift.driftScore * 0.4) : 11;
-    const infraDrag = backlog ? op10mA11Clamp(backlog.backlogScore * 0.34) : 10;
-    const nationalDrag = op10mA11Clamp(args.fragilityIndex * 0.12);
-
-    const erosionScore = op10mA11Clamp(isolationDrag + equityDrag + infraDrag + nationalDrag * 0.45);
-    weighted += erosionScore;
-
-    const signals: string[] = [];
-    if (hub && (hub.role === 'peripheral' || hub.isolationScore >= 50)) signals.push('hub isolation');
-    if (drift && (drift.band === 'polarized' || drift.band === 'fractured')) signals.push('corridor inequity');
-    if (backlog && (backlog.band === 'severe' || backlog.band === 'critical')) signals.push('network backlog');
-    if (!signals.length) signals.push('linkage resilience holding');
-
-    rows.push({
-      regionId: rid,
-      erosionScore: op10mA11Round(erosionScore),
-      band: erosionBand(erosionScore),
-      signals: signals.slice(0, 3),
-      narrative: `${rid} network resilience ${erosionBand(erosionScore)} (${op10mA11Round(erosionScore)}); ${signals.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.erosionScore - a.erosionScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithNetworkFracture(rows: OP10M_A11_NetworkErosionRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'eroding' || r.band === 'fracturing').map((r) => r.regionId);
-}
-
-export function op10mA11NetworkErosionEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 46;
-  return currentIndex >= 40 && currentIndex > priorIndex + 5;
-}
-
-
-// --- source: settlement-long-horizon-capacity-risk.ts ---
-
-function horizonBand(score: number): OP10M_A11_HorizonRiskBand {
-  if (score < 23) return 'stable';
-  if (score < 41) return 'elevated';
-  if (score < 59) return 'acute';
-  return 'critical';
-}
-
-export function op10mA11ComputeSettlementLongHorizonCapacityRisk(args: {
-  climateAdaptationLag: OP10M_A11_AdaptationLagRow[];
-  mobilityTrap: OP10M_A11_MobilityTrapRow[];
-  convergence: OP10M_A11_ConvergenceVelocityRow;
-}): { rows: OP10M_A11_HorizonRiskRow[]; nationalIndex: number } {
-  const lagByRegion = new Map(args.climateAdaptationLag.map((a) => [a.regionId, a]));
-  const trapByRegion = new Map(args.mobilityTrap.map((m) => [m.regionId, m]));
-  const spreadDrag = op10mA11Clamp(args.convergence.standingSpread * 0.28);
-  const convergenceDrag =
-    args.convergence.band === 'diverging' ? 14 : args.convergence.band === 'stalled' ? 8 : 0;
-
-  const rows: OP10M_A11_HorizonRiskRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const lag = lagByRegion.get(rid);
-    const trap = trapByRegion.get(rid);
-
-    const adaptationDrag = lag ? op10mA11Clamp(lag.lagScore * 0.48) : 15;
-    const mobilityDrag = trap ? op10mA11Clamp(trap.trapScore * 0.42) : 12;
-
-    const riskScore = op10mA11Clamp(adaptationDrag + mobilityDrag + spreadDrag + convergenceDrag);
-    weighted += riskScore;
-
-    const drivers: string[] = [];
-    if (lag && (lag.band === 'stalled' || lag.band === 'critical_lag')) drivers.push('adaptation lag');
-    if (trap && (trap.band === 'trapped' || trap.band === 'immobilized')) drivers.push('mobility lock-in');
-    if (args.convergence.band === 'stalled' || args.convergence.band === 'diverging') {
-      drivers.push('convergence stress');
-    }
-    if (!drivers.length) drivers.push('long-horizon capacity adequate');
-
-    rows.push({
-      regionId: rid,
-      riskScore: op10mA11Round(riskScore),
-      band: horizonBand(riskScore),
-      drivers: drivers.slice(0, 3),
-      narrative: `${rid} long-horizon capacity ${horizonBand(riskScore)} (${op10mA11Round(riskScore)}); ${drivers.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.riskScore - a.riskScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithCriticalHorizonRisk(rows: OP10M_A11_HorizonRiskRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'acute' || r.band === 'critical').map((r) => r.regionId);
-}
-
-export function op10mA11HorizonRiskEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 49;
-  return currentIndex >= 43 && currentIndex > priorIndex + 6;
-}
-
-
-// --- source: regional-cohesion-integrity-pressure.ts ---
-
-function integrityBand(score: number): OP10M_A11_CohesionIntegrityBand {
-  if (score < 22) return 'cohesive';
-  if (score < 40) return 'fraying';
-  if (score < 58) return 'fractured';
-  return 'disintegrating';
-}
-
-export function op10mA11ComputeRegionalCohesionIntegrityPressure(args: {
-  regionalCohesionIndex: number;
-  networkResilienceErosion: OP10M_A11_NetworkErosionRow[];
-  fiscalCapacityStrain: OP10M_A11_FiscalCapacityStrainRow[];
-}): { rows: OP10M_A11_CohesionIntegrityRow[]; nationalIndex: number } {
-  const erosionByRegion = new Map(args.networkResilienceErosion.map((n) => [n.regionId, n]));
-  const fiscalByRegion = new Map(args.fiscalCapacityStrain.map((f) => [f.regionId, f]));
-  const nationalCohesionDrag = op10mA11Clamp((100 - args.regionalCohesionIndex) * 0.22);
-
-  const rows: OP10M_A11_CohesionIntegrityRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const erosion = erosionByRegion.get(rid);
-    const fiscal = fiscalByRegion.get(rid);
-
-    const networkDrag = erosion ? op10mA11Clamp(erosion.erosionScore * 0.44) : 13;
-    const fiscalDrag = fiscal ? op10mA11Clamp(fiscal.strainScore * 0.38) : 11;
-
-    const pressureScore = op10mA11Clamp(networkDrag + fiscalDrag + nationalCohesionDrag);
-    weighted += pressureScore;
-
-    const strains: string[] = [];
-    if (erosion && (erosion.band === 'eroding' || erosion.band === 'fracturing')) strains.push('network erosion');
-    if (fiscal && (fiscal.band === 'fragile' || fiscal.band === 'exhausted')) strains.push('fiscal strain');
-    if (args.regionalCohesionIndex < 42) strains.push('national cohesion slip');
-    if (!strains.length) strains.push('integrity holding');
-
-    rows.push({
-      regionId: rid,
-      pressureScore: op10mA11Round(pressureScore),
-      band: integrityBand(pressureScore),
-      strains: strains.slice(0, 3),
-      narrative: `${rid} cohesion integrity ${integrityBand(pressureScore)} (${op10mA11Round(pressureScore)}); ${strains.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.pressureScore - a.pressureScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithCohesionIntegrityFracture(
-  rows: OP10M_A11_CohesionIntegrityRow[],
-): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'fractured' || r.band === 'disintegrating').map((r) => r.regionId);
-}
-
-export function op10mA11CohesionIntegrityEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 46;
-  return currentIndex >= 40 && currentIndex > priorIndex + 5;
-}
-
-
-// --- source: interregional-relief-delivery-equity-gap.ts ---
-
-function gapBand(score: number): OP10M_A11_ReliefEquityGapBand {
-  if (score < 21) return 'aligned';
-  if (score < 39) return 'uneven';
-  if (score < 57) return 'skewed';
-  return 'polarized';
-}
-
-export function op10mA11ComputeInterregionalReliefDeliveryEquityGap(args: {
-  reliefOverhead: OP10M_A11_ReliefOverheadRow[];
-  corridorEquityDrift: OP10M_A11_CorridorEquityDriftRow[];
-  serviceEquity: OP10M_A11_ServiceEquityRow[];
-}): { rows: OP10M_A11_ReliefEquityGapRow[]; nationalIndex: number } {
-  const reliefByRegion = new Map(args.reliefOverhead.map((r) => [r.regionId, r]));
-  const driftByRegion = new Map(args.corridorEquityDrift.map((d) => [d.regionId, d]));
-  const equityByRegion = new Map(args.serviceEquity.map((s) => [s.regionId, s]));
-
-  const rows: OP10M_A11_ReliefEquityGapRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const relief = reliefByRegion.get(rid);
-    const drift = driftByRegion.get(rid);
-    const equity = equityByRegion.get(rid);
-
-    const deliveryDrag = relief ? op10mA11Clamp(relief.overheadScore * 0.46) : 14;
-    const corridorDrag = drift ? op10mA11Clamp(drift.driftScore * 0.4) : 12;
-    const serviceDrag = equity
-      ? op10mA11Clamp((100 - equity.equityScore) * 0.3 + (equity.band === 'critical_gap' ? 8 : 0))
-      : 10;
-
-    const gapScore = op10mA11Clamp(deliveryDrag + corridorDrag + serviceDrag * 0.55);
-    weighted += gapScore;
-
-    const gaps: string[] = [];
-    if (relief && (relief.band === 'overloaded' || relief.band === 'paralytic')) gaps.push('relief delivery load');
-    if (drift && (drift.band === 'polarized' || drift.band === 'fractured')) gaps.push('corridor inequity');
-    if (equity && (equity.band === 'uneven' || equity.band === 'critical_gap')) gaps.push('service equity gap');
-    if (!gaps.length) gaps.push('balanced relief reach');
-
-    rows.push({
-      regionId: rid,
-      gapScore: op10mA11Round(gapScore),
-      band: gapBand(gapScore),
-      gaps: gaps.slice(0, 3),
-      narrative: `${rid} relief delivery equity ${gapBand(gapScore)} (${op10mA11Round(gapScore)}); ${gaps.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.gapScore - a.gapScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithPolarizedReliefEquity(rows: OP10M_A11_ReliefEquityGapRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'skewed' || r.band === 'polarized').map((r) => r.regionId);
-}
-
-export function op10mA11ReliefEquityGapEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 45;
-  return currentIndex >= 39 && currentIndex > priorIndex + 5;
-}
-
-
-// --- source: settlement-systemic-fragility-composite.ts ---
-
-function fragilityBand(score: number): OP10M_A11_SystemicFragilityBand {
-  if (score < 24) return 'contained';
-  if (score < 42) return 'elevated';
-  if (score < 60) return 'systemic';
-  return 'cascade_risk';
-}
-
-export function op10mA11ComputeSettlementSystemicFragilityComposite(args: {
-  longHorizonCapacityRisk: OP10M_A11_HorizonRiskRow[];
-  landUseGridlock: OP10M_A11_LandUseGridlockRow[];
-  relocationBurden: OP10M_A11_RelocationBurdenRow[];
-}): { rows: OP10M_A11_SystemicFragilityRow[]; nationalIndex: number } {
-  const horizonByRegion = new Map(args.longHorizonCapacityRisk.map((h) => [h.regionId, h]));
-  const gridlockByRegion = new Map(args.landUseGridlock.map((l) => [l.regionId, l]));
-  const relocationByRegion = new Map(args.relocationBurden.map((r) => [r.regionId, r]));
-
-  const rows: OP10M_A11_SystemicFragilityRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const horizon = horizonByRegion.get(rid);
-    const gridlock = gridlockByRegion.get(rid);
-    const relocation = relocationByRegion.get(rid);
-
-    const horizonDrag = horizon ? op10mA11Clamp(horizon.riskScore * 0.46) : 15;
-    const regulatoryDrag = gridlock ? op10mA11Clamp(gridlock.gridlockScore * 0.36) : 12;
-    const displacementDrag = relocation ? op10mA11Clamp(relocation.burdenScore * 0.38) : 11;
-
-    const fragilityScore = op10mA11Clamp(horizonDrag + regulatoryDrag + displacementDrag);
+    const trust = trustByRegion.get(rid);
+    const liquidity = liquidityByRegion.get(rid);
+    const cascade = cascadeByRegion.get(rid);
+
+    const trustDrag = trust ? op10mA11Clamp(trust.erosionScore * 0.41) : 12;
+    const liquidityDrag = liquidity ? op10mA11Clamp(liquidity.fragmentationScore * 0.39) : 11;
+    const cascadeDrag = cascade ? op10mA11Clamp(cascade.cascadeScore * 0.38) : 10;
+
+    const fragilityScore = op10mA11Clamp(trustDrag + liquidityDrag + cascadeDrag * 0.52);
     weighted += fragilityScore;
 
-    const cascades: string[] = [];
-    if (horizon && (horizon.band === 'acute' || horizon.band === 'critical')) cascades.push('horizon risk');
-    if (gridlock && (gridlock.band === 'gridlocked' || gridlock.band === 'paralyzed')) cascades.push('regulatory gridlock');
-    if (relocation && (relocation.band === 'severe' || relocation.band === 'overwhelming')) {
-      cascades.push('relocation overload');
+    const signals: string[] = [];
+    if (trust && (trust.band === 'brittle' || trust.band === 'breakdown')) {
+      signals.push('institutional trust breakdown');
     }
-    if (!cascades.length) cascades.push('systemic buffers intact');
+    if (liquidity && (liquidity.band === 'fractured' || liquidity.band === 'frozen')) {
+      signals.push('liquidity freeze');
+    }
+    if (cascade && (cascade.band === 'cascade_risk' || cascade.band === 'systemic')) {
+      signals.push('cascade exposure');
+    }
+    if (!signals.length) signals.push('social contract');
 
     rows.push({
       regionId: rid,
       fragilityScore: op10mA11Round(fragilityScore),
-      band: fragilityBand(fragilityScore),
-      cascades: cascades.slice(0, 3),
-      narrative: `${rid} systemic fragility ${fragilityBand(fragilityScore)} (${op10mA11Round(fragilityScore)}); ${cascades.slice(0, 2).join('; ')}.`,
+      band: contractBand(fragilityScore),
+      signals: signals.slice(0, 3),
+      narrative: `${rid} social contract fragility ${contractBand(fragilityScore)} (${op10mA11Round(fragilityScore)}); ${signals.slice(0, 2).join('; ')}.`,
     });
   }
 
@@ -5227,145 +9117,294 @@ export function op10mA11ComputeSettlementSystemicFragilityComposite(args: {
   return { rows: rows.sort((a, b) => b.fragilityScore - a.fragilityScore), nationalIndex };
 }
 
-export function op10mA11RegionsWithSystemicCascadeRisk(rows: OP10M_A11_SystemicFragilityRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'systemic' || r.band === 'cascade_risk').map((r) => r.regionId);
+export function op10mA11RegionsWithRupturedSocialContract(
+  rows: OP10M_A11_SocialContractFragilityRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'fraying' || r.band === 'ruptured').map((r) => r.regionId);
 }
 
-export function op10mA11SystemicFragilityEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 50;
-  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+export function op10mA11SocialContractFragilityEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 49;
+  return currentIndex >= 43 && currentIndex > priorIndex + 5;
 }
 
 
-// --- source: regional-governance-resilience-decay.ts ---
+// --- source: regional-state-collapse-cascade-amplification.ts ---
 
-function resilienceBand(score: number): OP10M_A11_GovernanceResilienceBand {
-  if (score < 22) return 'resilient';
-  if (score < 40) return 'eroding';
-  if (score < 58) return 'brittle';
-  return 'collapsed';
+function cascadeBand(score: number): OP10M_A11_StateCollapseCascadeAmplificationBand {
+  if (score < 24) return 'damped';
+  if (score < 42) return 'amplifying';
+  if (score < 59) return 'runaway';
+  return 'total';
 }
 
-export function op10mA11ComputeRegionalGovernanceResilienceDecay(args: {
-  governanceFriction: OP10M_A11_GovernanceFrictionRow[];
-  systemicFragility: OP10M_A11_SystemicFragilityRow[];
-  reliefEquityGap: OP10M_A11_ReliefEquityGapRow[];
-}): { rows: OP10M_A11_GovernanceResilienceRow[]; nationalIndex: number } {
-  const governanceByRegion = new Map(args.governanceFriction.map((g) => [g.regionId, g]));
-  const systemicByRegion = new Map(args.systemicFragility.map((s) => [s.regionId, s]));
-  const equityByRegion = new Map(args.reliefEquityGap.map((r) => [r.regionId, r]));
+export function op10mA11ComputeRegionalStateCollapseCascadeAmplification(args: {
+  governanceVacuumEscalation: OP10M_A11_GovernanceVacuumEscalationRow[];
+  settlementAbandonmentSpiral: OP10M_A11_SettlementAbandonmentSpiralRow[];
+  postCollapseRecoveryImpossibility: OP10M_A11_PostCollapseRecoveryImpossibilityRow[];
+}): { rows: OP10M_A11_StateCollapseCascadeAmplificationRow[]; nationalIndex: number } {
+  const vacuumByRegion = new Map(args.governanceVacuumEscalation.map((g) => [g.regionId, g]));
+  const spiralByRegion = new Map(args.settlementAbandonmentSpiral.map((s) => [s.regionId, s]));
+  const recoveryByRegion = new Map(args.postCollapseRecoveryImpossibility.map((p) => [p.regionId, p]));
 
-  const rows: OP10M_A11_GovernanceResilienceRow[] = [];
+  const rows: OP10M_A11_StateCollapseCascadeAmplificationRow[] = [];
   let weighted = 0;
 
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const governance = governanceByRegion.get(rid);
-    const systemic = systemicByRegion.get(rid);
-    const equity = equityByRegion.get(rid);
+    const vacuum = vacuumByRegion.get(rid);
+    const spiral = spiralByRegion.get(rid);
+    const recovery = recoveryByRegion.get(rid);
 
-    const frictionDrag = governance ? op10mA11Clamp(governance.frictionScore * 0.48) : 14;
-    const systemicDrag = systemic ? op10mA11Clamp(systemic.fragilityScore * 0.4) : 12;
-    const equityDrag = equity ? op10mA11Clamp(equity.gapScore * 0.34) : 10;
+    const vacuumDrag = vacuum ? op10mA11Clamp(vacuum.vacuumScore * 0.42) : 12;
+    const spiralDrag = spiral ? op10mA11Clamp(spiral.spiralScore * 0.41) : 11;
+    const recoveryDrag = recovery ? op10mA11Clamp(recovery.impossibilityScore * 0.39) : 10;
 
-    const decayScore = op10mA11Clamp(frictionDrag + systemicDrag + equityDrag * 0.55);
-    weighted += decayScore;
+    const amplificationScore = op10mA11Clamp(vacuumDrag + spiralDrag + recoveryDrag * 0.5);
+    weighted += amplificationScore;
 
     const drivers: string[] = [];
-    if (governance && (governance.band === 'fragmented' || governance.band === 'breakdown')) {
-      drivers.push('coordination breakdown');
+    if (vacuum && (vacuum.band === 'hollow' || vacuum.band === 'vacuum')) {
+      drivers.push('governance vacuum');
     }
-    if (systemic && (systemic.band === 'systemic' || systemic.band === 'cascade_risk')) {
-      drivers.push('systemic stress');
+    if (spiral && (spiral.band === 'exodus' || spiral.band === 'abandoned')) {
+      drivers.push('abandonment spiral');
     }
-    if (equity && (equity.band === 'skewed' || equity.band === 'polarized')) drivers.push('relief inequity');
-    if (!drivers.length) drivers.push('governance resilience intact');
+    if (recovery && (recovery.band === 'blocked' || recovery.band === 'impossible')) {
+      drivers.push('recovery blocked');
+    }
+    if (!drivers.length) drivers.push('collapse damping');
 
     rows.push({
       regionId: rid,
-      decayScore: op10mA11Round(decayScore),
-      band: resilienceBand(decayScore),
+      amplificationScore: op10mA11Round(amplificationScore),
+      band: cascadeBand(amplificationScore),
       drivers: drivers.slice(0, 3),
-      narrative: `${rid} governance resilience ${resilienceBand(decayScore)} (${op10mA11Round(decayScore)}); ${drivers.slice(0, 2).join('; ')}.`,
+      narrative: `${rid} state collapse cascade amplification ${cascadeBand(amplificationScore)} (${op10mA11Round(amplificationScore)}); ${drivers.slice(0, 2).join('; ')}.`,
     });
   }
 
   const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.decayScore - a.decayScore), nationalIndex };
+  return { rows: rows.sort((a, b) => b.amplificationScore - a.amplificationScore), nationalIndex };
 }
 
-export function op10mA11RegionsWithGovernanceResilienceCollapse(
-  rows: OP10M_A11_GovernanceResilienceRow[],
+export function op10mA11RegionsWithRunawayCollapseCascade(
+  rows: OP10M_A11_StateCollapseCascadeAmplificationRow[],
 ): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'brittle' || r.band === 'collapsed').map((r) => r.regionId);
+  return rows.filter((r) => r.band === 'runaway' || r.band === 'total').map((r) => r.regionId);
 }
 
-export function op10mA11GovernanceResilienceDecayEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 47;
-  return currentIndex >= 41 && currentIndex > priorIndex + 5;
+export function op10mA11StateCollapseCascadeAmplificationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 52;
+  return currentIndex >= 46 && currentIndex > priorIndex + 6;
 }
 
 
-// --- source: interregional-migration-stability-erosion.ts ---
+// --- source: regional-total-collapse-singularity-pressure.ts ---
 
-function stabilityBand(score: number): OP10M_A11_MigrationStabilityBand {
-  if (score < 23) return 'stable';
-  if (score < 41) return 'volatile';
-  if (score < 59) return 'unstable';
-  return 'chaotic';
+function singularityBand(score: number): OP10M_A11_TotalCollapseSingularityBand {
+  if (score < 26) return 'bounded';
+  if (score < 44) return 'accelerating';
+  if (score < 61) return 'singular';
+  return 'total';
 }
 
-export function op10mA11ComputeInterregionalMigrationStabilityErosion(args: {
-  migrationPressure: OP10M_A11_MigrationPressureRow[];
-  mobilityTrap: OP10M_A11_MobilityTrapRow[];
-  cohesionIntegrity: OP10M_A11_CohesionIntegrityRow[];
-}): { rows: OP10M_A11_MigrationStabilityRow[]; nationalIndex: number } {
-  const migrationByRegion = new Map(args.migrationPressure.map((m) => [m.regionId, m]));
-  const trapByRegion = new Map(args.mobilityTrap.map((t) => [t.regionId, t]));
-  const integrityByRegion = new Map(args.cohesionIntegrity.map((c) => [c.regionId, c]));
+export function op10mA11ComputeRegionalTotalCollapseSingularityPressure(args: {
+  stateCollapseCascadeAmplification: OP10M_A11_StateCollapseCascadeAmplificationRow[];
+  hollowRegionContagion: OP10M_A11_HollowRegionContagionRow[];
+  permanentDepopulationLock: OP10M_A11_PermanentDepopulationLockRow[];
+}): { rows: OP10M_A11_TotalCollapseSingularityRow[]; nationalIndex: number } {
+  const cascadeByRegion = new Map(args.stateCollapseCascadeAmplification.map((c) => [c.regionId, c]));
+  const hollowByRegion = new Map(args.hollowRegionContagion.map((h) => [h.regionId, h]));
+  const lockByRegion = new Map(args.permanentDepopulationLock.map((p) => [p.regionId, p]));
 
-  const rows: OP10M_A11_MigrationStabilityRow[] = [];
+  const rows: OP10M_A11_TotalCollapseSingularityRow[] = [];
   let weighted = 0;
 
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const migration = migrationByRegion.get(rid);
-    const trap = trapByRegion.get(rid);
-    const integrity = integrityByRegion.get(rid);
+    const cascade = cascadeByRegion.get(rid);
+    const hollow = hollowByRegion.get(rid);
+    const lock = lockByRegion.get(rid);
 
-    const flowDrag = migration ? op10mA11Clamp(migration.netPressure * 0.46) : 14;
-    const trapDrag = trap ? op10mA11Clamp(trap.trapScore * 0.4) : 12;
-    const cohesionDrag = integrity ? op10mA11Clamp(integrity.pressureScore * 0.32) : 10;
+    const cascadeDrag = cascade ? op10mA11Clamp(cascade.amplificationScore * 0.43) : 13;
+    const hollowDrag = hollow ? op10mA11Clamp(hollow.contagionScore * 0.41) : 12;
+    const lockDrag = lock ? op10mA11Clamp(lock.lockScore * 0.38) : 10;
 
-    const erosionScore = op10mA11Clamp(flowDrag + trapDrag + cohesionDrag * 0.55);
-    weighted += erosionScore;
+    const singularityScore = op10mA11Clamp(cascadeDrag + hollowDrag + lockDrag * 0.49);
+    weighted += singularityScore;
 
-    const signals: string[] = [];
-    if (migration && (migration.band === 'high' || migration.band === 'surge')) signals.push('migration surge');
-    if (trap && (trap.band === 'trapped' || trap.band === 'immobilized')) signals.push('mobility trap');
-    if (integrity && (integrity.band === 'fractured' || integrity.band === 'disintegrating')) {
-      signals.push('cohesion fracture');
+    const drivers: string[] = [];
+    if (cascade && (cascade.band === 'runaway' || cascade.band === 'total')) {
+      drivers.push('runaway cascade');
     }
-    if (!signals.length) signals.push('migration stability holding');
+    if (hollow && (hollow.band === 'contagion' || hollow.band === 'voided')) {
+      drivers.push('void contagion');
+    }
+    if (lock && (lock.band === 'locked' || lock.band === 'permanent')) {
+      drivers.push('depopulation lock');
+    }
+    if (!drivers.length) drivers.push('collapse containment');
 
     rows.push({
       regionId: rid,
-      erosionScore: op10mA11Round(erosionScore),
-      band: stabilityBand(erosionScore),
-      signals: signals.slice(0, 3),
-      narrative: `${rid} migration stability ${stabilityBand(erosionScore)} (${op10mA11Round(erosionScore)}); ${signals.slice(0, 2).join('; ')}.`,
+      singularityScore: op10mA11Round(singularityScore),
+      band: singularityBand(singularityScore),
+      drivers: drivers.slice(0, 3),
+      narrative: `${rid} total collapse singularity pressure ${singularityBand(singularityScore)} (${op10mA11Round(singularityScore)}); ${drivers.slice(0, 2).join('; ')}.`,
     });
   }
 
   const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.erosionScore - a.erosionScore), nationalIndex };
+  return { rows: rows.sort((a, b) => b.singularityScore - a.singularityScore), nationalIndex };
 }
 
-export function op10mA11RegionsWithMigrationChaos(rows: OP10M_A11_MigrationStabilityRow[]): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'unstable' || r.band === 'chaotic').map((r) => r.regionId);
+export function op10mA11RegionsWithTotalCollapseSingularity(
+  rows: OP10M_A11_TotalCollapseSingularityRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'singular' || r.band === 'total').map((r) => r.regionId);
 }
 
-export function op10mA11MigrationStabilityErosionEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 48;
-  return currentIndex >= 42 && currentIndex > priorIndex + 6;
+export function op10mA11TotalCollapseSingularityEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 54;
+  return currentIndex >= 48 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: regional-ultimate-collapse-singularity-seal.ts ---
+
+function sealBand(score: number): OP10M_A11_UltimateCollapseSingularitySealBand {
+  if (score < 22) return 'open';
+  if (score < 38) return 'closing';
+  if (score < 55) return 'sealed';
+  return 'ultimate';
+}
+
+export function op10mA11ComputeRegionalUltimateCollapseSingularitySeal(args: {
+  absoluteCollapseHorizonLock: OP10M_A11_AbsoluteCollapseHorizonLockRow[];
+  voidFinalizationCascade: OP10M_A11_VoidFinalizationCascadeRow[];
+  existentialObliterationThreshold: OP10M_A11_ExistentialObliterationThresholdRow[];
+}): { rows: OP10M_A11_UltimateCollapseSingularitySealRow[]; nationalIndex: number } {
+  const lockByRegion = new Map(args.absoluteCollapseHorizonLock.map((a) => [a.regionId, a]));
+  const cascadeByRegion = new Map(args.voidFinalizationCascade.map((v) => [v.regionId, v]));
+  const thresholdByRegion = new Map(args.existentialObliterationThreshold.map((e) => [e.regionId, e]));
+
+  const rows: OP10M_A11_UltimateCollapseSingularitySealRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const lock = lockByRegion.get(rid);
+    const cascade = cascadeByRegion.get(rid);
+    const threshold = thresholdByRegion.get(rid);
+
+    const lockDrag = lock ? op10mA11Clamp(lock.lockScore * 0.47) : 14;
+    const cascadeDrag = cascade ? op10mA11Clamp(cascade.cascadeScore * 0.44) : 12;
+    const thresholdDrag = threshold ? op10mA11Clamp(threshold.thresholdScore * 0.41) : 11;
+
+    const sealScore = op10mA11Clamp(lockDrag + cascadeDrag + thresholdDrag * 0.5);
+    weighted += sealScore;
+
+    const marks: string[] = [];
+    if (lock && (lock.band === 'sealed' || lock.band === 'absolute')) {
+      marks.push('horizon absolute');
+    }
+    if (cascade && (cascade.band === 'finalizing' || cascade.band === 'complete')) {
+      marks.push('void finalized');
+    }
+    if (threshold && (threshold.band === 'breached' || threshold.band === 'obliterated')) {
+      marks.push('obliteration breach');
+    }
+    if (!marks.length) marks.push('seal latent');
+
+    rows.push({
+      regionId: rid,
+      sealScore: op10mA11Round(sealScore),
+      band: sealBand(sealScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} ultimate collapse singularity seal ${sealBand(sealScore)} (${op10mA11Round(sealScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.sealScore - a.sealScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithUltimateCollapseSeal(
+  rows: OP10M_A11_UltimateCollapseSingularitySealRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'sealed' || r.band === 'ultimate').map((r) => r.regionId);
+}
+
+export function op10mA11UltimateCollapseSingularitySealEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 51;
+  return currentIndex >= 45 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: relief-playbook.ts ---
+
+export function op10mA11BuildReliefPlaybook(args: {
+  bottlenecks: OP10M_A11_RegionalBottleneck[];
+  hierarchy: OP10M_A11_UrbanHierarchyRow[];
+  weakLinkageRegions: OP10M_A11_RegionId[];
+}): OP10M_A11_ReliefPlaybookItem[] {
+  const out: OP10M_A11_ReliefPlaybookItem[] = [];
+
+  for (const rid of args.weakLinkageRegions) {
+    out.push({
+      regionId: rid,
+      priority: 'medium',
+      actions: [
+        'Restore redundant intercity corridor capacity',
+        'Prioritize strategic freight/digital backbone upgrades',
+      ],
+      rationale: `${rid} sits on multiple weak regional linkages — growth spillovers are fragile.`,
+    });
+  }
+
+  for (const b of args.bottlenecks) {
+    const h = args.hierarchy.find((x) => x.regionId === b.regionId);
+    const actions: string[] = [];
+    if (b.drivers.some((d) => d.includes('transport need'))) {
+      actions.push('Clear open transport infrastructure needs before new urban projects');
+    }
+    if (b.drivers.some((d) => d.includes('headroom'))) {
+      actions.push('Sequence housing/transport absorption projects in gateway cities');
+    }
+    if (b.drivers.some((d) => d.includes('infrastructure'))) {
+      actions.push('Target regional infrastructure quality uplift (not cash transfers)');
+    }
+    if (h && (h.primateBand === 'concentrated' || h.primateBand === 'hyper_concentrated')) {
+      actions.push('Seed secondary-city growth programs to reduce primate concentration');
+    }
+    if (!actions.length) actions.push('Monitor binding constraints; no automatic capital dispatch');
+
+    const priority =
+      b.severity === 'critical' ? 'urgent' : b.severity === 'meaningful' ? 'high' : 'medium';
+
+    out.push({
+      regionId: b.regionId,
+      priority,
+      actions: actions.slice(0, 4),
+      rationale: b.explanation,
+    });
+  }
+
+  const byRegion = new Map<OP10M_A11_RegionId, OP10M_A11_ReliefPlaybookItem>();
+  for (const item of out) {
+    const prev = byRegion.get(item.regionId);
+    if (!prev || item.priority === 'urgent' || (item.priority === 'high' && prev.priority !== 'urgent')) {
+      byRegion.set(item.regionId, item);
+    }
+  }
+  return [...byRegion.values()].sort((a, b) => {
+    const rank = { urgent: 4, high: 3, medium: 2, low: 1 };
+    return rank[b.priority] - rank[a.priority];
+  });
 }
 
 
@@ -5430,548 +9469,6 @@ export function op10mA11RegionsWithBreachedAdaptiveCeiling(rows: OP10M_A11_Adapt
 export function op10mA11AdaptiveCeilingEscalating(currentIndex: number, priorIndex: number | null): boolean {
   if (priorIndex === null) return currentIndex >= 50;
   return currentIndex >= 44 && currentIndex > priorIndex + 5;
-}
-
-
-// --- source: regional-fiscal-governance-coupling-strain.ts ---
-
-function couplingBand(score: number): OP10M_A11_FiscalGovernanceCouplingBand {
-  if (score < 22) return 'aligned';
-  if (score < 40) return 'strained';
-  if (score < 58) return 'misaligned';
-  return 'ruptured';
-}
-
-export function op10mA11ComputeRegionalFiscalGovernanceCouplingStrain(args: {
-  fiscalCapacityStrain: OP10M_A11_FiscalCapacityStrainRow[];
-  governanceResilienceDecay: OP10M_A11_GovernanceResilienceRow[];
-  cohesionIntegrity: OP10M_A11_CohesionIntegrityRow[];
-}): { rows: OP10M_A11_FiscalGovernanceCouplingRow[]; nationalIndex: number } {
-  const fiscalByRegion = new Map(args.fiscalCapacityStrain.map((f) => [f.regionId, f]));
-  const governanceByRegion = new Map(args.governanceResilienceDecay.map((g) => [g.regionId, g]));
-  const integrityByRegion = new Map(args.cohesionIntegrity.map((c) => [c.regionId, c]));
-
-  const rows: OP10M_A11_FiscalGovernanceCouplingRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const fiscal = fiscalByRegion.get(rid);
-    const governance = governanceByRegion.get(rid);
-    const integrity = integrityByRegion.get(rid);
-
-    const fiscalDrag = fiscal ? op10mA11Clamp(fiscal.strainScore * 0.46) : 14;
-    const governanceDrag = governance ? op10mA11Clamp(governance.decayScore * 0.4) : 12;
-    const cohesionDrag = integrity ? op10mA11Clamp(integrity.pressureScore * 0.32) : 10;
-
-    const strainScore = op10mA11Clamp(fiscalDrag + governanceDrag + cohesionDrag * 0.55);
-    weighted += strainScore;
-
-    const tensions: string[] = [];
-    if (fiscal && (fiscal.band === 'fragile' || fiscal.band === 'exhausted')) tensions.push('fiscal exhaustion');
-    if (governance && (governance.band === 'brittle' || governance.band === 'collapsed')) {
-      tensions.push('governance decay');
-    }
-    if (integrity && (integrity.band === 'fractured' || integrity.band === 'disintegrating')) {
-      tensions.push('cohesion fracture');
-    }
-    if (!tensions.length) tensions.push('fiscal–governance balance');
-
-    rows.push({
-      regionId: rid,
-      strainScore: op10mA11Round(strainScore),
-      band: couplingBand(strainScore),
-      tensions: tensions.slice(0, 3),
-      narrative: `${rid} fiscal–governance coupling ${couplingBand(strainScore)} (${op10mA11Round(strainScore)}); ${tensions.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.strainScore - a.strainScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithFiscalGovernanceRupture(
-  rows: OP10M_A11_FiscalGovernanceCouplingRow[],
-): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'misaligned' || r.band === 'ruptured').map((r) => r.regionId);
-}
-
-export function op10mA11FiscalGovernanceCouplingEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 46;
-  return currentIndex >= 40 && currentIndex > priorIndex + 5;
-}
-
-
-// --- source: interregional-network-equity-tension.ts ---
-
-function tensionBand(score: number): OP10M_A11_NetworkEquityTensionBand {
-  if (score < 21) return 'balanced';
-  if (score < 39) return 'stressed';
-  if (score < 57) return 'polarized';
-  return 'fractured';
-}
-
-export function op10mA11ComputeInterregionalNetworkEquityTension(args: {
-  networkResilienceErosion: OP10M_A11_NetworkErosionRow[];
-  reliefEquityGap: OP10M_A11_ReliefEquityGapRow[];
-  corridorEquityDrift: OP10M_A11_CorridorEquityDriftRow[];
-}): { rows: OP10M_A11_NetworkEquityTensionRow[]; nationalIndex: number } {
-  const erosionByRegion = new Map(args.networkResilienceErosion.map((n) => [n.regionId, n]));
-  const reliefByRegion = new Map(args.reliefEquityGap.map((r) => [r.regionId, r]));
-  const driftByRegion = new Map(args.corridorEquityDrift.map((d) => [d.regionId, d]));
-
-  const rows: OP10M_A11_NetworkEquityTensionRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const erosion = erosionByRegion.get(rid);
-    const relief = reliefByRegion.get(rid);
-    const drift = driftByRegion.get(rid);
-
-    const networkDrag = erosion ? op10mA11Clamp(erosion.erosionScore * 0.44) : 13;
-    const reliefDrag = relief ? op10mA11Clamp(relief.gapScore * 0.38) : 11;
-    const corridorDrag = drift ? op10mA11Clamp(drift.driftScore * 0.36) : 10;
-
-    const tensionScore = op10mA11Clamp(networkDrag + reliefDrag + corridorDrag * 0.58);
-    weighted += tensionScore;
-
-    const drivers: string[] = [];
-    if (erosion && (erosion.band === 'eroding' || erosion.band === 'fracturing')) drivers.push('network erosion');
-    if (relief && (relief.band === 'skewed' || relief.band === 'polarized')) drivers.push('relief inequity');
-    if (drift && (drift.band === 'polarized' || drift.band === 'fractured')) drivers.push('corridor drift');
-    if (!drivers.length) drivers.push('network equity stable');
-
-    rows.push({
-      regionId: rid,
-      tensionScore: op10mA11Round(tensionScore),
-      band: tensionBand(tensionScore),
-      drivers: drivers.slice(0, 3),
-      narrative: `${rid} network equity tension ${tensionBand(tensionScore)} (${op10mA11Round(tensionScore)}); ${drivers.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.tensionScore - a.tensionScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithNetworkEquityFracture(
-  rows: OP10M_A11_NetworkEquityTensionRow[],
-): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'polarized' || r.band === 'fractured').map((r) => r.regionId);
-}
-
-export function op10mA11NetworkEquityTensionEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 45;
-  return currentIndex >= 39 && currentIndex > priorIndex + 5;
-}
-
-
-// --- source: settlement-resilience-frontier-pressure.ts ---
-
-function frontierBand(score: number): OP10M_A11_ResilienceFrontierBand {
-  if (score < 23) return 'within';
-  if (score < 41) return 'approaching';
-  if (score < 59) return 'at_limit';
-  return 'breached';
-}
-
-export function op10mA11ComputeSettlementResilienceFrontierPressure(args: {
-  systemicFragility: OP10M_A11_SystemicFragilityRow[];
-  adaptiveCapacityCeiling: OP10M_A11_AdaptiveCeilingRow[];
-  longHorizonCapacityRisk: OP10M_A11_HorizonRiskRow[];
-}): { rows: OP10M_A11_ResilienceFrontierRow[]; nationalIndex: number } {
-  const systemicByRegion = new Map(args.systemicFragility.map((s) => [s.regionId, s]));
-  const ceilingByRegion = new Map(args.adaptiveCapacityCeiling.map((a) => [a.regionId, a]));
-  const horizonByRegion = new Map(args.longHorizonCapacityRisk.map((h) => [h.regionId, h]));
-
-  const rows: OP10M_A11_ResilienceFrontierRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const systemic = systemicByRegion.get(rid);
-    const ceiling = ceilingByRegion.get(rid);
-    const horizon = horizonByRegion.get(rid);
-
-    const cascadeDrag = systemic ? op10mA11Clamp(systemic.fragilityScore * 0.48) : 15;
-    const capacityDrag = ceiling ? op10mA11Clamp(ceiling.ceilingScore * 0.4) : 12;
-    const horizonDrag = horizon ? op10mA11Clamp(horizon.riskScore * 0.34) : 10;
-
-    const pressureScore = op10mA11Clamp(cascadeDrag + capacityDrag + horizonDrag * 0.52);
-    weighted += pressureScore;
-
-    const pressures: string[] = [];
-    if (systemic && (systemic.band === 'systemic' || systemic.band === 'cascade_risk')) {
-      pressures.push('systemic cascade');
-    }
-    if (ceiling && (ceiling.band === 'capped' || ceiling.band === 'breached')) pressures.push('adaptive ceiling');
-    if (horizon && (horizon.band === 'acute' || horizon.band === 'critical')) pressures.push('horizon risk');
-    if (!pressures.length) pressures.push('frontier headroom');
-
-    rows.push({
-      regionId: rid,
-      pressureScore: op10mA11Round(pressureScore),
-      band: frontierBand(pressureScore),
-      pressures: pressures.slice(0, 3),
-      narrative: `${rid} resilience frontier ${frontierBand(pressureScore)} (${op10mA11Round(pressureScore)}); ${pressures.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.pressureScore - a.pressureScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithBreachedResilienceFrontier(
-  rows: OP10M_A11_ResilienceFrontierRow[],
-): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'at_limit' || r.band === 'breached').map((r) => r.regionId);
-}
-
-export function op10mA11ResilienceFrontierEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 49;
-  return currentIndex >= 43 && currentIndex > priorIndex + 6;
-}
-
-
-// --- source: regional-meta-governance-coordination-fatigue.ts ---
-
-function fatigueBand(score: number): OP10M_A11_MetaGovernanceFatigueBand {
-  if (score < 24) return 'rested';
-  if (score < 42) return 'tiring';
-  if (score < 58) return 'fatigued';
-  return 'exhausted';
-}
-
-export function op10mA11ComputeRegionalMetaGovernanceCoordinationFatigue(args: {
-  fiscalGovernanceCoupling: OP10M_A11_FiscalGovernanceCouplingRow[];
-  governanceFriction: OP10M_A11_GovernanceFrictionRow[];
-  reliefOverhead: OP10M_A11_ReliefOverheadRow[];
-}): { rows: OP10M_A11_MetaGovernanceFatigueRow[]; nationalIndex: number } {
-  const couplingByRegion = new Map(args.fiscalGovernanceCoupling.map((f) => [f.regionId, f]));
-  const frictionByRegion = new Map(args.governanceFriction.map((g) => [g.regionId, g]));
-  const overheadByRegion = new Map(args.reliefOverhead.map((r) => [r.regionId, r]));
-
-  const rows: OP10M_A11_MetaGovernanceFatigueRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const coupling = couplingByRegion.get(rid);
-    const friction = frictionByRegion.get(rid);
-    const overhead = overheadByRegion.get(rid);
-
-    const couplingDrag = coupling ? op10mA11Clamp(coupling.strainScore * 0.44) : 14;
-    const frictionDrag = friction ? op10mA11Clamp(friction.frictionScore * 0.38) : 12;
-    const overheadDrag = overhead ? op10mA11Clamp(overhead.overheadScore * 0.36) : 10;
-
-    const fatigueScore = op10mA11Clamp(couplingDrag + frictionDrag + overheadDrag * 0.5);
-    weighted += fatigueScore;
-
-    const signals: string[] = [];
-    if (coupling && (coupling.band === 'misaligned' || coupling.band === 'ruptured')) {
-      signals.push('fiscal–governance rupture');
-    }
-    if (friction && (friction.band === 'fragmented' || friction.band === 'breakdown')) {
-      signals.push('coordination breakdown');
-    }
-    if (overhead && (overhead.band === 'overloaded' || overhead.band === 'paralytic')) {
-      signals.push('relief overhead');
-    }
-    if (!signals.length) signals.push('coordination headroom');
-
-    rows.push({
-      regionId: rid,
-      fatigueScore: op10mA11Round(fatigueScore),
-      band: fatigueBand(fatigueScore),
-      signals: signals.slice(0, 3),
-      narrative: `${rid} meta-governance coordination ${fatigueBand(fatigueScore)} (${op10mA11Round(fatigueScore)}); ${signals.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.fatigueScore - a.fatigueScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithMetaGovernanceExhaustion(
-  rows: OP10M_A11_MetaGovernanceFatigueRow[],
-): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'fatigued' || r.band === 'exhausted').map((r) => r.regionId);
-}
-
-export function op10mA11MetaGovernanceFatigueEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 47;
-  return currentIndex >= 41 && currentIndex > priorIndex + 5;
-}
-
-
-// --- source: interregional-capital-mobility-asymmetry.ts ---
-
-function asymmetryBand(score: number): OP10M_A11_CapitalMobilityAsymmetryBand {
-  if (score < 22) return 'balanced';
-  if (score < 40) return 'skewed';
-  if (score < 57) return 'polarized';
-  return 'locked';
-}
-
-export function op10mA11ComputeInterregionalCapitalMobilityAsymmetry(args: {
-  networkEquityTension: OP10M_A11_NetworkEquityTensionRow[];
-  fiscalGovernanceCoupling: OP10M_A11_FiscalGovernanceCouplingRow[];
-  corridorEquityDrift: OP10M_A11_CorridorEquityDriftRow[];
-}): { rows: OP10M_A11_CapitalMobilityAsymmetryRow[]; nationalIndex: number } {
-  const equityByRegion = new Map(args.networkEquityTension.map((n) => [n.regionId, n]));
-  const couplingByRegion = new Map(args.fiscalGovernanceCoupling.map((f) => [f.regionId, f]));
-  const driftByRegion = new Map(args.corridorEquityDrift.map((c) => [c.regionId, c]));
-
-  const rows: OP10M_A11_CapitalMobilityAsymmetryRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const equity = equityByRegion.get(rid);
-    const coupling = couplingByRegion.get(rid);
-    const drift = driftByRegion.get(rid);
-
-    const equityDrag = equity ? op10mA11Clamp(equity.tensionScore * 0.42) : 13;
-    const couplingDrag = coupling ? op10mA11Clamp(coupling.strainScore * 0.36) : 11;
-    const driftDrag = drift ? op10mA11Clamp(drift.driftScore * 0.4) : 10;
-
-    const asymmetryScore = op10mA11Clamp(equityDrag + couplingDrag + driftDrag * 0.55);
-    weighted += asymmetryScore;
-
-    const drivers: string[] = [];
-    if (equity && (equity.band === 'polarized' || equity.band === 'fractured')) drivers.push('network equity fracture');
-    if (coupling && (coupling.band === 'misaligned' || coupling.band === 'ruptured')) {
-      drivers.push('fiscal lock-in');
-    }
-    if (drift && (drift.band === 'polarized' || drift.band === 'fractured')) drivers.push('corridor drift');
-    if (!drivers.length) drivers.push('mobility balance');
-
-    rows.push({
-      regionId: rid,
-      asymmetryScore: op10mA11Round(asymmetryScore),
-      band: asymmetryBand(asymmetryScore),
-      drivers: drivers.slice(0, 3),
-      narrative: `${rid} capital mobility asymmetry ${asymmetryBand(asymmetryScore)} (${op10mA11Round(asymmetryScore)}); ${drivers.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.asymmetryScore - a.asymmetryScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithLockedCapitalMobility(
-  rows: OP10M_A11_CapitalMobilityAsymmetryRow[],
-): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'polarized' || r.band === 'locked').map((r) => r.regionId);
-}
-
-export function op10mA11CapitalMobilityAsymmetryEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 45;
-  return currentIndex >= 39 && currentIndex > priorIndex + 6;
-}
-
-
-// --- source: settlement-compound-shock-saturation.ts ---
-
-function saturationBand(score: number): OP10M_A11_CompoundShockSaturationBand {
-  if (score < 25) return 'buffered';
-  if (score < 43) return 'loading';
-  if (score < 60) return 'saturated';
-  return 'overwhelmed';
-}
-
-export function op10mA11ComputeSettlementCompoundShockSaturation(args: {
-  resilienceFrontier: OP10M_A11_ResilienceFrontierRow[];
-  systemicFragility: OP10M_A11_SystemicFragilityRow[];
-  migrationStabilityErosion: OP10M_A11_MigrationStabilityRow[];
-}): { rows: OP10M_A11_CompoundShockSaturationRow[]; nationalIndex: number } {
-  const frontierByRegion = new Map(args.resilienceFrontier.map((r) => [r.regionId, r]));
-  const systemicByRegion = new Map(args.systemicFragility.map((s) => [s.regionId, s]));
-  const migrationByRegion = new Map(args.migrationStabilityErosion.map((m) => [m.regionId, m]));
-
-  const rows: OP10M_A11_CompoundShockSaturationRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const frontier = frontierByRegion.get(rid);
-    const systemic = systemicByRegion.get(rid);
-    const migration = migrationByRegion.get(rid);
-
-    const frontierDrag = frontier ? op10mA11Clamp(frontier.pressureScore * 0.46) : 14;
-    const systemicDrag = systemic ? op10mA11Clamp(systemic.fragilityScore * 0.4) : 12;
-    const migrationDrag = migration ? op10mA11Clamp(migration.erosionScore * 0.34) : 10;
-
-    const saturationScore = op10mA11Clamp(frontierDrag + systemicDrag + migrationDrag * 0.52);
-    weighted += saturationScore;
-
-    const shocks: string[] = [];
-    if (frontier && (frontier.band === 'at_limit' || frontier.band === 'breached')) shocks.push('frontier breach');
-    if (systemic && (systemic.band === 'systemic' || systemic.band === 'cascade_risk')) {
-      shocks.push('compound fragility');
-    }
-    if (migration && (migration.band === 'unstable' || migration.band === 'chaotic')) {
-      shocks.push('migration churn');
-    }
-    if (!shocks.length) shocks.push('shock absorption');
-
-    rows.push({
-      regionId: rid,
-      saturationScore: op10mA11Round(saturationScore),
-      band: saturationBand(saturationScore),
-      shocks: shocks.slice(0, 3),
-      narrative: `${rid} compound shock saturation ${saturationBand(saturationScore)} (${op10mA11Round(saturationScore)}); ${shocks.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.saturationScore - a.saturationScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithOverwhelmingCompoundShocks(
-  rows: OP10M_A11_CompoundShockSaturationRow[],
-): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'saturated' || r.band === 'overwhelmed').map((r) => r.regionId);
-}
-
-export function op10mA11CompoundShockSaturationEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 50;
-  return currentIndex >= 44 && currentIndex > priorIndex + 6;
-}
-
-
-// --- source: regional-institutional-trust-erosion.ts ---
-
-function trustBand(score: number): OP10M_A11_InstitutionalTrustErosionBand {
-  if (score < 23) return 'trusted';
-  if (score < 41) return 'thinning';
-  if (score < 58) return 'brittle';
-  return 'breakdown';
-}
-
-export function op10mA11ComputeRegionalInstitutionalTrustErosion(args: {
-  metaGovernanceFatigue: OP10M_A11_MetaGovernanceFatigueRow[];
-  governanceResilienceDecay: OP10M_A11_GovernanceResilienceRow[];
-  cohesionIntegrity: OP10M_A11_CohesionIntegrityRow[];
-}): { rows: OP10M_A11_InstitutionalTrustErosionRow[]; nationalIndex: number } {
-  const fatigueByRegion = new Map(args.metaGovernanceFatigue.map((m) => [m.regionId, m]));
-  const decayByRegion = new Map(args.governanceResilienceDecay.map((g) => [g.regionId, g]));
-  const cohesionByRegion = new Map(args.cohesionIntegrity.map((c) => [c.regionId, c]));
-
-  const rows: OP10M_A11_InstitutionalTrustErosionRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const fatigue = fatigueByRegion.get(rid);
-    const decay = decayByRegion.get(rid);
-    const cohesion = cohesionByRegion.get(rid);
-
-    const fatigueDrag = fatigue ? op10mA11Clamp(fatigue.fatigueScore * 0.43) : 13;
-    const decayDrag = decay ? op10mA11Clamp(decay.decayScore * 0.4) : 11;
-    const cohesionDrag = cohesion ? op10mA11Clamp(cohesion.pressureScore * 0.35) : 10;
-
-    const erosionScore = op10mA11Clamp(fatigueDrag + decayDrag + cohesionDrag * 0.54);
-    weighted += erosionScore;
-
-    const signals: string[] = [];
-    if (fatigue && (fatigue.band === 'fatigued' || fatigue.band === 'exhausted')) {
-      signals.push('coordination exhaustion');
-    }
-    if (decay && (decay.band === 'brittle' || decay.band === 'collapsed')) {
-      signals.push('governance collapse risk');
-    }
-    if (cohesion && (cohesion.band === 'fractured' || cohesion.band === 'disintegrating')) {
-      signals.push('cohesion fracture');
-    }
-    if (!signals.length) signals.push('institutional trust');
-
-    rows.push({
-      regionId: rid,
-      erosionScore: op10mA11Round(erosionScore),
-      band: trustBand(erosionScore),
-      signals: signals.slice(0, 3),
-      narrative: `${rid} institutional trust erosion ${trustBand(erosionScore)} (${op10mA11Round(erosionScore)}); ${signals.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.erosionScore - a.erosionScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithInstitutionalTrustBreakdown(
-  rows: OP10M_A11_InstitutionalTrustErosionRow[],
-): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'brittle' || r.band === 'breakdown').map((r) => r.regionId);
-}
-
-export function op10mA11InstitutionalTrustErosionEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 48;
-  return currentIndex >= 42 && currentIndex > priorIndex + 5;
-}
-
-
-// --- source: interregional-liquidity-fragmentation-stress.ts ---
-
-function fragmentationBand(score: number): OP10M_A11_LiquidityFragmentationBand {
-  if (score < 24) return 'integrated';
-  if (score < 42) return 'segmented';
-  if (score < 59) return 'fractured';
-  return 'frozen';
-}
-
-export function op10mA11ComputeInterregionalLiquidityFragmentationStress(args: {
-  capitalMobilityAsymmetry: OP10M_A11_CapitalMobilityAsymmetryRow[];
-  networkEquityTension: OP10M_A11_NetworkEquityTensionRow[];
-  fiscalCapacityStrain: OP10M_A11_FiscalCapacityStrainRow[];
-}): { rows: OP10M_A11_LiquidityFragmentationRow[]; nationalIndex: number } {
-  const mobilityByRegion = new Map(args.capitalMobilityAsymmetry.map((c) => [c.regionId, c]));
-  const equityByRegion = new Map(args.networkEquityTension.map((n) => [n.regionId, n]));
-  const fiscalByRegion = new Map(args.fiscalCapacityStrain.map((f) => [f.regionId, f]));
-
-  const rows: OP10M_A11_LiquidityFragmentationRow[] = [];
-  let weighted = 0;
-
-  for (const rid of OP10M_A11_CORE_REGIONS) {
-    const mobility = mobilityByRegion.get(rid);
-    const equity = equityByRegion.get(rid);
-    const fiscal = fiscalByRegion.get(rid);
-
-    const mobilityDrag = mobility ? op10mA11Clamp(mobility.asymmetryScore * 0.41) : 12;
-    const equityDrag = equity ? op10mA11Clamp(equity.tensionScore * 0.38) : 11;
-    const fiscalDrag = fiscal ? op10mA11Clamp(fiscal.strainScore * 0.37) : 10;
-
-    const fragmentationScore = op10mA11Clamp(mobilityDrag + equityDrag + fiscalDrag * 0.53);
-    weighted += fragmentationScore;
-
-    const drivers: string[] = [];
-    if (mobility && (mobility.band === 'polarized' || mobility.band === 'locked')) {
-      drivers.push('capital lock-in');
-    }
-    if (equity && (equity.band === 'polarized' || equity.band === 'fractured')) {
-      drivers.push('network equity fracture');
-    }
-    if (fiscal && (fiscal.band === 'fragile' || fiscal.band === 'exhausted')) {
-      drivers.push('fiscal drought');
-    }
-    if (!drivers.length) drivers.push('liquidity integration');
-
-    rows.push({
-      regionId: rid,
-      fragmentationScore: op10mA11Round(fragmentationScore),
-      band: fragmentationBand(fragmentationScore),
-      drivers: drivers.slice(0, 3),
-      narrative: `${rid} liquidity fragmentation ${fragmentationBand(fragmentationScore)} (${op10mA11Round(fragmentationScore)}); ${drivers.slice(0, 2).join('; ')}.`,
-    });
-  }
-
-  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.fragmentationScore - a.fragmentationScore), nationalIndex };
-}
-
-export function op10mA11RegionsWithFrozenLiquidity(
-  rows: OP10M_A11_LiquidityFragmentationRow[],
-): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'fractured' || r.band === 'frozen').map((r) => r.regionId);
-}
-
-export function op10mA11LiquidityFragmentationEscalating(currentIndex: number, priorIndex: number | null): boolean {
-  if (priorIndex === null) return currentIndex >= 46;
-  return currentIndex >= 40 && currentIndex > priorIndex + 6;
 }
 
 
@@ -6045,149 +9542,936 @@ export function op10mA11CascadingFailureRiskEscalating(currentIndex: number, pri
 }
 
 
-// --- source: regional-collapse-omni-singularity-unification.ts ---
+// --- source: settlement-climate-adaptation-lag.ts ---
 
-function unificationBand(score: number): OP10M_A11_CollapseOmniSingularityUnificationBand {
-  if (score < 22) return 'dormant';
-  if (score < 38) return 'aligning';
-  if (score < 55) return 'total';
-  return 'unification';
+function lagBand(score: number): OP10M_A11_AdaptationLagBand {
+  if (score < 23) return 'responsive';
+  if (score < 41) return 'lagging';
+  if (score < 59) return 'stalled';
+  return 'critical_lag';
 }
 
-export function op10mA11ComputeRegionalCollapseOmniSingularityUnification(args: {
-  collapseOmniSingularityIntegration: OP10M_A11_CollapseOmniSingularityIntegrationRow[];
-  voidTotalErosionEradication: OP10M_A11_VoidTotalErosionEradicationRow[];
-  existentialAbsoluteNullityContinuity: OP10M_A11_ExistentialAbsoluteNullityContinuityRow[];
-}): { rows: OP10M_A11_CollapseOmniSingularityUnificationRow[]; nationalIndex: number } {
-  const integrationByRegion = new Map(args.collapseOmniSingularityIntegration.map((i) => [i.regionId, i]));
-  const eradicationByRegion = new Map(args.voidTotalErosionEradication.map((e) => [e.regionId, e]));
-  const continuityByRegion = new Map(args.existentialAbsoluteNullityContinuity.map((c) => [c.regionId, c]));
+export function op10mA11ComputeSettlementClimateAdaptationLag(args: {
+  climateDisplacement: OP10M_A11_ClimateDisplacementRow[];
+  absorptionGap: OP10M_A11_AbsorptionGapRow[];
+  infrastructureBacklog: OP10M_A11_InfrastructureBacklogRow[];
+}): { rows: OP10M_A11_AdaptationLagRow[]; nationalIndex: number } {
+  const climateByRegion = new Map(args.climateDisplacement.map((c) => [c.regionId, c]));
+  const gapByRegion = new Map(args.absorptionGap.map((g) => [g.regionId, g]));
+  const backlogByRegion = new Map(args.infrastructureBacklog.map((b) => [b.regionId, b]));
 
-  const rows: OP10M_A11_CollapseOmniSingularityUnificationRow[] = [];
+  const rows: OP10M_A11_AdaptationLagRow[] = [];
   let weighted = 0;
 
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const integration = integrationByRegion.get(rid);
-    const eradication = eradicationByRegion.get(rid);
-    const continuity = continuityByRegion.get(rid);
+    const climate = climateByRegion.get(rid);
+    const gap = gapByRegion.get(rid);
+    const backlog = backlogByRegion.get(rid);
 
-    const integrationDrag = integration ? op10mA11Clamp(integration.integrationScore * 0.55) : 19;
-    const eradicationDrag = eradication ? op10mA11Clamp(eradication.eradicationScore * 0.51) : 17;
-    const continuityDrag = continuity ? op10mA11Clamp(continuity.continuityScore * 0.48) : 16;
+    const exposureDrag = climate ? op10mA11Clamp(climate.displacementScore * 0.5) : 16;
+    const capacityDrag = gap ? op10mA11Clamp(gap.gapScore * 0.4) : 12;
+    const infraDrag = backlog ? op10mA11Clamp(backlog.backlogScore * 0.34) : 10;
 
-    const unificationScore = op10mA11Clamp(integrationDrag + eradicationDrag + continuityDrag * 0.59);
-    weighted += unificationScore;
+    const lagScore = op10mA11Clamp(exposureDrag + capacityDrag + infraDrag * 0.55);
+    weighted += lagScore;
 
-    const vectors: string[] = [];
-    if (integration && (integration.band === 'total' || integration.band === 'integration')) {
-      vectors.push('integration unify');
-    }
-    if (eradication && (eradication.band === 'total' || eradication.band === 'complete_eradication')) {
-      vectors.push('eradication unify');
-    }
-    if (continuity && (continuity.band === 'absolute' || continuity.band === 'total_continuity')) {
-      vectors.push('continuity unify');
-    }
-    if (!vectors.length) vectors.push('unification dormant');
+    const drivers: string[] = [];
+    if (climate && (climate.band === 'acute' || climate.band === 'critical')) drivers.push('climate exposure');
+    if (gap && (gap.band === 'critical' || gap.band === 'rupture')) drivers.push('absorption mismatch');
+    if (backlog && (backlog.band === 'severe' || backlog.band === 'critical')) drivers.push('adaptation backlog');
+    if (!drivers.length) drivers.push('adaptation on track');
 
     rows.push({
       regionId: rid,
-      unificationScore: op10mA11Round(unificationScore),
-      band: unificationBand(unificationScore),
-      vectors: vectors.slice(0, 3),
-      narrative: `${rid} collapse omni singularity unification ${unificationBand(unificationScore)} (${op10mA11Round(unificationScore)}); ${vectors.slice(0, 2).join('; ')}.`,
+      lagScore: op10mA11Round(lagScore),
+      band: lagBand(lagScore),
+      drivers: drivers.slice(0, 3),
+      narrative: `${rid} climate adaptation ${lagBand(lagScore)} (${op10mA11Round(lagScore)}); ${drivers.slice(0, 2).join('; ')}.`,
     });
   }
 
   const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.unificationScore - a.unificationScore), nationalIndex };
+  return { rows: rows.sort((a, b) => b.lagScore - a.lagScore), nationalIndex };
 }
 
-export function op10mA11RegionsWithCollapseSingularityUnification(
-  rows: OP10M_A11_CollapseOmniSingularityUnificationRow[],
+export function op10mA11RegionsWithCriticalAdaptationLag(rows: OP10M_A11_AdaptationLagRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'stalled' || r.band === 'critical_lag').map((r) => r.regionId);
+}
+
+export function op10mA11AdaptationLagEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 50;
+  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-compound-shock-saturation.ts ---
+
+function saturationBand(score: number): OP10M_A11_CompoundShockSaturationBand {
+  if (score < 25) return 'buffered';
+  if (score < 43) return 'loading';
+  if (score < 60) return 'saturated';
+  return 'overwhelmed';
+}
+
+export function op10mA11ComputeSettlementCompoundShockSaturation(args: {
+  resilienceFrontier: OP10M_A11_ResilienceFrontierRow[];
+  systemicFragility: OP10M_A11_SystemicFragilityRow[];
+  migrationStabilityErosion: OP10M_A11_MigrationStabilityRow[];
+}): { rows: OP10M_A11_CompoundShockSaturationRow[]; nationalIndex: number } {
+  const frontierByRegion = new Map(args.resilienceFrontier.map((r) => [r.regionId, r]));
+  const systemicByRegion = new Map(args.systemicFragility.map((s) => [s.regionId, s]));
+  const migrationByRegion = new Map(args.migrationStabilityErosion.map((m) => [m.regionId, m]));
+
+  const rows: OP10M_A11_CompoundShockSaturationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const frontier = frontierByRegion.get(rid);
+    const systemic = systemicByRegion.get(rid);
+    const migration = migrationByRegion.get(rid);
+
+    const frontierDrag = frontier ? op10mA11Clamp(frontier.pressureScore * 0.46) : 14;
+    const systemicDrag = systemic ? op10mA11Clamp(systemic.fragilityScore * 0.4) : 12;
+    const migrationDrag = migration ? op10mA11Clamp(migration.erosionScore * 0.34) : 10;
+
+    const saturationScore = op10mA11Clamp(frontierDrag + systemicDrag + migrationDrag * 0.52);
+    weighted += saturationScore;
+
+    const shocks: string[] = [];
+    if (frontier && (frontier.band === 'at_limit' || frontier.band === 'breached')) shocks.push('frontier breach');
+    if (systemic && (systemic.band === 'systemic' || systemic.band === 'cascade_risk')) {
+      shocks.push('compound fragility');
+    }
+    if (migration && (migration.band === 'unstable' || migration.band === 'chaotic')) {
+      shocks.push('migration churn');
+    }
+    if (!shocks.length) shocks.push('shock absorption');
+
+    rows.push({
+      regionId: rid,
+      saturationScore: op10mA11Round(saturationScore),
+      band: saturationBand(saturationScore),
+      shocks: shocks.slice(0, 3),
+      narrative: `${rid} compound shock saturation ${saturationBand(saturationScore)} (${op10mA11Round(saturationScore)}); ${shocks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.saturationScore - a.saturationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithOverwhelmingCompoundShocks(
+  rows: OP10M_A11_CompoundShockSaturationRow[],
 ): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'total' || r.band === 'unification').map((r) => r.regionId);
+  return rows.filter((r) => r.band === 'saturated' || r.band === 'overwhelmed').map((r) => r.regionId);
 }
 
-export function op10mA11CollapseOmniSingularityUnificationEscalating(
+export function op10mA11CompoundShockSaturationEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 50;
+  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-binding.ts ---
+
+function bindingBand(score: number): OP10M_A11_ExistentialAbsoluteNullityBindingBand {
+  if (score < 23) return 'trace';
+  if (score < 39) return 'binding';
+  if (score < 56) return 'absolute';
+  return 'total_binding';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityBinding(args: {
+  existentialAbsoluteNullityMandate: OP10M_A11_ExistentialAbsoluteNullityMandateRow[];
+  collapseOmniSingularitySynthesis: OP10M_A11_CollapseOmniSingularitySynthesisRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityBindingRow[]; nationalIndex: number } {
+  const mandateByRegion = new Map(args.existentialAbsoluteNullityMandate.map((m) => [m.regionId, m]));
+  const synthesisByRegion = new Map(args.collapseOmniSingularitySynthesis.map((s) => [s.regionId, s]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullityBindingRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const mandate = mandateByRegion.get(rid);
+    const synthesis = synthesisByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const mandateDrag = mandate ? op10mA11Clamp(mandate.mandateScore * 0.54) : 18;
+    const synthesisDrag = synthesis ? op10mA11Clamp(synthesis.synthesisScore * 0.5) : 16;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.51) : 15;
+
+    const bindingScore = op10mA11Clamp(mandateDrag + synthesisDrag + sentenceDrag * 0.62);
+    weighted += bindingScore;
+
+    const marks: string[] = [];
+    if (mandate && (mandate.band === 'absolute' || mandate.band === 'total_mandate')) {
+      marks.push('mandate bind');
+    }
+    if (synthesis && (synthesis.band === 'total' || synthesis.band === 'synthesis')) {
+      marks.push('synthesis bind');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence bind');
+    }
+    if (!marks.length) marks.push('binding trace');
+
+    rows.push({
+      regionId: rid,
+      bindingScore: op10mA11Round(bindingScore),
+      band: bindingBand(bindingScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity binding ${bindingBand(bindingScore)} (${op10mA11Round(bindingScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.bindingScore - a.bindingScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullityBinding(
+  rows: OP10M_A11_ExistentialAbsoluteNullityBindingRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_binding').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullityBindingEscalating(
   currentIndex: number,
   priorIndex: number | null,
 ): boolean {
-  if (priorIndex === null) return currentIndex >= 54;
-  return currentIndex >= 48 && currentIndex > priorIndex + 6;
+  if (priorIndex === null) return currentIndex >= 56;
+  return currentIndex >= 50 && currentIndex > priorIndex + 6;
 }
 
 
-// --- source: interregional-void-total-erosion-elimination.ts ---
+// --- source: settlement-existential-absolute-nullity-canonization.ts ---
 
-function eliminationBand(score: number): OP10M_A11_VoidTotalErosionEliminationBand {
-  if (score < 21) return 'dormant';
-  if (score < 37) return 'eliminating';
-  if (score < 54) return 'total';
-  return 'complete_elimination';
+function canonizationBand(score: number): OP10M_A11_ExistentialAbsoluteNullityCanonizationBand {
+  if (score < 33) return 'trace';
+  if (score < 49) return 'canonizing';
+  if (score < 66) return 'absolute';
+  return 'total_canonization';
 }
 
-export function op10mA11ComputeInterregionalVoidTotalErosionElimination(args: {
-  voidTotalErosionEradication: OP10M_A11_VoidTotalErosionEradicationRow[];
-  collapseOmniSingularityIntegration: OP10M_A11_CollapseOmniSingularityIntegrationRow[];
-  voidExistenceAnnihilationFront: OP10M_A11_VoidExistenceAnnihilationFrontRow[];
-}): { rows: OP10M_A11_VoidTotalErosionEliminationRow[]; nationalIndex: number } {
-  const eradicationByRegion = new Map(args.voidTotalErosionEradication.map((e) => [e.regionId, e]));
-  const integrationByRegion = new Map(args.collapseOmniSingularityIntegration.map((i) => [i.regionId, i]));
-  const frontByRegion = new Map(args.voidExistenceAnnihilationFront.map((f) => [f.regionId, f]));
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityCanonization(args: {
+  existentialAbsoluteNullityRatification: OP10M_A11_ExistentialAbsoluteNullityRatificationRow[];
+  collapseOmniSingularityCosmism: OP10M_A11_CollapseOmniSingularityCosmismRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityCanonizationRow[]; nationalIndex: number } {
+  const ratificationByRegion = new Map(args.existentialAbsoluteNullityRatification.map((r) => [r.regionId, r]));
+  const cosmismByRegion = new Map(args.collapseOmniSingularityCosmism.map((c) => [c.regionId, c]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
 
-  const rows: OP10M_A11_VoidTotalErosionEliminationRow[] = [];
+  const rows: OP10M_A11_ExistentialAbsoluteNullityCanonizationRow[] = [];
   let weighted = 0;
 
   for (const rid of OP10M_A11_CORE_REGIONS) {
-    const eradication = eradicationByRegion.get(rid);
-    const integration = integrationByRegion.get(rid);
-    const front = frontByRegion.get(rid);
+    const ratification = ratificationByRegion.get(rid);
+    const cosmism = cosmismByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
 
-    const eradicationDrag = eradication ? op10mA11Clamp(eradication.eradicationScore * 0.53) : 18;
-    const integrationDrag = integration ? op10mA11Clamp(integration.integrationScore * 0.49) : 16;
-    const frontDrag = front ? op10mA11Clamp(front.frontScore * 0.46) : 15;
+    const ratificationDrag = ratification ? op10mA11Clamp(ratification.ratificationScore * 0.52) : 23;
+    const cosmismDrag = cosmism ? op10mA11Clamp(cosmism.cosmismScore * 0.48) : 21;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.49) : 20;
 
-    const eliminationScore = op10mA11Clamp(eradicationDrag + integrationDrag + frontDrag * 0.56);
-    weighted += eliminationScore;
+    const canonizationScore = op10mA11Clamp(ratificationDrag + cosmismDrag + sentenceDrag * 0.6);
+    weighted += canonizationScore;
 
-    const phases: string[] = [];
-    if (eradication && (eradication.band === 'total' || eradication.band === 'complete_eradication')) {
-      phases.push('eradication eliminate');
+    const marks: string[] = [];
+    if (ratification && (ratification.band === 'absolute' || ratification.band === 'total_ratification')) {
+      marks.push('ratification canonization');
     }
-    if (integration && (integration.band === 'total' || integration.band === 'integration')) {
-      phases.push('integration eliminate');
+    if (cosmism && (cosmism.band === 'total' || cosmism.band === 'cosmism')) {
+      marks.push('cosmism canonization');
     }
-    if (front && (front.band === 'consuming' || front.band === 'total_void')) {
-      phases.push('front eliminate');
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence canonization');
     }
-    if (!phases.length) phases.push('elimination dormant');
+    if (!marks.length) marks.push('canonization trace');
 
     rows.push({
       regionId: rid,
-      eliminationScore: op10mA11Round(eliminationScore),
-      band: eliminationBand(eliminationScore),
-      phases: phases.slice(0, 3),
-      narrative: `${rid} void total erosion elimination ${eliminationBand(eliminationScore)} (${op10mA11Round(eliminationScore)}); ${phases.slice(0, 2).join('; ')}.`,
+      canonizationScore: op10mA11Round(canonizationScore),
+      band: canonizationBand(canonizationScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity canonization ${canonizationBand(canonizationScore)} (${op10mA11Round(canonizationScore)}); ${marks.slice(0, 2).join('; ')}.`,
     });
   }
 
   const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
-  return { rows: rows.sort((a, b) => b.eliminationScore - a.eliminationScore), nationalIndex };
+  return { rows: rows.sort((a, b) => b.canonizationScore - a.canonizationScore), nationalIndex };
 }
 
-export function op10mA11RegionsWithTotalErosionElimination(
-  rows: OP10M_A11_VoidTotalErosionEliminationRow[],
+export function op10mA11RegionsWithTotalAbsoluteNullityCanonization(
+  rows: OP10M_A11_ExistentialAbsoluteNullityCanonizationRow[],
 ): OP10M_A11_RegionId[] {
-  return rows.filter((r) => r.band === 'total' || r.band === 'complete_elimination').map((r) => r.regionId);
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_canonization').map((r) => r.regionId);
 }
 
-export function op10mA11VoidTotalErosionEliminationEscalating(
+export function op10mA11ExistentialAbsoluteNullityCanonizationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 66;
+  return currentIndex >= 60 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-certitude.ts ---
+
+function certitudeBand(score: number): OP10M_A11_ExistentialAbsoluteNullityCertitudeBand {
+  if (score < 28) return 'trace';
+  if (score < 44) return 'certain';
+  if (score < 61) return 'absolute';
+  return 'total_certitude';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityCertitude(args: {
+  existentialAbsoluteNullityDeterminism: OP10M_A11_ExistentialAbsoluteNullityDeterminismRow[];
+  collapseOmniSingularitySymbiosis: OP10M_A11_CollapseOmniSingularitySymbiosisRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityCertitudeRow[]; nationalIndex: number } {
+  const determinismByRegion = new Map(args.existentialAbsoluteNullityDeterminism.map((d) => [d.regionId, d]));
+  const symbiosisByRegion = new Map(args.collapseOmniSingularitySymbiosis.map((s) => [s.regionId, s]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullityCertitudeRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const determinism = determinismByRegion.get(rid);
+    const symbiosis = symbiosisByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const determinismDrag = determinism ? op10mA11Clamp(determinism.determinismScore * 0.47) : 18;
+    const symbiosisDrag = symbiosis ? op10mA11Clamp(symbiosis.symbiosisScore * 0.43) : 16;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.44) : 15;
+
+    const certitudeScore = op10mA11Clamp(determinismDrag + symbiosisDrag + sentenceDrag * 0.55);
+    weighted += certitudeScore;
+
+    const marks: string[] = [];
+    if (determinism && (determinism.band === 'absolute' || determinism.band === 'total_determinism')) {
+      marks.push('determinism certitude');
+    }
+    if (symbiosis && (symbiosis.band === 'total' || symbiosis.band === 'symbiosis')) {
+      marks.push('symbiosis certitude');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence certitude');
+    }
+    if (!marks.length) marks.push('certitude trace');
+
+    rows.push({
+      regionId: rid,
+      certitudeScore: op10mA11Round(certitudeScore),
+      band: certitudeBand(certitudeScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity certitude ${certitudeBand(certitudeScore)} (${op10mA11Round(certitudeScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.certitudeScore - a.certitudeScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullityCertitude(
+  rows: OP10M_A11_ExistentialAbsoluteNullityCertitudeRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_certitude').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullityCertitudeEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 61;
+  return currentIndex >= 55 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-continuity.ts ---
+
+function continuityBand(score: number): OP10M_A11_ExistentialAbsoluteNullityContinuityBand {
+  if (score < 23) return 'trace';
+  if (score < 39) return 'continuity';
+  if (score < 56) return 'absolute';
+  return 'total_continuity';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityContinuity(args: {
+  existentialAbsoluteNullityBinding: OP10M_A11_ExistentialAbsoluteNullityBindingRow[];
+  collapseOmniSingularityConvergence: OP10M_A11_CollapseOmniSingularityConvergenceRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityContinuityRow[]; nationalIndex: number } {
+  const bindingByRegion = new Map(args.existentialAbsoluteNullityBinding.map((b) => [b.regionId, b]));
+  const convergenceByRegion = new Map(args.collapseOmniSingularityConvergence.map((c) => [c.regionId, c]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullityContinuityRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const binding = bindingByRegion.get(rid);
+    const convergence = convergenceByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const bindingDrag = binding ? op10mA11Clamp(binding.bindingScore * 0.53) : 18;
+    const convergenceDrag = convergence ? op10mA11Clamp(convergence.convergenceScore * 0.49) : 16;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.5) : 15;
+
+    const continuityScore = op10mA11Clamp(bindingDrag + convergenceDrag + sentenceDrag * 0.61);
+    weighted += continuityScore;
+
+    const marks: string[] = [];
+    if (binding && (binding.band === 'absolute' || binding.band === 'total_binding')) {
+      marks.push('binding continue');
+    }
+    if (convergence && (convergence.band === 'total' || convergence.band === 'convergence')) {
+      marks.push('convergence continue');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence continue');
+    }
+    if (!marks.length) marks.push('continuity trace');
+
+    rows.push({
+      regionId: rid,
+      continuityScore: op10mA11Round(continuityScore),
+      band: continuityBand(continuityScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity continuity ${continuityBand(continuityScore)} (${op10mA11Round(continuityScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.continuityScore - a.continuityScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullityContinuity(
+  rows: OP10M_A11_ExistentialAbsoluteNullityContinuityRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_continuity').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullityContinuityEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 56;
+  return currentIndex >= 50 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-conviction.ts ---
+
+function convictionBand(score: number): OP10M_A11_ExistentialAbsoluteNullityConvictionBand {
+  if (score < 29) return 'trace';
+  if (score < 45) return 'convinced';
+  if (score < 62) return 'absolute';
+  return 'total_conviction';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityConviction(args: {
+  existentialAbsoluteNullityCertitude: OP10M_A11_ExistentialAbsoluteNullityCertitudeRow[];
+  collapseOmniSingularityHolism: OP10M_A11_CollapseOmniSingularityHolismRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityConvictionRow[]; nationalIndex: number } {
+  const certitudeByRegion = new Map(args.existentialAbsoluteNullityCertitude.map((c) => [c.regionId, c]));
+  const holismByRegion = new Map(args.collapseOmniSingularityHolism.map((h) => [h.regionId, h]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullityConvictionRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const certitude = certitudeByRegion.get(rid);
+    const holism = holismByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const certitudeDrag = certitude ? op10mA11Clamp(certitude.certitudeScore * 0.48) : 19;
+    const holismDrag = holism ? op10mA11Clamp(holism.holismScore * 0.44) : 17;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.45) : 16;
+
+    const convictionScore = op10mA11Clamp(certitudeDrag + holismDrag + sentenceDrag * 0.56);
+    weighted += convictionScore;
+
+    const marks: string[] = [];
+    if (certitude && (certitude.band === 'absolute' || certitude.band === 'total_certitude')) {
+      marks.push('certitude conviction');
+    }
+    if (holism && (holism.band === 'total' || holism.band === 'holism')) {
+      marks.push('holism conviction');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence conviction');
+    }
+    if (!marks.length) marks.push('conviction trace');
+
+    rows.push({
+      regionId: rid,
+      convictionScore: op10mA11Round(convictionScore),
+      band: convictionBand(convictionScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity conviction ${convictionBand(convictionScore)} (${op10mA11Round(convictionScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.convictionScore - a.convictionScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullityConviction(
+  rows: OP10M_A11_ExistentialAbsoluteNullityConvictionRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_conviction').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullityConvictionEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 62;
+  return currentIndex >= 56 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-determinism.ts ---
+
+function determinismBand(score: number): OP10M_A11_ExistentialAbsoluteNullityDeterminismBand {
+  if (score < 27) return 'trace';
+  if (score < 43) return 'determined';
+  if (score < 60) return 'absolute';
+  return 'total_determinism';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityDeterminism(args: {
+  existentialAbsoluteNullityInevitability: OP10M_A11_ExistentialAbsoluteNullityInevitabilityRow[];
+  collapseOmniSingularityAmalgamation: OP10M_A11_CollapseOmniSingularityAmalgamationRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityDeterminismRow[]; nationalIndex: number } {
+  const inevitabilityByRegion = new Map(args.existentialAbsoluteNullityInevitability.map((i) => [i.regionId, i]));
+  const amalgamationByRegion = new Map(args.collapseOmniSingularityAmalgamation.map((a) => [a.regionId, a]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullityDeterminismRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const inevitability = inevitabilityByRegion.get(rid);
+    const amalgamation = amalgamationByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const inevitabilityDrag = inevitability ? op10mA11Clamp(inevitability.inevitabilityScore * 0.48) : 18;
+    const amalgamationDrag = amalgamation ? op10mA11Clamp(amalgamation.amalgamationScore * 0.44) : 16;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.45) : 15;
+
+    const determinismScore = op10mA11Clamp(inevitabilityDrag + amalgamationDrag + sentenceDrag * 0.56);
+    weighted += determinismScore;
+
+    const marks: string[] = [];
+    if (inevitability && (inevitability.band === 'absolute' || inevitability.band === 'total_inevitability')) {
+      marks.push('inevitability determine');
+    }
+    if (amalgamation && (amalgamation.band === 'total' || amalgamation.band === 'amalgamation')) {
+      marks.push('amalgamation determine');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence determine');
+    }
+    if (!marks.length) marks.push('determinism trace');
+
+    rows.push({
+      regionId: rid,
+      determinismScore: op10mA11Round(determinismScore),
+      band: determinismBand(determinismScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity determinism ${determinismBand(determinismScore)} (${op10mA11Round(determinismScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.determinismScore - a.determinismScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullityDeterminism(
+  rows: OP10M_A11_ExistentialAbsoluteNullityDeterminismRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_determinism').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullityDeterminismEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 60;
+  return currentIndex >= 54 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-finality.ts ---
+
+function finalityBand(score: number): OP10M_A11_ExistentialAbsoluteNullityFinalityBand {
+  if (score < 30) return 'trace';
+  if (score < 46) return 'settling';
+  if (score < 63) return 'absolute';
+  return 'total_finality';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityFinality(args: {
+  existentialAbsoluteNullityConviction: OP10M_A11_ExistentialAbsoluteNullityConvictionRow[];
+  collapseOmniSingularityMonism: OP10M_A11_CollapseOmniSingularityMonismRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityFinalityRow[]; nationalIndex: number } {
+  const convictionByRegion = new Map(args.existentialAbsoluteNullityConviction.map((c) => [c.regionId, c]));
+  const monismByRegion = new Map(args.collapseOmniSingularityMonism.map((m) => [m.regionId, m]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullityFinalityRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const conviction = convictionByRegion.get(rid);
+    const monism = monismByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const convictionDrag = conviction ? op10mA11Clamp(conviction.convictionScore * 0.49) : 20;
+    const monismDrag = monism ? op10mA11Clamp(monism.monismScore * 0.45) : 18;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.46) : 17;
+
+    const finalityScore = op10mA11Clamp(convictionDrag + monismDrag + sentenceDrag * 0.57);
+    weighted += finalityScore;
+
+    const marks: string[] = [];
+    if (conviction && (conviction.band === 'absolute' || conviction.band === 'total_conviction')) {
+      marks.push('conviction finality');
+    }
+    if (monism && (monism.band === 'total' || monism.band === 'monism')) {
+      marks.push('monism finality');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence finality');
+    }
+    if (!marks.length) marks.push('finality trace');
+
+    rows.push({
+      regionId: rid,
+      finalityScore: op10mA11Round(finalityScore),
+      band: finalityBand(finalityScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity finality ${finalityBand(finalityScore)} (${op10mA11Round(finalityScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.finalityScore - a.finalityScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullityFinality(
+  rows: OP10M_A11_ExistentialAbsoluteNullityFinalityRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_finality').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullityFinalityEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 63;
+  return currentIndex >= 57 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-immutability.ts ---
+
+function immutabilityBand(score: number): OP10M_A11_ExistentialAbsoluteNullityImmutabilityBand {
+  if (score < 24) return 'trace';
+  if (score < 40) return 'immutable';
+  if (score < 57) return 'absolute';
+  return 'total_immutability';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityImmutability(args: {
+  existentialAbsoluteNullityPerpetuity: OP10M_A11_ExistentialAbsoluteNullityPerpetuityRow[];
+  collapseOmniSingularityUnification: OP10M_A11_CollapseOmniSingularityUnificationRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityImmutabilityRow[]; nationalIndex: number } {
+  const perpetuityByRegion = new Map(args.existentialAbsoluteNullityPerpetuity.map((p) => [p.regionId, p]));
+  const unificationByRegion = new Map(args.collapseOmniSingularityUnification.map((u) => [u.regionId, u]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullityImmutabilityRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const perpetuity = perpetuityByRegion.get(rid);
+    const unification = unificationByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const perpetuityDrag = perpetuity ? op10mA11Clamp(perpetuity.perpetuityScore * 0.51) : 18;
+    const unificationDrag = unification ? op10mA11Clamp(unification.unificationScore * 0.47) : 16;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.48) : 15;
+
+    const immutabilityScore = op10mA11Clamp(perpetuityDrag + unificationDrag + sentenceDrag * 0.59);
+    weighted += immutabilityScore;
+
+    const marks: string[] = [];
+    if (perpetuity && (perpetuity.band === 'absolute' || perpetuity.band === 'total_perpetuity')) {
+      marks.push('perpetuity immutabilize');
+    }
+    if (unification && (unification.band === 'total' || unification.band === 'unification')) {
+      marks.push('unification immutabilize');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence immutabilize');
+    }
+    if (!marks.length) marks.push('immutability trace');
+
+    rows.push({
+      regionId: rid,
+      immutabilityScore: op10mA11Round(immutabilityScore),
+      band: immutabilityBand(immutabilityScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity immutability ${immutabilityBand(immutabilityScore)} (${op10mA11Round(immutabilityScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.immutabilityScore - a.immutabilityScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullityImmutability(
+  rows: OP10M_A11_ExistentialAbsoluteNullityImmutabilityRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_immutability').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullityImmutabilityEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 57;
+  return currentIndex >= 51 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-inevitability.ts ---
+
+function inevitabilityBand(score: number): OP10M_A11_ExistentialAbsoluteNullityInevitabilityBand {
+  if (score < 26) return 'trace';
+  if (score < 42) return 'inevitable';
+  if (score < 59) return 'absolute';
+  return 'total_inevitability';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityInevitability(args: {
+  existentialAbsoluteNullityPermanence: OP10M_A11_ExistentialAbsoluteNullityPermanenceRow[];
+  collapseOmniSingularityCoalescence: OP10M_A11_CollapseOmniSingularityCoalescenceRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityInevitabilityRow[]; nationalIndex: number } {
+  const permanenceByRegion = new Map(args.existentialAbsoluteNullityPermanence.map((p) => [p.regionId, p]));
+  const coalescenceByRegion = new Map(args.collapseOmniSingularityCoalescence.map((c) => [c.regionId, c]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullityInevitabilityRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const permanence = permanenceByRegion.get(rid);
+    const coalescence = coalescenceByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const permanenceDrag = permanence ? op10mA11Clamp(permanence.permanenceScore * 0.49) : 18;
+    const coalescenceDrag = coalescence ? op10mA11Clamp(coalescence.coalescenceScore * 0.45) : 16;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.46) : 15;
+
+    const inevitabilityScore = op10mA11Clamp(permanenceDrag + coalescenceDrag + sentenceDrag * 0.57);
+    weighted += inevitabilityScore;
+
+    const marks: string[] = [];
+    if (permanence && (permanence.band === 'absolute' || permanence.band === 'total_permanence')) {
+      marks.push('permanence inevitable');
+    }
+    if (coalescence && (coalescence.band === 'total' || coalescence.band === 'coalescence')) {
+      marks.push('coalescence inevitable');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence inevitable');
+    }
+    if (!marks.length) marks.push('inevitability trace');
+
+    rows.push({
+      regionId: rid,
+      inevitabilityScore: op10mA11Round(inevitabilityScore),
+      band: inevitabilityBand(inevitabilityScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity inevitability ${inevitabilityBand(inevitabilityScore)} (${op10mA11Round(inevitabilityScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.inevitabilityScore - a.inevitabilityScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullityInevitability(
+  rows: OP10M_A11_ExistentialAbsoluteNullityInevitabilityRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_inevitability').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullityInevitabilityEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 59;
+  return currentIndex >= 53 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-mandate.ts ---
+
+function mandateBand(score: number): OP10M_A11_ExistentialAbsoluteNullityMandateBand {
+  if (score < 22) return 'trace';
+  if (score < 38) return 'mandating';
+  if (score < 55) return 'absolute';
+  return 'total_mandate';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityMandate(args: {
+  existentialTotalNullityDecree: OP10M_A11_ExistentialTotalNullityDecreeRow[];
+  collapseAbsoluteSingularityCulmination: OP10M_A11_CollapseAbsoluteSingularityCulminationRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityMandateRow[]; nationalIndex: number } {
+  const decreeByRegion = new Map(args.existentialTotalNullityDecree.map((d) => [d.regionId, d]));
+  const culminationByRegion = new Map(args.collapseAbsoluteSingularityCulmination.map((c) => [c.regionId, c]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullityMandateRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const decree = decreeByRegion.get(rid);
+    const culmination = culminationByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const decreeDrag = decree ? op10mA11Clamp(decree.decreeScore * 0.55) : 18;
+    const culminationDrag = culmination ? op10mA11Clamp(culmination.culminationScore * 0.51) : 16;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.52) : 15;
+
+    const mandateScore = op10mA11Clamp(decreeDrag + culminationDrag + sentenceDrag * 0.63);
+    weighted += mandateScore;
+
+    const marks: string[] = [];
+    if (decree && (decree.band === 'total' || decree.band === 'absolute_decree')) {
+      marks.push('decree mandate');
+    }
+    if (culmination && (culmination.band === 'total' || culmination.band === 'culmination')) {
+      marks.push('culmination mandate');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence mandate');
+    }
+    if (!marks.length) marks.push('mandate trace');
+
+    rows.push({
+      regionId: rid,
+      mandateScore: op10mA11Round(mandateScore),
+      band: mandateBand(mandateScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity mandate ${mandateBand(mandateScore)} (${op10mA11Round(mandateScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.mandateScore - a.mandateScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullityMandate(
+  rows: OP10M_A11_ExistentialAbsoluteNullityMandateRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_mandate').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullityMandateEscalating(
   currentIndex: number,
   priorIndex: number | null,
 ): boolean {
   if (priorIndex === null) return currentIndex >= 55;
   return currentIndex >= 49 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-permanence.ts ---
+
+function permanenceBand(score: number): OP10M_A11_ExistentialAbsoluteNullityPermanenceBand {
+  if (score < 25) return 'trace';
+  if (score < 41) return 'permanent';
+  if (score < 58) return 'absolute';
+  return 'total_permanence';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityPermanence(args: {
+  existentialAbsoluteNullityImmutability: OP10M_A11_ExistentialAbsoluteNullityImmutabilityRow[];
+  collapseOmniSingularityConsolidation: OP10M_A11_CollapseOmniSingularityConsolidationRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityPermanenceRow[]; nationalIndex: number } {
+  const immutabilityByRegion = new Map(args.existentialAbsoluteNullityImmutability.map((i) => [i.regionId, i]));
+  const consolidationByRegion = new Map(args.collapseOmniSingularityConsolidation.map((c) => [c.regionId, c]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullityPermanenceRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const immutability = immutabilityByRegion.get(rid);
+    const consolidation = consolidationByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const immutabilityDrag = immutability ? op10mA11Clamp(immutability.immutabilityScore * 0.5) : 18;
+    const consolidationDrag = consolidation ? op10mA11Clamp(consolidation.consolidationScore * 0.46) : 16;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.47) : 15;
+
+    const permanenceScore = op10mA11Clamp(immutabilityDrag + consolidationDrag + sentenceDrag * 0.58);
+    weighted += permanenceScore;
+
+    const marks: string[] = [];
+    if (immutability && (immutability.band === 'absolute' || immutability.band === 'total_immutability')) {
+      marks.push('immutability permanent');
+    }
+    if (consolidation && (consolidation.band === 'total' || consolidation.band === 'consolidation')) {
+      marks.push('consolidation permanent');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence permanent');
+    }
+    if (!marks.length) marks.push('permanence trace');
+
+    rows.push({
+      regionId: rid,
+      permanenceScore: op10mA11Round(permanenceScore),
+      band: permanenceBand(permanenceScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity permanence ${permanenceBand(permanenceScore)} (${op10mA11Round(permanenceScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.permanenceScore - a.permanenceScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullityPermanence(
+  rows: OP10M_A11_ExistentialAbsoluteNullityPermanenceRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_permanence').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullityPermanenceEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 58;
+  return currentIndex >= 52 && currentIndex > priorIndex + 6;
 }
 
 
@@ -6261,6 +10545,2079 @@ export function op10mA11ExistentialAbsoluteNullityPerpetuityEscalating(
 ): boolean {
   if (priorIndex === null) return currentIndex >= 56;
   return currentIndex >= 50 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-ratification.ts ---
+
+function ratificationBand(score: number): OP10M_A11_ExistentialAbsoluteNullityRatificationBand {
+  if (score < 32) return 'trace';
+  if (score < 48) return 'ratifying';
+  if (score < 65) return 'absolute';
+  return 'total_ratification';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityRatification(args: {
+  existentialAbsoluteNullitySealing: OP10M_A11_ExistentialAbsoluteNullitySealingRow[];
+  collapseOmniSingularityUniversalism: OP10M_A11_CollapseOmniSingularityUniversalismRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityRatificationRow[]; nationalIndex: number } {
+  const sealingByRegion = new Map(args.existentialAbsoluteNullitySealing.map((s) => [s.regionId, s]));
+  const universalismByRegion = new Map(args.collapseOmniSingularityUniversalism.map((u) => [u.regionId, u]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullityRatificationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const sealing = sealingByRegion.get(rid);
+    const universalism = universalismByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const sealingDrag = sealing ? op10mA11Clamp(sealing.sealingScore * 0.51) : 22;
+    const universalismDrag = universalism ? op10mA11Clamp(universalism.universalismScore * 0.47) : 20;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.48) : 19;
+
+    const ratificationScore = op10mA11Clamp(sealingDrag + universalismDrag + sentenceDrag * 0.59);
+    weighted += ratificationScore;
+
+    const marks: string[] = [];
+    if (sealing && (sealing.band === 'absolute' || sealing.band === 'total_sealing')) {
+      marks.push('sealing ratification');
+    }
+    if (universalism && (universalism.band === 'total' || universalism.band === 'universalism')) {
+      marks.push('universalism ratification');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence ratification');
+    }
+    if (!marks.length) marks.push('ratification trace');
+
+    rows.push({
+      regionId: rid,
+      ratificationScore: op10mA11Round(ratificationScore),
+      band: ratificationBand(ratificationScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity ratification ${ratificationBand(ratificationScore)} (${op10mA11Round(ratificationScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.ratificationScore - a.ratificationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullityRatification(
+  rows: OP10M_A11_ExistentialAbsoluteNullityRatificationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_ratification').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullityRatificationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 65;
+  return currentIndex >= 59 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-sanctification.ts ---
+
+function sanctificationBand(score: number): OP10M_A11_ExistentialAbsoluteNullitySanctificationBand {
+  if (score < 34) return 'trace';
+  if (score < 50) return 'sanctifying';
+  if (score < 67) return 'absolute';
+  return 'total_sanctification';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullitySanctification(args: {
+  existentialAbsoluteNullityCanonization: OP10M_A11_ExistentialAbsoluteNullityCanonizationRow[];
+  collapseOmniSingularityPantheism: OP10M_A11_CollapseOmniSingularityPantheismRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullitySanctificationRow[]; nationalIndex: number } {
+  const canonizationByRegion = new Map(args.existentialAbsoluteNullityCanonization.map((c) => [c.regionId, c]));
+  const pantheismByRegion = new Map(args.collapseOmniSingularityPantheism.map((p) => [p.regionId, p]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullitySanctificationRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const canonization = canonizationByRegion.get(rid);
+    const pantheism = pantheismByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const canonizationDrag = canonization ? op10mA11Clamp(canonization.canonizationScore * 0.53) : 23;
+    const pantheismDrag = pantheism ? op10mA11Clamp(pantheism.pantheismScore * 0.49) : 21;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.48) : 20;
+
+    const sanctificationScore = op10mA11Clamp(canonizationDrag + pantheismDrag + sentenceDrag * 0.61);
+    weighted += sanctificationScore;
+
+    const marks: string[] = [];
+    if (canonization && (canonization.band === 'absolute' || canonization.band === 'total_canonization')) {
+      marks.push('canonization sanctification');
+    }
+    if (pantheism && (pantheism.band === 'total' || pantheism.band === 'pantheism')) {
+      marks.push('pantheism sanctification');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence sanctification');
+    }
+    if (!marks.length) marks.push('sanctification trace');
+
+    rows.push({
+      regionId: rid,
+      sanctificationScore: op10mA11Round(sanctificationScore),
+      band: sanctificationBand(sanctificationScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity sanctification ${sanctificationBand(sanctificationScore)} (${op10mA11Round(sanctificationScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.sanctificationScore - a.sanctificationScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullitySanctification(
+  rows: OP10M_A11_ExistentialAbsoluteNullitySanctificationRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_sanctification').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullitySanctificationEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 67;
+  return currentIndex >= 61 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-sealing.ts ---
+
+function sealingBand(score: number): OP10M_A11_ExistentialAbsoluteNullitySealingBand {
+  if (score < 31) return 'trace';
+  if (score < 47) return 'sealing';
+  if (score < 64) return 'absolute';
+  return 'total_sealing';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullitySealing(args: {
+  existentialAbsoluteNullityFinality: OP10M_A11_ExistentialAbsoluteNullityFinalityRow[];
+  collapseOmniSingularityTotalism: OP10M_A11_CollapseOmniSingularityTotalismRow[];
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullitySealingRow[]; nationalIndex: number } {
+  const finalityByRegion = new Map(args.existentialAbsoluteNullityFinality.map((f) => [f.regionId, f]));
+  const totalismByRegion = new Map(args.collapseOmniSingularityTotalism.map((t) => [t.regionId, t]));
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullitySealingRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const finality = finalityByRegion.get(rid);
+    const totalism = totalismByRegion.get(rid);
+    const sentence = sentenceByRegion.get(rid);
+
+    const finalityDrag = finality ? op10mA11Clamp(finality.finalityScore * 0.5) : 21;
+    const totalismDrag = totalism ? op10mA11Clamp(totalism.totalismScore * 0.46) : 19;
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.47) : 18;
+
+    const sealingScore = op10mA11Clamp(finalityDrag + totalismDrag + sentenceDrag * 0.58);
+    weighted += sealingScore;
+
+    const marks: string[] = [];
+    if (finality && (finality.band === 'absolute' || finality.band === 'total_finality')) {
+      marks.push('finality sealing');
+    }
+    if (totalism && (totalism.band === 'total' || totalism.band === 'totalism')) {
+      marks.push('totalism sealing');
+    }
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence sealing');
+    }
+    if (!marks.length) marks.push('sealing trace');
+
+    rows.push({
+      regionId: rid,
+      sealingScore: op10mA11Round(sealingScore),
+      band: sealingBand(sealingScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity sealing ${sealingBand(sealingScore)} (${op10mA11Round(sealingScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.sealingScore - a.sealingScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullitySealing(
+  rows: OP10M_A11_ExistentialAbsoluteNullitySealingRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_sealing').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullitySealingEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 64;
+  return currentIndex >= 58 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-nullity-verdict.ts ---
+
+function verdictBand(score: number): OP10M_A11_ExistentialAbsoluteNullityVerdictBand {
+  if (score < 19) return 'trace';
+  if (score < 35) return 'judging';
+  if (score < 52) return 'absolute';
+  return 'total_verdict';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteNullityVerdict(args: {
+  existentialFinalNullityClosure: OP10M_A11_ExistentialFinalNullityClosureRow[];
+  collapseAbsoluteSingularityApex: OP10M_A11_CollapseAbsoluteSingularityApexRow[];
+  existentialUltimateNullitySeal: OP10M_A11_ExistentialUltimateNullitySealRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteNullityVerdictRow[]; nationalIndex: number } {
+  const closureByRegion = new Map(args.existentialFinalNullityClosure.map((c) => [c.regionId, c]));
+  const apexByRegion = new Map(args.collapseAbsoluteSingularityApex.map((a) => [a.regionId, a]));
+  const sealByRegion = new Map(args.existentialUltimateNullitySeal.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteNullityVerdictRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const closure = closureByRegion.get(rid);
+    const apex = apexByRegion.get(rid);
+    const seal = sealByRegion.get(rid);
+
+    const closureDrag = closure ? op10mA11Clamp(closure.closureScore * 0.52) : 15;
+    const apexDrag = apex ? op10mA11Clamp(apex.apexScore * 0.48) : 13;
+    const sealDrag = seal ? op10mA11Clamp(seal.sealScore * 0.49) : 12;
+
+    const verdictScore = op10mA11Clamp(closureDrag + apexDrag + sealDrag * 0.59);
+    weighted += verdictScore;
+
+    const marks: string[] = [];
+    if (closure && (closure.band === 'final' || closure.band === 'total_closure')) {
+      marks.push('closure verdict');
+    }
+    if (apex && (apex.band === 'total' || apex.band === 'apex')) {
+      marks.push('apex verdict');
+    }
+    if (seal && (seal.band === 'ultimate' || seal.band === 'total_seal')) {
+      marks.push('seal verdict');
+    }
+    if (!marks.length) marks.push('verdict trace');
+
+    rows.push({
+      regionId: rid,
+      verdictScore: op10mA11Round(verdictScore),
+      band: verdictBand(verdictScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential absolute nullity verdict ${verdictBand(verdictScore)} (${op10mA11Round(verdictScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.verdictScore - a.verdictScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalAbsoluteNullityVerdict(
+  rows: OP10M_A11_ExistentialAbsoluteNullityVerdictRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'absolute' || r.band === 'total_verdict').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteNullityVerdictEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 52;
+  return currentIndex >= 46 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-absolute-zero-lock.ts ---
+
+function zeroBand(score: number): OP10M_A11_ExistentialAbsoluteZeroLockBand {
+  if (score < 21) return 'residual';
+  if (score < 37) return 'collapsing';
+  if (score < 54) return 'zero';
+  return 'absolute_zero';
+}
+
+export function op10mA11ComputeSettlementExistentialAbsoluteZeroLock(args: {
+  existentialNullStateLock: OP10M_A11_ExistentialNullStateLockRow[];
+  ultimateCollapseSingularitySeal: OP10M_A11_UltimateCollapseSingularitySealRow[];
+  existentialObliterationThreshold: OP10M_A11_ExistentialObliterationThresholdRow[];
+}): { rows: OP10M_A11_ExistentialAbsoluteZeroLockRow[]; nationalIndex: number } {
+  const nullByRegion = new Map(args.existentialNullStateLock.map((n) => [n.regionId, n]));
+  const sealByRegion = new Map(args.ultimateCollapseSingularitySeal.map((s) => [s.regionId, s]));
+  const thresholdByRegion = new Map(args.existentialObliterationThreshold.map((e) => [e.regionId, e]));
+
+  const rows: OP10M_A11_ExistentialAbsoluteZeroLockRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const nullLock = nullByRegion.get(rid);
+    const seal = sealByRegion.get(rid);
+    const threshold = thresholdByRegion.get(rid);
+
+    const nullDrag = nullLock ? op10mA11Clamp(nullLock.nullScore * 0.5) : 14;
+    const sealDrag = seal ? op10mA11Clamp(seal.sealScore * 0.45) : 12;
+    const thresholdDrag = threshold ? op10mA11Clamp(threshold.thresholdScore * 0.42) : 11;
+
+    const zeroScore = op10mA11Clamp(nullDrag + sealDrag + thresholdDrag * 0.53);
+    weighted += zeroScore;
+
+    const locks: string[] = [];
+    if (nullLock && (nullLock.band === 'null' || nullLock.band === 'absolute_null')) {
+      locks.push('null-state zero');
+    }
+    if (seal && (seal.band === 'sealed' || seal.band === 'ultimate')) {
+      locks.push('seal zero');
+    }
+    if (threshold && (threshold.band === 'breached' || threshold.band === 'obliterated')) {
+      locks.push('obliteration zero');
+    }
+    if (!locks.length) locks.push('residual presence');
+
+    rows.push({
+      regionId: rid,
+      zeroScore: op10mA11Round(zeroScore),
+      band: zeroBand(zeroScore),
+      locks: locks.slice(0, 3),
+      narrative: `${rid} existential absolute zero lock ${zeroBand(zeroScore)} (${op10mA11Round(zeroScore)}); ${locks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.zeroScore - a.zeroScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithAbsoluteZeroLock(
+  rows: OP10M_A11_ExistentialAbsoluteZeroLockRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'zero' || r.band === 'absolute_zero').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialAbsoluteZeroLockEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 52;
+  return currentIndex >= 46 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-continuity-fracture.ts ---
+
+function fractureBand(score: number): OP10M_A11_ExistentialContinuityFractureBand {
+  if (score < 27) return 'intact';
+  if (score < 45) return 'fraying';
+  if (score < 62) return 'shattered';
+  return 'extinguished';
+}
+
+export function op10mA11ComputeSettlementExistentialContinuityFracture(args: {
+  permanentDepopulationLock: OP10M_A11_PermanentDepopulationLockRow[];
+  postCollapseRecoveryImpossibility: OP10M_A11_PostCollapseRecoveryImpossibilityRow[];
+  settlementLegitimacyCollapse: OP10M_A11_SettlementLegitimacyCollapseRow[];
+}): { rows: OP10M_A11_ExistentialContinuityFractureRow[]; nationalIndex: number } {
+  const lockByRegion = new Map(args.permanentDepopulationLock.map((p) => [p.regionId, p]));
+  const recoveryByRegion = new Map(args.postCollapseRecoveryImpossibility.map((r) => [r.regionId, r]));
+  const legitimacyByRegion = new Map(args.settlementLegitimacyCollapse.map((l) => [l.regionId, l]));
+
+  const rows: OP10M_A11_ExistentialContinuityFractureRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const lock = lockByRegion.get(rid);
+    const recovery = recoveryByRegion.get(rid);
+    const legitimacy = legitimacyByRegion.get(rid);
+
+    const lockDrag = lock ? op10mA11Clamp(lock.lockScore * 0.45) : 14;
+    const recoveryDrag = recovery ? op10mA11Clamp(recovery.impossibilityScore * 0.42) : 12;
+    const legitimacyDrag = legitimacy ? op10mA11Clamp(legitimacy.collapseScore * 0.35) : 10;
+
+    const fractureScore = op10mA11Clamp(lockDrag + recoveryDrag + legitimacyDrag * 0.47);
+    weighted += fractureScore;
+
+    const ruptures: string[] = [];
+    if (lock && (lock.band === 'locked' || lock.band === 'permanent')) {
+      ruptures.push('population continuity break');
+    }
+    if (recovery && (recovery.band === 'blocked' || recovery.band === 'impossible')) {
+      ruptures.push('recovery path severed');
+    }
+    if (legitimacy && (legitimacy.band === 'delegitimized' || legitimacy.band === 'collapsed')) {
+      ruptures.push('legitimacy void');
+    }
+    if (!ruptures.length) ruptures.push('continuity preserved');
+
+    rows.push({
+      regionId: rid,
+      fractureScore: op10mA11Round(fractureScore),
+      band: fractureBand(fractureScore),
+      ruptures: ruptures.slice(0, 3),
+      narrative: `${rid} existential continuity fracture ${fractureBand(fractureScore)} (${op10mA11Round(fractureScore)}); ${ruptures.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.fractureScore - a.fractureScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithExtinguishedContinuity(
+  rows: OP10M_A11_ExistentialContinuityFractureRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'shattered' || r.band === 'extinguished').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialContinuityFractureEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 56;
+  return currentIndex >= 50 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-final-nullity-closure.ts ---
+
+function closureBand(score: number): OP10M_A11_ExistentialFinalNullityClosureBand {
+  if (score < 18) return 'trace';
+  if (score < 34) return 'closing';
+  if (score < 51) return 'final';
+  return 'total_closure';
+}
+
+export function op10mA11ComputeSettlementExistentialFinalNullityClosure(args: {
+  existentialUltimateNullitySeal: OP10M_A11_ExistentialUltimateNullitySealRow[];
+  collapseTotalSingularityVertex: OP10M_A11_CollapseTotalSingularityVertexRow[];
+  existentialFinalNullityLock: OP10M_A11_ExistentialFinalNullityLockRow[];
+}): { rows: OP10M_A11_ExistentialFinalNullityClosureRow[]; nationalIndex: number } {
+  const sealByRegion = new Map(args.existentialUltimateNullitySeal.map((s) => [s.regionId, s]));
+  const vertexByRegion = new Map(args.collapseTotalSingularityVertex.map((v) => [v.regionId, v]));
+  const lockByRegion = new Map(args.existentialFinalNullityLock.map((f) => [f.regionId, f]));
+
+  const rows: OP10M_A11_ExistentialFinalNullityClosureRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const seal = sealByRegion.get(rid);
+    const vertex = vertexByRegion.get(rid);
+    const lock = lockByRegion.get(rid);
+
+    const sealDrag = seal ? op10mA11Clamp(seal.sealScore * 0.51) : 14;
+    const vertexDrag = vertex ? op10mA11Clamp(vertex.vertexScore * 0.47) : 12;
+    const lockDrag = lock ? op10mA11Clamp(lock.nullityScore * 0.48) : 11;
+
+    const closureScore = op10mA11Clamp(sealDrag + vertexDrag + lockDrag * 0.58);
+    weighted += closureScore;
+
+    const marks: string[] = [];
+    if (seal && (seal.band === 'ultimate' || seal.band === 'total_seal')) {
+      marks.push('seal closure');
+    }
+    if (vertex && (vertex.band === 'total' || vertex.band === 'vertex')) {
+      marks.push('vertex closure');
+    }
+    if (lock && (lock.band === 'nullity' || lock.band === 'final_nullity')) {
+      marks.push('nullity closure');
+    }
+    if (!marks.length) marks.push('closure trace');
+
+    rows.push({
+      regionId: rid,
+      closureScore: op10mA11Round(closureScore),
+      band: closureBand(closureScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential final nullity closure ${closureBand(closureScore)} (${op10mA11Round(closureScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.closureScore - a.closureScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalFinalNullityClosure(
+  rows: OP10M_A11_ExistentialFinalNullityClosureRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'final' || r.band === 'total_closure').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialFinalNullityClosureEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 51;
+  return currentIndex >= 45 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-final-nullity-lock.ts ---
+
+function nullityBand(score: number): OP10M_A11_ExistentialFinalNullityLockBand {
+  if (score < 19) return 'remnant';
+  if (score < 35) return 'dissolving';
+  if (score < 52) return 'nullity';
+  return 'final_nullity';
+}
+
+export function op10mA11ComputeSettlementExistentialFinalNullityLock(args: {
+  existentialAbsoluteZeroLock: OP10M_A11_ExistentialAbsoluteZeroLockRow[];
+  collapseExistenceSingularityPoint: OP10M_A11_CollapseExistenceSingularityPointRow[];
+  existentialNullStateLock: OP10M_A11_ExistentialNullStateLockRow[];
+}): { rows: OP10M_A11_ExistentialFinalNullityLockRow[]; nationalIndex: number } {
+  const zeroByRegion = new Map(args.existentialAbsoluteZeroLock.map((z) => [z.regionId, z]));
+  const pointByRegion = new Map(args.collapseExistenceSingularityPoint.map((p) => [p.regionId, p]));
+  const nullByRegion = new Map(args.existentialNullStateLock.map((n) => [n.regionId, n]));
+
+  const rows: OP10M_A11_ExistentialFinalNullityLockRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const zero = zeroByRegion.get(rid);
+    const point = pointByRegion.get(rid);
+    const nullLock = nullByRegion.get(rid);
+
+    const zeroDrag = zero ? op10mA11Clamp(zero.zeroScore * 0.52) : 14;
+    const pointDrag = point ? op10mA11Clamp(point.pointScore * 0.47) : 12;
+    const nullDrag = nullLock ? op10mA11Clamp(nullLock.nullScore * 0.43) : 11;
+
+    const nullityScore = op10mA11Clamp(zeroDrag + pointDrag + nullDrag * 0.55);
+    weighted += nullityScore;
+
+    const seals: string[] = [];
+    if (zero && (zero.band === 'zero' || zero.band === 'absolute_zero')) {
+      seals.push('absolute zero seal');
+    }
+    if (point && (point.band === 'singular' || point.band === 'existential')) {
+      seals.push('singularity nullity');
+    }
+    if (nullLock && (nullLock.band === 'null' || nullLock.band === 'absolute_null')) {
+      seals.push('null-state finality');
+    }
+    if (!seals.length) seals.push('remnant presence');
+
+    rows.push({
+      regionId: rid,
+      nullityScore: op10mA11Round(nullityScore),
+      band: nullityBand(nullityScore),
+      seals: seals.slice(0, 3),
+      narrative: `${rid} existential final nullity lock ${nullityBand(nullityScore)} (${op10mA11Round(nullityScore)}); ${seals.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.nullityScore - a.nullityScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithFinalNullityLock(
+  rows: OP10M_A11_ExistentialFinalNullityLockRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'nullity' || r.band === 'final_nullity').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialFinalNullityLockEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 51;
+  return currentIndex >= 45 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-final-nullity-sentence.ts ---
+
+function sentenceBand(score: number): OP10M_A11_ExistentialFinalNullitySentenceBand {
+  if (score < 20) return 'trace';
+  if (score < 36) return 'sentencing';
+  if (score < 53) return 'final';
+  return 'total_sentence';
+}
+
+export function op10mA11ComputeSettlementExistentialFinalNullitySentence(args: {
+  existentialAbsoluteNullityVerdict: OP10M_A11_ExistentialAbsoluteNullityVerdictRow[];
+  collapseUltimateSingularityZenith: OP10M_A11_CollapseUltimateSingularityZenithRow[];
+  existentialFinalNullityClosure: OP10M_A11_ExistentialFinalNullityClosureRow[];
+}): { rows: OP10M_A11_ExistentialFinalNullitySentenceRow[]; nationalIndex: number } {
+  const verdictByRegion = new Map(args.existentialAbsoluteNullityVerdict.map((v) => [v.regionId, v]));
+  const zenithByRegion = new Map(args.collapseUltimateSingularityZenith.map((z) => [z.regionId, z]));
+  const closureByRegion = new Map(args.existentialFinalNullityClosure.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_ExistentialFinalNullitySentenceRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const verdict = verdictByRegion.get(rid);
+    const zenith = zenithByRegion.get(rid);
+    const closure = closureByRegion.get(rid);
+
+    const verdictDrag = verdict ? op10mA11Clamp(verdict.verdictScore * 0.53) : 16;
+    const zenithDrag = zenith ? op10mA11Clamp(zenith.zenithScore * 0.49) : 14;
+    const closureDrag = closure ? op10mA11Clamp(closure.closureScore * 0.5) : 13;
+
+    const sentenceScore = op10mA11Clamp(verdictDrag + zenithDrag + closureDrag * 0.6);
+    weighted += sentenceScore;
+
+    const marks: string[] = [];
+    if (verdict && (verdict.band === 'absolute' || verdict.band === 'total_verdict')) {
+      marks.push('verdict sentence');
+    }
+    if (zenith && (zenith.band === 'total' || zenith.band === 'zenith')) {
+      marks.push('zenith sentence');
+    }
+    if (closure && (closure.band === 'final' || closure.band === 'total_closure')) {
+      marks.push('closure sentence');
+    }
+    if (!marks.length) marks.push('sentence trace');
+
+    rows.push({
+      regionId: rid,
+      sentenceScore: op10mA11Round(sentenceScore),
+      band: sentenceBand(sentenceScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential final nullity sentence ${sentenceBand(sentenceScore)} (${op10mA11Round(sentenceScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.sentenceScore - a.sentenceScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalFinalNullitySentence(
+  rows: OP10M_A11_ExistentialFinalNullitySentenceRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'final' || r.band === 'total_sentence').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialFinalNullitySentenceEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 53;
+  return currentIndex >= 47 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-null-state-lock.ts ---
+
+function nullBand(score: number): OP10M_A11_ExistentialNullStateLockBand {
+  if (score < 23) return 'present';
+  if (score < 39) return 'fading';
+  if (score < 56) return 'null';
+  return 'absolute_null';
+}
+
+export function op10mA11ComputeSettlementExistentialNullStateLock(args: {
+  existentialObliterationThreshold: OP10M_A11_ExistentialObliterationThresholdRow[];
+  absoluteCollapseHorizonLock: OP10M_A11_AbsoluteCollapseHorizonLockRow[];
+  existentialTerminusLock: OP10M_A11_ExistentialTerminusLockRow[];
+}): { rows: OP10M_A11_ExistentialNullStateLockRow[]; nationalIndex: number } {
+  const thresholdByRegion = new Map(args.existentialObliterationThreshold.map((e) => [e.regionId, e]));
+  const lockByRegion = new Map(args.absoluteCollapseHorizonLock.map((a) => [a.regionId, a]));
+  const terminusByRegion = new Map(args.existentialTerminusLock.map((t) => [t.regionId, t]));
+
+  const rows: OP10M_A11_ExistentialNullStateLockRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const threshold = thresholdByRegion.get(rid);
+    const lock = lockByRegion.get(rid);
+    const terminus = terminusByRegion.get(rid);
+
+    const thresholdDrag = threshold ? op10mA11Clamp(threshold.thresholdScore * 0.48) : 14;
+    const lockDrag = lock ? op10mA11Clamp(lock.lockScore * 0.42) : 12;
+    const terminusDrag = terminus ? op10mA11Clamp(terminus.terminusScore * 0.4) : 11;
+
+    const nullScore = op10mA11Clamp(thresholdDrag + lockDrag + terminusDrag * 0.51);
+    weighted += nullScore;
+
+    const voids: string[] = [];
+    if (threshold && (threshold.band === 'breached' || threshold.band === 'obliterated')) {
+      voids.push('obliteration void');
+    }
+    if (lock && (lock.band === 'sealed' || lock.band === 'absolute')) {
+      voids.push('horizon null');
+    }
+    if (terminus && (terminus.band === 'sealed' || terminus.band === 'terminal')) {
+      voids.push('terminus null');
+    }
+    if (!voids.length) voids.push('state present');
+
+    rows.push({
+      regionId: rid,
+      nullScore: op10mA11Round(nullScore),
+      band: nullBand(nullScore),
+      voids: voids.slice(0, 3),
+      narrative: `${rid} existential null-state lock ${nullBand(nullScore)} (${op10mA11Round(nullScore)}); ${voids.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.nullScore - a.nullScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithAbsoluteExistentialNull(
+  rows: OP10M_A11_ExistentialNullStateLockRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'null' || r.band === 'absolute_null').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialNullStateLockEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 53;
+  return currentIndex >= 47 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-obliteration-threshold.ts ---
+
+function obliterationBand(score: number): OP10M_A11_ExistentialObliterationThresholdBand {
+  if (score < 25) return 'dormant';
+  if (score < 41) return 'approaching';
+  if (score < 58) return 'breached';
+  return 'obliterated';
+}
+
+export function op10mA11ComputeSettlementExistentialObliterationThreshold(args: {
+  existentialTerminusLock: OP10M_A11_ExistentialTerminusLockRow[];
+  collapseHorizonConvergence: OP10M_A11_CollapseHorizonConvergenceRow[];
+  existentialContinuityFracture: OP10M_A11_ExistentialContinuityFractureRow[];
+}): { rows: OP10M_A11_ExistentialObliterationThresholdRow[]; nationalIndex: number } {
+  const terminusByRegion = new Map(args.existentialTerminusLock.map((t) => [t.regionId, t]));
+  const horizonByRegion = new Map(args.collapseHorizonConvergence.map((c) => [c.regionId, c]));
+  const fractureByRegion = new Map(args.existentialContinuityFracture.map((e) => [e.regionId, e]));
+
+  const rows: OP10M_A11_ExistentialObliterationThresholdRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const terminus = terminusByRegion.get(rid);
+    const horizon = horizonByRegion.get(rid);
+    const fracture = fractureByRegion.get(rid);
+
+    const terminusDrag = terminus ? op10mA11Clamp(terminus.terminusScore * 0.47) : 14;
+    const horizonDrag = horizon ? op10mA11Clamp(horizon.convergenceScore * 0.42) : 12;
+    const fractureDrag = fracture ? op10mA11Clamp(fracture.fractureScore * 0.39) : 11;
+
+    const thresholdScore = op10mA11Clamp(terminusDrag + horizonDrag + fractureDrag * 0.5);
+    weighted += thresholdScore;
+
+    const triggers: string[] = [];
+    if (terminus && (terminus.band === 'sealed' || terminus.band === 'terminal')) {
+      triggers.push('terminus breach');
+    }
+    if (horizon && (horizon.band === 'imminent' || horizon.band === 'locked')) {
+      triggers.push('horizon breach');
+    }
+    if (fracture && (fracture.band === 'shattered' || fracture.band === 'extinguished')) {
+      triggers.push('continuity void');
+    }
+    if (!triggers.length) triggers.push('threshold dormant');
+
+    rows.push({
+      regionId: rid,
+      thresholdScore: op10mA11Round(thresholdScore),
+      band: obliterationBand(thresholdScore),
+      triggers: triggers.slice(0, 3),
+      narrative: `${rid} existential obliteration threshold ${obliterationBand(thresholdScore)} (${op10mA11Round(thresholdScore)}); ${triggers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.thresholdScore - a.thresholdScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithObliteratedExistentialThreshold(
+  rows: OP10M_A11_ExistentialObliterationThresholdRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'breached' || r.band === 'obliterated').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialObliterationThresholdEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 54;
+  return currentIndex >= 48 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-terminus-lock.ts ---
+
+function terminusBand(score: number): OP10M_A11_ExistentialTerminusLockBand {
+  if (score < 26) return 'open';
+  if (score < 43) return 'closing';
+  if (score < 60) return 'sealed';
+  return 'terminal';
+}
+
+export function op10mA11ComputeSettlementExistentialTerminusLock(args: {
+  existentialContinuityFracture: OP10M_A11_ExistentialContinuityFractureRow[];
+  totalCollapseSingularity: OP10M_A11_TotalCollapseSingularityRow[];
+  permanentDepopulationLock: OP10M_A11_PermanentDepopulationLockRow[];
+}): { rows: OP10M_A11_ExistentialTerminusLockRow[]; nationalIndex: number } {
+  const fractureByRegion = new Map(args.existentialContinuityFracture.map((e) => [e.regionId, e]));
+  const singularityByRegion = new Map(args.totalCollapseSingularity.map((s) => [s.regionId, s]));
+  const lockByRegion = new Map(args.permanentDepopulationLock.map((p) => [p.regionId, p]));
+
+  const rows: OP10M_A11_ExistentialTerminusLockRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const fracture = fractureByRegion.get(rid);
+    const singularity = singularityByRegion.get(rid);
+    const lock = lockByRegion.get(rid);
+
+    const fractureDrag = fracture ? op10mA11Clamp(fracture.fractureScore * 0.46) : 14;
+    const singularityDrag = singularity ? op10mA11Clamp(singularity.singularityScore * 0.41) : 12;
+    const lockDrag = lock ? op10mA11Clamp(lock.lockScore * 0.38) : 10;
+
+    const terminusScore = op10mA11Clamp(fractureDrag + singularityDrag + lockDrag * 0.5);
+    weighted += terminusScore;
+
+    const seals: string[] = [];
+    if (fracture && (fracture.band === 'shattered' || fracture.band === 'extinguished')) {
+      seals.push('continuity sealed');
+    }
+    if (singularity && (singularity.band === 'singular' || singularity.band === 'total')) {
+      seals.push('singularity terminus');
+    }
+    if (lock && (lock.band === 'locked' || lock.band === 'permanent')) {
+      seals.push('depopulation seal');
+    }
+    if (!seals.length) seals.push('terminus open');
+
+    rows.push({
+      regionId: rid,
+      terminusScore: op10mA11Round(terminusScore),
+      band: terminusBand(terminusScore),
+      seals: seals.slice(0, 3),
+      narrative: `${rid} existential terminus lock ${terminusBand(terminusScore)} (${op10mA11Round(terminusScore)}); ${seals.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.terminusScore - a.terminusScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTerminalExistentialLock(
+  rows: OP10M_A11_ExistentialTerminusLockRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'sealed' || r.band === 'terminal').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialTerminusLockEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 55;
+  return currentIndex >= 49 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-total-nullity-decree.ts ---
+
+function decreeBand(score: number): OP10M_A11_ExistentialTotalNullityDecreeBand {
+  if (score < 21) return 'trace';
+  if (score < 37) return 'decreeing';
+  if (score < 54) return 'total';
+  return 'absolute_decree';
+}
+
+export function op10mA11ComputeSettlementExistentialTotalNullityDecree(args: {
+  existentialFinalNullitySentence: OP10M_A11_ExistentialFinalNullitySentenceRow[];
+  collapseTotalSingularityNexus: OP10M_A11_CollapseTotalSingularityNexusRow[];
+  existentialAbsoluteNullityVerdict: OP10M_A11_ExistentialAbsoluteNullityVerdictRow[];
+}): { rows: OP10M_A11_ExistentialTotalNullityDecreeRow[]; nationalIndex: number } {
+  const sentenceByRegion = new Map(args.existentialFinalNullitySentence.map((s) => [s.regionId, s]));
+  const nexusByRegion = new Map(args.collapseTotalSingularityNexus.map((n) => [n.regionId, n]));
+  const verdictByRegion = new Map(args.existentialAbsoluteNullityVerdict.map((v) => [v.regionId, v]));
+
+  const rows: OP10M_A11_ExistentialTotalNullityDecreeRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const sentence = sentenceByRegion.get(rid);
+    const nexus = nexusByRegion.get(rid);
+    const verdict = verdictByRegion.get(rid);
+
+    const sentenceDrag = sentence ? op10mA11Clamp(sentence.sentenceScore * 0.54) : 17;
+    const nexusDrag = nexus ? op10mA11Clamp(nexus.nexusScore * 0.5) : 15;
+    const verdictDrag = verdict ? op10mA11Clamp(verdict.verdictScore * 0.51) : 14;
+
+    const decreeScore = op10mA11Clamp(sentenceDrag + nexusDrag + verdictDrag * 0.62);
+    weighted += decreeScore;
+
+    const marks: string[] = [];
+    if (sentence && (sentence.band === 'final' || sentence.band === 'total_sentence')) {
+      marks.push('sentence decree');
+    }
+    if (nexus && (nexus.band === 'total' || nexus.band === 'nexus')) {
+      marks.push('nexus decree');
+    }
+    if (verdict && (verdict.band === 'absolute' || verdict.band === 'total_verdict')) {
+      marks.push('verdict decree');
+    }
+    if (!marks.length) marks.push('decree trace');
+
+    rows.push({
+      regionId: rid,
+      decreeScore: op10mA11Round(decreeScore),
+      band: decreeBand(decreeScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential total nullity decree ${decreeBand(decreeScore)} (${op10mA11Round(decreeScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.decreeScore - a.decreeScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalNullityDecree(
+  rows: OP10M_A11_ExistentialTotalNullityDecreeRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'total' || r.band === 'absolute_decree').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialTotalNullityDecreeEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 54;
+  return currentIndex >= 48 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-existential-ultimate-nullity-seal.ts ---
+
+function sealBand(score: number): OP10M_A11_ExistentialUltimateNullitySealBand {
+  if (score < 17) return 'trace';
+  if (score < 33) return 'sealing';
+  if (score < 50) return 'ultimate';
+  return 'total_seal';
+}
+
+export function op10mA11ComputeSettlementExistentialUltimateNullitySeal(args: {
+  existentialFinalNullityLock: OP10M_A11_ExistentialFinalNullityLockRow[];
+  collapseOmniSingularityNode: OP10M_A11_CollapseOmniSingularityNodeRow[];
+  collapseExistenceSingularityPoint: OP10M_A11_CollapseExistenceSingularityPointRow[];
+}): { rows: OP10M_A11_ExistentialUltimateNullitySealRow[]; nationalIndex: number } {
+  const nullityByRegion = new Map(args.existentialFinalNullityLock.map((f) => [f.regionId, f]));
+  const nodeByRegion = new Map(args.collapseOmniSingularityNode.map((n) => [n.regionId, n]));
+  const pointByRegion = new Map(args.collapseExistenceSingularityPoint.map((p) => [p.regionId, p]));
+
+  const rows: OP10M_A11_ExistentialUltimateNullitySealRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const nullity = nullityByRegion.get(rid);
+    const node = nodeByRegion.get(rid);
+    const point = pointByRegion.get(rid);
+
+    const nullityDrag = nullity ? op10mA11Clamp(nullity.nullityScore * 0.54) : 14;
+    const nodeDrag = node ? op10mA11Clamp(node.nodeScore * 0.5) : 12;
+    const pointDrag = point ? op10mA11Clamp(point.pointScore * 0.45) : 11;
+
+    const sealScore = op10mA11Clamp(nullityDrag + nodeDrag + pointDrag * 0.57);
+    weighted += sealScore;
+
+    const marks: string[] = [];
+    if (nullity && (nullity.band === 'nullity' || nullity.band === 'final_nullity')) {
+      marks.push('final nullity seal');
+    }
+    if (node && (node.band === 'omni' || node.band === 'total_node')) {
+      marks.push('omni seal');
+    }
+    if (point && (point.band === 'singular' || point.band === 'existential')) {
+      marks.push('existence seal');
+    }
+    if (!marks.length) marks.push('seal trace');
+
+    rows.push({
+      regionId: rid,
+      sealScore: op10mA11Round(sealScore),
+      band: sealBand(sealScore),
+      marks: marks.slice(0, 3),
+      narrative: `${rid} existential ultimate nullity seal ${sealBand(sealScore)} (${op10mA11Round(sealScore)}); ${marks.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.sealScore - a.sealScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTotalUltimateNullitySeal(
+  rows: OP10M_A11_ExistentialUltimateNullitySealRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'ultimate' || r.band === 'total_seal').map((r) => r.regionId);
+}
+
+export function op10mA11ExistentialUltimateNullitySealEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 50;
+  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-infrastructure-absorption-gap.ts ---
+
+function gapBand(score: number): OP10M_A11_AbsorptionGapBand {
+  if (score < 22) return 'aligned';
+  if (score < 40) return 'widening';
+  if (score < 58) return 'critical';
+  return 'rupture';
+}
+
+export function op10mA11ComputeSettlementInfrastructureAbsorptionGap(args: {
+  infrastructureBacklog: OP10M_A11_InfrastructureBacklogRow[];
+  receptionStrain: OP10M_A11_ReceptionStrainRow[];
+  absorptionStress: OP10M_A11_AbsorptionStressRow[];
+}): { rows: OP10M_A11_AbsorptionGapRow[]; nationalIndex: number } {
+  const backlogByRegion = new Map(args.infrastructureBacklog.map((b) => [b.regionId, b]));
+  const receptionByRegion = new Map(args.receptionStrain.map((r) => [r.regionId, r]));
+  const absorptionByRegion = new Map(args.absorptionStress.map((a) => [a.regionId, a]));
+
+  const rows: OP10M_A11_AbsorptionGapRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const backlog = backlogByRegion.get(rid);
+    const reception = receptionByRegion.get(rid);
+    const absorption = absorptionByRegion.get(rid);
+
+    const backlogDrag = backlog ? op10mA11Clamp(backlog.backlogScore * 0.48) : 14;
+    const inflowDrag = reception ? op10mA11Clamp(reception.strainScore * 0.44) : 12;
+    const capacityDrag = absorption ? op10mA11Clamp(absorption.stressScore * 0.36) : 10;
+
+    const gapScore = op10mA11Clamp(backlogDrag + inflowDrag + capacityDrag * 0.55);
+    weighted += gapScore;
+
+    const gaps: string[] = [];
+    if (backlog && (backlog.band === 'severe' || backlog.band === 'critical')) gaps.push('infra backlog');
+    if (reception && (reception.band === 'strained' || reception.band === 'saturated')) gaps.push('reception overload');
+    if (absorption && (absorption.band === 'strained' || absorption.band === 'breached')) gaps.push('absorption ceiling');
+    if (!gaps.length) gaps.push('capacity matched');
+
+    rows.push({
+      regionId: rid,
+      gapScore: op10mA11Round(gapScore),
+      band: gapBand(gapScore),
+      gaps: gaps.slice(0, 3),
+      narrative: `${rid} infrastructure absorption gap ${gapBand(gapScore)} (${op10mA11Round(gapScore)}); ${gaps.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.gapScore - a.gapScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCriticalAbsorptionGap(rows: OP10M_A11_AbsorptionGapRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'critical' || r.band === 'rupture').map((r) => r.regionId);
+}
+
+export function op10mA11AbsorptionGapEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 48;
+  return currentIndex >= 42 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: settlement-irrecoverable-collapse-threshold.ts ---
+
+function collapseBand(score: number): OP10M_A11_IrrecoverableCollapseBand {
+  if (score < 27) return 'recoverable';
+  if (score < 45) return 'stressed';
+  if (score < 62) return 'terminal';
+  return 'irrecoverable';
+}
+
+export function op10mA11ComputeSettlementIrrecoverableCollapseThreshold(args: {
+  cascadingFailureRisk: OP10M_A11_CascadingFailureRiskRow[];
+  compoundShockSaturation: OP10M_A11_CompoundShockSaturationRow[];
+  institutionalTrustErosion: OP10M_A11_InstitutionalTrustErosionRow[];
+}): { rows: OP10M_A11_IrrecoverableCollapseThresholdRow[]; nationalIndex: number } {
+  const cascadeByRegion = new Map(args.cascadingFailureRisk.map((c) => [c.regionId, c]));
+  const shockByRegion = new Map(args.compoundShockSaturation.map((s) => [s.regionId, s]));
+  const trustByRegion = new Map(args.institutionalTrustErosion.map((t) => [t.regionId, t]));
+
+  const rows: OP10M_A11_IrrecoverableCollapseThresholdRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const cascade = cascadeByRegion.get(rid);
+    const shock = shockByRegion.get(rid);
+    const trust = trustByRegion.get(rid);
+
+    const cascadeDrag = cascade ? op10mA11Clamp(cascade.cascadeScore * 0.46) : 14;
+    const shockDrag = shock ? op10mA11Clamp(shock.saturationScore * 0.41) : 12;
+    const trustDrag = trust ? op10mA11Clamp(trust.erosionScore * 0.35) : 10;
+
+    const thresholdScore = op10mA11Clamp(cascadeDrag + shockDrag + trustDrag * 0.5);
+    weighted += thresholdScore;
+
+    const markers: string[] = [];
+    if (cascade && (cascade.band === 'cascade_risk' || cascade.band === 'systemic')) {
+      markers.push('cascade threshold');
+    }
+    if (shock && (shock.band === 'saturated' || shock.band === 'overwhelmed')) {
+      markers.push('shock overload');
+    }
+    if (trust && (trust.band === 'brittle' || trust.band === 'breakdown')) {
+      markers.push('trust void');
+    }
+    if (!markers.length) markers.push('recovery headroom');
+
+    rows.push({
+      regionId: rid,
+      thresholdScore: op10mA11Round(thresholdScore),
+      band: collapseBand(thresholdScore),
+      markers: markers.slice(0, 3),
+      narrative: `${rid} irrecoverable collapse threshold ${collapseBand(thresholdScore)} (${op10mA11Round(thresholdScore)}); ${markers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.thresholdScore - a.thresholdScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithIrrecoverableCollapse(
+  rows: OP10M_A11_IrrecoverableCollapseThresholdRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'terminal' || r.band === 'irrecoverable').map((r) => r.regionId);
+}
+
+export function op10mA11IrrecoverableCollapseThresholdEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 52;
+  return currentIndex >= 46 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-long-horizon-capacity-risk.ts ---
+
+function horizonBand(score: number): OP10M_A11_HorizonRiskBand {
+  if (score < 23) return 'stable';
+  if (score < 41) return 'elevated';
+  if (score < 59) return 'acute';
+  return 'critical';
+}
+
+export function op10mA11ComputeSettlementLongHorizonCapacityRisk(args: {
+  climateAdaptationLag: OP10M_A11_AdaptationLagRow[];
+  mobilityTrap: OP10M_A11_MobilityTrapRow[];
+  convergence: OP10M_A11_ConvergenceVelocityRow;
+}): { rows: OP10M_A11_HorizonRiskRow[]; nationalIndex: number } {
+  const lagByRegion = new Map(args.climateAdaptationLag.map((a) => [a.regionId, a]));
+  const trapByRegion = new Map(args.mobilityTrap.map((m) => [m.regionId, m]));
+  const spreadDrag = op10mA11Clamp(args.convergence.standingSpread * 0.28);
+  const convergenceDrag =
+    args.convergence.band === 'diverging' ? 14 : args.convergence.band === 'stalled' ? 8 : 0;
+
+  const rows: OP10M_A11_HorizonRiskRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const lag = lagByRegion.get(rid);
+    const trap = trapByRegion.get(rid);
+
+    const adaptationDrag = lag ? op10mA11Clamp(lag.lagScore * 0.48) : 15;
+    const mobilityDrag = trap ? op10mA11Clamp(trap.trapScore * 0.42) : 12;
+
+    const riskScore = op10mA11Clamp(adaptationDrag + mobilityDrag + spreadDrag + convergenceDrag);
+    weighted += riskScore;
+
+    const drivers: string[] = [];
+    if (lag && (lag.band === 'stalled' || lag.band === 'critical_lag')) drivers.push('adaptation lag');
+    if (trap && (trap.band === 'trapped' || trap.band === 'immobilized')) drivers.push('mobility lock-in');
+    if (args.convergence.band === 'stalled' || args.convergence.band === 'diverging') {
+      drivers.push('convergence stress');
+    }
+    if (!drivers.length) drivers.push('long-horizon capacity adequate');
+
+    rows.push({
+      regionId: rid,
+      riskScore: op10mA11Round(riskScore),
+      band: horizonBand(riskScore),
+      drivers: drivers.slice(0, 3),
+      narrative: `${rid} long-horizon capacity ${horizonBand(riskScore)} (${op10mA11Round(riskScore)}); ${drivers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.riskScore - a.riskScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithCriticalHorizonRisk(rows: OP10M_A11_HorizonRiskRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'acute' || r.band === 'critical').map((r) => r.regionId);
+}
+
+export function op10mA11HorizonRiskEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 49;
+  return currentIndex >= 43 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-permanent-depopulation-lock.ts ---
+
+function lockBand(score: number): OP10M_A11_PermanentDepopulationLockBand {
+  if (score < 27) return 'fluid';
+  if (score < 45) return 'sticky';
+  if (score < 62) return 'locked';
+  return 'permanent';
+}
+
+export function op10mA11ComputeSettlementPermanentDepopulationLock(args: {
+  postCollapseRecoveryImpossibility: OP10M_A11_PostCollapseRecoveryImpossibilityRow[];
+  settlementAbandonmentSpiral: OP10M_A11_SettlementAbandonmentSpiralRow[];
+  terminalStateLockIn: OP10M_A11_TerminalStateLockInRow[];
+}): { rows: OP10M_A11_PermanentDepopulationLockRow[]; nationalIndex: number } {
+  const recoveryByRegion = new Map(args.postCollapseRecoveryImpossibility.map((p) => [p.regionId, p]));
+  const spiralByRegion = new Map(args.settlementAbandonmentSpiral.map((s) => [s.regionId, s]));
+  const lockInByRegion = new Map(args.terminalStateLockIn.map((t) => [t.regionId, t]));
+
+  const rows: OP10M_A11_PermanentDepopulationLockRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const recovery = recoveryByRegion.get(rid);
+    const spiral = spiralByRegion.get(rid);
+    const lockIn = lockInByRegion.get(rid);
+
+    const recoveryDrag = recovery ? op10mA11Clamp(recovery.impossibilityScore * 0.45) : 14;
+    const spiralDrag = spiral ? op10mA11Clamp(spiral.spiralScore * 0.43) : 12;
+    const lockInDrag = lockIn ? op10mA11Clamp(lockIn.lockInScore * 0.36) : 10;
+
+    const lockScore = op10mA11Clamp(recoveryDrag + spiralDrag + lockInDrag * 0.48);
+    weighted += lockScore;
+
+    const markers: string[] = [];
+    if (recovery && (recovery.band === 'blocked' || recovery.band === 'impossible')) {
+      markers.push('recovery sealed');
+    }
+    if (spiral && (spiral.band === 'exodus' || spiral.band === 'abandoned')) {
+      markers.push('outflow locked');
+    }
+    if (lockIn && (lockIn.band === 'locked' || lockIn.band === 'terminal')) {
+      markers.push('terminal depopulation');
+    }
+    if (!markers.length) markers.push('population mobility');
+
+    rows.push({
+      regionId: rid,
+      lockScore: op10mA11Round(lockScore),
+      band: lockBand(lockScore),
+      markers: markers.slice(0, 3),
+      narrative: `${rid} permanent depopulation lock ${lockBand(lockScore)} (${op10mA11Round(lockScore)}); ${markers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.lockScore - a.lockScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithPermanentDepopulationLock(
+  rows: OP10M_A11_PermanentDepopulationLockRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'locked' || r.band === 'permanent').map((r) => r.regionId);
+}
+
+export function op10mA11PermanentDepopulationLockEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 55;
+  return currentIndex >= 49 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-post-collapse-recovery-impossibility.ts ---
+
+function recoveryBand(score: number): OP10M_A11_PostCollapseRecoveryImpossibilityBand {
+  if (score < 27) return 'recoverable';
+  if (score < 45) return 'constrained';
+  if (score < 62) return 'blocked';
+  return 'impossible';
+}
+
+export function op10mA11ComputeSettlementPostCollapseRecoveryImpossibility(args: {
+  terminalStateLockIn: OP10M_A11_TerminalStateLockInRow[];
+  fiscalPanicContagion: OP10M_A11_FiscalPanicContagionRow[];
+  cascadingFailureRisk: OP10M_A11_CascadingFailureRiskRow[];
+}): { rows: OP10M_A11_PostCollapseRecoveryImpossibilityRow[]; nationalIndex: number } {
+  const lockInByRegion = new Map(args.terminalStateLockIn.map((t) => [t.regionId, t]));
+  const contagionByRegion = new Map(args.fiscalPanicContagion.map((f) => [f.regionId, f]));
+  const cascadeByRegion = new Map(args.cascadingFailureRisk.map((c) => [c.regionId, c]));
+
+  const rows: OP10M_A11_PostCollapseRecoveryImpossibilityRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const lockIn = lockInByRegion.get(rid);
+    const contagion = contagionByRegion.get(rid);
+    const cascade = cascadeByRegion.get(rid);
+
+    const lockInDrag = lockIn ? op10mA11Clamp(lockIn.lockInScore * 0.46) : 14;
+    const contagionDrag = contagion ? op10mA11Clamp(contagion.contagionScore * 0.4) : 12;
+    const cascadeDrag = cascade ? op10mA11Clamp(cascade.cascadeScore * 0.36) : 10;
+
+    const impossibilityScore = op10mA11Clamp(lockInDrag + contagionDrag + cascadeDrag * 0.47);
+    weighted += impossibilityScore;
+
+    const blockers: string[] = [];
+    if (lockIn && (lockIn.band === 'locked' || lockIn.band === 'terminal')) {
+      blockers.push('terminal rigidity');
+    }
+    if (contagion && (contagion.band === 'contagion' || contagion.band === 'systemic')) {
+      blockers.push('fiscal contagion');
+    }
+    if (cascade && (cascade.band === 'cascade_risk' || cascade.band === 'systemic')) {
+      blockers.push('cascade persistence');
+    }
+    if (!blockers.length) blockers.push('recovery pathway');
+
+    rows.push({
+      regionId: rid,
+      impossibilityScore: op10mA11Round(impossibilityScore),
+      band: recoveryBand(impossibilityScore),
+      blockers: blockers.slice(0, 3),
+      narrative: `${rid} post-collapse recovery impossibility ${recoveryBand(impossibilityScore)} (${op10mA11Round(impossibilityScore)}); ${blockers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.impossibilityScore - a.impossibilityScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithImpossibleRecovery(
+  rows: OP10M_A11_PostCollapseRecoveryImpossibilityRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'blocked' || r.band === 'impossible').map((r) => r.regionId);
+}
+
+export function op10mA11PostCollapseRecoveryImpossibilityEscalating(
+  currentIndex: number,
+  priorIndex: number | null,
+): boolean {
+  if (priorIndex === null) return currentIndex >= 54;
+  return currentIndex >= 48 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-reception-capacity-strain.ts ---
+
+function strainBand(score: number): OP10M_A11_ReceptionStrainBand {
+  if (score < 23) return 'absorptive';
+  if (score < 41) return 'tight';
+  if (score < 59) return 'strained';
+  return 'saturated';
+}
+
+export function op10mA11ComputeSettlementReceptionCapacityStrain(args: {
+  relocationBurden: OP10M_A11_RelocationBurdenRow[];
+  absorptionStress: OP10M_A11_AbsorptionStressRow[];
+  serviceEquity: OP10M_A11_ServiceEquityRow[];
+}): { rows: OP10M_A11_ReceptionStrainRow[]; nationalIndex: number } {
+  const relocationByRegion = new Map(args.relocationBurden.map((r) => [r.regionId, r]));
+  const absorptionByRegion = new Map(args.absorptionStress.map((a) => [a.regionId, a]));
+  const equityByRegion = new Map(args.serviceEquity.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_ReceptionStrainRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const relocation = relocationByRegion.get(rid);
+    const absorption = absorptionByRegion.get(rid);
+    const equity = equityByRegion.get(rid);
+
+    const inflowLoad = relocation ? op10mA11Clamp(relocation.burdenScore * 0.52) : 15;
+    const capacityDrag = absorption ? op10mA11Clamp(absorption.stressScore * 0.4) : 12;
+    const serviceDrag = equity
+      ? op10mA11Clamp((100 - equity.equityScore) * 0.28 + (equity.band === 'critical_gap' ? 10 : 0))
+      : 8;
+
+    const strainScore = op10mA11Clamp(inflowLoad + capacityDrag + serviceDrag);
+    weighted += strainScore;
+
+    const factors: string[] = [];
+    if (relocation && (relocation.band === 'severe' || relocation.band === 'overwhelming')) {
+      factors.push('relocation inflow');
+    }
+    if (absorption && (absorption.band === 'strained' || absorption.band === 'breached')) {
+      factors.push('absorption ceiling');
+    }
+    if (equity && (equity.band === 'uneven' || equity.band === 'critical_gap')) factors.push('service equity gap');
+    if (!factors.length) factors.push('routine reception headroom');
+
+    rows.push({
+      regionId: rid,
+      strainScore: op10mA11Round(strainScore),
+      band: strainBand(strainScore),
+      factors: factors.slice(0, 3),
+      narrative: `${rid} reception capacity ${strainBand(strainScore)} (${op10mA11Round(strainScore)}); ${factors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.strainScore - a.strainScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithReceptionCapacityStrain(
+  rows: OP10M_A11_ReceptionStrainRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'strained' || r.band === 'saturated').map((r) => r.regionId);
+}
+
+export function op10mA11ReceptionStrainEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 49;
+  return currentIndex >= 43 && currentIndex > priorIndex + 5;
+}
+
+
+// --- source: settlement-relocation-burden.ts ---
+
+function relocationBand(score: number): OP10M_A11_RelocationBurdenBand {
+  if (score < 24) return 'manageable';
+  if (score < 42) return 'elevated';
+  if (score < 60) return 'severe';
+  return 'overwhelming';
+}
+
+export function op10mA11ComputeSettlementRelocationBurden(args: {
+  climateDisplacement: OP10M_A11_ClimateDisplacementRow[];
+  governanceFriction: OP10M_A11_GovernanceFrictionRow[];
+  housingSpillover: OP10M_A11_HousingSpilloverRow[];
+}): { rows: OP10M_A11_RelocationBurdenRow[]; nationalIndex: number } {
+  const climateByRegion = new Map(args.climateDisplacement.map((c) => [c.regionId, c]));
+  const governanceByRegion = new Map(args.governanceFriction.map((g) => [g.regionId, g]));
+  const housingByRegion = new Map(args.housingSpillover.map((h) => [h.regionId, h]));
+
+  const rows: OP10M_A11_RelocationBurdenRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const climate = climateByRegion.get(rid);
+    const governance = governanceByRegion.get(rid);
+    const housing = housingByRegion.get(rid);
+
+    const displacementLoad = climate ? op10mA11Clamp(climate.displacementScore * 0.55) : 16;
+    const coordinationDrag = governance ? op10mA11Clamp(governance.frictionScore * 0.32) : 12;
+    const receptionStress = housing ? op10mA11Clamp(housing.spilloverScore * 0.28) : 10;
+
+    const burdenScore = op10mA11Clamp(displacementLoad + coordinationDrag + receptionStress);
+    weighted += burdenScore;
+
+    const factors: string[] = [];
+    if (climate && (climate.band === 'acute' || climate.band === 'critical')) factors.push('climate displacement');
+    if (governance && (governance.band === 'fragmented' || governance.band === 'breakdown')) {
+      factors.push('governance coordination gap');
+    }
+    if (housing && (housing.band === 'cascade' || housing.band === 'systemic')) factors.push('host market saturation');
+    if (!factors.length) factors.push('routine relocation capacity');
+
+    rows.push({
+      regionId: rid,
+      burdenScore: op10mA11Round(burdenScore),
+      band: relocationBand(burdenScore),
+      factors: factors.slice(0, 3),
+      narrative: `${rid} relocation burden ${relocationBand(burdenScore)} (${op10mA11Round(burdenScore)}); ${factors.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.burdenScore - a.burdenScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithOverwhelmingRelocationBurden(
+  rows: OP10M_A11_RelocationBurdenRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'severe' || r.band === 'overwhelming').map((r) => r.regionId);
+}
+
+export function op10mA11RelocationBurdenEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 50;
+  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-resilience-frontier-pressure.ts ---
+
+function frontierBand(score: number): OP10M_A11_ResilienceFrontierBand {
+  if (score < 23) return 'within';
+  if (score < 41) return 'approaching';
+  if (score < 59) return 'at_limit';
+  return 'breached';
+}
+
+export function op10mA11ComputeSettlementResilienceFrontierPressure(args: {
+  systemicFragility: OP10M_A11_SystemicFragilityRow[];
+  adaptiveCapacityCeiling: OP10M_A11_AdaptiveCeilingRow[];
+  longHorizonCapacityRisk: OP10M_A11_HorizonRiskRow[];
+}): { rows: OP10M_A11_ResilienceFrontierRow[]; nationalIndex: number } {
+  const systemicByRegion = new Map(args.systemicFragility.map((s) => [s.regionId, s]));
+  const ceilingByRegion = new Map(args.adaptiveCapacityCeiling.map((a) => [a.regionId, a]));
+  const horizonByRegion = new Map(args.longHorizonCapacityRisk.map((h) => [h.regionId, h]));
+
+  const rows: OP10M_A11_ResilienceFrontierRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const systemic = systemicByRegion.get(rid);
+    const ceiling = ceilingByRegion.get(rid);
+    const horizon = horizonByRegion.get(rid);
+
+    const cascadeDrag = systemic ? op10mA11Clamp(systemic.fragilityScore * 0.48) : 15;
+    const capacityDrag = ceiling ? op10mA11Clamp(ceiling.ceilingScore * 0.4) : 12;
+    const horizonDrag = horizon ? op10mA11Clamp(horizon.riskScore * 0.34) : 10;
+
+    const pressureScore = op10mA11Clamp(cascadeDrag + capacityDrag + horizonDrag * 0.52);
+    weighted += pressureScore;
+
+    const pressures: string[] = [];
+    if (systemic && (systemic.band === 'systemic' || systemic.band === 'cascade_risk')) {
+      pressures.push('systemic cascade');
+    }
+    if (ceiling && (ceiling.band === 'capped' || ceiling.band === 'breached')) pressures.push('adaptive ceiling');
+    if (horizon && (horizon.band === 'acute' || horizon.band === 'critical')) pressures.push('horizon risk');
+    if (!pressures.length) pressures.push('frontier headroom');
+
+    rows.push({
+      regionId: rid,
+      pressureScore: op10mA11Round(pressureScore),
+      band: frontierBand(pressureScore),
+      pressures: pressures.slice(0, 3),
+      narrative: `${rid} resilience frontier ${frontierBand(pressureScore)} (${op10mA11Round(pressureScore)}); ${pressures.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.pressureScore - a.pressureScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithBreachedResilienceFrontier(
+  rows: OP10M_A11_ResilienceFrontierRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'at_limit' || r.band === 'breached').map((r) => r.regionId);
+}
+
+export function op10mA11ResilienceFrontierEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 49;
+  return currentIndex >= 43 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-systemic-fragility-composite.ts ---
+
+function fragilityBand(score: number): OP10M_A11_SystemicFragilityBand {
+  if (score < 24) return 'contained';
+  if (score < 42) return 'elevated';
+  if (score < 60) return 'systemic';
+  return 'cascade_risk';
+}
+
+export function op10mA11ComputeSettlementSystemicFragilityComposite(args: {
+  longHorizonCapacityRisk: OP10M_A11_HorizonRiskRow[];
+  landUseGridlock: OP10M_A11_LandUseGridlockRow[];
+  relocationBurden: OP10M_A11_RelocationBurdenRow[];
+}): { rows: OP10M_A11_SystemicFragilityRow[]; nationalIndex: number } {
+  const horizonByRegion = new Map(args.longHorizonCapacityRisk.map((h) => [h.regionId, h]));
+  const gridlockByRegion = new Map(args.landUseGridlock.map((l) => [l.regionId, l]));
+  const relocationByRegion = new Map(args.relocationBurden.map((r) => [r.regionId, r]));
+
+  const rows: OP10M_A11_SystemicFragilityRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const horizon = horizonByRegion.get(rid);
+    const gridlock = gridlockByRegion.get(rid);
+    const relocation = relocationByRegion.get(rid);
+
+    const horizonDrag = horizon ? op10mA11Clamp(horizon.riskScore * 0.46) : 15;
+    const regulatoryDrag = gridlock ? op10mA11Clamp(gridlock.gridlockScore * 0.36) : 12;
+    const displacementDrag = relocation ? op10mA11Clamp(relocation.burdenScore * 0.38) : 11;
+
+    const fragilityScore = op10mA11Clamp(horizonDrag + regulatoryDrag + displacementDrag);
+    weighted += fragilityScore;
+
+    const cascades: string[] = [];
+    if (horizon && (horizon.band === 'acute' || horizon.band === 'critical')) cascades.push('horizon risk');
+    if (gridlock && (gridlock.band === 'gridlocked' || gridlock.band === 'paralyzed')) cascades.push('regulatory gridlock');
+    if (relocation && (relocation.band === 'severe' || relocation.band === 'overwhelming')) {
+      cascades.push('relocation overload');
+    }
+    if (!cascades.length) cascades.push('systemic buffers intact');
+
+    rows.push({
+      regionId: rid,
+      fragilityScore: op10mA11Round(fragilityScore),
+      band: fragilityBand(fragilityScore),
+      cascades: cascades.slice(0, 3),
+      narrative: `${rid} systemic fragility ${fragilityBand(fragilityScore)} (${op10mA11Round(fragilityScore)}); ${cascades.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.fragilityScore - a.fragilityScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithSystemicCascadeRisk(rows: OP10M_A11_SystemicFragilityRow[]): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'systemic' || r.band === 'cascade_risk').map((r) => r.regionId);
+}
+
+export function op10mA11SystemicFragilityEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 50;
+  return currentIndex >= 44 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-terminal-state-lock-in.ts ---
+
+function lockInBand(score: number): OP10M_A11_TerminalStateLockInBand {
+  if (score < 26) return 'reversible';
+  if (score < 44) return 'sticky';
+  if (score < 61) return 'locked';
+  return 'terminal';
+}
+
+export function op10mA11ComputeSettlementTerminalStateLockIn(args: {
+  irrecoverableCollapseThreshold: OP10M_A11_IrrecoverableCollapseThresholdRow[];
+  cascadingFailureRisk: OP10M_A11_CascadingFailureRiskRow[];
+  socialContractFragility: OP10M_A11_SocialContractFragilityRow[];
+}): { rows: OP10M_A11_TerminalStateLockInRow[]; nationalIndex: number } {
+  const collapseByRegion = new Map(args.irrecoverableCollapseThreshold.map((i) => [i.regionId, i]));
+  const cascadeByRegion = new Map(args.cascadingFailureRisk.map((c) => [c.regionId, c]));
+  const contractByRegion = new Map(args.socialContractFragility.map((s) => [s.regionId, s]));
+
+  const rows: OP10M_A11_TerminalStateLockInRow[] = [];
+  let weighted = 0;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const collapse = collapseByRegion.get(rid);
+    const cascade = cascadeByRegion.get(rid);
+    const contract = contractByRegion.get(rid);
+
+    const collapseDrag = collapse ? op10mA11Clamp(collapse.thresholdScore * 0.45) : 14;
+    const cascadeDrag = cascade ? op10mA11Clamp(cascade.cascadeScore * 0.42) : 12;
+    const contractDrag = contract ? op10mA11Clamp(contract.fragilityScore * 0.34) : 10;
+
+    const lockInScore = op10mA11Clamp(collapseDrag + cascadeDrag + contractDrag * 0.47);
+    weighted += lockInScore;
+
+    const markers: string[] = [];
+    if (collapse && (collapse.band === 'terminal' || collapse.band === 'irrecoverable')) {
+      markers.push('irrecoverable threshold');
+    }
+    if (cascade && (cascade.band === 'cascade_risk' || cascade.band === 'systemic')) {
+      markers.push('cascade lock-in');
+    }
+    if (contract && (contract.band === 'fraying' || contract.band === 'ruptured')) {
+      markers.push('contract rigidity');
+    }
+    if (!markers.length) markers.push('recovery path open');
+
+    rows.push({
+      regionId: rid,
+      lockInScore: op10mA11Round(lockInScore),
+      band: lockInBand(lockInScore),
+      markers: markers.slice(0, 3),
+      narrative: `${rid} terminal state lock-in ${lockInBand(lockInScore)} (${op10mA11Round(lockInScore)}); ${markers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  const nationalIndex = op10mA11Round(weighted / OP10M_A11_CORE_REGIONS.length);
+  return { rows: rows.sort((a, b) => b.lockInScore - a.lockInScore), nationalIndex };
+}
+
+export function op10mA11RegionsWithTerminalStateLockIn(
+  rows: OP10M_A11_TerminalStateLockInRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'locked' || r.band === 'terminal').map((r) => r.regionId);
+}
+
+export function op10mA11TerminalStateLockInEscalating(currentIndex: number, priorIndex: number | null): boolean {
+  if (priorIndex === null) return currentIndex >= 53;
+  return currentIndex >= 47 && currentIndex > priorIndex + 6;
+}
+
+
+// --- source: settlement-vulnerability.ts ---
+
+function vulnerabilityBand(score: number): OP10M_A11_SettlementVulnerabilityBand {
+  if (score < 28) return 'resilient';
+  if (score < 48) return 'exposed';
+  if (score < 68) return 'fragile';
+  return 'critical';
+}
+
+export function op10mA11ComputeSettlementVulnerability(args: {
+  regions: Record<OP10M_A11_RegionId, OP10M_A11_RegionInequalityRow>;
+  bottlenecks: OP10M_A11_RegionalBottleneck[];
+  linkageHubs: OP10M_A11_LinkageHubProfile[];
+  fragilityIndex: number;
+}): OP10M_A11_SettlementVulnerabilityRow[] {
+  const bottleneckByRegion = new Map(args.bottlenecks.map((b) => [b.regionId, b]));
+  const hubByRegion = new Map(args.linkageHubs.map((h) => [h.regionId, h]));
+
+  const rows: OP10M_A11_SettlementVulnerabilityRow[] = [];
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const region = args.regions[rid];
+    const bn = bottleneckByRegion.get(rid);
+    const hub = hubByRegion.get(rid);
+
+    const inequalityStress = region.lagging ? 22 : region.leading ? 8 : 14;
+    const bottleneckStress =
+      bn?.severity === 'critical' ? 32 : bn?.severity === 'meaningful' ? 20 : bn ? 10 : 0;
+    const isolationStress = hub ? op10mA11Clamp(hub.isolationScore * 0.55) : 15;
+    const spilloverPenalty =
+      region.spilloverBand === 'isolated' ? 16 : region.spilloverBand === 'weak' ? 8 : 0;
+    const networkStress = op10mA11Clamp(args.fragilityIndex * 0.12);
+
+    const compositeScore = op10mA11Clamp(
+      inequalityStress + bottleneckStress + isolationStress + spilloverPenalty + networkStress,
+    );
+
+    const drivers: string[] = [];
+    if (region.lagging) drivers.push('lagging urban standing');
+    if (bn) drivers.push(`infrastructure bottleneck (${bn.severity})`);
+    if (hub && hub.isolationScore >= 55) drivers.push('linkage isolation');
+    if (region.spilloverBand === 'isolated') drivers.push('weak national spillover');
+    if (!drivers.length) drivers.push('baseline settlement exposure');
+
+    rows.push({
+      regionId: rid,
+      vulnerabilityScore: op10mA11Round(compositeScore),
+      band: vulnerabilityBand(compositeScore),
+      drivers: drivers.slice(0, 4),
+      narrative: `${rid} settlement ${vulnerabilityBand(compositeScore)} (score ${op10mA11Round(compositeScore)}): ${drivers.slice(0, 2).join('; ')}.`,
+    });
+  }
+
+  return rows.sort((a, b) => b.vulnerabilityScore - a.vulnerabilityScore);
+}
+
+export function op10mA11CriticalSettlementRegions(
+  rows: OP10M_A11_SettlementVulnerabilityRow[],
+): OP10M_A11_RegionId[] {
+  return rows.filter((r) => r.band === 'critical' || r.band === 'fragile').map((r) => r.regionId);
+}
+
+
+// --- source: urban-corridor-flow.ts ---
+
+function flowBand(pressure: number): OP10M_A11_FlowPressureBand {
+  if (pressure < 28) return 'light';
+  if (pressure < 48) return 'moderate';
+  if (pressure < 68) return 'heavy';
+  return 'surge';
+}
+
+function regionUrbanPulse(cities: OP10M_A11_CityGrowthSlice[], rid: OP10M_A11_RegionId): number {
+  const rows = cities.filter((c) => c.regionId === rid);
+  if (!rows.length) return 45;
+  return rows.reduce((a, c) => a + c.growthScore, 0) / rows.length;
+}
+
+export function op10mA11ComputeCorridorFlows(args: {
+  cities: OP10M_A11_CityGrowthSlice[];
+  links: OP10M_A11_IntercityLinkSlice[];
+  linkages: OP10M_A11_RegionalLinkageEdge[];
+}): OP10M_A11_CorridorFlowRow[] {
+  const pulse = {} as Record<OP10M_A11_RegionId, number>;
+  for (const rid of OP10M_A11_CORE_REGIONS) pulse[rid] = regionUrbanPulse(args.cities, rid);
+
+  const linkageByKey = new Map<string, OP10M_A11_RegionalLinkageEdge>();
+  for (const l of args.linkages) {
+    linkageByKey.set([l.fromRegion, l.toRegion].sort().join('::'), l);
+  }
+
+  const acc = new Map<string, { pressure: number; gradient: number; n: number }>();
+
+  for (const link of args.links) {
+    if (link.regionA === link.regionB) continue;
+    const key = [link.regionA, link.regionB].sort().join('::');
+    const grad = Math.abs(pulse[link.regionA] - pulse[link.regionB]);
+    const util = link.utilization;
+    const healthDrag =
+      link.health === 'severed' ? 0.2 : link.health === 'degraded' ? 0.65 : link.health === 'operational' ? 0.9 : 1;
+    const add = op10mA11Clamp(util * 0.58 * healthDrag + grad * 0.38 + (link.strategic ? 12 : 0));
+    const prev = acc.get(key) || { pressure: 0, gradient: 0, n: 0 };
+    prev.pressure += add;
+    prev.gradient = Math.max(prev.gradient, grad);
+    prev.n += 1;
+    acc.set(key, prev);
+  }
+
+  const out: OP10M_A11_CorridorFlowRow[] = [];
+  for (const [key, val] of acc) {
+    const [fromRegion, toRegion] = key.split('::') as [OP10M_A11_RegionId, OP10M_A11_RegionId];
+    const linkage = linkageByKey.get(key);
+    const linkageBoost = linkage ? linkage.strength * 0.08 : 0;
+    const flowPressure = op10mA11Clamp(val.pressure / Math.max(1, val.n) + linkageBoost);
+    const band = flowBand(flowPressure);
+    out.push({
+      fromRegion,
+      toRegion,
+      flowPressure: op10mA11Round(flowPressure),
+      band,
+      growthGradient: op10mA11Round(val.gradient),
+      explanation: `${fromRegion}↔${toRegion} corridor ${band} (pressure ${op10mA11Round(flowPressure)}, gradient ${op10mA11Round(val.gradient)}).`,
+    });
+  }
+
+  return out.sort((a, b) => b.flowPressure - a.flowPressure);
+}
+
+export function op10mA11MaxCorridorFlow(flows: OP10M_A11_CorridorFlowRow[]): number {
+  if (!flows.length) return 0;
+  return Math.max(...flows.map((f) => f.flowPressure));
+}
+
+export function op10mA11SurgeCorridors(flows: OP10M_A11_CorridorFlowRow[]): OP10M_A11_CorridorFlowRow[] {
+  return flows.filter((f) => f.band === 'surge' || f.band === 'heavy');
+}
+
+
+// --- source: urban-growth-dynamics.ts ---
+
+const MOMENTUM_BOOST: Record<string, number> = {
+  declining: -10,
+  weakening: -4,
+  stable: 0,
+  growing: 6,
+  rapid_growth: 12,
+  booming: 18,
+};
+
+const DEV_BOOST: Record<string, number> = {
+  underdeveloped: -6,
+  emerging: -1,
+  developing: 3,
+  advanced: 8,
+  highly_developed: 12,
+};
+
+export function op10mA11AggregateUrbanGrowthByRegion(
+  cities: OP10M_A11_CityGrowthSlice[],
+): Record<OP10M_A11_RegionId, { avgGrowth: number; maxGrowth: number; cityCount: number; gatewayAvg: number }> {
+  const acc: Partial<
+    Record<
+      OP10M_A11_RegionId,
+      { sum: number; max: number; n: number; gatewaySum: number; gatewayN: number }
+    >
+  > = {};
+
+  for (const c of cities) {
+    const rid = c.regionId as OP10M_A11_RegionId;
+    if (!OP10M_A11_CORE_REGIONS.includes(rid)) continue;
+    const row = acc[rid] || { sum: 0, max: 0, n: 0, gatewaySum: 0, gatewayN: 0 };
+    row.sum += c.growthScore;
+    row.max = Math.max(row.max, c.growthScore);
+    row.n += 1;
+    if (c.gateway) {
+      row.gatewaySum += c.growthScore;
+      row.gatewayN += 1;
+    }
+    acc[rid] = row;
+  }
+
+  const out = {} as Record<
+    OP10M_A11_RegionId,
+    { avgGrowth: number; maxGrowth: number; cityCount: number; gatewayAvg: number }
+  >;
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const row = acc[rid];
+    if (!row || !row.n) {
+      out[rid] = { avgGrowth: 40, maxGrowth: 40, cityCount: 0, gatewayAvg: 40 };
+      continue;
+    }
+    out[rid] = {
+      avgGrowth: op10mA11Round(row.sum / row.n),
+      maxGrowth: op10mA11Round(row.max),
+      cityCount: row.n,
+      gatewayAvg: op10mA11Round(row.gatewayN ? row.gatewaySum / row.gatewayN : row.sum / row.n),
+    };
+  }
+  return out;
+}
+
+export function op10mA11BlendRegionalUrbanScore(
+  urban: { avgGrowth: number; gatewayAvg: number },
+  region: OP10M_A11_RegionSlice | undefined,
+): number {
+  const mom = MOMENTUM_BOOST[region?.momentumBand || 'stable'] ?? 0;
+  const dev = DEV_BOOST[region?.developmentTier || 'emerging'] ?? 0;
+  const infra = region?.infrastructureQuality ?? 45;
+  const econ = region?.economyScore ?? 50;
+  const base = urban.avgGrowth * 0.55 + urban.gatewayAvg * 0.2 + econ * 0.15;
+  return op10mA11Clamp(base + mom + dev + (infra - 50) * 0.12);
+}
+
+export function op10mA11MetroRegionalGap(
+  byRegion: Record<OP10M_A11_RegionId, { avgGrowth: number; gatewayAvg: number }>,
+): number {
+  const gatewayScores = OP10M_A11_CORE_REGIONS.map((r) => byRegion[r].gatewayAvg);
+  const regionalScores = OP10M_A11_CORE_REGIONS.map((r) => byRegion[r].avgGrowth);
+  const gMean = gatewayScores.reduce((a, b) => a + b, 0) / gatewayScores.length;
+  const rMean = regionalScores.reduce((a, b) => a + b, 0) / regionalScores.length;
+  return op10mA11Clamp(Math.abs(gMean - rMean) * 1.1);
+}
+
+
+// --- source: urban-hierarchy.ts ---
+
+function primateBand(index: number): OP10M_A11_PrimateBand {
+  if (index < 22) return 'decentralized';
+  if (index < 40) return 'balanced';
+  if (index < 62) return 'concentrated';
+  return 'hyper_concentrated';
+}
+
+export function op10mA11ComputeUrbanHierarchy(cities: OP10M_A11_CityGrowthSlice[]): OP10M_A11_UrbanHierarchyRow[] {
+  const rows: OP10M_A11_UrbanHierarchyRow[] = [];
+
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    const regionCities = cities.filter((c) => c.regionId === rid);
+    if (!regionCities.length) {
+      rows.push({
+        regionId: rid,
+        primateIndex: 30,
+        primateBand: 'balanced',
+        gatewayShare: 0,
+        secondaryMomentum: 40,
+        narrative: `${rid}: no tracked cities — neutral hierarchy prior.`,
+      });
+      continue;
+    }
+
+    const gateways = regionCities.filter((c) => c.gateway);
+    const secondaries = regionCities.filter((c) => !c.gateway);
+    const totalGrowth = regionCities.reduce((a, c) => a + c.growthScore, 0) || 1;
+    const gatewayGrowth = gateways.reduce((a, c) => a + c.growthScore, 0);
+    const gatewayShare = op10mA11Clamp((gatewayGrowth / totalGrowth) * 100);
+    const secondaryMomentum =
+      secondaries.length > 0
+        ? secondaries.reduce((a, c) => a + c.growthScore, 0) / secondaries.length
+        : gatewayGrowth / Math.max(1, gateways.length);
+
+    const top = Math.max(...regionCities.map((c) => c.growthScore));
+    const restAvg =
+      regionCities.length > 1
+        ? (totalGrowth - top) / (regionCities.length - 1)
+        : top * 0.6;
+    const primateIndex = op10mA11Clamp((top / Math.max(1, restAvg) - 1) * 28 + gatewayShare * 0.35);
+    const band = primateBand(primateIndex);
+
+    rows.push({
+      regionId: rid,
+      primateIndex: op10mA11Round(primateIndex),
+      primateBand: band,
+      gatewayShare: op10mA11Round(gatewayShare),
+      secondaryMomentum: op10mA11Round(secondaryMomentum),
+      narrative: `${rid} primate ${band} (index ${op10mA11Round(primateIndex)}); gateway share ${op10mA11Round(gatewayShare)}%.`,
+    });
+  }
+
+  return rows;
+}
+
+export function op10mA11NationalPrimateIndex(hierarchy: OP10M_A11_UrbanHierarchyRow[]): number {
+  if (!hierarchy.length) return 0;
+  const avg = hierarchy.reduce((a, h) => a + h.primateIndex, 0) / hierarchy.length;
+  const hyper = hierarchy.filter((h) => h.primateBand === 'hyper_concentrated' || h.primateBand === 'concentrated').length;
+  return op10mA11Round(op10mA11Clamp(avg + hyper * 4));
+}
+
+
+// --- source: urban-national-links.ts ---
+
+const NATIONAL_GROWTH_MOD: Record<OP10M_A11_NationalSlice['nationalGrowthBand'], number> = {
+  contraction: -8,
+  slow: -3,
+  steady: 0,
+  strong: 5,
+  overheating: 8,
+};
+
+const DISTRIBUTION_DRAG: Record<OP10M_A11_NationalSlice['distributionBand'], number> = {
+  broad_based: -4,
+  mixed: 0,
+  uneven: 5,
+  highly_uneven: 10,
+};
+
+export function op10mA11NationalLocalCoupling(national: OP10M_A11_NationalSlice): number {
+  const network = (national.networkFreight + national.networkDigital) / 2;
+  const biasPenalty = op10mA11Clamp(national.capitalCityBias * 0.35, 0, 18);
+  return op10mA11Clamp(network * 0.72 + NATIONAL_GROWTH_MOD[national.nationalGrowthBand] - biasPenalty);
+}
+
+export function op10mA11SpilloverBand(coupling: number, relativeStanding: number): OP10M_A11_SpilloverBand {
+  const adjusted = coupling + (relativeStanding < 45 ? 8 : relativeStanding > 62 ? -4 : 0);
+  if (adjusted < OP10M_A11_THRESHOLDS.spilloverWeak) return 'isolated';
+  if (adjusted < OP10M_A11_THRESHOLDS.spilloverConnected) return 'weak';
+  if (adjusted < OP10M_A11_THRESHOLDS.spilloverIntegrated) return 'connected';
+  return 'integrated';
+}
+
+export function op10mA11ApplyNationalSpilloverToStanding(
+  urbanIndex: number,
+  regionId: OP10M_A11_RegionId,
+  national: OP10M_A11_NationalSlice,
+  coupling: number,
+): number {
+  const distDrag = DISTRIBUTION_DRAG[national.distributionBand];
+  const lagBonus =
+    urbanIndex < 48 ? op10mA11Clamp(coupling * 0.22, 0, 12) : op10mA11Clamp(coupling * 0.08, 0, 6);
+  const hotspotTax =
+    urbanIndex > 68 && national.distributionBand !== 'broad_based'
+      ? op10mA11Clamp(distDrag * 0.6 + national.capitalCityBias * 0.08, 0, 10)
+      : 0;
+  const remote =
+    regionId === 'NT' || regionId === 'TAS' ? op10mA11Clamp(coupling * 0.05, 0, 4) : 0;
+  return op10mA11Clamp(urbanIndex + lagBonus - hotspotTax + remote - distDrag * 0.35);
+}
+
+export function op10mA11BuildRegionInequalityRow(args: {
+  regionId: OP10M_A11_RegionId;
+  urbanIndex: number;
+  relativeStanding: number;
+  coupling: number;
+  national: OP10M_A11_NationalSlice;
+  leading: boolean;
+  lagging: boolean;
+}): OP10M_A11_RegionInequalityRow {
+  const adjusted = op10mA11ApplyNationalSpilloverToStanding(
+    args.urbanIndex,
+    args.regionId,
+    args.national,
+    args.coupling,
+  );
+  const band = op10mA11GrowthBandFromScore(adjusted);
+  const spilloverBand = op10mA11SpilloverBand(args.coupling, args.relativeStanding);
+  const narrativeParts = [
+    `${args.regionId} urban index ${op10mA11Round(adjusted)} (${band})`,
+    spilloverBand !== 'isolated'
+      ? `national–local link ${spilloverBand}`
+      : 'limited national spillover',
+  ];
+  if (args.lagging) narrativeParts.push('lagging vs national peers');
+  if (args.leading) narrativeParts.push('leading peer regions');
+  return {
+    regionId: args.regionId,
+    urbanGrowthIndex: op10mA11Round(adjusted),
+    relativeStanding: op10mA11Round(args.relativeStanding),
+    band,
+    lagging: args.lagging,
+    leading: args.leading,
+    spilloverBand,
+    narrative: narrativeParts.join('; '),
+  };
 }
 
 
@@ -6398,6 +12755,9 @@ export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePe
     lastCollapseOmniSingularityPantheismIndex: 0,
     lastVoidTotalErosionExhaustionIndex: 0,
     lastExistentialAbsoluteNullityCanonizationIndex: 0,
+    lastCollapseOmniSingularityPanentheismIndex: 0,
+    lastVoidTotalErosionEnervationIndex: 0,
+    lastExistentialAbsoluteNullitySanctificationIndex: 0,
     inputHash: '',
   };
 }
@@ -6665,6 +13025,12 @@ export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState
   if (state.nationalCollapseOmniSingularityPantheismIndex < 0 || state.nationalCollapseOmniSingularityPantheismIndex > 100) errs.push('collapse omni singularity pantheism index out of range');
   if (state.nationalVoidTotalErosionExhaustionIndex < 0 || state.nationalVoidTotalErosionExhaustionIndex > 100) errs.push('void total erosion exhaustion index out of range');
   if (state.nationalExistentialAbsoluteNullityCanonizationIndex < 0 || state.nationalExistentialAbsoluteNullityCanonizationIndex > 100) errs.push('existential absolute nullity canonization index out of range');
+  if (state.collapseOmniSingularityPanentheism.length !== 8) errs.push('collapse omni singularity panentheism row count');
+  if (state.voidTotalErosionEnervation.length !== 8) errs.push('void total erosion enervation row count');
+  if (state.existentialAbsoluteNullitySanctification.length !== 8) errs.push('existential absolute nullity sanctification row count');
+  if (state.nationalCollapseOmniSingularityPanentheismIndex < 0 || state.nationalCollapseOmniSingularityPanentheismIndex > 100) errs.push('collapse omni singularity panentheism index out of range');
+  if (state.nationalVoidTotalErosionEnervationIndex < 0 || state.nationalVoidTotalErosionEnervationIndex > 100) errs.push('void total erosion enervation index out of range');
+  if (state.nationalExistentialAbsoluteNullitySanctificationIndex < 0 || state.nationalExistentialAbsoluteNullitySanctificationIndex > 100) errs.push('existential absolute nullity sanctification index out of range');
   return errs;
 }
 
@@ -7498,6 +13864,23 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
   const existentialAbsoluteNullityCanonizationOut = op10mA11ComputeSettlementExistentialAbsoluteNullityCanonization({
     existentialAbsoluteNullityRatification: existentialAbsoluteNullityRatificationOut.rows,
     collapseOmniSingularityCosmism: collapseOmniSingularityCosmismOut.rows,
+    existentialFinalNullitySentence: existentialFinalNullitySentenceOut.rows,
+  });
+  const collapseOmniSingularityPanentheismOut = op10mA11ComputeRegionalCollapseOmniSingularityPanentheism({
+    collapseOmniSingularityPantheism: collapseOmniSingularityPantheismOut.rows,
+    voidTotalErosionExhaustion: voidTotalErosionExhaustionOut.rows,
+    existentialAbsoluteNullityCanonization: existentialAbsoluteNullityCanonizationOut.rows,
+  });
+
+  const voidTotalErosionEnervationOut = op10mA11ComputeInterregionalVoidTotalErosionEnervation({
+    voidTotalErosionExhaustion: voidTotalErosionExhaustionOut.rows,
+    collapseOmniSingularityPantheism: collapseOmniSingularityPantheismOut.rows,
+    voidExistenceAnnihilationFront: voidExistenceAnnihilationFrontOut.rows,
+  });
+
+  const existentialAbsoluteNullitySanctificationOut = op10mA11ComputeSettlementExistentialAbsoluteNullitySanctification({
+    existentialAbsoluteNullityCanonization: existentialAbsoluteNullityCanonizationOut.rows,
+    collapseOmniSingularityPantheism: collapseOmniSingularityPantheismOut.rows,
     existentialFinalNullitySentence: existentialFinalNullitySentenceOut.rows,
   });
 
@@ -9992,6 +16375,66 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
       existentialAbsoluteNullityCanonizationOut.nationalIndex >= 91 ? 'major' : 'meaningful',
     );
   }
+  const singularityPanentheism = op10mA11RegionsWithCollapseSingularityPanentheism(
+    collapseOmniSingularityPanentheismOut.rows,
+  );
+  if (
+    singularityPanentheism.length >= 2 ||
+    collapseOmniSingularityPanentheismOut.nationalIndex >= 80 ||
+    op10mA11CollapseOmniSingularityPanentheismEscalating(
+      collapseOmniSingularityPanentheismOut.nationalIndex,
+      base.revision > 0 ? base.lastCollapseOmniSingularityPanentheismIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'collapse_omni_singularity_panentheism',
+      singularityPanentheism.slice(0, 5),
+      `Regional collapse omni singularity panentheism (index ${collapseOmniSingularityPanentheismOut.nationalIndex.toFixed(1)}).`,
+      collapseOmniSingularityPanentheismOut.nationalIndex >= 90 ? 'major' : 'meaningful',
+    );
+  }
+
+  const erosionEnervation = op10mA11RegionsWithTotalErosionEnervation(voidTotalErosionEnervationOut.rows);
+  if (
+    erosionEnervation.length >= 2 ||
+    voidTotalErosionEnervationOut.nationalIndex >= 79 ||
+    op10mA11VoidTotalErosionEnervationEscalating(
+      voidTotalErosionEnervationOut.nationalIndex,
+      base.revision > 0 ? base.lastVoidTotalErosionEnervationIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'void_total_erosion_enervation',
+      erosionEnervation.slice(0, 5),
+      `Interregional void total erosion enervation (index ${voidTotalErosionEnervationOut.nationalIndex.toFixed(1)}).`,
+      voidTotalErosionEnervationOut.nationalIndex >= 89 ? 'major' : 'meaningful',
+    );
+  }
+
+  const nullitySanctification = op10mA11RegionsWithTotalAbsoluteNullitySanctification(
+    existentialAbsoluteNullitySanctificationOut.rows,
+  );
+  if (
+    nullitySanctification.length >= 2 ||
+    existentialAbsoluteNullitySanctificationOut.nationalIndex >= 82 ||
+    op10mA11ExistentialAbsoluteNullitySanctificationEscalating(
+      existentialAbsoluteNullitySanctificationOut.nationalIndex,
+      base.revision > 0 ? base.lastExistentialAbsoluteNullitySanctificationIndex : null,
+    )
+  ) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'existential_absolute_nullity_sanctification',
+      nullitySanctification.slice(0, 5),
+      `Settlement existential absolute nullity sanctification (index ${existentialAbsoluteNullitySanctificationOut.nationalIndex.toFixed(1)}).`,
+      existentialAbsoluteNullitySanctificationOut.nationalIndex >= 92 ? 'major' : 'meaningful',
+    );
+  }
 
   base.revision += 1;
   base.urban = urbanOut.persisted;
@@ -10121,11 +16564,14 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
   base.lastCollapseOmniSingularityPantheismIndex = collapseOmniSingularityPantheismOut.nationalIndex;
   base.lastVoidTotalErosionExhaustionIndex = voidTotalErosionExhaustionOut.nationalIndex;
   base.lastExistentialAbsoluteNullityCanonizationIndex = existentialAbsoluteNullityCanonizationOut.nationalIndex;
+  base.lastCollapseOmniSingularityPanentheismIndex = collapseOmniSingularityPanentheismOut.nationalIndex;
+  base.lastVoidTotalErosionEnervationIndex = voidTotalErosionEnervationOut.nationalIndex;
+  base.lastExistentialAbsoluteNullitySanctificationIndex = existentialAbsoluteNullitySanctificationOut.nationalIndex;
   base.inputHash = op10mA11HashInputs({
     turn: inputs.urban.turn,
     cityCount: inputs.urban.cities.length,
     regionKeys: 'composite',
-    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}:${housingSpilloverOut.nationalIndex}:${climateOut.nationalIndex}:${amenityOut.nationalIndex}:${relocationOut.nationalIndex}:${employmentAnchorOut.nationalIndex}:${commuteWedgeOut.nationalIndex}:${receptionStrainOut.nationalIndex}:${landUseGridlockOut.nationalIndex}:${mobilityTrapOut.nationalIndex}:${absorptionGapOut.nationalIndex}:${reliefOverheadOut.nationalIndex}:${corridorEquityDriftOut.nationalIndex}:${climateAdaptationLagOut.nationalIndex}:${fiscalCapacityStrainOut.nationalIndex}:${networkErosionOut.nationalIndex}:${longHorizonRiskOut.nationalIndex}:${cohesionIntegrityOut.nationalIndex}:${reliefEquityGapOut.nationalIndex}:${systemicFragilityOut.nationalIndex}:${governanceResilienceDecayOut.nationalIndex}:${migrationStabilityErosionOut.nationalIndex}:${adaptiveCapacityCeilingOut.nationalIndex}:${fiscalGovernanceCouplingOut.nationalIndex}:${networkEquityTensionOut.nationalIndex}:${resilienceFrontierOut.nationalIndex}:${metaGovernanceFatigueOut.nationalIndex}:${capitalMobilityAsymmetryOut.nationalIndex}:${compoundShockSaturationOut.nationalIndex}:${institutionalTrustErosionOut.nationalIndex}:${liquidityFragmentationOut.nationalIndex}:${cascadingFailureRiskOut.nationalIndex}:${socialContractFragilityOut.nationalIndex}:${capitalFlightPanicOut.nationalIndex}:${irrecoverableCollapseOut.nationalIndex}:${settlementLegitimacyCollapseOut.nationalIndex}:${fiscalPanicContagionOut.nationalIndex}:${terminalStateLockInOut.nationalIndex}:${governanceVacuumEscalationOut.nationalIndex}:${settlementAbandonmentSpiralOut.nationalIndex}:${postCollapseRecoveryImpossibilityOut.nationalIndex}:${stateCollapseCascadeAmplificationOut.nationalIndex}:${hollowRegionContagionOut.nationalIndex}:${permanentDepopulationLockOut.nationalIndex}:${totalCollapseSingularityOut.nationalIndex}:${voidExpansionVelocityOut.nationalIndex}:${existentialContinuityFractureOut.nationalIndex}:${collapseHorizonConvergenceOut.nationalIndex}:${voidTotalizationSurgeOut.nationalIndex}:${existentialTerminusLockOut.nationalIndex}:${absoluteCollapseHorizonLockOut.nationalIndex}:${voidFinalizationCascadeOut.nationalIndex}:${existentialObliterationThresholdOut.nationalIndex}:${ultimateCollapseSingularitySealOut.nationalIndex}:${voidAnnihilationConvergenceOut.nationalIndex}:${existentialNullStateLockOut.nationalIndex}:${collapseExistenceSingularityPointOut.nationalIndex}:${voidExistenceAnnihilationFrontOut.nationalIndex}:${existentialAbsoluteZeroLockOut.nationalIndex}:${collapseOmniSingularityNodeOut.nationalIndex}:${voidAbsoluteErosionSurgeOut.nationalIndex}:${existentialFinalNullityLockOut.nationalIndex}:${collapseTotalSingularityVertexOut.nationalIndex}:${voidTerminalErosionCascadeOut.nationalIndex}:${existentialUltimateNullitySealOut.nationalIndex}:${collapseAbsoluteSingularityApexOut.nationalIndex}:${voidCompleteErosionTerminalityOut.nationalIndex}:${existentialFinalNullityClosureOut.nationalIndex}:${collapseUltimateSingularityZenithOut.nationalIndex}:${voidTotalErosionFinalityOut.nationalIndex}:${existentialAbsoluteNullityVerdictOut.nationalIndex}:${collapseTotalSingularityNexusOut.nationalIndex}:${voidAbsoluteErosionTerminationOut.nationalIndex}:${existentialFinalNullitySentenceOut.nationalIndex}:${collapseAbsoluteSingularityCulminationOut.nationalIndex}:${voidCompleteErosionExtinctionOut.nationalIndex}:${existentialTotalNullityDecreeOut.nationalIndex}:${collapseOmniSingularitySynthesisOut.nationalIndex}:${voidTotalErosionAnnihilationOut.nationalIndex}:${existentialAbsoluteNullityMandateOut.nationalIndex}:${collapseOmniSingularityConvergenceOut.nationalIndex}:${voidTotalErosionObliterationOut.nationalIndex}:${existentialAbsoluteNullityBindingOut.nationalIndex}:${collapseOmniSingularityIntegrationOut.nationalIndex}:${voidTotalErosionEradicationOut.nationalIndex}:${existentialAbsoluteNullityContinuityOut.nationalIndex}:${collapseOmniSingularityUnificationOut.nationalIndex}:${voidTotalErosionEliminationOut.nationalIndex}:${existentialAbsoluteNullityPerpetuityOut.nationalIndex}:${collapseOmniSingularityConsolidationOut.nationalIndex}:${voidTotalErosionDissolutionOut.nationalIndex}:${existentialAbsoluteNullityImmutabilityOut.nationalIndex}:${collapseOmniSingularityCoalescenceOut.nationalIndex}:${voidTotalErosionSublimationOut.nationalIndex}:${existentialAbsoluteNullityPermanenceOut.nationalIndex}:${collapseOmniSingularityAmalgamationOut.nationalIndex}:${voidTotalErosionAtomizationOut.nationalIndex}:${existentialAbsoluteNullityInevitabilityOut.nationalIndex}:${collapseOmniSingularitySymbiosisOut.nationalIndex}:${voidTotalErosionPulverizationOut.nationalIndex}:${existentialAbsoluteNullityDeterminismOut.nationalIndex}:${collapseOmniSingularityHolismOut.nationalIndex}:${voidTotalErosionGranulationOut.nationalIndex}:${existentialAbsoluteNullityCertitudeOut.nationalIndex}:${collapseOmniSingularityMonismOut.nationalIndex}:${voidTotalErosionComminutionOut.nationalIndex}:${existentialAbsoluteNullityConvictionOut.nationalIndex}:${collapseOmniSingularityTotalismOut.nationalIndex}:${voidTotalErosionAttritionOut.nationalIndex}:${existentialAbsoluteNullityFinalityOut.nationalIndex}:${collapseOmniSingularityUniversalismOut.nationalIndex}:${voidTotalErosionAblationOut.nationalIndex}:${existentialAbsoluteNullitySealingOut.nationalIndex}:${collapseOmniSingularityCosmismOut.nationalIndex}:${voidTotalErosionDepletionOut.nationalIndex}:${existentialAbsoluteNullityRatificationOut.nationalIndex}:${collapseOmniSingularityPantheismOut.nationalIndex}:${voidTotalErosionExhaustionOut.nationalIndex}:${existentialAbsoluteNullityCanonizationOut.nationalIndex}`,
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}:${regionalCohesionIndex}:${metropolitanSaturationIndex}:${backlogOut.nationalIndex}:${housingSpilloverOut.nationalIndex}:${climateOut.nationalIndex}:${amenityOut.nationalIndex}:${relocationOut.nationalIndex}:${employmentAnchorOut.nationalIndex}:${commuteWedgeOut.nationalIndex}:${receptionStrainOut.nationalIndex}:${landUseGridlockOut.nationalIndex}:${mobilityTrapOut.nationalIndex}:${absorptionGapOut.nationalIndex}:${reliefOverheadOut.nationalIndex}:${corridorEquityDriftOut.nationalIndex}:${climateAdaptationLagOut.nationalIndex}:${fiscalCapacityStrainOut.nationalIndex}:${networkErosionOut.nationalIndex}:${longHorizonRiskOut.nationalIndex}:${cohesionIntegrityOut.nationalIndex}:${reliefEquityGapOut.nationalIndex}:${systemicFragilityOut.nationalIndex}:${governanceResilienceDecayOut.nationalIndex}:${migrationStabilityErosionOut.nationalIndex}:${adaptiveCapacityCeilingOut.nationalIndex}:${fiscalGovernanceCouplingOut.nationalIndex}:${networkEquityTensionOut.nationalIndex}:${resilienceFrontierOut.nationalIndex}:${metaGovernanceFatigueOut.nationalIndex}:${capitalMobilityAsymmetryOut.nationalIndex}:${compoundShockSaturationOut.nationalIndex}:${institutionalTrustErosionOut.nationalIndex}:${liquidityFragmentationOut.nationalIndex}:${cascadingFailureRiskOut.nationalIndex}:${socialContractFragilityOut.nationalIndex}:${capitalFlightPanicOut.nationalIndex}:${irrecoverableCollapseOut.nationalIndex}:${settlementLegitimacyCollapseOut.nationalIndex}:${fiscalPanicContagionOut.nationalIndex}:${terminalStateLockInOut.nationalIndex}:${governanceVacuumEscalationOut.nationalIndex}:${settlementAbandonmentSpiralOut.nationalIndex}:${postCollapseRecoveryImpossibilityOut.nationalIndex}:${stateCollapseCascadeAmplificationOut.nationalIndex}:${hollowRegionContagionOut.nationalIndex}:${permanentDepopulationLockOut.nationalIndex}:${totalCollapseSingularityOut.nationalIndex}:${voidExpansionVelocityOut.nationalIndex}:${existentialContinuityFractureOut.nationalIndex}:${collapseHorizonConvergenceOut.nationalIndex}:${voidTotalizationSurgeOut.nationalIndex}:${existentialTerminusLockOut.nationalIndex}:${absoluteCollapseHorizonLockOut.nationalIndex}:${voidFinalizationCascadeOut.nationalIndex}:${existentialObliterationThresholdOut.nationalIndex}:${ultimateCollapseSingularitySealOut.nationalIndex}:${voidAnnihilationConvergenceOut.nationalIndex}:${existentialNullStateLockOut.nationalIndex}:${collapseExistenceSingularityPointOut.nationalIndex}:${voidExistenceAnnihilationFrontOut.nationalIndex}:${existentialAbsoluteZeroLockOut.nationalIndex}:${collapseOmniSingularityNodeOut.nationalIndex}:${voidAbsoluteErosionSurgeOut.nationalIndex}:${existentialFinalNullityLockOut.nationalIndex}:${collapseTotalSingularityVertexOut.nationalIndex}:${voidTerminalErosionCascadeOut.nationalIndex}:${existentialUltimateNullitySealOut.nationalIndex}:${collapseAbsoluteSingularityApexOut.nationalIndex}:${voidCompleteErosionTerminalityOut.nationalIndex}:${existentialFinalNullityClosureOut.nationalIndex}:${collapseUltimateSingularityZenithOut.nationalIndex}:${voidTotalErosionFinalityOut.nationalIndex}:${existentialAbsoluteNullityVerdictOut.nationalIndex}:${collapseTotalSingularityNexusOut.nationalIndex}:${voidAbsoluteErosionTerminationOut.nationalIndex}:${existentialFinalNullitySentenceOut.nationalIndex}:${collapseAbsoluteSingularityCulminationOut.nationalIndex}:${voidCompleteErosionExtinctionOut.nationalIndex}:${existentialTotalNullityDecreeOut.nationalIndex}:${collapseOmniSingularitySynthesisOut.nationalIndex}:${voidTotalErosionAnnihilationOut.nationalIndex}:${existentialAbsoluteNullityMandateOut.nationalIndex}:${collapseOmniSingularityConvergenceOut.nationalIndex}:${voidTotalErosionObliterationOut.nationalIndex}:${existentialAbsoluteNullityBindingOut.nationalIndex}:${collapseOmniSingularityIntegrationOut.nationalIndex}:${voidTotalErosionEradicationOut.nationalIndex}:${existentialAbsoluteNullityContinuityOut.nationalIndex}:${collapseOmniSingularityUnificationOut.nationalIndex}:${voidTotalErosionEliminationOut.nationalIndex}:${existentialAbsoluteNullityPerpetuityOut.nationalIndex}:${collapseOmniSingularityConsolidationOut.nationalIndex}:${voidTotalErosionDissolutionOut.nationalIndex}:${existentialAbsoluteNullityImmutabilityOut.nationalIndex}:${collapseOmniSingularityCoalescenceOut.nationalIndex}:${voidTotalErosionSublimationOut.nationalIndex}:${existentialAbsoluteNullityPermanenceOut.nationalIndex}:${collapseOmniSingularityAmalgamationOut.nationalIndex}:${voidTotalErosionAtomizationOut.nationalIndex}:${existentialAbsoluteNullityInevitabilityOut.nationalIndex}:${collapseOmniSingularitySymbiosisOut.nationalIndex}:${voidTotalErosionPulverizationOut.nationalIndex}:${existentialAbsoluteNullityDeterminismOut.nationalIndex}:${collapseOmniSingularityHolismOut.nationalIndex}:${voidTotalErosionGranulationOut.nationalIndex}:${existentialAbsoluteNullityCertitudeOut.nationalIndex}:${collapseOmniSingularityMonismOut.nationalIndex}:${voidTotalErosionComminutionOut.nationalIndex}:${existentialAbsoluteNullityConvictionOut.nationalIndex}:${collapseOmniSingularityTotalismOut.nationalIndex}:${voidTotalErosionAttritionOut.nationalIndex}:${existentialAbsoluteNullityFinalityOut.nationalIndex}:${collapseOmniSingularityUniversalismOut.nationalIndex}:${voidTotalErosionAblationOut.nationalIndex}:${existentialAbsoluteNullitySealingOut.nationalIndex}:${collapseOmniSingularityCosmismOut.nationalIndex}:${voidTotalErosionDepletionOut.nationalIndex}:${existentialAbsoluteNullityRatificationOut.nationalIndex}:${collapseOmniSingularityPantheismOut.nationalIndex}:${voidTotalErosionExhaustionOut.nationalIndex}:${existentialAbsoluteNullityCanonizationOut.nationalIndex}:${collapseOmniSingularityPanentheismOut.nationalIndex}:${voidTotalErosionEnervationOut.nationalIndex}:${existentialAbsoluteNullitySanctificationOut.nationalIndex}`,
   });
 
   const state: OP10M_A11_CompositeState = {
@@ -10398,7 +16844,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     nationalVoidTotalErosionExhaustionIndex: voidTotalErosionExhaustionOut.nationalIndex,
     existentialAbsoluteNullityCanonization: existentialAbsoluteNullityCanonizationOut.rows,
     nationalExistentialAbsoluteNullityCanonizationIndex: existentialAbsoluteNullityCanonizationOut.nationalIndex,
-    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}; housing spillover ${housingSpilloverOut.nationalIndex}; talent drain ${talentOut.nationalIndex}; climate displacement ${climateOut.nationalIndex}; amenity cost ${amenityOut.nationalIndex}; decentralization ${decentralOut.nationalIndex}; relocation burden ${relocationOut.nationalIndex}; employment anchor ${employmentAnchorOut.nationalIndex}; commute wedge ${commuteWedgeOut.nationalIndex}; reception strain ${receptionStrainOut.nationalIndex}; land-use gridlock ${landUseGridlockOut.nationalIndex}; mobility trap ${mobilityTrapOut.nationalIndex}; absorption gap ${absorptionGapOut.nationalIndex}; relief overhead ${reliefOverheadOut.nationalIndex}; corridor equity drift ${corridorEquityDriftOut.nationalIndex}; climate adaptation lag ${climateAdaptationLagOut.nationalIndex}; fiscal capacity ${fiscalCapacityStrainOut.nationalIndex}; network erosion ${networkErosionOut.nationalIndex}; horizon risk ${longHorizonRiskOut.nationalIndex}; cohesion integrity ${cohesionIntegrityOut.nationalIndex}; relief equity gap ${reliefEquityGapOut.nationalIndex}; systemic fragility ${systemicFragilityOut.nationalIndex}; governance decay ${governanceResilienceDecayOut.nationalIndex}; migration stability ${migrationStabilityErosionOut.nationalIndex}; adaptive ceiling ${adaptiveCapacityCeilingOut.nationalIndex}; fiscal–governance ${fiscalGovernanceCouplingOut.nationalIndex}; network equity ${networkEquityTensionOut.nationalIndex}; resilience frontier ${resilienceFrontierOut.nationalIndex}; meta-governance fatigue ${metaGovernanceFatigueOut.nationalIndex}; capital mobility ${capitalMobilityAsymmetryOut.nationalIndex}; compound shocks ${compoundShockSaturationOut.nationalIndex}; institutional trust ${institutionalTrustErosionOut.nationalIndex}; liquidity fragmentation ${liquidityFragmentationOut.nationalIndex}; cascade risk ${cascadingFailureRiskOut.nationalIndex}; social contract ${socialContractFragilityOut.nationalIndex}; capital flight ${capitalFlightPanicOut.nationalIndex}; collapse threshold ${irrecoverableCollapseOut.nationalIndex}; legitimacy collapse ${settlementLegitimacyCollapseOut.nationalIndex}; fiscal contagion ${fiscalPanicContagionOut.nationalIndex}; terminal lock-in ${terminalStateLockInOut.nationalIndex}; governance vacuum ${governanceVacuumEscalationOut.nationalIndex}; abandonment spiral ${settlementAbandonmentSpiralOut.nationalIndex}; recovery impossibility ${postCollapseRecoveryImpossibilityOut.nationalIndex}; cascade amplification ${stateCollapseCascadeAmplificationOut.nationalIndex}; hollow contagion ${hollowRegionContagionOut.nationalIndex}; depopulation lock ${permanentDepopulationLockOut.nationalIndex}; collapse singularity ${totalCollapseSingularityOut.nationalIndex}; void expansion ${voidExpansionVelocityOut.nationalIndex}; continuity fracture ${existentialContinuityFractureOut.nationalIndex}; horizon convergence ${collapseHorizonConvergenceOut.nationalIndex}; void totalization ${voidTotalizationSurgeOut.nationalIndex}; terminus lock ${existentialTerminusLockOut.nationalIndex}; absolute horizon lock ${absoluteCollapseHorizonLockOut.nationalIndex}; void finalization ${voidFinalizationCascadeOut.nationalIndex}; obliteration threshold ${existentialObliterationThresholdOut.nationalIndex}; singularity seal ${ultimateCollapseSingularitySealOut.nationalIndex}; void annihilation ${voidAnnihilationConvergenceOut.nationalIndex}; null-state lock ${existentialNullStateLockOut.nationalIndex}; existence point ${collapseExistenceSingularityPointOut.nationalIndex}; void front ${voidExistenceAnnihilationFrontOut.nationalIndex}; absolute zero ${existentialAbsoluteZeroLockOut.nationalIndex}; omni node ${collapseOmniSingularityNodeOut.nationalIndex}; erosion surge ${voidAbsoluteErosionSurgeOut.nationalIndex}; final nullity ${existentialFinalNullityLockOut.nationalIndex}; singularity vertex ${collapseTotalSingularityVertexOut.nationalIndex}; terminal erosion ${voidTerminalErosionCascadeOut.nationalIndex}; ultimate seal ${existentialUltimateNullitySealOut.nationalIndex}; singularity apex ${collapseAbsoluteSingularityApexOut.nationalIndex}; complete terminality ${voidCompleteErosionTerminalityOut.nationalIndex}; nullity closure ${existentialFinalNullityClosureOut.nationalIndex}; singularity zenith ${collapseUltimateSingularityZenithOut.nationalIndex}; total finality ${voidTotalErosionFinalityOut.nationalIndex}; nullity verdict ${existentialAbsoluteNullityVerdictOut.nationalIndex}; singularity nexus ${collapseTotalSingularityNexusOut.nationalIndex}; erosion termination ${voidAbsoluteErosionTerminationOut.nationalIndex}; nullity sentence ${existentialFinalNullitySentenceOut.nationalIndex}; singularity culmination ${collapseAbsoluteSingularityCulminationOut.nationalIndex}; erosion extinction ${voidCompleteErosionExtinctionOut.nationalIndex}; nullity decree ${existentialTotalNullityDecreeOut.nationalIndex}; omni synthesis ${collapseOmniSingularitySynthesisOut.nationalIndex}; erosion annihilation ${voidTotalErosionAnnihilationOut.nationalIndex}; nullity mandate ${existentialAbsoluteNullityMandateOut.nationalIndex}; omni convergence ${collapseOmniSingularityConvergenceOut.nationalIndex}; erosion obliteration ${voidTotalErosionObliterationOut.nationalIndex}; nullity binding ${existentialAbsoluteNullityBindingOut.nationalIndex}; omni integration ${collapseOmniSingularityIntegrationOut.nationalIndex}; erosion eradication ${voidTotalErosionEradicationOut.nationalIndex}; nullity continuity ${existentialAbsoluteNullityContinuityOut.nationalIndex}; omni unification ${collapseOmniSingularityUnificationOut.nationalIndex}; erosion elimination ${voidTotalErosionEliminationOut.nationalIndex}; nullity perpetuity ${existentialAbsoluteNullityPerpetuityOut.nationalIndex}; omni consolidation ${collapseOmniSingularityConsolidationOut.nationalIndex}; erosion dissolution ${voidTotalErosionDissolutionOut.nationalIndex}; nullity immutability ${existentialAbsoluteNullityImmutabilityOut.nationalIndex}; omni coalescence ${collapseOmniSingularityCoalescenceOut.nationalIndex}; erosion sublimation ${voidTotalErosionSublimationOut.nationalIndex}; nullity permanence ${existentialAbsoluteNullityPermanenceOut.nationalIndex}; omni amalgamation ${collapseOmniSingularityAmalgamationOut.nationalIndex}; erosion atomization ${voidTotalErosionAtomizationOut.nationalIndex}; nullity inevitability ${existentialAbsoluteNullityInevitabilityOut.nationalIndex}; omni symbiosis ${collapseOmniSingularitySymbiosisOut.nationalIndex}; erosion pulverization ${voidTotalErosionPulverizationOut.nationalIndex}; nullity determinism ${existentialAbsoluteNullityDeterminismOut.nationalIndex}; omni holism ${collapseOmniSingularityHolismOut.nationalIndex}; erosion granulation ${voidTotalErosionGranulationOut.nationalIndex}; nullity certitude ${existentialAbsoluteNullityCertitudeOut.nationalIndex}; omni monism ${collapseOmniSingularityMonismOut.nationalIndex}; erosion comminution ${voidTotalErosionComminutionOut.nationalIndex}; nullity conviction ${existentialAbsoluteNullityConvictionOut.nationalIndex}; omni totalism ${collapseOmniSingularityTotalismOut.nationalIndex}; erosion attrition ${voidTotalErosionAttritionOut.nationalIndex}; nullity finality ${existentialAbsoluteNullityFinalityOut.nationalIndex}; omni universalism ${collapseOmniSingularityUniversalismOut.nationalIndex}; erosion ablation ${voidTotalErosionAblationOut.nationalIndex}; nullity sealing ${existentialAbsoluteNullitySealingOut.nationalIndex}; omni cosmism ${collapseOmniSingularityCosmismOut.nationalIndex}; erosion depletion ${voidTotalErosionDepletionOut.nationalIndex}; nullity ratification ${existentialAbsoluteNullityRatificationOut.nationalIndex}; omni pantheism ${collapseOmniSingularityPantheismOut.nationalIndex}; erosion exhaustion ${voidTotalErosionExhaustionOut.nationalIndex}; nullity canonization ${existentialAbsoluteNullityCanonizationOut.nationalIndex}.`,
+    collapseOmniSingularityPanentheism: collapseOmniSingularityPanentheismOut.rows,
+    nationalCollapseOmniSingularityPanentheismIndex: collapseOmniSingularityPanentheismOut.nationalIndex,
+    voidTotalErosionEnervation: voidTotalErosionEnervationOut.rows,
+    nationalVoidTotalErosionEnervationIndex: voidTotalErosionEnervationOut.nationalIndex,
+    existentialAbsoluteNullitySanctification: existentialAbsoluteNullitySanctificationOut.rows,
+    nationalExistentialAbsoluteNullitySanctificationIndex: existentialAbsoluteNullitySanctificationOut.nationalIndex,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}; cohesion ${regionalCohesionIndex}; saturation ${metropolitanSaturationIndex}; service equity ${serviceEquityOut.nationalIndex}; backlog ${backlogOut.nationalIndex}; governance ${governanceOut.nationalIndex}; housing spillover ${housingSpilloverOut.nationalIndex}; talent drain ${talentOut.nationalIndex}; climate displacement ${climateOut.nationalIndex}; amenity cost ${amenityOut.nationalIndex}; decentralization ${decentralOut.nationalIndex}; relocation burden ${relocationOut.nationalIndex}; employment anchor ${employmentAnchorOut.nationalIndex}; commute wedge ${commuteWedgeOut.nationalIndex}; reception strain ${receptionStrainOut.nationalIndex}; land-use gridlock ${landUseGridlockOut.nationalIndex}; mobility trap ${mobilityTrapOut.nationalIndex}; absorption gap ${absorptionGapOut.nationalIndex}; relief overhead ${reliefOverheadOut.nationalIndex}; corridor equity drift ${corridorEquityDriftOut.nationalIndex}; climate adaptation lag ${climateAdaptationLagOut.nationalIndex}; fiscal capacity ${fiscalCapacityStrainOut.nationalIndex}; network erosion ${networkErosionOut.nationalIndex}; horizon risk ${longHorizonRiskOut.nationalIndex}; cohesion integrity ${cohesionIntegrityOut.nationalIndex}; relief equity gap ${reliefEquityGapOut.nationalIndex}; systemic fragility ${systemicFragilityOut.nationalIndex}; governance decay ${governanceResilienceDecayOut.nationalIndex}; migration stability ${migrationStabilityErosionOut.nationalIndex}; adaptive ceiling ${adaptiveCapacityCeilingOut.nationalIndex}; fiscal–governance ${fiscalGovernanceCouplingOut.nationalIndex}; network equity ${networkEquityTensionOut.nationalIndex}; resilience frontier ${resilienceFrontierOut.nationalIndex}; meta-governance fatigue ${metaGovernanceFatigueOut.nationalIndex}; capital mobility ${capitalMobilityAsymmetryOut.nationalIndex}; compound shocks ${compoundShockSaturationOut.nationalIndex}; institutional trust ${institutionalTrustErosionOut.nationalIndex}; liquidity fragmentation ${liquidityFragmentationOut.nationalIndex}; cascade risk ${cascadingFailureRiskOut.nationalIndex}; social contract ${socialContractFragilityOut.nationalIndex}; capital flight ${capitalFlightPanicOut.nationalIndex}; collapse threshold ${irrecoverableCollapseOut.nationalIndex}; legitimacy collapse ${settlementLegitimacyCollapseOut.nationalIndex}; fiscal contagion ${fiscalPanicContagionOut.nationalIndex}; terminal lock-in ${terminalStateLockInOut.nationalIndex}; governance vacuum ${governanceVacuumEscalationOut.nationalIndex}; abandonment spiral ${settlementAbandonmentSpiralOut.nationalIndex}; recovery impossibility ${postCollapseRecoveryImpossibilityOut.nationalIndex}; cascade amplification ${stateCollapseCascadeAmplificationOut.nationalIndex}; hollow contagion ${hollowRegionContagionOut.nationalIndex}; depopulation lock ${permanentDepopulationLockOut.nationalIndex}; collapse singularity ${totalCollapseSingularityOut.nationalIndex}; void expansion ${voidExpansionVelocityOut.nationalIndex}; continuity fracture ${existentialContinuityFractureOut.nationalIndex}; horizon convergence ${collapseHorizonConvergenceOut.nationalIndex}; void totalization ${voidTotalizationSurgeOut.nationalIndex}; terminus lock ${existentialTerminusLockOut.nationalIndex}; absolute horizon lock ${absoluteCollapseHorizonLockOut.nationalIndex}; void finalization ${voidFinalizationCascadeOut.nationalIndex}; obliteration threshold ${existentialObliterationThresholdOut.nationalIndex}; singularity seal ${ultimateCollapseSingularitySealOut.nationalIndex}; void annihilation ${voidAnnihilationConvergenceOut.nationalIndex}; null-state lock ${existentialNullStateLockOut.nationalIndex}; existence point ${collapseExistenceSingularityPointOut.nationalIndex}; void front ${voidExistenceAnnihilationFrontOut.nationalIndex}; absolute zero ${existentialAbsoluteZeroLockOut.nationalIndex}; omni node ${collapseOmniSingularityNodeOut.nationalIndex}; erosion surge ${voidAbsoluteErosionSurgeOut.nationalIndex}; final nullity ${existentialFinalNullityLockOut.nationalIndex}; singularity vertex ${collapseTotalSingularityVertexOut.nationalIndex}; terminal erosion ${voidTerminalErosionCascadeOut.nationalIndex}; ultimate seal ${existentialUltimateNullitySealOut.nationalIndex}; singularity apex ${collapseAbsoluteSingularityApexOut.nationalIndex}; complete terminality ${voidCompleteErosionTerminalityOut.nationalIndex}; nullity closure ${existentialFinalNullityClosureOut.nationalIndex}; singularity zenith ${collapseUltimateSingularityZenithOut.nationalIndex}; total finality ${voidTotalErosionFinalityOut.nationalIndex}; nullity verdict ${existentialAbsoluteNullityVerdictOut.nationalIndex}; singularity nexus ${collapseTotalSingularityNexusOut.nationalIndex}; erosion termination ${voidAbsoluteErosionTerminationOut.nationalIndex}; nullity sentence ${existentialFinalNullitySentenceOut.nationalIndex}; singularity culmination ${collapseAbsoluteSingularityCulminationOut.nationalIndex}; erosion extinction ${voidCompleteErosionExtinctionOut.nationalIndex}; nullity decree ${existentialTotalNullityDecreeOut.nationalIndex}; omni synthesis ${collapseOmniSingularitySynthesisOut.nationalIndex}; erosion annihilation ${voidTotalErosionAnnihilationOut.nationalIndex}; nullity mandate ${existentialAbsoluteNullityMandateOut.nationalIndex}; omni convergence ${collapseOmniSingularityConvergenceOut.nationalIndex}; erosion obliteration ${voidTotalErosionObliterationOut.nationalIndex}; nullity binding ${existentialAbsoluteNullityBindingOut.nationalIndex}; omni integration ${collapseOmniSingularityIntegrationOut.nationalIndex}; erosion eradication ${voidTotalErosionEradicationOut.nationalIndex}; nullity continuity ${existentialAbsoluteNullityContinuityOut.nationalIndex}; omni unification ${collapseOmniSingularityUnificationOut.nationalIndex}; erosion elimination ${voidTotalErosionEliminationOut.nationalIndex}; nullity perpetuity ${existentialAbsoluteNullityPerpetuityOut.nationalIndex}; omni consolidation ${collapseOmniSingularityConsolidationOut.nationalIndex}; erosion dissolution ${voidTotalErosionDissolutionOut.nationalIndex}; nullity immutability ${existentialAbsoluteNullityImmutabilityOut.nationalIndex}; omni coalescence ${collapseOmniSingularityCoalescenceOut.nationalIndex}; erosion sublimation ${voidTotalErosionSublimationOut.nationalIndex}; nullity permanence ${existentialAbsoluteNullityPermanenceOut.nationalIndex}; omni amalgamation ${collapseOmniSingularityAmalgamationOut.nationalIndex}; erosion atomization ${voidTotalErosionAtomizationOut.nationalIndex}; nullity inevitability ${existentialAbsoluteNullityInevitabilityOut.nationalIndex}; omni symbiosis ${collapseOmniSingularitySymbiosisOut.nationalIndex}; erosion pulverization ${voidTotalErosionPulverizationOut.nationalIndex}; nullity determinism ${existentialAbsoluteNullityDeterminismOut.nationalIndex}; omni holism ${collapseOmniSingularityHolismOut.nationalIndex}; erosion granulation ${voidTotalErosionGranulationOut.nationalIndex}; nullity certitude ${existentialAbsoluteNullityCertitudeOut.nationalIndex}; omni monism ${collapseOmniSingularityMonismOut.nationalIndex}; erosion comminution ${voidTotalErosionComminutionOut.nationalIndex}; nullity conviction ${existentialAbsoluteNullityConvictionOut.nationalIndex}; omni totalism ${collapseOmniSingularityTotalismOut.nationalIndex}; erosion attrition ${voidTotalErosionAttritionOut.nationalIndex}; nullity finality ${existentialAbsoluteNullityFinalityOut.nationalIndex}; omni universalism ${collapseOmniSingularityUniversalismOut.nationalIndex}; erosion ablation ${voidTotalErosionAblationOut.nationalIndex}; nullity sealing ${existentialAbsoluteNullitySealingOut.nationalIndex}; omni cosmism ${collapseOmniSingularityCosmismOut.nationalIndex}; erosion depletion ${voidTotalErosionDepletionOut.nationalIndex}; nullity ratification ${existentialAbsoluteNullityRatificationOut.nationalIndex}; omni pantheism ${collapseOmniSingularityPantheismOut.nationalIndex}; erosion exhaustion ${voidTotalErosionExhaustionOut.nationalIndex}; nullity canonization ${existentialAbsoluteNullityCanonizationOut.nationalIndex}; omni panentheism ${collapseOmniSingularityPanentheismOut.nationalIndex}; erosion enervation ${voidTotalErosionEnervationOut.nationalIndex}; nullity sanctification ${existentialAbsoluteNullitySanctificationOut.nationalIndex}.`,
     inputHash: base.inputHash,
   };
 
@@ -10549,6 +17001,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   collapseOmniSingularityPantheismIndex: number;
   voidTotalErosionExhaustionIndex: number;
   existentialAbsoluteNullityCanonizationIndex: number;
+  collapseOmniSingularityPanentheismIndex: number;
+  voidTotalErosionEnervationIndex: number;
+  existentialAbsoluteNullitySanctificationIndex: number;
   validationErrors: number;
 };
 
@@ -10707,6 +17162,9 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
       collapseOmniSingularityPantheismIndex: out.state.nationalCollapseOmniSingularityPantheismIndex,
       voidTotalErosionExhaustionIndex: out.state.nationalVoidTotalErosionExhaustionIndex,
       existentialAbsoluteNullityCanonizationIndex: out.state.nationalExistentialAbsoluteNullityCanonizationIndex,
+      collapseOmniSingularityPanentheismIndex: out.state.nationalCollapseOmniSingularityPanentheismIndex,
+      voidTotalErosionEnervationIndex: out.state.nationalVoidTotalErosionEnervationIndex,
+      existentialAbsoluteNullitySanctificationIndex: out.state.nationalExistentialAbsoluteNullitySanctificationIndex,
       validationErrors,
     });
   }
@@ -11028,6 +17486,15 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
   const nullityCanonizationStable = snapshots.every(
     (s) => s.existentialAbsoluteNullityCanonizationIndex >= 8 && s.existentialAbsoluteNullityCanonizationIndex <= 100,
   );
+  const omniPanentheismStable = snapshots.every(
+    (s) => s.collapseOmniSingularityPanentheismIndex >= 8 && s.collapseOmniSingularityPanentheismIndex <= 100,
+  );
+  const erosionEnervationStable = snapshots.every(
+    (s) => s.voidTotalErosionEnervationIndex >= 8 && s.voidTotalErosionEnervationIndex <= 100,
+  );
+  const nullitySanctificationStable = snapshots.every(
+    (s) => s.existentialAbsoluteNullitySanctificationIndex >= 8 && s.existentialAbsoluteNullitySanctificationIndex <= 100,
+  );
 
   const ok =
     monotonicRevision &&
@@ -11154,9 +17621,12 @@ export function runOP10M_A11_RegionalRegressionHarness(turns = 10): {
     nullityRatificationStable &&
     omniPantheismStable &&
     erosionExhaustionStable &&
-    nullityCanonizationStable;
+    nullityCanonizationStable &&
+    omniPanentheismStable &&
+    erosionEnervationStable &&
+    nullitySanctificationStable;
   const detail = ok
-    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, nullity canonization ${snapshots[snapshots.length - 1].existentialAbsoluteNullityCanonizationIndex}`
+    ? `${turns}-turn harness: revisions 1..${turns}, cohesion ${snapshots[0].cohesionIndex}→${snapshots[snapshots.length - 1].cohesionIndex}, nullity sanctification ${snapshots[snapshots.length - 1].existentialAbsoluteNullitySanctificationIndex}`
     : `harness failed: revision=${monotonicRevision} valid=${allValid} cohesion=${cohesionStable} equity=${serviceEquityStable} spread=${spreadStable} backlog=${backlogStable} governance=${governanceStable} housing=${housingStable} climate=${climateStable} amenity=${amenityStable} relocation=${relocationStable} anchor=${employmentAnchorStable} commute=${commuteWedgeStable} reception=${receptionStrainStable} gridlock=${landUseGridlockStable} trap=${mobilityTrapStable} gap=${absorptionGapStable} relief=${reliefOverheadStable} drift=${corridorDriftStable} lag=${adaptationLagStable} fiscal=${fiscalCapacityStable} erosion=${networkErosionStable} horizon=${horizonRiskStable} integrity=${cohesionIntegrityStable} reliefEq=${reliefEquityGapStable} systemic=${systemicFragilityStable} govDecay=${governanceDecayStable} migStab=${migrationStabilityStable} ceiling=${adaptiveCeilingStable} fiscalGov=${fiscalGovernanceCouplingStable} netEq=${networkEquityTensionStable} frontier=${resilienceFrontierStable} metaGov=${metaGovernanceFatigueStable} capital=${capitalMobilityStable} compound=${compoundShockStable} trust=${institutionalTrustStable} liquidity=${liquidityFragmentationStable} cascade=${cascadingFailureStable} social=${socialContractStable} flight=${capitalFlightStable} irrecoverable=${irrecoverableCollapseStable} legitimacy=${legitimacyCollapseStable} contagion=${fiscalContagionStable} lockin=${terminalLockInStable} vacuum=${governanceVacuumStable} abandonment=${abandonmentSpiralStable} recovery=${recoveryImpossibilityStable} amplification=${cascadeAmplificationStable} hollow=${hollowContagionStable} depop=${depopulationLockStable} singularity=${collapseSingularityStable} void=${voidExpansionStable} continuity=${continuityFractureStable} horizon=${horizonConvergenceStable} totalization=${voidTotalizationStable} terminus=${terminusLockStable} absolute=${absoluteHorizonLockStable} finalization=${voidFinalizationStable} obliteration=${obliterationThresholdStable} seal=${singularitySealStable} annihilation=${voidAnnihilationStable} nullstate=${nullStateLockStable} point=${existencePointStable} front=${voidFrontStable} zero=${absoluteZeroStable} omni=${omniNodeStable} erosion=${erosionSurgeStable} nullity=${finalNullityStable} vertex=${totalVertexStable} terminal=${terminalErosionStable} ultimate=${ultimateNullitySealStable} apex=${singularityApexStable} complete=${completeTerminalityStable} closure=${nullityClosureStable} zenith=${singularityZenithStable} finality=${totalFinalityStable} verdict=${nullityVerdictStable} nexus=${singularityNexusStable} termination=${erosionTerminationStable} sentence=${nullitySentenceStable} culmination=${singularityCulminationStable} extinction=${erosionExtinctionStable} decree=${nullityDecreeStable} synthesis=${omniSynthesisStable} annihilation=${erosionAnnihilationStable} mandate=${nullityMandateStable} convergence=${omniConvergenceStable} obliteration=${erosionObliterationStable} binding=${nullityBindingStable} integration=${omniIntegrationStable} eradication=${erosionEradicationStable} continuity=${nullityContinuityStable} unification=${omniUnificationStable} elimination=${erosionEliminationStable} perpetuity=${nullityPerpetuityStable} consolidation=${omniConsolidationStable} dissolution=${erosionDissolutionStable} immutability=${nullityImmutabilityStable} coalescence=${omniCoalescenceStable} sublimation=${erosionSublimationStable} permanence=${nullityPermanenceStable} amalgamation=${omniAmalgamationStable} atomization=${erosionAtomizationStable} inevitability=${nullityInevitabilityStable} symbiosis=${omniSymbiosisStable} pulverization=${erosionPulverizationStable} determinism=${nullityDeterminismStable} holism=${omniHolismStable} granulation=${erosionGranulationStable} certitude=${nullityCertitudeStable} monism=${omniMonismStable} comminution=${erosionComminutionStable} conviction=${nullityConvictionStable} totalism=${omniTotalismStable} attrition=${erosionAttritionStable} settlementFinality=${nullityFinalityStable} universalism=${omniUniversalismStable} ablation=${erosionAblationStable} nullitySealing=${nullitySealingStable} cosmism=${omniCosmismStable} depletion=${erosionDepletionStable} ratification=${nullityRatificationStable} pantheism=${omniPantheismStable} exhaustion=${erosionExhaustionStable} canonization=${nullityCanonizationStable}`;
 
   return { ok, snapshots, detail };
@@ -11490,7 +17960,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.45',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.46',
     composite.state.schemaVersion,
   );
 
@@ -14749,6 +21219,33 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(out, 'a11_408', composite.persisted.lastVoidTotalErosionExhaustionIndex === composite.state.nationalVoidTotalErosionExhaustionIndex, `persisted exhaustion ${composite.persisted.lastVoidTotalErosionExhaustionIndex}`);
   push(out, 'a11_409', composite.derived.some((d) => d.kind === 'existential_absolute_nullity_canonization') || composite.state.existentialAbsoluteNullityCanonization.some((c) => c.band === 'absolute' || c.band === 'total_canonization'), composite.state.existentialAbsoluteNullityCanonization[0]?.band ?? 'none');
   push(out, 'a11_410', composite.state.existentialAbsoluteNullityCanonization.every((c) => c.narrative.includes('existential absolute nullity canonization')), composite.state.existentialAbsoluteNullityCanonization[0]?.band ?? 'none');
+  const collapseOmniSingularityPanentheism = op10mA11ComputeRegionalCollapseOmniSingularityPanentheism({
+    collapseOmniSingularityPantheism: composite.state.collapseOmniSingularityPantheism,
+    voidTotalErosionExhaustion: composite.state.voidTotalErosionExhaustion,
+    existentialAbsoluteNullityCanonization: composite.state.existentialAbsoluteNullityCanonization,
+  });
+  push(out, 'a11_411', composite.state.collapseOmniSingularityPanentheism.length === 8 && composite.state.nationalCollapseOmniSingularityPanentheismIndex === collapseOmniSingularityPanentheism.nationalIndex, `omni panentheism ${composite.state.nationalCollapseOmniSingularityPanentheismIndex}`);
+
+  const voidTotalErosionEnervation = op10mA11ComputeInterregionalVoidTotalErosionEnervation({
+    voidTotalErosionExhaustion: composite.state.voidTotalErosionExhaustion,
+    collapseOmniSingularityPantheism: composite.state.collapseOmniSingularityPantheism,
+    voidExistenceAnnihilationFront: composite.state.voidExistenceAnnihilationFront,
+  });
+  push(out, 'a11_412', composite.state.voidTotalErosionEnervation.length === 8 && composite.state.nationalVoidTotalErosionEnervationIndex === voidTotalErosionEnervation.nationalIndex, `erosion enervation ${composite.state.nationalVoidTotalErosionEnervationIndex}`);
+
+  const existentialAbsoluteNullitySanctification = op10mA11ComputeSettlementExistentialAbsoluteNullitySanctification({
+    existentialAbsoluteNullityCanonization: composite.state.existentialAbsoluteNullityCanonization,
+    collapseOmniSingularityPantheism: composite.state.collapseOmniSingularityPantheism,
+    existentialFinalNullitySentence: composite.state.existentialFinalNullitySentence,
+  });
+  push(out, 'a11_413', composite.state.existentialAbsoluteNullitySanctification.length === 8 && composite.state.nationalExistentialAbsoluteNullitySanctificationIndex === existentialAbsoluteNullitySanctification.nationalIndex, `nullity sanctification ${composite.state.nationalExistentialAbsoluteNullitySanctificationIndex}`);
+
+  push(out, 'a11_414', composite.state.collapseOmniSingularityPanentheism.every((p) => p.narrative.includes('collapse omni singularity panentheism')), composite.state.collapseOmniSingularityPanentheism[0]?.band ?? 'none');
+  push(out, 'a11_415', composite.derived.some((d) => d.kind === 'collapse_omni_singularity_panentheism') || composite.state.collapseOmniSingularityPanentheism.some((p) => p.band === 'total' || p.band === 'panentheism'), composite.derived.map((d) => d.kind).join(', '));
+  push(out, 'a11_416', composite.derived.some((d) => d.kind === 'void_total_erosion_enervation') || composite.state.voidTotalErosionEnervation.some((e) => e.band === 'total' || e.band === 'complete_enervation'), composite.state.voidTotalErosionEnervation[0]?.band ?? 'none');
+  push(out, 'a11_417', composite.persisted.lastVoidTotalErosionEnervationIndex === composite.state.nationalVoidTotalErosionEnervationIndex, `persisted enervation ${composite.persisted.lastVoidTotalErosionEnervationIndex}`);
+  push(out, 'a11_418', composite.derived.some((d) => d.kind === 'existential_absolute_nullity_sanctification') || composite.state.existentialAbsoluteNullitySanctification.some((c) => c.band === 'absolute' || c.band === 'total_sanctification'), composite.state.existentialAbsoluteNullitySanctification[0]?.band ?? 'none');
+  push(out, 'a11_419', composite.state.existentialAbsoluteNullitySanctification.every((c) => c.narrative.includes('existential absolute nullity sanctification')), composite.state.existentialAbsoluteNullitySanctification[0]?.band ?? 'none');
 
   return out;
 }
