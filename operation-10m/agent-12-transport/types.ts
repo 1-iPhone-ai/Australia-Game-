@@ -213,8 +213,14 @@ export type PermittingStreamlinePolicy = 'baseline' | 'fast_track';
 
 export type ElectricFreightPolicy = 'baseline' | 'accelerate';
 
+export type DefenceMobilityPolicy = 'baseline' | 'mobilize';
+
+export type WeatherResiliencePolicy = 'baseline' | 'harden';
+
+export type DigitalFreightPolicy = 'baseline' | 'integrate';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/11';
+  schemaVersion: 'agent12/12';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -276,6 +282,13 @@ export interface TransportInfrastructureState {
   electricFreightShare: number;
   nationalElectricCorridorThroughputIndex: number;
   electricCorridorThroughputByRegion: Record<AuRegionCode, number>;
+  nationalDefenceLogisticsReadinessIndex: number;
+  defenceLogisticsReadinessByRegion: Record<AuRegionCode, number>;
+  nationalWeatherResilienceRoutingIndex: number;
+  weatherResilienceRoutingByRegion: Record<AuRegionCode, number>;
+  digitalFreightVisibilityShare: number;
+  nationalDigitalFreightThroughputIndex: number;
+  digitalFreightThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -299,6 +312,9 @@ export interface TransportInfrastructureOptions {
   deepSeaGatewayPolicy?: DeepSeaGatewayPolicy;
   permittingStreamlinePolicy?: PermittingStreamlinePolicy;
   electricFreightPolicy?: ElectricFreightPolicy;
+  defenceMobilityPolicy?: DefenceMobilityPolicy;
+  weatherResiliencePolicy?: WeatherResiliencePolicy;
+  digitalFreightPolicy?: DigitalFreightPolicy;
 }
 
 export interface V94ProjectSnapshot {

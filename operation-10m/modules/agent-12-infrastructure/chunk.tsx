@@ -217,8 +217,14 @@ export type PermittingStreamlinePolicy = 'baseline' | 'fast_track';
 
 export type ElectricFreightPolicy = 'baseline' | 'accelerate';
 
+export type DefenceMobilityPolicy = 'baseline' | 'mobilize';
+
+export type WeatherResiliencePolicy = 'baseline' | 'harden';
+
+export type DigitalFreightPolicy = 'baseline' | 'integrate';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/11';
+  schemaVersion: 'agent12/12';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -280,6 +286,13 @@ export interface TransportInfrastructureState {
   electricFreightShare: number;
   nationalElectricCorridorThroughputIndex: number;
   electricCorridorThroughputByRegion: Record<AuRegionCode, number>;
+  nationalDefenceLogisticsReadinessIndex: number;
+  defenceLogisticsReadinessByRegion: Record<AuRegionCode, number>;
+  nationalWeatherResilienceRoutingIndex: number;
+  weatherResilienceRoutingByRegion: Record<AuRegionCode, number>;
+  digitalFreightVisibilityShare: number;
+  nationalDigitalFreightThroughputIndex: number;
+  digitalFreightThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -303,6 +316,9 @@ export interface TransportInfrastructureOptions {
   deepSeaGatewayPolicy?: DeepSeaGatewayPolicy;
   permittingStreamlinePolicy?: PermittingStreamlinePolicy;
   electricFreightPolicy?: ElectricFreightPolicy;
+  defenceMobilityPolicy?: DefenceMobilityPolicy;
+  weatherResiliencePolicy?: WeatherResiliencePolicy;
+  digitalFreightPolicy?: DigitalFreightPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -786,6 +802,49 @@ export const TRANSPORT_CORRIDORS_ROUND10: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round11.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND11: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_nt_defence_northern_mobility',
+    name: 'Northern Defence Mobility Chain',
+    networkKind: 'freight',
+    regionSequence: ['NT', 'QLD', 'WA'],
+    requiredTagsByRegion: {
+      NT: ['defence_logistics', 'strategic_mobility', 'remote'],
+      QLD: ['defence_logistics', 'military_freight'],
+      WA: ['strategic_mobility', 'remote'],
+    },
+    productivitySynergyPoints: 6.8,
+    logisticsRelief: 0.04,
+  },
+  {
+    id: 'corr_nsw_weather_resilience_spine',
+    name: 'NSW Weather Resilience Spine',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'ACT'],
+    requiredTagsByRegion: {
+      NSW: ['weather_resilience', 'flood_bypass', 'motorway'],
+      ACT: ['weather_resilience', 'capital'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.034,
+  },
+  {
+    id: 'corr_vic_digital_freight_mesh',
+    name: 'Victoria Digital Freight Mesh',
+    networkKind: 'trade',
+    regionSequence: ['VIC', 'NSW'],
+    requiredTagsByRegion: {
+      VIC: ['digital_freight', 'visibility', 'telemetry'],
+      NSW: ['digital_freight', 'gateway'],
+    },
+    productivitySynergyPoints: 6.1,
+    logisticsRelief: 0.037,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -943,6 +1002,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND8,
   ...TRANSPORT_CORRIDORS_ROUND9,
   ...TRANSPORT_CORRIDORS_ROUND10,
+  ...TRANSPORT_CORRIDORS_ROUND11,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -1535,6 +1595,62 @@ export const TRANSPORT_SCENARIOS_ROUND10: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round11.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND11: TransportStressScenario[] = [
+  {
+    id: 'scn_nt_defence_mobility_surge',
+    label: 'NT Defence Mobility Surge',
+    description: 'Strategic lift diverts Stuart Highway defence convoys.',
+    targetRegions: ['NT', 'QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_flood_bypass_overload',
+    label: 'NSW Flood Bypass Overload',
+    description: 'Repeated east-coast floods saturate resilience detours.',
+    targetRegions: ['NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road', 'rail'],
+  },
+  {
+    id: 'scn_vic_digital_freight_outage',
+    label: 'Victoria Digital Freight Outage',
+    description: 'Telemetry platform fault blinds port–road visibility.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'port'],
+  },
+  {
+    id: 'scn_wa_pilbara_heat_routing',
+    label: 'Pilbara Heat Routing Curtailment',
+    description: 'Extreme heat triggers mandatory heat-routing slowdowns.',
+    targetRegions: ['WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road', 'rail'],
+  },
+  {
+    id: 'scn_act_capital_defence_lift',
+    label: 'Capital Region Defence Lift',
+    description: 'Canberra strategic air–road lift crowds freight slots.',
+    targetRegions: ['ACT', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -1706,6 +1822,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND8,
   ...TRANSPORT_SCENARIOS_ROUND9,
   ...TRANSPORT_SCENARIOS_ROUND10,
+  ...TRANSPORT_SCENARIOS_ROUND11,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -4677,6 +4794,232 @@ export const SCALE_WAVE_ROUND10_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round11-assets.ts ---
+
+export const ROUND11_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_nt_stuart_defence',
+    category: 'road',
+    name: 'Stuart Highway Defence Corridor',
+    description: 'Strategic mobility feed for northern defence logistics.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD', 'SA'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['freight'],
+    tags: ['defence_logistics', 'strategic_mobility', 'military_freight', 'remote'],
+    laneKilometres: 680,
+    designSpeedKmh: 110,
+    freightShare: 0.38,
+    urbanShare: 0.04,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_hunter_flood_bypass',
+    category: 'road',
+    name: 'Hunter Flood Bypass Route',
+    description: 'Weather-resilience detour for Pacific Highway flood closures.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight'],
+    tags: ['weather_resilience', 'flood_bypass', 'national_highway', 'motorway'],
+    laneKilometres: 96,
+    designSpeedKmh: 100,
+    freightShare: 0.41,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_geelong_telemetry_freight',
+    category: 'road',
+    name: 'Geelong Telemetry Freight Lane',
+    description: 'Digitized drayage with live cargo visibility.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['digital_freight', 'telemetry', 'visibility', 'motorway'],
+    laneKilometres: 52,
+    designSpeedKmh: 100,
+    freightShare: 0.43,
+    urbanShare: 0.14,
+    tollRoad: true,
+  },
+  {
+    id: 'road_wa_pilbara_heat_routing',
+    category: 'road',
+    name: 'Pilbara Heat Routing Highway',
+    description: 'Heat-adaptive routing for iron-ore road trains.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['weather_resilience', 'heat_routing', 'mining', 'remote', 'strategic_mobility'],
+    laneKilometres: 420,
+    designSpeedKmh: 90,
+    freightShare: 0.55,
+    urbanShare: 0.02,
+    tollRoad: false,
+  },
+];
+
+export const ROUND11_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_qld_townsville_defence_feed',
+    category: 'rail',
+    name: 'Townsville Defence Rail Feed',
+    description: 'Military freight shuttle to northern garrison ports.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['freight'],
+    tags: ['defence_logistics', 'military_freight', 'strategic_mobility'],
+    trackKilometres: 320,
+    dualTrackShare: 0.52,
+    electrifiedShare: 0.38,
+    designFreightTonnesPerYear: 5_600_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_blue_mountains_resilience',
+    category: 'rail',
+    name: 'Blue Mountains Resilience Line',
+    description: 'Flood-resilient freight path over Great Dividing Range.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['freight'],
+    tags: ['weather_resilience', 'flood_bypass', 'freight_rail'],
+    trackKilometres: 185,
+    dualTrackShare: 0.56,
+    electrifiedShare: 0.64,
+    designFreightTonnesPerYear: 6_800_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_vic_digital_intermodal',
+    category: 'rail',
+    name: 'Victoria Digital Intermodal Rail',
+    description: 'Telemetry-integrated container shuttle with visibility hubs.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['digital_freight', 'visibility', 'telemetry', 'container'],
+    trackKilometres: 142,
+    dualTrackShare: 0.6,
+    electrifiedShare: 0.72,
+    designFreightTonnesPerYear: 7_400_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND11_PORTS: PortAsset[] = [
+  {
+    id: 'port_nt_darwin_defence',
+    category: 'port',
+    name: 'Darwin Defence Logistics Berths',
+    description: 'Strategic mobility and northern garrison sealift.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD'],
+    baseProductivityPoints: 6.2,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['defence_logistics', 'strategic_mobility', 'gateway', 'remote'],
+    berthCount: 6,
+    maxDraftMetres: 13.5,
+    teuCapacityPerYear: 320_000,
+    automationLevel: 2,
+    bulkShare: 0.42,
+  },
+  {
+    id: 'port_wa_hedland_weather',
+    category: 'port',
+    name: 'Port Hedland Weather-Resilient Terminal',
+    description: 'Cyclone-hardened bulk export with flood bypass staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA'],
+    baseProductivityPoints: 7.0,
+    strategicNetworks: ['trade'],
+    tags: ['weather_resilience', 'bulk', 'mining', 'export'],
+    berthCount: 8,
+    maxDraftMetres: 17.5,
+    teuCapacityPerYear: 410_000,
+    automationLevel: 2,
+    bulkShare: 0.82,
+  },
+];
+
+export const ROUND11_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nt_darwin_defence_dc',
+    category: 'logistics',
+    name: 'Darwin Defence Logistics DC',
+    description: 'Northern strategic mobility staging and sealift prep.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['freight'],
+    tags: ['defence_logistics', 'strategic_mobility', 'military_freight', 'remote'],
+    warehouseSqm: 105_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 48,
+  },
+  {
+    id: 'log_nsw_sydney_resilience_hub',
+    category: 'logistics',
+    name: 'Sydney Weather Resilience Hub',
+    description: 'Flood bypass coordination and heat-routing control.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['freight'],
+    tags: ['weather_resilience', 'flood_bypass', 'heat_routing', 'digital_freight', 'gateway'],
+    warehouseSqm: 118_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 67,
+  },
+  {
+    id: 'log_vic_melbourne_digital_control',
+    category: 'logistics',
+    name: 'Melbourne Digital Freight Control',
+    description: 'National visibility mesh and telemetry integration centre.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW', 'SA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade'],
+    tags: ['digital_freight', 'visibility', 'telemetry', 'gateway'],
+    warehouseSqm: 192_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 73,
+  },
+  {
+    id: 'log_act_capital_defence_staging',
+    category: 'logistics',
+    name: 'Canberra Defence Staging Yard',
+    description: 'Capital region strategic lift and defence freight staging.',
+    hostRegion: 'ACT',
+    servedRegions: ['ACT', 'NSW'],
+    baseProductivityPoints: 3.7,
+    strategicNetworks: ['freight', 'mobility'],
+    tags: ['defence_logistics', 'strategic_mobility', 'capital', 'military_freight', 'weather_resilience'],
+    warehouseSqm: 58_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'air'],
+    lastMileCoveragePct: 76,
+  },
+];
+
+export const SCALE_WAVE_ROUND11_ASSETS = [
+  ...ROUND11_ROADS,
+  ...ROUND11_RAIL,
+  ...ROUND11_PORTS,
+  ...ROUND11_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -4695,6 +5038,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND8_ASSETS,
     ...SCALE_WAVE_ROUND9_ASSETS,
     ...SCALE_WAVE_ROUND10_ASSETS,
+    ...SCALE_WAVE_ROUND11_ASSETS,
   ];
 }
 
@@ -5261,6 +5605,60 @@ export function deepSeaGatewayProductivityMultiplier(
   const policyBoost = policy === 'expand' ? 0.042 : 0;
   const normalized = (throughputIndex - 16) / 100;
   return clamp(1 + normalized * 0.052 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/defence-logistics-readiness-index.ts ---
+
+/** 0–100 defence logistics readiness (strategic mobility, surge capacity). */
+export function computeDefenceLogisticsReadinessByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const defenceTagged =
+      asset.tags.some((t) => t === 'defence_logistics' || t === 'strategic_mobility' || t === 'military_freight') ||
+      asset.linkedProjectType === 'remote_logistics_base';
+
+    if (!defenceTagged) continue;
+
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += (asset.laneKilometres * asset.freightShare) / 520;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_500_000;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.9 + asset.teuCapacityPerYear / 320_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 88_000 + asset.lastMileCoveragePct / 130;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalDefenceLogisticsReadinessIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 4, 88) * 10) / 10;
+}
+
+export function defenceLogisticsProductivityMultiplier(
+  readinessIndex: number,
+  policy: DefenceMobilityPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'mobilize' ? 0.044 : 0;
+  const normalized = (readinessIndex - 10) / 100;
+  return clamp(1 + normalized * 0.05 + policyBoost, 0.93, 1.11);
 }
 
 
@@ -5840,6 +6238,64 @@ export function infrastructurePermittingProductivityMultiplier(
 }
 
 
+// --- source: operations/weather-resilience-routing-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type WeatherResiliencePolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 weather-resilience routing capacity (flood bypass, heat routing). */
+export function computeWeatherResilienceRoutingByRegion(
+  operationalAssets: TransportAsset[],
+  climateStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 34])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.includes('weather_resilience') ||
+      asset.tags.includes('flood_bypass') ||
+      asset.tags.includes('heat_routing')
+    ) {
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        byRegion[asset.hostRegion] += asset.laneKilometres / 360 + asset.designSpeedKmh / 55;
+      }
+      if (asset.category === 'rail' && 'trackKilometres' in asset) {
+        byRegion[asset.hostRegion] += asset.trackKilometres / 280 + asset.dualTrackShare * 8;
+      }
+      if (asset.category === 'logistics') {
+        byRegion[asset.hostRegion] += asset.warehouseSqm / 115_000 + 2.5;
+      }
+    }
+    if (asset.category === 'port' && asset.tags.includes('weather_resilience')) {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.2 + asset.maxDraftMetres;
+    }
+  }
+
+  const stress = clamp(climateStress, 0.05, 1.2);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.04 - stress * 0.05), 16, 94) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalWeatherResilienceRoutingIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  return Math.round(clamp(avg, 20, 86) * 10) / 10;
+}
+
+export function weatherResilienceProductivityMultiplier(
+  routingIndex: number,
+  policy: WeatherResiliencePolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'harden' ? 0.047 : 0;
+  const normalized = (routingIndex - 40) / 100;
+  return clamp(1 + normalized * 0.052 + policyBoost, 0.92, 1.1);
+}
+
+
 // --- source: productivity/regional-investment-tiers.ts ---
 
 const TIERS: TransportInvestmentTier[] = ['emerging', 'regional', 'integrated', 'national_gateway'];
@@ -6415,6 +6871,98 @@ export function nationalElectricCorridorThroughputIndex(
 }
 
 
+// --- source: productivity/digital-freight-visibility-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type DigitalFreightPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of freight operations with digital visibility / telemetry integration. */
+export function computeDigitalFreightVisibilityShare(
+  operationalAssets: TransportAsset[],
+  policy: DigitalFreightPolicy = 'baseline',
+): number {
+  let digitalUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'logistics') {
+      const units = asset.warehouseSqm / 65_000 + asset.intermodalLinks.length;
+      totalUnits += units;
+      if (
+        asset.tags.includes('digital_freight') ||
+        asset.tags.includes('visibility') ||
+        asset.tags.includes('telemetry')
+      ) {
+        digitalUnits += units * 0.82;
+      }
+    }
+    if (asset.category === 'port') {
+      const units = asset.berthCount * 2 + asset.automationLevel * 1.5;
+      totalUnits += units;
+      if (asset.tags.includes('digital_freight') || asset.automationLevel >= 2) {
+        digitalUnits += units * (0.45 + asset.automationLevel * 0.08);
+      }
+    }
+    if (asset.category === 'road' && asset.tags.includes('telemetry') && 'laneKilometres' in asset) {
+      totalUnits += asset.laneKilometres / 200;
+      digitalUnits += asset.laneKilometres / 200;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.08;
+  const policyBoost = policy === 'integrate' ? 0.042 : 0;
+  return Math.round(clamp(digitalUnits / totalUnits + policyBoost, 0.07, 0.65) * 1000) / 1000;
+}
+
+export function digitalFreightProductivityMultiplier(
+  share: number,
+  policy: DigitalFreightPolicy,
+): number {
+  const bias = policy === 'integrate' ? 1.023 : 1;
+  return (1 + (share - 0.12) * 0.036) * bias;
+}
+
+export function computeDigitalFreightThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some((t) => t === 'digital_freight' || t === 'visibility' || t === 'telemetry')
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 90_000 + asset.intermodalLinks.length * 1.4;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.automationLevel * 2.8 + asset.teuCapacityPerYear / 400_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 620;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalDigitalFreightThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.56 + max * 0.44, 2, 74) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -6688,6 +7236,19 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   electricFreightProductivityMultiplier,
   nationalElectricCorridorThroughputIndex,
 } from './electric-freight-index.ts';
+  computeDefenceLogisticsReadinessByRegion,
+  defenceLogisticsProductivityMultiplier,
+  nationalDefenceLogisticsReadinessIndex,
+} from '../network/defence-logistics-readiness-index.ts';
+  computeWeatherResilienceRoutingByRegion,
+  nationalWeatherResilienceRoutingIndex,
+  weatherResilienceProductivityMultiplier,
+} from '../operations/weather-resilience-routing-index.ts';
+  computeDigitalFreightThroughputByRegion,
+  computeDigitalFreightVisibilityShare,
+  digitalFreightProductivityMultiplier,
+  nationalDigitalFreightThroughputIndex,
+} from './digital-freight-visibility-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -7062,6 +7623,55 @@ export function computeTransportInfrastructureState(
     nationalDeepSeaGateway * 0.027 +
     nationalElectricCorridor * 0.023;
 
+  const climateStress = aggregateNetworkStress(inputs.networkUtilization);
+  const defenceLogisticsReadinessByRegion = computeDefenceLogisticsReadinessByRegion(ops);
+  const nationalDefenceLogistics = nationalDefenceLogisticsReadinessIndex(defenceLogisticsReadinessByRegion);
+  const defenceMult = defenceLogisticsProductivityMultiplier(
+    nationalDefenceLogistics,
+    options?.defenceMobilityPolicy ?? 'baseline',
+  );
+  const weatherResilienceRoutingByRegion = computeWeatherResilienceRoutingByRegion(ops, climateStress);
+  const nationalWeatherResilience = nationalWeatherResilienceRoutingIndex(weatherResilienceRoutingByRegion);
+  const weatherMult = weatherResilienceProductivityMultiplier(
+    nationalWeatherResilience,
+    options?.weatherResiliencePolicy ?? 'baseline',
+  );
+  const digitalFreightThroughputByRegion = computeDigitalFreightThroughputByRegion(ops);
+  const nationalDigitalFreight = nationalDigitalFreightThroughputIndex(digitalFreightThroughputByRegion);
+  const digitalFreightVisibilityShare = computeDigitalFreightVisibilityShare(
+    ops,
+    options?.digitalFreightPolicy ?? 'baseline',
+  );
+  const digitalMult = digitalFreightProductivityMultiplier(
+    digitalFreightVisibilityShare,
+    options?.digitalFreightPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const defenceBoost = (defenceLogisticsReadinessByRegion[code] - 8) * 0.0055;
+    const weatherBoost = (weatherResilienceRoutingByRegion[code] - 38) * 0.0042;
+    const digitalBoost = (digitalFreightThroughputByRegion[code] - 4) * 0.0058;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + defenceBoost + weatherBoost + digitalBoost) *
+      defenceMult *
+      weatherMult *
+      digitalMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023 +
+    nationalDefenceLogistics * 0.022 +
+    nationalDigitalFreight * 0.021;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -7075,7 +7685,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/11',
+    schemaVersion: 'agent12/12',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -7137,6 +7747,13 @@ export function computeTransportInfrastructureState(
     electricFreightShare,
     nationalElectricCorridorThroughputIndex: nationalElectricCorridor,
     electricCorridorThroughputByRegion,
+    nationalDefenceLogisticsReadinessIndex: nationalDefenceLogistics,
+    defenceLogisticsReadinessByRegion,
+    nationalWeatherResilienceRoutingIndex: nationalWeatherResilience,
+    weatherResilienceRoutingByRegion,
+    digitalFreightVisibilityShare,
+    nationalDigitalFreightThroughputIndex: nationalDigitalFreight,
+    digitalFreightThroughputByRegion,
     computeMs,
   };
 }
@@ -7219,7 +7836,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/11' &&
+      infra.schemaVersion === 'agent12/12' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -7245,8 +7862,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalDeepSeaGatewayThroughputIndex > 10 &&
       infra.nationalInfrastructurePermittingIndex > 38 &&
       infra.electricFreightShare >= 0.06 &&
-      infra.nationalElectricCorridorThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} deepSea=${infra.nationalDeepSeaGatewayThroughputIndex.toFixed(1)} permitting=${infra.nationalInfrastructurePermittingIndex.toFixed(1)} electric=${infra.nationalElectricCorridorThroughputIndex.toFixed(1)}`,
+      infra.nationalElectricCorridorThroughputIndex >= 2 &&
+      infra.nationalDefenceLogisticsReadinessIndex >= 8 &&
+      infra.nationalWeatherResilienceRoutingIndex > 38 &&
+      infra.digitalFreightVisibilityShare >= 0.07 &&
+      infra.nationalDigitalFreightThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} defence=${infra.nationalDefenceLogisticsReadinessIndex.toFixed(1)} weather=${infra.nationalWeatherResilienceRoutingIndex.toFixed(1)} digital=${infra.nationalDigitalFreightThroughputIndex.toFixed(1)}`,
   });
 
   return results;

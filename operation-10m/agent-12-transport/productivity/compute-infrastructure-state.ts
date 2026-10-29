@@ -133,6 +133,22 @@ import {
   electricFreightProductivityMultiplier,
   nationalElectricCorridorThroughputIndex,
 } from './electric-freight-index.ts';
+import {
+  computeDefenceLogisticsReadinessByRegion,
+  defenceLogisticsProductivityMultiplier,
+  nationalDefenceLogisticsReadinessIndex,
+} from '../network/defence-logistics-readiness-index.ts';
+import {
+  computeWeatherResilienceRoutingByRegion,
+  nationalWeatherResilienceRoutingIndex,
+  weatherResilienceProductivityMultiplier,
+} from '../operations/weather-resilience-routing-index.ts';
+import {
+  computeDigitalFreightThroughputByRegion,
+  computeDigitalFreightVisibilityShare,
+  digitalFreightProductivityMultiplier,
+  nationalDigitalFreightThroughputIndex,
+} from './digital-freight-visibility-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -508,6 +524,55 @@ export function computeTransportInfrastructureState(
     nationalDeepSeaGateway * 0.027 +
     nationalElectricCorridor * 0.023;
 
+  const climateStress = aggregateNetworkStress(inputs.networkUtilization);
+  const defenceLogisticsReadinessByRegion = computeDefenceLogisticsReadinessByRegion(ops);
+  const nationalDefenceLogistics = nationalDefenceLogisticsReadinessIndex(defenceLogisticsReadinessByRegion);
+  const defenceMult = defenceLogisticsProductivityMultiplier(
+    nationalDefenceLogistics,
+    options?.defenceMobilityPolicy ?? 'baseline',
+  );
+  const weatherResilienceRoutingByRegion = computeWeatherResilienceRoutingByRegion(ops, climateStress);
+  const nationalWeatherResilience = nationalWeatherResilienceRoutingIndex(weatherResilienceRoutingByRegion);
+  const weatherMult = weatherResilienceProductivityMultiplier(
+    nationalWeatherResilience,
+    options?.weatherResiliencePolicy ?? 'baseline',
+  );
+  const digitalFreightThroughputByRegion = computeDigitalFreightThroughputByRegion(ops);
+  const nationalDigitalFreight = nationalDigitalFreightThroughputIndex(digitalFreightThroughputByRegion);
+  const digitalFreightVisibilityShare = computeDigitalFreightVisibilityShare(
+    ops,
+    options?.digitalFreightPolicy ?? 'baseline',
+  );
+  const digitalMult = digitalFreightProductivityMultiplier(
+    digitalFreightVisibilityShare,
+    options?.digitalFreightPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const defenceBoost = (defenceLogisticsReadinessByRegion[code] - 8) * 0.0055;
+    const weatherBoost = (weatherResilienceRoutingByRegion[code] - 38) * 0.0042;
+    const digitalBoost = (digitalFreightThroughputByRegion[code] - 4) * 0.0058;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + defenceBoost + weatherBoost + digitalBoost) *
+      defenceMult *
+      weatherMult *
+      digitalMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024 +
+    nationalDeepSeaGateway * 0.027 +
+    nationalElectricCorridor * 0.023 +
+    nationalDefenceLogistics * 0.022 +
+    nationalDigitalFreight * 0.021;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -521,7 +586,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/11',
+    schemaVersion: 'agent12/12',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -583,6 +648,13 @@ export function computeTransportInfrastructureState(
     electricFreightShare,
     nationalElectricCorridorThroughputIndex: nationalElectricCorridor,
     electricCorridorThroughputByRegion,
+    nationalDefenceLogisticsReadinessIndex: nationalDefenceLogistics,
+    defenceLogisticsReadinessByRegion,
+    nationalWeatherResilienceRoutingIndex: nationalWeatherResilience,
+    weatherResilienceRoutingByRegion,
+    digitalFreightVisibilityShare,
+    nationalDigitalFreightThroughputIndex: nationalDigitalFreight,
+    digitalFreightThroughputByRegion,
     computeMs,
   };
 }
