@@ -134,6 +134,7 @@ export function attachGauntletSessionToState(
     expeditionSession: null,
     odysseySession: null,
     pilgrimageSession: null,
+    caravanSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,

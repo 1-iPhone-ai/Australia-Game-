@@ -36,9 +36,15 @@ import {
   pilgrimageSessionSummary,
   sanitizePilgrimageSession,
 } from './save-format-pilgrimage.js';
+import {
+  getCaravanScenarioAtCursor,
+  caravanSessionSummary,
+  sanitizeCaravanSession,
+} from './save-format-caravan.js';
 import { objectiveProgressCompletionRatio } from './save-format-objective-sync.js';
 import type {
   O10mCampaignPlan,
+  O10mCaravanLeg,
   O10mCircuitPhase,
   O10mExpeditionLeg,
   O10mOdysseyAct,
@@ -71,9 +77,31 @@ const emptyQueuePlan = {
   pilgrimageCursor: null as number | null,
   pilgrimageStage: null as O10mPilgrimageStage | null,
   pilgrimageDevotion: null as number | null,
+  caravanId: null as string | null,
+  caravanCursor: null as number | null,
+  caravanLeg: null as O10mCaravanLeg | null,
+  caravanCargo: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const caravan = sanitizeCaravanSession(state.caravanSession);
+  const caravanScenario = getCaravanScenarioAtCursor(caravan);
+  if (caravan && caravan.active && caravanScenario) {
+    return {
+      kind: 'caravan_step',
+      scenarioId: caravanScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      caravanId: caravan.caravanId,
+      caravanCursor: caravan.cursor,
+      caravanLeg: caravan.legTag,
+      caravanCargo: caravan.cargoScore,
+      reason: `Caravan "${caravan.label}" ${caravan.legTag} leg ${caravan.cursor + 1}/${caravan.scenarioIds.length} (cargo ${caravan.cargoScore}).`,
+    };
+  }
+
   const pilgrimage = sanitizePilgrimageSession(state.pilgrimageSession);
   const pilgrimageScenario = getPilgrimageScenarioAtCursor(pilgrimage);
   if (pilgrimage && pilgrimage.active && pilgrimageScenario) {
@@ -272,6 +300,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   expeditionActive: boolean;
   odysseyActive: boolean;
   pilgrimageActive: boolean;
+  caravanActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -286,6 +315,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const expedition = expeditionSessionSummary(state);
   const odyssey = odysseySessionSummary(state);
   const pilgrimage = pilgrimageSessionSummary(state);
+  const caravan = caravanSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -298,6 +328,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     expeditionActive: expedition.active,
     odysseyActive: odyssey.active,
     pilgrimageActive: pilgrimage.active,
+    caravanActive: caravan.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

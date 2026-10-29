@@ -416,6 +416,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_caravan_route',
+    title: 'Caravan Route',
+    description:
+      'Three-leg trade caravan with cargo accrual between stops — round-12 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_caravan_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_caravan_assembly_yard',
+        title: 'Assembly Yard',
+        narrativeBridge: 'Load cargo before the dune crossing.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 220 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_caravan_dune_crossing',
+        title: 'Dune Crossing',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { WA: 6, NT: 5 },
+          forcedSettingsPatch: { o10mCaravanMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_caravan_bazaar_finale',
+        title: 'Bazaar Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainCaravanRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

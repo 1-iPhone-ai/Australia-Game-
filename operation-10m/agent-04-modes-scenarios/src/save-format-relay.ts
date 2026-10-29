@@ -137,6 +137,7 @@ export function attachRelaySessionToState(
     expeditionSession: null,
     odysseySession: null,
     pilgrimageSession: null,
+    caravanSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
