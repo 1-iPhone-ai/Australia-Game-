@@ -1422,7 +1422,7 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
   {
     id: 'guardian_command_stress',
     label: 'Guardian & command stress',
-    shockIds: ['credit_crunch', 'global_slowdown'],
+    shockIds: ['credit_contraction', 'global_slowdown'],
     description: 'Red guardian vigilance with broken command coordination (harness overlay).'
   }
 ];
