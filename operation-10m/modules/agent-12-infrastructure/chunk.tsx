@@ -409,8 +409,14 @@ export type MiningCampResupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortContainerReeferLogisticsPolicy = 'baseline' | 'expand';
 
+export type TidalLagoonExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteTelehealthSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type WarehouseVerticalFulfillmentLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/43';
+  schemaVersion: 'agent12/44';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -720,6 +726,14 @@ export interface TransportInfrastructureState {
   portContainerReeferLogisticsShare: number;
   nationalPortContainerReeferLogisticsThroughputIndex: number;
   portContainerReeferLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalTidalLagoonExportIndex: number;
+  tidalLagoonExportByRegion: Record<AuRegionCode, number>;
+  remoteTelehealthSupplyStagingShare: number;
+  nationalRemoteTelehealthSupplyStagingIndex: number;
+  remoteTelehealthSupplyStagingByRegion: Record<AuRegionCode, number>;
+  warehouseVerticalFulfillmentLogisticsShare: number;
+  nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex: number;
+  warehouseVerticalFulfillmentLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -839,6 +853,9 @@ export interface TransportInfrastructureOptions {
   biomethaneGridExportPolicy?: BiomethaneGridExportPolicy;
   miningCampResupplyStagingPolicy?: MiningCampResupplyStagingPolicy;
   portContainerReeferLogisticsPolicy?: PortContainerReeferLogisticsPolicy;
+  tidalLagoonExportPolicy?: TidalLagoonExportPolicy;
+  remoteTelehealthSupplyStagingPolicy?: RemoteTelehealthSupplyStagingPolicy;
+  warehouseVerticalFulfillmentLogisticsPolicy?: WarehouseVerticalFulfillmentLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2662,6 +2679,48 @@ export const TRANSPORT_CORRIDORS_ROUND42: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round43.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND43: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_tas_vic_tidal_lagoon',
+    name: 'TAS–VIC Tidal Lagoon',
+    networkKind: 'trade',
+    regionSequence: ['TAS', 'VIC'],
+    requiredTagsByRegion: {
+      TAS: ['tidal_lagoon_export', 'tidal_barrage_rail_feed', 'marine_renewable_lagoon'],
+      VIC: ['tidal_lagoon_export', 'tidal_barrage_rail_feed', 'marine_renewable_lagoon'],
+    },
+    productivitySynergyPoints: 6.7,
+    logisticsRelief: 0.044,
+  },
+  {
+    id: 'corr_nt_sa_remote_telehealth',
+    name: 'NT–SA Remote Telehealth',
+    networkKind: 'mobility',
+    regionSequence: ['NT', 'SA'],
+    requiredTagsByRegion: {
+      NT: ['remote_telehealth_supply', 'clinic_medivac_staging', 'remote_health_logistics'],
+      SA: ['remote_telehealth_supply', 'clinic_medivac_staging', 'remote_health_logistics'],
+    },
+    productivitySynergyPoints: 6.5,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_nsw_vic_vertical_fulfillment',
+    name: 'NSW–VIC Vertical Fulfillment',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['warehouse_vertical_fulfillment', 'urban_tower_sortation', 'dense_last_mile_hub'],
+      VIC: ['warehouse_vertical_fulfillment', 'urban_tower_sortation', 'dense_last_mile_hub'],
+    },
+    productivitySynergyPoints: 6.4,
+    logisticsRelief: 0.04,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2851,6 +2910,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND40,
   ...TRANSPORT_CORRIDORS_ROUND41,
   ...TRANSPORT_CORRIDORS_ROUND42,
+  ...TRANSPORT_CORRIDORS_ROUND43,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -5235,6 +5295,62 @@ export const TRANSPORT_SCENARIOS_ROUND42: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round43.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND43: TransportStressScenario[] = [
+  {
+    id: 'scn_tas_tidal_export_surge',
+    label: 'Tasmania Tidal Export Surge',
+    description: 'Lagoon build overloads Burnie tidal berths.',
+    targetRegions: ['TAS', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_vic_barrage_feed_delay',
+    label: 'Victoria Barrage Feed Delay',
+    description: 'Swell delays Portland tidal staging.',
+    targetRegions: ['VIC', 'TAS'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_nt_telehealth_resupply',
+    label: 'NT Telehealth Resupply',
+    description: 'Outbreak response strains Darwin telehealth hub.',
+    targetRegions: ['NT', 'SA'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.32,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_nsw_vertical_tower_peak',
+    label: 'NSW Vertical Tower Peak',
+    description: 'E-commerce peak loads Sydney vertical tower.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_vic_dense_hub_backlog',
+    label: 'Victoria Dense Hub Backlog',
+    description: 'Sortation backlog at Melbourne vertical export.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -5438,6 +5554,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND40,
   ...TRANSPORT_SCENARIOS_ROUND41,
   ...TRANSPORT_SCENARIOS_ROUND42,
+  ...TRANSPORT_SCENARIOS_ROUND43,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -15750,6 +15867,233 @@ export const SCALE_WAVE_ROUND42_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round43-assets.ts ---
+
+export const ROUND43_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_tas_burnie_tidal_haul',
+    category: 'road',
+    name: 'Burnie Tidal Haul',
+    description: 'TAS marine renewable lagoon staging road.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['tidal_lagoon_export', 'tidal_barrage_rail_feed', 'marine_renewable_lagoon'],
+    laneKilometres: 26,
+    designSpeedKmh: 86,
+    freightShare: 0.33,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_portland_tidal_feed',
+    category: 'road',
+    name: 'Portland Tidal Feed',
+    description: 'Victorian tidal barrage export connector.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['trade'],
+    tags: ['tidal_lagoon_export', 'tidal_barrage_rail_feed', 'marine_renewable_lagoon'],
+    laneKilometres: 23,
+    designSpeedKmh: 83,
+    freightShare: 0.3,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_alice_telehealth_access',
+    category: 'road',
+    name: 'Alice Telehealth Access',
+    description: 'NT remote health logistics road feed.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_telehealth_supply', 'clinic_medivac_staging', 'remote_health_logistics'],
+    laneKilometres: 20,
+    designSpeedKmh: 75,
+    freightShare: 0.09,
+    urbanShare: 0.2,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_port_augusta_telehealth_staging',
+    category: 'road',
+    name: 'Port Augusta Telehealth Staging',
+    description: 'SA clinic medivac staging connector.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['remote_telehealth_supply', 'clinic_medivac_staging', 'remote_health_logistics'],
+    laneKilometres: 19,
+    designSpeedKmh: 73,
+    freightShare: 0.08,
+    urbanShare: 0.19,
+    tollRoad: false,
+  },
+];
+
+export const ROUND43_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_tas_northwest_tidal_rail',
+    category: 'rail',
+    name: 'Tasmania Northwest Tidal Rail',
+    description: 'TAS tidal lagoon export feed.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['tidal_lagoon_export', 'tidal_barrage_rail_feed', 'marine_renewable_lagoon'],
+    trackKilometres: 41,
+    dualTrackShare: 0.44,
+    electrifiedShare: 0.41,
+    designFreightTonnesPerYear: 3_700_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_vic_warrnambool_tidal_link',
+    category: 'rail',
+    name: 'Warrnambool Tidal Link',
+    description: 'Victorian marine lagoon export handoff.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade'],
+    tags: ['tidal_lagoon_export', 'tidal_barrage_rail_feed', 'marine_renewable_lagoon'],
+    trackKilometres: 34,
+    dualTrackShare: 0.5,
+    electrifiedShare: 0.49,
+    designFreightTonnesPerYear: 2_900_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_parramatta_vertical_rail',
+    category: 'rail',
+    name: 'Parramatta Vertical Rail',
+    description: 'NSW urban tower sortation rail feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['freight'],
+    tags: ['warehouse_vertical_fulfillment', 'urban_tower_sortation', 'dense_last_mile_hub'],
+    trackKilometres: 22,
+    dualTrackShare: 0.58,
+    electrifiedShare: 0.55,
+    designFreightTonnesPerYear: 2_400_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND43_PORTS: PortAsset[] = [
+  {
+    id: 'port_tas_burnie_tidal_export',
+    category: 'port',
+    name: 'Burnie Tidal Export',
+    description: 'Tasmanian tidal lagoon export port.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 6.1,
+    strategicNetworks: ['trade'],
+    tags: ['tidal_lagoon_export', 'tidal_barrage_rail_feed', 'marine_renewable_lagoon'],
+    berthCount: 3,
+    maxDraftMetres: 12.9,
+    teuCapacityPerYear: 99_000,
+    automationLevel: 2,
+    bulkShare: 0.37,
+  },
+  {
+    id: 'port_nt_darwin_telehealth_hub',
+    category: 'port',
+    name: 'Darwin Telehealth Hub',
+    description: 'NT remote telehealth logistics port.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['remote_telehealth_supply', 'clinic_medivac_staging', 'remote_health_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.8,
+    teuCapacityPerYear: 132_000,
+    automationLevel: 1,
+    bulkShare: 0.14,
+  },
+  {
+    id: 'port_vic_melbourne_vertical_export',
+    category: 'port',
+    name: 'Melbourne Vertical Export',
+    description: 'Victorian dense last-mile hub port.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['warehouse_vertical_fulfillment', 'urban_tower_sortation', 'dense_last_mile_hub'],
+    berthCount: 3,
+    maxDraftMetres: 12.3,
+    teuCapacityPerYear: 240_000,
+    automationLevel: 3,
+    bulkShare: 0.05,
+  },
+];
+
+export const ROUND43_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_sa_port_augusta_telehealth_stores',
+    category: 'logistics',
+    name: 'Port Augusta Telehealth Stores',
+    description: 'SA remote health consolidation yard.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_telehealth_supply', 'clinic_medivac_staging', 'remote_health_logistics'],
+    warehouseSqm: 30_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 46,
+  },
+  {
+    id: 'log_nsw_sydney_vertical_tower',
+    category: 'logistics',
+    name: 'Sydney Vertical Tower',
+    description: 'NSW warehouse vertical fulfillment yard.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['freight'],
+    tags: ['warehouse_vertical_fulfillment', 'urban_tower_sortation', 'dense_last_mile_hub'],
+    warehouseSqm: 64_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 78,
+  },
+  {
+    id: 'log_tas_devonport_tidal_stores',
+    category: 'logistics',
+    name: 'Devonport Tidal Stores',
+    description: 'TAS marine renewable lagoon yard.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade'],
+    tags: ['tidal_lagoon_export', 'tidal_barrage_rail_feed', 'marine_renewable_lagoon'],
+    warehouseSqm: 44_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 42,
+  },
+];
+
+export const SCALE_WAVE_ROUND43_ASSETS = [
+  ...ROUND43_ROADS,
+  ...ROUND43_RAIL,
+  ...ROUND43_PORTS,
+  ...ROUND43_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -15800,6 +16144,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND40_ASSETS,
     ...SCALE_WAVE_ROUND41_ASSETS,
     ...SCALE_WAVE_ROUND42_ASSETS,
+    ...SCALE_WAVE_ROUND43_ASSETS,
   ];
 }
 
@@ -18195,6 +18540,67 @@ export function biomethaneGridExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.034 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.037 + policyBoost, 0.93, 1.09);
+}
+
+
+// --- source: network/tidal-lagoon-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type TidalLagoonExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 tidal lagoon export throughput by region. */
+export function computeTidalLagoonExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'tidal_lagoon_export' ||
+        t === 'tidal_barrage_rail_feed' ||
+        t === 'marine_renewable_lagoon',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.0 + asset.maxDraftMetres * 0.37;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 68_000 + asset.intermodalLinks.length * 0.68;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 460;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_400_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalTidalLagoonExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.47 + max * 0.53, 5, 71) * 10) / 10;
+}
+
+export function tidalLagoonExportProductivityMultiplier(
+  index: number,
+  policy: TidalLagoonExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.033 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.036 + policyBoost, 0.93, 1.09);
 }
 
 
@@ -21338,6 +21744,96 @@ export function miningCampResupplyStagingProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.015 : 1;
   return (1 + (share - 0.042) * 0.02) * bias;
+}
+
+
+// --- source: operations/remote-telehealth-supply-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RemoteTelehealthSupplyStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 remote telehealth supply staging readiness by region. */
+export function computeRemoteTelehealthSupplyStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'remote_telehealth_supply' ||
+          t === 'clinic_medivac_staging' ||
+          t === 'remote_health_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 61_000 + (asset.coldChainCapable ? 1.35 : 0.76);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 425;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.91;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 255;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.032 - stress * 0.019), 5, 73) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRemoteTelehealthSupplyStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 6, 71) * 10) / 10;
+}
+
+export function computeRemoteTelehealthSupplyStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: RemoteTelehealthSupplyStagingPolicy = 'baseline',
+): number {
+  let healthUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('remote_telehealth_supply') || asset.tags.includes('remote_health_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 56_000;
+        healthUnits += (asset.warehouseSqm / 56_000) * 0.54;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 385;
+        healthUnits += (asset.laneKilometres / 385) * 0.47;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.032;
+  const policyBoost = policy === 'surge' ? 0.022 : 0;
+  return Math.round(clamp(healthUnits / totalUnits + policyBoost, 0.031, 0.2) * 1000) / 1000;
+}
+
+export function remoteTelehealthSupplyStagingProductivityMultiplier(
+  share: number,
+  policy: RemoteTelehealthSupplyStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.014 : 1;
+  return (1 + (share - 0.04) * 0.019) * bias;
 }
 
 
@@ -24737,6 +25233,98 @@ export function nationalPortContainerReeferLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/warehouse-vertical-fulfillment-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type TransportAsset,
+  type WarehouseVerticalFulfillmentLogisticsPolicy,
+} from '../types.ts';
+
+/** 0–1 share of logistics supporting vertical warehouse fulfillment. */
+export function computeWarehouseVerticalFulfillmentLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: WarehouseVerticalFulfillmentLogisticsPolicy = 'baseline',
+): number {
+  let verticalUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'warehouse_vertical_fulfillment' ||
+          t === 'urban_tower_sortation' ||
+          t === 'dense_last_mile_hub',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.0 + asset.teuCapacityPerYear / 390_000;
+        verticalUnits += (asset.berthCount * 1.0) * 0.57;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 50_000;
+        verticalUnits += (asset.warehouseSqm / 50_000) * 0.53;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.034;
+  const policyBoost = policy === 'expand' ? 0.024 : 0;
+  return Math.round(clamp(verticalUnits / totalUnits + policyBoost, 0.033, 0.22) * 1000) / 1000;
+}
+
+export function warehouseVerticalFulfillmentLogisticsProductivityMultiplier(
+  share: number,
+  policy: WarehouseVerticalFulfillmentLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.016 : 1;
+  return (1 + (share - 0.05) * 0.02) * bias;
+}
+
+export function computeWarehouseVerticalFulfillmentLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'warehouse_vertical_fulfillment' ||
+          t === 'urban_tower_sortation' ||
+          t === 'dense_last_mile_hub',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.4 + asset.teuCapacityPerYear / 360_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 48_000 + asset.lastMileCoveragePct / 95;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 370;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.54 + max * 0.46, 2, 49) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -25450,6 +26038,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalPortContainerReeferLogisticsThroughputIndex,
   portContainerReeferLogisticsProductivityMultiplier,
 } from './port-container-reefer-logistics-index.ts';
+  computeTidalLagoonExportByRegion,
+  nationalTidalLagoonExportIndex,
+  tidalLagoonExportProductivityMultiplier,
+} from '../network/tidal-lagoon-export-index.ts';
+  computeRemoteTelehealthSupplyStagingByRegion,
+  computeRemoteTelehealthSupplyStagingShare,
+  nationalRemoteTelehealthSupplyStagingIndex,
+  remoteTelehealthSupplyStagingProductivityMultiplier,
+} from '../operations/remote-telehealth-supply-staging-index.ts';
+  computeWarehouseVerticalFulfillmentLogisticsShare,
+  computeWarehouseVerticalFulfillmentLogisticsThroughputByRegion,
+  nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex,
+  warehouseVerticalFulfillmentLogisticsProductivityMultiplier,
+} from './warehouse-vertical-fulfillment-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -26834,6 +27436,35 @@ export function computeTransportInfrastructureState(
     portContainerReeferLogisticsShare,
     options?.portContainerReeferLogisticsPolicy ?? 'baseline',
   );
+  const tidalLagoonExportByRegion = computeTidalLagoonExportByRegion(ops);
+  const nationalTidalLagoon = nationalTidalLagoonExportIndex(tidalLagoonExportByRegion);
+  const tidalLagoonMult = tidalLagoonExportProductivityMultiplier(
+    nationalTidalLagoon,
+    options?.tidalLagoonExportPolicy ?? 'baseline',
+  );
+  const remoteTelehealthSupplyStagingByRegion = computeRemoteTelehealthSupplyStagingByRegion(ops, networkStress);
+  const nationalTelehealth = nationalRemoteTelehealthSupplyStagingIndex(remoteTelehealthSupplyStagingByRegion);
+  const remoteTelehealthSupplyStagingShare = computeRemoteTelehealthSupplyStagingShare(
+    ops,
+    options?.remoteTelehealthSupplyStagingPolicy ?? 'baseline',
+  );
+  const telehealthMult = remoteTelehealthSupplyStagingProductivityMultiplier(
+    remoteTelehealthSupplyStagingShare,
+    options?.remoteTelehealthSupplyStagingPolicy ?? 'baseline',
+  );
+  const warehouseVerticalFulfillmentLogisticsThroughputByRegion =
+    computeWarehouseVerticalFulfillmentLogisticsThroughputByRegion(ops);
+  const nationalVerticalFulfillment = nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex(
+    warehouseVerticalFulfillmentLogisticsThroughputByRegion,
+  );
+  const warehouseVerticalFulfillmentLogisticsShare = computeWarehouseVerticalFulfillmentLogisticsShare(
+    ops,
+    options?.warehouseVerticalFulfillmentLogisticsPolicy ?? 'baseline',
+  );
+  const verticalFulfillmentMult = warehouseVerticalFulfillmentLogisticsProductivityMultiplier(
+    warehouseVerticalFulfillmentLogisticsShare,
+    options?.warehouseVerticalFulfillmentLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -26917,6 +27548,9 @@ export function computeTransportInfrastructureState(
     const biomethaneBoost = (biomethaneGridExportByRegion[code] - 5) * 0.0026;
     const miningCampBoost = (miningCampResupplyStagingByRegion[code] - 6) * 0.0022;
     const containerReeferBoost = (portContainerReeferLogisticsThroughputByRegion[code] - 2) * 0.0018;
+    const tidalLagoonBoost = (tidalLagoonExportByRegion[code] - 5) * 0.0025;
+    const telehealthBoost = (remoteTelehealthSupplyStagingByRegion[code] - 6) * 0.0021;
+    const verticalFulfillmentBoost = (warehouseVerticalFulfillmentLogisticsThroughputByRegion[code] - 2) * 0.0017;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -26999,7 +27633,10 @@ export function computeTransportInfrastructureState(
         railShuntingBoost +
         biomethaneBoost +
         miningCampBoost +
-        containerReeferBoost) *
+        containerReeferBoost +
+        tidalLagoonBoost +
+        telehealthBoost +
+        verticalFulfillmentBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -27080,7 +27717,10 @@ export function computeTransportInfrastructureState(
       railShuntingMult *
       biomethaneMult *
       miningCampMult *
-      containerReeferMult;
+      containerReeferMult *
+      tidalLagoonMult *
+      telehealthMult *
+      verticalFulfillmentMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -27184,7 +27824,10 @@ export function computeTransportInfrastructureState(
     nationalRailShunting * 0.003 +
     nationalBiomethane * 0.003 +
     nationalMiningCamp * 0.003 +
-    nationalContainerReefer * 0.003;
+    nationalContainerReefer * 0.003 +
+    nationalTidalLagoon * 0.003 +
+    nationalTelehealth * 0.003 +
+    nationalVerticalFulfillment * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -27199,7 +27842,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/43',
+    schemaVersion: 'agent12/44',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -27509,6 +28152,14 @@ export function computeTransportInfrastructureState(
     portContainerReeferLogisticsShare,
     nationalPortContainerReeferLogisticsThroughputIndex: nationalContainerReefer,
     portContainerReeferLogisticsThroughputByRegion,
+    nationalTidalLagoonExportIndex: nationalTidalLagoon,
+    tidalLagoonExportByRegion,
+    remoteTelehealthSupplyStagingShare,
+    nationalRemoteTelehealthSupplyStagingIndex: nationalTelehealth,
+    remoteTelehealthSupplyStagingByRegion,
+    warehouseVerticalFulfillmentLogisticsShare,
+    nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex: nationalVerticalFulfillment,
+    warehouseVerticalFulfillmentLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -27591,7 +28242,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/43' &&
+      infra.schemaVersion === 'agent12/44' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -27745,8 +28396,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalBiomethaneGridExportIndex >= 5 &&
       infra.nationalMiningCampResupplyStagingIndex >= 6 &&
       infra.portContainerReeferLogisticsShare >= 0.03 &&
-      infra.nationalPortContainerReeferLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} bio=${infra.nationalBiomethaneGridExportIndex.toFixed(1)} camp=${infra.nationalMiningCampResupplyStagingIndex.toFixed(1)} reefer=${infra.nationalPortContainerReeferLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalPortContainerReeferLogisticsThroughputIndex >= 2 &&
+      infra.nationalTidalLagoonExportIndex >= 5 &&
+      infra.nationalRemoteTelehealthSupplyStagingIndex >= 6 &&
+      infra.warehouseVerticalFulfillmentLogisticsShare >= 0.03 &&
+      infra.nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} tidal=${infra.nationalTidalLagoonExportIndex.toFixed(1)} telehealth=${infra.nationalRemoteTelehealthSupplyStagingIndex.toFixed(1)} vertical=${infra.nationalWarehouseVerticalFulfillmentLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
