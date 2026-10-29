@@ -386,6 +386,11 @@ export interface NationalLaborDemographicsState {
   subjectResoluteReadinessBrief?: NationalSubjectResoluteReadinessBrief;
   nationalWorkforceResoluteDepthIndex?: NationalWorkforceResoluteDepthIndex;
   resoluteAdvocacyCouplingBrief?: NationalResoluteAdvocacyCouplingBrief;
+  resoluteSovereignCouplingBrief?: NationalResoluteSovereignCouplingBrief;
+  sovereignResilienceOutlook?: NationalSovereignResilienceOutlook;
+  subjectSovereignReadinessBrief?: NationalSubjectSovereignReadinessBrief;
+  nationalWorkforceSovereignDepthIndex?: NationalWorkforceSovereignDepthIndex;
+  sovereignResoluteHandoffCouplingBrief?: NationalSovereignResoluteHandoffCouplingBrief;
 }
 
 export type MigrationShockKind =
@@ -2645,6 +2650,65 @@ export interface NationalWorkforceResoluteDepthIndex {
   stewardNote: string;
 }
 
+export type ResoluteSovereignCouplingBand = SteadfastAdvocacyCouplingBand;
+
+export interface NationalResoluteSovereignCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: ResoluteSovereignCouplingBand;
+  resoluteDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SovereignResilienceBand = AdvocacyResilienceBand;
+
+export interface NationalSovereignResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: SovereignResilienceBand;
+  resoluteDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectSovereignReadinessBand =
+  | 'below_sovereign'
+  | 'approaching'
+  | 'sovereign_ready'
+  | 'resolute_locked';
+
+export interface NationalSubjectSovereignReadinessBrief {
+  turn: number;
+  sovereignIndex: number;
+  band: SubjectSovereignReadinessBand;
+  sovereignDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceSovereignDepthBand = 'fragile' | 'thin' | 'elevated' | 'sovereign';
+
+export interface NationalWorkforceSovereignDepthIndex {
+  turn: number;
+  sovereignIndex: number;
+  band: WorkforceSovereignDepthBand;
+  sovereignDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SovereignResoluteHandoffCouplingBand = SteadfastAdvocacyCouplingBand;
+
+export interface NationalSovereignResoluteHandoffCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SovereignResoluteHandoffCouplingBand;
+  sovereignDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -3908,7 +3972,12 @@ export type LaborGiQueryTopic =
   | 'resolute_resilience'
   | 'subject_resolute_readiness'
   | 'workforce_resolute_depth'
-  | 'resolute_advocacy_coupling';
+  | 'resolute_advocacy_coupling'
+  | 'resolute_sovereign_coupling'
+  | 'sovereign_resilience'
+  | 'subject_sovereign_readiness'
+  | 'workforce_sovereign_depth'
+  | 'sovereign_resolute_handoff';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3988,6 +4057,11 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(subject resolute readiness|subject resolute labor)/.test(q)) return 'subject_resolute_readiness';
   if (/\b(workforce resolute depth|resolute depth index labor)/.test(q)) return 'workforce_resolute_depth';
   if (/\b(resolute advocacy|resolute-advocacy coupling)/.test(q)) return 'resolute_advocacy_coupling';
+  if (/\b(resolute sovereign|resolute-sovereign coupling)/.test(q)) return 'resolute_sovereign_coupling';
+  if (/\b(sovereign resilience)/.test(q)) return 'sovereign_resilience';
+  if (/\b(subject sovereign readiness|subject sovereign labor)/.test(q)) return 'subject_sovereign_readiness';
+  if (/\b(workforce sovereign depth|sovereign depth index labor)/.test(q)) return 'workforce_sovereign_depth';
+  if (/\b(sovereign resolute handoff|sovereign-resolute handoff)/.test(q)) return 'sovereign_resolute_handoff';
   if (/\b(workforce perseverance depth|perseverance depth index labor)/.test(q)) return 'workforce_perseverance_depth';
   if (/\b(workforce tenacity depth|tenacity depth index labor)/.test(q)) return 'workforce_tenacity_depth';
   if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
@@ -5729,6 +5803,46 @@ export function answerLaborDemographicsQuestion(
         inference: state.resoluteAdvocacyCouplingBrief?.stewardNote || state.outlook,
         projection: 'Resolute-advocacy coupling tracks resolute depth against advocacy levers (O10-237 seed, O10-240 depth).'
       };
+    case 'resolute_sovereign_coupling':
+      return {
+        topic,
+        headline: state.resoluteSovereignCouplingBrief?.summary || 'Resolute-sovereign coupling unavailable.',
+        fact: `Coupling band ${state.resoluteSovereignCouplingBrief?.band ?? 'unknown'}; resolute drag ${Math.round(state.resoluteSovereignCouplingBrief?.resoluteDrag ?? 0)}.`,
+        inference: state.resoluteSovereignCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Resolute-sovereign coupling tracks resolute depth against sovereign levers for O10-247 wave 55.'
+      };
+    case 'sovereign_resilience':
+      return {
+        topic,
+        headline: state.sovereignResilienceOutlook?.summary || 'Sovereign resilience unavailable.',
+        fact: `Resilience band ${state.sovereignResilienceOutlook?.band ?? 'unknown'}; resolute drag ${Math.round(state.sovereignResilienceOutlook?.resoluteDrag ?? 0)}.`,
+        inference: state.sovereignResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Sovereign resilience outlook tracks resolute resilience against sovereign levers for wave 55 depth.'
+      };
+    case 'subject_sovereign_readiness':
+      return {
+        topic,
+        headline: state.subjectSovereignReadinessBrief?.summary || 'Subject sovereign readiness unavailable.',
+        fact: `Sovereign band ${state.subjectSovereignReadinessBrief?.band ?? 'unknown'}; sovereign drag ${Math.round(state.subjectSovereignReadinessBrief?.sovereignDrag ?? 0)}.`,
+        inference: state.subjectSovereignReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject sovereign readiness gates subject resolute against resolute depth for O10-247 wave 55.'
+      };
+    case 'workforce_sovereign_depth':
+      return {
+        topic,
+        headline: state.nationalWorkforceSovereignDepthIndex?.summary || 'Workforce sovereign depth unavailable.',
+        fact: `Sovereign band ${state.nationalWorkforceSovereignDepthIndex?.band ?? 'unknown'}; sovereign drag ${Math.round(state.nationalWorkforceSovereignDepthIndex?.sovereignDrag ?? 0)}.`,
+        inference: state.nationalWorkforceSovereignDepthIndex?.stewardNote || state.summary,
+        projection: 'Sovereign depth synthesizes resolute-sovereign coupling, resilience, and subject sovereign.'
+      };
+    case 'sovereign_resolute_handoff':
+      return {
+        topic,
+        headline: state.sovereignResoluteHandoffCouplingBrief?.summary || 'Sovereign-resolute handoff unavailable.',
+        fact: `Handoff band ${state.sovereignResoluteHandoffCouplingBrief?.band ?? 'unknown'}; sovereign drag ${Math.round(state.sovereignResoluteHandoffCouplingBrief?.sovereignDrag ?? 0)}.`,
+        inference: state.sovereignResoluteHandoffCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Sovereign-resolute handoff tracks sovereign depth against resolute levers post wave-54 stack.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -7149,6 +7263,36 @@ export function buildStewardLaborBrief(
     state.resoluteAdvocacyCouplingBrief?.band === 'strained'
   ) {
     hints.push(state.resoluteAdvocacyCouplingBrief.stewardNote);
+  }
+  if (
+    state.resoluteSovereignCouplingBrief?.band === 'decoupled' ||
+    state.resoluteSovereignCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.resoluteSovereignCouplingBrief.stewardNote);
+  }
+  if (
+    state.sovereignResilienceOutlook?.band === 'ebbing' ||
+    state.sovereignResilienceOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.sovereignResilienceOutlook.stewardNote);
+  }
+  if (
+    state.subjectSovereignReadinessBrief?.band === 'below_sovereign' ||
+    state.subjectSovereignReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectSovereignReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceSovereignDepthIndex?.band === 'fragile' ||
+    state.nationalWorkforceSovereignDepthIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceSovereignDepthIndex.stewardNote);
+  }
+  if (
+    state.sovereignResoluteHandoffCouplingBrief?.band === 'decoupled' ||
+    state.sovereignResoluteHandoffCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.sovereignResoluteHandoffCouplingBrief.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -22181,6 +22325,351 @@ export function computeNationalWorkforceResoluteDepthIndex(
 export { advocacyEaseForRegion as resoluteEaseForRegion } from './workforce-advocacy-levers';
 
 
+// --- source: resolute-sovereign-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalResoluteSovereignCouplingBrief,
+  type NationalWorkforceResoluteDepthIndex,
+  type ResoluteSovereignCouplingBand
+} from './types';
+
+function couplingBand(index: number): ResoluteSovereignCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-55 / wave-55 resolute-sovereign coupling — resolute depth × sovereign levers (O10-247). */
+export function computeNationalResoluteSovereignCouplingBrief(
+  state: NationalLaborDemographicsState,
+  resoluteDepth: NationalWorkforceResoluteDepthIndex | null | undefined
+): NationalResoluteSovereignCouplingBrief {
+  if (!state.enabled || !resoluteDepth) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      resoluteDrag: 0,
+      summary: 'Resolute-sovereign coupling idle — workforce resolute depth unavailable.',
+      stewardNote: 'Compute workforce resolute depth before sovereign coupling guidance.'
+    };
+  }
+
+  let sovereignLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    sovereignLift += sovereignEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  sovereignLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const resoluteDrag = v1014laborClamp(
+    resoluteDepth.resoluteDrag * 0.46 +
+      (resoluteDepth.band === 'fragile' || resoluteDepth.band === 'thin' ? 11 : 3)
+  );
+  const depthLift =
+    resoluteDepth.band === 'elevated' || resoluteDepth.band === 'resolute'
+      ? resoluteDepth.resoluteIndex * 0.22
+      : resoluteDepth.resoluteIndex * 0.11;
+
+  const couplingIndex = v1014laborClamp(22 + sovereignLift * 21 + depthLift - resoluteDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained resolute-sovereign link — deploy sovereign levers before O10-247 wave-55 commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard sovereign resilience spikes that drain resolute buffers.'
+        : 'Amplified coupling — pair sovereign packs with subject sovereign readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    resoluteDrag,
+    summary: `Resolute-sovereign coupling ${band} (index ${Math.round(couplingIndex)}); resolute drag ${Math.round(resoluteDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: sovereign-resilience-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalResoluteResilienceOutlook,
+  type NationalSovereignResilienceOutlook,
+  type SovereignResilienceBand
+} from './types';
+
+function resilienceBand(index: number): SovereignResilienceBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'fortified';
+}
+
+/** Round-55 / wave-55 sovereign resilience — resolute resilience × sovereign levers (O10-247). */
+export function computeNationalSovereignResilienceOutlook(
+  state: NationalLaborDemographicsState,
+  resoluteResilience: NationalResoluteResilienceOutlook | null | undefined
+): NationalSovereignResilienceOutlook {
+  if (!state.enabled || !resoluteResilience) {
+    return {
+      turn: state.turn,
+      resilienceIndex: 50,
+      band: 'patchy',
+      resoluteDrag: 0,
+      summary: 'Sovereign resilience idle — resolute resilience unavailable.',
+      stewardNote: 'Compute resolute resilience before sovereign resilience guidance.'
+    };
+  }
+
+  let sovereignLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    sovereignLift += sovereignEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  sovereignLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const resoluteDrag = v1014laborClamp(
+    resoluteResilience.advocacyDrag * 0.44 +
+      (resoluteResilience.band === 'ebbing' || resoluteResilience.band === 'patchy' ? 10 : 3)
+  );
+  const resilienceLift =
+    resoluteResilience.band === 'rising' || resoluteResilience.band === 'fortified'
+      ? resoluteResilience.resilienceIndex * 0.18
+      : resoluteResilience.resilienceIndex * 0.09;
+
+  const resilienceIndex = v1014laborClamp(24 + sovereignLift * 22 + resilienceLift - resoluteDrag);
+  const band = resilienceBand(resilienceIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy sovereign resilience — deploy sovereign levers before subject sovereign assembly.'
+      : band === 'fortified'
+        ? 'Fortified band — verify resolute-sovereign coupling before auto workforce pushes.'
+        : 'Rising resilience — align with resolute resilience outlook checks.';
+
+  return {
+    turn: state.turn,
+    resilienceIndex,
+    band,
+    resoluteDrag,
+    summary: `National sovereign resilience ${band} (index ${Math.round(resilienceIndex)}); resolute drag ${Math.round(resoluteDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-sovereign-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectResoluteReadinessBrief,
+  type NationalSubjectSovereignReadinessBrief,
+  type NationalWorkforceResoluteDepthIndex,
+  type SubjectSovereignReadinessBand
+} from './types';
+
+function sovereignBand(index: number): SubjectSovereignReadinessBand {
+  if (index <= 34) return 'below_sovereign';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'sovereign_ready';
+  return 'resolute_locked';
+}
+
+/** Round-55 / wave-55 subject sovereign readiness — subject resolute × resolute depth (O10-247). */
+export function computeNationalSubjectSovereignReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectResolute: NationalSubjectResoluteReadinessBrief | null | undefined,
+  resoluteDepth: NationalWorkforceResoluteDepthIndex | null | undefined
+): NationalSubjectSovereignReadinessBrief {
+  if (!state.enabled || !subjectResolute || !resoluteDepth) {
+    return {
+      turn: state.turn,
+      sovereignIndex: 50,
+      band: 'approaching',
+      sovereignDrag: 0,
+      summary: 'Subject sovereign readiness idle — subject resolute or resolute depth unavailable.',
+      stewardNote: 'Compute subject resolute and resolute depth before sovereign guidance.'
+    };
+  }
+
+  const sovereignDrag = v1014laborClamp(
+    subjectResolute.resoluteDrag * 0.36 +
+      resoluteDepth.resoluteDrag * 0.36 +
+      (subjectResolute.band === 'below_resolute' || resoluteDepth.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectResolute.band === 'resolute_ready' || subjectResolute.band === 'advocacy_locked'
+      ? subjectResolute.resoluteIndex * 0.25
+      : subjectResolute.resoluteIndex * 0.13;
+  const depthLift =
+    resoluteDepth.band === 'elevated' || resoluteDepth.band === 'resolute'
+      ? resoluteDepth.resoluteIndex * 0.23
+      : resoluteDepth.resoluteIndex * 0.12;
+
+  const sovereignIndex = v1014laborClamp(20 + subjectLift + depthLift - sovereignDrag);
+  const band = sovereignBand(sovereignIndex);
+
+  const stewardNote =
+    band === 'below_sovereign' || band === 'approaching'
+      ? 'Approaching sovereign — hold O10-247 wave-55 scale until resolute-sovereign syncs.'
+      : band === 'resolute_locked'
+        ? 'Resolute-locked sovereign — still monitor sovereign resilience during corridor peaks.'
+        : 'Sovereign-ready — pair with workforce sovereign depth index for post-c4bbec67 tranche.';
+
+  return {
+    turn: state.turn,
+    sovereignIndex,
+    band,
+    sovereignDrag,
+    summary: `Subject sovereign readiness ${band} (index ${Math.round(sovereignIndex)}); sovereign drag ${Math.round(sovereignDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-sovereign-depth-index.ts ---
+  type NationalLaborDemographicsState,
+  type NationalResoluteSovereignCouplingBrief,
+  type NationalSovereignResilienceOutlook,
+  type NationalSubjectSovereignReadinessBrief,
+  type NationalWorkforceSovereignDepthIndex,
+  type WorkforceSovereignDepthBand
+} from './types';
+
+function depthBand(index: number): WorkforceSovereignDepthBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'sovereign';
+}
+
+export function computeNationalWorkforceSovereignDepthIndex(
+  state: NationalLaborDemographicsState,
+  resoluteSovereign: NationalResoluteSovereignCouplingBrief | null | undefined,
+  sovereignResilience: NationalSovereignResilienceOutlook | null | undefined,
+  subjectSovereign: NationalSubjectSovereignReadinessBrief | null | undefined
+): NationalWorkforceSovereignDepthIndex {
+  if (!state.enabled || !resoluteSovereign || !sovereignResilience || !subjectSovereign) {
+    return {
+      turn: state.turn,
+      sovereignIndex: 50,
+      band: 'thin',
+      sovereignDrag: 0,
+      summary: 'Workforce sovereign depth idle — coupling, resilience, or subject sovereign unavailable.',
+      stewardNote: 'Compute O10-247 wave-55 depth stack before sovereign guidance.'
+    };
+  }
+
+  const sovereignDrag = v1014laborClamp(
+    subjectSovereign.sovereignDrag * 0.35 +
+      resoluteSovereign.resoluteDrag * 0.3 +
+      sovereignResilience.resoluteDrag * 0.25 +
+      (subjectSovereign.band === 'below_sovereign' || resoluteSovereign.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    resoluteSovereign.band === 'amplified' || resoluteSovereign.band === 'elevated'
+      ? resoluteSovereign.couplingIndex * 0.2
+      : resoluteSovereign.couplingIndex * 0.1;
+  const resilienceLift =
+    sovereignResilience.band === 'rising' || sovereignResilience.band === 'fortified'
+      ? sovereignResilience.resilienceIndex * 0.18
+      : sovereignResilience.resilienceIndex * 0.09;
+  const subjectLift =
+    subjectSovereign.band === 'sovereign_ready' || subjectSovereign.band === 'resolute_locked'
+      ? subjectSovereign.sovereignIndex * 0.22
+      : subjectSovereign.sovereignIndex * 0.11;
+
+  const sovereignIndex = v1014laborClamp(18 + couplingLift + resilienceLift + subjectLift - sovereignDrag);
+  const band = depthBand(sovereignIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce sovereign depth — sequence resolute-sovereign, resilience, and subject sovereign before post-c4bbec67 tranche.'
+      : band === 'sovereign'
+        ? 'Sovereign band — avoid corridor overload that breaks subject sovereign bands.'
+        : 'Elevated sovereign depth — refresh subject sovereign checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    sovereignIndex,
+    band,
+    sovereignDrag,
+    summary: `National workforce sovereign depth ${band} (index ${Math.round(sovereignIndex)}); sovereign drag ${Math.round(sovereignDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: catalog/workforce-sovereign-levers.ts ---
+export { resoluteEaseForRegion as sovereignEaseForRegion } from './workforce-resolute-levers';
+
+
+// --- source: sovereign-resolute-handoff-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalSovereignResoluteHandoffCouplingBrief,
+  type NationalWorkforceSovereignDepthIndex,
+  type SovereignResoluteHandoffCouplingBand
+} from './types';
+
+function couplingBand(index: number): SovereignResoluteHandoffCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-55 capstone — sovereign-resolute handoff coupling on sovereign depth (O10-247). */
+export function computeNationalSovereignResoluteHandoffCouplingBrief(
+  state: NationalLaborDemographicsState,
+  sovereignDepth: NationalWorkforceSovereignDepthIndex | null | undefined
+): NationalSovereignResoluteHandoffCouplingBrief {
+  if (!state.enabled || !sovereignDepth) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      sovereignDrag: 0,
+      summary: 'Sovereign-resolute handoff idle — workforce sovereign depth unavailable.',
+      stewardNote: 'Compute workforce sovereign depth before resolute handoff guidance.'
+    };
+  }
+
+  let resoluteLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    resoluteLift += resoluteEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  resoluteLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const sovereignDrag = v1014laborClamp(
+    sovereignDepth.sovereignDrag * 0.46 +
+      (sovereignDepth.band === 'fragile' || sovereignDepth.band === 'thin' ? 11 : 3)
+  );
+  const depthLift =
+    sovereignDepth.band === 'elevated' || sovereignDepth.band === 'sovereign'
+      ? sovereignDepth.sovereignIndex * 0.22
+      : sovereignDepth.sovereignIndex * 0.11;
+
+  const couplingIndex = v1014laborClamp(22 + resoluteLift * 21 + depthLift - sovereignDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained sovereign-resolute handoff — deploy resolute levers before wave-55 integration.'
+      : band === 'elevated'
+        ? 'Elevated handoff — guard resolute spikes that drain sovereign buffers.'
+        : 'Amplified handoff — pair resolute packs with subject sovereign readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    sovereignDrag,
+    summary: `Sovereign-resolute handoff ${band} (index ${Math.round(couplingIndex)}); sovereign drag ${Math.round(sovereignDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -23559,6 +24048,29 @@ export function computeNationalLaborDemographics(
     state,
     state.nationalWorkforceResoluteDepthIndex
   );
+  state.resoluteSovereignCouplingBrief = computeNationalResoluteSovereignCouplingBrief(
+    state,
+    state.nationalWorkforceResoluteDepthIndex
+  );
+  state.sovereignResilienceOutlook = computeNationalSovereignResilienceOutlook(
+    state,
+    state.resoluteResilienceOutlook
+  );
+  state.subjectSovereignReadinessBrief = computeNationalSubjectSovereignReadinessBrief(
+    state,
+    state.subjectResoluteReadinessBrief,
+    state.nationalWorkforceResoluteDepthIndex
+  );
+  state.nationalWorkforceSovereignDepthIndex = computeNationalWorkforceSovereignDepthIndex(
+    state,
+    state.resoluteSovereignCouplingBrief,
+    state.sovereignResilienceOutlook,
+    state.subjectSovereignReadinessBrief
+  );
+  state.sovereignResoluteHandoffCouplingBrief = computeNationalSovereignResoluteHandoffCouplingBrief(
+    state,
+    state.nationalWorkforceSovereignDepthIndex
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -24832,6 +25344,41 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.resoluteAdvocacyCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.resoluteSovereignCouplingBrief?.band === 'decoupled' ||
+      state.resoluteSovereignCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.resoluteSovereignCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.sovereignResilienceOutlook?.band === 'ebbing' ||
+      state.sovereignResilienceOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.sovereignResilienceOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectSovereignReadinessBrief?.band === 'below_sovereign' ||
+      state.subjectSovereignReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectSovereignReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceSovereignDepthIndex?.band === 'fragile' ||
+      state.nationalWorkforceSovereignDepthIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceSovereignDepthIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.sovereignResoluteHandoffCouplingBrief?.band === 'decoupled' ||
+      state.sovereignResoluteHandoffCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.sovereignResoluteHandoffCouplingBrief.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -28118,6 +28665,82 @@ export function runV1014LaborDemographicsSelfTests(): {
     'resolute depth steward note'
   );
   check('R5417', resoluteEaseForRegion('NSW', 'technology') > 0, 'resolute ease for region');
+
+  check('R5501', Boolean(r1.state.resoluteSovereignCouplingBrief?.band), 'resolute sovereign on state');
+  check(
+    'R5502',
+    detectLaborDemographicsQuery('resolute sovereign coupling') === 'resolute_sovereign_coupling',
+    'GI resolute sovereign detect'
+  );
+  check('R5503', Boolean(r1.state.sovereignResilienceOutlook?.band), 'sovereign resilience on state');
+  check(
+    'R5504',
+    detectLaborDemographicsQuery('sovereign resilience') === 'sovereign_resilience',
+    'GI sovereign resilience detect'
+  );
+  check('R5505', Boolean(r1.state.subjectSovereignReadinessBrief?.band), 'subject sovereign on state');
+  check(
+    'R5506',
+    detectLaborDemographicsQuery('subject sovereign readiness') === 'subject_sovereign_readiness',
+    'GI subject sovereign detect'
+  );
+  check(
+    'R5507',
+    Boolean(r1.state.nationalWorkforceSovereignDepthIndex?.band),
+    'workforce sovereign depth on state'
+  );
+  check(
+    'R5508',
+    detectLaborDemographicsQuery('workforce sovereign depth') === 'workforce_sovereign_depth',
+    'GI workforce sovereign depth detect'
+  );
+  check(
+    'R5509',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_sovereign_depth').headline.length > 5,
+    'GI workforce sovereign depth answer'
+  );
+  check(
+    'R5510',
+    Boolean(r1.state.sovereignResoluteHandoffCouplingBrief?.band),
+    'sovereign resolute handoff on state'
+  );
+  check(
+    'R5511',
+    detectLaborDemographicsQuery('sovereign resolute handoff') === 'sovereign_resolute_handoff',
+    'GI sovereign handoff detect'
+  );
+  const resoluteSovereignOnly = computeNationalResoluteSovereignCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceResoluteDepthIndex
+  );
+  check('R5512', resoluteSovereignOnly.summary.length > 10, 'resolute sovereign standalone summary');
+  const sovereignResilienceOnly = computeNationalSovereignResilienceOutlook(
+    r1.state,
+    r1.state.resoluteResilienceOutlook
+  );
+  check('R5513', sovereignResilienceOnly.band.length > 3, 'sovereign resilience band string');
+  const subjectSovereignOnly = computeNationalSubjectSovereignReadinessBrief(
+    r1.state,
+    r1.state.subjectResoluteReadinessBrief,
+    r1.state.nationalWorkforceResoluteDepthIndex
+  );
+  check('R5514', subjectSovereignOnly.sovereignDrag >= 0, 'subject sovereign drag');
+  check(
+    'R5515',
+    computeNationalWorkforceSovereignDepthIndex(
+      rHhBad.state,
+      rHhBad.state.resoluteSovereignCouplingBrief,
+      rHhBad.state.sovereignResilienceOutlook,
+      rHhBad.state.subjectSovereignReadinessBrief
+    ).stewardNote.length > 8,
+    'sovereign depth steward note'
+  );
+  const sovereignHandoffOnly = computeNationalSovereignResoluteHandoffCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSovereignDepthIndex
+  );
+  check('R5516', sovereignHandoffOnly.couplingIndex > 0, 'sovereign handoff coupling index');
+  check('R5517', sovereignEaseForRegion('NSW', 'technology') > 0, 'sovereign ease for region');
 
 
   for (let i = 19; i <= 52; i++) {
