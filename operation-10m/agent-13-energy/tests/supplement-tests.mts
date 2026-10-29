@@ -195,6 +195,11 @@ import {
   V1014_H2_LDES_EXPORT_BUFFER_TURN_SCENARIOS,
 } from '../modules/hydrogen-ldes-export-buffer-federation-ledger.ts';
 import {
+  runAgent13AiForecastFlexScaleSelfTests,
+  runAgent13AiForecastFlexTurnScenario,
+  V1014_AI_FORECAST_FLEX_TURN_SCENARIOS,
+} from '../modules/grid-ai-forecast-demand-flex-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -536,6 +541,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const h2LdesTurn = runAgent13H2LdesExportBufferTurnScenario(V1014_H2_LDES_EXPORT_BUFFER_TURN_SCENARIOS[0]);
   ok(h2LdesTurn.passed);
+
+  const aiForecastFlex = runAgent13AiForecastFlexScaleSelfTests();
+  ok(aiForecastFlex.failed === 0 && aiForecastFlex.passed >= 5);
+
+  const aiFlexTurn = runAgent13AiForecastFlexTurnScenario(V1014_AI_FORECAST_FLEX_TURN_SCENARIOS[0]);
+  ok(aiFlexTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

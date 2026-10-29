@@ -303,6 +303,13 @@ import {
   type V1014RegionalHydrogenLdesStorageLedger,
 } from './hydrogen-ldes-export-buffer-federation-ledger';
 import {
+  advanceRegionalDemandFlexFederationOrchestration,
+  computeRegionalGridAiForecastLedger,
+  scoreAgent13AiForecastFlexGIAlignment,
+  type V1014RegionalDemandFlexFederationLedger,
+  type V1014RegionalGridAiForecastLedger,
+} from './grid-ai-forecast-demand-flex-federation-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25923,6 +25930,10 @@ export interface V1014RegionalEnergyProfile {
   hydrogenLdesStorageRelief: number;
   exportBufferFederationBand: string;
   exportBufferFederationRelief: number;
+  gridAiForecastBand: string;
+  gridAiForecastRelief: number;
+  demandFlexFederationBand: string;
+  demandFlexFederationRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -26041,6 +26052,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalDecarbonCertificateStackLedgers: Record<string, V1014RegionalDecarbonCertificateStackLedger>;
   regionalHydrogenLdesStorageLedgers: Record<string, V1014RegionalHydrogenLdesStorageLedger>;
   regionalExportBufferFederationLedgers: Record<string, V1014RegionalExportBufferFederationLedger>;
+  regionalGridAiForecastLedgers: Record<string, V1014RegionalGridAiForecastLedger>;
+  regionalDemandFlexFederationLedgers: Record<string, V1014RegionalDemandFlexFederationLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -26130,6 +26143,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalDecarbonCertificateStackMemory: Record<string, { stackIndex: number }>;
   regionalHydrogenLdesStorageMemory: Record<string, { ldesBalance: number; ldesIndex: number }>;
   regionalExportBufferFederationMemory: Record<string, { bufferIndex: number }>;
+  regionalGridAiForecastMemory: Record<string, { forecastBalance: number; forecastIndex: number }>;
+  regionalDemandFlexFederationMemory: Record<string, { flexIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26231,6 +26246,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalDecarbonCertificateStackMemory: {},
     regionalHydrogenLdesStorageMemory: {},
     regionalExportBufferFederationMemory: {},
+    regionalGridAiForecastMemory: {},
+    regionalDemandFlexFederationMemory: {},
     history: [],
   };
 }
@@ -26484,6 +26501,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalExportBufferFederationMemory === 'object' && raw.regionalExportBufferFederationMemory
         ? raw.regionalExportBufferFederationMemory
         : {},
+    regionalGridAiForecastMemory:
+      typeof raw.regionalGridAiForecastMemory === 'object' && raw.regionalGridAiForecastMemory
+        ? raw.regionalGridAiForecastMemory
+        : {},
+    regionalDemandFlexFederationMemory:
+      typeof raw.regionalDemandFlexFederationMemory === 'object' && raw.regionalDemandFlexFederationMemory
+        ? raw.regionalDemandFlexFederationMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26672,6 +26697,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalDecarbonCertificateStackLedgers: {},
       regionalHydrogenLdesStorageLedgers: {},
       regionalExportBufferFederationLedgers: {},
+      regionalGridAiForecastLedgers: {},
+      regionalDemandFlexFederationLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26764,6 +26791,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const decarbonCertificateStackLedgers: Record<string, V1014RegionalDecarbonCertificateStackLedger> = {};
   const hydrogenLdesStorageLedgers: Record<string, V1014RegionalHydrogenLdesStorageLedger> = {};
   const exportBufferFederationLedgers: Record<string, V1014RegionalExportBufferFederationLedger> = {};
+  const gridAiForecastLedgers: Record<string, V1014RegionalGridAiForecastLedger> = {};
+  const demandFlexFederationLedgers: Record<string, V1014RegionalDemandFlexFederationLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26964,6 +26993,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextExportBufferFederationMemory: Record<string, { bufferIndex: number }> = {
     ...persisted.regionalExportBufferFederationMemory,
+  };
+  const nextGridAiForecastMemory: Record<string, { forecastBalance: number; forecastIndex: number }> = {
+    ...persisted.regionalGridAiForecastMemory,
+  };
+  const nextDemandFlexFederationMemory: Record<string, { flexIndex: number }> = {
+    ...persisted.regionalDemandFlexFederationMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -28079,6 +28114,33 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextExportBufferFederationMemory[regionId] = exportBufferFederationStep.next;
     exportBufferFederationLedgers[regionId] = exportBufferFederationStep.ledger;
     pressure -= exportBufferFederationStep.ledger.exportBufferFederationRelief;
+
+    const gridAiForecastStep = computeRegionalGridAiForecastLedger({
+      regionId,
+      exportBufferFederationRelief: exportBufferFederationStep.ledger.exportBufferFederationRelief,
+      hydrogenLdesStorageRelief: hydrogenLdesStorageStep.ledger.hydrogenLdesStorageRelief,
+      curtailmentRecoveryRelief: curtailmentStep.ledger.curtailmentRecoveryRelief,
+      gridInertiaRelief: syntheticInertiaStep.ledger.syntheticInertiaRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextGridAiForecastMemory[regionId] || null,
+    });
+    nextGridAiForecastMemory[regionId] = gridAiForecastStep.next;
+    gridAiForecastLedgers[regionId] = gridAiForecastStep.ledger;
+    pressure -= gridAiForecastStep.ledger.gridAiForecastRelief;
+
+    const demandFlexFederationStep = advanceRegionalDemandFlexFederationOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      forecastBand: gridAiForecastStep.ledger.band,
+      industrialElectrificationFlexRelief: industrialElectrificationFlexStep.ledger.industrialElectrificationFlexRelief,
+      derV2gFlexRelief: v2gStep.ledger.evV2gGridRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextDemandFlexFederationMemory[regionId] || null,
+    });
+    nextDemandFlexFederationMemory[regionId] = demandFlexFederationStep.next;
+    demandFlexFederationLedgers[regionId] = demandFlexFederationStep.ledger;
+    pressure -= demandFlexFederationStep.ledger.demandFlexFederationRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -28173,6 +28235,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       decarbonCertificateStackStep.ledger.summary,
       hydrogenLdesStorageStep.ledger.summary,
       exportBufferFederationStep.ledger.summary,
+      gridAiForecastStep.ledger.summary,
+      demandFlexFederationStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -28413,6 +28477,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       hydrogenLdesStorageRelief: hydrogenLdesStorageStep.ledger.hydrogenLdesStorageRelief,
       exportBufferFederationBand: exportBufferFederationStep.ledger.band,
       exportBufferFederationRelief: exportBufferFederationStep.ledger.exportBufferFederationRelief,
+      gridAiForecastBand: gridAiForecastStep.ledger.band,
+      gridAiForecastRelief: gridAiForecastStep.ledger.gridAiForecastRelief,
+      demandFlexFederationBand: demandFlexFederationStep.ledger.band,
+      demandFlexFederationRelief: demandFlexFederationStep.ledger.demandFlexFederationRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -28560,6 +28628,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalDecarbonCertificateStackLedgers: decarbonCertificateStackLedgers,
     regionalHydrogenLdesStorageLedgers: hydrogenLdesStorageLedgers,
     regionalExportBufferFederationLedgers: exportBufferFederationLedgers,
+    regionalGridAiForecastLedgers: gridAiForecastLedgers,
+    regionalDemandFlexFederationLedgers: demandFlexFederationLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -28649,6 +28719,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalDecarbonCertificateStackMemory: nextDecarbonCertificateStackMemory,
     regionalHydrogenLdesStorageMemory: nextHydrogenLdesStorageMemory,
     regionalExportBufferFederationMemory: nextExportBufferFederationMemory,
+    regionalGridAiForecastMemory: nextGridAiForecastMemory,
+    regionalDemandFlexFederationMemory: nextDemandFlexFederationMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -30240,6 +30312,49 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     exportBufferBand: rr42.state.regions.QLD?.exportBufferFederationBand,
   });
   check('H2 LDES EXPORT GI alignment', giH2LdesExport.relevanceDelta > 0.5, giH2LdesExport.reason || '');
+
+  const aiForecastFlexInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'grid_ai_forecast_federation_hub',
+      'federation_grid_forecast_tie',
+      'industrial_dr_federation_orchestration_hub',
+      'vpp_flex_federation_mesh',
+      'hydrogen_ldes_federation_hub',
+      'export_firming_buffer_hub',
+      'industrial_demand_response',
+      'fleet_v2g_orchestration_hub',
+      'demand_flexibility_market',
+      'renewable_grid',
+      'battery_grid',
+    ],
+  };
+  const rr43 = computeIndustrialEnergyEnvironmentalState(
+    aiForecastFlexInp,
+    createInitialIndustrialEnergyEnvironmentalPersisted(),
+    null,
+  );
+  check(
+    'AI FORECAST tracked',
+    !!rr43.state.regionalGridAiForecastLedgers.VIC?.band,
+    rr43.state.regionalGridAiForecastLedgers.VIC?.band || '',
+  );
+  check(
+    'DEMAND flex federation relief',
+    (rr43.state.regions.VIC?.demandFlexFederationRelief || 0) > 0,
+    String(rr43.state.regions.VIC?.demandFlexFederationRelief),
+  );
+  check(
+    'AI FORECAST memory persisted',
+    !!rr43.persisted.regionalGridAiForecastMemory.VIC,
+    String(rr43.persisted.regionalGridAiForecastMemory.VIC?.forecastIndex),
+  );
+  const giAiForecastFlex = scoreAgent13AiForecastFlexGIAlignment({
+    actionText: 'Grid AI forecast federation hub with industrial demand-response orchestration and VPP flex mesh',
+    forecastBand: rr43.state.regions.VIC?.gridAiForecastBand,
+    flexBand: rr43.state.regions.VIC?.demandFlexFederationBand,
+  });
+  check('AI FORECAST FLEX GI alignment', giAiForecastFlex.relevanceDelta > 0.25, giAiForecastFlex.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

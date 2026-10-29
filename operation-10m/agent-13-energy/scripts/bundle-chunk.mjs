@@ -62,6 +62,7 @@ const FILES = [
   'geothermal-basin-industrial-thermal-federation-ledger.ts',
   'safeguard-trade-certificate-stack-federation-ledger.ts',
   'hydrogen-ldes-export-buffer-federation-ledger.ts',
+  'grid-ai-forecast-demand-flex-federation-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -146,6 +147,8 @@ const EXPORT_MANIFEST = [
   'V1014_DECARBON_CERTIFICATE_STACK_CATALOG',
   'V1014_H2_LDES_STORAGE_CATALOG',
   'V1014_EXPORT_BUFFER_FEDERATION_CATALOG',
+  'V1014_GRID_AI_FORECAST_CATALOG',
+  'V1014_DEMAND_FLEX_FEDERATION_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -278,6 +281,9 @@ const EXPORT_MANIFEST = [
   'runAgent13H2LdesExportBufferScaleSelfTests',
   'runAgent13H2LdesExportBufferTurnScenario',
   'V1014_H2_LDES_EXPORT_BUFFER_TURN_SCENARIOS',
+  'runAgent13AiForecastFlexScaleSelfTests',
+  'runAgent13AiForecastFlexTurnScenario',
+  'V1014_AI_FORECAST_FLEX_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];
