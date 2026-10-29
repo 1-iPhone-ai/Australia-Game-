@@ -22,6 +22,7 @@ import { sanitizeWitnessSession } from './save-format-witness.js';
 import { sanitizeTribunalSession } from './save-format-tribunal.js';
 import { sanitizeIndictmentSession } from './save-format-indictment.js';
 import { sanitizeAppealSession } from './save-format-appeal.js';
+import { sanitizeClemencySession } from './save-format-clemency.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -40,7 +41,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 22;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 23;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -161,6 +162,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     tribunalSession: null,
     indictmentSession: null,
     appealSession: null,
+    clemencySession: null,
   };
 }
 
@@ -202,6 +204,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       tribunalSession: merged.tribunalSession ?? null,
       indictmentSession: merged.indictmentSession ?? null,
       appealSession: merged.appealSession ?? null,
+      clemencySession: merged.clemencySession ?? null,
     };
     return upgraded;
   }
@@ -267,6 +270,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     tribunalSession: sanitizeTribunalSession(o.tribunalSession),
     indictmentSession: sanitizeIndictmentSession(o.indictmentSession),
     appealSession: sanitizeAppealSession(o.appealSession),
+    clemencySession: sanitizeClemencySession(o.clemencySession),
   };
 }
 
@@ -427,6 +431,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Appeal session failed sanitization; planner will ignore it.');
   } else if (appeal && appeal.cursor >= appeal.scenarioIds.length) {
     warnings.push('Appeal cursor out of range; clamp on next sanitize.');
+  }
+
+  const clemency = sanitizeClemencySession(state.clemencySession);
+  if (state.clemencySession && !clemency) {
+    warnings.push('Clemency session failed sanitization; planner will ignore it.');
+  } else if (clemency && clemency.cursor >= clemency.scenarioIds.length) {
+    warnings.push('Clemency cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

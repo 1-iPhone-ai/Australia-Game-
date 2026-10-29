@@ -125,6 +125,7 @@ export function attachAppealSessionToState(
   return {
     ...state,
     appealSession: sanitized,
+    clemencySession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,

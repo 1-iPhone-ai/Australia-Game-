@@ -130,6 +130,7 @@ export function attachOdysseySessionToState(
     tribunalSession: null,
     indictmentSession: null,
     appealSession: null,
+    clemencySession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,

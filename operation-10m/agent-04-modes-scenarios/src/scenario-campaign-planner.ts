@@ -82,6 +82,11 @@ import {
   sanitizeAppealSession,
 } from './save-format-appeal.js';
 import {
+  getClemencyScenarioAtCursor,
+  clemencySessionSummary,
+  sanitizeClemencySession,
+} from './save-format-clemency.js';
+import {
   getSiegeScenarioAtCursor,
   siegeSessionSummary,
   sanitizeSiegeSession,
@@ -107,6 +112,7 @@ import type {
   O10mTribunalPhase,
   O10mIndictmentPhase,
   O10mAppealPhase,
+  O10mClemencyPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -181,9 +187,31 @@ const emptyQueuePlan = {
   appealCursor: null as number | null,
   appealPhase: null as O10mAppealPhase | null,
   appealMerit: null as number | null,
+  clemencyId: null as string | null,
+  clemencyCursor: null as number | null,
+  clemencyPhase: null as O10mClemencyPhase | null,
+  clemencyMercy: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const clemency = sanitizeClemencySession(state.clemencySession);
+  const clemencyScenario = getClemencyScenarioAtCursor(clemency);
+  if (clemency && clemency.active && clemencyScenario) {
+    return {
+      kind: 'clemency_step',
+      scenarioId: clemencyScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      clemencyId: clemency.clemencyId,
+      clemencyCursor: clemency.cursor,
+      clemencyPhase: clemency.phaseTag,
+      clemencyMercy: clemency.mercyScore,
+      reason: `Clemency "${clemency.label}" ${clemency.phaseTag} phase ${clemency.cursor + 1}/${clemency.scenarioIds.length} (mercy ${clemency.mercyScore}).`,
+    };
+  }
+
   const appeal = sanitizeAppealSession(state.appealSession);
   const appealScenario = getAppealScenarioAtCursor(appeal);
   if (appeal && appeal.active && appealScenario) {
@@ -591,6 +619,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   tribunalActive: boolean;
   indictmentActive: boolean;
   appealActive: boolean;
+  clemencyActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -616,6 +645,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const tribunal = tribunalSessionSummary(state);
   const indictment = indictmentSessionSummary(state);
   const appeal = appealSessionSummary(state);
+  const clemency = clemencySessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -639,6 +669,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     tribunalActive: tribunal.active,
     indictmentActive: indictment.active,
     appealActive: appeal.active,
+    clemencyActive: clemency.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
