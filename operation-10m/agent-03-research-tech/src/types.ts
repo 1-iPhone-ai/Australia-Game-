@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v26' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v27' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v26'
   | 'op10m-agent03-v25'
   | 'op10m-agent03-v24'
   | 'op10m-agent03-v23'
@@ -1028,6 +1029,45 @@ export interface ResearchScaleWaveIntegrationContinuityOutlook {
   ticketHint: string | null;
 }
 
+
+export type ResearchScaleWaveIntegrationContinuityBand = 70 | 84 | 98 | 100;
+
+export interface ResearchScaleWaveIntegrationContinuityBandEvent {
+  seq: number;
+  turn: number;
+  band: ResearchScaleWaveIntegrationContinuityBand;
+  integrationContinuityScore: number;
+  horizonTurns: number;
+  waveOrdinal: number;
+  phase: 'escalation' | 'de-escalation';
+}
+
+export interface ResearchScaleWaveIntegrationContinuitySnapshot {
+  capturedAtTurn: number;
+  integrationContinuityScore: number;
+  horizonTurns: number;
+  waveOrdinal: number;
+  continuityMomentum: number;
+  projectedFunctionalHint: number;
+  dryRunEligible: boolean;
+  peakBand: ResearchScaleWaveIntegrationContinuityBand | 0;
+  digest: string;
+}
+
+export interface ResearchScaleWaveContinuityHandoffOutlook {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  waveOrdinal: number;
+  continuityHandoffScore: number;
+  handoffMomentum: number;
+  integrationBaselineShaHint: string;
+  priorBaselineHints: string[];
+  projectedFunctionalHint: number;
+  dryRunEligible: boolean;
+  ticketHint: string | null;
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -1065,6 +1105,7 @@ export interface ResearchProgressState {
   scaleWaveIntegrationSealOutlook?: ResearchScaleWaveIntegrationSealOutlook | null;
   scaleWavePostSealHandoffOutlook?: ResearchScaleWavePostSealHandoffOutlook | null;
   scaleWaveIntegrationContinuityOutlook?: ResearchScaleWaveIntegrationContinuityOutlook | null;
+  scaleWaveContinuityHandoffOutlook?: ResearchScaleWaveContinuityHandoffOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -1118,6 +1159,8 @@ export interface ResearchProgressState {
   integrationSealSnapshot?: ResearchScaleWaveIntegrationSealSnapshot | null;
   postSealHandoffBandLog?: ResearchScaleWavePostSealHandoffBandEvent[];
   postSealHandoffSnapshot?: ResearchScaleWavePostSealHandoffSnapshot | null;
+  integrationContinuityBandLog?: ResearchScaleWaveIntegrationContinuityBandEvent[];
+  integrationContinuitySnapshot?: ResearchScaleWaveIntegrationContinuitySnapshot | null;
 }
 
 export interface StrategyHookDefinition {

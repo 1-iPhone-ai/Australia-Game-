@@ -30,6 +30,7 @@ import type {
   ResearchScaleWavePostIntegrationDryRunBandEvent,
   ResearchScaleWaveIntegrationSealBandEvent,
   ResearchScaleWavePostSealHandoffBandEvent,
+  ResearchScaleWaveIntegrationContinuityBandEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
@@ -78,6 +79,8 @@ import { mergeIntegrationSealSnapshots } from './scale-wave-integration-seal-sna
 import { RESEARCH_INTEGRATION_SEAL_BAND_LOG_CAP } from './scale-wave-integration-seal-band-log.ts';
 import { mergePostSealHandoffSnapshots } from './scale-wave-post-seal-handoff-snapshot.ts';
 import { RESEARCH_POST_SEAL_HANDOFF_BAND_LOG_CAP } from './scale-wave-post-seal-handoff-band-log.ts';
+import { mergeIntegrationContinuitySnapshots } from './scale-wave-integration-continuity-snapshot.ts';
+import { RESEARCH_INTEGRATION_CONTINUITY_BAND_LOG_CAP } from './scale-wave-integration-continuity-band-log.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -357,6 +360,18 @@ function mergePostSealHandoffBandLogs(
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_POST_SEAL_HANDOFF_BAND_LOG_CAP);
 }
 
+function mergeIntegrationContinuityBandLogs(
+  local: ResearchScaleWaveIntegrationContinuityBandEvent[] | undefined,
+  remote: ResearchScaleWaveIntegrationContinuityBandEvent[] | undefined
+): ResearchScaleWaveIntegrationContinuityBandEvent[] {
+  const byKey = new Map<string, ResearchScaleWaveIntegrationContinuityBandEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.band}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_INTEGRATION_CONTINUITY_BAND_LOG_CAP);
+}
+
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
   const { coreFingerprint, ...rest } = core;
   void coreFingerprint;
@@ -609,6 +624,15 @@ export function mergeResearchPersistedCores(
         local.postSealHandoffSnapshot ?? undefined,
         remote.postSealHandoffSnapshot ?? undefined
       ) ?? null,
+    integrationContinuityBandLog: mergeIntegrationContinuityBandLogs(
+      local.integrationContinuityBandLog,
+      remote.integrationContinuityBandLog
+    ),
+    integrationContinuitySnapshot:
+      mergeIntegrationContinuitySnapshots(
+        local.integrationContinuitySnapshot ?? undefined,
+        remote.integrationContinuitySnapshot ?? undefined
+      ) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -677,6 +701,8 @@ export function reconcileResearchProgressOnLoad(
         integrationSealSnapshot: persist.integrationSealSnapshot,
         postSealHandoffBandLog: persist.postSealHandoffBandLog,
         postSealHandoffSnapshot: persist.postSealHandoffSnapshot,
+        integrationContinuityBandLog: persist.integrationContinuityBandLog,
+        integrationContinuitySnapshot: persist.integrationContinuitySnapshot,
       },
       persist,
     };
@@ -737,6 +763,8 @@ export function reconcileResearchProgressOnLoad(
     integrationSealSnapshot: mergedCore.integrationSealSnapshot,
     postSealHandoffBandLog: mergedCore.postSealHandoffBandLog,
     postSealHandoffSnapshot: mergedCore.postSealHandoffSnapshot,
+    integrationContinuityBandLog: mergedCore.integrationContinuityBandLog,
+    integrationContinuitySnapshot: mergedCore.integrationContinuitySnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -798,6 +826,8 @@ export function reconcileResearchProgressOnLoad(
       integrationSealSnapshot: persist.integrationSealSnapshot,
       postSealHandoffBandLog: persist.postSealHandoffBandLog,
       postSealHandoffSnapshot: persist.postSealHandoffSnapshot,
+      integrationContinuityBandLog: persist.integrationContinuityBandLog,
+      integrationContinuitySnapshot: persist.integrationContinuitySnapshot,
     },
     persist,
   };
