@@ -146,7 +146,7 @@ describe('scale wave round 34 — apex coalition transcendence', () => {
       coalitionApexTranscendenceStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(32);
+    expect(save.version).toBe(33);
     expect(save.coalitionApexTranscendenceStreakDays).toBe(5);
   });
 });
