@@ -17,5 +17,7 @@ export * from './import-dependency.ts';
 export * from './diplomatic-engagement.ts';
 export * from './trade-finance.ts';
 export * from './market-diversification.ts';
+export * from './terms-of-trade.ts';
+export * from './supply-chain-resilience.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

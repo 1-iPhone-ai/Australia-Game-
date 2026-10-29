@@ -55,6 +55,19 @@ import {
   tradeFinanceGiNotes,
 } from './trade-finance.ts';
 import {
+  computeTermsOfTradeSnapshot,
+  termsOfTradeGiNotes,
+  termsOfTradeHouseholdModifier,
+  termsOfTradeWorldEvent,
+} from './terms-of-trade.ts';
+import {
+  computeSupplyChainResilienceSnapshot,
+  supplyChainResilienceDomesticStress,
+  supplyChainResilienceExportScale,
+  supplyChainResilienceGiNotes,
+  supplyChainResilienceWorldEvent,
+} from './supply-chain-resilience.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -257,13 +270,42 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   });
   persisted = financeStep.persisted;
   const tradeFinance = financeStep.snapshot;
-  const financeScaledThroughput =
-    Math.round(logistics.effectiveExportThroughput * tradeFinanceExportScale(tradeFinance) * 10) / 10;
 
   const dependencyStep = computeImportDependencySnapshot({ partners, commodities, persisted });
   persisted = dependencyStep.persisted;
   const importDependency = dependencyStep.snapshot;
   const importPressure = importDependencyConsumerPressure(importDependency);
+
+  const termsStep = computeTermsOfTradeSnapshot({
+    commodities,
+    tradeBalance,
+    importDependency,
+    persisted,
+  });
+  persisted = termsStep.persisted;
+  const termsOfTrade = termsStep.snapshot;
+  const termsEvent = termsOfTradeWorldEvent(termsOfTrade, turn);
+  if (termsEvent) worldEvents.push(termsEvent);
+
+  const resilienceStep = computeSupplyChainResilienceSnapshot({
+    logistics,
+    marketDiversification,
+    importDependency,
+    openDisputeCount: openDisputes,
+    persisted,
+  });
+  persisted = resilienceStep.persisted;
+  const supplyChainResilience = resilienceStep.snapshot;
+  const resilienceEvent = supplyChainResilienceWorldEvent(supplyChainResilience, turn);
+  if (resilienceEvent) worldEvents.push(resilienceEvent);
+
+  const financeScaledThroughput =
+    Math.round(
+      logistics.effectiveExportThroughput *
+        tradeFinanceExportScale(tradeFinance) *
+        supplyChainResilienceExportScale(supplyChainResilience) *
+        10,
+    ) / 10;
 
   const exportLedPressure = gtelClamp(
     (net.throughput / 120) * 0.4 + partners.filter(p => p.id !== 'domestic_premium' && GTEL_ACCESS_RANK[p.access] >= 3).length * 0.08,
@@ -272,7 +314,9 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   );
   const avgCommodity = commodities.reduce((a, c) => a + c.effectiveIndex, 0) / commodities.length;
   const householdOffset = gtelClamp(
-    (avgCommodity - 95) / -80 - (shock.domesticStress + sanctions.domesticStress + policy.domesticStress) * 0.15,
+    (avgCommodity - 95) / -80 -
+      (shock.domesticStress + sanctions.domesticStress + policy.domesticStress) * 0.15 +
+      termsOfTradeHouseholdModifier(termsOfTrade),
     -0.25,
     0.35,
   );
@@ -311,7 +355,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       Math.max(0, policy.domesticStress) +
       importPressure +
       diversificationMods.domesticStress +
-      tradeFinanceDomesticStress(tradeFinance),
+      tradeFinanceDomesticStress(tradeFinance) +
+      supplyChainResilienceDomesticStress(supplyChainResilience),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -332,6 +377,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     engagementStep.state.summitPulse,
     persisted.tradeFinanceSmoothing,
     persisted.partnerMixSmoothing,
+    persisted.termsOfTradeSmoothing,
+    persisted.supplyChainResilienceSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -384,6 +431,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     diplomaticEngagement: engagementStep.state,
     tradeFinance,
     marketDiversification,
+    termsOfTrade,
+    supplyChainResilience,
     inputHash,
   };
 
@@ -415,6 +464,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...diplomaticEngagementGiNotes(state.diplomaticEngagement));
   lines.push(...tradeFinanceGiNotes(state.tradeFinance));
   lines.push(...marketDiversificationGiNotes(state.marketDiversification));
+  lines.push(...termsOfTradeGiNotes(state.termsOfTrade));
+  lines.push(...supplyChainResilienceGiNotes(state.supplyChainResilience));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }

@@ -122,6 +122,10 @@ export interface GTELPersisted {
   tradeFinanceSmoothing?: number;
   /** Smoothed partner export mix shares. */
   partnerMixSmoothing?: Partial<Record<GTELPartnerId, number>>;
+  /** Smoothed net barter terms index (~1 = neutral). */
+  termsOfTradeSmoothing?: number;
+  /** Smoothed supply-chain resilience score (0–1). */
+  supplyChainResilienceSmoothing?: number;
 }
 
 export interface GTELState {
@@ -145,6 +149,8 @@ export interface GTELState {
   diplomaticEngagement: GTELDiplomaticEngagementState;
   tradeFinance: GTELTradeFinanceSnapshot;
   marketDiversification: GTELMarketDiversificationSnapshot;
+  termsOfTrade: GTELTermsOfTradeSnapshot;
+  supplyChainResilience: GTELSupplyChainResilienceSnapshot;
   inputHash: string;
 }
 
@@ -369,6 +375,26 @@ export interface GTELMarketDiversificationSnapshot {
   band: GTELDiversificationBand;
   dominantPartnerId: GTELPartnerId | null;
   effectivePartnerCount: number;
+  summary: string;
+}
+
+export type GTELTermsOfTradeBand = 'favorable' | 'neutral' | 'unfavorable' | 'severely_unfavorable';
+
+export interface GTELTermsOfTradeSnapshot {
+  index: number;
+  band: GTELTermsOfTradeBand;
+  exportBasketIndex: number;
+  importBasketIndex: number;
+  summary: string;
+}
+
+export type GTELSupplyChainBand = 'robust' | 'adaptive' | 'fragile' | 'brittle';
+
+export interface GTELSupplyChainResilienceSnapshot {
+  score: number;
+  band: GTELSupplyChainBand;
+  chokepointCount: number;
+  redundancyIndex: number;
   summary: string;
 }
 

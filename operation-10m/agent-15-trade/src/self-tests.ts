@@ -21,6 +21,11 @@ import {
   computeMarketDiversificationSnapshot,
   deriveDiversificationPartnerModifiers,
 } from './market-diversification.ts';
+import { computeTermsOfTradeSnapshot, termsOfTradeHouseholdModifier } from './terms-of-trade.ts';
+import {
+  computeSupplyChainResilienceSnapshot,
+  supplyChainResilienceExportScale,
+} from './supply-chain-resilience.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
   validateScenarioShockCatalog,
@@ -381,6 +386,82 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(snapshot.band === 'concentrated' || snapshot.band === 'critical', 'expected concentration band');
     const mods = deriveDiversificationPartnerModifiers(snapshot);
     gtelAssert(mods.domesticStress > 0, 'expected diversification domestic stress');
+  });
+
+  ok('terms of trade deteriorate when import dependency critical', () => {
+    const partners = GTEL_PARTNER_DEFS.map(p => ({
+      ...p,
+      access: p.id === 'asia_pacific' ? ('blocked' as const) : ('restricted' as const),
+      accessScore: 0.2,
+    }));
+    const commodities = GTEL_COMMODITIES.map(c => ({
+      commodity: c,
+      baseIndex: 100,
+      partnerModifier: 0,
+      diplomacyModifier: 0,
+      networkModifier: 0,
+      shockModifier: 0,
+      agreementModifier: 0,
+      effectiveIndex: c === 'manufacturing' ? 118 : 101,
+      trend: 'stable' as const,
+      evidence: [],
+    }));
+    const logistics = computeLogisticsStress({
+      nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 120 } } },
+      partners,
+      exportThroughput: 120,
+      openDisputeCount: 2,
+    });
+    const balance = computeTradeBalanceSnapshot({ commodities, partners, logistics, exportThroughput: 120 });
+    const dep = computeImportDependencySnapshot({ partners, commodities, persisted: createEmptyGTELPersisted() });
+    const step = computeTermsOfTradeSnapshot({
+      commodities,
+      tradeBalance: balance,
+      importDependency: dep.snapshot,
+      persisted: dep.persisted,
+    });
+    gtelAssert(step.snapshot.index < 1, 'expected sub-neutral terms index');
+    gtelAssert(termsOfTradeHouseholdModifier(step.snapshot) <= 0, 'expected household squeeze');
+  });
+
+  ok('supply chain resilience brittle under stacked chokepoints', () => {
+    const partners = GTEL_PARTNER_DEFS.map(p => ({
+      ...p,
+      access: p.id === 'asia_pacific' ? ('blocked' as const) : ('normal' as const),
+      accessScore: p.id === 'asia_pacific' ? 0.12 : 0.5,
+    }));
+    const logistics = computeLogisticsStress({
+      nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 150 } } },
+      partners,
+      exportThroughput: 150,
+      openDisputeCount: 3,
+    });
+    const persisted = createEmptyGTELPersisted();
+    persisted.supplyChainResilienceSmoothing = 0.22;
+    persisted.partnerMixSmoothing = { asia_pacific: 0.8, india_ocean: 0.07, north_america: 0.07, europe: 0.06 };
+    const diversification = computeMarketDiversificationSnapshot({ partners, persisted });
+    const commodities = GTEL_COMMODITIES.map(c => ({
+      commodity: c,
+      baseIndex: 100,
+      partnerModifier: 0,
+      diplomacyModifier: 0,
+      networkModifier: 0,
+      shockModifier: 0,
+      agreementModifier: 0,
+      effectiveIndex: 110,
+      trend: 'rising' as const,
+      evidence: [],
+    }));
+    const dep = computeImportDependencySnapshot({ partners, commodities, persisted });
+    const step = computeSupplyChainResilienceSnapshot({
+      logistics,
+      marketDiversification: diversification,
+      importDependency: dep.snapshot,
+      openDisputeCount: 3,
+      persisted: dep.persisted,
+    });
+    gtelAssert(step.snapshot.band === 'fragile' || step.snapshot.band === 'brittle', 'expected fragile resilience');
+    gtelAssert(supplyChainResilienceExportScale(step.snapshot) < 1, 'expected export scale haircut');
   });
 
   return { passed, failed };

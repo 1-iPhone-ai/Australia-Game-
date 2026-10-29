@@ -6,6 +6,8 @@ import { createEmptyTradeComplianceRecord, sanitizeTradeComplianceRecord } from 
 import { sanitizeImportDependencySmoothing } from './import-dependency.ts';
 import { sanitizePartnerMixSmoothing } from './market-diversification.ts';
 import { sanitizeTradeFinanceSmoothing } from './trade-finance.ts';
+import { sanitizeTermsOfTradeSmoothing } from './terms-of-trade.ts';
+import { sanitizeSupplyChainResilienceSmoothing } from './supply-chain-resilience.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -30,6 +32,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     diplomaticEngagement: {},
     tradeFinanceSmoothing: 0.62,
     partnerMixSmoothing: {},
+    termsOfTradeSmoothing: 1,
+    supplyChainResilienceSmoothing: 0.58,
   };
 }
 
@@ -184,5 +188,7 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   }
   base.tradeFinanceSmoothing = sanitizeTradeFinanceSmoothing(r.tradeFinanceSmoothing);
   base.partnerMixSmoothing = sanitizePartnerMixSmoothing(r.partnerMixSmoothing);
+  base.termsOfTradeSmoothing = sanitizeTermsOfTradeSmoothing(r.termsOfTradeSmoothing);
+  base.supplyChainResilienceSmoothing = sanitizeSupplyChainResilienceSmoothing(r.supplyChainResilienceSmoothing);
   return base;
 }
