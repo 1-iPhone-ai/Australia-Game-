@@ -216,6 +216,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Automation & forecast stress',
     shockIds: ['stimulus_bounce', 'mining_supercycle'],
     description: 'Collapsed automation throughput with runaway forecast calibration bias (harness overlay).'
+  },
+  {
+    id: 'governance_projection_stress',
+    label: 'Governance & projection stress',
+    shockIds: ['terms_of_trade_squeeze', 'global_slowdown'],
+    description: 'Escalated automation idle governance with runaway forecast projection drift (harness overlay).'
   }
 ];
 

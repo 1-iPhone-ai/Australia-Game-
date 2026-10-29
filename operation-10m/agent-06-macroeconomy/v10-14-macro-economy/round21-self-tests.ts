@@ -54,8 +54,8 @@ export function runAgent06Round21SelfTests(): {
   record('R21-04', 'State exposes forecast dispersion summary', integrated.state.forecastDispersionSpilloverSummary != null, 'ok');
   record(
     'R21-05',
-    'Sixty-four transmission layers',
-    integrated.state.transmissionReport.layers.length === 64,
+    'Sixty-six transmission layers',
+    integrated.state.transmissionReport.layers.length === 66,
     String(integrated.state.transmissionReport.layers.length)
   );
 

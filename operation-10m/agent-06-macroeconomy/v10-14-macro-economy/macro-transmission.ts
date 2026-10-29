@@ -62,6 +62,8 @@ import type { MacroTeamAiCohesionSpillover } from './bridge-v1018-team-ai-cohesi
 import type { MacroMemoryRetentionSpillover } from './bridge-v1019-memory-retention.ts';
 import type { MacroAutomationThroughputSpillover } from './bridge-v1020-automation-throughput.ts';
 import type { MacroForecastCalibrationSpillover } from './bridge-v1021-forecast-calibration.ts';
+import type { MacroAutomationIdleGovernanceSpillover } from './bridge-v1020-automation-idle-governance.ts';
+import type { MacroForecastProjectionSyncSpillover } from './bridge-v1021-forecast-projection-sync.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -132,6 +134,8 @@ export function buildMacroTransmissionReport(params: {
   memoryRetention?: MacroMemoryRetentionSpillover;
   automationThroughput?: MacroAutomationThroughputSpillover;
   forecastCalibration?: MacroForecastCalibrationSpillover;
+  automationIdleGovernance?: MacroAutomationIdleGovernanceSpillover;
+  forecastProjectionSync?: MacroForecastProjectionSyncSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -187,6 +191,8 @@ export function buildMacroTransmissionReport(params: {
   const memoryRetention = params.memoryRetention ?? ZERO_SPILLOVER;
   const automationThroughput = params.automationThroughput ?? ZERO_SPILLOVER;
   const forecastCalibration = params.forecastCalibration ?? ZERO_SPILLOVER;
+  const automationIdleGovernance = params.automationIdleGovernance ?? ZERO_SPILLOVER;
+  const forecastProjectionSync = params.forecastProjectionSync ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -671,6 +677,22 @@ export function buildMacroTransmissionReport(params: {
       forecastCalibration.investmentNudge,
       forecastCalibration.productivityNudge,
       forecastCalibration.summary
+    ),
+    layer(
+      'v10.20_automation_idle_governance',
+      'Automation idle governance',
+      automationIdleGovernance.cycleNudge,
+      automationIdleGovernance.investmentNudge,
+      automationIdleGovernance.productivityNudge,
+      automationIdleGovernance.summary
+    ),
+    layer(
+      'v10.21_forecast_projection_sync',
+      'Forecast projection sync',
+      forecastProjectionSync.cycleNudge,
+      forecastProjectionSync.investmentNudge,
+      forecastProjectionSync.productivityNudge,
+      forecastProjectionSync.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

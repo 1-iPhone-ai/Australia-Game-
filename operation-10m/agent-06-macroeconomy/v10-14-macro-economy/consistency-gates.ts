@@ -1118,5 +1118,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Elevated transmission saturation — a single layer dominates active mass.'
     });
   }
+  const idleGov: any = inputs.automationIdleGovernance ?? inputs.idleAutomation?.governance;
+  const govBand = String(idleGov?.governanceBand ?? idleGov?.policyBand ?? '');
+  if (
+    (govBand === 'runaway' || govBand === 'escalated') &&
+    (state.automationSpilloverSummary != null || state.automationIdleGovernanceSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'automation_idle_governance_escalated',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Escalated automation idle governance aligns with strained automation spillover read.'
+    });
+  }
+  const projSync: any = inputs.forecastProjectionSync ?? inputs.forecastingLab?.projectionSync;
+  const driftBand = String(projSync?.driftBand ?? projSync?.offsetBand ?? '');
+  if (
+    (driftBand === 'runaway' || driftBand === 'critical') &&
+    (state.forecastingSpilloverSummary != null || state.forecastProjectionSyncSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'forecast_projection_sync_drifted',
+      triggered: true,
+      severity: 'info',
+      summary: 'Runaway forecast projection drift coincides with strained forecasting spillover.'
+    });
+  }
+  if (state.transmissionElasticity?.band === 'rigid') {
+    gates.push({
+      id: 'transmission_elasticity_rigid',
+      triggered: true,
+      severity: 'info',
+      summary: 'Rigid transmission elasticity — active spillover mass concentrates in few layers.'
+    });
+  }
   return gates;
 }
