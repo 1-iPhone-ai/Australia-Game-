@@ -160,7 +160,7 @@ describe('scale wave round 40 — vanguard coalition synthesis', () => {
       coalitionVanguardSynthesisStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(39);
+    expect(save.version).toBe(40);
     expect(save.coalitionVanguardSynthesisStreakDays).toBe(5);
   });
 });

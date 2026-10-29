@@ -148,7 +148,7 @@ describe('scale wave round 36 — paragon coalition infinity', () => {
       coalitionParagonInfinityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(39);
+    expect(save.version).toBe(40);
     expect(save.coalitionParagonInfinityStreakDays).toBe(5);
   });
 });

@@ -388,3 +388,13 @@ export function sentinelAscendancyRankingBonus(
   if (streak >= action.minCoalitionSentinelAscendancyStreakDays) return 34;
   return 2;
 }
+
+export function oraclePerpetuityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionOraclePerpetuityStreakDays === undefined) return 0;
+  const streak = state.coalitionOraclePerpetuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionOraclePerpetuityStreakDays) return 35;
+  return 2;
+}

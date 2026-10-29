@@ -134,6 +134,10 @@ import {
   advanceCoalitionSentinelAscendancyStreak,
   applySentinelAscendancyMandateBonus,
 } from './coalition-sentinel-ascendancy.ts';
+import {
+  advanceCoalitionOraclePerpetuityStreak,
+  applyOraclePerpetuityMandateBonus,
+} from './coalition-oracle-perpetuity.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -255,6 +259,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyVanguardSynthesisMandateBonus(next, daysAdvanced);
   next = advanceCoalitionSentinelAscendancyStreak(next, daysAdvanced);
   next = applySentinelAscendancyMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionOraclePerpetuityStreak(next, daysAdvanced);
+  next = applyOraclePerpetuityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
