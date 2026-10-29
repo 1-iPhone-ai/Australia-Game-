@@ -44,6 +44,10 @@ export {
   computeActionBurnPressure,
   enrichSnapshotGuardianDepth,
   buildGuardianDepthInterlockReport,
+  buildGuardianDepthStabilityReport,
+  computeAdvisorySaturationIndex,
+  computeEscalationLatchScore,
+  computeGovernanceCoherenceScore,
   runGuardianDepthUnitSelfTests,
 } from './guardian-depth.js';
 export { ADVISORY_MONITOR_RULES_EXPANSION, countExpansionRulesByKind } from './monitor-rules-expansion.js';
@@ -60,5 +64,9 @@ export {
   ADVISORY_MONITOR_RULES_SCALE_WAVE_4,
   ADVISORY_MONITOR_RULES_SCALE_WAVE_4_COUNT,
 } from './monitor-rules-scale-wave-4.js';
+export {
+  ADVISORY_MONITOR_RULES_SCALE_WAVE_5,
+  ADVISORY_MONITOR_RULES_SCALE_WAVE_5_COUNT,
+} from './monitor-rules-scale-wave-5.js';
 export { ADVISORY_SCENARIO_CATALOG } from './scenarios.js';
 export { runAgent16GuardianCoPilotSelfTests, summarizeAgent16SelfTests } from './self-tests.js';

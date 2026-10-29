@@ -47,3 +47,9 @@ Anchor: canonical V9.4 `SECTION 20PA` (Guardian & Human Co-Pilot Advisory Ops).
 - **Interlock metrics:** `compositePressureIndex`, `automationReadinessScore`, `actionBurnPressure`; `buildGuardianDepthInterlockReport()`
 - **`monitor-rules-scale-wave-4.ts`** — 12 rules (**82** monitor rules total)
 - **139/139** self-tests; regenerate chunk with `npm run build:agent16-chunk`
+
+## Scale wave round 5
+
+- **Stability lattice metrics:** `advisorySaturationIndex`, `escalationLatchScore`, `governanceCoherenceScore`; `buildGuardianDepthStabilityReport()`
+- **`monitor-rules-scale-wave-5.ts`** — 12 rules (**94** monitor rules total)
+- Regenerate chunk with `npm run build:agent16-chunk`

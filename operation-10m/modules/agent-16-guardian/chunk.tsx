@@ -82,6 +82,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   compositePressureIndex: number;
   automationReadinessScore: number;
   actionBurnPressure: number;
+  advisorySaturationIndex: number;
+  escalationLatchScore: number;
+  governanceCoherenceScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -604,6 +607,64 @@ export function buildGuardianDepthInterlockReport(snapshot: GuardianCoPilotMonit
   return lines.slice(0, 3);
 }
 
+export function computeAdvisorySaturationIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let saturation = 0;
+  if (snapshot.compositePressureIndex >= 45) saturation += 25;
+  if (snapshot.compositePressureIndex >= 65) saturation += 10;
+  if (snapshot.automationReadinessScore < 55) saturation += 20;
+  if (snapshot.automationReadinessScore < 35) saturation += 10;
+  if (snapshot.actionBurnPressure >= 40) saturation += 20;
+  if (snapshot.actionBurnPressure >= 60) saturation += 10;
+  if (snapshot.guardianRiskBand === 'elevated') saturation += 15;
+  if (snapshot.guardianRiskBand === 'critical') saturation += 25;
+  if (snapshot.liquidityStressIndex >= 50) saturation += 10;
+  return Math.min(100, saturation);
+}
+
+export function computeEscalationLatchScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let latch = 0;
+  if (snapshot.guardianConfirmationLikelyRequired) latch += 20;
+  if (snapshot.guardianAutomationLikelyBlocked) latch += 15;
+  if (snapshot.takeoverSessionActive && snapshot.automationReadinessScore < 45) latch += 25;
+  if (snapshot.copilotAutonomousActive && snapshot.automationReadinessScore < 40) latch += 20;
+  if (snapshot.blockedContinueCount >= 1) latch += 15;
+  if (snapshot.compositePressureIndex >= 60) latch += 15;
+  if (snapshot.advisorySaturationIndex >= 55) latch += 10;
+  if (snapshot.guardianRiskBand === 'critical') latch += 20;
+  if (snapshot.copilotHoldsControl && snapshot.governanceCoherenceScore < 40) latch += 15;
+  return Math.min(100, latch);
+}
+
+export function computeGovernanceCoherenceScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.copilotTrustGapScore >= 40) score -= Math.min(35, Math.round(snapshot.copilotTrustGapScore * 0.4));
+  if (!snapshot.guardianEnabled && snapshot.copilotEnabled) score -= 25;
+  if (snapshot.guardianProtectionMaximum && snapshot.copilotAutonomousActive) score -= 15;
+  if (snapshot.guardianRequiresConfirmation && snapshot.copilotAuthorityMode === 'autonomous') score -= 10;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 15;
+  if (snapshot.compositePressureIndex >= 55) score -= 10;
+  if (snapshot.advisorySaturationIndex >= 60) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthStabilityReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.advisorySaturationIndex >= 55) {
+    lines.push(
+      `Advisory saturation ${snapshot.advisorySaturationIndex} — overlapping Guardian and Co-Pilot warnings likely`
+    );
+  }
+  if (snapshot.escalationLatchScore >= 50) {
+    lines.push(`Escalation latch ${snapshot.escalationLatchScore} — human confirmation path may engage repeatedly`);
+  }
+  if (snapshot.governanceCoherenceScore < 45) {
+    lines.push(
+      `Governance coherence ${snapshot.governanceCoherenceScore} — align protection level and Co-Pilot authority`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -632,10 +693,21 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   };
   const compositePressureIndex = computeCompositePressureIndex(withCoupling);
   const withPressure: GuardianCoPilotMonitorSnapshot = { ...withCoupling, compositePressureIndex };
-  return {
+  const withInterlock: GuardianCoPilotMonitorSnapshot = {
     ...withPressure,
     automationReadinessScore: computeAutomationReadinessScore(withPressure),
     actionBurnPressure: computeActionBurnPressure(withPressure),
+    advisorySaturationIndex: 0,
+    escalationLatchScore: 0,
+    governanceCoherenceScore: 100,
+  };
+  const advisorySaturationIndex = computeAdvisorySaturationIndex(withInterlock);
+  const withSaturation: GuardianCoPilotMonitorSnapshot = { ...withInterlock, advisorySaturationIndex };
+  const governanceCoherenceScore = computeGovernanceCoherenceScore(withSaturation);
+  const withGovernance: GuardianCoPilotMonitorSnapshot = { ...withSaturation, governanceCoherenceScore };
+  return {
+    ...withGovernance,
+    escalationLatchScore: computeEscalationLatchScore(withGovernance),
   };
 }
 
@@ -742,6 +814,46 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       copilotSpendingHeadroom: 0,
     } as GuardianCoPilotMonitorSnapshot;
     return computeActionBurnPressure(snap) >= 50;
+  });
+  ok('gd_advisory_saturation', () => {
+    const snap = {
+      compositePressureIndex: 68,
+      automationReadinessScore: 30,
+      actionBurnPressure: 55,
+      guardianRiskBand: 'critical' as const,
+      liquidityStressIndex: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAdvisorySaturationIndex(snap) >= 70;
+  });
+  ok('gd_escalation_latch', () => {
+    const snap = {
+      guardianConfirmationLikelyRequired: true,
+      guardianAutomationLikelyBlocked: true,
+      takeoverSessionActive: true,
+      automationReadinessScore: 30,
+      blockedContinueCount: 2,
+      compositePressureIndex: 65,
+      advisorySaturationIndex: 60,
+      guardianRiskBand: 'critical' as const,
+      copilotHoldsControl: false,
+      governanceCoherenceScore: 30,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeEscalationLatchScore(snap) >= 65;
+  });
+  ok('gd_governance_coherence', () => {
+    const snap = {
+      copilotTrustGapScore: 70,
+      guardianEnabled: false,
+      copilotEnabled: true,
+      guardianProtectionMaximum: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      copilotAuthorityMode: 'autonomous',
+      guardianAutomationLikelyBlocked: true,
+      compositePressureIndex: 60,
+      advisorySaturationIndex: 65,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceCoherenceScore(snap) < 35;
   });
   return out;
 }
@@ -1456,6 +1568,138 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_4: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_4_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_4.length;
 
 
+// --- source: monitor-rules-scale-wave-5.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_5: AdvisoryMonitorRule[] = [
+  {
+    id: 'advisory_saturation_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Advisory Saturation High',
+    detailTemplate: 'Multiple advisory subsystems report saturation in the high band',
+    evidenceFields: ['advisorySaturationIndex', 'compositePressureIndex', 'guardianRiskBand'],
+    evaluate: s => s.advisorySaturationIndex >= 70,
+  },
+  {
+    id: 'advisory_saturation_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Advisory Saturation Elevated',
+    detailTemplate: 'Advisory saturation index is elevated — expect overlapping warnings',
+    evidenceFields: ['advisorySaturationIndex', 'actionBurnPressure'],
+    evaluate: s => s.advisorySaturationIndex >= 45 && s.advisorySaturationIndex < 70,
+  },
+  {
+    id: 'escalation_latch_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Escalation Latch Critical',
+    detailTemplate: 'Human escalation likely before risky Co-Pilot or spend actions',
+    evidenceFields: ['escalationLatchScore', 'guardianConfirmationLikelyRequired', 'copilotHoldsControl'],
+    evaluate: s => s.escalationLatchScore >= 65,
+  },
+  {
+    id: 'escalation_latch_elevated',
+    category: 'copilot',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Escalation Latch Elevated',
+    detailTemplate: 'Escalation latch score is elevated — confirm authority before automation',
+    evidenceFields: ['escalationLatchScore', 'automationReadinessScore'],
+    evaluate: s => s.escalationLatchScore >= 40 && s.escalationLatchScore < 65,
+    followUp: 'Advisory only — review Guardian confirmation settings manually.',
+  },
+  {
+    id: 'governance_coherence_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Coherence Low',
+    detailTemplate: 'Guardian and Co-Pilot governance signals are misaligned',
+    evidenceFields: ['governanceCoherenceScore', 'copilotTrustGapScore', 'guardianProtectionLevel'],
+    evaluate: s => s.governanceCoherenceScore < 35,
+  },
+  {
+    id: 'governance_coherence_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Governance While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance coherence',
+    evidenceFields: ['governanceCoherenceScore', 'copilotAutonomousActive', 'copilotAuthorityMode'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceCoherenceScore >= 35 && s.governanceCoherenceScore < 55,
+  },
+  {
+    id: 'stability_lattice_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Stability Lattice Pressured',
+    detailTemplate: 'Composite pressure and advisory saturation align in the pressured lattice band',
+    evidenceFields: ['compositePressureIndex', 'advisorySaturationIndex', 'escalationLatchScore'],
+    evaluate: s => s.compositePressureIndex >= 55 && s.advisorySaturationIndex >= 50,
+  },
+  {
+    id: 'rival_escalation_latch',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Escalation Latch',
+    detailTemplate: 'Rival victory progress plus elevated escalation latch',
+    evidenceFields: ['rivalVictoryProgressPct', 'escalationLatchScore', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.7 &&
+      s.escalationLatchScore >= 45,
+  },
+  {
+    id: 'team_plan_escalation_latch',
+    category: 'team',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Team Plan Escalation Latch',
+    detailTemplate: 'Pending team plan while escalation latch is elevated',
+    evidenceFields: ['teamPlanPending', 'escalationLatchScore', 'governanceCoherenceScore'],
+    evaluate: s => s.teamPlanPending && s.escalationLatchScore >= 50,
+  },
+  {
+    id: 'guardian_stability_lattice_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Stability Lattice Critical',
+    detailTemplate: 'Critical Guardian band with low governance coherence',
+    evidenceFields: ['guardianRiskBand', 'governanceCoherenceScore', 'advisorySaturationIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceCoherenceScore < 45,
+  },
+  {
+    id: 'copilot_saturation_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Advisory Saturation',
+    detailTemplate: 'Autonomous Co-Pilot while advisory saturation is high',
+    evidenceFields: ['copilotAutonomousActive', 'advisorySaturationIndex', 'automationReadinessScore'],
+    evaluate: s => s.copilotAutonomousActive && s.advisorySaturationIndex >= 55,
+  },
+  {
+    id: 'contracts_escalation_latch',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Escalation Latch',
+    detailTemplate: 'Expiring contracts while escalation latch is elevated',
+    evidenceFields: ['expiringContractCount', 'escalationLatchScore', 'liquidityStressIndex'],
+    evaluate: s => s.expiringContractCount > 0 && s.escalationLatchScore >= 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_5_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_5.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -1689,6 +1933,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_2,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_3,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_4,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_5,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -2017,6 +2262,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     compositePressureIndex: 0,
     automationReadinessScore: 100,
     actionBurnPressure: 0,
+    advisorySaturationIndex: 0,
+    escalationLatchScore: 0,
+    governanceCoherenceScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -2085,6 +2333,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     compositePressureIndex: 0,
     automationReadinessScore: 100,
     actionBurnPressure: 0,
+    advisorySaturationIndex: 0,
+    escalationLatchScore: 0,
+    governanceCoherenceScore: 100,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
@@ -2526,6 +2777,66 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['action_burn_pressure_high', 'objective_behind_schedule'],
     notes: 'High AP burn pressure near objective deadline',
   },
+  {
+    id: 'sc_advisory_saturation_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 15,
+      minCashReserve: 500,
+      debt: 1500,
+      maxSpendPerAction: 9000,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      guardianProtectionLevel: 'maximum_protection',
+      blockedContinueCount: 2,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 12,
+      objectiveTurnsRemaining: 1,
+    },
+    expectRuleIds: ['advisory_saturation_high', 'escalation_latch_critical'],
+    notes: 'High advisory saturation with critical escalation latch',
+  },
+  {
+    id: 'sc_governance_coherence_low',
+    category: 'copilot',
+    snapshot: {
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotAuthorityMode: 'autonomous',
+      guardianEnabled: false,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      guardianProtectionLevel: 'maximum_protection',
+      cash: 40,
+      minCashReserve: 500,
+      debt: 800,
+    },
+    expectRuleIds: ['governance_coherence_low', 'guardian_disabled'],
+    notes: 'Low governance coherence with Guardian off and autonomous Co-Pilot',
+  },
+  {
+    id: 'sc_stability_lattice_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 25,
+      minCashReserve: 500,
+      debt: 1100,
+      maxSpendPerAction: 7500,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      teamPlanPending: true,
+      expiringContractCount: 1,
+    },
+    expectRuleIds: ['stability_lattice_pressured', 'team_plan_escalation_latch'],
+    notes: 'Pressured stability lattice with team plan pending',
+  },
 ];
 
 
@@ -2701,8 +3012,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 4 scale wave brings monitor catalog to 82+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 82;
+  check(results, 'a16_expansion_count', 'Round 5 scale wave brings monitor catalog to 94+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 94;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -2733,6 +3044,40 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianProtectionMaximum: true,
     });
     return snap.compositePressureIndex >= 40 && snap.automationReadinessScore <= 100 && snap.actionBurnPressure >= 0;
+  });
+
+  check(results, 'a16_stability_report', 'Guardian depth stability report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 25,
+      minCashReserve: 500,
+      debt: 1000,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+    });
+    const report = buildGuardianDepthStabilityReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round5_metrics', 'Round 5 stability lattice metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 30,
+      minCashReserve: 500,
+      debt: 900,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+    });
+    return (
+      snap.advisorySaturationIndex >= 40 &&
+      snap.escalationLatchScore >= 30 &&
+      snap.governanceCoherenceScore <= 100
+    );
   });
 
   check(results, 'a16_interlock_report', 'Guardian depth interlock report stays advisory-only', () => {

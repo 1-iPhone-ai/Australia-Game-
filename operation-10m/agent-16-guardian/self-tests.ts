@@ -20,7 +20,13 @@ import {
   parseObjectiveContextFromGame,
 } from './objective-context.js';
 import { buildGuardianCoPilotMonitorSnapshot } from './snapshot.js';
-import { buildGuardianDepthAdviceLines, buildGuardianDepthCouplingReport, buildGuardianDepthInterlockReport, runGuardianDepthUnitSelfTests } from './guardian-depth.js';
+import {
+  buildGuardianDepthAdviceLines,
+  buildGuardianDepthCouplingReport,
+  buildGuardianDepthInterlockReport,
+  buildGuardianDepthStabilityReport,
+  runGuardianDepthUnitSelfTests,
+} from './guardian-depth.js';
 import type { AdvisoryRecommendation, Agent16SelfTestResult, AiSuggestedAction } from './types.js';
 
 function check(
@@ -193,8 +199,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 4 scale wave brings monitor catalog to 82+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 82;
+  check(results, 'a16_expansion_count', 'Round 5 scale wave brings monitor catalog to 94+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 94;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -225,6 +231,40 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianProtectionMaximum: true,
     });
     return snap.compositePressureIndex >= 40 && snap.automationReadinessScore <= 100 && snap.actionBurnPressure >= 0;
+  });
+
+  check(results, 'a16_stability_report', 'Guardian depth stability report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 25,
+      minCashReserve: 500,
+      debt: 1000,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+    });
+    const report = buildGuardianDepthStabilityReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round5_metrics', 'Round 5 stability lattice metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 30,
+      minCashReserve: 500,
+      debt: 900,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+    });
+    return (
+      snap.advisorySaturationIndex >= 40 &&
+      snap.escalationLatchScore >= 30 &&
+      snap.governanceCoherenceScore <= 100
+    );
   });
 
   check(results, 'a16_interlock_report', 'Guardian depth interlock report stays advisory-only', () => {

@@ -78,6 +78,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   compositePressureIndex: number;
   automationReadinessScore: number;
   actionBurnPressure: number;
+  advisorySaturationIndex: number;
+  escalationLatchScore: number;
+  governanceCoherenceScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

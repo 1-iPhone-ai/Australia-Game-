@@ -239,6 +239,64 @@ export function buildGuardianDepthInterlockReport(snapshot: GuardianCoPilotMonit
   return lines.slice(0, 3);
 }
 
+export function computeAdvisorySaturationIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let saturation = 0;
+  if (snapshot.compositePressureIndex >= 45) saturation += 25;
+  if (snapshot.compositePressureIndex >= 65) saturation += 10;
+  if (snapshot.automationReadinessScore < 55) saturation += 20;
+  if (snapshot.automationReadinessScore < 35) saturation += 10;
+  if (snapshot.actionBurnPressure >= 40) saturation += 20;
+  if (snapshot.actionBurnPressure >= 60) saturation += 10;
+  if (snapshot.guardianRiskBand === 'elevated') saturation += 15;
+  if (snapshot.guardianRiskBand === 'critical') saturation += 25;
+  if (snapshot.liquidityStressIndex >= 50) saturation += 10;
+  return Math.min(100, saturation);
+}
+
+export function computeEscalationLatchScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let latch = 0;
+  if (snapshot.guardianConfirmationLikelyRequired) latch += 20;
+  if (snapshot.guardianAutomationLikelyBlocked) latch += 15;
+  if (snapshot.takeoverSessionActive && snapshot.automationReadinessScore < 45) latch += 25;
+  if (snapshot.copilotAutonomousActive && snapshot.automationReadinessScore < 40) latch += 20;
+  if (snapshot.blockedContinueCount >= 1) latch += 15;
+  if (snapshot.compositePressureIndex >= 60) latch += 15;
+  if (snapshot.advisorySaturationIndex >= 55) latch += 10;
+  if (snapshot.guardianRiskBand === 'critical') latch += 20;
+  if (snapshot.copilotHoldsControl && snapshot.governanceCoherenceScore < 40) latch += 15;
+  return Math.min(100, latch);
+}
+
+export function computeGovernanceCoherenceScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.copilotTrustGapScore >= 40) score -= Math.min(35, Math.round(snapshot.copilotTrustGapScore * 0.4));
+  if (!snapshot.guardianEnabled && snapshot.copilotEnabled) score -= 25;
+  if (snapshot.guardianProtectionMaximum && snapshot.copilotAutonomousActive) score -= 15;
+  if (snapshot.guardianRequiresConfirmation && snapshot.copilotAuthorityMode === 'autonomous') score -= 10;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 15;
+  if (snapshot.compositePressureIndex >= 55) score -= 10;
+  if (snapshot.advisorySaturationIndex >= 60) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthStabilityReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.advisorySaturationIndex >= 55) {
+    lines.push(
+      `Advisory saturation ${snapshot.advisorySaturationIndex} — overlapping Guardian and Co-Pilot warnings likely`
+    );
+  }
+  if (snapshot.escalationLatchScore >= 50) {
+    lines.push(`Escalation latch ${snapshot.escalationLatchScore} — human confirmation path may engage repeatedly`);
+  }
+  if (snapshot.governanceCoherenceScore < 45) {
+    lines.push(
+      `Governance coherence ${snapshot.governanceCoherenceScore} — align protection level and Co-Pilot authority`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -267,10 +325,21 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   };
   const compositePressureIndex = computeCompositePressureIndex(withCoupling);
   const withPressure: GuardianCoPilotMonitorSnapshot = { ...withCoupling, compositePressureIndex };
-  return {
+  const withInterlock: GuardianCoPilotMonitorSnapshot = {
     ...withPressure,
     automationReadinessScore: computeAutomationReadinessScore(withPressure),
     actionBurnPressure: computeActionBurnPressure(withPressure),
+    advisorySaturationIndex: 0,
+    escalationLatchScore: 0,
+    governanceCoherenceScore: 100,
+  };
+  const advisorySaturationIndex = computeAdvisorySaturationIndex(withInterlock);
+  const withSaturation: GuardianCoPilotMonitorSnapshot = { ...withInterlock, advisorySaturationIndex };
+  const governanceCoherenceScore = computeGovernanceCoherenceScore(withSaturation);
+  const withGovernance: GuardianCoPilotMonitorSnapshot = { ...withSaturation, governanceCoherenceScore };
+  return {
+    ...withGovernance,
+    escalationLatchScore: computeEscalationLatchScore(withGovernance),
   };
 }
 
@@ -377,6 +446,46 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       copilotSpendingHeadroom: 0,
     } as GuardianCoPilotMonitorSnapshot;
     return computeActionBurnPressure(snap) >= 50;
+  });
+  ok('gd_advisory_saturation', () => {
+    const snap = {
+      compositePressureIndex: 68,
+      automationReadinessScore: 30,
+      actionBurnPressure: 55,
+      guardianRiskBand: 'critical' as const,
+      liquidityStressIndex: 55,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeAdvisorySaturationIndex(snap) >= 70;
+  });
+  ok('gd_escalation_latch', () => {
+    const snap = {
+      guardianConfirmationLikelyRequired: true,
+      guardianAutomationLikelyBlocked: true,
+      takeoverSessionActive: true,
+      automationReadinessScore: 30,
+      blockedContinueCount: 2,
+      compositePressureIndex: 65,
+      advisorySaturationIndex: 60,
+      guardianRiskBand: 'critical' as const,
+      copilotHoldsControl: false,
+      governanceCoherenceScore: 30,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeEscalationLatchScore(snap) >= 65;
+  });
+  ok('gd_governance_coherence', () => {
+    const snap = {
+      copilotTrustGapScore: 70,
+      guardianEnabled: false,
+      copilotEnabled: true,
+      guardianProtectionMaximum: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      copilotAuthorityMode: 'autonomous',
+      guardianAutomationLikelyBlocked: true,
+      compositePressureIndex: 60,
+      advisorySaturationIndex: 65,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceCoherenceScore(snap) < 35;
   });
   return out;
 }
