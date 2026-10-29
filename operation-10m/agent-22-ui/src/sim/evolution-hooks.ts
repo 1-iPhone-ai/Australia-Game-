@@ -34,6 +34,11 @@ import {
 } from '../engine/milestone-forecast-coach.js';
 import { countIntroducedGuidedConcepts } from '../engine/guided-learning-panel-bridge.js';
 import { summarizeFocusSessionSuppression } from '../engine/focus-session-suppression-summary.js';
+import {
+  auditLegacyNavTargets,
+  countLegacyNavPatchCoverage,
+} from '../engine/legacy-nav-audit-coach.js';
+import { evaluateDayAdvanceCalmRecoveryHint } from '../engine/day-advance-calm-recovery-hint.js';
 
 /** Persisted slice proposed for `gameSettings.evolvingUi` (assembly-owned). */
 export interface EvolvingUiPersistedState {
@@ -76,6 +81,9 @@ export interface DayAdvanceUiEvolutionResult {
   milestoneForecastCoachCopy: string | null;
   focusSessionSuppressedPanelCount: number;
   guidedLearningConceptCount: number;
+  legacyNavPatchCoverageCount: number;
+  calmRecoverySuggested: boolean;
+  calmRecoveryHintCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -199,6 +207,8 @@ export function tickEvolvingUiOnDayAdvance(
     focusSessionSnoozedUntilDay: persisted.focusSessionSnoozedUntilDay,
   });
   const guidedCount = countIntroducedGuidedConcepts(nextSignals);
+  const legacyAudit = auditLegacyNavTargets(nextSignals, policy);
+  const legacyCoverage = countLegacyNavPatchCoverage(legacyAudit);
 
   const updatedPersistedFinal = mergeLastInterfaceLevelIntoPersisted(
     mergeCoverageRatioIntoPersisted(
@@ -212,6 +222,14 @@ export function tickEvolvingUiOnDayAdvance(
     ),
     nextSignals.interfaceLevel
   );
+
+  const calmHint = evaluateDayAdvanceCalmRecoveryHint({
+    signals: nextSignals,
+    policy,
+    persisted: updatedPersistedFinal,
+    newlyUnlockedPanelCount: newlyUnlockedPanelIds.length,
+    deferredAnnouncementCount: combinedQueue.length,
+  });
 
   return {
     gameDay: nextSignals.gameDay,
@@ -227,6 +245,9 @@ export function tickEvolvingUiOnDayAdvance(
     milestoneForecastCoachCopy: milestoneCopy,
     focusSessionSuppressedPanelCount: focusSummary.suppressedCount,
     guidedLearningConceptCount: guidedCount,
+    legacyNavPatchCoverageCount: legacyCoverage,
+    calmRecoverySuggested: calmHint.suggestCalmRecovery,
+    calmRecoveryHintCopy: calmHint.coachCopy,
     updatedPersisted: updatedPersistedFinal,
     visiblePanelCount,
   };

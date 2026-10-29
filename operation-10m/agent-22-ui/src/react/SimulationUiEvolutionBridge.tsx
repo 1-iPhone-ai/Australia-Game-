@@ -58,6 +58,14 @@ export function SimulationUiEvolutionBridge({
           Focus session previewing {result.focusSessionSuppressedPanelCount} panels
         </div>
       ) : null}
+      {result.calmRecoveryHintCopy ? (
+        <div data-testid="sim-ui-evolution-calm-hint">{result.calmRecoveryHintCopy}</div>
+      ) : null}
+      {result.legacyNavPatchCoverageCount > 0 ? (
+        <div data-testid="sim-ui-evolution-legacy-nav-coverage">
+          Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
+        </div>
+      ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
         <div key={i}>{line}</div>
       ))}

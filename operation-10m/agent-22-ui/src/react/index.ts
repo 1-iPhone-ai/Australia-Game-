@@ -34,3 +34,7 @@ export { MilestoneForecastCoachStrip } from './MilestoneForecastCoachStrip.js';
 export { GuidedLearningPanelCoachStrip } from './GuidedLearningPanelCoachStrip.js';
 export { FocusSessionSuppressionStrip } from './FocusSessionSuppressionStrip.js';
 export { LandmarkReadingOrderCoachStrip } from './LandmarkReadingOrderCoachStrip.js';
+export { LegacyNavAuditCoachStrip } from './LegacyNavAuditCoachStrip.js';
+export { PhaseShellVisibilityBanner } from './PhaseShellVisibilityBanner.js';
+export { TextScaleReadabilityCoachStrip } from './TextScaleReadabilityCoachStrip.js';
+export { CalmRecoveryDayAdvanceHint } from './CalmRecoveryDayAdvanceHint.js';

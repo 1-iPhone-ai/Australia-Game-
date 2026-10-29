@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: e133e9829651c3a5
+// content-sha256-prefix: 2581bcb771f330e1
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -877,6 +877,9 @@ export interface DayAdvanceUiEvolutionResult {
   milestoneForecastCoachCopy: string | null;
   focusSessionSuppressedPanelCount: number;
   guidedLearningConceptCount: number;
+  legacyNavPatchCoverageCount: number;
+  calmRecoverySuggested: boolean;
+  calmRecoveryHintCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1000,6 +1003,8 @@ export function tickEvolvingUiOnDayAdvance(
     focusSessionSnoozedUntilDay: persisted.focusSessionSnoozedUntilDay,
   });
   const guidedCount = countIntroducedGuidedConcepts(nextSignals);
+  const legacyAudit = auditLegacyNavTargets(nextSignals, policy);
+  const legacyCoverage = countLegacyNavPatchCoverage(legacyAudit);
 
   const updatedPersistedFinal = mergeLastInterfaceLevelIntoPersisted(
     mergeCoverageRatioIntoPersisted(
@@ -1013,6 +1018,14 @@ export function tickEvolvingUiOnDayAdvance(
     ),
     nextSignals.interfaceLevel
   );
+
+  const calmHint = evaluateDayAdvanceCalmRecoveryHint({
+    signals: nextSignals,
+    policy,
+    persisted: updatedPersistedFinal,
+    newlyUnlockedPanelCount: newlyUnlockedPanelIds.length,
+    deferredAnnouncementCount: combinedQueue.length,
+  });
 
   return {
     gameDay: nextSignals.gameDay,
@@ -1028,6 +1041,9 @@ export function tickEvolvingUiOnDayAdvance(
     milestoneForecastCoachCopy: milestoneCopy,
     focusSessionSuppressedPanelCount: focusSummary.suppressedCount,
     guidedLearningConceptCount: guidedCount,
+    legacyNavPatchCoverageCount: legacyCoverage,
+    calmRecoverySuggested: calmHint.suggestCalmRecovery,
+    calmRecoveryHintCopy: calmHint.coachCopy,
     updatedPersisted: updatedPersistedFinal,
     visiblePanelCount,
   };
@@ -3895,6 +3911,196 @@ export function landmarkReadingCoachCopy(plan: LandmarkReadingOrderPlan): string
   return `Screen reader order: ${plan.skipLinkLabels.slice(0, 2).join(', ')}…`;
 }
 
+// --- source: engine/legacy-nav-audit-coach.ts ---
+export const AUDITED_LEGACY_NAV_TARGETS = [
+  'map',
+  'market',
+  'workshop',
+  'contracts',
+  'loans',
+  'help',
+  'settings',
+  'diagnostics',
+  'replay',
+  'unknown_target',
+] as const;
+
+export interface LegacyNavAuditEntry {
+  target: string;
+  hasPatch: boolean;
+  panelIds: string[];
+  progressionWouldHide: boolean;
+}
+
+export function auditLegacyNavTargets(
+  signals: ProgressionSignalSnapshot,
+  policy: EvolvingUiAccessPolicy
+): LegacyNavAuditEntry[] {
+  return AUDITED_LEGACY_NAV_TARGETS.map(target => {
+    const patch = resolveIntentNavToUiPatch(target);
+    const panels = listPanelsForNavTarget(target);
+    const progressionWouldHide =
+      panels.length > 0 &&
+      panels.every(p => resolveEvolvingPanelVisibility(p.id, signals, policy).state === 'hidden');
+
+    return {
+      target,
+      hasPatch: Object.keys(patch).length > 0,
+      panelIds: panels.map(p => p.id),
+      progressionWouldHide,
+    };
+  });
+}
+
+export function legacyNavAuditCoachCopy(entries: LegacyNavAuditEntry[]): string | null {
+  const missing = entries.filter(e => !e.hasPatch);
+  const hidden = entries.filter(e => e.hasPatch && e.progressionWouldHide);
+  if (missing.length) {
+    return `${missing.length} legacy nav targets lack UI patches — deep links may noop.`;
+  }
+  if (hidden.length) {
+    return `${hidden.length} legacy nav targets resolve but panels stay hidden by progression.`;
+  }
+  return null;
+}
+
+export function countLegacyNavPatchCoverage(entries: LegacyNavAuditEntry[]): number {
+  return entries.filter(e => e.hasPatch).length;
+}
+
+// --- source: engine/phase-shell-visibility-plan.ts ---
+export interface PhaseShellVisibilityPlan {
+  phase: V94StandardizedGamePhase;
+  showNavRail: boolean;
+  showQuickActions: boolean;
+  showDensityControl: boolean;
+  showCoachSurfaces: boolean;
+  coachCopy: string | null;
+}
+
+const QUICK_ACTION_PHASES = new Set<V94StandardizedGamePhase>(['human_turn', 'paused', 'approval_waiting']);
+
+export function planPhaseShellVisibility(phase: V94StandardizedGamePhase): PhaseShellVisibilityPlan {
+  const showNavRail = shouldShowEvolvingRailForPhase(phase);
+  const showQuickActions = QUICK_ACTION_PHASES.has(phase);
+  const showDensityControl = phase !== 'save_load' && phase !== 'replay';
+  const showCoachSurfaces = phase === 'human_turn' || phase === 'paused' || phase === 'setup';
+
+  let coachCopy: string | null = null;
+  if (phase === 'save_load') {
+    coachCopy = 'Save/load phase hides the evolving nav rail and quick actions.';
+  } else if (phase === 'ai_turn') {
+    coachCopy = 'During AI turns, coaching shells stay minimal until control returns.';
+  } else if (!showQuickActions && showNavRail) {
+    coachCopy = 'Quick actions are tucked away for this phase.';
+  }
+
+  return {
+    phase,
+    showNavRail,
+    showQuickActions,
+    showDensityControl,
+    showCoachSurfaces,
+    coachCopy,
+  };
+}
+
+export function phaseShellVisibilitySummary(plan: PhaseShellVisibilityPlan): string {
+  const parts: string[] = [];
+  if (plan.showNavRail) parts.push('nav');
+  if (plan.showQuickActions) parts.push('quick actions');
+  if (plan.showCoachSurfaces) parts.push('coaches');
+  return parts.length ? parts.join(', ') : 'minimal shells';
+}
+
+// --- source: engine/text-scale-readability-coach.ts ---
+export interface TextScaleReadabilityAssessment {
+  textScaleMultiplier: number;
+  activeDensity: UiDensityTier;
+  recommendedDensity: UiDensityTier;
+  needsSpaciousDensity: boolean;
+  coachCopy: string | null;
+}
+
+export function assessTextScaleReadability(input: {
+  accessibility: AccessibilitySettingsSnapshot;
+  activeDensity: UiDensityTier;
+}): TextScaleReadabilityAssessment {
+  const scale = input.accessibility.textScaleMultiplier;
+  const needsSpaciousDensity = scale >= 1.15;
+  const recommendedDensity: UiDensityTier = scale >= 1.35 ? 'spacious' : scale >= 1.15 ? 'comfortable' : input.activeDensity;
+
+  const touch = resolveTouchTargetProfile(input.activeDensity, input.accessibility);
+  let coachCopy: string | null = null;
+
+  if (needsSpaciousDensity && input.activeDensity === 'compact') {
+    coachCopy = 'Large text scale pairs poorly with compact density — switch to comfortable or spacious.';
+  } else if (scale >= 1.35 && touch.minHeightPx < 48) {
+    coachCopy = 'Increase touch targets by choosing spacious density with your text scale.';
+  } else if (scale <= 1.0 && input.activeDensity === 'spacious') {
+    coachCopy = 'Default text scale can use comfortable density to show more panels.';
+  }
+
+  return {
+    textScaleMultiplier: scale,
+    activeDensity: input.activeDensity,
+    recommendedDensity,
+    needsSpaciousDensity,
+    coachCopy,
+  };
+}
+
+// --- source: engine/day-advance-calm-recovery-hint.ts ---
+export interface DayAdvanceCalmRecoveryHint {
+  suggestCalmRecovery: boolean;
+  alreadyActive: boolean;
+  coachCopy: string | null;
+  patch: ReturnType<typeof buildCalmRecoveryPatch> | null;
+}
+
+export function evaluateDayAdvanceCalmRecoveryHint(input: {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  persisted: EvolvingUiPersistedState;
+  newlyUnlockedPanelCount: number;
+  deferredAnnouncementCount: number;
+}): DayAdvanceCalmRecoveryHint {
+  const alreadyActive = isCalmRecoveryActive(input.persisted, input.signals.gameDay);
+  if (alreadyActive) {
+    return {
+      suggestCalmRecovery: false,
+      alreadyActive: true,
+      coachCopy: 'Calm recovery remains active from a prior session.',
+      patch: null,
+    };
+  }
+
+  const load = assessCognitiveLoad({
+    signals: input.signals,
+    policy: input.policy,
+    pendingCoachAnnouncements: input.deferredAnnouncementCount,
+  });
+
+  const stressful =
+    load.band === 'heavy' ||
+    (input.newlyUnlockedPanelCount >= 3 && input.deferredAnnouncementCount >= 2);
+
+  const patch = buildCalmRecoveryPatch(load, input.signals.gameDay);
+  const suggestCalmRecovery = stressful && patch != null;
+
+  let coachCopy: string | null = null;
+  if (suggestCalmRecovery) {
+    coachCopy = 'Busy unlock day — calm recovery can snooze coaches and widen spacing.';
+  }
+
+  return {
+    suggestCalmRecovery,
+    alreadyActive: false,
+    coachCopy,
+    patch,
+  };
+}
+
 // --- source: engine/legacy-access.ts ---
 /** Mirrors V9.4 resolveIntentNavToUiPatch targets (standalone copy for module tests). */
 export function resolveIntentNavToUiPatch(target: string): Record<string, boolean | string> {
@@ -5872,6 +6078,154 @@ export function runAgent22Round14SelfTests(): {
   return { passed: results.length - failed, failed, results };
 }
 
+// --- source: engine/round15-self-tests.ts ---
+export function runAgent22Round15SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r15_legacy_audit_missing',
+    'legacy audit flags missing patch target',
+    (() => {
+      const entries = auditLegacyNavTargets(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      );
+      return entries.some(e => e.target === 'unknown_target' && !e.hasPatch);
+    })()
+  );
+
+  check(
+    'r15_legacy_audit_copy',
+    'legacy audit copy mentions missing patches',
+    Boolean(
+      legacyNavAuditCoachCopy(
+        auditLegacyNavTargets(
+          { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+          DEFAULT_EVOLVING_UI_ACCESS_POLICY
+        )
+      )?.includes('patches')
+    )
+  );
+
+  check(
+    'r15_legacy_coverage_count',
+    'coverage count excludes missing patches',
+    (() => {
+      const entries = auditLegacyNavTargets(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      );
+      return countLegacyNavPatchCoverage(entries) >= 5;
+    })()
+  );
+
+  check(
+    'r15_phase_save_load',
+    'save_load hides nav rail',
+    !planPhaseShellVisibility('save_load').showNavRail
+  );
+
+  check(
+    'r15_phase_human_turn',
+    'human turn shows quick actions',
+    planPhaseShellVisibility('human_turn').showQuickActions
+  );
+
+  check(
+    'r15_phase_summary',
+    'phase summary lists visible shells',
+    phaseShellVisibilitySummary(planPhaseShellVisibility('human_turn')).includes('nav')
+  );
+
+  check(
+    'r15_text_scale_compact',
+    'large text warns on compact density',
+    Boolean(
+      assessTextScaleReadability({
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.2 },
+        activeDensity: 'compact',
+      }).coachCopy?.includes('compact')
+    )
+  );
+
+  check(
+    'r15_text_scale_ok',
+    'default scale may omit coach on comfortable',
+    assessTextScaleReadability({
+      accessibility: DEFAULT_ACCESSIBILITY_SNAPSHOT,
+      activeDensity: 'comfortable',
+    }).coachCopy == null
+  );
+
+  check(
+    'r15_calm_hint_busy',
+    'calm hint suggests on busy unlock day',
+    (() => {
+      const hint = evaluateDayAdvanceCalmRecoveryHint({
+        signals: { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        persisted: createDefaultEvolvingUiPersistedState(),
+        newlyUnlockedPanelCount: 4,
+        deferredAnnouncementCount: 3,
+      });
+      return hint.suggestCalmRecovery || Boolean(hint.coachCopy);
+    })()
+  );
+
+  check(
+    'r15_calm_active',
+    'calm hint notes when already active',
+    (() => {
+      const hint = evaluateDayAdvanceCalmRecoveryHint({
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        persisted: { ...createDefaultEvolvingUiPersistedState(), calmRecoveryUntilDay: 5 },
+        newlyUnlockedPanelCount: 0,
+        deferredAnnouncementCount: 0,
+      });
+      return hint.alreadyActive && Boolean(hint.coachCopy?.includes('Calm recovery'));
+    })()
+  );
+
+  check(
+    'r15_tick_legacy_coverage',
+    'day advance reports legacy nav coverage count',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState()
+      );
+      return r.legacyNavPatchCoverageCount >= 5;
+    })()
+  );
+
+  check(
+    'r15_tick_calm_fields',
+    'day advance exposes calm recovery hint fields',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'guided' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState()
+      );
+      return typeof r.calmRecoverySuggested === 'boolean';
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
 // --- source: a11y/aria-builders.ts ---
 const RING_CLASSES: Record<FocusRingStyle, string> = {
   emerald: 'focus-visible:ring-emerald-400',
@@ -6564,6 +6918,14 @@ export function SimulationUiEvolutionBridge({
       {result.focusSessionSuppressedPanelCount > 0 ? (
         <div data-testid="sim-ui-evolution-focus-suppression">
           Focus session previewing {result.focusSessionSuppressedPanelCount} panels
+        </div>
+      ) : null}
+      {result.calmRecoveryHintCopy ? (
+        <div data-testid="sim-ui-evolution-calm-hint">{result.calmRecoveryHintCopy}</div>
+      ) : null}
+      {result.legacyNavPatchCoverageCount > 0 ? (
+        <div data-testid="sim-ui-evolution-legacy-nav-coverage">
+          Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
         </div>
       ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
@@ -7739,8 +8101,116 @@ export function LandmarkReadingOrderCoachStrip({
   );
 }
 
+// --- source: react/LegacyNavAuditCoachStrip.tsx ---
+export interface LegacyNavAuditCoachStripProps {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function LegacyNavAuditCoachStrip({
+  signals,
+  policy,
+  accessibility,
+}: LegacyNavAuditCoachStripProps): React.ReactElement | null {
+  const entries = auditLegacyNavTargets(signals, policy);
+  const copy = legacyNavAuditCoachCopy(entries);
+  if (!copy) return null;
+
+  return (
+    <div
+      data-testid="legacy-nav-audit-coach-strip"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-amber-600/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {copy}
+    </div>
+  );
+}
+
+// --- source: react/PhaseShellVisibilityBanner.tsx ---
+export interface PhaseShellVisibilityBannerProps {
+  phase: V94StandardizedGamePhase;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function PhaseShellVisibilityBanner({
+  phase,
+  accessibility,
+}: PhaseShellVisibilityBannerProps): React.ReactElement | null {
+  const plan = planPhaseShellVisibility(phase);
+  const copy = plan.coachCopy ?? `Phase ${phase}: ${phaseShellVisibilitySummary(plan)} visible.`;
+
+  return (
+    <div
+      data-testid="phase-shell-visibility-banner"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-sky-600/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-show-nav-rail={plan.showNavRail ? 'true' : 'false'}
+    >
+      {copy}
+    </div>
+  );
+}
+
+// --- source: react/TextScaleReadabilityCoachStrip.tsx ---
+export interface TextScaleReadabilityCoachStripProps {
+  accessibility: AccessibilitySettingsSnapshot;
+  activeDensity: UiDensityTier;
+}
+
+export function TextScaleReadabilityCoachStrip({
+  accessibility,
+  activeDensity,
+}: TextScaleReadabilityCoachStripProps): React.ReactElement | null {
+  const assessment = assessTextScaleReadability({ accessibility, activeDensity });
+  if (!assessment.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="text-scale-readability-coach-strip"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-orange-400/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {assessment.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/CalmRecoveryDayAdvanceHint.tsx ---
+export interface CalmRecoveryDayAdvanceHintProps {
+  hint: DayAdvanceCalmRecoveryHint;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function CalmRecoveryDayAdvanceHint({
+  hint,
+  accessibility,
+}: CalmRecoveryDayAdvanceHintProps): React.ReactElement | null {
+  if (!hint.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="calm-recovery-day-advance-hint"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-violet-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-suggest-calm={hint.suggestCalmRecovery ? 'true' : 'false'}
+    >
+      {hint.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.14.0';
+export const AGENT_22_MODULE_VERSION = '1.15.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -7851,6 +8321,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round14 = runAgent22Round14SelfTests();
   for (const r of round14.results) {
     check(`agent22_round14_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round15 = runAgent22Round15SelfTests();
+  for (const r of round15.results) {
+    check(`agent22_round15_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;
