@@ -152,6 +152,12 @@ import { nrDashBuildLinkPulseAsymmetry } from '../core/link-pulse-asymmetry.ts';
 import { nrDashBuildNsOnlySnippetHeadroom } from '../core/ns-only-snippet-headroom.ts';
 import { nrDashBuildDerivedMajorOverlapGap } from '../core/derived-major-overlap-gap.ts';
 import { nrDashBuildCorridorSaturationShare } from '../core/corridor-saturation-share.ts';
+import { nrDashBuildRivalOwnerPortfolioSkew } from '../core/rival-owner-portfolio-skew.ts';
+import { nrDashBuildCriticalTierNeedsConcentration } from '../core/critical-tier-needs-concentration.ts';
+import { nrDashBuildHubPulseAsymmetry } from '../core/hub-pulse-asymmetry.ts';
+import { nrDashBuildLrOnlySnippetHeadroom } from '../core/lr-only-snippet-headroom.ts';
+import { nrDashBuildMeaningfulDerivedOverlapGap } from '../core/meaningful-derived-overlap-gap.ts';
+import { nrDashBuildLinkSaturationShare } from '../core/link-saturation-share.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1193,6 +1199,50 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
     const sat = nrDashBuildCorridorSaturationShare(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
     return sat.corridorCount > 0 && sat.saturationShare > 0 && sat.saturationShare < 1;
+  });
+
+  check('a23_rival_owner_portfolio_skew', 'Rival owner portfolio skew tracks NSW rival fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'rival' })!;
+    const skew = nrDashBuildRivalOwnerPortfolioSkew(snap)!;
+    return skew.rivalShare === 0.125 && skew.portfolioSkew === 0.125;
+  });
+
+  check('a23_critical_tier_needs_concentration', 'Critical-tier needs concentration splits two-region fixture', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs.push({ category: 'security', status: 'open', severity: 'critical' });
+    lr.state.regions.VIC!.needs.push({ category: 'health', status: 'open', severity: 'critical' });
+    const conc = nrDashBuildCriticalTierNeedsConcentration(lr)!;
+    return conc.criticalOpenCount === 2 && conc.concentrationIndex === 0.5;
+  });
+
+  check('a23_hub_pulse_asymmetry', 'Hub pulse asymmetry is positive on connectivity hubs', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const asym = nrDashBuildHubPulseAsymmetry(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return asym.hubRegionCount > 0 && asym.asymmetryGap > 0.01;
+  });
+
+  check('a23_lr_only_snippet_headroom', 'LR-only snippet headroom reports three-slot major lane', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const head = nrDashBuildLrOnlySnippetHeadroom(snap)!;
+    return head.lrSnippetCap === 3 && head.surfacedCount === 1 && head.headroomSlots === 2;
+  });
+
+  check('a23_meaningful_derived_overlap_gap', 'Meaningful-derived overlap gap counts duplicate NS turns', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 5, text: 'Echo', significance: 'meaningful' });
+    const gap = nrDashBuildMeaningfulDerivedOverlapGap(lr, createAgent23NsFixture())!;
+    return gap.totalEntries === 2 && gap.uniqueTurnCount === 1 && gap.overlapGap === 1;
+  });
+
+  check('a23_link_saturation_share', 'Link saturation share is below one on merged map links', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const nodes = nrDashBuildRegionMapNodes(snap);
+    const links = nrDashMergeMapLinks(
+      nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+      nrDashBuildDependencyLinks(createAgent23NsFixture(), AGENT23_REGION_MAP_LAYOUT)
+    );
+    const sat = nrDashBuildLinkSaturationShare(links, nodes)!;
+    return sat.linkCount > 0 && sat.saturationShare > 0 && sat.saturationShare < 1;
   });
 
   return results;

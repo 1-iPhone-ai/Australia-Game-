@@ -156,6 +156,12 @@ import { nrDashBuildLinkPulseAsymmetry } from '../core/link-pulse-asymmetry.ts';
 import { nrDashBuildNsOnlySnippetHeadroom } from '../core/ns-only-snippet-headroom.ts';
 import { nrDashBuildDerivedMajorOverlapGap } from '../core/derived-major-overlap-gap.ts';
 import { nrDashBuildCorridorSaturationShare } from '../core/corridor-saturation-share.ts';
+import { nrDashBuildRivalOwnerPortfolioSkew } from '../core/rival-owner-portfolio-skew.ts';
+import { nrDashBuildCriticalTierNeedsConcentration } from '../core/critical-tier-needs-concentration.ts';
+import { nrDashBuildHubPulseAsymmetry } from '../core/hub-pulse-asymmetry.ts';
+import { nrDashBuildLrOnlySnippetHeadroom } from '../core/lr-only-snippet-headroom.ts';
+import { nrDashBuildMeaningfulDerivedOverlapGap } from '../core/meaningful-derived-overlap-gap.ts';
+import { nrDashBuildLinkSaturationShare } from '../core/link-saturation-share.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -575,6 +581,41 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-high-tier-needs-concentration">
           High-tier needs concentration {highConc.concentrationIndex} · {highConc.activeHighTierSlots} slots ·{' '}
           {highConc.highTierOpenCount} open
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const critConc = nrDashBuildCriticalTierNeedsConcentration(lrView);
+      return critConc ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-critical-tier-needs-concentration">
+          Critical-tier needs concentration {critConc.concentrationIndex} · {critConc.criticalOpenCount} critical across{' '}
+          {critConc.regionCount} regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const lrHeadroom = nrDashBuildLrOnlySnippetHeadroom(snap);
+      return lrHeadroom ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-lr-only-snippet-headroom">
+          LR-only snippet headroom {lrHeadroom.headroomSlots} · share {lrHeadroom.headroomShare} · {lrHeadroom.surfacedCount}/
+          {lrHeadroom.lrSnippetCap}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const meaningfulOverlap = nrDashBuildMeaningfulDerivedOverlapGap(lrView, nsState);
+      return meaningfulOverlap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-meaningful-derived-overlap-gap">
+          Meaningful-derived overlap gap {meaningfulOverlap.overlapGap} · {meaningfulOverlap.totalEntries} entries ·{' '}
+          {meaningfulOverlap.uniqueTurnCount} unique turns
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const rivalSkew = nrDashBuildRivalOwnerPortfolioSkew(snap);
+      return rivalSkew ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-rival-owner-portfolio-skew">
+          Rival owner portfolio skew {rivalSkew.portfolioSkew} · rival {rivalSkew.rivalShare} · you {rivalSkew.youShare}
         </div>
       ) : null;
     })()}
@@ -1486,11 +1527,28 @@ export const NrDashMapTab: React.FC<{
         ) : null;
       })()}
       {(() => {
+        const linkSat = nrDashBuildLinkSaturationShare(stressedLinks, baseNodes);
+        return linkSat && linkSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-link-saturation-share">
+            Link saturation share {linkSat.saturationShare} · μ {linkSat.meanBlend} · peak {linkSat.peakBlend}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
         const hubPulse = nrDashBuildHubPulseSpan(nsState, baseNodes);
         return hubPulse && hubPulse.intensitySpread > 0 ? (
           <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-pulse-span">
             Hub pulse span {hubPulse.intensitySpread} · min {hubPulse.minIntensity} · max {hubPulse.maxIntensity} ·{' '}
             {hubPulse.hubRegionCount} hubs
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const hubAsym = nrDashBuildHubPulseAsymmetry(nsState, baseNodes);
+        return hubAsym && hubAsym.asymmetryGap > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-pulse-asymmetry">
+            Hub pulse asymmetry {hubAsym.asymmetryGap} · max {hubAsym.maxIntensity} vs μ {hubAsym.meanIntensity} ·{' '}
+            {hubAsym.hubRegionCount} hubs
           </p>
         ) : null;
       })()}
