@@ -133346,6 +133346,181 @@ export function runV93ContentReplayabilitySelfTests(): V9SelfTestResult[] {
 }
 
 
+
+// ============================================================================
+// SECTION 20P-A87: O111 REACT PERFORMANCE — LOAD_STATE COALESCING & V10 DIAG SNAPSHOTS
+// ============================================================================
+// Agent 87 (Division I). Pure helpers + a dispatch wrapper that merge partial V10 band-memory
+// LOAD_STATE patches within one microtask so chained useEffects cause one reducer pass instead of
+// a storm. Full-state loads (turn ownership keys present) flush the queue first. Dev-only tracing
+// mirrors Agent 7 opt-in (`?o111ReactPerf=1` or localStorage `o111.reactPerf`).
+
+export function isFullGameStateLoadPayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  const p = payload as Record<string, unknown>;
+  return 'currentTurn' in p || 'turnCounter' in p;
+}
+
+/** Shallow-merge partial LOAD_STATE payloads (later keys win). */
+export function mergeLoadStatePatches(patches: Array<Record<string, unknown>>): Record<string, unknown> {
+  let out: Record<string, unknown> = {};
+  for (const patch of patches) {
+    if (patch && typeof patch === 'object') out = { ...out, ...patch };
+  }
+  return out;
+}
+
+export interface V10BandDiagCell {
+  recomputes: number;
+  lastReason: string;
+  lastMs: number;
+  eventsEmitted: number;
+}
+
+export interface V10BandDiagSnapshot {
+  nationalSystems: V10BandDiagCell | null;
+  industries: V10BandDiagCell | null;
+  infraNetworks: V10BandDiagCell | null;
+  megaprojects: { evaluations: number; lastReason: string; lastMs: number; eventsEmitted: number; commands: number; rejected: number } | null;
+}
+
+export function snapshotV10BandDiagRefs(input: {
+  ns?: V10BandDiagCell | null;
+  sc?: V10BandDiagCell | null;
+  infra?: V10BandDiagCell | null;
+  mp?: V10BandDiagSnapshot['megaprojects'];
+}): V10BandDiagSnapshot {
+  return {
+    nationalSystems: input.ns ? { ...input.ns } : null,
+    industries: input.sc ? { ...input.sc } : null,
+    infraNetworks: input.infra ? { ...input.infra } : null,
+    megaprojects: input.mp ? { ...input.mp } : null
+  };
+}
+
+export interface LoadStateCoalescer {
+  dispatch: (action: any) => void;
+  flush: () => void;
+  stats: { coalescedBatches: number; savedDispatches: number; loadStateDispatches: number };
+}
+
+export function createLoadStateCoalescingDispatch(
+  rawDispatch: (action: any) => void,
+  options?: { onCoalescedBatch?: (mergedKeys: string[], savedDispatches: number) => void }
+): LoadStateCoalescer {
+  let pending: Record<string, unknown> | null = null;
+  let pendingCount = 0;
+  let flushScheduled = false;
+  const stats = { coalescedBatches: 0, savedDispatches: 0, loadStateDispatches: 0 };
+
+  const flush = () => {
+    flushScheduled = false;
+    if (!pending) return;
+    const payload = pending;
+    const keys = Object.keys(payload);
+    const saved = Math.max(0, pendingCount - 1);
+    pending = null;
+    pendingCount = 0;
+    stats.loadStateDispatches += 1;
+    if (saved > 0) {
+      stats.coalescedBatches += 1;
+      stats.savedDispatches += saved;
+      options?.onCoalescedBatch?.(keys, saved);
+    }
+    rawDispatch({ type: 'LOAD_STATE', payload });
+  };
+
+  const dispatch = (action: any) => {
+    if (action?.type !== 'LOAD_STATE' || !action.payload || typeof action.payload !== 'object') {
+      if (pending) flush();
+      rawDispatch(action);
+      return;
+    }
+    if (isFullGameStateLoadPayload(action.payload)) {
+      if (pending) flush();
+      stats.loadStateDispatches += 1;
+      rawDispatch(action);
+      return;
+    }
+    pending = pending ? { ...pending, ...action.payload } : { ...action.payload };
+    pendingCount += 1;
+    if (!flushScheduled) {
+      flushScheduled = true;
+      queueMicrotask(flush);
+    }
+  };
+
+  return { dispatch, flush, stats };
+}
+
+const O111_REACT_PERF_LS = 'o111.reactPerf';
+
+export function o111ReactPerfTracingEnabled(): boolean {
+  if (typeof import.meta !== 'undefined' && (import.meta as any).env?.PROD) return false;
+  if (typeof window === 'undefined') return false;
+  try {
+    const q = new URLSearchParams(window.location.search).get('o111ReactPerf');
+    if (q === '1' || q === 'true') return true;
+    if (q === '0' || q === 'false') return false;
+    return window.localStorage?.getItem(O111_REACT_PERF_LS) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function runO111ReactPerformanceSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const r = fn();
+      results.push({ id, name, passed: r === true, detail: r === true ? 'ok' : String(r) });
+    } catch (err) {
+      results.push({ id, name, passed: false, detail: err instanceof Error ? err.message : String(err) });
+    }
+  };
+  check('rp_merge_keys', 'mergeLoadStatePatches combines disjoint partial keys', () => {
+    const m = mergeLoadStatePatches([{ nationalSystems: { revision: 1 } }, { industries: { revision: 2 } }]);
+    return Boolean(m.nationalSystems && m.industries) || JSON.stringify(m);
+  });
+  check('rp_full_payload_detect', 'isFullGameStateLoadPayload recognises turn ownership keys', () => {
+    return isFullGameStateLoadPayload({ currentTurn: 'player' }) && !isFullGameStateLoadPayload({ nationalSystems: {} });
+  });
+  check('rp_coalesce_microtask', 'Coalescer merges partial LOAD_STATE dispatches in one microtask', () => {
+    const log: any[] = [];
+    const c = createLoadStateCoalescingDispatch(a => log.push(a));
+    c.dispatch({ type: 'LOAD_STATE', payload: { nationalSystems: { a: 1 } } });
+    c.dispatch({ type: 'LOAD_STATE', payload: { industries: { b: 2 } } });
+    if (log.length !== 0) return `sync count ${log.length}`;
+    c.flush();
+    return (log.length === 1 && log[0].payload.nationalSystems && log[0].payload.industries && c.stats.savedDispatches === 1) || JSON.stringify({ log, stats: c.stats });
+  });
+  check('rp_coalesce_flush_before_full', 'Full LOAD_STATE flushes pending partial patches first', () => {
+    const log: any[] = [];
+    const c = createLoadStateCoalescingDispatch(a => log.push(a));
+    c.dispatch({ type: 'LOAD_STATE', payload: { nationalSystems: { x: 1 } } });
+    c.dispatch({ type: 'LOAD_STATE', payload: { currentTurn: 'player', day: 2 } });
+    c.flush();
+    return (log.length === 2 && log[0].payload.nationalSystems && log[1].payload.currentTurn === 'player') || JSON.stringify(log);
+  });
+  check('rp_reducer_thinking', 'Coalesced partial patches preserve isAiThinking like sequential LOAD_STATE', () => {
+    const base = { isAiThinking: true, currentTurn: 'ai' as const };
+    const merged = mergeLoadStatePatches([{ aiMemoriesByActor: {} }, { nationalSystems: { revision: 1 } }]);
+    const once = gameStateReducer(base, { type: 'LOAD_STATE', payload: merged });
+    const step1 = gameStateReducer(base, { type: 'LOAD_STATE', payload: { aiMemoriesByActor: {} } });
+    const step2 = gameStateReducer(step1, { type: 'LOAD_STATE', payload: { nationalSystems: { revision: 1 } } });
+    return (once.isAiThinking === true && step2.isAiThinking === true) || `${once.isAiThinking}/${step2.isAiThinking}`;
+  });
+  check('rp_v10_diag_snapshot', 'snapshotV10BandDiagRefs copies ns/sc/infra cells', () => {
+    const snap = snapshotV10BandDiagRefs({
+      ns: { recomputes: 2, lastReason: 'hash', lastMs: 3, eventsEmitted: 1 },
+      sc: { recomputes: 1, lastReason: 'lr', lastMs: 4, eventsEmitted: 0 }
+    });
+    return (snap.nationalSystems?.recomputes === 2 && snap.industries?.lastMs === 4 && !snap.infraNetworks) || JSON.stringify(snap);
+  });
+  return results;
+}
+
+
 // ============================================================================
 // SECTION 20P: V9.4 GAME FEEL & POLISH — RESPONSIVE • SATISFYING • CLEAR • ALIVE • POLISHED
 // ============================================================================
@@ -136512,6 +136687,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
+  { id: 'o111_a87', label: 'O111 React Performance (A87)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111ReactPerformanceSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
@@ -182080,7 +182256,17 @@ function AustraliaGame() {
 
   // Core game state
   const [player, dispatchPlayer] = useReducer(playerReducer, initialPlayerState);
-  const [gameState, dispatchGameState] = useReducer(gameStateReducer, initialGameState);
+  const [gameState, dispatchGameStateRaw] = useReducer(gameStateReducer, initialGameState);
+  const loadStateCoalescerRef = useRef<LoadStateCoalescer | null>(null);
+  if (!loadStateCoalescerRef.current) {
+    loadStateCoalescerRef.current = createLoadStateCoalescingDispatch(dispatchGameStateRaw, {
+      onCoalescedBatch: (keys, saved) => {
+        if (!o111ReactPerfTracingEnabled()) return;
+        console.info(`[O111 reactPerf] coalesced ${saved + 1} partial LOAD_STATE patch(es) → 1 dispatch keys=[${keys.join(', ')}]`);
+      }
+    });
+  }
+  const dispatchGameState = loadStateCoalescerRef.current.dispatch;
   const setGameState = (nextState: any) => dispatchGameState({ type: 'LOAD_STATE', payload: nextState });
 
   // AI opponent state
@@ -214093,6 +214279,16 @@ function dispatchGameSettingsChange(
   const mpWorldRef = useRef(mpWorld); mpWorldRef.current = mpWorld;
   const mpHash = useMemo(() => megaprojectWorldHash(mpWorld, mpPersisted), [mpWorld, mpPersisted]);
   const mpDiagRef = useRef({ evaluations: 0, lastReason: 'not yet evaluated', lastMs: 0, eventsEmitted: 0, commands: 0, rejected: 0 });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env?.PROD) return;
+    (window as any).__O111_REACT_PERF__ = {
+      enable: (on: boolean) => { try { window.localStorage.setItem('o111.reactPerf', on ? '1' : '0'); } catch { /* ignore */ } },
+      isEnabled: () => o111ReactPerfTracingEnabled(),
+      coalescerStats: () => loadStateCoalescerRef.current?.stats ?? null,
+      v10Diag: () => snapshotV10BandDiagRefs({ ns: nsDiagRef.current, sc: scDiagRef.current, infra: inDiagRef.current, mp: mpDiagRef.current })
+    };
+  }, []);
   const mpViewerId = String(player?.id || 'player');
   const mpRivalId = aiPlayer?.id ? String(aiPlayer.id) : 'ai';
   const mpViewer = useMemo<MegaprojectViewer>(() => ({ id: mpViewerId, money: Number(player?.money || 0), day: Number(gameState.day || 1), currentRegion: player?.currentRegion ? String(player.currentRegion) : null, teamId: player?.teamId ? String(player.teamId) : null,
