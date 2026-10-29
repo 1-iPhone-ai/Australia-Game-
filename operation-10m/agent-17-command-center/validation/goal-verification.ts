@@ -94,6 +94,14 @@ import {
   covenantGateBlocksOps,
 } from '../planning/covenant-gate.ts';
 import {
+  buildAgent17MandateWeave,
+  mandateWeaveBlocksSovereignty,
+} from '../planning/mandate-weave.ts';
+import {
+  buildAgent17SovereigntyLock,
+  sovereigntyLockBlocksCommand,
+} from '../planning/sovereignty-lock.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -937,6 +945,50 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const mandateWeave = depthEval.snapshot.planningDepth?.mandateWeave;
+  goalResults.push(
+    result(
+      'G17-058',
+      !!mandateWeave &&
+        mandateWeave.weaveScore >= 0 &&
+        mandateWeave.weaveScore <= 100 &&
+        (mandateWeave.band === 'aligned' ||
+          mandateWeave.band === 'tensioned' ||
+          mandateWeave.band === 'frayed'),
+      `${mandateWeave?.weaveScore}/${mandateWeave?.band}`
+    )
+  );
+
+  const sovereigntyLock = depthEval.snapshot.planningDepth?.sovereigntyLock;
+  goalResults.push(
+    result(
+      'G17-059',
+      !!sovereigntyLock &&
+        sovereigntyLock.pins.length >= 5 &&
+        sovereigntyLock.lockScore >= 0 &&
+        sovereigntyLock.lockScore <= 100,
+      `pins=${sovereigntyLock?.pins.length} score=${sovereigntyLock?.lockScore}`
+    )
+  );
+
+  const frayedWeave = buildAgent17MandateWeave({
+    covenantGate: voidCovenant,
+    commitLattice: fragmentedLattice,
+    strategicAlignment: depthEval.snapshot.planningDepth!.strategicAlignment,
+  });
+  const releasedLock = buildAgent17SovereigntyLock({
+    mandateWeave: frayedWeave,
+    governanceAudit: breachAudit,
+    stabilizationIndex: volatileStabilization,
+  });
+  goalResults.push(
+    result(
+      'G17-060',
+      mandateWeaveBlocksSovereignty(frayedWeave) || sovereigntyLockBlocksCommand(releasedLock),
+      `${frayedWeave.band}/${releasedLock.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1024,6 +1076,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-055',
     'G17-056',
     'G17-057',
+    'G17-058',
+    'G17-059',
+    'G17-060',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

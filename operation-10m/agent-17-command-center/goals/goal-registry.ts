@@ -401,6 +401,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Fragmented lattice or void covenant yields covenantGateBlocksOps.',
     severity: 'major',
   },
+  {
+    id: 'G17-058',
+    title: 'Mandate weave on planning depth',
+    category: 'telemetry',
+    acceptance: 'mandateWeave reports weaveScore 0–100 with aligned/tensioned/frayed band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-059',
+    title: 'Sovereignty lock pins complete',
+    category: 'telemetry',
+    acceptance: 'sovereigntyLock exposes ≥5 lock pins and lockScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-060',
+    title: 'Frayed mandate releases sovereignty',
+    category: 'integration',
+    acceptance: 'Frayed weave or released lock yields sovereigntyLockBlocksCommand.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

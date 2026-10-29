@@ -205,6 +205,8 @@ export interface Agent17PlanningDepthSnapshot {
   integritySeal: Agent17IntegritySealSnapshot;
   commitLattice: Agent17CommitLatticeSnapshot;
   covenantGate: Agent17CovenantGateSnapshot;
+  mandateWeave: Agent17MandateWeaveSnapshot;
+  sovereigntyLock: Agent17SovereigntyLockSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -575,6 +577,38 @@ export interface Agent17CovenantGateSnapshot {
   clauses: Agent17CovenantGateClause[];
   latticeBand: Agent17CommitLatticeSnapshot['band'];
   opsAllowed: boolean;
+  headline: string;
+}
+
+export interface Agent17MandateWeaveThread {
+  id: string;
+  label: string;
+  strength: number;
+  weight: number;
+}
+
+export interface Agent17MandateWeaveSnapshot {
+  weaveScore: number;
+  band: 'aligned' | 'tensioned' | 'frayed';
+  threads: Agent17MandateWeaveThread[];
+  covenantBand: Agent17CovenantGateSnapshot['band'];
+  alignmentBand: Agent17StrategicAlignmentSnapshot['band'];
+  headline: string;
+}
+
+export interface Agent17SovereigntyLockPin {
+  id: string;
+  label: string;
+  engaged: boolean;
+  weight: number;
+}
+
+export interface Agent17SovereigntyLockSnapshot {
+  lockScore: number;
+  band: 'secured' | 'conditional' | 'released';
+  pins: Agent17SovereigntyLockPin[];
+  weaveBand: Agent17MandateWeaveSnapshot['band'];
+  commandSovereignty: boolean;
   headline: string;
 }
 

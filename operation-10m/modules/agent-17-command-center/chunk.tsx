@@ -209,6 +209,8 @@ export interface Agent17PlanningDepthSnapshot {
   integritySeal: Agent17IntegritySealSnapshot;
   commitLattice: Agent17CommitLatticeSnapshot;
   covenantGate: Agent17CovenantGateSnapshot;
+  mandateWeave: Agent17MandateWeaveSnapshot;
+  sovereigntyLock: Agent17SovereigntyLockSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -579,6 +581,38 @@ export interface Agent17CovenantGateSnapshot {
   clauses: Agent17CovenantGateClause[];
   latticeBand: Agent17CommitLatticeSnapshot['band'];
   opsAllowed: boolean;
+  headline: string;
+}
+
+export interface Agent17MandateWeaveThread {
+  id: string;
+  label: string;
+  strength: number;
+  weight: number;
+}
+
+export interface Agent17MandateWeaveSnapshot {
+  weaveScore: number;
+  band: 'aligned' | 'tensioned' | 'frayed';
+  threads: Agent17MandateWeaveThread[];
+  covenantBand: Agent17CovenantGateSnapshot['band'];
+  alignmentBand: Agent17StrategicAlignmentSnapshot['band'];
+  headline: string;
+}
+
+export interface Agent17SovereigntyLockPin {
+  id: string;
+  label: string;
+  engaged: boolean;
+  weight: number;
+}
+
+export interface Agent17SovereigntyLockSnapshot {
+  lockScore: number;
+  band: 'secured' | 'conditional' | 'released';
+  pins: Agent17SovereigntyLockPin[];
+  weaveBand: Agent17MandateWeaveSnapshot['band'];
+  commandSovereignty: boolean;
   headline: string;
 }
 
@@ -4589,6 +4623,194 @@ export function covenantGateBlocksOps(snapshot: Agent17CovenantGateSnapshot): bo
 }
 
 
+// --- source: planning/mandate-weave.ts ---
+  Agent17CommitLatticeSnapshot,
+  Agent17CovenantGateSnapshot,
+  Agent17MandateWeaveSnapshot,
+  Agent17StrategicAlignmentSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17MandateWeaveInputs {
+  covenantGate: Agent17CovenantGateSnapshot;
+  commitLattice: Agent17CommitLatticeSnapshot;
+  strategicAlignment: Agent17StrategicAlignmentSnapshot;
+}
+
+export function buildAgent17MandateWeave(
+  inputs: Agent17MandateWeaveInputs
+): Agent17MandateWeaveSnapshot {
+  const threads: Agent17MandateWeaveSnapshot['threads'] = [];
+
+  threads.push({
+    id: 'covenant_score',
+    label: 'Covenant gate score',
+    strength: inputs.covenantGate.covenantScore,
+    weight: 35,
+  });
+
+  threads.push({
+    id: 'lattice_score',
+    label: 'Commit lattice score',
+    strength: inputs.commitLattice.latticeScore,
+    weight: 30,
+  });
+
+  threads.push({
+    id: 'alignment_index',
+    label: 'Strategic alignment index',
+    strength: inputs.strategicAlignment.alignmentIndex,
+    weight: 25,
+  });
+
+  const clauseRatio = Math.round(
+    (inputs.covenantGate.clauses.filter(c => c.upheld).length /
+      Math.max(1, inputs.covenantGate.clauses.length)) *
+      100
+  );
+  threads.push({
+    id: 'clause_ratio',
+    label: 'Covenant clause ratio',
+    strength: clauseRatio,
+    weight: 10,
+  });
+
+  const weighted = threads.reduce((n, t) => n + t.strength * (t.weight / 100), 0);
+  const totalWeight = threads.reduce((n, t) => n + t.weight, 0);
+  const weaveScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const frayedSignals =
+    inputs.covenantGate.band === 'void' ||
+    inputs.commitLattice.band === 'fragmented' ||
+    inputs.strategicAlignment.band === 'divergent' ||
+    commitLatticeBlocksCovenant(inputs.commitLattice);
+
+  const band: Agent17MandateWeaveSnapshot['band'] = frayedSignals
+    ? 'frayed'
+    : weaveScore >= 65 &&
+        (inputs.covenantGate.band === 'upheld' ||
+          inputs.covenantGate.band === 'conditional') &&
+        inputs.strategicAlignment.band !== 'divergent'
+      ? 'aligned'
+      : 'tensioned';
+
+  return {
+    weaveScore,
+    band,
+    threads,
+    covenantBand: inputs.covenantGate.band,
+    alignmentBand: inputs.strategicAlignment.band,
+    headline: `Mandate ${band} (${weaveScore}/100) · covenant ${inputs.covenantGate.band}`,
+  };
+}
+
+export function mandateWeaveBlocksSovereignty(snapshot: Agent17MandateWeaveSnapshot): boolean {
+  return snapshot.band === 'frayed' || snapshot.weaveScore < 34;
+}
+
+
+// --- source: planning/sovereignty-lock.ts ---
+  Agent17GovernanceAuditSnapshot,
+  Agent17MandateWeaveSnapshot,
+  Agent17SovereigntyLockSnapshot,
+  Agent17StabilizationIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17SovereigntyLockInputs {
+  mandateWeave: Agent17MandateWeaveSnapshot;
+  governanceAudit: Agent17GovernanceAuditSnapshot;
+  stabilizationIndex: Agent17StabilizationIndexSnapshot;
+}
+
+export function buildAgent17SovereigntyLock(
+  inputs: Agent17SovereigntyLockInputs
+): Agent17SovereigntyLockSnapshot {
+  const pins: Agent17SovereigntyLockSnapshot['pins'] = [];
+
+  pins.push({
+    id: 'weave_aligned',
+    label: 'Mandate weave aligned',
+    engaged: inputs.mandateWeave.band === 'aligned' || inputs.mandateWeave.band === 'tensioned',
+    weight: 30,
+  });
+
+  pins.push({
+    id: 'governance_compliant',
+    label: 'Governance audit compliant',
+    engaged:
+      inputs.governanceAudit.band === 'compliant' ||
+      inputs.governanceAudit.band === 'review',
+    weight: 25,
+  });
+
+  pins.push({
+    id: 'stabilization_stable',
+    label: 'Stabilization lane stable',
+    engaged:
+      inputs.stabilizationIndex.band === 'stable' ||
+      inputs.stabilizationIndex.band === 'adjusting',
+    weight: 25,
+  });
+
+  pins.push({
+    id: 'audit_score',
+    label: 'Governance audit score',
+    engaged: inputs.governanceAudit.auditScore >= 50,
+    weight: 10,
+  });
+
+  pins.push({
+    id: 'stabilization_index',
+    label: 'Stabilization index headroom',
+    engaged: inputs.stabilizationIndex.stabilizationIndex >= 45,
+    weight: 10,
+  });
+
+  const weighted = pins.reduce(
+    (n, p) => n + (p.engaged ? 100 : 14) * (p.weight / 100),
+    0
+  );
+  const totalWeight = pins.reduce((n, p) => n + p.weight, 0);
+  const lockScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const releasedSignals =
+    mandateWeaveBlocksSovereignty(inputs.mandateWeave) ||
+    inputs.governanceAudit.band === 'breach' ||
+    inputs.stabilizationIndex.band === 'volatile';
+
+  const band: Agent17SovereigntyLockSnapshot['band'] = releasedSignals
+    ? 'released'
+    : lockScore >= 70 &&
+        inputs.mandateWeave.band === 'aligned' &&
+        !mandateWeaveBlocksSovereignty(inputs.mandateWeave)
+      ? 'secured'
+      : 'conditional';
+
+  const commandSovereignty =
+    band === 'secured' &&
+    !mandateWeaveBlocksSovereignty(inputs.mandateWeave) &&
+    inputs.governanceAudit.band !== 'breach';
+
+  return {
+    lockScore,
+    band,
+    pins,
+    weaveBand: inputs.mandateWeave.band,
+    commandSovereignty,
+    headline: `Sovereignty ${band} (${lockScore}/100) · ${pins.filter(p => p.engaged).length}/${pins.length} pins`,
+  };
+}
+
+export function sovereigntyLockBlocksCommand(snapshot: Agent17SovereigntyLockSnapshot): boolean {
+  return snapshot.band === 'released' || !snapshot.commandSovereignty;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -4818,6 +5040,16 @@ export function buildAgent17PlanningDepthSnapshot(
     planHealth,
     rollbackAssurance,
   });
+  const mandateWeave = buildAgent17MandateWeave({
+    covenantGate,
+    commitLattice,
+    strategicAlignment,
+  });
+  const sovereigntyLock = buildAgent17SovereigntyLock({
+    mandateWeave,
+    governanceAudit,
+    stabilizationIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -4845,6 +5077,8 @@ export function buildAgent17PlanningDepthSnapshot(
     integritySeal,
     commitLattice,
     covenantGate,
+    mandateWeave,
+    sovereigntyLock,
   };
 }
 
@@ -5536,6 +5770,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Fragmented lattice or void covenant yields covenantGateBlocksOps.',
     severity: 'major',
   },
+  {
+    id: 'G17-058',
+    title: 'Mandate weave on planning depth',
+    category: 'telemetry',
+    acceptance: 'mandateWeave reports weaveScore 0–100 with aligned/tensioned/frayed band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-059',
+    title: 'Sovereignty lock pins complete',
+    category: 'telemetry',
+    acceptance: 'sovereigntyLock exposes ≥5 lock pins and lockScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-060',
+    title: 'Frayed mandate releases sovereignty',
+    category: 'integration',
+    acceptance: 'Frayed weave or released lock yields sovereigntyLockBlocksCommand.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -5607,6 +5862,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17CovenantGate,
   covenantGateBlocksOps,
 } from '../planning/covenant-gate.ts';
+  buildAgent17MandateWeave,
+  mandateWeaveBlocksSovereignty,
+} from '../planning/mandate-weave.ts';
+  buildAgent17SovereigntyLock,
+  sovereigntyLockBlocksCommand,
+} from '../planning/sovereignty-lock.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -6450,6 +6711,50 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const mandateWeave = depthEval.snapshot.planningDepth?.mandateWeave;
+  goalResults.push(
+    result(
+      'G17-058',
+      !!mandateWeave &&
+        mandateWeave.weaveScore >= 0 &&
+        mandateWeave.weaveScore <= 100 &&
+        (mandateWeave.band === 'aligned' ||
+          mandateWeave.band === 'tensioned' ||
+          mandateWeave.band === 'frayed'),
+      `${mandateWeave?.weaveScore}/${mandateWeave?.band}`
+    )
+  );
+
+  const sovereigntyLock = depthEval.snapshot.planningDepth?.sovereigntyLock;
+  goalResults.push(
+    result(
+      'G17-059',
+      !!sovereigntyLock &&
+        sovereigntyLock.pins.length >= 5 &&
+        sovereigntyLock.lockScore >= 0 &&
+        sovereigntyLock.lockScore <= 100,
+      `pins=${sovereigntyLock?.pins.length} score=${sovereigntyLock?.lockScore}`
+    )
+  );
+
+  const frayedWeave = buildAgent17MandateWeave({
+    covenantGate: voidCovenant,
+    commitLattice: fragmentedLattice,
+    strategicAlignment: depthEval.snapshot.planningDepth!.strategicAlignment,
+  });
+  const releasedLock = buildAgent17SovereigntyLock({
+    mandateWeave: frayedWeave,
+    governanceAudit: breachAudit,
+    stabilizationIndex: volatileStabilization,
+  });
+  goalResults.push(
+    result(
+      'G17-060',
+      mandateWeaveBlocksSovereignty(frayedWeave) || sovereigntyLockBlocksCommand(releasedLock),
+      `${frayedWeave.band}/${releasedLock.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -6537,6 +6842,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-055',
     'G17-056',
     'G17-057',
+    'G17-058',
+    'G17-059',
+    'G17-060',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -10780,6 +11088,474 @@ export function runAgent17CovenantDepthTests(): Agent17DevTestReport {
     success: overallStatus === 'passed',
     testResults,
     summary: `Agent 17 Covenant Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
+// --- source: harness/run-mandate-depth-tests.ts ---
+  createDefaultAcc17CommandCenterOpsState,
+  acc17CreateMultiStepPlanFromObjective,
+  defaultObjectiveResolver,
+} from '../planning/ops-state.ts';
+  buildAgent17GovernanceAudit,
+  governanceAuditBlocksAutomation,
+} from '../planning/governance-audit.ts';
+  buildAgent17EscalationMatrix,
+  escalationMatrixBlocksAutomation,
+} from '../planning/escalation-matrix.ts';
+  buildAgent17RollbackAssurance,
+  rollbackAssuranceNeedsRestore,
+} from '../planning/rollback-assurance.ts';
+  buildAgent17StabilizationIndex,
+  stabilizationIndexBlocksAutomation,
+} from '../planning/stabilization-index.ts';
+  buildAgent17CommandEnvelope,
+  commandEnvelopeNeedsThrottle,
+} from '../planning/command-envelope.ts';
+  buildAgent17ConvergenceIndex,
+  convergenceIndexBlocksDirective,
+} from '../planning/convergence-index.ts';
+  buildAgent17DirectiveSynthesis,
+  directiveSynthesisBlocksAdvance,
+} from '../planning/directive-synthesis.ts';
+  buildAgent17MandateWeave,
+  mandateWeaveBlocksSovereignty,
+} from '../planning/mandate-weave.ts';
+  buildAgent17SovereigntyLock,
+  sovereigntyLockBlocksCommand,
+} from '../planning/sovereignty-lock.ts';
+  rankAgent17TemplateCandidates,
+  summarizeAgent17CatalogDepth,
+} from '../planning/template-selector.ts';
+
+export function runAgent17MandateDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'assisted' as const,
+    };
+    const actor = {
+      id: 'player',
+      money: 120,
+      netWorth: 2400,
+      currentRegion: 'QLD',
+      currentSupplies: 6,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 33,
+      day: 33,
+      player: actor,
+      actorsById: { player: actor },
+      playerTrackedObjective: {
+        title: 'Expand trade network supply chain',
+        sourceType: 'contract',
+      },
+      gi3Strategy: { headline: 'Expand trade network resilience' },
+      strategyPlannerState: { activePlan: { title: 'Trade network supply expansion' } },
+      lastExecutedAction: { type: 'trade' },
+    };
+    const ops = createDefaultAcc17CommandCenterOpsState();
+    const plan = acc17CreateMultiStepPlanFromObjective(
+      state,
+      settings,
+      'player',
+      (s, st, id) => defaultObjectiveResolver(s, st, id)
+    );
+    const opsWithPlan = {
+      ...ops,
+      activePlan: plan ? { ...plan, title: plan.title || 'Trade supply chain plan' } : plan,
+    };
+    const health = assessAgent17PlanHealth(opsWithPlan.activePlan, state, 'player');
+    const intentQueue = buildAgent17IntentQueue(opsWithPlan, state, settings, 'player', health);
+    const alignment = buildAgent17StrategicAlignment(
+      opsWithPlan,
+      state,
+      settings,
+      'player',
+      intentQueue
+    );
+    const policy = buildAgent17VerificationPolicy(
+      { ...opsWithPlan, lastContextFingerprint: 'mdt_fp' },
+      state,
+      'player'
+    );
+    const pacing = buildAgent17ExecutionPacing(opsWithPlan, state, health, policy);
+    const scorecard = buildAgent17ResilienceScorecard(
+      opsWithPlan,
+      state,
+      'player',
+      health,
+      policy
+    );
+    const routing = rankAgent17TemplateCandidates(state, settings, 'player');
+    const delegationAnalytics = buildAgent17DelegationAnalytics(opsWithPlan, settings);
+    const core = {
+      turn: state.turnCounter || 1,
+      actorId: 'player',
+      planHealth: health,
+      suggestion: buildAgent17PlanningSuggestion(
+        opsWithPlan,
+        state,
+        settings,
+        'player',
+        'copilot'
+      ),
+      templateRouting: routing,
+      delegationAnalytics,
+      delegationLadder: buildAgent17DelegationLadder(delegationAnalytics, settings, 'copilot'),
+      planLedger: summarizeAgent17PlanLedger(opsWithPlan, state),
+      catalogDepth: summarizeAgent17CatalogDepth(),
+    };
+    const brief = buildAgent17CoordinationBrief(
+      core,
+      intentQueue,
+      policy,
+      opsWithPlan,
+      state,
+      settings
+    );
+    const handoff = buildAgent17HandoffReadiness({
+      coordinationBrief: brief,
+      verificationPolicy: policy,
+      executionPacing: pacing,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const posture = buildAgent17CommandPosture({
+      planHealth: health,
+      handoffReadiness: handoff,
+      resilienceScorecard: scorecard,
+      strategicAlignment: alignment,
+    });
+    const audit = buildAgent17GovernanceAudit(opsWithPlan, settings, policy);
+    const matrix = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: audit,
+      handoffReadiness: handoff,
+    });
+    const assurance = buildAgent17RollbackAssurance(opsWithPlan, health, audit);
+    const stabilization = buildAgent17StabilizationIndex({
+      escalationMatrix: matrix,
+      rollbackAssurance: assurance,
+    });
+    const envelope = buildAgent17CommandEnvelope({
+      ops: opsWithPlan,
+      executionPacing: pacing,
+      stabilizationIndex: stabilization,
+    });
+    const convergence = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelope,
+      stabilizationIndex: stabilization,
+      strategicAlignment: alignment,
+    });
+    const directive = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelope,
+      convergenceIndex: convergence,
+    });
+    const synthesis = buildAgent17DirectiveSynthesis({
+      missionDirective: directive,
+      convergenceIndex: convergence,
+      intentQueue,
+    });
+    const closure = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+      missionDirective: directive,
+    });
+    const cadence = buildAgent17CadenceLattice({
+      executionClosure: closure,
+      directiveSynthesis: synthesis,
+      executionPacing: pacing,
+    });
+    const readiness = buildAgent17ReadinessGate({
+      cadenceLattice: cadence,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    const pulse = buildAgent17PulseIndex({
+      readinessGate: readiness,
+      cadenceLattice: cadence,
+      commandPosture: posture,
+    });
+    const bridge = buildAgent17ContinuityBridge({
+      pulseIndex: pulse,
+      resilienceScorecard: scorecard,
+      verificationPolicy: policy,
+    });
+    const flux = buildAgent17FluxIndex({
+      continuityBridge: bridge,
+      pulseIndex: pulse,
+      governanceAudit: audit,
+    });
+    const seal = buildAgent17IntegritySeal({
+      fluxIndex: flux,
+      rollbackAssurance: assurance,
+      verificationPolicy: policy,
+    });
+    const lattice = buildAgent17CommitLattice({
+      integritySeal: seal,
+      fluxIndex: flux,
+      escalationMatrix: matrix,
+    });
+    const covenant = buildAgent17CovenantGate({
+      commitLattice: lattice,
+      planHealth: health,
+      rollbackAssurance: assurance,
+    });
+
+    const weaveClean = buildAgent17MandateWeave({
+      covenantGate: covenant,
+      commitLattice: lattice,
+      strategicAlignment: alignment,
+    });
+    push(
+      'mdt_weave_bounded',
+      'Mandate weave bounded with band',
+      weaveClean.weaveScore >= 0 &&
+        weaveClean.weaveScore <= 100 &&
+        (weaveClean.band === 'aligned' ||
+          weaveClean.band === 'tensioned' ||
+          weaveClean.band === 'frayed'),
+      `${weaveClean.weaveScore}/${weaveClean.band}`
+    );
+
+    push(
+      'mdt_weave_threads',
+      'Mandate weave exposes weighted threads',
+      weaveClean.threads.length >= 4 && weaveClean.threads.every(t => t.weight > 0),
+      `threads=${weaveClean.threads.length}`
+    );
+
+    const lockClean = buildAgent17SovereigntyLock({
+      mandateWeave: weaveClean,
+      governanceAudit: audit,
+      stabilizationIndex: stabilization,
+    });
+    push(
+      'mdt_lock_pins',
+      'Sovereignty lock exposes pins',
+      lockClean.pins.length >= 5 &&
+        lockClean.lockScore >= 0 &&
+        lockClean.lockScore <= 100,
+      `pins=${lockClean.pins.length} score=${lockClean.lockScore}`
+    );
+
+    push(
+      'mdt_weave_aligned',
+      'Healthy ops yields aligned or tensioned weave',
+      weaveClean.band === 'aligned' || weaveClean.band === 'tensioned',
+      weaveClean.band
+    );
+
+    push(
+      'mdt_lock_conditional',
+      'Healthy ops yields secured or conditional lock',
+      lockClean.band === 'secured' || lockClean.band === 'conditional',
+      lockClean.band
+    );
+
+    const breachOps = {
+      ...opsWithPlan,
+      delegatedProjects: [
+        {
+          id: 'dp1',
+          planId: 'p1',
+          title: 'Breach project',
+          delegateKind: 'team_os' as const,
+          delegateTargetId: 'team',
+          status: 'active' as const,
+          authorityCeiling: 'delegated' as const,
+          assignedTurn: 1,
+          assignedDay: 1,
+          lastVerifiedFingerprint: '',
+          notes: '',
+        },
+      ],
+    };
+    const advisorySettings = {
+      ...settings,
+      aiCommunicationAutonomyLevel: 'advisory' as const,
+    };
+    const auditBreach = buildAgent17GovernanceAudit(breachOps, advisorySettings, policy);
+    const matrixUrgent = buildAgent17EscalationMatrix({
+      commandPosture: posture,
+      governanceAudit: auditBreach,
+      handoffReadiness: handoff,
+    });
+    const assuranceBreach = buildAgent17RollbackAssurance(
+      breachOps,
+      assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      auditBreach
+    );
+    const stabilizationVolatile = buildAgent17StabilizationIndex({
+      escalationMatrix: matrixUrgent,
+      rollbackAssurance: assuranceBreach,
+    });
+    const envelopeSaturated = buildAgent17CommandEnvelope({
+      ops: breachOps,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      stabilizationIndex: stabilizationVolatile,
+    });
+    const convergenceDiverging = buildAgent17ConvergenceIndex({
+      commandEnvelope: envelopeSaturated,
+      stabilizationIndex: stabilizationVolatile,
+      strategicAlignment: alignment,
+    });
+    const directiveHeld = buildAgent17MissionDirective({
+      intentQueue,
+      commandEnvelope: envelopeSaturated,
+      convergenceIndex: convergenceDiverging,
+    });
+    const synthesisLocked = buildAgent17DirectiveSynthesis({
+      missionDirective: directiveHeld,
+      convergenceIndex: convergenceDiverging,
+      intentQueue,
+    });
+    const closureSealed = buildAgent17ExecutionClosure({
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      missionDirective: directiveHeld,
+    });
+    const cadenceStalled = buildAgent17CadenceLattice({
+      executionClosure: closureSealed,
+      directiveSynthesis: synthesisLocked,
+      executionPacing: buildAgent17ExecutionPacing(
+        breachOps,
+        state,
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+    });
+    const readinessStop = buildAgent17ReadinessGate({
+      cadenceLattice: cadenceStalled,
+      handoffReadiness: handoff,
+      coordinationBrief: brief,
+    });
+    const pulseFlat = buildAgent17PulseIndex({
+      readinessGate: readinessStop,
+      cadenceLattice: cadenceStalled,
+      commandPosture: posture,
+    });
+    const bridgeBroken = buildAgent17ContinuityBridge({
+      pulseIndex: pulseFlat,
+      resilienceScorecard: buildAgent17ResilienceScorecard(
+        breachOps,
+        state,
+        'player',
+        assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+        policy
+      ),
+      verificationPolicy: policy,
+    });
+    const fluxDisrupted = buildAgent17FluxIndex({
+      continuityBridge: bridgeBroken,
+      pulseIndex: pulseFlat,
+      governanceAudit: auditBreach,
+    });
+    const sealBreached = buildAgent17IntegritySeal({
+      fluxIndex: fluxDisrupted,
+      rollbackAssurance: assuranceBreach,
+      verificationPolicy: policy,
+    });
+    const latticeFragmented = buildAgent17CommitLattice({
+      integritySeal: sealBreached,
+      fluxIndex: fluxDisrupted,
+      escalationMatrix: matrixUrgent,
+    });
+    const covenantVoid = buildAgent17CovenantGate({
+      commitLattice: latticeFragmented,
+      planHealth: assessAgent17PlanHealth(breachOps.activePlan, state, 'player'),
+      rollbackAssurance: assuranceBreach,
+    });
+    const weaveFrayed = buildAgent17MandateWeave({
+      covenantGate: covenantVoid,
+      commitLattice: latticeFragmented,
+      strategicAlignment: alignment,
+    });
+    push(
+      'mdt_frayed_blocks',
+      'Governance breach yields frayed weave or blocks sovereignty',
+      weaveFrayed.band === 'frayed' || mandateWeaveBlocksSovereignty(weaveFrayed),
+      `${weaveFrayed.band} idx=${weaveFrayed.weaveScore}`
+    );
+
+    const lockReleased = buildAgent17SovereigntyLock({
+      mandateWeave: weaveFrayed,
+      governanceAudit: auditBreach,
+      stabilizationIndex: stabilizationVolatile,
+    });
+    push(
+      'mdt_released_command',
+      'Released lock blocks command sovereignty',
+      lockReleased.band === 'released' ||
+        sovereigntyLockBlocksCommand(lockReleased) ||
+        !lockReleased.commandSovereignty,
+      `${lockReleased.band} sov=${lockReleased.commandSovereignty}`
+    );
+
+    push(
+      'mdt_escalation_link',
+      'Urgent escalation propagates to weave threads',
+      escalationMatrixBlocksAutomation(matrixUrgent) ||
+        governanceAuditBlocksAutomation(auditBreach) ||
+        rollbackAssuranceNeedsRestore(assuranceBreach) ||
+        stabilizationIndexBlocksAutomation(stabilizationVolatile) ||
+        commandEnvelopeNeedsThrottle(envelopeSaturated) ||
+        convergenceIndexBlocksDirective(convergenceDiverging),
+      matrixUrgent.band
+    );
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'mdt_evaluator_depth',
+      'Evaluator attaches mandate weave and sovereignty lock',
+      !!depth?.mandateWeave?.headline &&
+        !!depth?.sovereigntyLock?.headline &&
+        (depth.sovereigntyLock.pins?.length ?? 0) >= 5,
+      `${depth?.mandateWeave?.band}/${depth?.sovereigntyLock?.band}`
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('mdt_throw', 'Mandate harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Mandate Depth Tests: ${passedCount}/${testResults.length} Passed`,
   };
 }
 

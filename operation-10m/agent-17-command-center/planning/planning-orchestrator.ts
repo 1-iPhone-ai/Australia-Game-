@@ -45,6 +45,8 @@ import { buildAgent17FluxIndex } from './flux-index.ts';
 import { buildAgent17IntegritySeal } from './integrity-seal.ts';
 import { buildAgent17CommitLattice } from './commit-lattice.ts';
 import { buildAgent17CovenantGate } from './covenant-gate.ts';
+import { buildAgent17MandateWeave } from './mandate-weave.ts';
+import { buildAgent17SovereigntyLock } from './sovereignty-lock.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -259,6 +261,16 @@ export function buildAgent17PlanningDepthSnapshot(
     planHealth,
     rollbackAssurance,
   });
+  const mandateWeave = buildAgent17MandateWeave({
+    covenantGate,
+    commitLattice,
+    strategicAlignment,
+  });
+  const sovereigntyLock = buildAgent17SovereigntyLock({
+    mandateWeave,
+    governanceAudit,
+    stabilizationIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -286,6 +298,8 @@ export function buildAgent17PlanningDepthSnapshot(
     integritySeal,
     commitLattice,
     covenantGate,
+    mandateWeave,
+    sovereigntyLock,
   };
 }
 
