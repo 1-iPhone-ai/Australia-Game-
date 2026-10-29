@@ -90,6 +90,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Cities & forecasting stress',
     shockIds: ['global_slowdown', 'housing_correction'],
     description: 'Metro pressure with downside forecast dispersion (harness overlay).'
+  },
+  {
+    id: 'command_automation_stress',
+    label: 'Command & automation stress',
+    shockIds: ['credit_contraction', 'global_slowdown'],
+    description: 'Crisis command posture with stalled automation throughput (harness overlay).'
   }
 ];
 

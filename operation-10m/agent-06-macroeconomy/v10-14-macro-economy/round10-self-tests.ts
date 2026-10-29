@@ -51,8 +51,8 @@ export function runAgent06Round10SelfTests(): {
   record('R10-04', 'State exposes transport summary', integrated.state.transportSpilloverSummary != null, 'ok');
   record(
     'R10-05',
-    'Twenty-two transmission layers',
-    integrated.state.transmissionReport.layers.length === 22,
+    'Twenty-four transmission layers',
+    integrated.state.transmissionReport.layers.length === 24,
     String(integrated.state.transmissionReport.layers.length)
   );
 

@@ -21,6 +21,8 @@ import { applyMacroModesSpillover, readMacroModesSpilloverFromV1006 } from './br
 import { applyMacroGuardianSpillover, readMacroGuardianSpilloverFromV1016Guardian } from './bridge-v1016-guardian.ts';
 import { applyMacroCitiesSpillover, readMacroCitiesSpilloverFromV1011Cities } from './bridge-v1011-cities.ts';
 import { applyMacroForecastingSpillover, readMacroForecastingSpilloverFromV1021 } from './bridge-v1021-forecasting.ts';
+import { applyMacroCommandSpillover, readMacroCommandSpilloverFromV1017Command } from './bridge-v1017-command.ts';
+import { applyMacroAutomationSpillover, readMacroAutomationSpilloverFromV1020 } from './bridge-v1020-automation.ts';
 import { evaluateMacroConsistencyGates } from './consistency-gates.ts';
 import { buildMacroDerivedSignals, composeMacroEconomyDebrief } from './macro-debrief.ts';
 import { buildMacroTransmissionReport } from './macro-transmission.ts';
@@ -34,6 +36,7 @@ import { buildMacroTransmissionAsymmetrySnapshot } from './macro-transmission-as
 import { buildMacroTransmissionVolatilitySnapshot } from './macro-transmission-volatility.ts';
 import { buildMacroTransmissionResilienceSnapshot } from './macro-transmission-resilience.ts';
 import { buildMacroTransmissionCoverageSnapshot } from './macro-transmission-coverage.ts';
+import { buildMacroTransmissionAmplificationSnapshot } from './macro-transmission-amplification.ts';
 import { appendMacroCycleTransitionMemory } from './cycle-memory.ts';
 import { V1014_MACRO_LIMITS } from './constants.ts';
 import { resolveActiveCyclicalShockIds } from './catalog/cyclical-shocks.ts';
@@ -119,6 +122,8 @@ export function computeNationalMacroEconomy(
   const guardianSpillover = readMacroGuardianSpilloverFromV1016Guardian(inputs);
   const citiesSpillover = readMacroCitiesSpilloverFromV1011Cities(inputs);
   const forecastingSpillover = readMacroForecastingSpilloverFromV1021(inputs);
+  const commandSpillover = readMacroCommandSpilloverFromV1017Command(inputs);
+  const automationSpillover = readMacroAutomationSpilloverFromV1020(inputs);
   const withFiscal = applyMacroFiscalSpillover(structural, fiscalSpillover);
   const withHousehold = applyMacroHouseholdSpillover(withFiscal, householdSpillover);
   const withIndustry = applyMacroIndustrySpillover(withHousehold, industrySpillover);
@@ -141,7 +146,9 @@ export function computeNationalMacroEconomy(
   const withGuardian = applyMacroGuardianSpillover(withModes, guardianSpillover);
   const withCities = applyMacroCitiesSpillover(withGuardian, citiesSpillover);
   const withForecasting = applyMacroForecastingSpillover(withCities, forecastingSpillover);
-  const shocked = applyMacroShockAdjustments(inputs, withForecasting, pushEv);
+  const withCommand = applyMacroCommandSpillover(withForecasting, commandSpillover);
+  const withAutomation = applyMacroAutomationSpillover(withCommand, automationSpillover);
+  const shocked = applyMacroShockAdjustments(inputs, withAutomation, pushEv);
   ({ productivityScore, investmentScore, cycleScore } = clampMacroScores(shocked));
 
   const productivityBand = v1014macroBandProductivity(productivityScore);
@@ -191,7 +198,9 @@ export function computeNationalMacroEconomy(
     modes: modesSpillover,
     guardian: guardianSpillover,
     cities: citiesSpillover,
-    forecasting: forecastingSpillover
+    forecasting: forecastingSpillover,
+    command: commandSpillover,
+    automation: automationSpillover
   });
 
   const transmissionBalance = buildMacroTransmissionBalanceSnapshot(transmissionReport);
@@ -201,6 +210,7 @@ export function computeNationalMacroEconomy(
   const transmissionVolatility = buildMacroTransmissionVolatilitySnapshot(transmissionReport);
   const transmissionResilience = buildMacroTransmissionResilienceSnapshot(transmissionReport);
   const transmissionCoverage = buildMacroTransmissionCoverageSnapshot(transmissionReport);
+  const transmissionAmplification = buildMacroTransmissionAmplificationSnapshot(transmissionReport);
 
   const capacitySnapshot = buildMacroCapacitySnapshot({
     state: {
@@ -273,6 +283,8 @@ export function computeNationalMacroEconomy(
     guardianSpilloverSummary: guardianSpillover.summary,
     citiesSpilloverSummary: citiesSpillover.summary,
     forecastingSpilloverSummary: forecastingSpillover.summary,
+    commandSpilloverSummary: commandSpillover.summary,
+    automationSpilloverSummary: automationSpillover.summary,
     capacitySnapshot,
     transmissionBalance,
     transmissionCoherence,
@@ -281,6 +293,7 @@ export function computeNationalMacroEconomy(
     transmissionVolatility,
     transmissionResilience,
     transmissionCoverage,
+    transmissionAmplification,
     transmissionReport,
     stressIndex: {
       score: 0,

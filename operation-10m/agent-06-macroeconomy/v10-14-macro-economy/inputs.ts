@@ -57,6 +57,12 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
     forecastingLab: params?.forecastingLab ?? params?.gameState?.forecastingLabState,
     macroForecasts: params?.macroForecasts,
     nationalForecasts: params?.nationalForecasts ?? params?.nationalSystems?.forecasting,
+    commandCenter: params?.commandCenter ?? params?.gameState?.commandCenterState ?? params?.nationalSystems?.commandCenter,
+    nationalCommand: params?.nationalCommand,
+    aiCommandCenter: params?.aiCommandCenter,
+    idleAutomation: params?.idleAutomation ?? params?.gameState?.automationState,
+    automation: params?.automation,
+    nationalAutomation: params?.nationalAutomation ?? params?.nationalSystems?.automation,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };

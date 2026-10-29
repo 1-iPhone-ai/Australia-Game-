@@ -398,5 +398,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Few transmission layers materially active — composite macro read may omit cross-system forces.'
     });
   }
+  const cmd: any = inputs.commandCenter ?? inputs.nationalCommand ?? inputs.aiCommandCenter;
+  const posture = String(cmd?.postureBand ?? cmd?.operationalPosture?.band ?? '');
+  if (
+    (posture === 'crisis' || posture === 'red' || posture === 'critical') &&
+    state.stressIndex?.band === 'acute'
+  ) {
+    gates.push({
+      id: 'command_stress_lockstep',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Crisis command posture aligns with acute macro stress — policy room likely constrained.'
+    });
+  }
+  const au: any = inputs.idleAutomation ?? inputs.automation ?? inputs.nationalAutomation;
+  const throughput = String(au?.throughputBand ?? au?.automationThroughput?.band ?? '');
+  if (
+    (throughput === 'stalled' || throughput === 'critical') &&
+    (state.productivityBand === 'weak' || state.productivityBand === 'critical')
+  ) {
+    gates.push({
+      id: 'automation_productivity_bind',
+      triggered: true,
+      severity: 'info',
+      summary: 'Stalled automation throughput coincides with weak macro productivity — operational drag likely binding.'
+    });
+  }
+  if (state.transmissionAmplification?.band === 'restrictive' || state.transmissionAmplification?.band === 'mild_restrict') {
+    gates.push({
+      id: 'transmission_amplification_downside',
+      triggered: true,
+      severity: 'info',
+      summary: 'Restrictive transmission amplification — downside nudges dominate supportive layers.'
+    });
+  }
   return gates;
 }
