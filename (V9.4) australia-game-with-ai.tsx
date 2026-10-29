@@ -4,6 +4,531 @@
 import React, { useState, useEffect, useCallback, useMemo, useReducer, useRef, useContext, createContext, ChangeEvent, useLayoutEffect } from 'react';
 
 // ============================================================================
+// SECTION 1A: SOURCE ARCHITECTURE MAP (Operation 111 / Agent 02)
+// ----------------------------------------------------------------------------
+// Machine-readable section catalog for the single-file deliverable.
+// `SOURCE_FILE_SECTION_HEADER_SNAPSHOT` must match // SECTION markers in-file;
+// `runSourceArchitectureSelfTests` and tests/source-architecture.mjs enforce it.
+// ============================================================================
+
+export const SOURCE_FILE_ARCHITECTURE_VERSION = 'op111-agent02-v1' as const;
+export const SOURCE_FILE_SECTION_MARKER_COUNT = 60 as const;
+
+export type SourceFileSectionFamily = 'foundation' | 'core' | 'gameplay' | 'ai-core' | 'systems' | 'ai-assistants' | 'ui-shell' | 'v9-intelligence' | 'v9-player' | 'v9-quality' | 'v10-national' | 'verification' | 'export' | 'other';
+
+export interface SourceFileSectionMeta {
+  id: string;
+  title: string;
+  family: SourceFileSectionFamily;
+  layer: number;
+  header: string;
+  reserved?: boolean;
+}
+
+export const SOURCE_FILE_SECTION_INDEX: SourceFileSectionMeta[] = [
+  {
+    "id": "1",
+    "title": "IMPORTS",
+    "family": "foundation",
+    "layer": 0,
+    "header": "1: IMPORTS"
+  },
+  {
+    "id": "1A",
+    "title": "SOURCE ARCHITECTURE MAP (Operation 111 / Agent 02)",
+    "family": "foundation",
+    "layer": 0,
+    "header": "1A: SOURCE ARCHITECTURE MAP (Operation 111 / Agent 02)"
+  },
+  {
+    "id": "1B",
+    "title": "BUILT-IN AI MEMORY, PERSISTENT MEMORY AND AI COMMUNICATION",
+    "family": "foundation",
+    "layer": 0,
+    "header": "1B: BUILT-IN AI MEMORY, PERSISTENT MEMORY AND AI COMMUNICATION"
+  },
+  {
+    "id": "2",
+    "title": "GAME DATA AND CONSTANTS",
+    "family": "core",
+    "layer": 1,
+    "header": "2: GAME DATA AND CONSTANTS"
+  },
+  {
+    "id": "3",
+    "title": "CORE TYPES AND INTERFACES",
+    "family": "core",
+    "layer": 1,
+    "header": "3: CORE TYPES AND INTERFACES"
+  },
+  {
+    "id": "4",
+    "title": "DEFAULT SETTINGS AND CONFIGURATION",
+    "family": "core",
+    "layer": 1,
+    "header": "4: DEFAULT SETTINGS AND CONFIGURATION"
+  },
+  {
+    "id": "5",
+    "title": "CORE HELPERS AND UTILITIES",
+    "family": "core",
+    "layer": 1,
+    "header": "5: CORE HELPERS AND UTILITIES"
+  },
+  {
+    "id": "6",
+    "title": "SAVE, LOAD, MIGRATION, AND REPLAY FOUNDATIONS",
+    "family": "core",
+    "layer": 1,
+    "header": "6: SAVE, LOAD, MIGRATION, AND REPLAY FOUNDATIONS"
+  },
+  {
+    "id": "7",
+    "title": "CORE GAMEPLAY SYSTEMS",
+    "family": "gameplay",
+    "layer": 2,
+    "header": "7: CORE GAMEPLAY SYSTEMS"
+  },
+  {
+    "id": "8",
+    "title": "ECONOMY AND TEAM SYSTEMS",
+    "family": "gameplay",
+    "layer": 2,
+    "header": "8: ECONOMY AND TEAM SYSTEMS"
+  },
+  {
+    "id": "9",
+    "title": "CORE AI SYSTEMS",
+    "family": "ai-core",
+    "layer": 3,
+    "header": "9: CORE AI SYSTEMS"
+  },
+  {
+    "id": "10",
+    "title": "GOVERNANCE, APPROVALS, AND OVERSIGHT",
+    "family": "foundation",
+    "layer": 0,
+    "header": "10: GOVERNANCE, APPROVALS, AND OVERSIGHT"
+  },
+  {
+    "id": "11",
+    "title": "AUTOMATION AND ADVANCED GAME SYSTEMS",
+    "family": "foundation",
+    "layer": 0,
+    "header": "11: AUTOMATION AND ADVANCED GAME SYSTEMS"
+  },
+  {
+    "id": "12",
+    "title": "ASK THE GAME AI",
+    "family": "foundation",
+    "layer": 0,
+    "header": "12: ASK THE GAME AI"
+  },
+  {
+    "id": "13",
+    "title": "GUARDIAN AI",
+    "family": "foundation",
+    "layer": 0,
+    "header": "13: GUARDIAN AI"
+  },
+  {
+    "id": "14",
+    "title": "HUMAN CO-PILOT AI",
+    "family": "foundation",
+    "layer": 0,
+    "header": "14: HUMAN CO-PILOT AI"
+  },
+  {
+    "id": "15",
+    "title": "AI COMMAND CENTER",
+    "family": "foundation",
+    "layer": 0,
+    "header": "15: AI COMMAND CENTER"
+  },
+  {
+    "id": "16",
+    "title": "STRATEGY PLANNER AND RELATED ASSISTANTS",
+    "family": "foundation",
+    "layer": 0,
+    "header": "16: STRATEGY PLANNER AND RELATED ASSISTANTS"
+  },
+  {
+    "id": "17",
+    "title": "SHARED UI INFRASTRUCTURE",
+    "family": "foundation",
+    "layer": 0,
+    "header": "17: SHARED UI INFRASTRUCTURE"
+  },
+  {
+    "id": "18",
+    "title": "Reserved (legacy numbering gap before Settings Hub)",
+    "family": "ui-shell",
+    "layer": 5,
+    "header": "18: (RESERVED)",
+    "reserved": true
+  },
+  {
+    "id": "19",
+    "title": "SETTINGS HUB COMPONENTS",
+    "family": "foundation",
+    "layer": 0,
+    "header": "19: SETTINGS HUB COMPONENTS"
+  },
+  {
+    "id": "20",
+    "title": "FEATURE UI COMPONENTS",
+    "family": "ui-shell",
+    "layer": 5,
+    "header": "20: FEATURE UI COMPONENTS"
+  },
+  {
+    "id": "20B",
+    "title": "V9 EXPERIENCE UNIFICATION",
+    "family": "v9-intelligence",
+    "layer": 6,
+    "header": "20B: V9 EXPERIENCE UNIFICATION"
+  },
+  {
+    "id": "20C",
+    "title": "GAME INTELLIGENCE 2.0",
+    "family": "v9-intelligence",
+    "layer": 6,
+    "header": "20C: GAME INTELLIGENCE 2.0"
+  },
+  {
+    "id": "20D",
+    "title": "TEAM INTELLIGENCE 2.0 — TEAM OPERATING SYSTEM",
+    "family": "v9-intelligence",
+    "layer": 6,
+    "header": "20D: TEAM INTELLIGENCE 2.0 — TEAM OPERATING SYSTEM"
+  },
+  {
+    "id": "20E",
+    "title": "GAME INTELLIGENCE 3.0 — STRATEGIC COMMAND CENTER",
+    "family": "v9-intelligence",
+    "layer": 6,
+    "header": "20E: GAME INTELLIGENCE 3.0 — STRATEGIC COMMAND CENTER"
+  },
+  {
+    "id": "20F",
+    "title": "BACKGROUND AI — PARALLEL INTELLIGENCE SYSTEM",
+    "family": "v9-intelligence",
+    "layer": 6,
+    "header": "20F: BACKGROUND AI — PARALLEL INTELLIGENCE SYSTEM"
+  },
+  {
+    "id": "20G",
+    "title": "SETTINGS INTELLIGENCE 2.0 — INTELLIGENT GAME EXPERIENCE DIRECTOR",
+    "family": "v9-intelligence",
+    "layer": 6,
+    "header": "20G: SETTINGS INTELLIGENCE 2.0 — INTELLIGENT GAME EXPERIENCE DIRECTOR"
+  },
+  {
+    "id": "20H",
+    "title": "DIPLOMACY & NEGOTIATION 2.0 — DYNAMIC DEAL-MAKING SYSTEM",
+    "family": "v9-intelligence",
+    "layer": 6,
+    "header": "20H: DIPLOMACY & NEGOTIATION 2.0 — DYNAMIC DEAL-MAKING SYSTEM"
+  },
+  {
+    "id": "20I",
+    "title": "STRATEGIC CONSEQUENCE / WORLD REACTION SYSTEM",
+    "family": "v9-intelligence",
+    "layer": 6,
+    "header": "20I: STRATEGIC CONSEQUENCE / WORLD REACTION SYSTEM"
+  },
+  {
+    "id": "20J",
+    "title": "LIVING REGIONS 2.0 — DYNAMIC REGIONAL STATE SYSTEM",
+    "family": "v9-intelligence",
+    "layer": 6,
+    "header": "20J: LIVING REGIONS 2.0 — DYNAMIC REGIONAL STATE SYSTEM"
+  },
+  {
+    "id": "20K",
+    "title": "REGIONAL FACTIONS & STAKEHOLDERS 2.0",
+    "family": "v9-intelligence",
+    "layer": 6,
+    "header": "20K: REGIONAL FACTIONS & STAKEHOLDERS 2.0"
+  },
+  {
+    "id": "20L",
+    "title": "V9 GAMEPLAY COHESION — ONE GAME • ONE MOMENT • ONE CLEAR NEXT DECISION",
+    "family": "v9-player",
+    "layer": 6,
+    "header": "20L: V9 GAMEPLAY COHESION — ONE GAME • ONE MOMENT • ONE CLEAR NEXT DECISION"
+  },
+  {
+    "id": "20M",
+    "title": "V9.1 STRATEGIC DEPTH & BALANCE — diagnostics, policy simulation, ROI (LAB / tests only)",
+    "family": "v9-player",
+    "layer": 6,
+    "header": "20M: V9.1 STRATEGIC DEPTH & BALANCE — diagnostics, policy simulation, ROI (LAB / tests only)"
+  },
+  {
+    "id": "20N",
+    "title": "V9.2 GUIDED LEARNING — LEARN BY PLAYING • TEACH WHEN RELEVANT • NEVER OVERWHELM",
+    "family": "v9-player",
+    "layer": 6,
+    "header": "20N: V9.2 GUIDED LEARNING — LEARN BY PLAYING • TEACH WHEN RELEVANT • NEVER OVERWHELM"
+  },
+  {
+    "id": "20O",
+    "title": "V9.3 CONTENT EXPANSION & REPLAYABILITY — MORE SITUATIONS • SAME CORE SYSTEMS",
+    "family": "v9-player",
+    "layer": 6,
+    "header": "20O: V9.3 CONTENT EXPANSION & REPLAYABILITY — MORE SITUATIONS • SAME CORE SYSTEMS"
+  },
+  {
+    "id": "20P",
+    "title": "V9.4 GAME FEEL & POLISH — RESPONSIVE • SATISFYING • CLEAR • ALIVE • POLISHED",
+    "family": "v9-player",
+    "layer": 6,
+    "header": "20P: V9.4 GAME FEEL & POLISH — RESPONSIVE • SATISFYING • CLEAR • ALIVE • POLISHED"
+  },
+  {
+    "id": "20Q",
+    "title": "V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING",
+    "family": "v9-quality",
+    "layer": 7,
+    "header": "20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING"
+  },
+  {
+    "id": "20R",
+    "title": "V9.6 HUMAN VS AI FIDELITY — THINK → ACT → RE-EVALUATE → KNOW WHEN TO STOP → END TURN",
+    "family": "v9-quality",
+    "layer": 7,
+    "header": "20R: V9.6 HUMAN VS AI FIDELITY — THINK → ACT → RE-EVALUATE → KNOW WHEN TO STOP → END TURN"
+  },
+  {
+    "id": "20S",
+    "title": "V10.0 NATIONAL SYSTEMS & INTERREGIONAL NETWORKS",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20S: V10.0 NATIONAL SYSTEMS & INTERREGIONAL NETWORKS"
+  },
+  {
+    "id": "20T",
+    "title": "V10.1 INDUSTRIES & SUPPLY CHAINS",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20T: V10.1 INDUSTRIES & SUPPLY CHAINS"
+  },
+  {
+    "id": "20U",
+    "title": "V10.2 STRATEGIC INFRASTRUCTURE NETWORKS",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20U: V10.2 STRATEGIC INFRASTRUCTURE NETWORKS"
+  },
+  {
+    "id": "20V",
+    "title": "V10.3 NATIONAL MEGAPROJECTS",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20V: V10.3 NATIONAL MEGAPROJECTS"
+  },
+  {
+    "id": "20W",
+    "title": "V10.4 NATIONAL DEVELOPMENT STRATEGY",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20W: V10.4 NATIONAL DEVELOPMENT STRATEGY"
+  },
+  {
+    "id": "20X",
+    "title": "V10.5 INNOVATION & EMERGING CAPABILITIES",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20X: V10.5 INNOVATION & EMERGING CAPABILITIES"
+  },
+  {
+    "id": "20Y",
+    "title": "V10.6 RESILIENCE, DEPENDENCIES & SYSTEMIC RISK",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20Y: V10.6 RESILIENCE, DEPENDENCIES & SYSTEMIC RISK"
+  },
+  {
+    "id": "20Z",
+    "title": "V10.7 DYNAMIC NATIONAL PRIORITIES",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20Z: V10.7 DYNAMIC NATIONAL PRIORITIES"
+  },
+  {
+    "id": "20AA",
+    "title": "V10.8 REGIONAL COMPETITION & ECONOMIC GEOGRAPHY",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20AA: V10.8 REGIONAL COMPETITION & ECONOMIC GEOGRAPHY"
+  },
+  {
+    "id": "20AB",
+    "title": "V10.9 STRATEGIC CAPITAL ALLOCATION & INVESTMENT CLIMATE",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20AB: V10.9 STRATEGIC CAPITAL ALLOCATION & INVESTMENT CLIMATE"
+  },
+  {
+    "id": "20AC",
+    "title": "V10.10 WORKFORCE, SKILLS & HUMAN CAPITAL",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20AC: V10.10 WORKFORCE, SKILLS & HUMAN CAPITAL"
+  },
+  {
+    "id": "20AC_-_PART_2",
+    "title": "CORE WORKFORCE ENGINE & PERSISTENCE",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20AC — PART 2: CORE WORKFORCE ENGINE & PERSISTENCE"
+  },
+  {
+    "id": "20AC_-_PART_3",
+    "title": "CROSS-SYSTEM ADAPTERS, UI SURFACES & 50 SELF-TESTS",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20AC — PART 3: CROSS-SYSTEM ADAPTERS, UI SURFACES & 50 SELF-TESTS"
+  },
+  {
+    "id": "20AC_-_UI_COMPONENTS",
+    "title": "20AC — UI COMPONENTS",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20AC — UI COMPONENTS"
+  },
+  {
+    "id": "20AC_-_DETERMINISTIC_FIXTURES_&_50_SELF-TESTS_(wf01-wf50)",
+    "title": "20AC — DETERMINISTIC FIXTURES & 50 SELF-TESTS (wf01–wf50)",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20AC — DETERMINISTIC FIXTURES & 50 SELF-TESTS (wf01–wf50)"
+  },
+  {
+    "id": "20AD",
+    "title": "V10.11 ADAPTIVE GOVERNANCE & STATE CAPACITY",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20AD: V10.11 ADAPTIVE GOVERNANCE & STATE CAPACITY"
+  },
+  {
+    "id": "20AD_PART_3",
+    "title": "UI SURFACES, INSPECTOR & 52-TEST SELF-TEST SUITE (V10.11)",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20AD PART 3: UI SURFACES, INSPECTOR & 52-TEST SELF-TEST SUITE (V10.11)"
+  },
+  {
+    "id": "20AE",
+    "title": "V10.12 PUBLIC FINANCE, NATIONAL BUDGET & FISCAL CAPACITY",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20AE: V10.12 PUBLIC FINANCE, NATIONAL BUDGET & FISCAL CAPACITY"
+  },
+  {
+    "id": "20AF",
+    "title": "V10.13 HOUSEHOLDS, LIVING STANDARDS & DOMESTIC DEMAND",
+    "family": "v10-national",
+    "layer": 8,
+    "header": "20AF: V10.13 HOUSEHOLDS, LIVING STANDARDS & DOMESTIC DEMAND"
+  },
+  {
+    "id": "21A",
+    "title": "SOURCE ARCHITECTURE SELF-TESTS (Operation 111 / Agent 02)",
+    "family": "verification",
+    "layer": 9,
+    "header": "21A: SOURCE ARCHITECTURE SELF-TESTS (Operation 111 / Agent 02)"
+  },
+  {
+    "id": "21B",
+    "title": "RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS",
+    "family": "verification",
+    "layer": 9,
+    "header": "21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS"
+  },
+  {
+    "id": "22",
+    "title": "FINAL EXPORT",
+    "family": "export",
+    "layer": 10,
+    "header": "22: FINAL EXPORT"
+  }
+] as SourceFileSectionMeta[];
+
+/** Exact // SECTION header labels in file order (excluding SECTION 1A itself). */
+export const SOURCE_FILE_SECTION_HEADER_SNAPSHOT = `1: IMPORTS
+1A: SOURCE ARCHITECTURE MAP (Operation 111 / Agent 02)
+1B: BUILT-IN AI MEMORY, PERSISTENT MEMORY AND AI COMMUNICATION
+2: GAME DATA AND CONSTANTS
+3: CORE TYPES AND INTERFACES
+4: DEFAULT SETTINGS AND CONFIGURATION
+5: CORE HELPERS AND UTILITIES
+6: SAVE, LOAD, MIGRATION, AND REPLAY FOUNDATIONS
+7: CORE GAMEPLAY SYSTEMS
+8: ECONOMY AND TEAM SYSTEMS
+9: CORE AI SYSTEMS
+10: GOVERNANCE, APPROVALS, AND OVERSIGHT
+11: AUTOMATION AND ADVANCED GAME SYSTEMS
+12: ASK THE GAME AI
+13: GUARDIAN AI
+14: HUMAN CO-PILOT AI
+15: AI COMMAND CENTER
+16: STRATEGY PLANNER AND RELATED ASSISTANTS
+17: SHARED UI INFRASTRUCTURE
+19: SETTINGS HUB COMPONENTS
+20: FEATURE UI COMPONENTS
+20B: V9 EXPERIENCE UNIFICATION
+20C: GAME INTELLIGENCE 2.0
+20D: TEAM INTELLIGENCE 2.0 — TEAM OPERATING SYSTEM
+20E: GAME INTELLIGENCE 3.0 — STRATEGIC COMMAND CENTER
+20F: BACKGROUND AI — PARALLEL INTELLIGENCE SYSTEM
+20G: SETTINGS INTELLIGENCE 2.0 — INTELLIGENT GAME EXPERIENCE DIRECTOR
+20H: DIPLOMACY & NEGOTIATION 2.0 — DYNAMIC DEAL-MAKING SYSTEM
+20I: STRATEGIC CONSEQUENCE / WORLD REACTION SYSTEM
+20J: LIVING REGIONS 2.0 — DYNAMIC REGIONAL STATE SYSTEM
+20K: REGIONAL FACTIONS & STAKEHOLDERS 2.0
+20L: V9 GAMEPLAY COHESION — ONE GAME • ONE MOMENT • ONE CLEAR NEXT DECISION
+20M: V9.1 STRATEGIC DEPTH & BALANCE — diagnostics, policy simulation, ROI (LAB / tests only)
+20N: V9.2 GUIDED LEARNING — LEARN BY PLAYING • TEACH WHEN RELEVANT • NEVER OVERWHELM
+20O: V9.3 CONTENT EXPANSION & REPLAYABILITY — MORE SITUATIONS • SAME CORE SYSTEMS
+20P: V9.4 GAME FEEL & POLISH — RESPONSIVE • SATISFYING • CLEAR • ALIVE • POLISHED
+20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
+20R: V9.6 HUMAN VS AI FIDELITY — THINK → ACT → RE-EVALUATE → KNOW WHEN TO STOP → END TURN
+20S: V10.0 NATIONAL SYSTEMS & INTERREGIONAL NETWORKS
+20T: V10.1 INDUSTRIES & SUPPLY CHAINS
+20U: V10.2 STRATEGIC INFRASTRUCTURE NETWORKS
+20V: V10.3 NATIONAL MEGAPROJECTS
+20W: V10.4 NATIONAL DEVELOPMENT STRATEGY
+20X: V10.5 INNOVATION & EMERGING CAPABILITIES
+20Y: V10.6 RESILIENCE, DEPENDENCIES & SYSTEMIC RISK
+20Z: V10.7 DYNAMIC NATIONAL PRIORITIES
+20AA: V10.8 REGIONAL COMPETITION & ECONOMIC GEOGRAPHY
+20AB: V10.9 STRATEGIC CAPITAL ALLOCATION & INVESTMENT CLIMATE
+20AC: V10.10 WORKFORCE, SKILLS & HUMAN CAPITAL
+20AC — PART 2: CORE WORKFORCE ENGINE & PERSISTENCE
+20AC — PART 3: CROSS-SYSTEM ADAPTERS, UI SURFACES & 50 SELF-TESTS
+20AC — UI COMPONENTS
+20AC — DETERMINISTIC FIXTURES & 50 SELF-TESTS (wf01–wf50)
+20AD: V10.11 ADAPTIVE GOVERNANCE & STATE CAPACITY
+20AD PART 3: UI SURFACES, INSPECTOR & 52-TEST SELF-TEST SUITE (V10.11)
+20AE: V10.12 PUBLIC FINANCE, NATIONAL BUDGET & FISCAL CAPACITY
+20AF: V10.13 HOUSEHOLDS, LIVING STANDARDS & DOMESTIC DEMAND
+21A: SOURCE ARCHITECTURE SELF-TESTS (Operation 111 / Agent 02)
+21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
+22: FINAL EXPORT`;
+
+export function getSourceFileSection(id: string): SourceFileSectionMeta | undefined {
+  return SOURCE_FILE_SECTION_INDEX.find(s => s.id === id);
+}
+
+export function listSourceFileSectionsByFamily(family: SourceFileSectionFamily): SourceFileSectionMeta[] {
+  return SOURCE_FILE_SECTION_INDEX.filter(s => s.family === family);
+}
+
+export const V94_SOURCE_SECTION_IDS = ['20P'] as const;
+
+// ============================================================================
 // SECTION 1B: BUILT-IN AI MEMORY, PERSISTENT MEMORY AND AI COMMUNICATION
 // ----------------------------------------------------------------------------
 // These used to be separate local modules (AI memory, persistent AI memory and
@@ -133353,6 +133878,8 @@ export function runV93ContentReplayabilitySelfTests(): V9SelfTestResult[] {
 // queue derived from canonical state deltas, and a few shared visual components. Nothing here changes a
 // rule, delays an action, or is persisted: canonical state is always authoritative and animation
 // completion never controls gameplay. No sound, no external assets, no libraries.
+//
+// Internal bands (single-file; no imports): A motion · B semantics · C feedback · D PLAY chrome · E self-tests
 
 /** Motion tokens (ms). Appearance eases out; state changes ease in-out. */
 export const UI_MOTION = {
@@ -136532,6 +137059,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'replay', label: 'Replay Studio', tier: 'quick', section: 'Replay Integrity', severity: 'CRITICAL', run: () => runReplayStudioSelfTests() },
   { id: 'intent', label: 'Player Intent', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runPlayerIntentLayerSelfTests() },
   { id: 'copilot', label: 'Co-Pilot', tier: 'full', section: 'AI Turn Reliability', severity: 'CRITICAL', run: () => runCoPilotDevSelfTests() },
+  { id: 'src_arch', label: 'Source architecture map (SECTION 1A)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runSourceArchitectureSelfTests() },
   { id: 'reliability', label: 'Reliability upgrade regressions', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => runReliabilityUpgradeSelfTests() },
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
@@ -181922,6 +182450,60 @@ export function triggerJsonFileDownload(filename: string, data: unknown): boolea
     console.warn('[download] blocked or unavailable:', error);
     return false;
   }
+}
+
+// ============================================================================
+// SECTION 21A: SOURCE ARCHITECTURE SELF-TESTS (Operation 111 / Agent 02)
+// ----------------------------------------------------------------------------
+// Validates SECTION 1A catalog + header snapshot; pure (no filesystem reads at runtime).
+// ============================================================================
+export function scanSourceFileSectionHeadersFromSnapshot(snapshot: string): string[] {
+  return snapshot.split('\n').map(s => s.trim()).filter(Boolean);
+}
+
+export function runSourceArchitectureSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  check('src_arch_version', 'SOURCE_FILE_ARCHITECTURE_VERSION is pinned for integration gates', () => SOURCE_FILE_ARCHITECTURE_VERSION === 'op111-agent02-v1');
+  check('src_arch_unique_ids', 'SOURCE_FILE_SECTION_INDEX ids are unique', () => {
+    const ids = SOURCE_FILE_SECTION_INDEX.map(s => s.id);
+    const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+    return dupes.length === 0 || `duplicate id(s): ${[...new Set(dupes)].join(', ')}`;
+  });
+  check('src_arch_snapshot_count', 'Header snapshot matches on-disk SECTION marker count (SOURCE_FILE_SECTION_MARKER_COUNT)', () => {
+    const n = scanSourceFileSectionHeadersFromSnapshot(SOURCE_FILE_SECTION_HEADER_SNAPSHOT).length;
+    return n === SOURCE_FILE_SECTION_MARKER_COUNT || `expected ${SOURCE_FILE_SECTION_MARKER_COUNT} headers, got ${n}`;
+  });
+  check('src_arch_index_snapshot', 'Non-reserved index headers match SOURCE_FILE_SECTION_HEADER_SNAPSHOT order', () => {
+    const indexed = SOURCE_FILE_SECTION_INDEX.filter(s => !s.reserved).map(s => s.header);
+    const snap = scanSourceFileSectionHeadersFromSnapshot(SOURCE_FILE_SECTION_HEADER_SNAPSHOT);
+    return JSON.stringify(indexed) === JSON.stringify(snap) || 'index/snapshot drift — regenerate SECTION 1A snapshot';
+  });
+  check('src_arch_layer_order', 'File section order respects dependency layers (allows equal layer)', () => {
+    let prev = -1;
+    for (const s of SOURCE_FILE_SECTION_INDEX) {
+      if (s.reserved) continue;
+      if (s.layer < prev) return `section ${s.id} layer ${s.layer} follows layer ${prev}`;
+      prev = s.layer;
+    }
+    return true;
+  });
+  check('src_arch_v94_catalogued', 'V9.4 (20P) is in v9-player family on layer 6', () => {
+    const s = getSourceFileSection('20P');
+    return (s?.family === 'v9-player' && s.layer === 6 && V94_SOURCE_SECTION_IDS.includes('20P')) || JSON.stringify(s);
+  });
+  check('src_arch_phantom_18', 'Reserved section 18 documents the Settings Hub numbering gap', () => {
+    const s = getSourceFileSection('18');
+    return s?.reserved === true && s.family === 'ui-shell' && s.layer === 5;
+  });
+  return results;
 }
 
 // ============================================================================
