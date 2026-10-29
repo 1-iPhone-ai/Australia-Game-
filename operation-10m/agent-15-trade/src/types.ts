@@ -230,6 +230,8 @@ export interface GTELPersisted {
   bilateralSustainedWaveThroughputGateSmoothing?: number;
   sustainedWaveThroughputContinuitySmoothing?: number;
   bilateralClearedWaveHandoffGateSmoothing?: number;
+  clearedWaveHandoffContinuitySmoothing?: number;
+  bilateralHandedWaveCyclePrimingGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -329,6 +331,8 @@ export interface GTELState {
   bilateralSustainedWaveThroughputGate: GTELBilateralSustainedWaveThroughputGateSnapshot;
   sustainedWaveThroughputContinuity: GTELSustainedWaveThroughputContinuitySnapshot;
   bilateralClearedWaveHandoffGate: GTELBilateralClearedWaveHandoffGateSnapshot;
+  clearedWaveHandoffContinuity: GTELClearedWaveHandoffContinuitySnapshot;
+  bilateralHandedWaveCyclePrimingGate: GTELBilateralHandedWaveCyclePrimingGateSnapshot;
   inputHash: string;
 }
 
@@ -1313,6 +1317,26 @@ export interface GTELBilateralClearedWaveHandoffGateSnapshot {
   band: GTELBilateralClearedWaveHandoffGateBand;
   continuityFeed: number;
   loopContinuityLift: number;
+  summary: string;
+}
+
+export type GTELClearedWaveHandoffContinuityBand = 'secured' | 'holding' | 'slipping' | 'broken';
+
+export interface GTELClearedWaveHandoffContinuitySnapshot {
+  score: number;
+  band: GTELClearedWaveHandoffContinuityBand;
+  handoffGateSupport: number;
+  throughputAnchor: number;
+  summary: string;
+}
+
+export type GTELBilateralHandedWaveCyclePrimingGateBand = 'primed' | 'charging' | 'deferred' | 'blocked';
+
+export interface GTELBilateralHandedWaveCyclePrimingGateSnapshot {
+  score: number;
+  band: GTELBilateralHandedWaveCyclePrimingGateBand;
+  continuityFeed: number;
+  cyclePrimingLift: number;
   summary: string;
 }
 

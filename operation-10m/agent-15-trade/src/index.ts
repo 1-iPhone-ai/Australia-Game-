@@ -93,5 +93,7 @@ export * from './launched-wave-sustain-continuity.ts';
 export * from './bilateral-sustained-wave-throughput-gate.ts';
 export * from './sustained-wave-throughput-continuity.ts';
 export * from './bilateral-cleared-wave-handoff-gate.ts';
+export * from './cleared-wave-handoff-continuity.ts';
+export * from './bilateral-handed-wave-cycle-priming-gate.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

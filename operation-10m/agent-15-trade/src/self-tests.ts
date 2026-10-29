@@ -389,6 +389,16 @@ import {
   createEmptyBilateralClearedWaveHandoffGateSnapshot,
   bilateralClearedWaveHandoffGateExportScale,
 } from './bilateral-cleared-wave-handoff-gate.ts';
+import {
+  computeClearedWaveHandoffContinuitySnapshot,
+  createEmptyClearedWaveHandoffContinuitySnapshot,
+  clearedWaveHandoffContinuityExportScale,
+} from './cleared-wave-handoff-continuity.ts';
+import {
+  computeBilateralHandedWaveCyclePrimingGateSnapshot,
+  createEmptyBilateralHandedWaveCyclePrimingGateSnapshot,
+  bilateralHandedWaveCyclePrimingGateExportScale,
+} from './bilateral-handed-wave-cycle-priming-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -2630,6 +2640,59 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralClearedWaveHandoffGateExportScale(handed) >= bilateralClearedWaveHandoffGateExportScale(blocked),
       'expected cleared handoff scale lift',
+    );
+  });
+
+  ok('cleared wave handoff continuity improves when handoff gate is handed', () => {
+    const gate = {
+      ...createEmptyBilateralClearedWaveHandoffGateSnapshot(),
+      score: 0.95,
+      band: 'handed' as const,
+    };
+    const throughput = {
+      ...createEmptySustainedWaveThroughputContinuitySnapshot(),
+      score: 0.93,
+      band: 'steady' as const,
+    };
+    const secured = computeClearedWaveHandoffContinuitySnapshot({
+      bilateralClearedWaveHandoffGate: gate,
+      sustainedWaveThroughputContinuity: throughput,
+      persisted: { ...createEmptyGTELPersisted(), clearedWaveHandoffContinuitySmoothing: 0.98 },
+    }).snapshot;
+    const broken = computeClearedWaveHandoffContinuitySnapshot({
+      bilateralClearedWaveHandoffGate: { ...gate, score: 0.1, band: 'blocked' },
+      sustainedWaveThroughputContinuity: { ...throughput, score: 0.08, band: 'severed' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(secured.score > broken.score, 'expected secured handoff continuity');
+    gtelAssert(
+      clearedWaveHandoffContinuityExportScale(secured) >= clearedWaveHandoffContinuityExportScale(broken),
+      'expected handoff continuity scale lift',
+    );
+  });
+
+  ok('bilateral handed wave cycle priming gate improves when handoff continuity is secured', () => {
+    const continuity = {
+      ...createEmptyClearedWaveHandoffContinuitySnapshot(),
+      score: 0.96,
+      band: 'secured' as const,
+    };
+    const cycle = { ...createEmptyAcknowledgedCyclePrimingSnapshot(), score: 0.9, band: 'primed' as const };
+    const primed = computeBilateralHandedWaveCyclePrimingGateSnapshot({
+      clearedWaveHandoffContinuity: continuity,
+      acknowledgedCyclePriming: cycle,
+      persisted: { ...createEmptyGTELPersisted(), bilateralHandedWaveCyclePrimingGateSmoothing: 0.99 },
+    }).snapshot;
+    const blocked = computeBilateralHandedWaveCyclePrimingGateSnapshot({
+      clearedWaveHandoffContinuity: { ...continuity, score: 0.11, band: 'broken' },
+      acknowledgedCyclePriming: { ...cycle, score: 0.08, band: 'empty' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(primed.score > blocked.score, 'expected cycle priming when secured');
+    gtelAssert(
+      bilateralHandedWaveCyclePrimingGateExportScale(primed) >=
+        bilateralHandedWaveCyclePrimingGateExportScale(blocked),
+      'expected handed cycle priming scale lift',
     );
   });
 

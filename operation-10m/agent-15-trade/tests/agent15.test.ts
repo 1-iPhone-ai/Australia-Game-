@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 95);
+  assert.ok(r.passed >= 97);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -1989,5 +1989,50 @@ test('round 43: blocked throughput gate weakens continuity vs cleared baseline',
   assert.ok(
     cleared.state.sustainedWaveThroughputContinuity.score >=
       blocked.state.sustainedWaveThroughputContinuity.score - 0.14,
+  );
+});
+
+test('round 44: handoff continuity and handed wave cycle priming gate on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralClearedWaveHandoffGateSmoothing = 0.71;
+  persisted.clearedWaveHandoffContinuitySmoothing = 0.69;
+  persisted.bilateralHandedWaveCyclePrimingGateSmoothing = 0.67;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 105,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 136 } } },
+    persisted,
+  });
+  assert.ok(r.state.clearedWaveHandoffContinuity);
+  assert.ok(['secured', 'holding', 'slipping', 'broken'].includes(r.state.clearedWaveHandoffContinuity.band));
+  assert.ok(r.state.bilateralHandedWaveCyclePrimingGate);
+  assert.ok(['primed', 'charging', 'deferred', 'blocked'].includes(r.state.bilateralHandedWaveCyclePrimingGate.band));
+  assert.ok(r.persisted.clearedWaveHandoffContinuitySmoothing != null);
+  assert.ok(r.persisted.bilateralHandedWaveCyclePrimingGateSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Cleared wave handoff continuity/i.test(n)));
+  assert.ok(notes.some(n => /Bilateral handed wave cycle priming gate/i.test(n)));
+});
+
+test('round 44: blocked handoff gate weakens continuity vs handed baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralClearedWaveHandoffGateSmoothing = 0.99;
+  persisted.sustainedWaveThroughputContinuitySmoothing = 0.97;
+  const handed = advanceGlobalTradeEconomyTurn({
+    turn: 106,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 118 } } },
+    persisted: { ...persisted },
+  });
+  persisted.bilateralClearedWaveHandoffGateSmoothing = 0.26;
+  persisted.sustainedWaveThroughputContinuitySmoothing = 0.23;
+  const blocked = advanceGlobalTradeEconomyTurn({
+    turn: 106,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 268 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    handed.state.clearedWaveHandoffContinuity.score >= blocked.state.clearedWaveHandoffContinuity.score - 0.14,
   );
 });
