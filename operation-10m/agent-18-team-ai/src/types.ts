@@ -263,6 +263,11 @@ export interface TeamMultiAgentCoordinationMeta {
   invertedDirectiveIds?: string[];
   handoffOrphanCount?: number;
   orphanHandoffIds?: string[];
+  workstreamDeadlockCount?: number;
+  deadlockedWorkstreamIds?: string[];
+  leaseContentionIndex?: number;
+  contendedRegionIds?: string[];
+  coordinationSaturationIndex?: number;
 }
 
 export const AGENT18_LIMITS = {

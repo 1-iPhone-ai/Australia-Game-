@@ -11,6 +11,9 @@ import { combineDualTeamEscalationTier } from './coordination-escalation-tier.ts
 import { combineDualTeamRecoveryUrgency } from './coordination-recovery-playbook.ts';
 import { combineDualTeamPriorityInversion } from './directive-priority-inversion.ts';
 import { combineDualTeamHandoffOrphans } from './handoff-orphan-detector.ts';
+import { combineDualTeamWorkstreamDeadlocks } from './workstream-deadlock-detector.ts';
+import { combineDualTeamLeaseContention } from './lease-contention-index.ts';
+import { combineDualTeamCoordinationSaturation } from './coordination-saturation-gauge.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -39,6 +42,9 @@ export interface DualTeamMultiAgentResult {
   recoveryUrgencyCombined: number;
   priorityInversionCombined: number;
   handoffOrphanCombined: number;
+  workstreamDeadlockCombined: number;
+  leaseContentionCombined: number;
+  coordinationSaturationCombined: number;
 }
 
 /**
@@ -83,6 +89,9 @@ export function evaluateDualTeamMultiAgentLayers(
       recoveryUrgencyCombined: friendly.state.meta.coordinationRecoveryUrgency ?? 0,
       priorityInversionCombined: friendly.state.meta.directivePriorityInversionIndex ?? 0,
       handoffOrphanCombined: friendly.state.meta.handoffOrphanCount ?? 0,
+      workstreamDeadlockCombined: friendly.state.meta.workstreamDeadlockCount ?? 0,
+      leaseContentionCombined: friendly.state.meta.leaseContentionIndex ?? 0,
+      coordinationSaturationCombined: friendly.state.meta.coordinationSaturationIndex ?? 0,
     };
   }
 
@@ -210,6 +219,18 @@ export function evaluateDualTeamMultiAgentLayers(
     handoffOrphanCombined: combineDualTeamHandoffOrphans(
       friendly.state.meta.handoffOrphanCount ?? 0,
       enemy.state.meta.handoffOrphanCount ?? 0,
+    ),
+    workstreamDeadlockCombined: combineDualTeamWorkstreamDeadlocks(
+      friendly.state.meta.workstreamDeadlockCount ?? 0,
+      enemy.state.meta.workstreamDeadlockCount ?? 0,
+    ),
+    leaseContentionCombined: combineDualTeamLeaseContention(
+      friendly.state.meta.leaseContentionIndex ?? 0,
+      enemy.state.meta.leaseContentionIndex ?? 0,
+    ),
+    coordinationSaturationCombined: combineDualTeamCoordinationSaturation(
+      friendly.state.meta.coordinationSaturationIndex ?? 0,
+      enemy.state.meta.coordinationSaturationIndex ?? 0,
     ),
   };
 }

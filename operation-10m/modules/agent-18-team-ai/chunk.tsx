@@ -267,6 +267,11 @@ export interface TeamMultiAgentCoordinationMeta {
   invertedDirectiveIds?: string[];
   handoffOrphanCount?: number;
   orphanHandoffIds?: string[];
+  workstreamDeadlockCount?: number;
+  deadlockedWorkstreamIds?: string[];
+  leaseContentionIndex?: number;
+  contendedRegionIds?: string[];
+  coordinationSaturationIndex?: number;
 }
 
 export const AGENT18_LIMITS = {
@@ -1309,927 +1314,6 @@ export function stressDirectiveCoordination(
 }
 
 
-// --- source: coordination-audit.ts ---
-  AGENT18_LIMITS,
-  CoordinationAuditFinding,
-  TeamMultiAgentInputs,
-  TeamMultiAgentLayerState,
-  TeamMultiAgentCoordinationMeta,
-} from './types.ts';
-
-function summarizeAudit(findings: CoordinationAuditFinding[]): TeamMultiAgentCoordinationMeta['auditSummary'] {
-  return {
-    errors: findings.filter(f => f.severity === 'error').length,
-    warnings: findings.filter(f => f.severity === 'warning').length,
-    info: findings.filter(f => f.severity === 'info').length,
-  };
-}
-
-export function emptyCoordinationMeta(): TeamMultiAgentCoordinationMeta {
-  return {
-    directiveConstraints: {},
-    suppressedDirectiveIds: [],
-    auditSummary: { errors: 0, warnings: 0, info: 0 },
-    lastReconcileStable: true,
-    thrashingRegions: [],
-    mutexHistory: [],
-  };
-}
-
-export function auditTeamMultiAgentLayer(
-  state: TeamMultiAgentLayerState,
-  inputs: TeamMultiAgentInputs,
-): CoordinationAuditFinding[] {
-  const findings: CoordinationAuditFinding[] = [];
-  const push = (f: Omit<CoordinationAuditFinding, 'id'>) => {
-    if (findings.length >= AGENT18_LIMITS.maxAuditFindings) return;
-    findings.push({ ...f, id: `audit_${findings.length}_${f.severity}` });
-  };
-
-  detectIllegalSharedExclusiveTasks(inputs.tasks).forEach(msg =>
-    push({ severity: 'error', message: msg, actorIds: [], regionId: null }),
-  );
-
-  Object.entries(state.coordination.mutexRegions).forEach(([regionId, holderId]) => {
-    const role = state.roles.find(r => r.actorId === holderId);
-    const task = inputs.tasks.find(
-      t => t.regionId === regionId && t.assignedActorIds.includes(holderId),
-    );
-    if (!task) {
-      push({
-        severity: 'warning',
-        message: `Mutex holder ${holderId} has no assigned task for ${regionId}`,
-        actorIds: [holderId],
-        regionId,
-      });
-    }
-    if (role && role.primaryRole === 'support') {
-      push({
-        severity: 'warning',
-        message: `Support role holds mutex for ${regionId} — verify handoff`,
-        actorIds: [holderId],
-        regionId,
-      });
-    }
-    const resKey = reservationKeyForRegionAction(regionId, 'region_deposit');
-    const reservation = state.duplicateGuard.reservations[resKey];
-    if (reservation && reservation.holderActorId !== holderId) {
-      push({
-        severity: 'error',
-        message: `Reservation holder ${reservation.holderActorId} disagrees with mutex ${holderId}`,
-        actorIds: [holderId, reservation.holderActorId],
-        regionId,
-      });
-    }
-  });
-
-  state.coordination.arbitrationLog.forEach(entry => {
-    if (entry.regionId && state.coordination.mutexRegions[entry.regionId] !== entry.winnerActorId) {
-      push({
-        severity: 'error',
-        message: `Arbitration winner ${entry.winnerActorId} does not match mutex for ${entry.regionId}`,
-        actorIds: [entry.winnerActorId],
-        regionId: entry.regionId,
-      });
-    }
-  });
-
-  state.coordination.handoffs
-    .filter(h => h.status === 'pending')
-    .forEach(h => {
-      const task = inputs.tasks.find(t => t.id === h.taskId);
-      if (!task || task.status !== 'blocked') {
-        push({
-          severity: 'info',
-          message: `Handoff ${h.id} pending without blocked task ${h.taskId}`,
-          actorIds: [h.fromActorId, h.toActorId],
-          regionId: h.regionId,
-        });
-      }
-    });
-
-  state.coordination.workstreams.forEach(ws => {
-    ws.actorIds.forEach(id => {
-      const role = state.roles.find(r => r.actorId === id);
-      if (!role || role.taskIds.length === 0) {
-        push({
-          severity: 'warning',
-          message: `Workstream ${ws.id} includes idle actor ${id}`,
-          actorIds: [id],
-          regionId: null,
-        });
-      }
-    });
-  });
-
-  if (state.coordination.warnings.length > 3) {
-    push({
-      severity: 'warning',
-      message: `${state.coordination.warnings.length} coordination warnings active`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  if (state.meta.thrashingRegions.length > 0) {
-    push({
-      severity: 'error',
-      message: `Mutex thrashing on ${state.meta.thrashingRegions.join(', ')}`,
-      actorIds: [],
-      regionId: state.meta.thrashingRegions[0] || null,
-    });
-  }
-
-  if (state.meta.lastReconcileStable === false) {
-    push({
-      severity: 'warning',
-      message: 'Coordination plan changed materially since last evaluation',
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  const suppressRate =
-    state.meta.suppressedDirectiveIds.length /
-    Math.max(1, state.meta.suppressedDirectiveIds.length + Object.keys(state.meta.directiveConstraints).length);
-  if (state.meta.suppressedDirectiveIds.length >= 3 && suppressRate > 0.5) {
-    push({
-      severity: 'info',
-      message: `High directive suppression rate (${state.meta.suppressedDirectiveIds.length} suppressed)`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  if (state.meta.overdueHandoffIds && state.meta.overdueHandoffIds.length > 0) {
-    push({
-      severity: 'warning',
-      message: `Handoff SLA overdue: ${state.meta.overdueHandoffIds.join(', ')}`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  if (state.meta.overloadedActorIds && state.meta.overloadedActorIds.length > 0) {
-    push({
-      severity: 'info',
-      message: `Capacity overload: ${state.meta.overloadedActorIds.join(', ')}`,
-      actorIds: state.meta.overloadedActorIds,
-      regionId: null,
-    });
-  }
-
-  if (state.meta.notReadyHandoffIds && state.meta.notReadyHandoffIds.length > 0) {
-    push({
-      severity: 'warning',
-      message: `Handoff targets not ready: ${state.meta.notReadyHandoffIds.join(', ')}`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  if (
-    typeof state.meta.mutexStabilityIndex === 'number' &&
-    state.meta.mutexStabilityIndex < 50 &&
-    (state.meta.volatileMutexRegionIds?.length ?? 0) > 0
-  ) {
-    push({
-      severity: 'warning',
-      message: `Low mutex stability (${state.meta.mutexStabilityIndex}) on ${state.meta.volatileMutexRegionIds!.join(', ')}`,
-      actorIds: [],
-      regionId: state.meta.volatileMutexRegionIds![0] || null,
-    });
-  }
-
-  if (state.meta.stalledWorkstreamIds && state.meta.stalledWorkstreamIds.length > 0) {
-    push({
-      severity: 'warning',
-      message: `Workstream barrier stall: ${state.meta.stalledWorkstreamIds.join(', ')}`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  if (typeof state.meta.roleChurnIndex === 'number' && state.meta.roleChurnIndex >= 50) {
-    push({
-      severity: 'warning',
-      message: `High role churn (${state.meta.roleChurnIndex}) on ${(state.meta.roleChurnActorIds || []).join(', ') || 'actors'}`,
-      actorIds: state.meta.roleChurnActorIds || [],
-      regionId: null,
-    });
-  }
-
-  if (state.meta.expiredLeaseIds && state.meta.expiredLeaseIds.length > 0) {
-    push({
-      severity: 'warning',
-      message: `Expired leases: ${state.meta.expiredLeaseIds.join(', ')}`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  if (
-    typeof state.meta.coordinationCompositeScore === 'number' &&
-    state.meta.coordinationCompositeScore < 55
-  ) {
-    push({
-      severity: 'warning',
-      message: `Low coordination composite (${state.meta.coordinationCompositeScore}); weakest: ${state.meta.coordinationWeakestDimension || 'unknown'}`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  if (typeof state.meta.directiveCollisionIndex === 'number' && state.meta.directiveCollisionIndex >= 40) {
-    push({
-      severity: 'warning',
-      message: `High directive collision index (${state.meta.directiveCollisionIndex})`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  if (typeof state.meta.handoffIntegrityScore === 'number' && state.meta.handoffIntegrityScore < 70) {
-    push({
-      severity: 'warning',
-      message: `Low handoff chain integrity (${state.meta.handoffIntegrityScore})`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  if (
-    typeof state.meta.coordinationEscalationTier === 'number' &&
-    state.meta.coordinationEscalationTier >= 2
-  ) {
-    push({
-      severity: state.meta.coordinationEscalationTier >= 3 ? 'error' : 'warning',
-      message: `Coordination escalation ${state.meta.coordinationEscalationLabel || state.meta.coordinationEscalationTier} (tier ${state.meta.coordinationEscalationTier})`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  if (typeof state.meta.coordinationRecoveryUrgency === 'number' && state.meta.coordinationRecoveryUrgency >= 75) {
-    push({
-      severity: 'warning',
-      message: `High coordination recovery urgency (${state.meta.coordinationRecoveryUrgency})`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  if (
-    typeof state.meta.directivePriorityInversionIndex === 'number' &&
-    state.meta.directivePriorityInversionIndex >= 50
-  ) {
-    push({
-      severity: 'warning',
-      message: `Directive priority inversion index (${state.meta.directivePriorityInversionIndex})`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  if (typeof state.meta.handoffOrphanCount === 'number' && state.meta.handoffOrphanCount > 0) {
-    push({
-      severity: 'warning',
-      message: `Orphan handoffs pending: ${(state.meta.orphanHandoffIds || []).join(', ') || state.meta.handoffOrphanCount}`,
-      actorIds: [],
-      regionId: null,
-    });
-  }
-
-  state.coordination.leases.forEach(lease => {
-    if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
-      push({
-        severity: 'warning',
-        message: `Lease ${lease.id} expired at turn ${lease.expiresTurn}`,
-        actorIds: [lease.holderActorId],
-        regionId: lease.regionId,
-      });
-    }
-  });
-
-  return findings;
-}
-
-export function attachAuditToState(
-  state: TeamMultiAgentLayerState,
-  findings: CoordinationAuditFinding[],
-  metaPatch: Partial<TeamMultiAgentCoordinationMeta>,
-): TeamMultiAgentLayerState {
-  const auditFindings = findings.slice(0, AGENT18_LIMITS.maxAuditFindings);
-  const meta: TeamMultiAgentCoordinationMeta = {
-    ...emptyCoordinationMeta(),
-    ...state.meta,
-    ...metaPatch,
-    auditSummary: summarizeAudit(auditFindings),
-  };
-  return { ...state, auditFindings, meta };
-}
-
-
-// --- source: coordination-reconcile.ts ---
-
-export interface CoordinationReconcileChange {
-  kind:
-    | 'mutex_holder_changed'
-    | 'handoff_opened'
-    | 'handoff_closed'
-    | 'lease_added'
-    | 'lease_removed'
-    | 'arbitration_reversed';
-  regionId: string | null;
-  detail: string;
-}
-
-export interface CoordinationReconcileReport {
-  turn: number;
-  stable: boolean;
-  changes: CoordinationReconcileChange[];
-  thrashingRegions: string[];
-}
-
-function handoffKey(h: HandoffRequest): string {
-  return `${h.id}:${h.status}`;
-}
-
-/** Compare two coordination plans for material diffs (turn-to-turn stability). */
-export function reconcileCoordinationPlans(
-  previous: CoordinationPlan | null,
-  next: CoordinationPlan,
-  turn: number,
-): CoordinationReconcileReport {
-  const changes: CoordinationReconcileChange[] = [];
-  if (!previous) {
-    return { turn, stable: true, changes, thrashingRegions: [] };
-  }
-
-  const prevRegions = previous.mutexRegions;
-  const nextRegions = next.mutexRegions;
-  new Set([...Object.keys(prevRegions), ...Object.keys(nextRegions)]).forEach(regionId => {
-    const a = prevRegions[regionId];
-    const b = nextRegions[regionId];
-    if (a && b && a !== b) {
-      changes.push({
-        kind: 'mutex_holder_changed',
-        regionId,
-        detail: `${regionId}: ${a} → ${b}`,
-      });
-      const prevArb = previous.arbitrationLog.find(x => x.regionId === regionId);
-      const nextArb = next.arbitrationLog.find(x => x.regionId === regionId);
-      if (prevArb && nextArb && prevArb.winnerActorId !== nextArb.winnerActorId) {
-        changes.push({
-          kind: 'arbitration_reversed',
-          regionId,
-          detail: `arbitration ${prevArb.winnerActorId} → ${nextArb.winnerActorId}`,
-        });
-      }
-    }
-  });
-
-  const prevHandoffs = new Map(previous.handoffs.map(h => [handoffKey(h), h]));
-  next.handoffs.forEach(h => {
-    const k = handoffKey(h);
-    const p = prevHandoffs.get(k);
-    if (!p && h.status === 'pending') {
-      changes.push({ kind: 'handoff_opened', regionId: h.regionId, detail: h.id });
-    }
-  });
-  previous.handoffs.forEach(h => {
-    const n = next.handoffs.find(x => x.id === h.id);
-    if (h.status === 'pending' && n && n.status !== 'pending') {
-      changes.push({
-        kind: 'handoff_closed',
-        regionId: h.regionId,
-        detail: `${h.id} → ${n.status}`,
-      });
-    }
-  });
-
-  const prevLeaseIds = new Set(previous.leases.map(l => l.id));
-  const nextLeaseIds = new Set(next.leases.map(l => l.id));
-  next.leases.forEach(l => {
-    if (!prevLeaseIds.has(l.id)) {
-      changes.push({ kind: 'lease_added', regionId: l.regionId, detail: l.id });
-    }
-  });
-  previous.leases.forEach(l => {
-    if (!nextLeaseIds.has(l.id)) {
-      changes.push({ kind: 'lease_removed', regionId: l.regionId, detail: l.id });
-    }
-  });
-
-  return {
-    turn,
-    stable: changes.length === 0,
-    changes,
-    thrashingRegions: [],
-  };
-}
-
-/** Flag regions whose mutex holder changed in ≥2 of the last N snapshots. */
-export function detectMutexThrashing(
-  mutexHistory: Array<Record<string, string>>,
-  minFlips: number = 2,
-): string[] {
-  const flips: Record<string, number> = {};
-  for (let i = 1; i < mutexHistory.length; i += 1) {
-    const prev = mutexHistory[i - 1];
-    const cur = mutexHistory[i];
-    new Set([...Object.keys(prev), ...Object.keys(cur)]).forEach(regionId => {
-      if (prev[regionId] && cur[regionId] && prev[regionId] !== cur[regionId]) {
-        flips[regionId] = (flips[regionId] || 0) + 1;
-      }
-    });
-  }
-  return Object.entries(flips)
-    .filter(([, n]) => n >= minFlips)
-    .map(([regionId]) => regionId)
-    .sort();
-}
-
-export function mergeReconcileThrashing(
-  report: CoordinationReconcileReport,
-  mutexHistory: Array<Record<string, string>>,
-): CoordinationReconcileReport {
-  const thrashingRegions = detectMutexThrashing(mutexHistory);
-  return {
-    ...report,
-    stable: report.stable && thrashingRegions.length === 0,
-    thrashingRegions,
-  };
-}
-
-export function summarizeArbitrationDemotions(log: PriorityArbitrationRecord[]): number {
-  return log.reduce((s, e) => s + e.demoted.length, 0);
-}
-
-
-// --- source: multi-agent-state.ts ---
-  mergeReconcileThrashing,
-  reconcileCoordinationPlans,
-} from './coordination-reconcile.ts';
-  buildActorDirectiveConstraints,
-  coordinateTeammateDirectives,
-} from './directive-coordination.ts';
-  advanceDuplicateGuardTurn,
-  emptyDuplicateGuardState,
-  reserveActionSlot,
-  reservationKeyForRegionAction,
-  sanitizeDuplicateGuardState,
-} from './duplicate-action-guard.ts';
-  assignTeamRolesWithSlots,
-  detectIllegalSharedExclusiveTasks,
-} from './role-assignment-engine.ts';
-  decideTeamMultiAgentPersistence,
-  teamMultiAgentPersistSignature,
-} from './layer-persistence.ts';
-  buildActorCapacityLedger,
-  suggestCapacityRebalanceNotes,
-} from './actor-capacity-ledger.ts';
-  evaluateWorkstreamBarriers,
-  trackWorkstreamBarrierSince,
-} from './workstream-barrier-monitor.ts';
-  assertTasksTeamScoped,
-  filterCrossTeamDirectives,
-  teamActorScope,
-} from './team-boundary-guard.ts';
-  AGENT18_LIMITS,
-  TeamMultiAgentEvaluation,
-  TeamMultiAgentInputs,
-  TeamMultiAgentLayerState,
-  TeamMultiAgentPersistenceDecision,
-} from './types.ts';
-
-const emptyCoordination = {
-  leases: [],
-  handoffs: [],
-  workstreams: [],
-  mutexRegions: {},
-  warnings: [],
-  arbitrationLog: [],
-};
-
-export function sanitizeTeamMultiAgentCoordinationState(
-  raw: unknown,
-  teamId: string,
-  turn: number,
-): TeamMultiAgentLayerState {
-  const empty: TeamMultiAgentLayerState = {
-    version: 1,
-    teamId,
-    turn,
-    roles: [],
-    coordination: { ...emptyCoordination },
-    duplicateGuard: emptyDuplicateGuardState(turn),
-    diagnostics: [],
-    meta: emptyCoordinationMeta(),
-    auditFindings: [],
-  };
-  if (!raw || typeof raw !== 'object') return empty;
-  const r = raw as Record<string, unknown>;
-  const roles = Array.isArray(r.roles) ? (r.roles as TeamMultiAgentLayerState['roles']) : [];
-  const coordination =
-    r.coordination && typeof r.coordination === 'object'
-      ? (r.coordination as TeamMultiAgentLayerState['coordination'])
-      : empty.coordination;
-  const metaRaw = r.meta && typeof r.meta === 'object' ? (r.meta as Record<string, unknown>) : {};
-  return {
-    version: 1,
-    teamId: String(r.teamId || teamId),
-    turn: Number(r.turn) || turn,
-    roles,
-    coordination: {
-      leases: Array.isArray(coordination.leases) ? coordination.leases.slice(0, AGENT18_LIMITS.maxLeases) : [],
-      handoffs: Array.isArray(coordination.handoffs) ? coordination.handoffs.slice(0, AGENT18_LIMITS.maxHandoffs) : [],
-      workstreams: Array.isArray(coordination.workstreams)
-        ? coordination.workstreams.slice(0, AGENT18_LIMITS.maxWorkstreams)
-        : [],
-      mutexRegions:
-        coordination.mutexRegions && typeof coordination.mutexRegions === 'object'
-          ? (coordination.mutexRegions as Record<string, string>)
-          : {},
-      warnings: Array.isArray(coordination.warnings) ? coordination.warnings.map(String).slice(0, 12) : [],
-      arbitrationLog: Array.isArray(coordination.arbitrationLog)
-        ? coordination.arbitrationLog.slice(0, 12)
-        : [],
-    },
-    duplicateGuard: sanitizeDuplicateGuardState(r.duplicateGuard, turn),
-    diagnostics: Array.isArray(r.diagnostics) ? r.diagnostics.map(String).slice(0, 20) : [],
-    meta: {
-      directiveConstraints:
-        metaRaw.directiveConstraints && typeof metaRaw.directiveConstraints === 'object'
-          ? (metaRaw.directiveConstraints as Record<string, string>)
-          : {},
-      suppressedDirectiveIds: Array.isArray(metaRaw.suppressedDirectiveIds)
-        ? metaRaw.suppressedDirectiveIds.map(String).slice(0, AGENT18_LIMITS.maxSuppressedDirectives)
-        : [],
-      auditSummary:
-        metaRaw.auditSummary && typeof metaRaw.auditSummary === 'object'
-          ? (metaRaw.auditSummary as TeamMultiAgentLayerState['meta']['auditSummary'])
-          : { errors: 0, warnings: 0, info: 0 },
-      lastReconcileStable: metaRaw.lastReconcileStable !== false,
-      thrashingRegions: Array.isArray(metaRaw.thrashingRegions)
-        ? metaRaw.thrashingRegions.map(String).slice(0, 8)
-        : [],
-      mutexHistory: Array.isArray(metaRaw.mutexHistory)
-        ? (metaRaw.mutexHistory as Array<Record<string, string>>).slice(-5)
-        : [],
-      handoffSlaCompliance:
-        typeof metaRaw.handoffSlaCompliance === 'number' ? metaRaw.handoffSlaCompliance : undefined,
-      overdueHandoffIds: Array.isArray(metaRaw.overdueHandoffIds)
-        ? metaRaw.overdueHandoffIds.map(String).slice(0, 8)
-        : undefined,
-      capacityBalanceScore:
-        typeof metaRaw.capacityBalanceScore === 'number' ? metaRaw.capacityBalanceScore : undefined,
-      overloadedActorIds: Array.isArray(metaRaw.overloadedActorIds)
-        ? metaRaw.overloadedActorIds.map(String).slice(0, 8)
-        : undefined,
-      idleActorIds: Array.isArray(metaRaw.idleActorIds)
-        ? metaRaw.idleActorIds.map(String).slice(0, 8)
-        : undefined,
-      directiveQuotaRemaining:
-        metaRaw.directiveQuotaRemaining && typeof metaRaw.directiveQuotaRemaining === 'object'
-          ? (metaRaw.directiveQuotaRemaining as Record<string, number>)
-          : undefined,
-      handoffReadinessAverage:
-        typeof metaRaw.handoffReadinessAverage === 'number' ? metaRaw.handoffReadinessAverage : undefined,
-      notReadyHandoffIds: Array.isArray(metaRaw.notReadyHandoffIds)
-        ? metaRaw.notReadyHandoffIds.map(String).slice(0, 8)
-        : undefined,
-      mutexStabilityIndex:
-        typeof metaRaw.mutexStabilityIndex === 'number' ? metaRaw.mutexStabilityIndex : undefined,
-      volatileMutexRegionIds: Array.isArray(metaRaw.volatileMutexRegionIds)
-        ? metaRaw.volatileMutexRegionIds.map(String).slice(0, 8)
-        : undefined,
-      workstreamBarrierCompliance:
-        typeof metaRaw.workstreamBarrierCompliance === 'number'
-          ? metaRaw.workstreamBarrierCompliance
-          : undefined,
-      stalledWorkstreamIds: Array.isArray(metaRaw.stalledWorkstreamIds)
-        ? metaRaw.stalledWorkstreamIds.map(String).slice(0, 8)
-        : undefined,
-      workstreamBarrierSince:
-        metaRaw.workstreamBarrierSince && typeof metaRaw.workstreamBarrierSince === 'object'
-          ? (metaRaw.workstreamBarrierSince as Record<string, number>)
-          : undefined,
-      roleChurnIndex:
-        typeof metaRaw.roleChurnIndex === 'number' ? metaRaw.roleChurnIndex : undefined,
-      roleChurnActorIds: Array.isArray(metaRaw.roleChurnActorIds)
-        ? metaRaw.roleChurnActorIds.map(String).slice(0, 8)
-        : undefined,
-      leaseHealthScore:
-        typeof metaRaw.leaseHealthScore === 'number' ? metaRaw.leaseHealthScore : undefined,
-      expiringLeaseIds: Array.isArray(metaRaw.expiringLeaseIds)
-        ? metaRaw.expiringLeaseIds.map(String).slice(0, 8)
-        : undefined,
-      expiredLeaseIds: Array.isArray(metaRaw.expiredLeaseIds)
-        ? metaRaw.expiredLeaseIds.map(String).slice(0, 8)
-        : undefined,
-      coordinationCompositeScore:
-        typeof metaRaw.coordinationCompositeScore === 'number'
-          ? metaRaw.coordinationCompositeScore
-          : undefined,
-      coordinationWeakestDimension:
-        typeof metaRaw.coordinationWeakestDimension === 'string'
-          ? metaRaw.coordinationWeakestDimension
-          : undefined,
-      directiveCollisionIndex:
-        typeof metaRaw.directiveCollisionIndex === 'number'
-          ? metaRaw.directiveCollisionIndex
-          : undefined,
-      collidingDirectiveIds: Array.isArray(metaRaw.collidingDirectiveIds)
-        ? metaRaw.collidingDirectiveIds.map(String).slice(0, 8)
-        : undefined,
-      handoffIntegrityScore:
-        typeof metaRaw.handoffIntegrityScore === 'number' ? metaRaw.handoffIntegrityScore : undefined,
-      brokenHandoffIds: Array.isArray(metaRaw.brokenHandoffIds)
-        ? metaRaw.brokenHandoffIds.map(String).slice(0, 8)
-        : undefined,
-      duplicatePendingHandoffTaskIds: Array.isArray(metaRaw.duplicatePendingHandoffTaskIds)
-        ? metaRaw.duplicatePendingHandoffTaskIds.map(String).slice(0, 8)
-        : undefined,
-      coordinationEscalationTier:
-        typeof metaRaw.coordinationEscalationTier === 'number'
-          ? metaRaw.coordinationEscalationTier
-          : undefined,
-      coordinationEscalationLabel:
-        typeof metaRaw.coordinationEscalationLabel === 'string'
-          ? metaRaw.coordinationEscalationLabel
-          : undefined,
-      coordinationRecoveryUrgency:
-        typeof metaRaw.coordinationRecoveryUrgency === 'number'
-          ? metaRaw.coordinationRecoveryUrgency
-          : undefined,
-      coordinationRecoveryActions: Array.isArray(metaRaw.coordinationRecoveryActions)
-        ? metaRaw.coordinationRecoveryActions.map(String).slice(0, 8)
-        : undefined,
-      directivePriorityInversionIndex:
-        typeof metaRaw.directivePriorityInversionIndex === 'number'
-          ? metaRaw.directivePriorityInversionIndex
-          : undefined,
-      invertedDirectiveIds: Array.isArray(metaRaw.invertedDirectiveIds)
-        ? metaRaw.invertedDirectiveIds.map(String).slice(0, 8)
-        : undefined,
-      handoffOrphanCount:
-        typeof metaRaw.handoffOrphanCount === 'number' ? metaRaw.handoffOrphanCount : undefined,
-      orphanHandoffIds: Array.isArray(metaRaw.orphanHandoffIds)
-        ? metaRaw.orphanHandoffIds.map(String).slice(0, 8)
-        : undefined,
-    },
-    auditFindings: Array.isArray(r.auditFindings)
-      ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
-      : [],
-  };
-}
-
-export function teamMultiAgentSignature(state: TeamMultiAgentLayerState): string {
-  return teamMultiAgentPersistSignature(state);
-}
-
-/**
- * Evaluate the Agent 18 multi-agent layer: roles + coordination + duplicate reservations.
- * Pure function — safe to call from Team OS evaluation and Strategic Command sync.
- */
-export function evaluateTeamMultiAgentLayer(
-  inputs: TeamMultiAgentInputs,
-  previous: TeamMultiAgentLayerState | null,
-): TeamMultiAgentEvaluation {
-  const diagnostics: string[] = [];
-  const roleMinTurns = inputs.roleMinTurns || AGENT18_LIMITS.roleMinTurnsDefault;
-  const { roles, notes } = assignTeamRolesWithSlots({ ...inputs, roleMinTurns });
-  diagnostics.push(...notes);
-  const sharedIssues = detectIllegalSharedExclusiveTasks(inputs.tasks);
-  const locked = [...inputs.lockedRoles, ...(inputs.command?.lockedActorIds || [])];
-  const coordination = orchestrateTeamCoordination(inputs.turn, inputs.tasks, roles, locked);
-  diagnostics.push(...coordination.warnings);
-  coordination.arbitrationLog.forEach(a => diagnostics.push(a.reason));
-
-  const directiveConstraints = buildActorDirectiveConstraints(coordination, roles);
-  const scope = teamActorScope(inputs);
-  diagnostics.push(...assertTasksTeamScoped(inputs, scope));
-
-  const rawProposals = inputs.directiveProposals || [];
-  const scoped = filterCrossTeamDirectives(rawProposals, scope);
-  scoped.rejected.forEach(r =>
-    diagnostics.push(`Rejected cross-team directive ${r.proposal.id}: ${r.reason}`),
-  );
-  const quota = applyDirectiveQuotaGuard(scoped.inTeam, {
-    maxPerActorPerTurn: AGENT18_LIMITS.maxDirectivesPerActorPerTurn,
-    maxPerTeamPerTurn: AGENT18_LIMITS.maxDirectivesPerTeamPerTurn,
-  });
-  quota.dropped.forEach(d =>
-    diagnostics.push(`Dropped directive ${d.proposal.id}: ${d.reason}`),
-  );
-  const proposals = quota.allowed;
-  const directiveCollisions = computeDirectiveCollisionIndex(proposals);
-  directiveCollisions.notes.forEach(n => diagnostics.push(n));
-  const handoffIntegrity = evaluateHandoffChainIntegrity(coordination.handoffs, scope);
-  handoffIntegrity.notes.forEach(n => diagnostics.push(n));
-  const directiveResult = coordinateTeammateDirectives(proposals, coordination, roles);
-  const priorityInversion = computeDirectivePriorityInversion(
-    proposals,
-    directiveCollisions.collidingProposalIds,
-    {
-      allowed: directiveResult.allowed,
-      suppressed: directiveResult.suppressed.map(s => s.proposal),
-    },
-  );
-  priorityInversion.notes.forEach(n => diagnostics.push(n));
-  const handoffOrphans = detectHandoffOrphans(coordination.handoffs, inputs.tasks, roles);
-  handoffOrphans.notes.forEach(n => diagnostics.push(n));
-  const handoffSla = evaluateHandoffSla(inputs.turn, coordination.handoffs, {
-    maxPendingTurns: AGENT18_LIMITS.handoffSlaMaxPendingTurns,
-  });
-  handoffSla.notes.forEach(n => diagnostics.push(n));
-  const handoffReadiness = scoreHandoffReadiness(
-    coordination.handoffs,
-    inputs.actors,
-    roles,
-    inputs.tasks,
-  );
-  handoffReadiness.notes.forEach(n => diagnostics.push(n));
-  const capacityLedger = buildActorCapacityLedger(inputs.actors, inputs.tasks, roles);
-  suggestCapacityRebalanceNotes(capacityLedger).forEach(n => diagnostics.push(n));
-  directiveResult.suppressed.forEach(s =>
-    diagnostics.push(`Suppressed directive ${s.proposal.id}: ${s.reason}`),
-  );
-
-  let duplicateGuard = previous
-    ? advanceDuplicateGuardTurn(previous.duplicateGuard, inputs.turn)
-    : emptyDuplicateGuardState(inputs.turn);
-  Object.entries(coordination.mutexRegions).forEach(([regionId, holderActorId]) => {
-    const task = inputs.tasks.find(t => t.regionId === regionId);
-    duplicateGuard = reserveActionSlot(
-      duplicateGuard,
-      reservationKeyForRegionAction(regionId, 'region_deposit'),
-      holderActorId,
-      task?.id || `region_${regionId}`,
-      inputs.turn,
-    );
-  });
-
-  let state: TeamMultiAgentLayerState = {
-    version: 1,
-    teamId: inputs.teamId,
-    turn: inputs.turn,
-    roles,
-    coordination,
-    duplicateGuard,
-    diagnostics,
-    meta: emptyCoordinationMeta(),
-    auditFindings: [],
-  };
-
-  const mutexHistory = [...(previous?.meta.mutexHistory || []), coordination.mutexRegions].slice(
-    -AGENT18_LIMITS.maxMutexHistorySnapshots,
-  );
-  const reconcile = mergeReconcileThrashing(
-    reconcileCoordinationPlans(previous?.coordination ?? null, coordination, inputs.turn),
-    mutexHistory,
-  );
-  if (!reconcile.stable) {
-    diagnostics.push(`Coordination reconcile: ${reconcile.changes.length} change(s)`);
-  }
-  if (reconcile.thrashingRegions.length) {
-    diagnostics.push(`Mutex thrashing: ${reconcile.thrashingRegions.join(', ')}`);
-  }
-
-  const mutexStability = computeMutexStabilityIndex(mutexHistory, reconcile.thrashingRegions);
-  mutexStability.notes.forEach(n => diagnostics.push(n));
-
-  const barrierSince = trackWorkstreamBarrierSince(
-    previous?.meta.workstreamBarrierSince ?? {},
-    coordination.workstreams,
-    inputs.turn,
-  );
-  const workstreamBarriers = evaluateWorkstreamBarriers(
-    inputs.turn,
-    coordination.workstreams,
-    inputs.tasks,
-    { workstreamSinceTurn: barrierSince },
-  );
-  workstreamBarriers.notes.forEach(n => diagnostics.push(n));
-
-  const roleChurn = computeRoleChurnIndex(previous?.roles ?? null, roles);
-  roleChurn.notes.forEach(n => diagnostics.push(n));
-
-  const leaseExpiry = evaluateLeaseExpiry(inputs.turn, coordination.leases);
-  leaseExpiry.notes.forEach(n => diagnostics.push(n));
-
-  const coordinationComposite = computeCoordinationComposite({
-    handoffSlaCompliance: handoffSla.complianceScore,
-    handoffReadinessAverage: handoffReadiness.averageReadiness,
-    mutexStabilityIndex: mutexStability.stabilityIndex,
-    workstreamBarrierCompliance: workstreamBarriers.barrierComplianceScore,
-    capacityBalanceScore: capacityLedger.balanceScore,
-    leaseHealthScore: leaseExpiry.leaseHealthScore,
-    roleChurnIndex: roleChurn.churnIndex,
-  });
-  coordinationComposite.notes.forEach(n => diagnostics.push(n));
-
-  state = {
-    ...state,
-    diagnostics,
-    meta: {
-      ...emptyCoordinationMeta(),
-      directiveConstraints: directiveResult.constraintsByActor,
-      suppressedDirectiveIds: [
-        ...quota.dropped.map(d => d.proposal.id),
-        ...directiveResult.suppressed.map(s => s.proposal.id),
-      ].slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
-      lastReconcileStable: reconcile.stable,
-      thrashingRegions: reconcile.thrashingRegions,
-      mutexHistory,
-      handoffSlaCompliance: handoffSla.complianceScore,
-      overdueHandoffIds: handoffSla.overdueHandoffIds,
-      capacityBalanceScore: capacityLedger.balanceScore,
-      overloadedActorIds: capacityLedger.overloadedActorIds,
-      idleActorIds: capacityLedger.idleActorIds,
-      directiveQuotaRemaining: quota.remainingByActor,
-      handoffReadinessAverage: handoffReadiness.averageReadiness,
-      notReadyHandoffIds: handoffReadiness.notReadyHandoffIds,
-      mutexStabilityIndex: mutexStability.stabilityIndex,
-      volatileMutexRegionIds: mutexStability.volatileRegionIds,
-      workstreamBarrierCompliance: workstreamBarriers.barrierComplianceScore,
-      stalledWorkstreamIds: workstreamBarriers.stalledWorkstreamIds,
-      workstreamBarrierSince: barrierSince,
-      roleChurnIndex: roleChurn.churnIndex,
-      roleChurnActorIds: roleChurn.churnedActorIds,
-      leaseHealthScore: leaseExpiry.leaseHealthScore,
-      expiringLeaseIds: leaseExpiry.expiringLeaseIds,
-      expiredLeaseIds: leaseExpiry.expiredLeaseIds,
-      coordinationCompositeScore: coordinationComposite.compositeScore,
-      coordinationWeakestDimension: coordinationComposite.weakestDimension,
-      directiveCollisionIndex: directiveCollisions.collisionIndex,
-      collidingDirectiveIds: directiveCollisions.collidingProposalIds,
-      handoffIntegrityScore: handoffIntegrity.integrityScore,
-      brokenHandoffIds: handoffIntegrity.brokenHandoffIds,
-      duplicatePendingHandoffTaskIds: handoffIntegrity.duplicatePendingTaskIds,
-      directivePriorityInversionIndex: priorityInversion.inversionIndex,
-      invertedDirectiveIds: priorityInversion.invertedProposalIds,
-      handoffOrphanCount: handoffOrphans.orphanCount,
-      orphanHandoffIds: handoffOrphans.orphanHandoffIds,
-    },
-  };
-
-  const auditFindings = auditTeamMultiAgentLayer(state, inputs);
-  const escalation = computeCoordinationEscalationTier({
-    coordinationCompositeScore: coordinationComposite.compositeScore,
-    auditErrors: auditFindings.filter(f => f.severity === 'error').length,
-    auditWarnings: auditFindings.filter(f => f.severity === 'warning').length,
-    directiveCollisionIndex: directiveCollisions.collisionIndex,
-    handoffIntegrityScore: handoffIntegrity.integrityScore,
-  });
-  escalation.notes.forEach(n => diagnostics.push(n));
-  const recoveryPlaybook = buildCoordinationRecoveryPlaybook({
-    escalationTier: escalation.tier,
-    coordinationCompositeScore: coordinationComposite.compositeScore,
-    coordinationWeakestDimension: coordinationComposite.weakestDimension,
-    directiveCollisionIndex: directiveCollisions.collisionIndex,
-    handoffIntegrityScore: handoffIntegrity.integrityScore,
-  });
-  recoveryPlaybook.notes.forEach(n => diagnostics.push(n));
-  state = attachAuditToState(state, auditFindings, {
-    coordinationEscalationTier: escalation.tier,
-    coordinationEscalationLabel: escalation.label,
-    coordinationRecoveryUrgency: recoveryPlaybook.recoveryUrgency,
-    coordinationRecoveryActions: recoveryPlaybook.recommendedActions,
-  });
-  state = { ...state, diagnostics };
-
-  const coordinationIssues = [
-    ...sharedIssues,
-    ...coordination.warnings,
-    ...auditFindings.filter(f => f.severity !== 'info').map(f => f.message),
-  ];
-
-  const persistence = decideTeamMultiAgentPersistence(
-    previous,
-    state,
-    previous ? teamMultiAgentPersistSignature(previous) : null,
-    0,
-  );
-
-  return {
-    state,
-    blockedDuplicates: sharedIssues,
-    coordinationIssues,
-    auditFindings: state.auditFindings,
-    persistence,
-  };
-}
-
-export function syncMultiAgentCoordinationForDirectives(
-  inputs: TeamMultiAgentInputs,
-  stored: TeamMultiAgentLayerState | null,
-): TeamMultiAgentLayerState {
-  return evaluateTeamMultiAgentLayer(inputs, stored).state;
-}
-
-
 // --- source: team-boundary-guard.ts ---
 
 /** Actor ids allowed for this team's coordination slice (defaults to input actors). */
@@ -2346,210 +1430,6 @@ export function bumpPersistTracker(
     turn,
     commits: committed ? tracker.commits + 1 : tracker.commits,
     lastSignature: committed && signature ? signature : tracker.lastSignature,
-  };
-}
-
-
-// --- source: dual-team-coordination.ts ---
-  combineDualTeamCoordinationComposite,
-} from './coordination-composite-score.ts';
-  auditCrossTeamMutexIsolation,
-  assertTasksTeamScoped,
-  teamActorScope,
-} from './team-boundary-guard.ts';
-  TeamMultiAgentEvaluation,
-  TeamMultiAgentInputs,
-  TeamMultiAgentLayerState,
-} from './types.ts';
-
-export interface DualTeamMultiAgentResult {
-  friendly: TeamMultiAgentEvaluation;
-  enemy: TeamMultiAgentEvaluation | null;
-  isolationIssues: string[];
-  byTeam: Record<string, TeamMultiAgentLayerState>;
-  handoffSlaCombinedCompliance: number;
-  mutexStabilityCombined: number;
-  coordinationCompositeCombined: number;
-  roleChurnCombined: number;
-  leaseHealthCombined: number;
-  directiveCollisionCombined: number;
-  handoffIntegrityCombined: number;
-  escalationTierCombined: number;
-  recoveryUrgencyCombined: number;
-  priorityInversionCombined: number;
-  handoffOrphanCombined: number;
-}
-
-/**
- * Evaluate friendly + optional enemy team layers with cross-team isolation checks.
- * Planning-only: each team keeps its own mutex namespace (no shared state mutation).
- */
-export function evaluateDualTeamMultiAgentLayers(
-  friendlyInputs: TeamMultiAgentInputs,
-  enemyInputs: TeamMultiAgentInputs | null,
-  storedByTeam: Record<string, TeamMultiAgentLayerState | null> = {},
-): DualTeamMultiAgentResult {
-  const friendlyScope = teamActorScope(friendlyInputs);
-  const boundaryIssues = assertTasksTeamScoped(friendlyInputs, friendlyScope);
-  const friendlyProposals = friendlyInputs.directiveProposals || [];
-  const friendly = evaluateTeamMultiAgentLayer(
-    {
-      ...friendlyInputs,
-      directiveProposals: friendlyProposals,
-    },
-    storedByTeam[friendlyInputs.teamId] ?? null,
-  );
-  friendly.coordinationIssues.push(...boundaryIssues);
-
-  if (!enemyInputs) {
-    const friendlySla = evaluateHandoffSla(
-      friendlyInputs.turn,
-      friendly.state.coordination.handoffs,
-    );
-    return {
-      friendly,
-      enemy: null,
-      isolationIssues: boundaryIssues,
-      byTeam: { [friendlyInputs.teamId]: friendly.state },
-      handoffSlaCombinedCompliance: friendlySla.complianceScore,
-      mutexStabilityCombined: friendly.state.meta.mutexStabilityIndex ?? 100,
-      coordinationCompositeCombined: friendly.state.meta.coordinationCompositeScore ?? 100,
-      roleChurnCombined: friendly.state.meta.roleChurnIndex ?? 0,
-      leaseHealthCombined: friendly.state.meta.leaseHealthScore ?? 100,
-      directiveCollisionCombined: friendly.state.meta.directiveCollisionIndex ?? 0,
-      handoffIntegrityCombined: friendly.state.meta.handoffIntegrityScore ?? 100,
-      escalationTierCombined: friendly.state.meta.coordinationEscalationTier ?? 0,
-      recoveryUrgencyCombined: friendly.state.meta.coordinationRecoveryUrgency ?? 0,
-      priorityInversionCombined: friendly.state.meta.directivePriorityInversionIndex ?? 0,
-      handoffOrphanCombined: friendly.state.meta.handoffOrphanCount ?? 0,
-    };
-  }
-
-  const enemyScope = teamActorScope(enemyInputs);
-  const enemyBoundary = assertTasksTeamScoped(enemyInputs, enemyScope);
-  const enemy = evaluateTeamMultiAgentLayer(enemyInputs, storedByTeam[enemyInputs.teamId] ?? null);
-  enemy.coordinationIssues.push(...enemyBoundary);
-
-  const mutexIssues = auditCrossTeamMutexIsolation(
-    friendly.state.coordination.mutexRegions,
-    enemy.state.coordination.mutexRegions,
-  );
-
-  const crossActorIssues: string[] = [];
-  if ([...friendlyScope].some(id => enemyScope.has(id))) {
-    crossActorIssues.push('Friendly and enemy teams share actor ids — invalid isolation');
-  }
-
-  const isolationIssues = [...boundaryIssues, ...enemyBoundary, ...mutexIssues, ...crossActorIssues];
-
-  const friendlySla = evaluateHandoffSla(friendlyInputs.turn, friendly.state.coordination.handoffs);
-  const enemySla = evaluateHandoffSla(enemyInputs.turn, enemy.state.coordination.handoffs);
-  const slaSummary = summarizeDualTeamHandoffSla(
-    friendlyInputs.teamId,
-    friendlySla,
-    enemyInputs.teamId,
-    enemySla,
-  );
-
-  return {
-    friendly,
-    enemy,
-    isolationIssues,
-    byTeam: {
-      [friendlyInputs.teamId]: friendly.state,
-      [enemyInputs.teamId]: enemy.state,
-    },
-    handoffSlaCombinedCompliance: slaSummary.combinedCompliance,
-    mutexStabilityCombined: combineDualTeamMutexStability(
-      {
-        stabilityIndex: friendly.state.meta.mutexStabilityIndex ?? 100,
-        volatileRegionIds: friendly.state.meta.volatileMutexRegionIds ?? [],
-        stableRegionCount: 0,
-        trackedTurns: friendly.state.meta.mutexHistory.length,
-        notes: [],
-      },
-      {
-        stabilityIndex: enemy.state.meta.mutexStabilityIndex ?? 100,
-        volatileRegionIds: enemy.state.meta.volatileMutexRegionIds ?? [],
-        stableRegionCount: 0,
-        trackedTurns: enemy.state.meta.mutexHistory.length,
-        notes: [],
-      },
-    ),
-    coordinationCompositeCombined: combineDualTeamCoordinationComposite(
-      friendly.state.meta.coordinationCompositeScore ?? 100,
-      enemy.state.meta.coordinationCompositeScore ?? 100,
-    ),
-    roleChurnCombined: combineDualTeamRoleChurn(
-      {
-        churnIndex: friendly.state.meta.roleChurnIndex ?? 0,
-        churnedActorIds: friendly.state.meta.roleChurnActorIds ?? [],
-        stableActorCount: 0,
-        notes: [],
-      },
-      {
-        churnIndex: enemy.state.meta.roleChurnIndex ?? 0,
-        churnedActorIds: enemy.state.meta.roleChurnActorIds ?? [],
-        stableActorCount: 0,
-        notes: [],
-      },
-    ),
-    leaseHealthCombined: combineDualTeamLeaseHealth(
-      {
-        leaseHealthScore: friendly.state.meta.leaseHealthScore ?? 100,
-        expiringLeaseIds: friendly.state.meta.expiringLeaseIds ?? [],
-        expiredLeaseIds: friendly.state.meta.expiredLeaseIds ?? [],
-        notes: [],
-      },
-      {
-        leaseHealthScore: enemy.state.meta.leaseHealthScore ?? 100,
-        expiringLeaseIds: enemy.state.meta.expiringLeaseIds ?? [],
-        expiredLeaseIds: enemy.state.meta.expiredLeaseIds ?? [],
-        notes: [],
-      },
-    ),
-    directiveCollisionCombined: combineDualTeamDirectiveCollision(
-      {
-        collisionIndex: friendly.state.meta.directiveCollisionIndex ?? 0,
-        collidingProposalIds: friendly.state.meta.collidingDirectiveIds ?? [],
-        notes: [],
-      },
-      {
-        collisionIndex: enemy.state.meta.directiveCollisionIndex ?? 0,
-        collidingProposalIds: enemy.state.meta.collidingDirectiveIds ?? [],
-        notes: [],
-      },
-    ),
-    handoffIntegrityCombined: combineDualTeamHandoffIntegrity(
-      {
-        integrityScore: friendly.state.meta.handoffIntegrityScore ?? 100,
-        brokenHandoffIds: friendly.state.meta.brokenHandoffIds ?? [],
-        duplicatePendingTaskIds: friendly.state.meta.duplicatePendingHandoffTaskIds ?? [],
-        notes: [],
-      },
-      {
-        integrityScore: enemy.state.meta.handoffIntegrityScore ?? 100,
-        brokenHandoffIds: enemy.state.meta.brokenHandoffIds ?? [],
-        duplicatePendingTaskIds: enemy.state.meta.duplicatePendingHandoffTaskIds ?? [],
-        notes: [],
-      },
-    ),
-    escalationTierCombined: combineDualTeamEscalationTier(
-      friendly.state.meta.coordinationEscalationTier ?? 0,
-      enemy.state.meta.coordinationEscalationTier ?? 0,
-    ),
-    recoveryUrgencyCombined: combineDualTeamRecoveryUrgency(
-      friendly.state.meta.coordinationRecoveryUrgency ?? 0,
-      enemy.state.meta.coordinationRecoveryUrgency ?? 0,
-    ),
-    priorityInversionCombined: combineDualTeamPriorityInversion(
-      friendly.state.meta.directivePriorityInversionIndex ?? 0,
-      enemy.state.meta.directivePriorityInversionIndex ?? 0,
-    ),
-    handoffOrphanCombined: combineDualTeamHandoffOrphans(
-      friendly.state.meta.handoffOrphanCount ?? 0,
-      enemy.state.meta.handoffOrphanCount ?? 0,
-    ),
   };
 }
 
@@ -3488,6 +2368,1634 @@ export function computeCoordinationEscalationTier(
 export function combineDualTeamEscalationTier(friendly: number, enemy: number | null): number {
   if (enemy === null) return friendly;
   return Math.max(friendly, enemy);
+}
+
+
+// --- source: coordination-recovery-playbook.ts ---
+export interface CoordinationRecoveryInputs {
+  escalationTier: number;
+  coordinationCompositeScore: number;
+  coordinationWeakestDimension?: string;
+  directiveCollisionIndex?: number;
+  handoffIntegrityScore?: number;
+}
+
+export interface CoordinationRecoveryPlaybook {
+  recoveryUrgency: number;
+  recommendedActions: string[];
+  notes: string[];
+}
+
+const DIMENSION_ACTIONS: Record<string, string[]> = {
+  handoffSla: ['flush_overdue_handoffs', 'reassign_handoff_targets'],
+  handoffReadiness: ['defer_not_ready_handoffs', 'boost_target_ap'],
+  mutexStability: ['freeze_mutex_reassign', 'extend_region_leases'],
+  workstreamBarriers: ['split_stalled_workstreams', 'drop_barrier_dependencies'],
+  capacityBalance: ['rebalance_task_load', 'idle_actor_pickup'],
+  leaseHealth: ['renew_expiring_leases', 'revoke_expired_leases'],
+  roleChurn: ['extend_role_locks', 'stabilize_primary_assignments'],
+};
+
+/**
+ * Operator recovery playbook from escalation tier and weakest composite dimension.
+ */
+export function buildCoordinationRecoveryPlaybook(
+  inputs: CoordinationRecoveryInputs,
+): CoordinationRecoveryPlaybook {
+  const notes: string[] = [];
+  const actions: string[] = [];
+  const tier = Math.max(0, Math.min(3, inputs.escalationTier));
+  const collision = inputs.directiveCollisionIndex ?? 0;
+  const integrity = inputs.handoffIntegrityScore ?? 100;
+
+  if (tier >= 3) {
+    actions.push('halt_noncritical_directives', 'operator_review_required');
+    notes.push('Critical escalation — halt discretionary teammate directives');
+  } else if (tier >= 2) {
+    actions.push('reduce_directive_quota', 'serialize_region_mutex');
+    notes.push('Elevated escalation — throttle parallel directives');
+  } else if (tier >= 1) {
+    actions.push('monitor_coordination_dashboard');
+    notes.push('Watch-tier escalation — increase observation cadence');
+  }
+
+  const weakest = inputs.coordinationWeakestDimension;
+  if (weakest && DIMENSION_ACTIONS[weakest]) {
+    actions.push(...DIMENSION_ACTIONS[weakest].slice(0, 2));
+    notes.push(`Weakest dimension ${weakest} — targeted recovery steps appended`);
+  }
+
+  if (collision >= 40) {
+    actions.push('dedupe_colliding_directives');
+    notes.push('High directive collision — dedupe before commit');
+  }
+  if (integrity < 70) {
+    actions.push('repair_handoff_chain');
+    notes.push('Low handoff integrity — repair pending chain');
+  }
+
+  const compositeGap = Math.max(0, 100 - inputs.coordinationCompositeScore);
+  const tierBoost = tier * 18;
+  const signalBoost = Math.round(collision * 0.25 + Math.max(0, 70 - integrity) * 0.5);
+  const recoveryUrgency = Math.round(Math.min(100, compositeGap * 0.45 + tierBoost + signalBoost));
+
+  return {
+    recoveryUrgency,
+    recommendedActions: [...new Set(actions)].slice(0, 8),
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamRecoveryUrgency(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: directive-priority-inversion.ts ---
+
+export interface DirectivePriorityInversionReport {
+  inversionIndex: number;
+  invertedProposalIds: string[];
+  notes: string[];
+}
+
+function collisionKey(p: TeammateDirectiveProposal): string | null {
+  if (p.taskId) return `task:${p.taskId}`;
+  if (p.targetRegionId) return `region:${p.targetRegionId}`;
+  return null;
+}
+
+export interface DirectivePriorityInversionContext {
+  allowed: TeammateDirectiveProposal[];
+  suppressed: TeammateDirectiveProposal[];
+}
+
+/**
+ * Detect higher-priority (lower number) directives suppressed while lower-priority peers remain allowed on the same target.
+ */
+export function computeDirectivePriorityInversion(
+  proposals: TeammateDirectiveProposal[],
+  collidingProposalIds: string[],
+  context: DirectivePriorityInversionContext,
+): DirectivePriorityInversionReport {
+  const notes: string[] = [];
+  const colliding = new Set(collidingProposalIds);
+  const byKey = new Map<string, TeammateDirectiveProposal[]>();
+
+  proposals.forEach(p => {
+    if (colliding.size > 0 && !colliding.has(p.id)) return;
+    const key = collisionKey(p);
+    if (!key) return;
+    const list = byKey.get(key) || [];
+    list.push(p);
+    byKey.set(key, list);
+  });
+
+  const allowedIds = new Set(context.allowed.map(p => p.id));
+  const suppressedIds = new Set(context.suppressed.map(p => p.id));
+  const invertedIds = new Set<string>();
+  let inversionPairs = 0;
+  let pairTotal = 0;
+
+  byKey.forEach(list => {
+    const allowedInCluster = list.filter(p => allowedIds.has(p.id));
+    const suppressedInCluster = list.filter(p => suppressedIds.has(p.id));
+    if (!allowedInCluster.length || !suppressedInCluster.length) return;
+
+    allowedInCluster.forEach(a => {
+      suppressedInCluster.forEach(s => {
+        pairTotal += 1;
+        if (s.priority < a.priority) {
+          inversionPairs += 1;
+          invertedIds.add(a.id);
+          invertedIds.add(s.id);
+          notes.push(
+            `Priority inversion: suppressed ${s.actorId} priority ${s.priority} loses to allowed ${a.actorId} priority ${a.priority}`,
+          );
+        }
+      });
+    });
+  });
+
+  const inversionIndex =
+    pairTotal === 0 ? 0 : Math.round(Math.min(100, (inversionPairs / pairTotal) * 100));
+
+  return {
+    inversionIndex,
+    invertedProposalIds: [...invertedIds].slice(0, 8),
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamPriorityInversion(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: handoff-orphan-detector.ts ---
+
+export interface HandoffOrphanReport {
+  orphanCount: number;
+  orphanHandoffIds: string[];
+  notes: string[];
+}
+
+function taskAssignedToActor(task: TeamTaskSnapshot | undefined, actorId: string): boolean {
+  return Boolean(task && task.assignedActorIds.includes(actorId));
+}
+
+/**
+ * Pending handoffs whose target actor is not assigned to the handoff task (orphaned acceptance).
+ */
+export function detectHandoffOrphans(
+  handoffs: HandoffRequest[],
+  tasks: TeamTaskSnapshot[],
+  roles: RoleAssignment[],
+): HandoffOrphanReport {
+  const notes: string[] = [];
+  const orphanHandoffIds: string[] = [];
+  const roleByActor = new Map(roles.map(r => [r.actorId, r]));
+
+  handoffs
+    .filter(h => h.status === 'pending')
+    .forEach(h => {
+      const task = tasks.find(t => t.id === h.taskId);
+      const toRole = roleByActor.get(h.toActorId);
+      const assigned = taskAssignedToActor(task, h.toActorId);
+      const roleLinked = Boolean(toRole && toRole.taskIds.includes(h.taskId));
+
+      if (!assigned && !roleLinked) {
+        orphanHandoffIds.push(h.id);
+        notes.push(`Orphan handoff ${h.id}: ${h.toActorId} not linked to task ${h.taskId}`);
+      }
+    });
+
+  return {
+    orphanCount: orphanHandoffIds.length,
+    orphanHandoffIds: orphanHandoffIds.slice(0, 8),
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamHandoffOrphans(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return friendly + enemy;
+}
+
+
+// --- source: workstream-deadlock-detector.ts ---
+
+export interface WorkstreamDeadlockReport {
+  deadlockCount: number;
+  deadlockedWorkstreamIds: string[];
+  notes: string[];
+}
+
+function waitingWorkstreams(workstreams: ParallelWorkstream[]): ParallelWorkstream[] {
+  return workstreams.filter(ws => ws.phase === 'waiting_barrier');
+}
+
+function dependsOn(a: ParallelWorkstream, b: ParallelWorkstream): boolean {
+  if (b.taskIds.length === 0) return false;
+  const bTasks = new Set(b.taskIds);
+  return a.barrierTaskIds.some(taskId => bTasks.has(taskId));
+}
+
+/**
+ * Detect circular barrier dependencies among workstreams stuck in waiting_barrier.
+ */
+export function detectWorkstreamDeadlocks(workstreams: ParallelWorkstream[]): WorkstreamDeadlockReport {
+  const waiting = waitingWorkstreams(workstreams);
+  const notes: string[] = [];
+  const deadlocked = new Set<string>();
+
+  const adjacency = new Map<string, string[]>();
+  waiting.forEach(ws => {
+    const deps = waiting.filter(other => other.id !== ws.id && dependsOn(ws, other)).map(o => o.id);
+    adjacency.set(ws.id, deps);
+  });
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const stack: string[] = [];
+
+  const reportCycle = (cycleStart: string) => {
+    const startIdx = stack.indexOf(cycleStart);
+    if (startIdx < 0) return;
+    const cycle = stack.slice(startIdx);
+    cycle.forEach(id => deadlocked.add(id));
+    notes.push(`Workstream deadlock cycle: ${cycle.join(' → ')}`);
+  };
+
+  const dfs = (node: string): boolean => {
+    if (visiting.has(node)) {
+      reportCycle(node);
+      return true;
+    }
+    if (visited.has(node)) return false;
+    visiting.add(node);
+    stack.push(node);
+    const neighbors = adjacency.get(node) || [];
+    neighbors.forEach(n => {
+      dfs(n);
+    });
+    stack.pop();
+    visiting.delete(node);
+    visited.add(node);
+    return false;
+  };
+
+  waiting.forEach(ws => {
+    if (!visited.has(ws.id)) dfs(ws.id);
+  });
+
+  return {
+    deadlockCount: deadlocked.size,
+    deadlockedWorkstreamIds: [...deadlocked].slice(0, 8),
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamWorkstreamDeadlocks(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return friendly + enemy;
+}
+
+
+// --- source: lease-contention-index.ts ---
+
+export interface LeaseContentionReport {
+  contentionIndex: number;
+  contendedRegionIds: string[];
+  notes: string[];
+}
+
+/**
+ * Score regions where leases, mutex holders, and pending handoffs disagree on ownership.
+ */
+export function computeLeaseContentionIndex(
+  leases: CoordinationLease[],
+  handoffs: HandoffRequest[],
+  mutexRegions: Record<string, string>,
+): LeaseContentionReport {
+  const notes: string[] = [];
+  const contendedRegionIds: string[] = [];
+  const scopedLeases = leases.slice(0, AGENT18_LIMITS.maxLeases);
+  const regionLeaseHolders = new Map<string, Set<string>>();
+
+  scopedLeases.forEach(lease => {
+    if (!lease.regionId) return;
+    const holders = regionLeaseHolders.get(lease.regionId) ?? new Set<string>();
+    holders.add(lease.holderActorId);
+    regionLeaseHolders.set(lease.regionId, holders);
+  });
+
+  regionLeaseHolders.forEach((holders, regionId) => {
+    if (holders.size > 1) {
+      contendedRegionIds.push(regionId);
+      notes.push(`Region ${regionId}: ${holders.size} lease holders (${[...holders].join(', ')})`);
+    }
+  });
+
+  handoffs
+    .filter(h => h.status === 'pending' && h.regionId)
+    .forEach(h => {
+      const regionId = h.regionId as string;
+      const mutexHolder = mutexRegions[regionId];
+      if (mutexHolder && mutexHolder !== h.toActorId) {
+        if (!contendedRegionIds.includes(regionId)) contendedRegionIds.push(regionId);
+        notes.push(
+          `Handoff ${h.id} to ${h.toActorId} conflicts with mutex holder ${mutexHolder} on ${regionId}`,
+        );
+      }
+    });
+
+  const leaseConflictWeight = contendedRegionIds.filter(r => {
+    const holders = regionLeaseHolders.get(r);
+    return holders && holders.size > 1;
+  }).length;
+  const handoffConflictCount = notes.filter(n => n.startsWith('Handoff')).length;
+  const signal = leaseConflictWeight * 35 + handoffConflictCount * 25;
+  const contentionIndex = Math.min(100, Math.round(signal));
+
+  return {
+    contentionIndex,
+    contendedRegionIds: contendedRegionIds.slice(0, 8),
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamLeaseContention(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: coordination-saturation-gauge.ts ---
+
+export interface CoordinationSaturationInputs {
+  directiveProposalCount: number;
+  pendingHandoffCount: number;
+  activeLeaseCount: number;
+  activeWorkstreamCount: number;
+  suppressedDirectiveCount?: number;
+}
+
+export interface CoordinationSaturationReport {
+  saturationIndex: number;
+  notes: string[];
+}
+
+function ratio(numerator: number, limit: number): number {
+  if (limit <= 0) return 0;
+  return Math.min(1, numerator / limit);
+}
+
+/**
+ * Measure how close the team is to coordination resource limits (directives, handoffs, leases, workstreams).
+ */
+export function measureCoordinationSaturation(
+  inputs: CoordinationSaturationInputs,
+): CoordinationSaturationReport {
+  const notes: string[] = [];
+  const directiveLoad =
+    inputs.directiveProposalCount + (inputs.suppressedDirectiveCount ?? 0);
+  const ratios = [
+    { label: 'directives', value: ratio(directiveLoad, AGENT18_LIMITS.maxDirectivesPerTeamPerTurn) },
+    { label: 'handoffs', value: ratio(inputs.pendingHandoffCount, AGENT18_LIMITS.maxHandoffs) },
+    { label: 'leases', value: ratio(inputs.activeLeaseCount, AGENT18_LIMITS.maxLeases) },
+    { label: 'workstreams', value: ratio(inputs.activeWorkstreamCount, AGENT18_LIMITS.maxWorkstreams) },
+  ];
+
+  ratios
+    .filter(r => r.value >= 0.75)
+    .forEach(r => notes.push(`Coordination ${r.label} at ${Math.round(r.value * 100)}% of limit`));
+
+  const peak = Math.max(...ratios.map(r => r.value));
+  const average = ratios.reduce((s, r) => s + r.value, 0) / ratios.length;
+  const saturationIndex = Math.round(Math.min(100, peak * 70 + average * 30));
+
+  return {
+    saturationIndex,
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamCoordinationSaturation(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: coordination-audit.ts ---
+  AGENT18_LIMITS,
+  CoordinationAuditFinding,
+  TeamMultiAgentInputs,
+  TeamMultiAgentLayerState,
+  TeamMultiAgentCoordinationMeta,
+} from './types.ts';
+
+function summarizeAudit(findings: CoordinationAuditFinding[]): TeamMultiAgentCoordinationMeta['auditSummary'] {
+  return {
+    errors: findings.filter(f => f.severity === 'error').length,
+    warnings: findings.filter(f => f.severity === 'warning').length,
+    info: findings.filter(f => f.severity === 'info').length,
+  };
+}
+
+export function emptyCoordinationMeta(): TeamMultiAgentCoordinationMeta {
+  return {
+    directiveConstraints: {},
+    suppressedDirectiveIds: [],
+    auditSummary: { errors: 0, warnings: 0, info: 0 },
+    lastReconcileStable: true,
+    thrashingRegions: [],
+    mutexHistory: [],
+  };
+}
+
+export function auditTeamMultiAgentLayer(
+  state: TeamMultiAgentLayerState,
+  inputs: TeamMultiAgentInputs,
+): CoordinationAuditFinding[] {
+  const findings: CoordinationAuditFinding[] = [];
+  const push = (f: Omit<CoordinationAuditFinding, 'id'>) => {
+    if (findings.length >= AGENT18_LIMITS.maxAuditFindings) return;
+    findings.push({ ...f, id: `audit_${findings.length}_${f.severity}` });
+  };
+
+  detectIllegalSharedExclusiveTasks(inputs.tasks).forEach(msg =>
+    push({ severity: 'error', message: msg, actorIds: [], regionId: null }),
+  );
+
+  Object.entries(state.coordination.mutexRegions).forEach(([regionId, holderId]) => {
+    const role = state.roles.find(r => r.actorId === holderId);
+    const task = inputs.tasks.find(
+      t => t.regionId === regionId && t.assignedActorIds.includes(holderId),
+    );
+    if (!task) {
+      push({
+        severity: 'warning',
+        message: `Mutex holder ${holderId} has no assigned task for ${regionId}`,
+        actorIds: [holderId],
+        regionId,
+      });
+    }
+    if (role && role.primaryRole === 'support') {
+      push({
+        severity: 'warning',
+        message: `Support role holds mutex for ${regionId} — verify handoff`,
+        actorIds: [holderId],
+        regionId,
+      });
+    }
+    const resKey = reservationKeyForRegionAction(regionId, 'region_deposit');
+    const reservation = state.duplicateGuard.reservations[resKey];
+    if (reservation && reservation.holderActorId !== holderId) {
+      push({
+        severity: 'error',
+        message: `Reservation holder ${reservation.holderActorId} disagrees with mutex ${holderId}`,
+        actorIds: [holderId, reservation.holderActorId],
+        regionId,
+      });
+    }
+  });
+
+  state.coordination.arbitrationLog.forEach(entry => {
+    if (entry.regionId && state.coordination.mutexRegions[entry.regionId] !== entry.winnerActorId) {
+      push({
+        severity: 'error',
+        message: `Arbitration winner ${entry.winnerActorId} does not match mutex for ${entry.regionId}`,
+        actorIds: [entry.winnerActorId],
+        regionId: entry.regionId,
+      });
+    }
+  });
+
+  state.coordination.handoffs
+    .filter(h => h.status === 'pending')
+    .forEach(h => {
+      const task = inputs.tasks.find(t => t.id === h.taskId);
+      if (!task || task.status !== 'blocked') {
+        push({
+          severity: 'info',
+          message: `Handoff ${h.id} pending without blocked task ${h.taskId}`,
+          actorIds: [h.fromActorId, h.toActorId],
+          regionId: h.regionId,
+        });
+      }
+    });
+
+  state.coordination.workstreams.forEach(ws => {
+    ws.actorIds.forEach(id => {
+      const role = state.roles.find(r => r.actorId === id);
+      if (!role || role.taskIds.length === 0) {
+        push({
+          severity: 'warning',
+          message: `Workstream ${ws.id} includes idle actor ${id}`,
+          actorIds: [id],
+          regionId: null,
+        });
+      }
+    });
+  });
+
+  if (state.coordination.warnings.length > 3) {
+    push({
+      severity: 'warning',
+      message: `${state.coordination.warnings.length} coordination warnings active`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (state.meta.thrashingRegions.length > 0) {
+    push({
+      severity: 'error',
+      message: `Mutex thrashing on ${state.meta.thrashingRegions.join(', ')}`,
+      actorIds: [],
+      regionId: state.meta.thrashingRegions[0] || null,
+    });
+  }
+
+  if (state.meta.lastReconcileStable === false) {
+    push({
+      severity: 'warning',
+      message: 'Coordination plan changed materially since last evaluation',
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  const suppressRate =
+    state.meta.suppressedDirectiveIds.length /
+    Math.max(1, state.meta.suppressedDirectiveIds.length + Object.keys(state.meta.directiveConstraints).length);
+  if (state.meta.suppressedDirectiveIds.length >= 3 && suppressRate > 0.5) {
+    push({
+      severity: 'info',
+      message: `High directive suppression rate (${state.meta.suppressedDirectiveIds.length} suppressed)`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (state.meta.overdueHandoffIds && state.meta.overdueHandoffIds.length > 0) {
+    push({
+      severity: 'warning',
+      message: `Handoff SLA overdue: ${state.meta.overdueHandoffIds.join(', ')}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (state.meta.overloadedActorIds && state.meta.overloadedActorIds.length > 0) {
+    push({
+      severity: 'info',
+      message: `Capacity overload: ${state.meta.overloadedActorIds.join(', ')}`,
+      actorIds: state.meta.overloadedActorIds,
+      regionId: null,
+    });
+  }
+
+  if (state.meta.notReadyHandoffIds && state.meta.notReadyHandoffIds.length > 0) {
+    push({
+      severity: 'warning',
+      message: `Handoff targets not ready: ${state.meta.notReadyHandoffIds.join(', ')}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.mutexStabilityIndex === 'number' &&
+    state.meta.mutexStabilityIndex < 50 &&
+    (state.meta.volatileMutexRegionIds?.length ?? 0) > 0
+  ) {
+    push({
+      severity: 'warning',
+      message: `Low mutex stability (${state.meta.mutexStabilityIndex}) on ${state.meta.volatileMutexRegionIds!.join(', ')}`,
+      actorIds: [],
+      regionId: state.meta.volatileMutexRegionIds![0] || null,
+    });
+  }
+
+  if (state.meta.stalledWorkstreamIds && state.meta.stalledWorkstreamIds.length > 0) {
+    push({
+      severity: 'warning',
+      message: `Workstream barrier stall: ${state.meta.stalledWorkstreamIds.join(', ')}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.roleChurnIndex === 'number' && state.meta.roleChurnIndex >= 50) {
+    push({
+      severity: 'warning',
+      message: `High role churn (${state.meta.roleChurnIndex}) on ${(state.meta.roleChurnActorIds || []).join(', ') || 'actors'}`,
+      actorIds: state.meta.roleChurnActorIds || [],
+      regionId: null,
+    });
+  }
+
+  if (state.meta.expiredLeaseIds && state.meta.expiredLeaseIds.length > 0) {
+    push({
+      severity: 'warning',
+      message: `Expired leases: ${state.meta.expiredLeaseIds.join(', ')}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.coordinationCompositeScore === 'number' &&
+    state.meta.coordinationCompositeScore < 55
+  ) {
+    push({
+      severity: 'warning',
+      message: `Low coordination composite (${state.meta.coordinationCompositeScore}); weakest: ${state.meta.coordinationWeakestDimension || 'unknown'}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.directiveCollisionIndex === 'number' && state.meta.directiveCollisionIndex >= 40) {
+    push({
+      severity: 'warning',
+      message: `High directive collision index (${state.meta.directiveCollisionIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.handoffIntegrityScore === 'number' && state.meta.handoffIntegrityScore < 70) {
+    push({
+      severity: 'warning',
+      message: `Low handoff chain integrity (${state.meta.handoffIntegrityScore})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.coordinationEscalationTier === 'number' &&
+    state.meta.coordinationEscalationTier >= 2
+  ) {
+    push({
+      severity: state.meta.coordinationEscalationTier >= 3 ? 'error' : 'warning',
+      message: `Coordination escalation ${state.meta.coordinationEscalationLabel || state.meta.coordinationEscalationTier} (tier ${state.meta.coordinationEscalationTier})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.coordinationRecoveryUrgency === 'number' && state.meta.coordinationRecoveryUrgency >= 75) {
+    push({
+      severity: 'warning',
+      message: `High coordination recovery urgency (${state.meta.coordinationRecoveryUrgency})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.directivePriorityInversionIndex === 'number' &&
+    state.meta.directivePriorityInversionIndex >= 50
+  ) {
+    push({
+      severity: 'warning',
+      message: `Directive priority inversion index (${state.meta.directivePriorityInversionIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.handoffOrphanCount === 'number' && state.meta.handoffOrphanCount > 0) {
+    push({
+      severity: 'warning',
+      message: `Orphan handoffs pending: ${(state.meta.orphanHandoffIds || []).join(', ') || state.meta.handoffOrphanCount}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.workstreamDeadlockCount === 'number' && state.meta.workstreamDeadlockCount > 0) {
+    push({
+      severity: 'error',
+      message: `Workstream deadlocks detected (${state.meta.workstreamDeadlockCount}): ${(state.meta.deadlockedWorkstreamIds || []).join(', ')}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.leaseContentionIndex === 'number' && state.meta.leaseContentionIndex >= 50) {
+    push({
+      severity: 'warning',
+      message: `High lease contention index (${state.meta.leaseContentionIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.coordinationSaturationIndex === 'number' &&
+    state.meta.coordinationSaturationIndex >= 75
+  ) {
+    push({
+      severity: 'warning',
+      message: `Coordination saturation elevated (${state.meta.coordinationSaturationIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  state.coordination.leases.forEach(lease => {
+    if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
+      push({
+        severity: 'warning',
+        message: `Lease ${lease.id} expired at turn ${lease.expiresTurn}`,
+        actorIds: [lease.holderActorId],
+        regionId: lease.regionId,
+      });
+    }
+  });
+
+  return findings;
+}
+
+export function attachAuditToState(
+  state: TeamMultiAgentLayerState,
+  findings: CoordinationAuditFinding[],
+  metaPatch: Partial<TeamMultiAgentCoordinationMeta>,
+): TeamMultiAgentLayerState {
+  const auditFindings = findings.slice(0, AGENT18_LIMITS.maxAuditFindings);
+  const meta: TeamMultiAgentCoordinationMeta = {
+    ...emptyCoordinationMeta(),
+    ...state.meta,
+    ...metaPatch,
+    auditSummary: summarizeAudit(auditFindings),
+  };
+  return { ...state, auditFindings, meta };
+}
+
+
+// --- source: coordination-reconcile.ts ---
+
+export interface CoordinationReconcileChange {
+  kind:
+    | 'mutex_holder_changed'
+    | 'handoff_opened'
+    | 'handoff_closed'
+    | 'lease_added'
+    | 'lease_removed'
+    | 'arbitration_reversed';
+  regionId: string | null;
+  detail: string;
+}
+
+export interface CoordinationReconcileReport {
+  turn: number;
+  stable: boolean;
+  changes: CoordinationReconcileChange[];
+  thrashingRegions: string[];
+}
+
+function handoffKey(h: HandoffRequest): string {
+  return `${h.id}:${h.status}`;
+}
+
+/** Compare two coordination plans for material diffs (turn-to-turn stability). */
+export function reconcileCoordinationPlans(
+  previous: CoordinationPlan | null,
+  next: CoordinationPlan,
+  turn: number,
+): CoordinationReconcileReport {
+  const changes: CoordinationReconcileChange[] = [];
+  if (!previous) {
+    return { turn, stable: true, changes, thrashingRegions: [] };
+  }
+
+  const prevRegions = previous.mutexRegions;
+  const nextRegions = next.mutexRegions;
+  new Set([...Object.keys(prevRegions), ...Object.keys(nextRegions)]).forEach(regionId => {
+    const a = prevRegions[regionId];
+    const b = nextRegions[regionId];
+    if (a && b && a !== b) {
+      changes.push({
+        kind: 'mutex_holder_changed',
+        regionId,
+        detail: `${regionId}: ${a} → ${b}`,
+      });
+      const prevArb = previous.arbitrationLog.find(x => x.regionId === regionId);
+      const nextArb = next.arbitrationLog.find(x => x.regionId === regionId);
+      if (prevArb && nextArb && prevArb.winnerActorId !== nextArb.winnerActorId) {
+        changes.push({
+          kind: 'arbitration_reversed',
+          regionId,
+          detail: `arbitration ${prevArb.winnerActorId} → ${nextArb.winnerActorId}`,
+        });
+      }
+    }
+  });
+
+  const prevHandoffs = new Map(previous.handoffs.map(h => [handoffKey(h), h]));
+  next.handoffs.forEach(h => {
+    const k = handoffKey(h);
+    const p = prevHandoffs.get(k);
+    if (!p && h.status === 'pending') {
+      changes.push({ kind: 'handoff_opened', regionId: h.regionId, detail: h.id });
+    }
+  });
+  previous.handoffs.forEach(h => {
+    const n = next.handoffs.find(x => x.id === h.id);
+    if (h.status === 'pending' && n && n.status !== 'pending') {
+      changes.push({
+        kind: 'handoff_closed',
+        regionId: h.regionId,
+        detail: `${h.id} → ${n.status}`,
+      });
+    }
+  });
+
+  const prevLeaseIds = new Set(previous.leases.map(l => l.id));
+  const nextLeaseIds = new Set(next.leases.map(l => l.id));
+  next.leases.forEach(l => {
+    if (!prevLeaseIds.has(l.id)) {
+      changes.push({ kind: 'lease_added', regionId: l.regionId, detail: l.id });
+    }
+  });
+  previous.leases.forEach(l => {
+    if (!nextLeaseIds.has(l.id)) {
+      changes.push({ kind: 'lease_removed', regionId: l.regionId, detail: l.id });
+    }
+  });
+
+  return {
+    turn,
+    stable: changes.length === 0,
+    changes,
+    thrashingRegions: [],
+  };
+}
+
+/** Flag regions whose mutex holder changed in ≥2 of the last N snapshots. */
+export function detectMutexThrashing(
+  mutexHistory: Array<Record<string, string>>,
+  minFlips: number = 2,
+): string[] {
+  const flips: Record<string, number> = {};
+  for (let i = 1; i < mutexHistory.length; i += 1) {
+    const prev = mutexHistory[i - 1];
+    const cur = mutexHistory[i];
+    new Set([...Object.keys(prev), ...Object.keys(cur)]).forEach(regionId => {
+      if (prev[regionId] && cur[regionId] && prev[regionId] !== cur[regionId]) {
+        flips[regionId] = (flips[regionId] || 0) + 1;
+      }
+    });
+  }
+  return Object.entries(flips)
+    .filter(([, n]) => n >= minFlips)
+    .map(([regionId]) => regionId)
+    .sort();
+}
+
+export function mergeReconcileThrashing(
+  report: CoordinationReconcileReport,
+  mutexHistory: Array<Record<string, string>>,
+): CoordinationReconcileReport {
+  const thrashingRegions = detectMutexThrashing(mutexHistory);
+  return {
+    ...report,
+    stable: report.stable && thrashingRegions.length === 0,
+    thrashingRegions,
+  };
+}
+
+export function summarizeArbitrationDemotions(log: PriorityArbitrationRecord[]): number {
+  return log.reduce((s, e) => s + e.demoted.length, 0);
+}
+
+
+// --- source: multi-agent-state.ts ---
+  mergeReconcileThrashing,
+  reconcileCoordinationPlans,
+} from './coordination-reconcile.ts';
+  buildActorDirectiveConstraints,
+  coordinateTeammateDirectives,
+} from './directive-coordination.ts';
+  advanceDuplicateGuardTurn,
+  emptyDuplicateGuardState,
+  reserveActionSlot,
+  reservationKeyForRegionAction,
+  sanitizeDuplicateGuardState,
+} from './duplicate-action-guard.ts';
+  assignTeamRolesWithSlots,
+  detectIllegalSharedExclusiveTasks,
+} from './role-assignment-engine.ts';
+  decideTeamMultiAgentPersistence,
+  teamMultiAgentPersistSignature,
+} from './layer-persistence.ts';
+  buildActorCapacityLedger,
+  suggestCapacityRebalanceNotes,
+} from './actor-capacity-ledger.ts';
+  evaluateWorkstreamBarriers,
+  trackWorkstreamBarrierSince,
+} from './workstream-barrier-monitor.ts';
+  assertTasksTeamScoped,
+  filterCrossTeamDirectives,
+  teamActorScope,
+} from './team-boundary-guard.ts';
+  AGENT18_LIMITS,
+  TeamMultiAgentEvaluation,
+  TeamMultiAgentInputs,
+  TeamMultiAgentLayerState,
+  TeamMultiAgentPersistenceDecision,
+} from './types.ts';
+
+const emptyCoordination = {
+  leases: [],
+  handoffs: [],
+  workstreams: [],
+  mutexRegions: {},
+  warnings: [],
+  arbitrationLog: [],
+};
+
+export function sanitizeTeamMultiAgentCoordinationState(
+  raw: unknown,
+  teamId: string,
+  turn: number,
+): TeamMultiAgentLayerState {
+  const empty: TeamMultiAgentLayerState = {
+    version: 1,
+    teamId,
+    turn,
+    roles: [],
+    coordination: { ...emptyCoordination },
+    duplicateGuard: emptyDuplicateGuardState(turn),
+    diagnostics: [],
+    meta: emptyCoordinationMeta(),
+    auditFindings: [],
+  };
+  if (!raw || typeof raw !== 'object') return empty;
+  const r = raw as Record<string, unknown>;
+  const roles = Array.isArray(r.roles) ? (r.roles as TeamMultiAgentLayerState['roles']) : [];
+  const coordination =
+    r.coordination && typeof r.coordination === 'object'
+      ? (r.coordination as TeamMultiAgentLayerState['coordination'])
+      : empty.coordination;
+  const metaRaw = r.meta && typeof r.meta === 'object' ? (r.meta as Record<string, unknown>) : {};
+  return {
+    version: 1,
+    teamId: String(r.teamId || teamId),
+    turn: Number(r.turn) || turn,
+    roles,
+    coordination: {
+      leases: Array.isArray(coordination.leases) ? coordination.leases.slice(0, AGENT18_LIMITS.maxLeases) : [],
+      handoffs: Array.isArray(coordination.handoffs) ? coordination.handoffs.slice(0, AGENT18_LIMITS.maxHandoffs) : [],
+      workstreams: Array.isArray(coordination.workstreams)
+        ? coordination.workstreams.slice(0, AGENT18_LIMITS.maxWorkstreams)
+        : [],
+      mutexRegions:
+        coordination.mutexRegions && typeof coordination.mutexRegions === 'object'
+          ? (coordination.mutexRegions as Record<string, string>)
+          : {},
+      warnings: Array.isArray(coordination.warnings) ? coordination.warnings.map(String).slice(0, 12) : [],
+      arbitrationLog: Array.isArray(coordination.arbitrationLog)
+        ? coordination.arbitrationLog.slice(0, 12)
+        : [],
+    },
+    duplicateGuard: sanitizeDuplicateGuardState(r.duplicateGuard, turn),
+    diagnostics: Array.isArray(r.diagnostics) ? r.diagnostics.map(String).slice(0, 20) : [],
+    meta: {
+      directiveConstraints:
+        metaRaw.directiveConstraints && typeof metaRaw.directiveConstraints === 'object'
+          ? (metaRaw.directiveConstraints as Record<string, string>)
+          : {},
+      suppressedDirectiveIds: Array.isArray(metaRaw.suppressedDirectiveIds)
+        ? metaRaw.suppressedDirectiveIds.map(String).slice(0, AGENT18_LIMITS.maxSuppressedDirectives)
+        : [],
+      auditSummary:
+        metaRaw.auditSummary && typeof metaRaw.auditSummary === 'object'
+          ? (metaRaw.auditSummary as TeamMultiAgentLayerState['meta']['auditSummary'])
+          : { errors: 0, warnings: 0, info: 0 },
+      lastReconcileStable: metaRaw.lastReconcileStable !== false,
+      thrashingRegions: Array.isArray(metaRaw.thrashingRegions)
+        ? metaRaw.thrashingRegions.map(String).slice(0, 8)
+        : [],
+      mutexHistory: Array.isArray(metaRaw.mutexHistory)
+        ? (metaRaw.mutexHistory as Array<Record<string, string>>).slice(-5)
+        : [],
+      handoffSlaCompliance:
+        typeof metaRaw.handoffSlaCompliance === 'number' ? metaRaw.handoffSlaCompliance : undefined,
+      overdueHandoffIds: Array.isArray(metaRaw.overdueHandoffIds)
+        ? metaRaw.overdueHandoffIds.map(String).slice(0, 8)
+        : undefined,
+      capacityBalanceScore:
+        typeof metaRaw.capacityBalanceScore === 'number' ? metaRaw.capacityBalanceScore : undefined,
+      overloadedActorIds: Array.isArray(metaRaw.overloadedActorIds)
+        ? metaRaw.overloadedActorIds.map(String).slice(0, 8)
+        : undefined,
+      idleActorIds: Array.isArray(metaRaw.idleActorIds)
+        ? metaRaw.idleActorIds.map(String).slice(0, 8)
+        : undefined,
+      directiveQuotaRemaining:
+        metaRaw.directiveQuotaRemaining && typeof metaRaw.directiveQuotaRemaining === 'object'
+          ? (metaRaw.directiveQuotaRemaining as Record<string, number>)
+          : undefined,
+      handoffReadinessAverage:
+        typeof metaRaw.handoffReadinessAverage === 'number' ? metaRaw.handoffReadinessAverage : undefined,
+      notReadyHandoffIds: Array.isArray(metaRaw.notReadyHandoffIds)
+        ? metaRaw.notReadyHandoffIds.map(String).slice(0, 8)
+        : undefined,
+      mutexStabilityIndex:
+        typeof metaRaw.mutexStabilityIndex === 'number' ? metaRaw.mutexStabilityIndex : undefined,
+      volatileMutexRegionIds: Array.isArray(metaRaw.volatileMutexRegionIds)
+        ? metaRaw.volatileMutexRegionIds.map(String).slice(0, 8)
+        : undefined,
+      workstreamBarrierCompliance:
+        typeof metaRaw.workstreamBarrierCompliance === 'number'
+          ? metaRaw.workstreamBarrierCompliance
+          : undefined,
+      stalledWorkstreamIds: Array.isArray(metaRaw.stalledWorkstreamIds)
+        ? metaRaw.stalledWorkstreamIds.map(String).slice(0, 8)
+        : undefined,
+      workstreamBarrierSince:
+        metaRaw.workstreamBarrierSince && typeof metaRaw.workstreamBarrierSince === 'object'
+          ? (metaRaw.workstreamBarrierSince as Record<string, number>)
+          : undefined,
+      roleChurnIndex:
+        typeof metaRaw.roleChurnIndex === 'number' ? metaRaw.roleChurnIndex : undefined,
+      roleChurnActorIds: Array.isArray(metaRaw.roleChurnActorIds)
+        ? metaRaw.roleChurnActorIds.map(String).slice(0, 8)
+        : undefined,
+      leaseHealthScore:
+        typeof metaRaw.leaseHealthScore === 'number' ? metaRaw.leaseHealthScore : undefined,
+      expiringLeaseIds: Array.isArray(metaRaw.expiringLeaseIds)
+        ? metaRaw.expiringLeaseIds.map(String).slice(0, 8)
+        : undefined,
+      expiredLeaseIds: Array.isArray(metaRaw.expiredLeaseIds)
+        ? metaRaw.expiredLeaseIds.map(String).slice(0, 8)
+        : undefined,
+      coordinationCompositeScore:
+        typeof metaRaw.coordinationCompositeScore === 'number'
+          ? metaRaw.coordinationCompositeScore
+          : undefined,
+      coordinationWeakestDimension:
+        typeof metaRaw.coordinationWeakestDimension === 'string'
+          ? metaRaw.coordinationWeakestDimension
+          : undefined,
+      directiveCollisionIndex:
+        typeof metaRaw.directiveCollisionIndex === 'number'
+          ? metaRaw.directiveCollisionIndex
+          : undefined,
+      collidingDirectiveIds: Array.isArray(metaRaw.collidingDirectiveIds)
+        ? metaRaw.collidingDirectiveIds.map(String).slice(0, 8)
+        : undefined,
+      handoffIntegrityScore:
+        typeof metaRaw.handoffIntegrityScore === 'number' ? metaRaw.handoffIntegrityScore : undefined,
+      brokenHandoffIds: Array.isArray(metaRaw.brokenHandoffIds)
+        ? metaRaw.brokenHandoffIds.map(String).slice(0, 8)
+        : undefined,
+      duplicatePendingHandoffTaskIds: Array.isArray(metaRaw.duplicatePendingHandoffTaskIds)
+        ? metaRaw.duplicatePendingHandoffTaskIds.map(String).slice(0, 8)
+        : undefined,
+      coordinationEscalationTier:
+        typeof metaRaw.coordinationEscalationTier === 'number'
+          ? metaRaw.coordinationEscalationTier
+          : undefined,
+      coordinationEscalationLabel:
+        typeof metaRaw.coordinationEscalationLabel === 'string'
+          ? metaRaw.coordinationEscalationLabel
+          : undefined,
+      coordinationRecoveryUrgency:
+        typeof metaRaw.coordinationRecoveryUrgency === 'number'
+          ? metaRaw.coordinationRecoveryUrgency
+          : undefined,
+      coordinationRecoveryActions: Array.isArray(metaRaw.coordinationRecoveryActions)
+        ? metaRaw.coordinationRecoveryActions.map(String).slice(0, 8)
+        : undefined,
+      directivePriorityInversionIndex:
+        typeof metaRaw.directivePriorityInversionIndex === 'number'
+          ? metaRaw.directivePriorityInversionIndex
+          : undefined,
+      invertedDirectiveIds: Array.isArray(metaRaw.invertedDirectiveIds)
+        ? metaRaw.invertedDirectiveIds.map(String).slice(0, 8)
+        : undefined,
+      handoffOrphanCount:
+        typeof metaRaw.handoffOrphanCount === 'number' ? metaRaw.handoffOrphanCount : undefined,
+      orphanHandoffIds: Array.isArray(metaRaw.orphanHandoffIds)
+        ? metaRaw.orphanHandoffIds.map(String).slice(0, 8)
+        : undefined,
+      workstreamDeadlockCount:
+        typeof metaRaw.workstreamDeadlockCount === 'number'
+          ? metaRaw.workstreamDeadlockCount
+          : undefined,
+      deadlockedWorkstreamIds: Array.isArray(metaRaw.deadlockedWorkstreamIds)
+        ? metaRaw.deadlockedWorkstreamIds.map(String).slice(0, 8)
+        : undefined,
+      leaseContentionIndex:
+        typeof metaRaw.leaseContentionIndex === 'number' ? metaRaw.leaseContentionIndex : undefined,
+      contendedRegionIds: Array.isArray(metaRaw.contendedRegionIds)
+        ? metaRaw.contendedRegionIds.map(String).slice(0, 8)
+        : undefined,
+      coordinationSaturationIndex:
+        typeof metaRaw.coordinationSaturationIndex === 'number'
+          ? metaRaw.coordinationSaturationIndex
+          : undefined,
+    },
+    auditFindings: Array.isArray(r.auditFindings)
+      ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
+      : [],
+  };
+}
+
+export function teamMultiAgentSignature(state: TeamMultiAgentLayerState): string {
+  return teamMultiAgentPersistSignature(state);
+}
+
+/**
+ * Evaluate the Agent 18 multi-agent layer: roles + coordination + duplicate reservations.
+ * Pure function — safe to call from Team OS evaluation and Strategic Command sync.
+ */
+export function evaluateTeamMultiAgentLayer(
+  inputs: TeamMultiAgentInputs,
+  previous: TeamMultiAgentLayerState | null,
+): TeamMultiAgentEvaluation {
+  const diagnostics: string[] = [];
+  const roleMinTurns = inputs.roleMinTurns || AGENT18_LIMITS.roleMinTurnsDefault;
+  const { roles, notes } = assignTeamRolesWithSlots({ ...inputs, roleMinTurns });
+  diagnostics.push(...notes);
+  const sharedIssues = detectIllegalSharedExclusiveTasks(inputs.tasks);
+  const locked = [...inputs.lockedRoles, ...(inputs.command?.lockedActorIds || [])];
+  const coordination = orchestrateTeamCoordination(inputs.turn, inputs.tasks, roles, locked);
+  diagnostics.push(...coordination.warnings);
+  coordination.arbitrationLog.forEach(a => diagnostics.push(a.reason));
+
+  const directiveConstraints = buildActorDirectiveConstraints(coordination, roles);
+  const scope = teamActorScope(inputs);
+  diagnostics.push(...assertTasksTeamScoped(inputs, scope));
+
+  const rawProposals = inputs.directiveProposals || [];
+  const scoped = filterCrossTeamDirectives(rawProposals, scope);
+  scoped.rejected.forEach(r =>
+    diagnostics.push(`Rejected cross-team directive ${r.proposal.id}: ${r.reason}`),
+  );
+  const quota = applyDirectiveQuotaGuard(scoped.inTeam, {
+    maxPerActorPerTurn: AGENT18_LIMITS.maxDirectivesPerActorPerTurn,
+    maxPerTeamPerTurn: AGENT18_LIMITS.maxDirectivesPerTeamPerTurn,
+  });
+  quota.dropped.forEach(d =>
+    diagnostics.push(`Dropped directive ${d.proposal.id}: ${d.reason}`),
+  );
+  const proposals = quota.allowed;
+  const directiveCollisions = computeDirectiveCollisionIndex(proposals);
+  directiveCollisions.notes.forEach(n => diagnostics.push(n));
+  const handoffIntegrity = evaluateHandoffChainIntegrity(coordination.handoffs, scope);
+  handoffIntegrity.notes.forEach(n => diagnostics.push(n));
+  const directiveResult = coordinateTeammateDirectives(proposals, coordination, roles);
+  const priorityInversion = computeDirectivePriorityInversion(
+    proposals,
+    directiveCollisions.collidingProposalIds,
+    {
+      allowed: directiveResult.allowed,
+      suppressed: directiveResult.suppressed.map(s => s.proposal),
+    },
+  );
+  priorityInversion.notes.forEach(n => diagnostics.push(n));
+  const handoffOrphans = detectHandoffOrphans(coordination.handoffs, inputs.tasks, roles);
+  handoffOrphans.notes.forEach(n => diagnostics.push(n));
+  const handoffSla = evaluateHandoffSla(inputs.turn, coordination.handoffs, {
+    maxPendingTurns: AGENT18_LIMITS.handoffSlaMaxPendingTurns,
+  });
+  handoffSla.notes.forEach(n => diagnostics.push(n));
+  const handoffReadiness = scoreHandoffReadiness(
+    coordination.handoffs,
+    inputs.actors,
+    roles,
+    inputs.tasks,
+  );
+  handoffReadiness.notes.forEach(n => diagnostics.push(n));
+  const capacityLedger = buildActorCapacityLedger(inputs.actors, inputs.tasks, roles);
+  suggestCapacityRebalanceNotes(capacityLedger).forEach(n => diagnostics.push(n));
+  directiveResult.suppressed.forEach(s =>
+    diagnostics.push(`Suppressed directive ${s.proposal.id}: ${s.reason}`),
+  );
+
+  let duplicateGuard = previous
+    ? advanceDuplicateGuardTurn(previous.duplicateGuard, inputs.turn)
+    : emptyDuplicateGuardState(inputs.turn);
+  Object.entries(coordination.mutexRegions).forEach(([regionId, holderActorId]) => {
+    const task = inputs.tasks.find(t => t.regionId === regionId);
+    duplicateGuard = reserveActionSlot(
+      duplicateGuard,
+      reservationKeyForRegionAction(regionId, 'region_deposit'),
+      holderActorId,
+      task?.id || `region_${regionId}`,
+      inputs.turn,
+    );
+  });
+
+  let state: TeamMultiAgentLayerState = {
+    version: 1,
+    teamId: inputs.teamId,
+    turn: inputs.turn,
+    roles,
+    coordination,
+    duplicateGuard,
+    diagnostics,
+    meta: emptyCoordinationMeta(),
+    auditFindings: [],
+  };
+
+  const mutexHistory = [...(previous?.meta.mutexHistory || []), coordination.mutexRegions].slice(
+    -AGENT18_LIMITS.maxMutexHistorySnapshots,
+  );
+  const reconcile = mergeReconcileThrashing(
+    reconcileCoordinationPlans(previous?.coordination ?? null, coordination, inputs.turn),
+    mutexHistory,
+  );
+  if (!reconcile.stable) {
+    diagnostics.push(`Coordination reconcile: ${reconcile.changes.length} change(s)`);
+  }
+  if (reconcile.thrashingRegions.length) {
+    diagnostics.push(`Mutex thrashing: ${reconcile.thrashingRegions.join(', ')}`);
+  }
+
+  const mutexStability = computeMutexStabilityIndex(mutexHistory, reconcile.thrashingRegions);
+  mutexStability.notes.forEach(n => diagnostics.push(n));
+
+  const barrierSince = trackWorkstreamBarrierSince(
+    previous?.meta.workstreamBarrierSince ?? {},
+    coordination.workstreams,
+    inputs.turn,
+  );
+  const workstreamBarriers = evaluateWorkstreamBarriers(
+    inputs.turn,
+    coordination.workstreams,
+    inputs.tasks,
+    { workstreamSinceTurn: barrierSince },
+  );
+  workstreamBarriers.notes.forEach(n => diagnostics.push(n));
+  const workstreamDeadlocks = detectWorkstreamDeadlocks(coordination.workstreams);
+  workstreamDeadlocks.notes.forEach(n => diagnostics.push(n));
+  const leaseContention = computeLeaseContentionIndex(
+    coordination.leases,
+    coordination.handoffs,
+    coordination.mutexRegions,
+  );
+  leaseContention.notes.forEach(n => diagnostics.push(n));
+  const coordinationSaturation = measureCoordinationSaturation({
+    directiveProposalCount: proposals.length,
+    pendingHandoffCount: coordination.handoffs.filter(h => h.status === 'pending').length,
+    activeLeaseCount: coordination.leases.length,
+    activeWorkstreamCount: coordination.workstreams.filter(ws => ws.phase !== 'complete').length,
+    suppressedDirectiveCount: directiveResult.suppressed.length + quota.dropped.length,
+  });
+  coordinationSaturation.notes.forEach(n => diagnostics.push(n));
+
+  const roleChurn = computeRoleChurnIndex(previous?.roles ?? null, roles);
+  roleChurn.notes.forEach(n => diagnostics.push(n));
+
+  const leaseExpiry = evaluateLeaseExpiry(inputs.turn, coordination.leases);
+  leaseExpiry.notes.forEach(n => diagnostics.push(n));
+
+  const coordinationComposite = computeCoordinationComposite({
+    handoffSlaCompliance: handoffSla.complianceScore,
+    handoffReadinessAverage: handoffReadiness.averageReadiness,
+    mutexStabilityIndex: mutexStability.stabilityIndex,
+    workstreamBarrierCompliance: workstreamBarriers.barrierComplianceScore,
+    capacityBalanceScore: capacityLedger.balanceScore,
+    leaseHealthScore: leaseExpiry.leaseHealthScore,
+    roleChurnIndex: roleChurn.churnIndex,
+  });
+  coordinationComposite.notes.forEach(n => diagnostics.push(n));
+
+  state = {
+    ...state,
+    diagnostics,
+    meta: {
+      ...emptyCoordinationMeta(),
+      directiveConstraints: directiveResult.constraintsByActor,
+      suppressedDirectiveIds: [
+        ...quota.dropped.map(d => d.proposal.id),
+        ...directiveResult.suppressed.map(s => s.proposal.id),
+      ].slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
+      lastReconcileStable: reconcile.stable,
+      thrashingRegions: reconcile.thrashingRegions,
+      mutexHistory,
+      handoffSlaCompliance: handoffSla.complianceScore,
+      overdueHandoffIds: handoffSla.overdueHandoffIds,
+      capacityBalanceScore: capacityLedger.balanceScore,
+      overloadedActorIds: capacityLedger.overloadedActorIds,
+      idleActorIds: capacityLedger.idleActorIds,
+      directiveQuotaRemaining: quota.remainingByActor,
+      handoffReadinessAverage: handoffReadiness.averageReadiness,
+      notReadyHandoffIds: handoffReadiness.notReadyHandoffIds,
+      mutexStabilityIndex: mutexStability.stabilityIndex,
+      volatileMutexRegionIds: mutexStability.volatileRegionIds,
+      workstreamBarrierCompliance: workstreamBarriers.barrierComplianceScore,
+      stalledWorkstreamIds: workstreamBarriers.stalledWorkstreamIds,
+      workstreamBarrierSince: barrierSince,
+      roleChurnIndex: roleChurn.churnIndex,
+      roleChurnActorIds: roleChurn.churnedActorIds,
+      leaseHealthScore: leaseExpiry.leaseHealthScore,
+      expiringLeaseIds: leaseExpiry.expiringLeaseIds,
+      expiredLeaseIds: leaseExpiry.expiredLeaseIds,
+      coordinationCompositeScore: coordinationComposite.compositeScore,
+      coordinationWeakestDimension: coordinationComposite.weakestDimension,
+      directiveCollisionIndex: directiveCollisions.collisionIndex,
+      collidingDirectiveIds: directiveCollisions.collidingProposalIds,
+      handoffIntegrityScore: handoffIntegrity.integrityScore,
+      brokenHandoffIds: handoffIntegrity.brokenHandoffIds,
+      duplicatePendingHandoffTaskIds: handoffIntegrity.duplicatePendingTaskIds,
+      directivePriorityInversionIndex: priorityInversion.inversionIndex,
+      invertedDirectiveIds: priorityInversion.invertedProposalIds,
+      handoffOrphanCount: handoffOrphans.orphanCount,
+      orphanHandoffIds: handoffOrphans.orphanHandoffIds,
+      workstreamDeadlockCount: workstreamDeadlocks.deadlockCount,
+      deadlockedWorkstreamIds: workstreamDeadlocks.deadlockedWorkstreamIds,
+      leaseContentionIndex: leaseContention.contentionIndex,
+      contendedRegionIds: leaseContention.contendedRegionIds,
+      coordinationSaturationIndex: coordinationSaturation.saturationIndex,
+    },
+  };
+
+  const auditFindings = auditTeamMultiAgentLayer(state, inputs);
+  const escalation = computeCoordinationEscalationTier({
+    coordinationCompositeScore: coordinationComposite.compositeScore,
+    auditErrors: auditFindings.filter(f => f.severity === 'error').length,
+    auditWarnings: auditFindings.filter(f => f.severity === 'warning').length,
+    directiveCollisionIndex: directiveCollisions.collisionIndex,
+    handoffIntegrityScore: handoffIntegrity.integrityScore,
+  });
+  escalation.notes.forEach(n => diagnostics.push(n));
+  const recoveryPlaybook = buildCoordinationRecoveryPlaybook({
+    escalationTier: escalation.tier,
+    coordinationCompositeScore: coordinationComposite.compositeScore,
+    coordinationWeakestDimension: coordinationComposite.weakestDimension,
+    directiveCollisionIndex: directiveCollisions.collisionIndex,
+    handoffIntegrityScore: handoffIntegrity.integrityScore,
+  });
+  recoveryPlaybook.notes.forEach(n => diagnostics.push(n));
+  state = attachAuditToState(state, auditFindings, {
+    coordinationEscalationTier: escalation.tier,
+    coordinationEscalationLabel: escalation.label,
+    coordinationRecoveryUrgency: recoveryPlaybook.recoveryUrgency,
+    coordinationRecoveryActions: recoveryPlaybook.recommendedActions,
+  });
+  state = { ...state, diagnostics };
+
+  const coordinationIssues = [
+    ...sharedIssues,
+    ...coordination.warnings,
+    ...auditFindings.filter(f => f.severity !== 'info').map(f => f.message),
+  ];
+
+  const persistence = decideTeamMultiAgentPersistence(
+    previous,
+    state,
+    previous ? teamMultiAgentPersistSignature(previous) : null,
+    0,
+  );
+
+  return {
+    state,
+    blockedDuplicates: sharedIssues,
+    coordinationIssues,
+    auditFindings: state.auditFindings,
+    persistence,
+  };
+}
+
+export function syncMultiAgentCoordinationForDirectives(
+  inputs: TeamMultiAgentInputs,
+  stored: TeamMultiAgentLayerState | null,
+): TeamMultiAgentLayerState {
+  return evaluateTeamMultiAgentLayer(inputs, stored).state;
+}
+
+
+// --- source: dual-team-coordination.ts ---
+  combineDualTeamCoordinationComposite,
+} from './coordination-composite-score.ts';
+  auditCrossTeamMutexIsolation,
+  assertTasksTeamScoped,
+  teamActorScope,
+} from './team-boundary-guard.ts';
+  TeamMultiAgentEvaluation,
+  TeamMultiAgentInputs,
+  TeamMultiAgentLayerState,
+} from './types.ts';
+
+export interface DualTeamMultiAgentResult {
+  friendly: TeamMultiAgentEvaluation;
+  enemy: TeamMultiAgentEvaluation | null;
+  isolationIssues: string[];
+  byTeam: Record<string, TeamMultiAgentLayerState>;
+  handoffSlaCombinedCompliance: number;
+  mutexStabilityCombined: number;
+  coordinationCompositeCombined: number;
+  roleChurnCombined: number;
+  leaseHealthCombined: number;
+  directiveCollisionCombined: number;
+  handoffIntegrityCombined: number;
+  escalationTierCombined: number;
+  recoveryUrgencyCombined: number;
+  priorityInversionCombined: number;
+  handoffOrphanCombined: number;
+  workstreamDeadlockCombined: number;
+  leaseContentionCombined: number;
+  coordinationSaturationCombined: number;
+}
+
+/**
+ * Evaluate friendly + optional enemy team layers with cross-team isolation checks.
+ * Planning-only: each team keeps its own mutex namespace (no shared state mutation).
+ */
+export function evaluateDualTeamMultiAgentLayers(
+  friendlyInputs: TeamMultiAgentInputs,
+  enemyInputs: TeamMultiAgentInputs | null,
+  storedByTeam: Record<string, TeamMultiAgentLayerState | null> = {},
+): DualTeamMultiAgentResult {
+  const friendlyScope = teamActorScope(friendlyInputs);
+  const boundaryIssues = assertTasksTeamScoped(friendlyInputs, friendlyScope);
+  const friendlyProposals = friendlyInputs.directiveProposals || [];
+  const friendly = evaluateTeamMultiAgentLayer(
+    {
+      ...friendlyInputs,
+      directiveProposals: friendlyProposals,
+    },
+    storedByTeam[friendlyInputs.teamId] ?? null,
+  );
+  friendly.coordinationIssues.push(...boundaryIssues);
+
+  if (!enemyInputs) {
+    const friendlySla = evaluateHandoffSla(
+      friendlyInputs.turn,
+      friendly.state.coordination.handoffs,
+    );
+    return {
+      friendly,
+      enemy: null,
+      isolationIssues: boundaryIssues,
+      byTeam: { [friendlyInputs.teamId]: friendly.state },
+      handoffSlaCombinedCompliance: friendlySla.complianceScore,
+      mutexStabilityCombined: friendly.state.meta.mutexStabilityIndex ?? 100,
+      coordinationCompositeCombined: friendly.state.meta.coordinationCompositeScore ?? 100,
+      roleChurnCombined: friendly.state.meta.roleChurnIndex ?? 0,
+      leaseHealthCombined: friendly.state.meta.leaseHealthScore ?? 100,
+      directiveCollisionCombined: friendly.state.meta.directiveCollisionIndex ?? 0,
+      handoffIntegrityCombined: friendly.state.meta.handoffIntegrityScore ?? 100,
+      escalationTierCombined: friendly.state.meta.coordinationEscalationTier ?? 0,
+      recoveryUrgencyCombined: friendly.state.meta.coordinationRecoveryUrgency ?? 0,
+      priorityInversionCombined: friendly.state.meta.directivePriorityInversionIndex ?? 0,
+      handoffOrphanCombined: friendly.state.meta.handoffOrphanCount ?? 0,
+      workstreamDeadlockCombined: friendly.state.meta.workstreamDeadlockCount ?? 0,
+      leaseContentionCombined: friendly.state.meta.leaseContentionIndex ?? 0,
+      coordinationSaturationCombined: friendly.state.meta.coordinationSaturationIndex ?? 0,
+    };
+  }
+
+  const enemyScope = teamActorScope(enemyInputs);
+  const enemyBoundary = assertTasksTeamScoped(enemyInputs, enemyScope);
+  const enemy = evaluateTeamMultiAgentLayer(enemyInputs, storedByTeam[enemyInputs.teamId] ?? null);
+  enemy.coordinationIssues.push(...enemyBoundary);
+
+  const mutexIssues = auditCrossTeamMutexIsolation(
+    friendly.state.coordination.mutexRegions,
+    enemy.state.coordination.mutexRegions,
+  );
+
+  const crossActorIssues: string[] = [];
+  if ([...friendlyScope].some(id => enemyScope.has(id))) {
+    crossActorIssues.push('Friendly and enemy teams share actor ids — invalid isolation');
+  }
+
+  const isolationIssues = [...boundaryIssues, ...enemyBoundary, ...mutexIssues, ...crossActorIssues];
+
+  const friendlySla = evaluateHandoffSla(friendlyInputs.turn, friendly.state.coordination.handoffs);
+  const enemySla = evaluateHandoffSla(enemyInputs.turn, enemy.state.coordination.handoffs);
+  const slaSummary = summarizeDualTeamHandoffSla(
+    friendlyInputs.teamId,
+    friendlySla,
+    enemyInputs.teamId,
+    enemySla,
+  );
+
+  return {
+    friendly,
+    enemy,
+    isolationIssues,
+    byTeam: {
+      [friendlyInputs.teamId]: friendly.state,
+      [enemyInputs.teamId]: enemy.state,
+    },
+    handoffSlaCombinedCompliance: slaSummary.combinedCompliance,
+    mutexStabilityCombined: combineDualTeamMutexStability(
+      {
+        stabilityIndex: friendly.state.meta.mutexStabilityIndex ?? 100,
+        volatileRegionIds: friendly.state.meta.volatileMutexRegionIds ?? [],
+        stableRegionCount: 0,
+        trackedTurns: friendly.state.meta.mutexHistory.length,
+        notes: [],
+      },
+      {
+        stabilityIndex: enemy.state.meta.mutexStabilityIndex ?? 100,
+        volatileRegionIds: enemy.state.meta.volatileMutexRegionIds ?? [],
+        stableRegionCount: 0,
+        trackedTurns: enemy.state.meta.mutexHistory.length,
+        notes: [],
+      },
+    ),
+    coordinationCompositeCombined: combineDualTeamCoordinationComposite(
+      friendly.state.meta.coordinationCompositeScore ?? 100,
+      enemy.state.meta.coordinationCompositeScore ?? 100,
+    ),
+    roleChurnCombined: combineDualTeamRoleChurn(
+      {
+        churnIndex: friendly.state.meta.roleChurnIndex ?? 0,
+        churnedActorIds: friendly.state.meta.roleChurnActorIds ?? [],
+        stableActorCount: 0,
+        notes: [],
+      },
+      {
+        churnIndex: enemy.state.meta.roleChurnIndex ?? 0,
+        churnedActorIds: enemy.state.meta.roleChurnActorIds ?? [],
+        stableActorCount: 0,
+        notes: [],
+      },
+    ),
+    leaseHealthCombined: combineDualTeamLeaseHealth(
+      {
+        leaseHealthScore: friendly.state.meta.leaseHealthScore ?? 100,
+        expiringLeaseIds: friendly.state.meta.expiringLeaseIds ?? [],
+        expiredLeaseIds: friendly.state.meta.expiredLeaseIds ?? [],
+        notes: [],
+      },
+      {
+        leaseHealthScore: enemy.state.meta.leaseHealthScore ?? 100,
+        expiringLeaseIds: enemy.state.meta.expiringLeaseIds ?? [],
+        expiredLeaseIds: enemy.state.meta.expiredLeaseIds ?? [],
+        notes: [],
+      },
+    ),
+    directiveCollisionCombined: combineDualTeamDirectiveCollision(
+      {
+        collisionIndex: friendly.state.meta.directiveCollisionIndex ?? 0,
+        collidingProposalIds: friendly.state.meta.collidingDirectiveIds ?? [],
+        notes: [],
+      },
+      {
+        collisionIndex: enemy.state.meta.directiveCollisionIndex ?? 0,
+        collidingProposalIds: enemy.state.meta.collidingDirectiveIds ?? [],
+        notes: [],
+      },
+    ),
+    handoffIntegrityCombined: combineDualTeamHandoffIntegrity(
+      {
+        integrityScore: friendly.state.meta.handoffIntegrityScore ?? 100,
+        brokenHandoffIds: friendly.state.meta.brokenHandoffIds ?? [],
+        duplicatePendingTaskIds: friendly.state.meta.duplicatePendingHandoffTaskIds ?? [],
+        notes: [],
+      },
+      {
+        integrityScore: enemy.state.meta.handoffIntegrityScore ?? 100,
+        brokenHandoffIds: enemy.state.meta.brokenHandoffIds ?? [],
+        duplicatePendingTaskIds: enemy.state.meta.duplicatePendingHandoffTaskIds ?? [],
+        notes: [],
+      },
+    ),
+    escalationTierCombined: combineDualTeamEscalationTier(
+      friendly.state.meta.coordinationEscalationTier ?? 0,
+      enemy.state.meta.coordinationEscalationTier ?? 0,
+    ),
+    recoveryUrgencyCombined: combineDualTeamRecoveryUrgency(
+      friendly.state.meta.coordinationRecoveryUrgency ?? 0,
+      enemy.state.meta.coordinationRecoveryUrgency ?? 0,
+    ),
+    priorityInversionCombined: combineDualTeamPriorityInversion(
+      friendly.state.meta.directivePriorityInversionIndex ?? 0,
+      enemy.state.meta.directivePriorityInversionIndex ?? 0,
+    ),
+    handoffOrphanCombined: combineDualTeamHandoffOrphans(
+      friendly.state.meta.handoffOrphanCount ?? 0,
+      enemy.state.meta.handoffOrphanCount ?? 0,
+    ),
+    workstreamDeadlockCombined: combineDualTeamWorkstreamDeadlocks(
+      friendly.state.meta.workstreamDeadlockCount ?? 0,
+      enemy.state.meta.workstreamDeadlockCount ?? 0,
+    ),
+    leaseContentionCombined: combineDualTeamLeaseContention(
+      friendly.state.meta.leaseContentionIndex ?? 0,
+      enemy.state.meta.leaseContentionIndex ?? 0,
+    ),
+    coordinationSaturationCombined: combineDualTeamCoordinationSaturation(
+      friendly.state.meta.coordinationSaturationIndex ?? 0,
+      enemy.state.meta.coordinationSaturationIndex ?? 0,
+    ),
+  };
 }
 
 
@@ -4942,6 +5450,138 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.recoveryUrgencyCombined === 'number' &&
       typeof dual.priorityInversionCombined === 'number' &&
       typeof dual.handoffOrphanCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_workstream_deadlock_cycle', 'Workstream deadlock: mutual barrier dependency detected', () => {
+    const report = detectWorkstreamDeadlocks([
+      {
+        id: 'ws_a',
+        actorIds: ['a'],
+        taskIds: ['task_a'],
+        phase: 'waiting_barrier',
+        barrierTaskIds: ['task_b'],
+      },
+      {
+        id: 'ws_b',
+        actorIds: ['b'],
+        taskIds: ['task_b'],
+        phase: 'waiting_barrier',
+        barrierTaskIds: ['task_a'],
+      },
+    ]);
+    return report.deadlockCount >= 2 && report.deadlockedWorkstreamIds.includes('ws_a');
+  });
+
+  check(results, 'a18_workstream_deadlock_none', 'Workstream deadlock: independent streams score zero', () => {
+    const report = detectWorkstreamDeadlocks([
+      {
+        id: 'ws_a',
+        actorIds: ['a'],
+        taskIds: ['task_a'],
+        phase: 'active',
+        barrierTaskIds: [],
+      },
+    ]);
+    return report.deadlockCount === 0;
+  });
+
+  check(results, 'a18_lease_contention_mutex', 'Lease contention: pending handoff vs mutex holder', () => {
+    const report = computeLeaseContentionIndex(
+      [],
+      [
+        {
+          id: 'h1',
+          fromActorId: 'a',
+          toActorId: 'mate',
+          regionId: 'NSW',
+          taskId: 't1',
+          status: 'pending',
+          requestedTurn: 1,
+          reason: 'test',
+        },
+      ],
+      { NSW: 'player' },
+    );
+    return report.contentionIndex > 0 && report.contendedRegionIds.includes('NSW');
+  });
+
+  check(results, 'a18_lease_contention_clear', 'Lease contention: aligned handoff scores zero', () => {
+    const report = computeLeaseContentionIndex(
+      [],
+      [
+        {
+          id: 'h1',
+          fromActorId: 'a',
+          toActorId: 'player',
+          regionId: 'NSW',
+          taskId: 't1',
+          status: 'pending',
+          requestedTurn: 1,
+          reason: 'test',
+        },
+      ],
+      { NSW: 'player' },
+    );
+    return report.contentionIndex === 0;
+  });
+
+  check(results, 'a18_coordination_saturation_high', 'Coordination saturation: near-limit load scores high', () => {
+    const report = measureCoordinationSaturation({
+      directiveProposalCount: 8,
+      pendingHandoffCount: 6,
+      activeLeaseCount: 12,
+      activeWorkstreamCount: 4,
+      suppressedDirectiveCount: 4,
+    });
+    return report.saturationIndex >= 75;
+  });
+
+  check(results, 'a18_coordination_saturation_low', 'Coordination saturation: light load stays low', () => {
+    const report = measureCoordinationSaturation({
+      directiveProposalCount: 1,
+      pendingHandoffCount: 0,
+      activeLeaseCount: 1,
+      activeWorkstreamCount: 1,
+    });
+    return report.saturationIndex < 40;
+  });
+
+  check(results, 'a18_eval_round9_meta', 'Layer: round-9 meta exposes deadlock, contention, saturation signals', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.workstreamDeadlockCount === 'number' &&
+      typeof m.leaseContentionIndex === 'number' &&
+      typeof m.coordinationSaturationIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_workstream_deadlock', 'Audit: workstream deadlock surfaces error', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = {
+      ...ev.state,
+      meta: { ...ev.state.meta, workstreamDeadlockCount: 2, deadlockedWorkstreamIds: ['ws_a', 'ws_b'] },
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'error' && /deadlock/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round9_combined', 'Dual team: round-9 combined deadlock, contention, saturation exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.workstreamDeadlockCombined === 'number' &&
+      typeof dual.leaseContentionCombined === 'number' &&
+      typeof dual.coordinationSaturationCombined === 'number'
     );
   });
 

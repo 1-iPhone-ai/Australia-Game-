@@ -44,6 +44,9 @@ import { computeCoordinationEscalationTier } from './coordination-escalation-tie
 import { buildCoordinationRecoveryPlaybook } from './coordination-recovery-playbook.ts';
 import { computeDirectivePriorityInversion } from './directive-priority-inversion.ts';
 import { detectHandoffOrphans } from './handoff-orphan-detector.ts';
+import { detectWorkstreamDeadlocks } from './workstream-deadlock-detector.ts';
+import { computeLeaseContentionIndex } from './lease-contention-index.ts';
+import { measureCoordinationSaturation } from './coordination-saturation-gauge.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -232,6 +235,22 @@ export function sanitizeTeamMultiAgentCoordinationState(
       orphanHandoffIds: Array.isArray(metaRaw.orphanHandoffIds)
         ? metaRaw.orphanHandoffIds.map(String).slice(0, 8)
         : undefined,
+      workstreamDeadlockCount:
+        typeof metaRaw.workstreamDeadlockCount === 'number'
+          ? metaRaw.workstreamDeadlockCount
+          : undefined,
+      deadlockedWorkstreamIds: Array.isArray(metaRaw.deadlockedWorkstreamIds)
+        ? metaRaw.deadlockedWorkstreamIds.map(String).slice(0, 8)
+        : undefined,
+      leaseContentionIndex:
+        typeof metaRaw.leaseContentionIndex === 'number' ? metaRaw.leaseContentionIndex : undefined,
+      contendedRegionIds: Array.isArray(metaRaw.contendedRegionIds)
+        ? metaRaw.contendedRegionIds.map(String).slice(0, 8)
+        : undefined,
+      coordinationSaturationIndex:
+        typeof metaRaw.coordinationSaturationIndex === 'number'
+          ? metaRaw.coordinationSaturationIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -366,6 +385,22 @@ export function evaluateTeamMultiAgentLayer(
     { workstreamSinceTurn: barrierSince },
   );
   workstreamBarriers.notes.forEach(n => diagnostics.push(n));
+  const workstreamDeadlocks = detectWorkstreamDeadlocks(coordination.workstreams);
+  workstreamDeadlocks.notes.forEach(n => diagnostics.push(n));
+  const leaseContention = computeLeaseContentionIndex(
+    coordination.leases,
+    coordination.handoffs,
+    coordination.mutexRegions,
+  );
+  leaseContention.notes.forEach(n => diagnostics.push(n));
+  const coordinationSaturation = measureCoordinationSaturation({
+    directiveProposalCount: proposals.length,
+    pendingHandoffCount: coordination.handoffs.filter(h => h.status === 'pending').length,
+    activeLeaseCount: coordination.leases.length,
+    activeWorkstreamCount: coordination.workstreams.filter(ws => ws.phase !== 'complete').length,
+    suppressedDirectiveCount: directiveResult.suppressed.length + quota.dropped.length,
+  });
+  coordinationSaturation.notes.forEach(n => diagnostics.push(n));
 
   const roleChurn = computeRoleChurnIndex(previous?.roles ?? null, roles);
   roleChurn.notes.forEach(n => diagnostics.push(n));
@@ -426,6 +461,11 @@ export function evaluateTeamMultiAgentLayer(
       invertedDirectiveIds: priorityInversion.invertedProposalIds,
       handoffOrphanCount: handoffOrphans.orphanCount,
       orphanHandoffIds: handoffOrphans.orphanHandoffIds,
+      workstreamDeadlockCount: workstreamDeadlocks.deadlockCount,
+      deadlockedWorkstreamIds: workstreamDeadlocks.deadlockedWorkstreamIds,
+      leaseContentionIndex: leaseContention.contentionIndex,
+      contendedRegionIds: leaseContention.contendedRegionIds,
+      coordinationSaturationIndex: coordinationSaturation.saturationIndex,
     },
   };
 

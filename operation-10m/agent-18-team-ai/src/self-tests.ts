@@ -52,6 +52,9 @@ import { computeCoordinationEscalationTier } from './coordination-escalation-tie
 import { buildCoordinationRecoveryPlaybook } from './coordination-recovery-playbook.ts';
 import { computeDirectivePriorityInversion } from './directive-priority-inversion.ts';
 import { detectHandoffOrphans } from './handoff-orphan-detector.ts';
+import { detectWorkstreamDeadlocks } from './workstream-deadlock-detector.ts';
+import { computeLeaseContentionIndex } from './lease-contention-index.ts';
+import { measureCoordinationSaturation } from './coordination-saturation-gauge.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -1475,6 +1478,138 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.recoveryUrgencyCombined === 'number' &&
       typeof dual.priorityInversionCombined === 'number' &&
       typeof dual.handoffOrphanCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_workstream_deadlock_cycle', 'Workstream deadlock: mutual barrier dependency detected', () => {
+    const report = detectWorkstreamDeadlocks([
+      {
+        id: 'ws_a',
+        actorIds: ['a'],
+        taskIds: ['task_a'],
+        phase: 'waiting_barrier',
+        barrierTaskIds: ['task_b'],
+      },
+      {
+        id: 'ws_b',
+        actorIds: ['b'],
+        taskIds: ['task_b'],
+        phase: 'waiting_barrier',
+        barrierTaskIds: ['task_a'],
+      },
+    ]);
+    return report.deadlockCount >= 2 && report.deadlockedWorkstreamIds.includes('ws_a');
+  });
+
+  check(results, 'a18_workstream_deadlock_none', 'Workstream deadlock: independent streams score zero', () => {
+    const report = detectWorkstreamDeadlocks([
+      {
+        id: 'ws_a',
+        actorIds: ['a'],
+        taskIds: ['task_a'],
+        phase: 'active',
+        barrierTaskIds: [],
+      },
+    ]);
+    return report.deadlockCount === 0;
+  });
+
+  check(results, 'a18_lease_contention_mutex', 'Lease contention: pending handoff vs mutex holder', () => {
+    const report = computeLeaseContentionIndex(
+      [],
+      [
+        {
+          id: 'h1',
+          fromActorId: 'a',
+          toActorId: 'mate',
+          regionId: 'NSW',
+          taskId: 't1',
+          status: 'pending',
+          requestedTurn: 1,
+          reason: 'test',
+        },
+      ],
+      { NSW: 'player' },
+    );
+    return report.contentionIndex > 0 && report.contendedRegionIds.includes('NSW');
+  });
+
+  check(results, 'a18_lease_contention_clear', 'Lease contention: aligned handoff scores zero', () => {
+    const report = computeLeaseContentionIndex(
+      [],
+      [
+        {
+          id: 'h1',
+          fromActorId: 'a',
+          toActorId: 'player',
+          regionId: 'NSW',
+          taskId: 't1',
+          status: 'pending',
+          requestedTurn: 1,
+          reason: 'test',
+        },
+      ],
+      { NSW: 'player' },
+    );
+    return report.contentionIndex === 0;
+  });
+
+  check(results, 'a18_coordination_saturation_high', 'Coordination saturation: near-limit load scores high', () => {
+    const report = measureCoordinationSaturation({
+      directiveProposalCount: 8,
+      pendingHandoffCount: 6,
+      activeLeaseCount: 12,
+      activeWorkstreamCount: 4,
+      suppressedDirectiveCount: 4,
+    });
+    return report.saturationIndex >= 75;
+  });
+
+  check(results, 'a18_coordination_saturation_low', 'Coordination saturation: light load stays low', () => {
+    const report = measureCoordinationSaturation({
+      directiveProposalCount: 1,
+      pendingHandoffCount: 0,
+      activeLeaseCount: 1,
+      activeWorkstreamCount: 1,
+    });
+    return report.saturationIndex < 40;
+  });
+
+  check(results, 'a18_eval_round9_meta', 'Layer: round-9 meta exposes deadlock, contention, saturation signals', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.workstreamDeadlockCount === 'number' &&
+      typeof m.leaseContentionIndex === 'number' &&
+      typeof m.coordinationSaturationIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_workstream_deadlock', 'Audit: workstream deadlock surfaces error', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = {
+      ...ev.state,
+      meta: { ...ev.state.meta, workstreamDeadlockCount: 2, deadlockedWorkstreamIds: ['ws_a', 'ws_b'] },
+    };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'error' && /deadlock/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round9_combined', 'Dual team: round-9 combined deadlock, contention, saturation exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.workstreamDeadlockCombined === 'number' &&
+      typeof dual.leaseContentionCombined === 'number' &&
+      typeof dual.coordinationSaturationCombined === 'number'
     );
   });
 

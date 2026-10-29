@@ -30,4 +30,7 @@ export * from './coordination-escalation-tier.ts';
 export * from './coordination-recovery-playbook.ts';
 export * from './directive-priority-inversion.ts';
 export * from './handoff-orphan-detector.ts';
+export * from './workstream-deadlock-detector.ts';
+export * from './lease-contention-index.ts';
+export * from './coordination-saturation-gauge.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';
