@@ -103,6 +103,8 @@ import { runGrantClawbackOutlookBridgeSelfTests } from './modules/grant-clawback
 import { runSovereignIssuanceOutlookCoherenceSelfTests } from './modules/sovereign-issuance-outlook-coherence/self-tests';
 import { runDebtFiscalCouplingOutlookBridgeSelfTests } from './modules/debt-fiscal-coupling-outlook-bridge/self-tests';
 import { runFiscalBufferOutlookCoherenceSelfTests } from './modules/fiscal-buffer-outlook-coherence/self-tests';
+import { runReconciliationCouplingOutlookBridgeSelfTests } from './modules/reconciliation-coupling-outlook-bridge/self-tests';
+import { runContingentBufferOutlookCoherenceSelfTests } from './modules/contingent-buffer-outlook-coherence/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -215,6 +217,8 @@ ok = runSuite('Grant clawback outlook bridge', runGrantClawbackOutlookBridgeSelf
 ok = runSuite('Sovereign issuance outlook coherence', runSovereignIssuanceOutlookCoherenceSelfTests) && ok;
 ok = runSuite('Debt fiscal coupling outlook bridge', runDebtFiscalCouplingOutlookBridgeSelfTests) && ok;
 ok = runSuite('Fiscal buffer outlook coherence', runFiscalBufferOutlookCoherenceSelfTests) && ok;
+ok = runSuite('Reconciliation coupling outlook bridge', runReconciliationCouplingOutlookBridgeSelfTests) && ok;
+ok = runSuite('Contingent buffer outlook coherence', runContingentBufferOutlookCoherenceSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

@@ -200,6 +200,10 @@ const FILES = [
   'debt-fiscal-coupling-outlook-bridge/compute.ts',
   'fiscal-buffer-outlook-coherence/types.ts',
   'fiscal-buffer-outlook-coherence/compute.ts',
+  'reconciliation-coupling-outlook-bridge/types.ts',
+  'reconciliation-coupling-outlook-bridge/compute.ts',
+  'contingent-buffer-outlook-coherence/types.ts',
+  'contingent-buffer-outlook-coherence/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -337,7 +341,9 @@ const FILES = [
   'grant-clawback-outlook-bridge/self-tests.ts',
   'sovereign-issuance-outlook-coherence/self-tests.ts',
   'debt-fiscal-coupling-outlook-bridge/self-tests.ts',
-  'fiscal-buffer-outlook-coherence/self-tests.ts'
+  'fiscal-buffer-outlook-coherence/self-tests.ts',
+  'reconciliation-coupling-outlook-bridge/self-tests.ts',
+  'contingent-buffer-outlook-coherence/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {
