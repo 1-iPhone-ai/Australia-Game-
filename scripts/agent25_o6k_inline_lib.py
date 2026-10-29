@@ -165,6 +165,47 @@ def sanitize_inlined_chunk(rel: str, src: str) -> str:
             "  runV1018FfedTurn,\n  createEmptyV1018FfedPersisted,\n  v1018FfedInputHash,\n  sanitizeV1018FfedPersisted,\n} from '../engine/fiscal-federalism-orchestrator';",
             "  runV1018FfedTurn,\n  v1018FfedInputHash,\n} from '../engine/fiscal-federalism-orchestrator';\nimport {\n  createEmptyV1018FfedPersisted,\n  sanitizeV1018FfedPersisted,\n} from '../persistence/migrations';",
         )
+    if "v1017-intercity-logistics" in name.replace("\\", "/"):
+        src = src.replace("SECTION 20BI", "SECTION 20BK")
+    if "intercity-logistics/persistence/migrations.ts" in name.replace("\\", "/"):
+        src = re.sub(r"function clampNum\(", "function v1017IclogClampNum(", src)
+        src = re.sub(r"(?<![\w.])clampNum\(", "v1017IclogClampNum(", src)
+        src = re.sub(r"const REGIONS:", "const V1017_ICLOG_MIG_REGIONS:", src)
+        src = re.sub(r"(?<![\w.])REGIONS\b", "V1017_ICLOG_MIG_REGIONS", src)
+    if "intercity-logistics-orchestrator.ts" in name:
+        src = re.sub(
+            r"^export \{ createEmptyV1017IclogPersisted, sanitizeV1017IclogPersisted \};\n",
+            "",
+            src,
+            flags=re.M,
+        )
+        src = re.sub(r"const REGIONS:", "const V1017_ICLOG_ORCH_REGIONS:", src)
+        src = re.sub(r"REGIONS\.forEach", "V1017_ICLOG_ORCH_REGIONS.forEach", src)
+    if "intercity-logistics-utils.ts" in name:
+        src = re.sub(
+            r"export function V1017_ICLOG_corridorGraphHash",
+            "export function V1017_ICLOG_utilCorridorGraphHash",
+            src,
+        )
+    if "v1017-intercity-logistics/corridor-graph/graph-utils.ts" in name.replace("\\", "/"):
+        src = re.sub(
+            r"return nresPgHashCore\(edges\)",
+            "return V1017_ICLOG_utilCorridorGraphHash(edges)",
+            src,
+        )
+    if "run-v1017-iclog-self-tests.ts" in name:
+        src = re.sub(r"function check\(", "function v1017IclogSelfTestCheck(", src)
+        src = re.sub(r"(?<![\w.])check\(", "v1017IclogSelfTestCheck(", src)
+        src = re.sub(r"function baseInput\(", "function v1017IclogBaseInput(", src)
+        src = re.sub(r"(?<![\w.])baseInput\(", "v1017IclogBaseInput(", src)
+        src = src.replace(
+            "  runV1017IclogTurn,\n  createEmptyV1017IclogPersisted,\n  v1017IclogInputHash,\n  sanitizeV1017IclogPersisted,\n} from '../engine/intercity-logistics-orchestrator';",
+            "  runV1017IclogTurn,\n  v1017IclogInputHash,\n} from '../engine/intercity-logistics-orchestrator';\nimport {\n  createEmptyV1017IclogPersisted,\n  sanitizeV1017IclogPersisted,\n} from '../persistence/migrations';",
+        )
+        src = src.replace(
+            "  createEmptyV1017IclogPersisted,\n  v1017IclogInputHash,\n  sanitizeV1017IclogPersisted,\n} from '../engine/intercity-logistics-orchestrator';",
+            "  v1017IclogInputHash,\n} from '../engine/intercity-logistics-orchestrator';\nimport {\n  createEmptyV1017IclogPersisted,\n  sanitizeV1017IclogPersisted,\n} from '../persistence/migrations';",
+        )
         src = src.replace(
             "  createEmptyV1018FfedPersisted,\n  v1018FfedInputHash,\n  sanitizeV1018FfedPersisted,\n} from '../engine/fiscal-federalism-orchestrator';",
             "  v1018FfedInputHash,\n} from '../engine/fiscal-federalism-orchestrator';\nimport {\n  createEmptyV1018FfedPersisted,\n  sanitizeV1018FfedPersisted,\n} from '../persistence/migrations';",
@@ -470,6 +511,49 @@ def fiscal_federalism_paths() -> list[str]:
         if "/adapters/" in s:
             return (8, s)
         if "fiscal-federalism-orchestrator" in s:
+            return (9, s)
+        if "/self-tests/" in s:
+            return (10, s)
+        return (50, s)
+
+    files = sorted(
+        (
+            p
+            for p in root.rglob("*.ts")
+            if p.name not in {"index.ts", "run-self-tests.ts"}
+            and "/scripts/" not in str(p)
+        ),
+        key=sort_key,
+    )
+    return [str(p.relative_to(ROOT)) for p in files]
+
+
+def intercity_logistics_paths() -> list[str]:
+    root = ROOT / "expansion/o6k-10m/v1017-intercity-logistics"
+
+    def sort_key(p: pathlib.Path) -> tuple:
+        s = str(p)
+        if "/scripts/" in s:
+            return (99, s)
+        if "/types/" in s:
+            return (0, s)
+        if "/persistence/" in s:
+            return (1, s)
+        if "/corridor-graph/" in s and "graph-utils" in s:
+            return (2, s)
+        if "/generated/freight-route-scenarios/" in s:
+            return (3, s)
+        if "/generated/corridor-graph/" in s:
+            return (4, s)
+        if "freight-route-registry" in s or "corridor-graph-bundle" in s:
+            return (5, s)
+        if "/logistics-hubs/" in s:
+            return (6, s)
+        if "intercity-logistics-utils" in s:
+            return (7, s)
+        if "/adapters/" in s:
+            return (8, s)
+        if "intercity-logistics-orchestrator" in s:
             return (9, s)
         if "/self-tests/" in s:
             return (10, s)

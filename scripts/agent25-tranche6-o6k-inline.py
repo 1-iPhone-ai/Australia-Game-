@@ -20,6 +20,7 @@ from agent25_o6k_inline_lib import (  # noqa: E402
     workforce_migration_paths,
     national_resilience_paths,
     fiscal_federalism_paths,
+    intercity_logistics_paths,
     insert_before,
     paths_from_index,
     public_services_paths,
@@ -35,6 +36,7 @@ AI_FIDELITY_MARKER = "export function runV1014AiFidelityTurn"
 WORKFORCE_MARKER = "export function runV1014WorkforceMigrationTurn"
 NRES_MARKER = "export function runV1016NresTurn"
 FFED_MARKER = "export function runV1018FfedTurn"
+ICLOG_MARKER = "export function runV1017IclogTurn"
 
 TRADE_SECTION = (
     "// ============================================================================\n"
@@ -91,6 +93,13 @@ FFED_SECTION = (
     "// ============================================================================\n"
     "// SECTION 20BJ: V10.18 FISCAL FEDERALISM — TRANSFERS, GRANT STACKS & AUDIT TRAILS (O6K-37)\n"
     "// Renumbered from shard 20BI (canonical 20BI = T6 mega2 lattice, push #11)\n"
+    "// ============================================================================\n"
+)
+
+ICLOG_SECTION = (
+    "// ============================================================================\n"
+    "// SECTION 20BK: V10.17 INTERCITY LOGISTICS — FREIGHT ROUTES & CORRIDOR HUBS (O6K-36)\n"
+    "// Renumbered from shard 20BI (canonical 20BI = mega2, 20BJ = fiscal federalism)\n"
     "// ============================================================================\n"
 )
 
@@ -1033,6 +1042,134 @@ def push_ffed(text: str) -> str:
     return text
 
 
+ICLOG_HELPERS = """
+function V1017_ICLOG_readPersistedFromGameState(gs: any): V1017IclogPersisted | null {
+  const raw = (gs?.save?.meta?.v1017 as any)?.intercity_logistics;
+  return raw ? sanitizeV1017IclogPersisted(raw, Number(gs?.turnCounter ?? 1)) : null;
+}
+
+function V1017_ICLOG_applyToGameState(gs: any, out: V1017IclogTurnResult): any {
+  const save = { ...(gs?.save || {}) };
+  const meta = { ...(save.meta || {}) };
+  const v1017 = { ...(meta.v1017 || {}) };
+  v1017.intercity_logistics = out.persisted;
+  meta.v1017 = v1017;
+  save.meta = meta;
+  return { ...gs, save, v1017IntercityLogistics: out.state };
+}
+
+export function buildV1017IclogTurnInputFromGameState(gs: any, turn: number): V1017IclogTurnInput {
+  const seed = typeof gs?.seed === 'number' ? gs.seed : 7170;
+  const inp = buildV1017IclogTurnInputFromGameStateStub(turn, seed);
+  const supply = gs?.v1014SupplyChain ?? null;
+  const trade = gs?.v1014TradeDepth ?? null;
+  const cities = gs?.v1014CitiesIntercity ?? gs?.v1014Cities ?? null;
+  const nres = gs?.v1016NationalResilience ?? null;
+  return {
+    ...inp,
+    supply20bb: {
+      ...inp.supply20bb,
+      turn,
+      bottleneckPressure: Number(supply?.bottleneckPressure ?? inp.supply20bb.bottleneckPressure),
+      regionalStockDays: supply?.regionalStockDays ?? inp.supply20bb.regionalStockDays,
+    },
+    trade20ba: {
+      ...inp.trade20ba,
+      turn,
+      sanctionsPressure: Number(trade?.sanctionsPressure ?? inp.trade20ba.sanctionsPressure),
+      exportLaneStability: Number(trade?.exportLaneStability ?? inp.trade20ba.exportLaneStability),
+    },
+    cities20ak: {
+      ...inp.cities20ak,
+      turn,
+      intercityLinkCongestion: Number(cities?.intercityLinkCongestion ?? cities?.linkCongestion ?? inp.cities20ak.intercityLinkCongestion),
+      corridorThroughputIndex: Number(cities?.corridorThroughputIndex ?? inp.cities20ak.corridorThroughputIndex),
+      hubCapacityScore: Number(cities?.hubCapacityScore ?? inp.cities20ak.hubCapacityScore),
+    },
+    resilience20bg: {
+      ...inp.resilience20bg,
+      turn,
+      supplyShockPressure: Number(nres?.aggregateSeverityIndex ?? nres?.supplyShockPressure ?? inp.resilience20bg.supplyShockPressure),
+      resilienceContinuityScore: Number(nres?.aggregateContinuityScore ?? nres?.resilienceContinuityScore ?? inp.resilience20bg.resilienceContinuityScore),
+      rerouteUrgencyIndex: Number(nres?.rerouteUrgencyIndex ?? inp.resilience20bg.rerouteUrgencyIndex),
+    },
+    persisted: null,
+  };
+}
+"""
+
+ICLOG_DAY_HOOK = """
+      if (typeof runV1017IclogTurn === 'function') {
+        try {
+          const iclogIn = buildV1017IclogTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          iclogIn.persisted = V1017_ICLOG_readPersistedFromGameState(mergedGameState);
+          const iclogOut = runV1017IclogTurn(iclogIn);
+          mergedGameState = V1017_ICLOG_applyToGameState(mergedGameState, iclogOut);
+        } catch (_) { /* isolated */ }
+      }
+"""
+
+
+def wire_iclog_day_hook(text: str) -> str:
+    marker = "runV1017IclogTurn(iclogIn)"
+    day_slice = text.split("executeAgent02SingleDayBoundary", 1)[1][:30000] if "executeAgent02SingleDayBoundary" in text else ""
+    if marker in day_slice:
+        print("skip iclog day hook (present)")
+        return text
+    ffed_tail = """      if (typeof runV1018FfedTurn === 'function') {
+        try {
+          const ffedIn = buildV1018FfedTurnInputFromGameState(mergedGameState, passCtx.turnCounter);
+          ffedIn.persisted = V1018_FFED_readPersistedFromGameState(mergedGameState);
+          const ffedOut = runV1018FfedTurn(ffedIn);
+          mergedGameState = V1018_FFED_applyToGameState(mergedGameState, ffedOut);
+        } catch (_) { /* isolated */ }
+      }"""
+    if ffed_tail not in text:
+        raise SystemExit("ffed day hook anchor missing for iclog hook")
+    return text.replace(ffed_tail, ffed_tail + ICLOG_DAY_HOOK, 1)
+
+
+def wire_iclog_migration(text: str) -> str:
+    anchor = "  if (migrated.gameState && typeof sanitizeV1018FfedPersisted === 'function') {"
+    patch = (
+        "  if (migrated.gameState && typeof sanitizeV1017IclogPersisted === 'function') {\n"
+        "    const iclogRaw = (migrated.gameState as any)?.save?.meta?.v1017?.intercity_logistics;\n"
+        "    if (iclogRaw) {\n"
+        "      const save = { ...((migrated.gameState as any).save || {}) };\n"
+        "      const meta = { ...(save.meta || {}) };\n"
+        "      const v1017 = { ...(meta.v1017 || {}) };\n"
+        "      v1017.intercity_logistics = sanitizeV1017IclogPersisted(iclogRaw, Number((migrated.gameState as any).turnCounter || 0));\n"
+        "      meta.v1017 = v1017;\n"
+        "      save.meta = meta;\n"
+        "      migrated.gameState = { ...(migrated.gameState as any), save };\n"
+        "    }\n"
+        "  }\n"
+    )
+    if "v1017.intercity_logistics = sanitizeV1017IclogPersisted" in text:
+        print("skip iclog §6 migration")
+        return text
+    if anchor not in text:
+        raise SystemExit("ffed §6 anchor missing for iclog migration")
+    return text.replace(anchor, patch + anchor, 1)
+
+
+def push_iclog(text: str) -> str:
+    block = ICLOG_SECTION + bundle_local_files(intercity_logistics_paths()) + ICLOG_HELPERS
+    text = insert_before(text, block, ICLOG_MARKER, "T6 push #13 v1017-intercity-logistics (PR #343)")
+    text = wire_iclog_day_hook(text)
+    text = wire_iclog_migration(text)
+    lab = """  { id: 'v1017_intercity_logistics', label: 'V10.17 Intercity logistics (20BK freight routes & hubs)', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1017IclogSelfTestsForLab() },
+"""
+    anchor_lab = "  { id: 'v1018_fiscal_federalism',"
+    if "{ id: 'v1017_intercity_logistics'" not in text:
+        if anchor_lab in text:
+            text = text.replace(anchor_lab, lab + anchor_lab, 1)
+        else:
+            text = wire_lab(text, lab, "v1017_intercity_logistics")
+        print("registered LAB v1017_intercity_logistics")
+    return text
+
+
 def write_loc_report() -> None:
     out = ROOT / "expansion/o6k-10m/trade-sanctions"
     store = pathlib.Path("/cursor/stores/self/internal/trade-sanctions-t6-6-loc-per-file.txt")
@@ -1047,7 +1184,7 @@ def write_loc_report() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12])
+    ap.add_argument("push", type=int, choices=[2, 3, 4, 5, 6, 7, 8, 10, 12, 13])
     args = ap.parse_args()
     text = V94.read_text(encoding="utf-8")
     before = len(text.splitlines())
@@ -1070,6 +1207,8 @@ def main() -> None:
         text = push_nres(text)
     elif args.push == 12:
         text = push_ffed(text)
+    elif args.push == 13:
+        text = push_iclog(text)
     V94.write_text(text, encoding="utf-8")
     after = len(text.splitlines())
     print(f"lines {before} -> {after} (+{after - before})")

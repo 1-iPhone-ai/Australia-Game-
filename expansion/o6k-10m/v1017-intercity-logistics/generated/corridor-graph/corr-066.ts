@@ -1,0 +1,31 @@
+import type { V1017IclogCorridorEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 066 (freight route cross-system coupling). */
+export const V1017_ICLOG_CORRIDOR_SHARD_066: readonly V1017IclogCorridorEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.477, lagTurns: 5, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.484, lagTurns: 6, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.491, lagTurns: 7, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.498, lagTurns: 5, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.505, lagTurns: 6, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.512, lagTurns: 7, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.519, lagTurns: 5, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.526, lagTurns: 6, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.533, lagTurns: 7, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.435, lagTurns: 5, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.442, lagTurns: 6, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.449, lagTurns: 7, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.456, lagTurns: 5, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.463, lagTurns: 6, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.47, lagTurns: 7, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.477, lagTurns: 5, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.484, lagTurns: 6, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.491, lagTurns: 7, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.498, lagTurns: 5, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.505, lagTurns: 6, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.512, lagTurns: 7, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.519, lagTurns: 5, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.526, lagTurns: 6, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.533, lagTurns: 7, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.435, lagTurns: 5, nodeId: 'hub_18' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.442, lagTurns: 6, nodeId: 'hub_18' },
+];

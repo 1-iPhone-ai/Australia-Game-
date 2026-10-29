@@ -1,0 +1,31 @@
+import type { V1017IclogCorridorEdge } from '../../types/core.ts';
+
+/** Corridor graph shard 050 (freight route cross-system coupling). */
+export const V1017_ICLOG_CORRIDOR_SHARD_050: readonly V1017IclogCorridorEdge[] = [
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.61, lagTurns: 5, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.617, lagTurns: 6, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.624, lagTurns: 7, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.631, lagTurns: 5, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.638, lagTurns: 6, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.54, lagTurns: 7, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.547, lagTurns: 5, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.554, lagTurns: 6, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.561, lagTurns: 7, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.568, lagTurns: 5, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.575, lagTurns: 6, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.582, lagTurns: 7, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.589, lagTurns: 5, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.596, lagTurns: 6, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.603, lagTurns: 7, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.61, lagTurns: 5, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.617, lagTurns: 6, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.624, lagTurns: 7, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.631, lagTurns: 5, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.638, lagTurns: 6, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.54, lagTurns: 7, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.547, lagTurns: 5, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.554, lagTurns: 6, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.561, lagTurns: 7, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.568, lagTurns: 5, nodeId: 'hub_02' },
+  { fromSystem: 'freight', toSystem: 'trade', weight: 0.575, lagTurns: 6, nodeId: 'hub_02' },
+];
