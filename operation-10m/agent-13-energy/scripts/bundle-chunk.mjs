@@ -53,6 +53,7 @@ const FILES = [
   'national-decarbon-federation-relief-arbitration-ledger.ts',
   'net-zero-pathway-export-carbon-intensity-ledger.ts',
   'scope3-supply-chain-hard-to-abate-orchestration-ledger.ts',
+  'climate-disclosure-green-product-passport-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -119,6 +120,8 @@ const EXPORT_MANIFEST = [
   'V1014_EXPORT_CARBON_INTENSITY_CATALOG',
   'V1014_SCOPE3_SUPPLY_CHAIN_CATALOG',
   'V1014_HARD_TO_ABATE_SECTOR_CATALOG',
+  'V1014_CLIMATE_DISCLOSURE_CATALOG',
+  'V1014_GREEN_PRODUCT_PASSPORT_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -224,6 +227,9 @@ const EXPORT_MANIFEST = [
   'runAgent13Scope3HardToAbateScaleSelfTests',
   'runAgent13Scope3HardToAbateTurnScenario',
   'V1014_SCOPE3_HARD_TO_ABATE_TURN_SCENARIOS',
+  'runAgent13DisclosurePassportScaleSelfTests',
+  'runAgent13DisclosurePassportTurnScenario',
+  'V1014_DISCLOSURE_PASSPORT_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

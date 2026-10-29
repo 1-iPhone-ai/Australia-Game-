@@ -39,6 +39,7 @@ operation-10m/agent-13-energy/
   modules/national-decarbon-federation-relief-arbitration-ledger.ts  # scale wave round 31 (O10-193)
   modules/net-zero-pathway-export-carbon-intensity-ledger.ts  # scale wave round 32 (O10-195)
   modules/scope3-supply-chain-hard-to-abate-orchestration-ledger.ts  # scale wave round 33 (O10-197)
+  modules/climate-disclosure-green-product-passport-ledger.ts  # scale wave round 34 (O10-199)
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge

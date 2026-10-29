@@ -150,6 +150,11 @@ import {
   V1014_SCOPE3_HARD_TO_ABATE_TURN_SCENARIOS,
 } from '../modules/scope3-supply-chain-hard-to-abate-orchestration-ledger.ts';
 import {
+  runAgent13DisclosurePassportScaleSelfTests,
+  runAgent13DisclosurePassportTurnScenario,
+  V1014_DISCLOSURE_PASSPORT_TURN_SCENARIOS,
+} from '../modules/climate-disclosure-green-product-passport-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -437,6 +442,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const s3HtTurn = runAgent13Scope3HardToAbateTurnScenario(V1014_SCOPE3_HARD_TO_ABATE_TURN_SCENARIOS[0]);
   ok(s3HtTurn.passed);
+
+  const disclosurePassport = runAgent13DisclosurePassportScaleSelfTests();
+  ok(disclosurePassport.failed === 0 && disclosurePassport.passed >= 7);
+
+  const dpTurn = runAgent13DisclosurePassportTurnScenario(V1014_DISCLOSURE_PASSPORT_TURN_SCENARIOS[0]);
+  ok(dpTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }
