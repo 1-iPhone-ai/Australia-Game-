@@ -1,13 +1,13 @@
 {
   "moduleId": "agent-20-automation",
-  "moduleVersion": "10m.1.24.0-agent20",
+  "moduleVersion": "10m.1.25.0-agent20",
   "slot": "append-only-self-tests",
   "touchesSaveFormat": true,
   "anchorComment": "O10_AGENT20_INTEGRATION_ANCHOR",
   "sourceRoot": "operation-10m/agent-20-automation/src",
   "regenerate": "node operation-10m/agent-20-automation/scripts/build-chunk.mjs",
-  "chunkSha256": "ba19f249d216a6525130988834e229f5a53f23eb703acc774025a8af6d07e3b0",
-  "chunkLineCount": 11616,
+  "chunkSha256": "a4d47db3b86bc10152249af17db42b5e078d949f2466bcc68135fde710de5d74",
+  "chunkLineCount": 11990,
   "sourceFiles": [
     "types.ts",
     "conditional-actions.ts",
@@ -86,6 +86,9 @@
     "automation-idle-governance-program-wave-landing-gate-compare.ts",
     "automation-idle-governance-program-wave-landing-bundle.ts",
     "automation-idle-governance-program-wave-scale-wave-seal.ts",
+    "automation-idle-governance-program-wave-scale-wave-seal-compare.ts",
+    "automation-idle-governance-program-wave-scale-wave-seal-export.ts",
+    "automation-idle-governance-program-wave-epoch-closeout.ts",
     "index.ts"
   ]
 }
