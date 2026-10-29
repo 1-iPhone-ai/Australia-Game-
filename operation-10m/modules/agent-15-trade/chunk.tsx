@@ -252,6 +252,7 @@ export interface GTELPersisted {
   bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing?: number;
   settledLaunchedClearedForwardArcHandoffContinuitySmoothing?: number;
   bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing?: number;
+  wave53SovereignHandoffDepthSmoothing?: number;
 }
 
 export interface GTELState {
@@ -1788,6 +1789,7 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralSettledLaunchedClearedForwardArcReadinessGateSmoothing: 0.52,
     settledLaunchedClearedForwardArcHandoffContinuitySmoothing: 0.52,
     bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing: 0.52,
+    wave53SovereignHandoffDepthSmoothing: 0.52,
   };
 }
 
@@ -2183,6 +2185,11 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
     sanitizeBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing(
       r.bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSmoothing,
     );
+  base.wave53SovereignHandoffDepthSmoothing = gtelClamp(
+    gtelNum(r.wave53SovereignHandoffDepthSmoothing, 0.52),
+    0.16,
+    0.92,
+  );
   return base;
 }
 
@@ -7525,6 +7532,50 @@ export function tradeFlowCohesionGiNotes(
 }
 
 
+// --- source: o10-237-wave53-sovereign-handoff-depth.ts ---
+/**
+ * Agent 15 scale wave round 53 (O10-237) — sovereign settlement forward-arc handoff depth stub.
+ */
+
+
+export interface GTELWave53SovereignHandoffDepthSnapshot {
+  score: number;
+  band: 'cleared' | 'staging' | 'queued' | 'blocked';
+  summary: string;
+}
+
+export function sanitizeWave53SovereignHandoffDepthSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.52), 0.16, 0.92);
+}
+
+export function computeWave53SovereignHandoffDepthSnapshot(input: {
+  certifiedHandoffScore: number;
+  persisted: GTELPersisted;
+}): { snapshot: GTELWave53SovereignHandoffDepthSnapshot; persisted: GTELPersisted } {
+  const raw = gtelClamp(input.certifiedHandoffScore * 0.88 + 0.08, 0.16, 0.92);
+  const prev = sanitizeWave53SovereignHandoffDepthSmoothing(input.persisted.wave53SovereignHandoffDepthSmoothing);
+  const score = gtelClamp(prev * 0.25 + raw * 0.75, 0.16, 0.92);
+  const band: GTELWave53SovereignHandoffDepthSnapshot['band'] =
+    score >= 0.9 ? 'cleared' : score >= 0.7 ? 'staging' : score >= 0.55 ? 'queued' : 'blocked';
+  const persisted: GTELPersisted = {
+    ...input.persisted,
+    wave53SovereignHandoffDepthSmoothing: Math.round(score * 1000) / 1000,
+  };
+  return {
+    snapshot: {
+      score,
+      band,
+      summary: `Wave 53 sovereign handoff depth ${band} (${score.toFixed(2)})`,
+    },
+    persisted,
+  };
+}
+
+export function wave53SovereignHandoffDepthExportScale(snapshot: GTELWave53SovereignHandoffDepthSnapshot): number {
+  return gtelClamp(snapshot.score * 1.05, 0.16, 0.95);
+}
+
+
 // --- source: domestic-consequences.ts ---
   GTELCommodityQuote,
   GTELDomesticCoupling,
@@ -8242,6 +8293,9 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateGiNotes,
   bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateWorldEvent,
 } from './bilateral-certified-settled-launched-cleared-forward-arc-handoff-gate.ts';
+  computeWave53SovereignHandoffDepthSnapshot,
+  wave53SovereignHandoffDepthExportScale,
+} from './o10-237-wave53-sovereign-handoff-depth.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -9561,6 +9615,12 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     worldEvents.push(certifiedSettledLaunchedClearedForwardArcHandoffEvent);
   }
 
+  const wave53SovereignHandoffStep = computeWave53SovereignHandoffDepthSnapshot({
+    certifiedHandoffScore: bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate.score,
+    persisted,
+  });
+  persisted = wave53SovereignHandoffStep.persisted;
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -9660,6 +9720,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale(
           bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate,
         ) *
+        wave53SovereignHandoffDepthExportScale(wave53SovereignHandoffStep.snapshot) *
         10,
     ) / 10;
 
@@ -10587,6 +10648,9 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   createEmptyBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot,
   bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale,
 } from './bilateral-certified-settled-launched-cleared-forward-arc-handoff-gate.ts';
+  computeWave53SovereignHandoffDepthSnapshot,
+  wave53SovereignHandoffDepthExportScale,
+} from './o10-237-wave53-sovereign-handoff-depth.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -13340,6 +13404,18 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale(cleared) >=
         bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale(blocked),
       'expected certified settled launched cleared forward arc handoff scale lift',
+    );
+  });
+
+  ok('wave53 sovereign handoff depth improves export scale', () => {
+    const step = computeWave53SovereignHandoffDepthSnapshot({
+      certifiedHandoffScore: 0.82,
+      persisted: createEmptyGTELPersisted(),
+    });
+    gtelAssert(step.snapshot.band !== 'blocked', 'expected wave53 sovereign handoff depth not blocked');
+    gtelAssert(
+      wave53SovereignHandoffDepthExportScale(step.snapshot) >= 0.16,
+      'expected wave53 export scale',
     );
   });
 

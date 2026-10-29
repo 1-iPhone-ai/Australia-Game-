@@ -479,6 +479,10 @@ import {
   createEmptyBilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateSnapshot,
   bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale,
 } from './bilateral-certified-settled-launched-cleared-forward-arc-handoff-gate.ts';
+import {
+  computeWave53SovereignHandoffDepthSnapshot,
+  wave53SovereignHandoffDepthExportScale,
+} from './o10-237-wave53-sovereign-handoff-depth.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -3236,6 +3240,18 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale(cleared) >=
         bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale(blocked),
       'expected certified settled launched cleared forward arc handoff scale lift',
+    );
+  });
+
+  ok('wave53 sovereign handoff depth improves export scale', () => {
+    const step = computeWave53SovereignHandoffDepthSnapshot({
+      certifiedHandoffScore: 0.82,
+      persisted: createEmptyGTELPersisted(),
+    });
+    gtelAssert(step.snapshot.band !== 'blocked', 'expected wave53 sovereign handoff depth not blocked');
+    gtelAssert(
+      wave53SovereignHandoffDepthExportScale(step.snapshot) >= 0.16,
+      'expected wave53 export scale',
     );
   });
 

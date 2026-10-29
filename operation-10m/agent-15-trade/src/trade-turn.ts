@@ -711,6 +711,10 @@ import {
   bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateWorldEvent,
 } from './bilateral-certified-settled-launched-cleared-forward-arc-handoff-gate.ts';
 import {
+  computeWave53SovereignHandoffDepthSnapshot,
+  wave53SovereignHandoffDepthExportScale,
+} from './o10-237-wave53-sovereign-handoff-depth.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -2033,6 +2037,12 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     worldEvents.push(certifiedSettledLaunchedClearedForwardArcHandoffEvent);
   }
 
+  const wave53SovereignHandoffStep = computeWave53SovereignHandoffDepthSnapshot({
+    certifiedHandoffScore: bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate.score,
+    persisted,
+  });
+  persisted = wave53SovereignHandoffStep.persisted;
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -2132,6 +2142,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGateExportScale(
           bilateralCertifiedSettledLaunchedClearedForwardArcHandoffGate,
         ) *
+        wave53SovereignHandoffDepthExportScale(wave53SovereignHandoffStep.snapshot) *
         10,
     ) / 10;
 

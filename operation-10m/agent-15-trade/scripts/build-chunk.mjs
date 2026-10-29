@@ -55,6 +55,7 @@ const FILES = [
   'export-commitment-pipeline.ts',
   'import-commitment-pipeline.ts',
   'trade-flow-cohesion.ts',
+  'o10-237-wave53-sovereign-handoff-depth.ts',
   'domestic-consequences.ts',
   'household-bridge.ts',
   'trade-turn.ts',
