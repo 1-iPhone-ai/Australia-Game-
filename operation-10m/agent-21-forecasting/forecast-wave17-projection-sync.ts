@@ -6,8 +6,8 @@ import { recordAg21FullChunksDryRunExecution } from './forecast-full-chunks-dry-
 import { ag21LabelUncertainty, O10M_AGENT21_MODULE_VERSION, type Ag21UncertaintyLabel } from './isolation-core';
 import type { Ag21ForecastContext } from './strategic-forecast-policy-lab';
 
-/** Post–wave-16 dry-run baseline (O10-161); wave 17 module sync anchor for O10-163. */
-export const AG21_WAVE17_PROJECTION_BASELINE_SHA = '04ecf18';
+/** Post–wave-16 dry-run baseline (O10-161 @ fcab7b20); wave 17 module sync anchor for O10-163. */
+export const AG21_WAVE17_PROJECTION_BASELINE_SHA = 'fcab7b20';
 export const AG21_WAVE17_PROJECTED_AUDITED_FUNCTIONAL = 1_194_408;
 
 export type Ag21Wave17ProjectionSyncStatus = 'aligned' | 'drift' | 'unknown';
