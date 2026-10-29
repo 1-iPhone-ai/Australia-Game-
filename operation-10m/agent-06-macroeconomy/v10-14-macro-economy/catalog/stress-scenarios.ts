@@ -204,6 +204,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Guardian & command stress',
     shockIds: ['credit_contraction', 'global_slowdown'],
     description: 'Red guardian vigilance with broken command coordination (harness overlay).'
+  },
+  {
+    id: 'team_memory_stress',
+    label: 'Team AI & memory stress',
+    shockIds: ['high_inflation', 'terms_of_trade_squeeze'],
+    description: 'Fractured team AI cohesion with volatile memory retention (harness overlay).'
   }
 ];
 

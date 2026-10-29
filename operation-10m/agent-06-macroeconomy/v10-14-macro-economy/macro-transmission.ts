@@ -58,6 +58,8 @@ import type { MacroHousingAffordabilitySpillover } from './bridge-v1014-housing-
 import type { MacroTradeExposureSpillover } from './bridge-v1015-trade-exposure.ts';
 import type { MacroGuardianVigilanceSpillover } from './bridge-v1016-guardian-vigilance.ts';
 import type { MacroCommandCoordinationSpillover } from './bridge-v1017-command-coordination.ts';
+import type { MacroTeamAiCohesionSpillover } from './bridge-v1018-team-ai-cohesion.ts';
+import type { MacroMemoryRetentionSpillover } from './bridge-v1019-memory-retention.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -124,6 +126,8 @@ export function buildMacroTransmissionReport(params: {
   tradeExposure?: MacroTradeExposureSpillover;
   guardianVigilance?: MacroGuardianVigilanceSpillover;
   commandCoordination?: MacroCommandCoordinationSpillover;
+  teamAiCohesion?: MacroTeamAiCohesionSpillover;
+  memoryRetention?: MacroMemoryRetentionSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -175,6 +179,8 @@ export function buildMacroTransmissionReport(params: {
   const tradeExposure = params.tradeExposure ?? ZERO_SPILLOVER;
   const guardianVigilance = params.guardianVigilance ?? ZERO_SPILLOVER;
   const commandCoordination = params.commandCoordination ?? ZERO_SPILLOVER;
+  const teamAiCohesion = params.teamAiCohesion ?? ZERO_SPILLOVER;
+  const memoryRetention = params.memoryRetention ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -627,6 +633,22 @@ export function buildMacroTransmissionReport(params: {
       commandCoordination.investmentNudge,
       commandCoordination.productivityNudge,
       commandCoordination.summary
+    ),
+    layer(
+      'v10.18_team_ai_cohesion',
+      'Team AI cohesion',
+      teamAiCohesion.cycleNudge,
+      teamAiCohesion.investmentNudge,
+      teamAiCohesion.productivityNudge,
+      teamAiCohesion.summary
+    ),
+    layer(
+      'v10.19_memory_retention',
+      'Memory retention',
+      memoryRetention.cycleNudge,
+      memoryRetention.investmentNudge,
+      memoryRetention.productivityNudge,
+      memoryRetention.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);

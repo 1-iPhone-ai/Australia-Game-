@@ -1050,5 +1050,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'High transmission fragmentation — many layers carry negligible spillover mass.'
     });
   }
+  const teamCohesionIn: any = inputs.teamAiCohesion ?? inputs.teamIntelligence?.cohesion;
+  const cohesionAlign = String(teamCohesionIn?.alignmentBand ?? teamCohesionIn?.cohesionBand ?? '');
+  if (
+    (cohesionAlign === 'split' || cohesionAlign === 'fractured') &&
+    (state.teamAiSpilloverSummary != null || state.teamAiCohesionSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'team_ai_cohesion_fractured',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Fractured team AI cohesion aligns with strained team AI spillover read.'
+    });
+  }
+  const memRetIn: any = inputs.memoryRetention ?? inputs.aiMemory?.retention;
+  const retentionBand = String(memRetIn?.retentionBand ?? memRetIn?.holdBand ?? '');
+  if (
+    (retentionBand === 'lost' || retentionBand === 'volatile') &&
+    (state.memorySpilloverSummary != null || state.memoryRetentionSpilloverSummary != null)
+  ) {
+    gates.push({
+      id: 'memory_retention_volatile',
+      triggered: true,
+      severity: 'info',
+      summary: 'Volatile memory retention coincides with strained AI memory spillover.'
+    });
+  }
+  if (state.transmissionRedundancy?.band === 'stacked') {
+    gates.push({
+      id: 'transmission_redundancy_stacked',
+      triggered: true,
+      severity: 'info',
+      summary: 'Stacked transmission redundancy — aligned layers dominate spillover mass.'
+    });
+  }
   return gates;
 }
