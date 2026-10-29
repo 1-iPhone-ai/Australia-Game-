@@ -99,4 +99,7 @@ export * from './forecast-round26-console';
 export * from './forecast-wave27-projection-sync';
 export * from './forecast-integration-wave27-origin-handoff';
 export * from './forecast-round27-console';
+export * from './forecast-wave28-projection-sync';
+export * from './forecast-integration-wave28-origin-handoff';
+export * from './forecast-round28-console';
 export * from './strategic-forecast-policy-lab';
