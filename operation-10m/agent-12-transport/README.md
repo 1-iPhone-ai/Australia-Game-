@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 9
+
+- Schema **`agent12/10`**: coastal shipping throughput, biosecurity clearance efficiency, autonomous freight share (`coastalShippingPolicy`, `biosecurityStreamlinePolicy`, `autonomousFreightPolicy`)
+- Catalog: **142** assets, **41** corridors, **63** scenarios
+- Systems: `network/coastal-shipping-throughput-index.ts`, `operations/biosecurity-clearance-index.ts`, `productivity/autonomous-freight-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 8
 
 - Schema **`agent12/9`**: aviation cargo throughput, customs clearance efficiency, hydrogen corridor share (`hydrogenFreightPolicy`, `customsModernizationPolicy`)

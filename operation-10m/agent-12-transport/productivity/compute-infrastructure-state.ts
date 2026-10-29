@@ -101,6 +101,22 @@ import {
   hydrogenFreightProductivityMultiplier,
   nationalHydrogenCorridorThroughputIndex,
 } from './hydrogen-freight-index.ts';
+import {
+  coastalShippingProductivityMultiplier,
+  computeCoastalShippingThroughputByRegion,
+  nationalCoastalShippingThroughputIndex,
+} from '../network/coastal-shipping-throughput-index.ts';
+import {
+  biosecurityClearanceProductivityMultiplier,
+  computeBiosecurityClearanceByRegion,
+  nationalBiosecurityClearanceIndex,
+} from '../operations/biosecurity-clearance-index.ts';
+import {
+  autonomousFreightProductivityMultiplier,
+  computeAutonomousCorridorThroughputByRegion,
+  computeAutonomousFreightShare,
+  nationalAutonomousCorridorThroughputIndex,
+} from './autonomous-freight-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -388,6 +404,50 @@ export function computeTransportInfrastructureState(
     nationalAviationCargo * 0.03 +
     nationalHydrogenCorridor * 0.028;
 
+  const coastalShippingThroughputByRegion = computeCoastalShippingThroughputByRegion(ops);
+  const nationalCoastalShipping = nationalCoastalShippingThroughputIndex(coastalShippingThroughputByRegion);
+  const coastalMult = coastalShippingProductivityMultiplier(
+    nationalCoastalShipping,
+    options?.coastalShippingPolicy ?? 'baseline',
+  );
+  const biosecurityClearanceByRegion = computeBiosecurityClearanceByRegion(ops, freightUtil);
+  const nationalBiosecurityClearance = nationalBiosecurityClearanceIndex(biosecurityClearanceByRegion);
+  const biosecurityMult = biosecurityClearanceProductivityMultiplier(
+    nationalBiosecurityClearance,
+    options?.biosecurityStreamlinePolicy ?? 'baseline',
+  );
+  const autonomousCorridorThroughputByRegion = computeAutonomousCorridorThroughputByRegion(ops);
+  const nationalAutonomousCorridor = nationalAutonomousCorridorThroughputIndex(autonomousCorridorThroughputByRegion);
+  const autonomousFreightShare = computeAutonomousFreightShare(
+    ops,
+    options?.autonomousFreightPolicy ?? 'baseline',
+  );
+  const autonomousMult = autonomousFreightProductivityMultiplier(
+    autonomousFreightShare,
+    options?.autonomousFreightPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const coastalBoost = (coastalShippingThroughputByRegion[code] - 10) * 0.006;
+    const biosecurityBoost = (biosecurityClearanceByRegion[code] - 40) * 0.0045;
+    const autonomousBoost = (autonomousCorridorThroughputByRegion[code] - 6) * 0.0065;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + coastalBoost + biosecurityBoost + autonomousBoost) *
+      coastalMult *
+      biosecurityMult *
+      autonomousMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -401,7 +461,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/9',
+    schemaVersion: 'agent12/10',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -449,6 +509,13 @@ export function computeTransportInfrastructureState(
     hydrogenFreightShare,
     nationalHydrogenCorridorThroughputIndex: nationalHydrogenCorridor,
     hydrogenCorridorThroughputByRegion,
+    nationalCoastalShippingThroughputIndex: nationalCoastalShipping,
+    coastalShippingThroughputByRegion,
+    nationalBiosecurityClearanceIndex: nationalBiosecurityClearance,
+    biosecurityClearanceByRegion,
+    autonomousFreightShare,
+    nationalAutonomousCorridorThroughputIndex: nationalAutonomousCorridor,
+    autonomousCorridorThroughputByRegion,
     computeMs,
   };
 }

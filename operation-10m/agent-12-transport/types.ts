@@ -201,8 +201,14 @@ export type HydrogenFreightPolicy = 'baseline' | 'pipeline';
 
 export type CustomsModernizationPolicy = 'baseline' | 'digitize';
 
+export type CoastalShippingPolicy = 'baseline' | 'short_sea_boost';
+
+export type BiosecurityStreamlinePolicy = 'baseline' | 'preclear';
+
+export type AutonomousFreightPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/9';
+  schemaVersion: 'agent12/10';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -250,6 +256,13 @@ export interface TransportInfrastructureState {
   hydrogenFreightShare: number;
   nationalHydrogenCorridorThroughputIndex: number;
   hydrogenCorridorThroughputByRegion: Record<AuRegionCode, number>;
+  nationalCoastalShippingThroughputIndex: number;
+  coastalShippingThroughputByRegion: Record<AuRegionCode, number>;
+  nationalBiosecurityClearanceIndex: number;
+  biosecurityClearanceByRegion: Record<AuRegionCode, number>;
+  autonomousFreightShare: number;
+  nationalAutonomousCorridorThroughputIndex: number;
+  autonomousCorridorThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -267,6 +280,9 @@ export interface TransportInfrastructureOptions {
   congestionReliefPolicy?: CongestionReliefPolicy;
   hydrogenFreightPolicy?: HydrogenFreightPolicy;
   customsModernizationPolicy?: CustomsModernizationPolicy;
+  coastalShippingPolicy?: CoastalShippingPolicy;
+  biosecurityStreamlinePolicy?: BiosecurityStreamlinePolicy;
+  autonomousFreightPolicy?: AutonomousFreightPolicy;
 }
 
 export interface V94ProjectSnapshot {

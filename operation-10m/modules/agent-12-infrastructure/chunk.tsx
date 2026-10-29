@@ -205,8 +205,14 @@ export type HydrogenFreightPolicy = 'baseline' | 'pipeline';
 
 export type CustomsModernizationPolicy = 'baseline' | 'digitize';
 
+export type CoastalShippingPolicy = 'baseline' | 'short_sea_boost';
+
+export type BiosecurityStreamlinePolicy = 'baseline' | 'preclear';
+
+export type AutonomousFreightPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/9';
+  schemaVersion: 'agent12/10';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -254,6 +260,13 @@ export interface TransportInfrastructureState {
   hydrogenFreightShare: number;
   nationalHydrogenCorridorThroughputIndex: number;
   hydrogenCorridorThroughputByRegion: Record<AuRegionCode, number>;
+  nationalCoastalShippingThroughputIndex: number;
+  coastalShippingThroughputByRegion: Record<AuRegionCode, number>;
+  nationalBiosecurityClearanceIndex: number;
+  biosecurityClearanceByRegion: Record<AuRegionCode, number>;
+  autonomousFreightShare: number;
+  nationalAutonomousCorridorThroughputIndex: number;
+  autonomousCorridorThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -271,6 +284,9 @@ export interface TransportInfrastructureOptions {
   congestionReliefPolicy?: CongestionReliefPolicy;
   hydrogenFreightPolicy?: HydrogenFreightPolicy;
   customsModernizationPolicy?: CustomsModernizationPolicy;
+  coastalShippingPolicy?: CoastalShippingPolicy;
+  biosecurityStreamlinePolicy?: BiosecurityStreamlinePolicy;
+  autonomousFreightPolicy?: AutonomousFreightPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -671,6 +687,47 @@ export const TRANSPORT_CORRIDORS_ROUND8: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round9.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND9: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_tas_bass_short_sea',
+    name: 'Bass Strait Short-Sea Chain',
+    networkKind: 'freight',
+    regionSequence: ['TAS', 'VIC'],
+    requiredTagsByRegion: {
+      TAS: ['coastal_shipping', 'roro', 'island'],
+      VIC: ['short_sea', 'roro', 'container'],
+    },
+    productivitySynergyPoints: 6.4,
+    logisticsRelief: 0.039,
+  },
+  {
+    id: 'corr_qld_gladstone_biosecurity',
+    name: 'Gladstone Biosecurity Export Chain',
+    networkKind: 'trade',
+    regionSequence: ['QLD'],
+    requiredTagsByRegion: {
+      QLD: ['biosecurity', 'quarantine', 'bulk'],
+    },
+    productivitySynergyPoints: 7.1,
+    logisticsRelief: 0.042,
+  },
+  {
+    id: 'corr_nsw_vic_autonomous_freight_spine',
+    name: 'NSW–VIC Autonomous Freight Spine',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['autonomous', 'motorway', 'smart_freight'],
+      VIC: ['platoon', 'motorway', 'freight'],
+    },
+    productivitySynergyPoints: 6.2,
+    logisticsRelief: 0.036,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -826,6 +883,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND6,
   ...TRANSPORT_CORRIDORS_ROUND7,
   ...TRANSPORT_CORRIDORS_ROUND8,
+  ...TRANSPORT_CORRIDORS_ROUND9,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -1306,6 +1364,62 @@ export const TRANSPORT_SCENARIOS_ROUND8: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round9.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND9: TransportStressScenario[] = [
+  {
+    id: 'scn_tas_bass_short_sea_delay',
+    label: 'Bass Strait Short-Sea Delay',
+    description: 'Rough seas cut roro sailings; island supply backlog.',
+    targetRegions: ['TAS', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_qld_biosecurity_inspection_hold',
+    label: 'Gladstone Biosecurity Inspection Hold',
+    description: 'Quarantine surge delays bulk export clearances.',
+    targetRegions: ['QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_autonomous_convoy_fault',
+    label: 'NSW Autonomous Convoy Fault',
+    description: 'Platooning control outage slows Hume smart-freight lanes.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road'],
+  },
+  {
+    id: 'scn_wa_coastal_ore_storm',
+    label: 'WA Coastal Ore Storm Closure',
+    description: 'Cyclone shuts short-sea feeder and coastal road trains.',
+    targetRegions: ['WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_sa_grain_biosecurity_surge',
+    label: 'SA Grain Biosecurity Surge',
+    description: 'Export phytosanitary checks backlog Adelaide bulk terminals.',
+    targetRegions: ['SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -1475,6 +1589,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND6,
   ...TRANSPORT_SCENARIOS_ROUND7,
   ...TRANSPORT_SCENARIOS_ROUND8,
+  ...TRANSPORT_SCENARIOS_ROUND9,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -3994,6 +4109,232 @@ export const SCALE_WAVE_ROUND8_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round9-assets.ts ---
+
+export const ROUND9_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_tas_bass_feeder',
+    category: 'road',
+    name: 'Tasmanian Bass Feeder Highway',
+    description: 'Devonport roro precinct to Launceston distribution.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS'],
+    baseProductivityPoints: 3.9,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['coastal_shipping', 'roro', 'island', 'national_highway'],
+    laneKilometres: 68,
+    designSpeedKmh: 100,
+    freightShare: 0.41,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_geelong_short_sea',
+    category: 'road',
+    name: 'Geelong Short-Sea Port Link',
+    description: 'Roro and feeder vessel drayage to Melbourne intermodal.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['short_sea', 'roro', 'port_access', 'coastal_shipping'],
+    laneKilometres: 46,
+    designSpeedKmh: 100,
+    freightShare: 0.39,
+    urbanShare: 0.16,
+    tollRoad: true,
+  },
+  {
+    id: 'road_nsw_hume_autonomous_lane',
+    category: 'road',
+    name: 'Hume Autonomous Freight Lane',
+    description: 'Platooning-enabled smart freight on Hume corridor.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['freight'],
+    tags: ['autonomous', 'platoon', 'smart_freight', 'motorway', 'freight'],
+    laneKilometres: 112,
+    designSpeedKmh: 110,
+    freightShare: 0.52,
+    urbanShare: 0.08,
+    tollRoad: true,
+  },
+  {
+    id: 'road_qld_gladstone_biosecurity_feed',
+    category: 'road',
+    name: 'Gladstone Biosecurity Feed Road',
+    description: 'Bulk export quarantine staging to port inspection gates.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['biosecurity', 'quarantine', 'bulk', 'port_access'],
+    laneKilometres: 34,
+    designSpeedKmh: 90,
+    freightShare: 0.47,
+    urbanShare: 0.06,
+    tollRoad: false,
+  },
+];
+
+export const ROUND9_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_tas_bell_bay_roro',
+    category: 'rail',
+    name: 'Bell Bay Roro Rail Feed',
+    description: 'Short-sea roro cargo shuttle to Burnie and Devonport.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['coastal_shipping', 'roro', 'island', 'intermodal'],
+    trackKilometres: 58,
+    dualTrackShare: 0.42,
+    electrifiedShare: 0.18,
+    designFreightTonnesPerYear: 2_800_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_smart_freight_inland',
+    category: 'rail',
+    name: 'NSW Smart Freight Inland Line',
+    description: 'Autonomous-ready freight shuttle on Parkes–Sydney axis.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'ACT'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['freight'],
+    tags: ['autonomous', 'smart_freight', 'freight_rail', 'intercapital'],
+    trackKilometres: 420,
+    dualTrackShare: 0.55,
+    electrifiedShare: 0.62,
+    designFreightTonnesPerYear: 9_500_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_vic_gippsland_platoon_feed',
+    category: 'rail',
+    name: 'Gippsland Platoon Feed',
+    description: 'Autonomous bulk feed supporting Melbourne–Gippsland freight.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['freight'],
+    tags: ['platoon', 'smart_freight', 'freight_rail', 'motorway'],
+    trackKilometres: 165,
+    dualTrackShare: 0.48,
+    electrifiedShare: 0.35,
+    designFreightTonnesPerYear: 6_200_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND9_PORTS: PortAsset[] = [
+  {
+    id: 'port_tas_devonport_roro',
+    category: 'port',
+    name: 'Devonport Roro Terminal',
+    description: 'Bass Strait roro and short-sea island supply berths.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['coastal_shipping', 'roro', 'short_sea', 'island', 'feeder'],
+    berthCount: 5,
+    maxDraftMetres: 11.5,
+    teuCapacityPerYear: 185_000,
+    automationLevel: 1,
+    bulkShare: 0.22,
+  },
+  {
+    id: 'port_qld_gladstone_biosecurity',
+    category: 'port',
+    name: 'Gladstone Biosecurity Bulk Terminal',
+    description: 'Quarantine and phytosanitary inspection for export bulk.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 6.8,
+    strategicNetworks: ['trade'],
+    tags: ['biosecurity', 'quarantine', 'bulk', 'export'],
+    berthCount: 7,
+    maxDraftMetres: 14.2,
+    teuCapacityPerYear: 240_000,
+    automationLevel: 2,
+    bulkShare: 0.68,
+  },
+];
+
+export const ROUND9_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_tas_bass_strait_dc',
+    category: 'logistics',
+    name: 'Bass Strait Coastal DC',
+    description: 'Island supply consolidation and short-sea staging.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 3.5,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['coastal_shipping', 'short_sea', 'roro', 'island'],
+    warehouseSqm: 78_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port', 'rail'],
+    lastMileCoveragePct: 58,
+  },
+  {
+    id: 'log_qld_gladstone_quarantine',
+    category: 'logistics',
+    name: 'Gladstone Quarantine Staging',
+    description: 'Biosecurity preclear and bulk export inspection yard.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['trade'],
+    tags: ['biosecurity', 'quarantine', 'bulk', 'gateway'],
+    warehouseSqm: 132_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 61,
+  },
+  {
+    id: 'log_nsw_hume_smart_freight_hub',
+    category: 'logistics',
+    name: 'Hume Smart Freight Hub',
+    description: 'Autonomous convoy control and platoon staging on Hume.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['freight'],
+    tags: ['autonomous', 'smart_freight', 'platoon', 'intermodal'],
+    warehouseSqm: 168_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 69,
+  },
+  {
+    id: 'log_sa_adelaide_biosecurity',
+    category: 'logistics',
+    name: 'Adelaide Grain Biosecurity Hub',
+    description: 'Phytosanitary preclear for grain and bulk export.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'VIC'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['trade'],
+    tags: ['biosecurity', 'quarantine', 'grain', 'gateway'],
+    warehouseSqm: 98_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 64,
+  },
+];
+
+export const SCALE_WAVE_ROUND9_ASSETS = [
+  ...ROUND9_ROADS,
+  ...ROUND9_RAIL,
+  ...ROUND9_PORTS,
+  ...ROUND9_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -4010,6 +4351,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND6_ASSETS,
     ...SCALE_WAVE_ROUND7_ASSETS,
     ...SCALE_WAVE_ROUND8_ASSETS,
+    ...SCALE_WAVE_ROUND9_ASSETS,
   ];
 }
 
@@ -4457,6 +4799,66 @@ export function nationalAviationCargoThroughputIndex(
   const max = Math.max(...values);
   const composite = avg * 0.5 + max * 0.5;
   return Math.round(clamp(composite, 4, 92) * 10) / 10;
+}
+
+
+// --- source: network/coastal-shipping-throughput-index.ts ---
+
+/** 0–100 short-sea / coastal shipping throughput (roro, feeder, island supply). */
+export function computeCoastalShippingThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const coastalTagged =
+      asset.tags.some((t) => t === 'coastal_shipping' || t === 'short_sea' || t === 'roro' || t === 'island') ||
+      (asset.category === 'port' && asset.tags.includes('feeder'));
+
+    if (!coastalTagged) continue;
+
+    if (asset.category === 'port') {
+      const roroBoost = asset.tags.includes('roro') ? 1.15 : 1;
+      byRegion[asset.hostRegion] +=
+        (asset.berthCount * 2.4 + asset.teuCapacityPerYear / 160_000) * roroBoost * (0.4 + asset.bulkShare * 0.35);
+      for (const r of asset.servedRegions) {
+        if (r !== asset.hostRegion) byRegion[r] += 1.8;
+      }
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 5_500_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += (asset.laneKilometres * asset.freightShare) / 650;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 100_000 + asset.lastMileCoveragePct / 140;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalCoastalShippingThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  const composite = avg * 0.55 + max * 0.45;
+  return Math.round(clamp(composite, 3, 90) * 10) / 10;
+}
+
+export function coastalShippingProductivityMultiplier(
+  throughputIndex: number,
+  policy: CoastalShippingPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'short_sea_boost' ? 0.045 : 0;
+  const normalized = (throughputIndex - 14) / 100;
+  return clamp(1 + normalized * 0.055 + policyBoost, 0.93, 1.11);
 }
 
 
@@ -4924,6 +5326,64 @@ export function customsClearanceProductivityMultiplier(
 }
 
 
+// --- source: operations/biosecurity-clearance-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type BiosecurityStreamlinePolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 biosecurity / quarantine clearance efficiency (higher = faster ag & bulk inspections). */
+export function computeBiosecurityClearanceByRegion(
+  operationalAssets: TransportAsset[],
+  freightUtilization = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 38])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.category === 'port' &&
+      (asset.tags.includes('biosecurity') ||
+        asset.tags.includes('quarantine') ||
+        asset.tags.includes('grain') ||
+        asset.bulkShare > 0.45)
+    ) {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.6 + asset.bulkShare * 12 + asset.automationLevel * 1.8;
+    }
+    if (
+      asset.category === 'logistics' &&
+      (asset.tags.includes('biosecurity') || asset.tags.includes('quarantine') || asset.coldChainCapable)
+    ) {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 88_000 + (asset.coldChainCapable ? 2.2 : 0);
+    }
+    if (asset.category === 'road' && asset.tags.includes('biosecurity') && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 420;
+    }
+  }
+
+  const utilDrag = clamp(freightUtilization, 0.05, 1.2);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.01 - utilDrag * 0.07), 16, 94) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalBiosecurityClearanceIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  return Math.round(clamp(avg, 20, 86) * 10) / 10;
+}
+
+export function biosecurityClearanceProductivityMultiplier(
+  clearanceIndex: number,
+  policy: BiosecurityStreamlinePolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'preclear' ? 0.048 : 0;
+  const normalized = (clearanceIndex - 42) / 100;
+  return clamp(1 + normalized * 0.055 + policyBoost, 0.91, 1.1);
+}
+
+
 // --- source: productivity/regional-investment-tiers.ts ---
 
 const TIERS: TransportInvestmentTier[] = ['emerging', 'regional', 'integrated', 'national_gateway'];
@@ -5328,6 +5788,90 @@ export function nationalHydrogenCorridorThroughputIndex(
 }
 
 
+// --- source: productivity/autonomous-freight-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type AutonomousFreightPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of road/rail freight capacity with autonomous or platooning systems. */
+export function computeAutonomousFreightShare(
+  operationalAssets: TransportAsset[],
+  policy: AutonomousFreightPolicy = 'baseline',
+): number {
+  let autonomousUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      const units = asset.laneKilometres * (0.25 + asset.freightShare);
+      totalUnits += units;
+      if (asset.tags.includes('autonomous') || asset.tags.includes('platoon') || asset.tags.includes('smart_freight')) {
+        autonomousUnits += units * (0.7 + asset.designSpeedKmh / 400);
+      }
+    }
+    if (asset.category === 'rail' && 'trackKilometres' in asset) {
+      const units = asset.trackKilometres * (0.3 + asset.electrifiedShare);
+      totalUnits += units;
+      if (asset.tags.includes('autonomous') || asset.tags.includes('smart_freight')) {
+        autonomousUnits += units * 0.55;
+      }
+    }
+    if (asset.category === 'logistics' && asset.tags.includes('smart_freight')) {
+      totalUnits += asset.warehouseSqm / 70_000;
+      autonomousUnits += asset.warehouseSqm / 70_000 * 0.8;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.06;
+  const policyBoost = policy === 'deploy' ? 0.04 : 0;
+  return Math.round(clamp(autonomousUnits / totalUnits + policyBoost, 0.05, 0.58) * 1000) / 1000;
+}
+
+export function autonomousFreightProductivityMultiplier(
+  share: number,
+  policy: AutonomousFreightPolicy,
+): number {
+  const bias = policy === 'deploy' ? 1.022 : 1;
+  return (1 + (share - 0.1) * 0.035) * bias;
+}
+
+export function computeAutonomousCorridorThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (!asset.tags.some((t) => t === 'autonomous' || t === 'platoon' || t === 'smart_freight')) continue;
+
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += (asset.laneKilometres * asset.freightShare) / 520;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 6_500_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 105_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAutonomousCorridorThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.55 + max * 0.45, 2, 78) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -5575,6 +6119,19 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   hydrogenFreightProductivityMultiplier,
   nationalHydrogenCorridorThroughputIndex,
 } from './hydrogen-freight-index.ts';
+  coastalShippingProductivityMultiplier,
+  computeCoastalShippingThroughputByRegion,
+  nationalCoastalShippingThroughputIndex,
+} from '../network/coastal-shipping-throughput-index.ts';
+  biosecurityClearanceProductivityMultiplier,
+  computeBiosecurityClearanceByRegion,
+  nationalBiosecurityClearanceIndex,
+} from '../operations/biosecurity-clearance-index.ts';
+  autonomousFreightProductivityMultiplier,
+  computeAutonomousCorridorThroughputByRegion,
+  computeAutonomousFreightShare,
+  nationalAutonomousCorridorThroughputIndex,
+} from './autonomous-freight-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -5861,6 +6418,50 @@ export function computeTransportInfrastructureState(
     nationalAviationCargo * 0.03 +
     nationalHydrogenCorridor * 0.028;
 
+  const coastalShippingThroughputByRegion = computeCoastalShippingThroughputByRegion(ops);
+  const nationalCoastalShipping = nationalCoastalShippingThroughputIndex(coastalShippingThroughputByRegion);
+  const coastalMult = coastalShippingProductivityMultiplier(
+    nationalCoastalShipping,
+    options?.coastalShippingPolicy ?? 'baseline',
+  );
+  const biosecurityClearanceByRegion = computeBiosecurityClearanceByRegion(ops, freightUtil);
+  const nationalBiosecurityClearance = nationalBiosecurityClearanceIndex(biosecurityClearanceByRegion);
+  const biosecurityMult = biosecurityClearanceProductivityMultiplier(
+    nationalBiosecurityClearance,
+    options?.biosecurityStreamlinePolicy ?? 'baseline',
+  );
+  const autonomousCorridorThroughputByRegion = computeAutonomousCorridorThroughputByRegion(ops);
+  const nationalAutonomousCorridor = nationalAutonomousCorridorThroughputIndex(autonomousCorridorThroughputByRegion);
+  const autonomousFreightShare = computeAutonomousFreightShare(
+    ops,
+    options?.autonomousFreightPolicy ?? 'baseline',
+  );
+  const autonomousMult = autonomousFreightProductivityMultiplier(
+    autonomousFreightShare,
+    options?.autonomousFreightPolicy ?? 'baseline',
+  );
+
+  for (const code of AU_REGION_CODES) {
+    const coastalBoost = (coastalShippingThroughputByRegion[code] - 10) * 0.006;
+    const biosecurityBoost = (biosecurityClearanceByRegion[code] - 40) * 0.0045;
+    const autonomousBoost = (autonomousCorridorThroughputByRegion[code] - 6) * 0.0065;
+    productivity.byRegion[code].productivityIndexBonus =
+      (productivity.byRegion[code].productivityIndexBonus + coastalBoost + biosecurityBoost + autonomousBoost) *
+      coastalMult *
+      biosecurityMult *
+      autonomousMult;
+  }
+  productivity.nationalProductivityIndexBonus =
+    AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
+    pipeline.productivityPoints +
+    intercapitalConnectivityIndex * 2.5 +
+    nationalContainerThroughput * 0.04 +
+    nationalBulkExport * 0.035 +
+    nationalAviationCargo * 0.03 +
+    nationalHydrogenCorridor * 0.028 +
+    nationalCoastalShipping * 0.026 +
+    nationalAutonomousCorridor * 0.024;
+
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
     baseInputs.operationalAssetIds,
@@ -5874,7 +6475,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/9',
+    schemaVersion: 'agent12/10',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -5922,6 +6523,13 @@ export function computeTransportInfrastructureState(
     hydrogenFreightShare,
     nationalHydrogenCorridorThroughputIndex: nationalHydrogenCorridor,
     hydrogenCorridorThroughputByRegion,
+    nationalCoastalShippingThroughputIndex: nationalCoastalShipping,
+    coastalShippingThroughputByRegion,
+    nationalBiosecurityClearanceIndex: nationalBiosecurityClearance,
+    biosecurityClearanceByRegion,
+    autonomousFreightShare,
+    nationalAutonomousCorridorThroughputIndex: nationalAutonomousCorridor,
+    autonomousCorridorThroughputByRegion,
     computeMs,
   };
 }
@@ -6004,7 +6612,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/9' &&
+      infra.schemaVersion === 'agent12/10' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -6022,8 +6630,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalAviationCargoThroughputIndex > 9 &&
       infra.nationalCustomsClearanceIndex > 35 &&
       infra.hydrogenFreightShare >= 0.04 &&
-      infra.nationalHydrogenCorridorThroughputIndex > 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} aviation=${infra.nationalAviationCargoThroughputIndex.toFixed(1)} customs=${infra.nationalCustomsClearanceIndex.toFixed(1)} hydrogen=${infra.nationalHydrogenCorridorThroughputIndex.toFixed(1)}`,
+      infra.nationalHydrogenCorridorThroughputIndex > 2 &&
+      infra.nationalCoastalShippingThroughputIndex > 8 &&
+      infra.nationalBiosecurityClearanceIndex > 36 &&
+      infra.autonomousFreightShare >= 0.05 &&
+      infra.nationalAutonomousCorridorThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} coastal=${infra.nationalCoastalShippingThroughputIndex.toFixed(1)} biosecurity=${infra.nationalBiosecurityClearanceIndex.toFixed(1)} autonomous=${infra.nationalAutonomousCorridorThroughputIndex.toFixed(1)}`,
   });
 
   return results;
