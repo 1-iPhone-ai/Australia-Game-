@@ -171,6 +171,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   pardonStrainIndex: number;
   pardonIntegrityScore: number;
   governanceZealScore: number;
+  clemencyStrainIndex: number;
+  clemencyIntegrityScore: number;
+  governancePluckScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

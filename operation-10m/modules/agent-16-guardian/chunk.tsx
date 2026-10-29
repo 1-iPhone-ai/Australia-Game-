@@ -175,6 +175,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   pardonStrainIndex: number;
   pardonIntegrityScore: number;
   governanceZealScore: number;
+  clemencyStrainIndex: number;
+  clemencyIntegrityScore: number;
+  governancePluckScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -2433,6 +2436,62 @@ export function buildGuardianDepthPardonReport(snapshot: GuardianCoPilotMonitorS
   return lines.slice(0, 3);
 }
 
+export function computeClemencyStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceZealScore < 50) load += Math.min(25, 50 - snapshot.governanceZealScore);
+  if (snapshot.governanceZealScore < 35) load += 10;
+  if (snapshot.pardonIntegrityScore < 45) load += 20;
+  if (snapshot.pardonIntegrityScore < 35) load += 10;
+  if (snapshot.pardonStrainIndex >= 55) load += 20;
+  if (snapshot.pardonStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeClemencyIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.clemencyStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.clemencyStrainIndex * 0.35));
+  if (snapshot.pardonIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.pardonIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceZealScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernancePluckScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.clemencyStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.clemencyStrainIndex * 0.32));
+  if (snapshot.clemencyIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.clemencyIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceZealScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthClemencyReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.clemencyStrainIndex >= 55) {
+    lines.push(
+      `Clemency strain ${snapshot.clemencyStrainIndex} — stacked clemency review may exceed operator clemency capacity`
+    );
+  }
+  if (snapshot.clemencyIntegrityScore < 45) {
+    lines.push(
+      `Clemency integrity ${snapshot.clemencyIntegrityScore} — align Co-Pilot clemencies with Guardian clemency posture`
+    );
+  }
+  if (snapshot.governancePluckScore < 40) {
+    lines.push(
+      `Governance pluck ${snapshot.governancePluckScore} — little pluck to sustain clemency oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -2803,9 +2862,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withPardonStrain: GuardianCoPilotMonitorSnapshot = { ...withResolve, pardonStrainIndex };
   const pardonIntegrityScore = computePardonIntegrityScore(withPardonStrain);
   const withPardon: GuardianCoPilotMonitorSnapshot = { ...withPardonStrain, pardonIntegrityScore };
-  return {
+  const withZeal: GuardianCoPilotMonitorSnapshot = {
     ...withPardon,
     governanceZealScore: computeGovernanceZealScore(withPardon),
+    clemencyStrainIndex: 0,
+    clemencyIntegrityScore: 100,
+    governancePluckScore: 100,
+  };
+  const clemencyStrainIndex = computeClemencyStrainIndex(withZeal);
+  const withClemencyStrain: GuardianCoPilotMonitorSnapshot = { ...withZeal, clemencyStrainIndex };
+  const clemencyIntegrityScore = computeClemencyIntegrityScore(withClemencyStrain);
+  const withClemency: GuardianCoPilotMonitorSnapshot = { ...withClemencyStrain, clemencyIntegrityScore };
+  return {
+    ...withClemency,
+    governancePluckScore: computeGovernancePluckScore(withClemency),
   };
 }
 
@@ -3978,6 +4048,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceZealScore(snap) < 35;
+  });
+  ok('gd_clemency_strain', () => {
+    const snap = {
+      governanceZealScore: 30,
+      pardonIntegrityScore: 32,
+      pardonStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeClemencyStrainIndex(snap) >= 70;
+  });
+  ok('gd_clemency_integrity', () => {
+    const snap = {
+      clemencyStrainIndex: 72,
+      pardonIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceZealScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeClemencyIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_pluck', () => {
+    const snap = {
+      clemencyStrainIndex: 78,
+      clemencyIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceZealScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernancePluckScore(snap) < 35;
   });
   return out;
 }
@@ -8811,6 +8915,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_35: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_35_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_35.length;
 
 
+// --- source: monitor-rules-scale-wave-36.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_36: AdvisoryMonitorRule[] = [
+  {
+    id: 'clemency_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Clemency Strain High',
+    detailTemplate: 'Clemency strain is in the high band — reduce overlapping warn-only clemency review demands',
+    evidenceFields: ['clemencyStrainIndex', 'governanceZealScore', 'clemencyIntegrityScore'],
+    evaluate: s => s.clemencyStrainIndex >= 70,
+  },
+  {
+    id: 'clemency_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Clemency Strain Elevated',
+    detailTemplate: 'Clemency strain is elevated — expect slower clemency review across turns',
+    evidenceFields: ['clemencyStrainIndex', 'pardonStrainIndex'],
+    evaluate: s => s.clemencyStrainIndex >= 45 && s.clemencyStrainIndex < 70,
+  },
+  {
+    id: 'clemency_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Clemency Integrity Low',
+    detailTemplate: 'Clemency integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['clemencyIntegrityScore', 'clemencyStrainIndex', 'pardonIntegrityScore'],
+    evaluate: s => s.clemencyIntegrityScore < 35,
+  },
+  {
+    id: 'clemency_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Clemency While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate clemency integrity',
+    evidenceFields: ['clemencyIntegrityScore', 'copilotAutonomousActive', 'clemencyStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.clemencyIntegrityScore >= 35 && s.clemencyIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_pluck_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Pluck Low',
+    detailTemplate: 'Little governance pluck remains for warn-only clemency oversight across turns',
+    evidenceFields: ['governancePluckScore', 'clemencyStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governancePluckScore < 35,
+  },
+  {
+    id: 'governance_pluck_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Pluck While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance pluck',
+    evidenceFields: ['governancePluckScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governancePluckScore >= 35 && s.governancePluckScore < 55,
+  },
+  {
+    id: 'clemency_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Clemency Envelope Pressured',
+    detailTemplate: 'Clemency strain and low clemency integrity align in the pressured envelope band',
+    evidenceFields: ['clemencyStrainIndex', 'clemencyIntegrityScore', 'governancePluckScore'],
+    evaluate: s => s.clemencyStrainIndex >= 55 && s.clemencyIntegrityScore < 50,
+  },
+  {
+    id: 'rival_clemency_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Clemency Strain',
+    detailTemplate: 'Rival victory progress plus elevated clemency strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'clemencyStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.clemencyStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_clemency_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Clemency Strain',
+    detailTemplate: 'Pending team plan while clemency strain is elevated',
+    evidenceFields: ['teamPlanPending', 'clemencyStrainIndex', 'governancePluckScore'],
+    evaluate: s => s.teamPlanPending && s.clemencyStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_clemency_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Clemency Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance pluck',
+    evidenceFields: ['guardianRiskBand', 'governancePluckScore', 'clemencyStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governancePluckScore < 40,
+  },
+  {
+    id: 'copilot_clemency_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Clemency Strain',
+    detailTemplate: 'Autonomous Co-Pilot while clemency strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'clemencyStrainIndex', 'clemencyIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.clemencyStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_pluck',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Pluck',
+    detailTemplate: 'Expiring contracts while governance pluck is low',
+    evidenceFields: ['expiringContractCount', 'governancePluckScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governancePluckScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_36_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_36.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -9075,6 +9312,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_33,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_34,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_35,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_36,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -9496,6 +9734,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     pardonStrainIndex: 0,
     pardonIntegrityScore: 100,
     governanceZealScore: 100,
+    clemencyStrainIndex: 0,
+    clemencyIntegrityScore: 100,
+    governancePluckScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -12136,6 +12377,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['pardon_envelope_pressured', 'guardian_pardon_envelope_critical'],
     notes: 'Pressured pardon envelope with critical Guardian band',
   },
+  {
+    id: 'sc_clemency_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2260,
+      maxSpendPerAction: 10580,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['clemency_strain_high', 'clemency_integrity_low'],
+    notes: 'High clemency strain with critical clemency integrity',
+  },
+  {
+    id: 'sc_governance_pluck_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1380,
+      maxSpendPerAction: 8080,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_pluck_low', 'contracts_governance_pluck'],
+    notes: 'Low governance pluck with expiring contracts',
+  },
+  {
+    id: 'sc_clemency_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 1300,
+      maxSpendPerAction: 8280,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['clemency_envelope_pressured', 'guardian_clemency_envelope_critical'],
+    notes: 'Pressured clemency envelope with critical Guardian band',
+  },
 ];
 
 
@@ -12311,8 +12620,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 35 scale wave brings monitor catalog to 454+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 454;
+  check(results, 'a16_expansion_count', 'Round 36 scale wave brings monitor catalog to 466+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 466;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -13604,6 +13913,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthPardonReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round36_metrics', 'Round 36 clemency envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.clemencyStrainIndex >= 40 &&
+      snap.clemencyIntegrityScore <= 100 &&
+      snap.governancePluckScore <= 100
+    );
+  });
+
+  check(results, 'a16_clemency_report', 'Guardian depth clemency report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthClemencyReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

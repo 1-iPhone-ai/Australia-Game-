@@ -78,6 +78,7 @@ export {
   buildGuardianDepthAbsolutionReport,
   buildGuardianDepthAmnestyReport,
   buildGuardianDepthPardonReport,
+  buildGuardianDepthClemencyReport,
   computeContainmentBurdenIndex,
   computeHumanRelayPressure,
   computeRecoveryHeadroomScore,
@@ -168,6 +169,9 @@ export {
   computePardonStrainIndex,
   computePardonIntegrityScore,
   computeGovernanceZealScore,
+  computeClemencyStrainIndex,
+  computeClemencyIntegrityScore,
+  computeGovernancePluckScore,
   runGuardianDepthUnitSelfTests,
 } from './guardian-depth.js';
 export { ADVISORY_MONITOR_RULES_EXPANSION, countExpansionRulesByKind } from './monitor-rules-expansion.js';
@@ -308,5 +312,9 @@ export {
   ADVISORY_MONITOR_RULES_SCALE_WAVE_35,
   ADVISORY_MONITOR_RULES_SCALE_WAVE_35_COUNT,
 } from './monitor-rules-scale-wave-35.js';
+export {
+  ADVISORY_MONITOR_RULES_SCALE_WAVE_36,
+  ADVISORY_MONITOR_RULES_SCALE_WAVE_36_COUNT,
+} from './monitor-rules-scale-wave-36.js';
 export { ADVISORY_SCENARIO_CATALOG } from './scenarios.js';
 export { runAgent16GuardianCoPilotSelfTests, summarizeAgent16SelfTests } from './self-tests.js';
