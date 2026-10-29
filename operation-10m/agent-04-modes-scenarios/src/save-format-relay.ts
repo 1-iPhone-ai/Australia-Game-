@@ -144,6 +144,7 @@ export function attachRelaySessionToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };

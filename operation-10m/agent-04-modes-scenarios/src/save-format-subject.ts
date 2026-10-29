@@ -125,6 +125,7 @@ export function attachSubjectSessionToState(
   return {
     ...state,
     subjectSession: sanitized,
+    witnessSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,

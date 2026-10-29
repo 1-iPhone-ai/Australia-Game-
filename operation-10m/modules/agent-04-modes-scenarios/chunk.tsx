@@ -374,6 +374,7 @@ export type O10mConvoyStage = 'staging' | 'transit' | 'delivery';
 export type O10mEscortPhase = 'briefing' | 'corridor' | 'handoff';
 export type O10mExtractionPhase = 'intel' | 'rescue' | 'exfil';
 export type O10mSubjectPhase = 'intake' | 'probe' | 'verdict';
+export type O10mWitnessPhase = 'brief' | 'testimony' | 'affirm';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -496,6 +497,17 @@ export interface O10mSubjectSession {
   phaseTag: O10mSubjectPhase;
 }
 
+/** Schema v19 — witness arc with credibility accrual between phases. */
+export interface O10mWitnessSession {
+  witnessId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  credibilityScore: number;
+  phaseTag: O10mWitnessPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -520,6 +532,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'witness_step'
     | 'subject_step'
     | 'extraction_step'
     | 'escort_step'
@@ -593,6 +606,10 @@ export interface O10mCampaignPlan {
   subjectCursor: number | null;
   subjectPhase: O10mSubjectPhase | null;
   subjectFidelity: number | null;
+  witnessId: string | null;
+  witnessCursor: number | null;
+  witnessPhase: O10mWitnessPhase | null;
+  witnessCredibility: number | null;
   reason: string;
 }
 
@@ -652,6 +669,8 @@ export interface O10mModesPersistedState {
   extractionSession?: O10mExtractionSession | null;
   /** Schema v18 — active subject investigation (mutually exclusive with extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   subjectSession?: O10mSubjectSession | null;
+  /** Schema v19 — active witness arc (mutually exclusive with subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  witnessSession?: O10mWitnessSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -2945,6 +2964,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Subject finales', 'Fidelity ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_witness_brief_room',
+    title: 'Witness Brief Room',
+    description: 'Open a witness arc with low-pressure credibility pacing before testimony.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100466,
+    startingMoney: 2750,
+    startingRegions: ['ACT', 'NSW'],
+    badgeId: 'badge_o10m_witness_brief_room',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100466),
+      o10mWitnessBriefRoom: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_wbr_obj_day',
+        label: 'Brief Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Witness arcs', 'Credibility pacing', 'Brief phase'],
+  },
+  {
+    id: 'o10m_witness_testimony_floor',
+    title: 'Witness Testimony Floor',
+    description: 'Mid-witness testimony with accrued credibility bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100467,
+    startingMoney: 3300,
+    startingRegions: ['QLD', 'NT'],
+    startingStanding: { QLD: 52, NT: 50 },
+    badgeId: 'badge_o10m_witness_testimony_floor',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100467),
+      regionalStandingEnabled: true,
+      o10mWitnessTestimonyFloor: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_wtf_obj_avg',
+        label: 'Testimony Threshold',
+        description: 'Average standing of 58',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 58,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Testimony floor', 'Credibility carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_witness_affirm_finale',
+    title: 'Witness Affirm Finale',
+    description: 'Finale affirm stage — net worth gate with full credibility bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100468,
+    startingMoney: 3750,
+    startingRegions: ['WA', 'SA', 'VIC'],
+    badgeId: 'badge_o10m_witness_affirm_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100468),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mWitnessAffirmFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_waf_obj_net',
+        label: 'Affirm Net Worth',
+        description: 'Reach $17,000 net worth',
+        targetType: 'netWorth',
+        targetValue: 17000,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Witness finales', 'Credibility ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -4039,6 +4155,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_witness_route',
+    title: 'Witness Route',
+    description:
+      'Three-phase witness arc with credibility accrual between legs — round-19 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_witness_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_witness_brief_room',
+        title: 'Brief Room',
+        narrativeBridge: 'Establish witness context before testimony.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 290 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_witness_testimony_floor',
+        title: 'Testimony Floor',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, SA: 5 },
+          forcedSettingsPatch: { o10mWitnessMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_witness_affirm_finale',
+        title: 'Affirm Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainWitnessRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -4865,7 +5015,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 18;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 19;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -4982,6 +5132,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     escortSession: null,
     extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
   };
 }
 
@@ -5019,6 +5170,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       escortSession: merged.escortSession ?? null,
       extractionSession: merged.extractionSession ?? null,
       subjectSession: merged.subjectSession ?? null,
+      witnessSession: merged.witnessSession ?? null,
     };
     return upgraded;
   }
@@ -5080,6 +5232,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     escortSession: sanitizeEscortSession(o.escortSession),
     extractionSession: sanitizeExtractionSession(o.extractionSession),
     subjectSession: sanitizeSubjectSession(o.subjectSession),
+    witnessSession: sanitizeWitnessSession(o.witnessSession),
   };
 }
 
@@ -5214,6 +5367,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Subject cursor out of range; clamp on next sanitize.');
   }
 
+  const witness = sanitizeWitnessSession(state.witnessSession);
+  if (state.witnessSession && !witness) {
+    warnings.push('Witness session failed sanitization; planner will ignore it.');
+  } else if (witness && witness.cursor >= witness.scenarioIds.length) {
+    warnings.push('Witness cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -5335,6 +5495,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'escortSession',
   'extractionSession',
   'subjectSession',
+  'witnessSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -5851,6 +6012,7 @@ export function attachMarathonQueueToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -5968,6 +6130,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceWitnessSessionAfterRun(next, run);
   next = advanceSubjectSessionAfterRun(next, run);
   next = advanceExtractionSessionAfterRun(next, run);
   next = advanceEscortSessionAfterRun(next, run);
@@ -6120,6 +6283,7 @@ export function attachGauntletSessionToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -6360,6 +6524,7 @@ export function attachRelaySessionToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -6560,6 +6725,7 @@ export function attachCircuitSessionToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -6778,6 +6944,7 @@ export function attachExpeditionSessionToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -6994,6 +7161,7 @@ export function attachOdysseySessionToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -7209,6 +7377,7 @@ export function attachPilgrimageSessionToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -7425,6 +7594,7 @@ export function attachCaravanSessionToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -7635,6 +7805,7 @@ export function attachVoyageSessionToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -7845,6 +8016,7 @@ export function attachSiegeSessionToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -8055,6 +8227,7 @@ export function attachConvoySessionToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -8265,6 +8438,7 @@ export function attachEscortSessionToState(
     escortSession: sanitized,
     extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -8484,6 +8658,7 @@ export function attachExtractionSessionToState(
     ...state,
     extractionSession: sanitized,
     subjectSession: null,
+    witnessSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -8711,6 +8886,7 @@ export function attachSubjectSessionToState(
   return {
     ...state,
     subjectSession: sanitized,
+    witnessSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -8820,6 +8996,235 @@ export function subjectSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-witness.ts ---
+export const O10M_WITNESS_SCENARIO_CAP = 6;
+export const O10M_WITNESS_CREDIBILITY_CAP = 720;
+export const O10M_WITNESS_CREDIBILITY_MONEY_CAP = 800;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mWitnessPhase>(['brief', 'testimony', 'affirm']);
+
+export function unlockTokenForWitnessId(witnessId: string): string | null {
+  if (!witnessId.startsWith('o10m_witness_')) return null;
+  return `o10m_unlock_${witnessId.slice('o10m_witness_'.length)}`;
+}
+
+export function witnessPhaseForCursor(cursor: number, scenarioCount: number): O10mWitnessPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'affirm';
+  if (clamped >= Math.floor(total / 2)) return 'testimony';
+  return 'brief';
+}
+
+export function witnessCredibilityFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(100, Math.max(13, Math.floor(run.playerNetWorth / 185) + standingSlice));
+}
+
+export function sanitizeWitnessSession(raw: unknown): O10mWitnessSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const witnessId =
+    typeof o.witnessId === 'string' && o.witnessId.startsWith('o10m_witness_') ? o.witnessId : null;
+  if (!witnessId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : witnessId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_WITNESS_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const credibilityScore = Math.min(
+    O10M_WITNESS_CREDIBILITY_CAP,
+    Math.max(0, Math.floor(num(o.credibilityScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mWitnessPhase)
+      ? (phaseRaw as O10mWitnessPhase)
+      : witnessPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    witnessId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    credibilityScore,
+    phaseTag,
+  };
+}
+
+export function createWitnessSession(params: {
+  witnessId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mWitnessSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.witnessId.startsWith('o10m_witness_')) {
+    return { session: null, warnings: ['Witness ids must start with o10m_witness_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_WITNESS_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Witness arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      witnessId: params.witnessId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      credibilityScore: 0,
+      phaseTag: witnessPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachWitnessSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mWitnessSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeWitnessSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    witnessSession: sanitized,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearWitnessSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, witnessSession: null };
+}
+
+export function getWitnessScenarioAtCursor(
+  session: O10mWitnessSession | null | undefined,
+): string | null {
+  const witness = sanitizeWitnessSession(session);
+  if (!witness || !witness.active) return null;
+  return witness.scenarioIds[witness.cursor] ?? null;
+}
+
+export function buildWitnessScenarioStartOverrides(
+  session: O10mWitnessSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const witness = sanitizeWitnessSession(session);
+  if (!witness) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_WITNESS_CREDIBILITY_MONEY_CAP,
+    Math.floor(witness.credibilityScore * 0.81),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveWitnessId: witness.witnessId,
+      o10mActiveWitnessStep: witness.cursor,
+      o10mActiveWitnessPhase: witness.phaseTag,
+      o10mWitnessCredibility: witness.credibilityScore,
+    },
+  };
+}
+
+export function advanceWitnessSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeWitnessSession(state.witnessSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const credibilityScore = Math.min(
+    O10M_WITNESS_CREDIBILITY_CAP,
+    session.credibilityScore + witnessCredibilityFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      witnessSession: {
+        ...session,
+        cursor,
+        credibilityScore,
+        phaseTag: witnessPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForWitnessId(session.witnessId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    witnessSession: { ...session, active: false, credibilityScore, phaseTag: 'affirm' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function witnessSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  credibility: number;
+  phase: O10mWitnessPhase | null;
+} {
+  const session = sanitizeWitnessSession(state.witnessSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    credibility: session?.credibilityScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -8874,9 +9279,31 @@ const emptyQueuePlan = {
   subjectCursor: null as number | null,
   subjectPhase: null as O10mSubjectPhase | null,
   subjectFidelity: null as number | null,
+  witnessId: null as string | null,
+  witnessCursor: null as number | null,
+  witnessPhase: null as O10mWitnessPhase | null,
+  witnessCredibility: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const witness = sanitizeWitnessSession(state.witnessSession);
+  const witnessScenario = getWitnessScenarioAtCursor(witness);
+  if (witness && witness.active && witnessScenario) {
+    return {
+      kind: 'witness_step',
+      scenarioId: witnessScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      witnessId: witness.witnessId,
+      witnessCursor: witness.cursor,
+      witnessPhase: witness.phaseTag,
+      witnessCredibility: witness.credibilityScore,
+      reason: `Witness "${witness.label}" ${witness.phaseTag} phase ${witness.cursor + 1}/${witness.scenarioIds.length} (credibility ${witness.credibilityScore}).`,
+    };
+  }
+
   const subject = sanitizeSubjectSession(state.subjectSession);
   const subjectScenario = getSubjectScenarioAtCursor(subject);
   if (subject && subject.active && subjectScenario) {
@@ -9208,6 +9635,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   escortActive: boolean;
   extractionActive: boolean;
   subjectActive: boolean;
+  witnessActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -9229,6 +9657,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const escort = escortSessionSummary(state);
   const extraction = extractionSessionSummary(state);
   const subject = subjectSessionSummary(state);
+  const witness = witnessSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -9248,6 +9677,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     escortActive: escort.active,
     extractionActive: extraction.active,
     subjectActive: subject.active,
+    witnessActive: witness.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -9266,7 +9696,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 19, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 20, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -9406,16 +9836,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const subjectState = subject ? attachSubjectSessionToState(createEmptyO10mModesPersistedState(), subject) : null;
   push('agent04_chunk_26', subjectState !== null && planNextCampaignAction(subjectState!).kind === 'subject_step');
 
+  const witness = createWitnessSession({
+    witnessId: 'o10m_witness_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_witness_brief_room'],
+  }).session;
+  const witnessState = witness ? attachWitnessSessionToState(createEmptyO10mModesPersistedState(), witness) : null;
+  push('agent04_chunk_27', witnessState !== null && planNextCampaignAction(witnessState!).kind === 'witness_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v19',
+  schemaVersion: 'op10m-agent04-v20',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 18,
+  saveSchemaVersion: 19,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

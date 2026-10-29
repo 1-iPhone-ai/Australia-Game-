@@ -654,6 +654,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_witness_route',
+    title: 'Witness Route',
+    description:
+      'Three-phase witness arc with credibility accrual between legs — round-19 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_witness_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_witness_brief_room',
+        title: 'Brief Room',
+        narrativeBridge: 'Establish witness context before testimony.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 290 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_witness_testimony_floor',
+        title: 'Testimony Floor',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, SA: 5 },
+          forcedSettingsPatch: { o10mWitnessMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_witness_affirm_finale',
+        title: 'Affirm Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainWitnessRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

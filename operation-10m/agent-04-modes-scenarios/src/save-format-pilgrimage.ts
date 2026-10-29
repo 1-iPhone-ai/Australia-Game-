@@ -130,6 +130,7 @@ export function attachPilgrimageSessionToState(
     escortSession: null,
   extractionSession: null,
     subjectSession: null,
+    witnessSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,

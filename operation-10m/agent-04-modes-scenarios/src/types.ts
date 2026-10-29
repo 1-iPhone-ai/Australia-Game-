@@ -370,6 +370,7 @@ export type O10mConvoyStage = 'staging' | 'transit' | 'delivery';
 export type O10mEscortPhase = 'briefing' | 'corridor' | 'handoff';
 export type O10mExtractionPhase = 'intel' | 'rescue' | 'exfil';
 export type O10mSubjectPhase = 'intake' | 'probe' | 'verdict';
+export type O10mWitnessPhase = 'brief' | 'testimony' | 'affirm';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -492,6 +493,17 @@ export interface O10mSubjectSession {
   phaseTag: O10mSubjectPhase;
 }
 
+/** Schema v19 — witness arc with credibility accrual between phases. */
+export interface O10mWitnessSession {
+  witnessId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  credibilityScore: number;
+  phaseTag: O10mWitnessPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -516,6 +528,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'witness_step'
     | 'subject_step'
     | 'extraction_step'
     | 'escort_step'
@@ -589,6 +602,10 @@ export interface O10mCampaignPlan {
   subjectCursor: number | null;
   subjectPhase: O10mSubjectPhase | null;
   subjectFidelity: number | null;
+  witnessId: string | null;
+  witnessCursor: number | null;
+  witnessPhase: O10mWitnessPhase | null;
+  witnessCredibility: number | null;
   reason: string;
 }
 
@@ -648,6 +665,8 @@ export interface O10mModesPersistedState {
   extractionSession?: O10mExtractionSession | null;
   /** Schema v18 — active subject investigation (mutually exclusive with extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   subjectSession?: O10mSubjectSession | null;
+  /** Schema v19 — active witness arc (mutually exclusive with subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  witnessSession?: O10mWitnessSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

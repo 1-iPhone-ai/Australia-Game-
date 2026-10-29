@@ -62,6 +62,11 @@ import {
   sanitizeSubjectSession,
 } from './save-format-subject.js';
 import {
+  getWitnessScenarioAtCursor,
+  witnessSessionSummary,
+  sanitizeWitnessSession,
+} from './save-format-witness.js';
+import {
   getSiegeScenarioAtCursor,
   siegeSessionSummary,
   sanitizeSiegeSession,
@@ -83,6 +88,7 @@ import type {
   O10mEscortPhase,
   O10mExtractionPhase,
   O10mSubjectPhase,
+  O10mWitnessPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -141,9 +147,31 @@ const emptyQueuePlan = {
   subjectCursor: null as number | null,
   subjectPhase: null as O10mSubjectPhase | null,
   subjectFidelity: null as number | null,
+  witnessId: null as string | null,
+  witnessCursor: null as number | null,
+  witnessPhase: null as O10mWitnessPhase | null,
+  witnessCredibility: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const witness = sanitizeWitnessSession(state.witnessSession);
+  const witnessScenario = getWitnessScenarioAtCursor(witness);
+  if (witness && witness.active && witnessScenario) {
+    return {
+      kind: 'witness_step',
+      scenarioId: witnessScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      witnessId: witness.witnessId,
+      witnessCursor: witness.cursor,
+      witnessPhase: witness.phaseTag,
+      witnessCredibility: witness.credibilityScore,
+      reason: `Witness "${witness.label}" ${witness.phaseTag} phase ${witness.cursor + 1}/${witness.scenarioIds.length} (credibility ${witness.credibilityScore}).`,
+    };
+  }
+
   const subject = sanitizeSubjectSession(state.subjectSession);
   const subjectScenario = getSubjectScenarioAtCursor(subject);
   if (subject && subject.active && subjectScenario) {
@@ -475,6 +503,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   escortActive: boolean;
   extractionActive: boolean;
   subjectActive: boolean;
+  witnessActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -496,6 +525,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const escort = escortSessionSummary(state);
   const extraction = extractionSessionSummary(state);
   const subject = subjectSessionSummary(state);
+  const witness = witnessSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -515,6 +545,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     escortActive: escort.active,
     extractionActive: extraction.active,
     subjectActive: subject.active,
+    witnessActive: witness.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
