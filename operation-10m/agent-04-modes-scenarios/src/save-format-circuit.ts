@@ -152,6 +152,7 @@ export function attachCircuitSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,

@@ -400,6 +400,7 @@ export type O10mCertiorariPhase = 'filing' | 'review' | 'certiorari';
 export type O10mMandamusPhase = 'filing' | 'review' | 'mandamus';
 export type O10mProhibitionPhase = 'filing' | 'review' | 'prohibition';
 export type O10mHabeasPhase = 'filing' | 'review' | 'habeas';
+export type O10mQuowarrantoPhase = 'filing' | 'review' | 'quowarranto';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -808,6 +809,17 @@ export interface O10mHabeasSession {
   phaseTag: O10mHabeasPhase;
 }
 
+/** Schema v45 — quo warranto arc with score accrual between phases. */
+export interface O10mQuowarrantoSession {
+  quowarrantoId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  quowarrantoScore: number;
+  phaseTag: O10mQuowarrantoPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -832,6 +844,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'quowarranto_step'
     | 'habeas_step'
     | 'prohibition_step'
     | 'mandamus_step'
@@ -1035,6 +1048,10 @@ export interface O10mCampaignPlan {
   habeasCursor: number | null;
   habeasPhase: O10mHabeasPhase | null;
   habeasScore: number | null;
+  quowarrantoId: string | null;
+  quowarrantoCursor: number | null;
+  quowarrantoPhase: O10mQuowarrantoPhase | null;
+  quowarrantoScore: number | null;
   reason: string;
 }
 
@@ -1144,8 +1161,10 @@ export interface O10mModesPersistedState {
   mandamusSession?: O10mMandamusSession | null;
   /** Schema v43 — active prohibition arc (mutually exclusive with habeas / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   prohibitionSession?: O10mProhibitionSession | null;
-  /** Schema v44 — active habeas arc (mutually exclusive with prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v44 — active habeas arc (mutually exclusive with quowarranto / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   habeasSession?: O10mHabeasSession | null;
+  /** Schema v45 — active quo warranto arc (mutually exclusive with habeas / prohibition / mandamus / certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  quowarrantoSession?: O10mQuowarrantoSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -5961,6 +5980,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Habeas finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_quowarranto_filing_docket',
+    title: 'Quo Warranto Filing Docket',
+    description: 'Open a quo warranto arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100544,
+    startingMoney: 4050,
+    startingRegions: ['NT', 'QLD'],
+    badgeId: 'badge_o10m_quowarranto_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100544),
+      o10mQuowarrantoFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_qfd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Quo warranto arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_quowarranto_review_chamber',
+    title: 'Quo Warranto Review Chamber',
+    description: 'Mid quo warranto review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100545,
+    startingMoney: 4600,
+    startingRegions: ['WA', 'SA'],
+    startingStanding: { WA: 72, SA: 70 },
+    badgeId: 'badge_o10m_quowarranto_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100545),
+      regionalStandingEnabled: true,
+      o10mQuowarrantoReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_qrc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_quowarranto_warrant_finale',
+    title: 'Quo Warranto Warrant Finale',
+    description: 'Finale quo warranto stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100546,
+    startingMoney: 5050,
+    startingRegions: ['ACT', 'NSW', 'VIC'],
+    badgeId: 'badge_o10m_quowarranto_warrant_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100546),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mQuowarrantoWarrantFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_qwf_obj_net',
+        label: 'Warrant Net Worth',
+        description: 'Reach $22,600 net worth',
+        targetType: 'netWorth',
+        targetValue: 22600,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Quo warranto finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -7939,6 +8055,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_quowarranto_route',
+    title: 'Quo Warranto Route',
+    description:
+      'Three-phase quo warranto arc with score accrual between legs — round-45 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_quowarranto_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_quowarranto_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File quo warranto petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 550 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_quowarranto_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mQuowarrantoMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_quowarranto_warrant_finale',
+        title: 'Warrant Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainQuowarrantoRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -8765,7 +8915,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 44;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 45;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -8908,6 +9058,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
   };
 }
 
@@ -8971,6 +9122,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       mandamusSession: merged.mandamusSession ?? null,
       prohibitionSession: merged.prohibitionSession ?? null,
       habeasSession: merged.habeasSession ?? null,
+      quowarrantoSession: merged.quowarrantoSession ?? null,
     };
     return upgraded;
   }
@@ -9058,6 +9210,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     mandamusSession: sanitizeMandamusSession(o.mandamusSession),
     prohibitionSession: sanitizeProhibitionSession(o.prohibitionSession),
     habeasSession: sanitizeHabeasSession(o.habeasSession),
+    quowarrantoSession: sanitizeQuowarrantoSession(o.quowarrantoSession),
   };
 }
 
@@ -9374,6 +9527,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Habeas cursor out of range; clamp on next sanitize.');
   }
 
+  const quowarranto = sanitizeQuowarrantoSession(state.quowarrantoSession);
+  if (state.quowarrantoSession && !quowarranto) {
+    warnings.push('Quo warranto session failed sanitization; planner will ignore it.');
+  } else if (quowarranto && quowarranto.cursor >= quowarranto.scenarioIds.length) {
+    warnings.push('Quo warranto cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -9521,6 +9681,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'mandamusSession',
   'prohibitionSession',
   'habeasSession',
+  'quowarrantoSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -10063,6 +10224,7 @@ export function attachMarathonQueueToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -10180,6 +10342,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceQuowarrantoSessionAfterRun(next, run);
   next = advanceHabeasSessionAfterRun(next, run);
   next = advanceProhibitionSessionAfterRun(next, run);
   next = advanceMandamusSessionAfterRun(next, run);
@@ -10384,6 +10547,7 @@ export function attachGauntletSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -10650,6 +10814,7 @@ export function attachRelaySessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -10876,6 +11041,7 @@ export function attachCircuitSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -11120,6 +11286,7 @@ export function attachExpeditionSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -11362,6 +11529,7 @@ export function attachOdysseySessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -11603,6 +11771,7 @@ export function attachPilgrimageSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -11845,6 +12014,7 @@ export function attachCaravanSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -12081,6 +12251,7 @@ export function attachVoyageSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -12317,6 +12488,7 @@ export function attachSiegeSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -12553,6 +12725,7 @@ export function attachConvoySessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -12789,6 +12962,7 @@ export function attachEscortSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -13034,6 +13208,7 @@ export function attachExtractionSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -13287,6 +13462,7 @@ export function attachSubjectSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -13540,6 +13716,7 @@ export function attachWitnessSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -13793,6 +13970,7 @@ export function attachTribunalSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -14046,6 +14224,7 @@ export function attachIndictmentSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -14299,6 +14478,7 @@ export function attachAppealSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -14552,6 +14732,7 @@ export function attachClemencySessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -14805,6 +14986,7 @@ export function attachPardonSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -15058,6 +15240,7 @@ export function attachAmnestySessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -15311,6 +15494,7 @@ export function attachReprieveSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -15564,6 +15748,7 @@ export function attachParoleSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -15817,6 +16002,7 @@ export function attachProbationSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -16070,6 +16256,7 @@ export function attachCommutationSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -16323,6 +16510,7 @@ export function attachAcquittalSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -16576,6 +16764,7 @@ export function attachExonerationSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -16829,6 +17018,7 @@ export function attachExpungementSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -17082,6 +17272,7 @@ export function attachVacaturSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -17335,6 +17526,7 @@ export function attachRemandSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -17588,6 +17780,7 @@ export function attachReversalSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -17841,6 +18034,7 @@ export function attachAnnulmentSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     reversalSession: null,
     remandSession: null,
     vacaturSession: null,
@@ -18096,6 +18290,7 @@ export function attachReinstatementSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     annulmentSession: null,
     reversalSession: null,
     remandSession: null,
@@ -18351,6 +18546,7 @@ export function attachSetAsideSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     reinstatementSession: null,
     annulmentSession: null,
     reversalSession: null,
@@ -18604,6 +18800,7 @@ export function attachQuashSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     setAsideSession: null,
     reinstatementSession: null,
     annulmentSession: null,
@@ -18859,6 +19056,7 @@ export function attachSupersedeSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     quashSession: null,
     setAsideSession: null,
     reinstatementSession: null,
@@ -20008,6 +20206,263 @@ export function habeasSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-quowarranto.ts ---
+export const O10M_QUOWARRANTO_SCENARIO_CAP = 6;
+export const O10M_QUOWARRANTO_SCORE_CAP = 1110;
+export const O10M_QUOWARRANTO_SCORE_MONEY_CAP = 1190;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mQuowarrantoPhase>(['filing', 'review', 'quowarranto']);
+
+export function unlockTokenForQuowarrantoId(quowarrantoId: string): string | null {
+  if (!quowarrantoId.startsWith('o10m_quowarranto_')) return null;
+  return `o10m_unlock_${quowarrantoId.slice('o10m_quowarranto_'.length)}`;
+}
+
+export function quowarrantoPhaseForCursor(cursor: number, scenarioCount: number): O10mQuowarrantoPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'quowarranto';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function quowarrantoScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(144, Math.max(36, Math.floor(run.playerNetWorth / 120) + standingSlice));
+}
+
+export function sanitizeQuowarrantoSession(raw: unknown): O10mQuowarrantoSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const quowarrantoId =
+    typeof o.quowarrantoId === 'string' && o.quowarrantoId.startsWith('o10m_quowarranto_')
+      ? o.quowarrantoId
+      : null;
+  if (!quowarrantoId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : quowarrantoId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_QUOWARRANTO_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const quowarrantoScore = Math.min(
+    O10M_QUOWARRANTO_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.quowarrantoScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mQuowarrantoPhase)
+      ? (phaseRaw as O10mQuowarrantoPhase)
+      : quowarrantoPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    quowarrantoId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    quowarrantoScore,
+    phaseTag,
+  };
+}
+
+export function createQuowarrantoSession(params: {
+  quowarrantoId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mQuowarrantoSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.quowarrantoId.startsWith('o10m_quowarranto_')) {
+    return { session: null, warnings: ['Quowarranto ids must start with o10m_quowarranto_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_QUOWARRANTO_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Quowarranto arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      quowarrantoId: params.quowarrantoId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      quowarrantoScore: 0,
+      phaseTag: quowarrantoPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachQuowarrantoSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mQuowarrantoSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeQuowarrantoSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    quowarrantoSession: sanitized,
+    habeasSession: null,
+    prohibitionSession: null,
+    mandamusSession: null,
+    certiorariSession: null,
+    supersedeSession: null,
+    quashSession: null,
+    setAsideSession: null,
+    reinstatementSession: null,
+    annulmentSession: null,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearQuowarrantoSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, quowarrantoSession: null };
+}
+
+export function getQuowarrantoScenarioAtCursor(
+  session: O10mQuowarrantoSession | null | undefined,
+): string | null {
+  const quowarranto = sanitizeQuowarrantoSession(session);
+  if (!quowarranto || !quowarranto.active) return null;
+  return quowarranto.scenarioIds[quowarranto.cursor] ?? null;
+}
+
+export function buildQuowarrantoScenarioStartOverrides(
+  session: O10mQuowarrantoSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const quowarranto = sanitizeQuowarrantoSession(session);
+  if (!quowarranto) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_QUOWARRANTO_SCORE_MONEY_CAP,
+    Math.floor(quowarranto.quowarrantoScore * 0.90),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveQuowarrantoId: quowarranto.quowarrantoId,
+      o10mActiveQuowarrantoStep: quowarranto.cursor,
+      o10mActiveQuowarrantoPhase: quowarranto.phaseTag,
+      o10mQuowarrantoScore: quowarranto.quowarrantoScore,
+    },
+  };
+}
+
+export function advanceQuowarrantoSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeQuowarrantoSession(state.quowarrantoSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const quowarrantoScore = Math.min(
+    O10M_QUOWARRANTO_SCORE_CAP,
+    session.quowarrantoScore + quowarrantoScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      quowarrantoSession: {
+        ...session,
+        cursor,
+        quowarrantoScore,
+        phaseTag: quowarrantoPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForQuowarrantoId(session.quowarrantoId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    quowarrantoSession: { ...session, active: false, quowarrantoScore, phaseTag: 'quowarranto' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function quowarrantoSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  quowarrantoScore: number;
+  phase: O10mQuowarrantoPhase | null;
+} {
+  const session = sanitizeQuowarrantoSession(state.quowarrantoSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    quowarrantoScore: session?.quowarrantoScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -20166,9 +20621,31 @@ const emptyQueuePlan = {
   habeasCursor: null as number | null,
   habeasPhase: null as O10mHabeasPhase | null,
   habeasScore: null as number | null,
+  quowarrantoId: null as string | null,
+  quowarrantoCursor: null as number | null,
+  quowarrantoPhase: null as O10mQuowarrantoPhase | null,
+  quowarrantoScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const quowarranto = sanitizeQuowarrantoSession(state.quowarrantoSession);
+  const quowarrantoScenario = getQuowarrantoScenarioAtCursor(quowarranto);
+  if (quowarranto && quowarranto.active && quowarrantoScenario) {
+    return {
+      kind: 'quowarranto_step',
+      scenarioId: quowarrantoScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      quowarrantoId: quowarranto.quowarrantoId,
+      quowarrantoCursor: quowarranto.cursor,
+      quowarrantoPhase: quowarranto.phaseTag,
+      quowarrantoScore: quowarranto.quowarrantoScore,
+      reason: `Quo warranto "${quowarranto.label}" ${quowarranto.phaseTag} phase ${quowarranto.cursor + 1}/${quowarranto.scenarioIds.length} (score ${quowarranto.quowarrantoScore}).`,
+    };
+  }
+
   const habeas = sanitizeHabeasSession(state.habeasSession);
   const habeasScenario = getHabeasScenarioAtCursor(habeas);
   if (habeas && habeas.active && habeasScenario) {
@@ -20994,6 +21471,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   mandamusActive: boolean;
   prohibitionActive: boolean;
   habeasActive: boolean;
+  quowarrantoActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -21041,6 +21519,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const mandamus = mandamusSessionSummary(state);
   const prohibition = prohibitionSessionSummary(state);
   const habeas = habeasSessionSummary(state);
+  const quowarranto = quowarrantoSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -21086,6 +21565,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     mandamusActive: mandamus.active,
     prohibitionActive: prohibition.active,
     habeasActive: habeas.active,
+    quowarrantoActive: quowarranto.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -21104,7 +21584,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 45, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 46, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -21452,16 +21932,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const habeasState = habeas ? attachHabeasSessionToState(createEmptyO10mModesPersistedState(), habeas) : null;
   push('agent04_chunk_52', habeasState !== null && planNextCampaignAction(habeasState!).kind === 'habeas_step');
 
+  const quowarranto = createQuowarrantoSession({
+    quowarrantoId: 'o10m_quowarranto_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_quowarranto_filing_docket'],
+  }).session;
+  const quowarrantoState = quowarranto ? attachQuowarrantoSessionToState(createEmptyO10mModesPersistedState(), quowarranto) : null;
+  push('agent04_chunk_53', quowarrantoState !== null && planNextCampaignAction(quowarrantoState!).kind === 'quowarranto_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v45',
+  schemaVersion: 'op10m-agent04-v46',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 44,
+  saveSchemaVersion: 45,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

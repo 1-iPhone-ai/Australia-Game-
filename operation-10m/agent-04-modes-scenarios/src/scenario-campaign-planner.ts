@@ -117,6 +117,11 @@ import {
   sanitizeReversalSession,
 } from './save-format-reversal.js';
 import {
+  getQuowarrantoScenarioAtCursor,
+  quowarrantoSessionSummary,
+  sanitizeQuowarrantoSession,
+} from './save-format-quowarranto.js';
+import {
   getHabeasScenarioAtCursor,
   habeasSessionSummary,
   sanitizeHabeasSession,
@@ -239,6 +244,7 @@ import type {
   O10mMandamusPhase,
   O10mProhibitionPhase,
   O10mHabeasPhase,
+  O10mQuowarrantoPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -401,9 +407,31 @@ const emptyQueuePlan = {
   habeasCursor: null as number | null,
   habeasPhase: null as O10mHabeasPhase | null,
   habeasScore: null as number | null,
+  quowarrantoId: null as string | null,
+  quowarrantoCursor: null as number | null,
+  quowarrantoPhase: null as O10mQuowarrantoPhase | null,
+  quowarrantoScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const quowarranto = sanitizeQuowarrantoSession(state.quowarrantoSession);
+  const quowarrantoScenario = getQuowarrantoScenarioAtCursor(quowarranto);
+  if (quowarranto && quowarranto.active && quowarrantoScenario) {
+    return {
+      kind: 'quowarranto_step',
+      scenarioId: quowarrantoScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      quowarrantoId: quowarranto.quowarrantoId,
+      quowarrantoCursor: quowarranto.cursor,
+      quowarrantoPhase: quowarranto.phaseTag,
+      quowarrantoScore: quowarranto.quowarrantoScore,
+      reason: `Quo warranto "${quowarranto.label}" ${quowarranto.phaseTag} phase ${quowarranto.cursor + 1}/${quowarranto.scenarioIds.length} (score ${quowarranto.quowarrantoScore}).`,
+    };
+  }
+
   const habeas = sanitizeHabeasSession(state.habeasSession);
   const habeasScenario = getHabeasScenarioAtCursor(habeas);
   if (habeas && habeas.active && habeasScenario) {
@@ -1229,6 +1257,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   mandamusActive: boolean;
   prohibitionActive: boolean;
   habeasActive: boolean;
+  quowarrantoActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1276,6 +1305,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const mandamus = mandamusSessionSummary(state);
   const prohibition = prohibitionSessionSummary(state);
   const habeas = habeasSessionSummary(state);
+  const quowarranto = quowarrantoSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1321,6 +1351,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     mandamusActive: mandamus.active,
     prohibitionActive: prohibition.active,
     habeasActive: habeas.active,
+    quowarrantoActive: quowarranto.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

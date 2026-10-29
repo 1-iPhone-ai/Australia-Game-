@@ -156,6 +156,7 @@ export function attachPilgrimageSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,

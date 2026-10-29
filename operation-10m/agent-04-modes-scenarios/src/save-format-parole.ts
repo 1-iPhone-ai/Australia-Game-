@@ -142,6 +142,7 @@ export function attachParoleSessionToState(
     mandamusSession: null,
     prohibitionSession: null,
     habeasSession: null,
+    quowarrantoSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
