@@ -11,9 +11,8 @@ export function buildShowAllOverrideActiveDayCoach(input: {
   policy: EvolvingUiAccessPolicy;
   nextGameDay: number;
 }): ShowAllOverrideActiveDayCoach {
-  const overrideActive = Boolean(
-    input.persisted.showAllPanelsOverride ?? input.policy.showAllPanelsOverride
-  );
+  const overrideActive =
+    input.persisted.showAllPanelsOverride === true || input.policy.showAllPanelsOverride === true;
   if (!overrideActive) {
     return { overrideActive: false, coachCopy: null };
   }

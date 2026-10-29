@@ -64,7 +64,10 @@ export function runAgent22Round38SelfTests(): {
         createDefaultEvolvingUiPersistedState()
       );
       const coach = buildLegacyNavRememberPlanDayCoach({ plan, nextGameDay: 5 });
-      return plan.panelIdsToRemember.length === 0 || Boolean(coach.coachCopy?.includes('Day 5') || coach.coachCopy === null);
+      if (!plan.panelIdsToRemember.length) {
+        return coach.coachCopy === null;
+      }
+      return Boolean(coach.coachCopy?.includes('Day 5'));
     })()
   );
 
@@ -172,13 +175,14 @@ export function runAgent22Round38SelfTests(): {
           'onboarding_map',
           'onboarding_economy',
           'onboarding_standing',
-          'onboarding_advanced',
+          'onboarding_finance',
+          'onboarding_automation',
         ],
       };
       const coach = buildOnboardingActiveStepsDayCoach({
-        gameDay: 10,
+        gameDay: 20,
         persisted,
-        nextGameDay: 10,
+        nextGameDay: 20,
       });
       return coach.coachCopy === null;
     })()

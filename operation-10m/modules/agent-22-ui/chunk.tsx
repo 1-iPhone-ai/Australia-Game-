@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: a4e1a94d4ea399ea
+// content-sha256-prefix: 12a70c26dd41e9e6
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -7249,9 +7249,8 @@ export function buildShowAllOverrideActiveDayCoach(input: {
   policy: EvolvingUiAccessPolicy;
   nextGameDay: number;
 }): ShowAllOverrideActiveDayCoach {
-  const overrideActive = Boolean(
-    input.persisted.showAllPanelsOverride ?? input.policy.showAllPanelsOverride
-  );
+  const overrideActive =
+    input.persisted.showAllPanelsOverride === true || input.policy.showAllPanelsOverride === true;
   if (!overrideActive) {
     return { overrideActive: false, coachCopy: null };
   }
@@ -7377,7 +7376,10 @@ export function runAgent22Round38SelfTests(): {
         createDefaultEvolvingUiPersistedState()
       );
       const coach = buildLegacyNavRememberPlanDayCoach({ plan, nextGameDay: 5 });
-      return plan.panelIdsToRemember.length === 0 || Boolean(coach.coachCopy?.includes('Day 5') || coach.coachCopy === null);
+      if (!plan.panelIdsToRemember.length) {
+        return coach.coachCopy === null;
+      }
+      return Boolean(coach.coachCopy?.includes('Day 5'));
     })()
   );
 
@@ -7485,13 +7487,14 @@ export function runAgent22Round38SelfTests(): {
           'onboarding_map',
           'onboarding_economy',
           'onboarding_standing',
-          'onboarding_advanced',
+          'onboarding_finance',
+          'onboarding_automation',
         ],
       };
       const coach = buildOnboardingActiveStepsDayCoach({
-        gameDay: 10,
+        gameDay: 20,
         persisted,
-        nextGameDay: 10,
+        nextGameDay: 20,
       });
       return coach.coachCopy === null;
     })()
