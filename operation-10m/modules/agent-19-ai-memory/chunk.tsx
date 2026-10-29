@@ -9121,6 +9121,293 @@ export function commonwealthRecoveryOrchestratorWithinCap(report: CommonwealthRe
 }
 
 
+// --- source: match-explainability-realm-bundle.ts ---
+  auditMatchExplainabilityRealmGate,
+  matchExplainabilityRealmAllowed,
+} from './match-explainability-realm-gate.ts';
+  buildMatchExplainabilityCommonwealthBundle,
+  matchExplainabilityCommonwealthReady,
+} from './match-explainability-commonwealth-bundle.ts';
+  buildSessionCommonwealthExportBundle,
+  sessionCommonwealthExportShipped,
+} from './session-commonwealth-export-bundle.ts';
+
+export const AGENT19_REALM_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityRealmBundle {
+  realmReady: boolean;
+  realmAllowed: boolean;
+  commonwealthReady: boolean;
+  commonwealthExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type RealmParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Realm bundle: realm gate and commonwealth export must both be green. */
+export function buildMatchExplainabilityRealmBundle(
+  packs: TurnExplainabilityPack[],
+  params: RealmParams,
+): MatchExplainabilityRealmBundle {
+  const realm = auditMatchExplainabilityRealmGate(packs, params);
+  const commonwealth = buildMatchExplainabilityCommonwealthBundle(packs, params);
+  const commonwealthExport = buildSessionCommonwealthExportBundle(packs, params);
+  const realmAllowed = matchExplainabilityRealmAllowed(realm);
+  const commonwealthReady = matchExplainabilityCommonwealthReady(commonwealth);
+  const commonwealthExportShipped = sessionCommonwealthExportShipped(commonwealthExport);
+  const realmReady = realmAllowed && commonwealthReady && commonwealthExportShipped;
+  const narrativeLines = [
+    `Match explainability realm bundle: ${realmReady ? 'READY' : 'PENDING'} (gate ${realmAllowed ? 'ok' : 'fail'}, commonwealth ${commonwealthReady ? 'ok' : 'fail'}).`,
+    ...realm.narrativeLines.slice(0, 2),
+    ...commonwealth.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_REALM_NARRATIVE_CAP);
+  return {
+    realmReady,
+    realmAllowed,
+    commonwealthReady,
+    commonwealthExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityRealmReady(bundle: MatchExplainabilityRealmBundle): boolean {
+  return bundle.realmReady;
+}
+
+
+// --- source: session-realm-export-bundle.ts ---
+  buildSessionCommonwealthExportBundle,
+  type SessionCommonwealthExportBundle,
+} from './session-commonwealth-export-bundle.ts';
+  buildMatchExplainabilityRealmBundle,
+  matchExplainabilityRealmReady,
+} from './match-explainability-realm-bundle.ts';
+
+export interface SessionRealmExportBundle extends SessionCommonwealthExportBundle {
+  realmReady: boolean;
+  realmSchema: string;
+}
+
+/** Realm export wraps commonwealth export when realm bundle is ready. */
+export function buildSessionRealmExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionRealmExportBundle {
+  const base = buildSessionCommonwealthExportBundle(packs, params);
+  const realm = buildMatchExplainabilityRealmBundle(packs, params);
+  const realmReady = matchExplainabilityRealmReady(realm);
+  const exports = realmReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    realmReady,
+    realmSchema: 'agent19.realm.v1',
+    releaseReady: realmReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Realm export: ${realmReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionRealmExportShipped(bundle: SessionRealmExportBundle): boolean {
+  return (
+    bundle.realmReady &&
+    bundle.exports.length > 0 &&
+    bundle.realmSchema === 'agent19.realm.v1'
+  );
+}
+
+
+// --- source: commonwealth-realm-bridge.ts ---
+  buildMatchExplainabilityRealmBundle,
+  matchExplainabilityRealmReady,
+} from './match-explainability-realm-bundle.ts';
+  buildMatchExplainabilityCommonwealthBundle,
+  matchExplainabilityCommonwealthReady,
+} from './match-explainability-commonwealth-bundle.ts';
+
+export interface CommonwealthRealmBridgeReport {
+  aligned: boolean;
+  realmReady: boolean;
+  commonwealthReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Realm-ready should match commonwealth-ready when commonwealth export stack passes. */
+export function auditCommonwealthRealmBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): CommonwealthRealmBridgeReport {
+  const realm = buildMatchExplainabilityRealmBundle(packs, params);
+  const commonwealth = buildMatchExplainabilityCommonwealthBundle(packs, params);
+  const realmReady = matchExplainabilityRealmReady(realm);
+  const commonwealthReady = matchExplainabilityCommonwealthReady(commonwealth);
+  const aligned = realmReady === commonwealthReady;
+  const narrativeLines = [
+    `Commonwealth/realm bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (realm ${realmReady ? 'ok' : 'fail'}, commonwealth ${commonwealthReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, realmReady, commonwealthReady, narrativeLines };
+}
+
+export function commonwealthRealmBridgeHealthy(report: CommonwealthRealmBridgeReport): boolean {
+  return report.realmReady && report.commonwealthReady && report.aligned;
+}
+
+
+// --- source: match-explainability-sovereign-gate.ts ---
+  buildMatchExplainabilityRealmBundle,
+  matchExplainabilityRealmReady,
+} from './match-explainability-realm-bundle.ts';
+  buildSessionRealmExportBundle,
+  sessionRealmExportShipped,
+} from './session-realm-export-bundle.ts';
+
+export interface MatchExplainabilitySovereignGateReport {
+  sovereignAllowed: boolean;
+  realmReady: boolean;
+  realmExportShipped: boolean;
+  commonwealthRealmHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Sovereign gate: realm bundle + realm export + commonwealth/realm bridge. */
+export function auditMatchExplainabilitySovereignGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilitySovereignGateReport {
+  const realm = buildMatchExplainabilityRealmBundle(packs, params);
+  const realmExport = buildSessionRealmExportBundle(packs, params);
+  const bridge = auditCommonwealthRealmBridge(packs, params);
+  const realmReady = matchExplainabilityRealmReady(realm);
+  const realmExportShipped = sessionRealmExportShipped(realmExport);
+  const commonwealthRealmHealthy = commonwealthRealmBridgeHealthy(bridge);
+  const sovereignAllowed = realmReady && realmExportShipped && commonwealthRealmHealthy;
+  const narrativeLines = [
+    `Match explainability sovereign: ${sovereignAllowed ? 'ALLOWED' : 'DENIED'} (realm ${realmReady ? 'ok' : 'fail'}, export ${realmExportShipped ? 'ok' : 'fail'}).`,
+    ...realm.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    sovereignAllowed,
+    realmReady,
+    realmExportShipped,
+    commonwealthRealmHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilitySovereignAllowed(report: MatchExplainabilitySovereignGateReport): boolean {
+  return report.sovereignAllowed;
+}
+
+
+// --- source: realm-recovery-orchestrator.ts ---
+  auditMatchExplainabilityRealmGate,
+  matchExplainabilityRealmAllowed,
+} from './match-explainability-realm-gate.ts';
+
+export const AGENT19_REALM_RECOVERY_CAP = 10;
+
+export interface RealmRecoveryOrchestratorReport {
+  realmBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when realm gate blocks sovereign rollout. */
+export function buildRealmRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): RealmRecoveryOrchestratorReport {
+  const realm = auditMatchExplainabilityRealmGate(packs, params);
+  const realmBlocked = !matchExplainabilityRealmAllowed(realm);
+  const steps: string[] = [];
+  if (realmBlocked) {
+    if (!realm.commonwealthReady) {
+      steps.push('Restore commonwealth bundle: union and commonwealth export must pass.');
+    }
+    if (!realm.commonwealthExportShipped) {
+      steps.push('Emit session commonwealth export before realm clearance.');
+    }
+    if (!realm.unionCommonwealthHealthy) {
+      steps.push('Reconcile union/commonwealth bridge before realm.');
+    }
+    steps.push(...buildCommonwealthRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const commonwealth = buildMatchExplainabilityCommonwealthBundle(packs, params);
+    if (!commonwealth.commonwealthReady) {
+      steps.push('Re-run commonwealth readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Realm gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_REALM_RECOVERY_CAP);
+  return {
+    realmBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Realm recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function realmRecoveryOrchestratorWithinCap(report: RealmRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_REALM_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -9605,6 +9892,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityRealmGate,
   matchExplainabilityRealmAllowed,
 } from '../match-explainability-realm-gate.ts';
+  buildMatchExplainabilityRealmBundle,
+  matchExplainabilityRealmReady,
+} from '../match-explainability-realm-bundle.ts';
+  buildSessionRealmExportBundle,
+  sessionRealmExportShipped,
+} from '../session-realm-export-bundle.ts';
+  buildRealmRecoveryOrchestrator,
+  realmRecoveryOrchestratorWithinCap,
+} from '../realm-recovery-orchestrator.ts';
+  auditMatchExplainabilitySovereignGate,
+  matchExplainabilitySovereignAllowed,
+} from '../match-explainability-sovereign-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -14470,6 +14769,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityRealmAllowed(report) && !report.commonwealthReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r35_realm_ready',
+        'Realm bundle ready when realm gate and commonwealth export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityRealmBundle([pack], params);
+          return matchExplainabilityRealmReady(bundle) && bundle.realmAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r35_realm_held',
+        'Realm bundle pending when realm gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 45, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityRealmBundle([pack], {
+            memory: null,
+            currentTurn: 45,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityRealmReady(bundle) && !bundle.realmAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r35_realm_recovery',
+        'Realm recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 21, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 21, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildRealmRecoveryOrchestrator([pack], params);
+          return report.realmBlocked && realmRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r35_commonwealth_realm_bridge',
+        'Commonwealth realm bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditCommonwealthRealmBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return commonwealthRealmBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r35_realm_export',
+        'Realm export shipped when realm ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionRealmExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionRealmExportShipped(bundle) && bundle.realmSchema === 'agent19.realm.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r35_sovereign_gate_ok',
+        'Sovereign gate allowed on healthy realm stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilitySovereignGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilitySovereignAllowed(report) && report.realmExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r35_sovereign_gate_block',
+        'Sovereign gate denied when realm pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 46, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilitySovereignGate([pack], {
+            memory: null,
+            currentTurn: 46,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilitySovereignAllowed(report) && !report.realmReady || JSON.stringify(report);
         },
       ],
     ]),
