@@ -21,12 +21,15 @@ const FILES = [
   'household-industry-links.ts',
   'grid-recovery-extraction-efficiency.ts',
   'regional-grid-scenarios-climate-transition.ts',
+  'turn-simulation-depth.ts',
   'industrial-energy-environmental.tsx',
 ];
 
 const EXPORT_MANIFEST = [
   'V1014_INDUSTRIAL_ENERGY_SCHEMA_VERSION',
   'V1014_INDUSTRIAL_ENERGY_AGENT',
+  'V1014_INTERREGIONAL_GRID_LINKS',
+  'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
   'V1014_EXTRACTION_SITES',
   'V1014_RENEWABLE_ASSETS',
@@ -38,7 +41,11 @@ const EXPORT_MANIFEST = [
   'mergeIndustryModifiers',
   'sanitizeIndustrialEnergyEnvironmentalPersisted',
   'createInitialIndustrialEnergyEnvironmentalPersisted',
+  'advanceIndustrialEnergyEnvironmentalTurn',
+  'scoreAgent13EnergyEnvironmentGIAlignment',
+  'executeAgent13IndustrialEnergyTurnHook',
   'runV1014IndustrialEnergyEnvironmentalSelfTests',
+  'runAgent13TurnSimulationDepthSelfTests',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

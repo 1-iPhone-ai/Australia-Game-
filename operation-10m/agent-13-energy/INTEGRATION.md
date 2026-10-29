@@ -27,6 +27,9 @@ operation-10m/agent-13-energy/
 - `sanitizeIndustrialEnergyEnvironmentalPersisted` / `createInitialIndustrialEnergyEnvironmentalPersisted`
 - `runV1014IndustrialEnergyEnvironmentalSelfTests`
 - `IndustrialEnergyEnvironmentalInspector`
+- `advanceIndustrialEnergyEnvironmentalTurn` (turn advance hook)
+- `scoreAgent13EnergyEnvironmentGIAlignment` (GI ranking metadata)
+- `executeAgent13IndustrialEnergyTurnHook` / `V1014_INTERREGIONAL_GRID_LINKS` / `V1014_ENERGY_TURN_SCENARIOS`
 - Catalogs: `V1014_EXTRACTION_SITES`, `V1014_RENEWABLE_ASSETS`, `V1014_ENVIRONMENTAL_RULES`, `V1014_INDUSTRY_COUPLING`
 
 ## Game settings / persistence

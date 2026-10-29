@@ -10,6 +10,15 @@ import {
   computeRegionalGridRecovery,
 } from '../modules/grid-recovery-extraction-efficiency.ts';
 import { runV1014RegionalGridClimateScaleSelfTests } from '../modules/regional-grid-scenarios-climate-transition.ts';
+import {
+  runAgent13EnergyScenarioSimulation,
+  runAgent13TurnSimulationDepthSelfTests,
+  V1014_ENERGY_TURN_SCENARIOS,
+} from '../modules/turn-simulation-depth.ts';
+import {
+  advanceIndustrialEnergyEnvironmentalTurn,
+  createInitialIndustrialEnergyEnvironmentalPersisted,
+} from '../modules/industrial-energy-environmental.tsx';
 import { buildHouseholdEnergyHints } from '../modules/household-industry-links.ts';
 
 export function runAgent13SupplementTests(): { passed: number; failed: number; total: number } {
@@ -72,6 +81,46 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const scale = runV1014RegionalGridClimateScaleSelfTests();
   ok(scale.failed === 0 && scale.passed >= 5);
+
+  const depth = runAgent13TurnSimulationDepthSelfTests();
+  ok(depth.failed === 0 && depth.passed >= 6);
+
+  const scenario = V1014_ENERGY_TURN_SCENARIOS[0];
+  let persisted = createInitialIndustrialEnergyEnvironmentalPersisted();
+  let prev: ReturnType<typeof advanceIndustrialEnergyEnvironmentalTurn>['state'] | null = null;
+  const sim = runAgent13EnergyScenarioSimulation(scenario, step => {
+    const out = advanceIndustrialEnergyEnvironmentalTurn({
+      turn: step.turn,
+      enabled: true,
+      gameState: { crises: step.crises },
+      gameSettings: { industrialEnergyEnabled: true, nationalSystemsEnabled: true },
+      livingRegions: step.livingRegions,
+      nationalSystems: (step.nationalSystems as any) || null,
+      industries: null,
+      regionalFactions: null,
+      persisted,
+      prev,
+    });
+    persisted = out.persisted;
+    prev = out.state;
+    return {
+      ok: true,
+      turn: step.turn,
+      interRegionalFlowCount: out.state.interRegionalFlows.length,
+      turnSimulationDigest: out.state.turnSimulationDigest,
+      state: {
+        turn: out.state.turn,
+        inputHash: out.state.inputHash,
+        regions: out.state.regions,
+        industryModifiers: out.state.industryModifiers,
+        national: out.state.national,
+        interRegionalFlows: out.state.interRegionalFlows,
+        turnSimulationDigest: out.state.turnSimulationDigest,
+      },
+      persisted: out.persisted,
+    };
+  });
+  ok(sim.passed);
 
   return { passed, failed, total: passed + failed };
 }

@@ -22,6 +22,11 @@ import {
   type V1014ClimateTransitionProfile,
 } from './regional-grid-scenarios-climate-transition';
 import {
+  computeInterRegionalSpillover,
+  scoreAgent13EnergyEnvironmentGIAlignment,
+  type V1014InterRegionalFlow,
+} from './turn-simulation-depth';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25521,6 +25526,8 @@ export interface IndustrialEnergyEnvironmentalState {
   national: V1014NationalEnergyEnvironmentalSummary;
   industryModifiers: V1014IndustryModifierEntry[];
   householdEnergyHints: V1014HouseholdEnergyHint[];
+  interRegionalFlows: V1014InterRegionalFlow[];
+  turnSimulationDigest: string;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -25674,6 +25681,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       },
       industryModifiers: [],
       householdEnergyHints: [],
+      interRegionalFlows: [],
+      turnSimulationDigest: `t${turn}|disabled`,
       transitions: [],
       history: persisted.history,
     };
@@ -25886,10 +25895,16 @@ export function computeIndustrialEnergyEnvironmentalState(
   }
 
   const regionList = Object.values(regions);
-  const nationalRenewableShare = regionList.length ? v1014Round(regionList.reduce((a, r) => a + r.renewableShareScore, 0) / regionList.length / 100, 3) : 0;
-  const nationalExtractionIntensity = regionList.length ? v1014Round(regionList.reduce((a, r) => a + r.extractionScore, 0) / regionList.length, 1) : 0;
-  const topConstrainedRegions = regionList.sort((a, b) => b.environmentalPressure - a.environmentalPressure).slice(0, 3).map(r => r.regionId);
-  const topRenewableRegions = regionList.sort((a, b) => b.renewableShareScore - a.renewableShareScore).slice(0, 3).map(r => r.regionId);
+  const spill = computeInterRegionalSpillover(regions);
+  const mergedRegions = spill.adjustedRegions;
+  const interRegionalFlows = spill.flows;
+  const turnSimulationDigest = `t${turn}|flows${interRegionalFlows.length}|hash${inputHash}`;
+
+  const regionListMerged = Object.values(mergedRegions);
+  const nationalRenewableShare = regionListMerged.length ? v1014Round(regionListMerged.reduce((a, r) => a + r.renewableShareScore, 0) / regionListMerged.length / 100, 3) : 0;
+  const nationalExtractionIntensity = regionListMerged.length ? v1014Round(regionListMerged.reduce((a, r) => a + r.extractionScore, 0) / regionListMerged.length, 1) : 0;
+  const topConstrainedRegions = regionListMerged.sort((a, b) => b.environmentalPressure - a.environmentalPressure).slice(0, 3).map(r => r.regionId);
+  const topRenewableRegions = regionListMerged.sort((a, b) => b.renewableShareScore - a.renewableShareScore).slice(0, 3).map(r => r.regionId);
   const domainCounts: Record<string, number> = {};
   modifiers.forEach(m => {
     const rule = V1014_ENVIRONMENTAL_RULES_BY_ID[m.ruleId];
@@ -25900,13 +25915,13 @@ export function computeIndustrialEnergyEnvironmentalState(
   const national = {
     extractionBand: v1014BandExtraction(nationalExtractionIntensity),
     renewableBand: v1014BandRenewable(nationalRenewableShare),
-    constraintBand: v1014BandConstraint(regionList.reduce((a, r) => a + r.environmentalPressure, 0) / Math.max(1, regionList.length)),
+    constraintBand: v1014BandConstraint(regionListMerged.reduce((a, r) => a + r.environmentalPressure, 0) / Math.max(1, regionListMerged.length)),
     nationalRenewableShare,
     nationalExtractionIntensity,
     topConstrainedRegions,
     topRenewableRegions,
     primaryEnvironmentalDomain: primaryEnvironmentalDomain || null,
-    summary: `National extraction ${v1014BandExtraction(nationalExtractionIntensity)}, renewables ${v1014BandRenewable(nationalRenewableShare)}, environmental constraint ${v1014BandConstraint(regionList.reduce((a, r) => a + r.environmentalPressure, 0) / Math.max(1, regionList.length))}.`,
+    summary: `National extraction ${v1014BandExtraction(nationalExtractionIntensity)}, renewables ${v1014BandRenewable(nationalRenewableShare)}, environmental constraint ${v1014BandConstraint(regionListMerged.reduce((a, r) => a + r.environmentalPressure, 0) / Math.max(1, regionListMerged.length))}.`,
   };
 
   const history = [...persisted.history, ...(transitions.length ? [{ id: `ie14_hist_${turn}`, turn, kind: 'transition', summary: `${transitions.length} regional band change(s)` }] : [])].slice(-V1014_LIMITS.maxHistory);
@@ -25916,10 +25931,12 @@ export function computeIndustrialEnergyEnvironmentalState(
     revision: persisted.revision + 1,
     turn,
     inputHash,
-    regions,
+    regions: mergedRegions,
     national,
     industryModifiers: modifiers.slice(0, 120),
     householdEnergyHints: mergeHouseholdEnergyHints(householdHintLists).slice(0, 48),
+    interRegionalFlows,
+    turnSimulationDigest,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -25934,6 +25951,24 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   return { state, persisted: nextPersisted };
 }
+
+export function advanceIndustrialEnergyEnvironmentalTurn(params: {
+  turn: number;
+  enabled: boolean;
+  gameState: any;
+  gameSettings: any;
+  livingRegions: any;
+  nationalSystems: NationalSystemsState | null;
+  industries: IndustriesSupplyChainsState | null;
+  regionalFactions: RegionalFactionsState | null;
+  persisted?: IndustrialEnergyEnvironmentalPersisted | null;
+  prev?: IndustrialEnergyEnvironmentalState | null;
+}): { state: IndustrialEnergyEnvironmentalState; persisted: IndustrialEnergyEnvironmentalPersisted } {
+  const inputs = buildIndustrialEnergyEnvironmentalInputs(params);
+  return computeIndustrialEnergyEnvironmentalState(inputs, params.persisted ?? null, params.prev ?? null);
+}
+
+export { scoreAgent13EnergyEnvironmentGIAlignment };
 
 export function buildIndustrialEnergyIndustryModifiers(state: IndustrialEnergyEnvironmentalState | null | undefined): IndustriesInputs['modifiers'] {
   if (!state || !state.industryModifiers.length) return undefined;
@@ -26054,6 +26089,14 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
   check('GRID scenario id', !!r1.state.regions.NSW?.activeGridScenarioId?.startsWith('grid_sc_'), r1.state.regions.NSW?.activeGridScenarioId || '');
   check('CLIMATE transition depth', (r1.state.regions.SA?.climateTransitionDepth || 0) >= 0, `depth=${r1.state.regions.SA?.climateTransitionDepth}`);
   check('CLIMATE transition stage set', !!r1.state.regions.VIC?.climateTransitionStage, String(r1.state.regions.VIC?.climateTransitionStage));
+
+  check('INTERREGIONAL flows', Array.isArray(r1.state.interRegionalFlows), `flows=${r1.state.interRegionalFlows?.length}`);
+  check('TURN digest', !!r1.state.turnSimulationDigest?.includes('flows'), r1.state.turnSimulationDigest || '');
+  const gi = scoreAgent13EnergyEnvironmentGIAlignment(
+    { id: 'gi_t', title: 'Battery grid upgrade', category: 'energy', regionId: 'SA', description: 'renewable battery grid' },
+    r1.state,
+  );
+  check('GI alignment', gi.relevanceDelta > 0, gi.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');
