@@ -92,6 +92,10 @@ const FILES = [
   'debt-fiscal-coupling-register/compute.ts',
   'grant-forward-alignment/types.ts',
   'grant-forward-alignment/compute.ts',
+  'infrastructure-envelope-coherence/types.ts',
+  'infrastructure-envelope-coherence/compute.ts',
+  'fiscal-stress-resilience-bridge/types.ts',
+  'fiscal-stress-resilience-bridge/compute.ts',
   'infrastructure-financing/types.ts',
   'infrastructure-financing/compute.ts',
   'recurring-commitments/types.ts',
@@ -175,7 +179,9 @@ const FILES = [
   'medium-term-revenue-anchor/self-tests.ts',
   'appropriation-timing-coherence/self-tests.ts',
   'debt-fiscal-coupling-register/self-tests.ts',
-  'grant-forward-alignment/self-tests.ts'
+  'grant-forward-alignment/self-tests.ts',
+  'infrastructure-envelope-coherence/self-tests.ts',
+  'fiscal-stress-resilience-bridge/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {

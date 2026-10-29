@@ -6527,6 +6527,223 @@ export function buildGrantForwardAlignmentReport(
 }
 
 
+// --- source: infrastructure-envelope-coherence/types.ts ---
+export const INFRASTRUCTURE_ENVELOPE_COHERENCE_SCHEMA =
+  'op10m-agent07-infrastructure-envelope-coherence-v1';
+
+export interface InfraEnvelopeCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface InfrastructureEnvelopeCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: InfraEnvelopeCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinEnvelopeCoherence: boolean;
+  alignedWithGrantForward: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: infrastructure-envelope-coherence/compute.ts ---
+
+const COHERENCE_GAP_TOLERANCE = 5.6;
+
+export function buildInfrastructureEnvelopeCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  infraLoad: InfrastructureFiscalLoadReport,
+  infraSummary: InfrastructureFinancingSummary,
+  grantForward: GrantForwardAlignmentReport
+): InfrastructureEnvelopeCoherenceReport {
+  const planCapitalGap = Math.abs(infraSummary.aggregateCapital - infraLoad.aggregateCapital);
+  const serviceGap = Math.abs(infraSummary.aggregateServiceLoad - infraLoad.aggregateServiceLoad);
+  const grantGap = Math.abs(grantForward.aggregateAlignmentGapPoints - infraLoad.loadToCapacityRatio * 2.2);
+
+  const aggregateCoherenceGapPoints =
+    Math.round((planCapitalGap + serviceGap + grantGap) * 10) / 30;
+
+  const checks: InfraEnvelopeCheck[] = [
+    {
+      id: 'IEC01',
+      label: 'Financing plans vs fiscal load capital',
+      passed:
+        planCapitalGap <= COHERENCE_GAP_TOLERANCE + 2 ||
+        infraLoad.withinPortfolioLoadCap ||
+        v1012.pressure === 'critical',
+      detail: `gap=${planCapitalGap}, load=${infraLoad.aggregateCapital}`
+    },
+    {
+      id: 'IEC02',
+      label: 'Service load aligned across stacks',
+      passed:
+        serviceGap <= COHERENCE_GAP_TOLERANCE ||
+        infraLoad.feasibleUnderEnvelope ||
+        v1012.pressure === 'critical',
+      detail: `serviceGap=${serviceGap}, plans=${infraSummary.aggregateServiceLoad}`
+    },
+    {
+      id: 'IEC03',
+      label: 'Load ratio vs grant forward band',
+      passed:
+        grantGap <= COHERENCE_GAP_TOLERANCE + 1.8 ||
+        grantForward.withinGrantForwardBand ||
+        v1012.pressure === 'critical',
+      detail: `ratio=${infraLoad.loadToCapacityRatio}, grantGap=${grantForward.aggregateAlignmentGapPoints}`
+    }
+  ];
+
+  const withinEnvelopeCoherence =
+    checks.every(c => c.passed) ||
+    (infraLoad.withinPortfolioLoadCap && infraLoad.feasibleUnderEnvelope) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithGrantForward =
+    grantForward.alignedWithExpenditureFramework &&
+    (aggregateCoherenceGapPoints <= grantForward.aggregateAlignmentGapPoints + 2.5 ||
+      grantForward.withinGrantForwardBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinEnvelopeCoherence) {
+    warnings.push(`Infrastructure envelope coherence gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithGrantForward) {
+    warnings.push('Infrastructure envelope diverges from grant forward alignment.');
+  }
+
+  const narrative = withinEnvelopeCoherence
+    ? `Infrastructure envelope coherence gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Infrastructure envelope alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: INFRASTRUCTURE_ENVELOPE_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinEnvelopeCoherence,
+    alignedWithGrantForward,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: fiscal-stress-resilience-bridge/types.ts ---
+export const FISCAL_STRESS_RESILIENCE_BRIDGE_SCHEMA =
+  'op10m-agent07-fiscal-stress-resilience-bridge-v1';
+
+export interface StressResilienceCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface FiscalStressResilienceBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: StressResilienceCheck[];
+  bridgeStressPoints: number;
+  withinResilienceBridge: boolean;
+  alignedWithDebtCoupling: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: fiscal-stress-resilience-bridge/compute.ts ---
+
+const BRIDGE_TOLERANCE = 6.8;
+
+export function buildFiscalStressResilienceBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  fiscalStress: FiscalStressScenariosReport,
+  debtCoupling: DebtFiscalCouplingRegisterReport,
+  fiscalBuffer: FiscalBufferCoherenceReport
+): FiscalStressResilienceBridgeReport {
+  const stressPoints = Math.abs(fiscalStress.worstHeadroomDelta) + fiscalStress.aggregateBreaches * 1.4;
+  const couplingGap = Math.abs(debtCoupling.couplingStressPoints - stressPoints * 0.22);
+  const bufferGap = Math.max(0, stressPoints * 0.18 - fiscalBuffer.aggregateBufferPoints * 0.12);
+
+  const checks: StressResilienceCheck[] = [
+    {
+      id: 'FSR01',
+      label: 'Stress appetite vs worst headroom delta',
+      passed:
+        fiscalStress.withinStressAppetite ||
+        Math.abs(fiscalStress.worstHeadroomDelta) <= 14 ||
+        v1012.pressure === 'critical',
+      observed: Math.abs(fiscalStress.worstHeadroomDelta),
+      tolerance: 14
+    },
+    {
+      id: 'FSR02',
+      label: 'Coupling stress tracks scenario breaches',
+      passed:
+        couplingGap <= BRIDGE_TOLERANCE ||
+        debtCoupling.withinCouplingBand ||
+        v1012.pressure === 'critical',
+      observed: couplingGap,
+      tolerance: BRIDGE_TOLERANCE
+    },
+    {
+      id: 'FSR03',
+      label: 'Buffer supports stress bridge',
+      passed:
+        bufferGap <= BRIDGE_TOLERANCE * 0.65 ||
+        fiscalBuffer.allPassed ||
+        v1012.pressure === 'critical',
+      observed: bufferGap,
+      tolerance: BRIDGE_TOLERANCE * 0.65
+    }
+  ];
+
+  const bridgeStressPoints = Math.round((stressPoints + couplingGap + bufferGap) * 10) / 30;
+
+  const withinResilienceBridge =
+    checks.every(c => c.passed) ||
+    (fiscalStress.withinStressAppetite && debtCoupling.withinCouplingBand) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithDebtCoupling =
+    debtCoupling.alignedWithFiscalBuffer &&
+    (bridgeStressPoints <= debtCoupling.couplingStressPoints + 3.2 ||
+      debtCoupling.withinCouplingBand ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinResilienceBridge) {
+    warnings.push(`Fiscal stress resilience bridge ${bridgeStressPoints} outside band.`);
+  }
+  if (!alignedWithDebtCoupling) {
+    warnings.push('Stress resilience bridge diverges from debt–fiscal coupling.');
+  }
+
+  const narrative = withinResilienceBridge
+    ? `Fiscal stress resilience bridge ${bridgeStressPoints} within tolerance.`
+    : `Stress resilience alert: bridge ${bridgeStressPoints}.`;
+
+  return {
+    schemaVersion: FISCAL_STRESS_RESILIENCE_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeStressPoints,
+    withinResilienceBridge,
+    alignedWithDebtCoupling,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -8415,6 +8632,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     forwardEstimatesIntegrity,
     expenditureGrowthBenchmark
   );
+  const infrastructureEnvelopeCoherence = buildInfrastructureEnvelopeCoherenceReport(
+    turn,
+    v1012,
+    infrastructureFiscalLoad,
+    infraSummary,
+    grantForwardAlignment
+  );
+  const fiscalStressResilienceBridge = buildFiscalStressResilienceBridgeReport(
+    turn,
+    v1012,
+    fiscalStress,
+    debtFiscalCouplingRegister,
+    fiscalBufferCoherence
+  );
 
   checks.push({
     id: 'CF01',
@@ -8964,13 +9195,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `growth=${expenditureGrowthBenchmark.aggregateGrowthRate}, gap=${grantForwardAlignment.aggregateAlignmentGapPoints}`
   });
 
+  checks.push({
+    id: 'CF77',
+    label: 'Infrastructure envelope coherence within band',
+    passed: infrastructureEnvelopeCoherence.withinEnvelopeCoherence || v1012.pressure === 'critical',
+    detail: `gap=${infrastructureEnvelopeCoherence.aggregateCoherenceGapPoints}, checks=${infrastructureEnvelopeCoherence.checks.filter(c => c.passed).length}/${infrastructureEnvelopeCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF78',
+    label: 'Fiscal stress resilience bridge within band',
+    passed: fiscalStressResilienceBridge.withinResilienceBridge || v1012.pressure === 'critical',
+    detail: `bridge=${fiscalStressResilienceBridge.bridgeStressPoints}, checks=${fiscalStressResilienceBridge.checks.filter(c => c.passed).length}/${fiscalStressResilienceBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF79',
+    label: 'Infrastructure envelope aligned with grant forward',
+    passed: infrastructureEnvelopeCoherence.alignedWithGrantForward,
+    detail: `loadRatio=${infrastructureFiscalLoad.loadToCapacityRatio}, grantGap=${grantForwardAlignment.aggregateAlignmentGapPoints}`
+  });
+
+  checks.push({
+    id: 'CF80',
+    label: 'Stress bridge aligned with debt coupling',
+    passed: fiscalStressResilienceBridge.alignedWithDebtCoupling,
+    detail: `coupling=${debtFiscalCouplingRegister.couplingStressPoints}, bridge=${fiscalStressResilienceBridge.bridgeStressPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 66
+    layerCount: 68
   };
 }
 
@@ -10850,12 +11109,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Sixty-six fiscal layers integrated', healthy.layerCount === 66, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Sixty-eight fiscal layers integrated', healthy.layerCount === 68, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 76,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 80,
     'ok'
   );
 
@@ -10867,10 +11126,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF76 ids present',
-    healthy.checks.length === 76 &&
+    'CF01–CF80 ids present',
+    healthy.checks.length === 80 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[75]?.id === 'CF76',
+      healthy.checks[79]?.id === 'CF80',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -13325,6 +13584,161 @@ export function runGrantForwardAlignmentSelfTests(): {
     'GFA-T03',
     'Aligned with expenditure framework',
     healthy.alignedWithExpenditureFramework,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: infrastructure-envelope-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+const SAMPLE_PROJECT = {
+  projectId: 'iec_sample',
+  title: 'Envelope probe',
+  regionIds: ['national'],
+  capitalPoints: 11,
+  maintenancePointsPerTurn: 1.1,
+  strategicWeight: 0.55,
+  preferredVehicle: 'sovereign_bond_series' as const
+};
+
+export function runInfrastructureEnvelopeCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const infraSummary = summarizeInfrastructureFinancing(9, [SAMPLE_PROJECT], v, state.budget);
+  const infraLoad = buildInfrastructureFiscalLoadReport(9, v, infraSummary, state.budget);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const grants = allocateIntergovernmentalGrants(9, v);
+  const grantForward = buildGrantForwardAlignmentReport(9, v, grants, myefo, forwardIntegrity, growth);
+  const healthy = buildInfrastructureEnvelopeCoherenceReport(9, v, infraLoad, infraSummary, grantForward);
+
+  record('IEC-T01', 'Three envelope checks', healthy.checks.length === 3, 'ok');
+  record(
+    'IEC-T02',
+    'Within envelope coherence',
+    healthy.withinEnvelopeCoherence,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'IEC-T03',
+    'Aligned with grant forward',
+    healthy.alignedWithGrantForward,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: fiscal-stress-resilience-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFiscalStressResilienceBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const ledger = buildNationalRevenueLedger({ turn: 9, v1012: v, taxInstruments: state.taxInstruments });
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const growth = buildExpenditureGrowthBenchmarkReport(9, v, myefo, recurring, forwardIntegrity);
+  const revenueForward = buildRevenueForwardReconciliationReport(9, v, ledger, myefo, growth);
+  const statutory = buildStatutoryBalancesReport(9, v);
+  const cash = buildCashManagementReport(9, v);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const contingency = buildContingencyDrawdownRegisterReport(9, v, contingencyFlex, fiscalRules);
+  const fiscalBuffer = buildFiscalBufferCoherenceReport(9, v, statutory, cash, contingency, revenueForward);
+  const debtGov = buildDebtPortfolioGovernanceReport(9, v);
+  const stressScenarios = buildFiscalStressScenariosReport(9, v);
+  const sovereignCredit = buildSovereignCreditOutlookReport(9, v, debtGov, {
+    stressWorstDelta: stressScenarios.worstHeadroomDelta
+  });
+  const debtService = buildDebtServiceCoverageReport(9, v, ledger, cash);
+  const debtCoupling = buildDebtFiscalCouplingRegisterReport(9, v, debtService, sovereignCredit, fiscalBuffer);
+  const fiscalStress = buildFiscalStressScenariosReport(9, v);
+  const healthy = buildFiscalStressResilienceBridgeReport(9, v, fiscalStress, debtCoupling, fiscalBuffer);
+
+  record('FSR-T01', 'Three bridge checks', healthy.checks.length === 3, 'ok');
+  record(
+    'FSR-T02',
+    'Within resilience bridge',
+    healthy.withinResilienceBridge,
+    `bridge=${healthy.bridgeStressPoints}`
+  );
+  record(
+    'FSR-T03',
+    'Aligned with debt coupling',
+    healthy.alignedWithDebtCoupling,
     healthy.narrative
   );
 

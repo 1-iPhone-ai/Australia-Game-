@@ -49,6 +49,8 @@ import { runMediumTermRevenueAnchorSelfTests } from './modules/medium-term-reven
 import { runAppropriationTimingCoherenceSelfTests } from './modules/appropriation-timing-coherence/self-tests';
 import { runDebtFiscalCouplingRegisterSelfTests } from './modules/debt-fiscal-coupling-register/self-tests';
 import { runGrantForwardAlignmentSelfTests } from './modules/grant-forward-alignment/self-tests';
+import { runInfrastructureEnvelopeCoherenceSelfTests } from './modules/infrastructure-envelope-coherence/self-tests';
+import { runFiscalStressResilienceBridgeSelfTests } from './modules/fiscal-stress-resilience-bridge/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -107,6 +109,8 @@ ok = runSuite('Medium-term revenue anchor', runMediumTermRevenueAnchorSelfTests)
 ok = runSuite('Appropriation timing coherence', runAppropriationTimingCoherenceSelfTests) && ok;
 ok = runSuite('Debt–fiscal coupling register', runDebtFiscalCouplingRegisterSelfTests) && ok;
 ok = runSuite('Grant forward alignment', runGrantForwardAlignmentSelfTests) && ok;
+ok = runSuite('Infrastructure envelope coherence', runInfrastructureEnvelopeCoherenceSelfTests) && ok;
+ok = runSuite('Fiscal stress resilience bridge', runFiscalStressResilienceBridgeSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);
