@@ -261,6 +261,8 @@ export interface Agent17PlanningDepthSnapshot {
   provenanceAccord: Agent17ProvenanceAccordSnapshot;
   witnessIndex: Agent17WitnessIndexSnapshot;
   testamentAccord: Agent17TestamentAccordSnapshot;
+  memorialIndex: Agent17MemorialIndexSnapshot;
+  remembranceAccord: Agent17RemembranceAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1511,6 +1513,40 @@ export interface Agent17TestamentAccordSnapshot {
   witnessBand: Agent17WitnessIndexSnapshot['band'];
   provenanceBand: Agent17ProvenanceAccordSnapshot['band'];
   testamentBinding: boolean;
+  headline: string;
+}
+
+export interface Agent17MemorialInscription {
+  id: string;
+  label: string;
+  enshrined: boolean;
+  weight: number;
+}
+
+export interface Agent17MemorialIndexSnapshot {
+  memorialScore: number;
+  band: 'enshrined' | 'pending' | 'desecrated';
+  inscriptions: Agent17MemorialInscription[];
+  testamentBand: Agent17TestamentAccordSnapshot['band'];
+  witnessBand: Agent17WitnessIndexSnapshot['band'];
+  memorialEnshrined: boolean;
+  headline: string;
+}
+
+export interface Agent17RemembranceObservance {
+  id: string;
+  label: string;
+  observed: boolean;
+  weight: number;
+}
+
+export interface Agent17RemembranceAccordSnapshot {
+  remembranceScore: number;
+  band: 'commemorated' | 'nascent' | 'forgotten';
+  observances: Agent17RemembranceObservance[];
+  memorialBand: Agent17MemorialIndexSnapshot['band'];
+  testamentBand: Agent17TestamentAccordSnapshot['band'];
+  remembranceCommemorated: boolean;
   headline: string;
 }
 
@@ -10825,6 +10861,216 @@ export function testamentAccordBlocksWitness(snapshot: Agent17TestamentAccordSna
   return snapshot.band === 'voided' || !snapshot.testamentBinding;
 }
 
+export function testamentAccordBlocksMemorial(snapshot: Agent17TestamentAccordSnapshot): boolean {
+  return testamentAccordBlocksWitness(snapshot);
+}
+
+
+// --- source: planning/memorial-index.ts ---
+  Agent17MemorialIndexSnapshot,
+  Agent17ProvenanceAccordSnapshot,
+  Agent17TestamentAccordSnapshot,
+  Agent17WitnessIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17MemorialIndexInputs {
+  testamentAccord: Agent17TestamentAccordSnapshot;
+  witnessIndex: Agent17WitnessIndexSnapshot;
+  provenanceAccord: Agent17ProvenanceAccordSnapshot;
+}
+
+export function buildAgent17MemorialIndex(
+  inputs: Agent17MemorialIndexInputs
+): Agent17MemorialIndexSnapshot {
+  const inscriptions: Agent17MemorialIndexSnapshot['inscriptions'] = [];
+
+  inscriptions.push({
+    id: 'testament_binding',
+    label: 'Testament accord testament-binding',
+    enshrined:
+      inputs.testamentAccord.testamentBinding &&
+      !testamentAccordBlocksMemorial(inputs.testamentAccord),
+    weight: 30,
+  });
+
+  inscriptions.push({
+    id: 'testament_band',
+    label: 'Testament binding or draft',
+    enshrined:
+      inputs.testamentAccord.band === 'binding' || inputs.testamentAccord.band === 'draft',
+    weight: 25,
+  });
+
+  inscriptions.push({
+    id: 'witness_affirmed',
+    label: 'Witness index witness-affirmed',
+    enshrined:
+      inputs.witnessIndex.witnessAffirmed &&
+      !witnessIndexBlocksTestament(inputs.witnessIndex),
+    weight: 20,
+  });
+
+  inscriptions.push({
+    id: 'provenance_clear',
+    label: 'Provenance accord not blocking witness',
+    enshrined: !provenanceAccordBlocksWitness(inputs.provenanceAccord),
+    weight: 15,
+  });
+
+  inscriptions.push({
+    id: 'testament_score',
+    label: 'Testament score headroom',
+    enshrined: inputs.testamentAccord.testamentScore >= 12,
+    weight: 10,
+  });
+
+  const weighted = inscriptions.reduce(
+    (n, i) => n + (i.enshrined ? 100 : 2) * (i.weight / 100),
+    0
+  );
+  const totalWeight = inscriptions.reduce((n, i) => n + i.weight, 0);
+  const memorialScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const desecratedSignals =
+    testamentAccordBlocksMemorial(inputs.testamentAccord) ||
+    witnessIndexBlocksTestament(inputs.witnessIndex) ||
+    provenanceAccordBlocksWitness(inputs.provenanceAccord);
+
+  const band: Agent17MemorialIndexSnapshot['band'] = desecratedSignals
+    ? 'desecrated'
+    : memorialScore >= 48 &&
+        inputs.testamentAccord.band === 'binding' &&
+        inputs.witnessIndex.band === 'affirmed'
+      ? 'enshrined'
+      : 'pending';
+
+  const memorialEnshrined =
+    band === 'enshrined' &&
+    inputs.testamentAccord.testamentBinding &&
+    !testamentAccordBlocksMemorial(inputs.testamentAccord);
+
+  return {
+    memorialScore,
+    band,
+    inscriptions,
+    testamentBand: inputs.testamentAccord.band,
+    witnessBand: inputs.witnessIndex.band,
+    memorialEnshrined,
+    headline: `Memorial ${band} (${memorialScore}/100) · ${inscriptions.filter(i => i.enshrined).length}/${inscriptions.length} inscriptions`,
+  };
+}
+
+export function memorialIndexBlocksRemembrance(snapshot: Agent17MemorialIndexSnapshot): boolean {
+  return snapshot.band === 'desecrated' || !snapshot.memorialEnshrined;
+}
+
+
+// --- source: planning/remembrance-accord.ts ---
+  Agent17MemorialIndexSnapshot,
+  Agent17RemembranceAccordSnapshot,
+  Agent17TestamentAccordSnapshot,
+  Agent17WitnessIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17RemembranceAccordInputs {
+  memorialIndex: Agent17MemorialIndexSnapshot;
+  testamentAccord: Agent17TestamentAccordSnapshot;
+  witnessIndex: Agent17WitnessIndexSnapshot;
+}
+
+export function buildAgent17RemembranceAccord(
+  inputs: Agent17RemembranceAccordInputs
+): Agent17RemembranceAccordSnapshot {
+  const observances: Agent17RemembranceAccordSnapshot['observances'] = [];
+
+  observances.push({
+    id: 'memorial_enshrined',
+    label: 'Memorial index memorial-enshrined',
+    observed:
+      inputs.memorialIndex.memorialEnshrined &&
+      !memorialIndexBlocksRemembrance(inputs.memorialIndex),
+    weight: 30,
+  });
+
+  observances.push({
+    id: 'memorial_band',
+    label: 'Memorial enshrined or pending',
+    observed:
+      inputs.memorialIndex.band === 'enshrined' || inputs.memorialIndex.band === 'pending',
+    weight: 25,
+  });
+
+  observances.push({
+    id: 'testament_binding',
+    label: 'Testament accord testament-ready',
+    observed:
+      inputs.testamentAccord.testamentBinding &&
+      !testamentAccordBlocksMemorial(inputs.testamentAccord),
+    weight: 20,
+  });
+
+  observances.push({
+    id: 'witness_clear',
+    label: 'Witness index not blocking testament',
+    observed: !witnessIndexBlocksTestament(inputs.witnessIndex),
+    weight: 15,
+  });
+
+  observances.push({
+    id: 'memorial_score',
+    label: 'Memorial score headroom',
+    observed: inputs.memorialIndex.memorialScore >= 11,
+    weight: 10,
+  });
+
+  const weighted = observances.reduce(
+    (n, o) => n + (o.observed ? 100 : 1) * (o.weight / 100),
+    0
+  );
+  const totalWeight = observances.reduce((n, o) => n + o.weight, 0);
+  const remembranceScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const forgottenSignals =
+    memorialIndexBlocksRemembrance(inputs.memorialIndex) ||
+    testamentAccordBlocksMemorial(inputs.testamentAccord) ||
+    witnessIndexBlocksTestament(inputs.witnessIndex);
+
+  const band: Agent17RemembranceAccordSnapshot['band'] = forgottenSignals
+    ? 'forgotten'
+    : remembranceScore >= 45 &&
+        inputs.memorialIndex.band === 'enshrined' &&
+        inputs.testamentAccord.band === 'binding'
+      ? 'commemorated'
+      : 'nascent';
+
+  const remembranceCommemorated =
+    band === 'commemorated' &&
+    inputs.memorialIndex.memorialEnshrined &&
+    !witnessIndexBlocksTestament(inputs.witnessIndex);
+
+  return {
+    remembranceScore,
+    band,
+    observances,
+    memorialBand: inputs.memorialIndex.band,
+    testamentBand: inputs.testamentAccord.band,
+    remembranceCommemorated,
+    headline: `Remembrance ${band} (${remembranceScore}/100) · ${observances.filter(o => o.observed).length}/${observances.length} observances`,
+  };
+}
+
+export function remembranceAccordBlocksMemorial(
+  snapshot: Agent17RemembranceAccordSnapshot
+): boolean {
+  return snapshot.band === 'forgotten' || !snapshot.remembranceCommemorated;
+}
+
 
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
@@ -11315,6 +11561,16 @@ export function buildAgent17PlanningDepthSnapshot(
     provenanceAccord,
     lineageIndex,
   });
+  const memorialIndex = buildAgent17MemorialIndex({
+    testamentAccord,
+    witnessIndex,
+    provenanceAccord,
+  });
+  const remembranceAccord = buildAgent17RemembranceAccord({
+    memorialIndex,
+    testamentAccord,
+    witnessIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -11394,6 +11650,8 @@ export function buildAgent17PlanningDepthSnapshot(
     provenanceAccord,
     witnessIndex,
     testamentAccord,
+    memorialIndex,
+    remembranceAccord,
   };
 }
 
@@ -12635,6 +12893,28 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Contradicted witness or repudiated provenance yields testamentAccordBlocksWitness.',
     severity: 'major',
   },
+  {
+    id: 'G17-136',
+    title: 'Memorial index on planning depth',
+    category: 'telemetry',
+    acceptance: 'memorialIndex reports memorialScore 0–100 with enshrined/pending/desecrated band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-137',
+    title: 'Remembrance accord observances complete',
+    category: 'telemetry',
+    acceptance: 'remembranceAccord exposes ≥5 observances and remembranceScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-138',
+    title: 'Desecrated memorial forgets remembrance accord',
+    category: 'integration',
+    acceptance:
+      'Desecrated memorial or voided testament yields remembranceAccordBlocksMemorial.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -12873,6 +13153,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17TestamentAccord,
   testamentAccordBlocksWitness,
 } from '../planning/testament-accord.ts';
+  buildAgent17MemorialIndex,
+  memorialIndexBlocksRemembrance,
+} from '../planning/memorial-index.ts';
+  buildAgent17RemembranceAccord,
+  remembranceAccordBlocksMemorial,
+} from '../planning/remembrance-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -14935,6 +15221,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const memorialIndex = depthEval.snapshot.planningDepth?.memorialIndex;
+  goalResults.push(
+    result(
+      'G17-136',
+      !!memorialIndex &&
+        memorialIndex.inscriptions.length >= 5 &&
+        memorialIndex.memorialScore >= 0 &&
+        memorialIndex.memorialScore <= 100 &&
+        (memorialIndex.band === 'enshrined' ||
+          memorialIndex.band === 'pending' ||
+          memorialIndex.band === 'desecrated'),
+      `inscriptions=${memorialIndex?.inscriptions.length} score=${memorialIndex?.memorialScore}`
+    )
+  );
+
+  const remembranceAccord = depthEval.snapshot.planningDepth?.remembranceAccord;
+  goalResults.push(
+    result(
+      'G17-137',
+      !!remembranceAccord &&
+        remembranceAccord.observances.length >= 5 &&
+        remembranceAccord.remembranceScore >= 0 &&
+        remembranceAccord.remembranceScore <= 100,
+      `observances=${remembranceAccord?.observances.length} score=${remembranceAccord?.remembranceScore}`
+    )
+  );
+
+  const desecratedMemorial = buildAgent17MemorialIndex({
+    testamentAccord: voidedTestament,
+    witnessIndex: contradictedWitness,
+    provenanceAccord: repudiatedProvenance,
+  });
+  const forgottenRemembrance = buildAgent17RemembranceAccord({
+    memorialIndex: desecratedMemorial,
+    testamentAccord: voidedTestament,
+    witnessIndex: contradictedWitness,
+  });
+  goalResults.push(
+    result(
+      'G17-138',
+      testamentAccordBlocksWitness(voidedTestament) ||
+        memorialIndexBlocksRemembrance(desecratedMemorial) ||
+        remembranceAccordBlocksMemorial(forgottenRemembrance),
+      `${desecratedMemorial.band}/${forgottenRemembrance.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -15100,6 +15433,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-133',
     'G17-134',
     'G17-135',
+    'G17-136',
+    'G17-137',
+    'G17-138',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

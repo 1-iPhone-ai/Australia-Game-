@@ -951,6 +951,28 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Contradicted witness or repudiated provenance yields testamentAccordBlocksWitness.',
     severity: 'major',
   },
+  {
+    id: 'G17-136',
+    title: 'Memorial index on planning depth',
+    category: 'telemetry',
+    acceptance: 'memorialIndex reports memorialScore 0–100 with enshrined/pending/desecrated band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-137',
+    title: 'Remembrance accord observances complete',
+    category: 'telemetry',
+    acceptance: 'remembranceAccord exposes ≥5 observances and remembranceScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-138',
+    title: 'Desecrated memorial forgets remembrance accord',
+    category: 'integration',
+    acceptance:
+      'Desecrated memorial or voided testament yields remembranceAccordBlocksMemorial.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

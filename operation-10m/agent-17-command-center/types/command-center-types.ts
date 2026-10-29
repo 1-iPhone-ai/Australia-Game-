@@ -257,6 +257,8 @@ export interface Agent17PlanningDepthSnapshot {
   provenanceAccord: Agent17ProvenanceAccordSnapshot;
   witnessIndex: Agent17WitnessIndexSnapshot;
   testamentAccord: Agent17TestamentAccordSnapshot;
+  memorialIndex: Agent17MemorialIndexSnapshot;
+  remembranceAccord: Agent17RemembranceAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1507,6 +1509,40 @@ export interface Agent17TestamentAccordSnapshot {
   witnessBand: Agent17WitnessIndexSnapshot['band'];
   provenanceBand: Agent17ProvenanceAccordSnapshot['band'];
   testamentBinding: boolean;
+  headline: string;
+}
+
+export interface Agent17MemorialInscription {
+  id: string;
+  label: string;
+  enshrined: boolean;
+  weight: number;
+}
+
+export interface Agent17MemorialIndexSnapshot {
+  memorialScore: number;
+  band: 'enshrined' | 'pending' | 'desecrated';
+  inscriptions: Agent17MemorialInscription[];
+  testamentBand: Agent17TestamentAccordSnapshot['band'];
+  witnessBand: Agent17WitnessIndexSnapshot['band'];
+  memorialEnshrined: boolean;
+  headline: string;
+}
+
+export interface Agent17RemembranceObservance {
+  id: string;
+  label: string;
+  observed: boolean;
+  weight: number;
+}
+
+export interface Agent17RemembranceAccordSnapshot {
+  remembranceScore: number;
+  band: 'commemorated' | 'nascent' | 'forgotten';
+  observances: Agent17RemembranceObservance[];
+  memorialBand: Agent17MemorialIndexSnapshot['band'];
+  testamentBand: Agent17TestamentAccordSnapshot['band'];
+  remembranceCommemorated: boolean;
   headline: string;
 }
 

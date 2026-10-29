@@ -101,3 +101,7 @@ export function buildAgent17TestamentAccord(
 export function testamentAccordBlocksWitness(snapshot: Agent17TestamentAccordSnapshot): boolean {
   return snapshot.band === 'voided' || !snapshot.testamentBinding;
 }
+
+export function testamentAccordBlocksMemorial(snapshot: Agent17TestamentAccordSnapshot): boolean {
+  return testamentAccordBlocksWitness(snapshot);
+}

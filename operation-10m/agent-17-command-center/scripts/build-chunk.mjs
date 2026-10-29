@@ -103,6 +103,8 @@ const FILES = [
   'planning/provenance-accord.ts',
   'planning/witness-index.ts',
   'planning/testament-accord.ts',
+  'planning/memorial-index.ts',
+  'planning/remembrance-accord.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',

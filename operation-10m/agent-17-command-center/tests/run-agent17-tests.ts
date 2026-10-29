@@ -41,6 +41,7 @@ import { runAgent17ReconciliationDepthTests } from '../harness/run-reconciliatio
 import { runAgent17ArchiveDepthTests } from '../harness/run-archive-depth-tests.ts';
 import { runAgent17LineageDepthTests } from '../harness/run-lineage-depth-tests.ts';
 import { runAgent17WitnessDepthTests } from '../harness/run-witness-depth-tests.ts';
+import { runAgent17MemorialDepthTests } from '../harness/run-memorial-depth-tests.ts';
 import { verifyAgent17Goals, validateGoalRegistryCoverage } from '../validation/goal-verification.ts';
 import { createAgent17RollbackController } from '../rollback/rollback-controller.ts';
 
@@ -87,6 +88,7 @@ const reports = [
   runAgent17ArchiveDepthTests(),
   runAgent17LineageDepthTests(),
   runAgent17WitnessDepthTests(),
+  runAgent17MemorialDepthTests(),
 ];
 
 const combinedSuccess = reports.every(r => r.success);
@@ -152,6 +154,7 @@ const payload = {
   archiveReport: reports[39],
   lineageReport: reports[40],
   witnessReport: reports[41],
+  memorialReport: reports[42],
   validationReport,
   goalRegistryCoverage: coverage,
   exitCode,

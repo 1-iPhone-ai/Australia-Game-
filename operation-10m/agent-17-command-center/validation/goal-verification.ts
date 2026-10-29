@@ -313,6 +313,14 @@ import {
   testamentAccordBlocksWitness,
 } from '../planning/testament-accord.ts';
 import {
+  buildAgent17MemorialIndex,
+  memorialIndexBlocksRemembrance,
+} from '../planning/memorial-index.ts';
+import {
+  buildAgent17RemembranceAccord,
+  remembranceAccordBlocksMemorial,
+} from '../planning/remembrance-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2375,6 +2383,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const memorialIndex = depthEval.snapshot.planningDepth?.memorialIndex;
+  goalResults.push(
+    result(
+      'G17-136',
+      !!memorialIndex &&
+        memorialIndex.inscriptions.length >= 5 &&
+        memorialIndex.memorialScore >= 0 &&
+        memorialIndex.memorialScore <= 100 &&
+        (memorialIndex.band === 'enshrined' ||
+          memorialIndex.band === 'pending' ||
+          memorialIndex.band === 'desecrated'),
+      `inscriptions=${memorialIndex?.inscriptions.length} score=${memorialIndex?.memorialScore}`
+    )
+  );
+
+  const remembranceAccord = depthEval.snapshot.planningDepth?.remembranceAccord;
+  goalResults.push(
+    result(
+      'G17-137',
+      !!remembranceAccord &&
+        remembranceAccord.observances.length >= 5 &&
+        remembranceAccord.remembranceScore >= 0 &&
+        remembranceAccord.remembranceScore <= 100,
+      `observances=${remembranceAccord?.observances.length} score=${remembranceAccord?.remembranceScore}`
+    )
+  );
+
+  const desecratedMemorial = buildAgent17MemorialIndex({
+    testamentAccord: voidedTestament,
+    witnessIndex: contradictedWitness,
+    provenanceAccord: repudiatedProvenance,
+  });
+  const forgottenRemembrance = buildAgent17RemembranceAccord({
+    memorialIndex: desecratedMemorial,
+    testamentAccord: voidedTestament,
+    witnessIndex: contradictedWitness,
+  });
+  goalResults.push(
+    result(
+      'G17-138',
+      testamentAccordBlocksWitness(voidedTestament) ||
+        memorialIndexBlocksRemembrance(desecratedMemorial) ||
+        remembranceAccordBlocksMemorial(forgottenRemembrance),
+      `${desecratedMemorial.band}/${forgottenRemembrance.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2540,6 +2595,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-133',
     'G17-134',
     'G17-135',
+    'G17-136',
+    'G17-137',
+    'G17-138',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
