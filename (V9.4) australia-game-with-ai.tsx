@@ -13205,6 +13205,10 @@ export function reduceGameAction(
       }
       nextState.eventLogs = nextState.gameActivityLedger.events;
 
+      if (actionExecuted && isHumanActor(actorId, nextState)) {
+        appendPlayerMatchHistoryEntry(nextState, action, actorId, actionExecuted, actionAttemptId, canonical, actor);
+      }
+
       return {
         success: actionExecuted,
         nextState,
@@ -36315,6 +36319,8 @@ export const initialGameState = {
   householdEconomy: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
+  /** O111 Agent 77: bounded human-player action timeline (always on; lighter than optional Activity Ledger). */
+  playerMatchHistory: null as PlayerMatchHistoryState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
   regionalFactions: null as RegionalFactionsState | null
 };
@@ -133291,6 +133297,195 @@ export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
 }
 
 
+
+// ============================================================================
+// SECTION 20P-A77: PLAYER MATCH HISTORY — O111 AGENT 77 (BOUNDED HUMAN TIMELINE)
+// ============================================================================
+// Append-only, match-scoped record of successful **human** canonical actions. Separate from the optional
+// Game Activity Ledger (off by default, heavy) and from V9.4 UI feedback (never persisted). Never invented on load.
+
+export const PLAYER_MATCH_HISTORY_LIMITS = { entries: 120, summaryLen: 160, actionTypeLen: 64 } as const;
+
+export type PlayerMatchHistoryKind = 'action' | 'decision' | 'day_boundary';
+
+export interface PlayerMatchHistoryEntry {
+  id: string;
+  day: number;
+  turn: number;
+  actorId: string;
+  actionType: string;
+  summary: string;
+  kind: PlayerMatchHistoryKind;
+  success: boolean;
+  cashDelta: number;
+  region: string | null;
+  attemptId: string | null;
+}
+
+export interface PlayerMatchHistoryState {
+  schemaVersion: '1';
+  revision: number;
+  entries: PlayerMatchHistoryEntry[];
+}
+
+export function createDefaultPlayerMatchHistoryState(): PlayerMatchHistoryState {
+  return { schemaVersion: '1', revision: 0, entries: [] };
+}
+
+const PMH_SKIP_TYPES = new Set([
+  'copilot_telemetry_noop', 'copilot_event', 'copilot_recommendation_accepted',
+  'copilot_takeover_started', 'copilot_takeover_interrupted', 'copilot_rescue_triggered'
+]);
+
+function pmhStr(v: unknown, max: number): string {
+  const s = String(v ?? '').trim();
+  return s.length <= max ? s : s.slice(0, max);
+}
+
+function pmhNum(v: unknown, fallback = 0): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+export function sanitizePlayerMatchHistoryState(raw: unknown): PlayerMatchHistoryState | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const entriesIn = Array.isArray(r.entries) ? r.entries : [];
+  const entries: PlayerMatchHistoryEntry[] = entriesIn.slice(-PLAYER_MATCH_HISTORY_LIMITS.entries).map((e: any, i: number) => ({
+    id: pmhStr(e?.id, 48) || `pmh_${i}`,
+    day: Math.max(0, Math.floor(pmhNum(e?.day))),
+    turn: Math.max(0, Math.floor(pmhNum(e?.turn))),
+    actorId: pmhStr(e?.actorId, 32) || 'player',
+    actionType: pmhStr(e?.actionType, PLAYER_MATCH_HISTORY_LIMITS.actionTypeLen) || 'unknown',
+    summary: pmhStr(e?.summary, PLAYER_MATCH_HISTORY_LIMITS.summaryLen),
+    kind: (e?.kind === 'decision' || e?.kind === 'day_boundary') ? e.kind : 'action',
+    success: e?.success !== false,
+    cashDelta: Math.round(pmhNum(e?.cashDelta)),
+    region: e?.region ? pmhStr(e.region, 8) : null,
+    attemptId: e?.attemptId ? pmhStr(e.attemptId, 64) : null
+  }));
+  if (!entries.length && r.schemaVersion !== '1') return null;
+  return { schemaVersion: '1', revision: Math.max(0, Math.floor(pmhNum(r.revision))), entries };
+}
+
+export function summarizePlayerMatchHistoryAction(action: GameAction, actor: any): { summary: string; region: string | null } {
+  const type = String(action.type || 'action');
+  const region = action.targetRegion || action.parameters?.region || action.parameters?.targetRegion || action.parameters?.destinationRegion || null;
+  const regName = region ? (REGIONS[String(region)]?.name || String(region)) : null;
+  switch (type) {
+    case 'move':
+    case 'movement':
+    case 'travel':
+      return { summary: regName ? `Traveled to ${regName}` : 'Traveled', region: region ? String(region) : null };
+    case 'region_deposit':
+      return { summary: regName ? `Deposited control in ${regName}` : 'Region deposit', region: region ? String(region) : null };
+    case 'transfer_cash':
+      return { summary: `Transferred cash to ${action.targetActorId || 'another actor'}`, region: null };
+    case 'accept_regional_contract':
+      return { summary: `Accepted contract ${action.parameters?.contractId || action.parameters?.contractId || ''}`.trim(), region: region ? String(region) : null };
+    case 'fulfill_regional_contract':
+    case 'deliver_contract_objectives':
+      return { summary: 'Progressed an active contract', region: region ? String(region) : null };
+    case 'emergency_loan':
+    case 'take_loan':
+    case 'take_advanced_loan':
+      return { summary: 'Took a loan', region: null };
+    default:
+      return { summary: type.replace(/_/g, ' '), region: region ? String(region) : null };
+  }
+}
+
+export function appendPlayerMatchHistoryEntry(
+  nextState: CanonicalGameState,
+  action: GameAction,
+  actorId: string,
+  actionExecuted: boolean,
+  actionAttemptId: string | undefined,
+  priorCanonical: CanonicalGameState,
+  actorAfter: any
+): void {
+  if (!actionExecuted || PMH_SKIP_TYPES.has(String(action.type))) return;
+  const priorActor = priorCanonical.actorsById?.[actorId] || (actorId === 'player' ? priorCanonical.player : null);
+  const cashBefore = Number(priorActor?.money ?? 0);
+  const cashAfter = Number(actorAfter?.money ?? priorActor?.money ?? 0);
+  const cashDelta = Math.round(cashAfter - cashBefore);
+  const { summary, region } = summarizePlayerMatchHistoryAction(action, actorAfter);
+  const day = Number(nextState.day ?? 1);
+  const turn = Number(nextState.turnCounter ?? 0);
+  const attemptId = actionAttemptId ? String(actionAttemptId) : null;
+  let hist = sanitizePlayerMatchHistoryState(nextState.playerMatchHistory) || createDefaultPlayerMatchHistoryState();
+  if (attemptId && hist.entries.some(e => e.attemptId === attemptId)) return;
+  const id = `pmh_d${day}_t${turn}_${hist.revision + 1}`;
+  const entry: PlayerMatchHistoryEntry = {
+    id,
+    day,
+    turn,
+    actorId: String(actorId),
+    actionType: pmhStr(action.type, PLAYER_MATCH_HISTORY_LIMITS.actionTypeLen),
+    summary: pmhStr(summary, PLAYER_MATCH_HISTORY_LIMITS.summaryLen) || pmhStr(action.type, PLAYER_MATCH_HISTORY_LIMITS.actionTypeLen),
+    kind: action.decisionId || action.parameters?.decisionId ? 'decision' : 'action',
+    success: true,
+    cashDelta,
+    region,
+    attemptId
+  };
+  hist = { ...hist, revision: hist.revision + 1, entries: [...hist.entries, entry].slice(-PLAYER_MATCH_HISTORY_LIMITS.entries) };
+  nextState.playerMatchHistory = hist;
+}
+
+export function buildPlayerMatchHistoryView(state: PlayerMatchHistoryState | null | undefined, limit = 20): { entries: PlayerMatchHistoryEntry[]; total: number } {
+  const sanitized = sanitizePlayerMatchHistoryState(state);
+  if (!sanitized) return { entries: [], total: 0 };
+  const entries = sanitized.entries.slice(-Math.max(1, limit));
+  return { entries, total: sanitized.entries.length };
+}
+
+export function runPlayerMatchHistorySelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => unknown) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, errorMessage: out === true ? undefined : String(out) });
+    } catch (err) {
+      results.push({ id, name, passed: false, errorMessage: err instanceof Error ? err.message : String(err) });
+    }
+  };
+  check('pmh_sanitize_empty', 'Malformed history is dropped; empty valid shell allowed', () => {
+    return sanitizePlayerMatchHistoryState(undefined) === null && sanitizePlayerMatchHistoryState({ junk: 1 }) === null;
+  });
+  check('pmh_bounded', 'Entries cap at PLAYER_MATCH_HISTORY_LIMITS.entries', () => {
+    const fat = { schemaVersion: '1', revision: 1, entries: Array.from({ length: 200 }, (_, i) => ({ id: `e${i}`, day: 1, turn: i, actorId: 'player', actionType: 'move', summary: 'x', kind: 'action', success: true, cashDelta: 0, region: null, attemptId: null })) };
+    const s = sanitizePlayerMatchHistoryState(fat)!;
+    return s.entries.length === PLAYER_MATCH_HISTORY_LIMITS.entries;
+  });
+  check('pmh_append_human', 'Successful human reduceGameAction appends one bounded entry', () => {
+    const { liveState } = createGIFixtureWorld({ money: 10000 });
+    const canonical = canonicalStateFromLiveRuntime(liveState as any);
+    const before = canonical.playerMatchHistory?.entries?.length || 0;
+    const res = reduceGameAction(canonical, { type: 'region_deposit', actorId: 'player', targetRegion: 'NSW', investmentAmount: 100 } as GameAction);
+    const after = res.nextState.playerMatchHistory?.entries?.length || 0;
+    return res.success !== false && after === before + 1 && res.nextState.playerMatchHistory!.entries.slice(-1)[0].actionType === 'region_deposit';
+  });
+  check('pmh_skip_ai', 'AI actions do not append to player match history', () => {
+    const { liveState } = createGIFixtureWorld({ money: 10000 });
+    const canonical = canonicalStateFromLiveRuntime(liveState as any);
+    const res = reduceGameAction(canonical, { type: 'region_deposit', actorId: 'ai', targetRegion: 'VIC', investmentAmount: 100 } as GameAction);
+    return (res.nextState.playerMatchHistory?.entries?.length || 0) === 0 || res.nextState.playerMatchHistory === null;
+  });
+  check('pmh_dedupe_attempt', 'Same actionAttemptId is not recorded twice', () => {
+    const { liveState } = createGIFixtureWorld({ money: 20000 });
+    let canonical = canonicalStateFromLiveRuntime(liveState as any);
+    const ctx: ActionExecutionContext = { active: true, operation: 'region_deposit', actorId: 'player', actionAttemptId: 'attempt_fixed_1' };
+    const a = reduceGameAction(canonical, { type: 'region_deposit', actorId: 'player', targetRegion: 'QLD', investmentAmount: 50 } as GameAction, ctx);
+    const b = reduceGameAction(a.nextState, { type: 'region_deposit', actorId: 'player', targetRegion: 'SA', investmentAmount: 50 } as GameAction, ctx);
+    const n = b.nextState.playerMatchHistory?.entries?.length || 0;
+    return n === 1;
+  });
+  return results;
+}
+
+
 // ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
@@ -133717,6 +133912,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         livingRegions: sanitizeLivingRegionsState(stateData.livingRegions || raw.livingRegions || raw.gameState?.livingRegions),
         regionalFactions: sanitizeRegionalFactionsState(stateData.regionalFactions || raw.regionalFactions || raw.gameState?.regionalFactions),
         contentState: sanitizeMatchContentState(stateData.contentState || raw.contentState || raw.gameState?.contentState),
+        playerMatchHistory: sanitizePlayerMatchHistoryState(stateData.playerMatchHistory || raw.playerMatchHistory || raw.gameState?.playerMatchHistory),
         nationalSystems: sanitizeNationalSystemsPersisted(stateData.nationalSystems || raw.gameState?.nationalSystems),
         industries: sanitizeIndustriesPersisted(stateData.industries || raw.gameState?.industries),
         infrastructureNetworks: sanitizeInfraNetworksPersisted(stateData.infrastructureNetworks || raw.gameState?.infrastructureNetworks),
@@ -135791,6 +135987,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'pmh', label: 'Player Match History', tier: 'quick', section: 'Player Experience', severity: 'MAJOR', run: () => runPlayerMatchHistorySelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -226979,6 +227176,7 @@ function dispatchGameSettingsChange(
     const decisionHistory = selectedDecisionActorId
       ? (gameState.decisionState?.historyByActor?.[selectedDecisionActorId] || []).slice(-(gameSettings.decisionTransparencyTimelineLength || 20))
       : [];
+    const playerHistoryView = buildPlayerMatchHistoryView(gameState.playerMatchHistory, gameSettings.decisionTransparencyTimelineLength || 15);
     const factorEntries = selectedDecisionTrace
       ? Object.entries(selectedDecisionTrace.factorWeights || {})
           .filter(([, value]) => typeof value === 'number' && value > 0)
@@ -227692,6 +227890,19 @@ function dispatchGameSettingsChange(
                       </>
                     )}
 
+                    {playerHistoryView.entries.length > 0 && (
+                      <div className="mt-4 border-t pt-3" data-testid="player-match-history">
+                        <h4 className="font-bold mb-2">Your recent actions</h4>
+                        <ul className="text-sm space-y-1 max-h-40 overflow-y-auto">
+                          {playerHistoryView.entries.slice().reverse().map((h) => (
+                            <li key={h.id} className="opacity-90">
+                              <span className="font-mono text-xs opacity-70">D{h.day}</span> {h.summary}
+                              {h.cashDelta ? <span className="text-xs ml-1">({fmtDelta(h.cashDelta)})</span> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                     {gameSettings.decisionTransparencyTimeline && decisionHistory.length > 0 && (
                       <div className={`${themeStyles.border} border rounded-lg p-3`}>
                         <div className="font-semibold mb-3">Decision Timeline</div>
