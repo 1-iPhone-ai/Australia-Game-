@@ -222,6 +222,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   confermentStrainIndex: number;
   confermentIntegrityScore: number;
   governanceVitalityScore: number;
+  bestowalStrainIndex: number;
+  bestowalIntegrityScore: number;
+  governanceAnimationScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

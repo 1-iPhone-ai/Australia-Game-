@@ -95,9 +95,13 @@ export {
   buildGuardianDepthAssignmentReport,
   buildGuardianDepthCommissionReport,
   buildGuardianDepthConfermentReport,
+  buildGuardianDepthBestowalReport,
   computeGovernanceVitalityScore,
+  computeGovernanceAnimationScore,
   computeConfermentIntegrityScore,
   computeConfermentStrainIndex,
+  computeBestowalIntegrityScore,
+  computeBestowalStrainIndex,
   computeContainmentBurdenIndex,
   computeHumanRelayPressure,
   computeRecoveryHeadroomScore,
@@ -448,5 +452,9 @@ export {
   ADVISORY_MONITOR_RULES_SCALE_WAVE_53,
   ADVISORY_MONITOR_RULES_SCALE_WAVE_53_COUNT,
 } from './monitor-rules-scale-wave-53.js';
+export {
+  ADVISORY_MONITOR_RULES_SCALE_WAVE_54,
+  ADVISORY_MONITOR_RULES_SCALE_WAVE_54_COUNT,
+} from './monitor-rules-scale-wave-54.js';
 export { ADVISORY_SCENARIO_CATALOG } from './scenarios.js';
 export { runAgent16GuardianCoPilotSelfTests, summarizeAgent16SelfTests } from './self-tests.js';

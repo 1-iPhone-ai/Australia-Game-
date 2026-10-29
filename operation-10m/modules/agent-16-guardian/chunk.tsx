@@ -226,6 +226,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   confermentStrainIndex: number;
   confermentIntegrityScore: number;
   governanceVitalityScore: number;
+  bestowalStrainIndex: number;
+  bestowalIntegrityScore: number;
+  governanceAnimationScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -3437,6 +3440,62 @@ export function buildGuardianDepthConfermentReport(snapshot: GuardianCoPilotMoni
   return lines.slice(0, 3);
 }
 
+export function computeBestowalStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceVitalityScore < 50) load += Math.min(25, 50 - snapshot.governanceVitalityScore);
+  if (snapshot.governanceVitalityScore < 35) load += 10;
+  if (snapshot.confermentIntegrityScore < 45) load += 20;
+  if (snapshot.confermentIntegrityScore < 35) load += 10;
+  if (snapshot.confermentStrainIndex >= 55) load += 20;
+  if (snapshot.confermentStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeBestowalIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.bestowalStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.bestowalStrainIndex * 0.35));
+  if (snapshot.confermentIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.confermentIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceVitalityScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceAnimationScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.bestowalStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.bestowalStrainIndex * 0.32));
+  if (snapshot.bestowalIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.bestowalIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceVitalityScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthBestowalReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.bestowalStrainIndex >= 55) {
+    lines.push(
+      `Bestowal strain ${snapshot.bestowalStrainIndex} — stacked bestowal review may exceed operator bestowal capacity`
+    );
+  }
+  if (snapshot.bestowalIntegrityScore < 45) {
+    lines.push(
+      `Bestowal integrity ${snapshot.bestowalIntegrityScore} — align Co-Pilot bestowals with Guardian bestowal posture`
+    );
+  }
+  if (snapshot.governanceAnimationScore < 40) {
+    lines.push(
+      `Governance animation ${snapshot.governanceAnimationScore} — little animation to sustain bestowal oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -4003,9 +4062,23 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withConfermentStrain: GuardianCoPilotMonitorSnapshot = { ...withConfermentSeed, confermentStrainIndex };
   const confermentIntegrityScore = computeConfermentIntegrityScore(withConfermentStrain);
   const withConferment: GuardianCoPilotMonitorSnapshot = { ...withConfermentStrain, confermentIntegrityScore };
-  return {
+  const withVitalityFinal: GuardianCoPilotMonitorSnapshot = {
     ...withConferment,
     governanceVitalityScore: computeGovernanceVitalityScore(withConferment),
+  };
+  const withBestowalSeed: GuardianCoPilotMonitorSnapshot = {
+    ...withVitalityFinal,
+    bestowalStrainIndex: 0,
+    bestowalIntegrityScore: 100,
+    governanceAnimationScore: 100,
+  };
+  const bestowalStrainIndex = computeBestowalStrainIndex(withBestowalSeed);
+  const withBestowalStrain: GuardianCoPilotMonitorSnapshot = { ...withBestowalSeed, bestowalStrainIndex };
+  const bestowalIntegrityScore = computeBestowalIntegrityScore(withBestowalStrain);
+  const withBestowal: GuardianCoPilotMonitorSnapshot = { ...withBestowalStrain, bestowalIntegrityScore };
+  return {
+    ...withBestowal,
+    governanceAnimationScore: computeGovernanceAnimationScore(withBestowal),
   };
 }
 
@@ -5757,6 +5830,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceVitalityScore(snap) < 35;
+  });
+  ok('gd_bestowal_strain', () => {
+    const snap = {
+      governanceVitalityScore: 30,
+      confermentIntegrityScore: 32,
+      confermentStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeBestowalStrainIndex(snap) >= 70;
+  });
+  ok('gd_bestowal_integrity', () => {
+    const snap = {
+      bestowalStrainIndex: 72,
+      confermentIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceVitalityScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeBestowalIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_animation', () => {
+    const snap = {
+      bestowalStrainIndex: 78,
+      bestowalIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceVitalityScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceAnimationScore(snap) < 35;
   });
   return out;
 }
@@ -12468,6 +12575,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_51,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_52,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_53,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_54,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -12940,6 +13048,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     confermentStrainIndex: 0,
     confermentIntegrityScore: 100,
     governanceVitalityScore: 100,
+    bestowalStrainIndex: 0,
+    bestowalIntegrityScore: 100,
+    governanceAnimationScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -16736,6 +16847,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['conferment_envelope_pressured', 'guardian_conferment_envelope_critical'],
     notes: 'Pressured conferment envelope with critical Guardian band',
   },
+  {
+    id: 'sc_bestowal_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2500,
+      maxSpendPerAction: 12100,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['bestowal_strain_high', 'bestowal_integrity_low'],
+    notes: 'High bestowal strain with critical bestowal integrity',
+  },
+  {
+    id: 'sc_governance_animation_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 1,
+      minCashReserve: 500,
+      debt: 1520,
+      maxSpendPerAction: 8680,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_animation_low', 'contracts_governance_animation'],
+    notes: 'Low governance animation with expiring contracts',
+  },
+  {
+    id: 'sc_bestowal_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2640,
+      maxSpendPerAction: 12040,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['bestowal_envelope_pressured', 'guardian_bestowal_envelope_critical'],
+    notes: 'Pressured bestowal envelope with critical Guardian band',
+  },
 
 ];
 
@@ -18902,6 +19081,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthConfermentReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round54_metrics', 'Round 54 bestowal envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.bestowalStrainIndex >= 40 &&
+      snap.bestowalIntegrityScore <= 100 &&
+      snap.governanceAnimationScore <= 100
+    );
+  });
+
+  check(results, 'a16_bestowal_report', 'Guardian depth bestowal report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthBestowalReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 

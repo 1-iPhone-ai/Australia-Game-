@@ -54,6 +54,7 @@ import { ADVISORY_MONITOR_RULES_SCALE_WAVE_50 } from './monitor-rules-scale-wave
 import { ADVISORY_MONITOR_RULES_SCALE_WAVE_51 } from './monitor-rules-scale-wave-51.js';
 import { ADVISORY_MONITOR_RULES_SCALE_WAVE_52 } from './monitor-rules-scale-wave-52.js';
 import { ADVISORY_MONITOR_RULES_SCALE_WAVE_53 } from './monitor-rules-scale-wave-53.js';
+import { ADVISORY_MONITOR_RULES_SCALE_WAVE_54 } from './monitor-rules-scale-wave-54.js';
 
 export type { AdvisoryMonitorRule };
 
@@ -335,6 +336,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_51,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_52,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_53,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_54,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {

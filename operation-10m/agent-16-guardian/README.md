@@ -313,5 +313,6 @@ Anchor: canonical V9.4 `SECTION 20PA` (Guardian & Human Co-Pilot Advisory Ops).
 ## Scale wave round 52
 
 - **Conferment envelope metrics:** `confermentStrainIndex`, `confermentIntegrityScore`, `governanceVitalityScore`; `buildGuardianDepthConfermentReport()`
+- **Bestowal envelope metrics:** `bestowalStrainIndex`, `bestowalIntegrityScore`, `governanceAnimationScore`; `buildGuardianDepthBestowalReport()`
 - **`monitor-rules-scale-wave-52.ts`** — 12 rules (**658** monitor rules total)
 - Regenerate chunk with `npm run build:agent16-chunk`
