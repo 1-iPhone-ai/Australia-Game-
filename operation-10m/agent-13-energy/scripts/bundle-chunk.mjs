@@ -60,6 +60,7 @@ const FILES = [
   'export-hydrogen-maritime-shore-power-ledger.ts',
   'circular-stewardship-symbiosis-federation-ledger.ts',
   'geothermal-basin-industrial-thermal-federation-ledger.ts',
+  'safeguard-trade-certificate-stack-federation-ledger.ts',
   'industrial-energy-environmental.tsx',
 ];
 
@@ -138,6 +139,8 @@ const EXPORT_MANIFEST = [
   'V1014_MARITIME_SHORE_POWER_CATALOG',
   'V1014_CIRCULAR_STEWARDSHIP_CATALOG',
   'V1014_SYMBIOSIS_FEDERATION_CATALOG',
+  'V1014_GEOTHERMAL_BASIN_HEAT_CATALOG',
+  'V1014_INDUSTRIAL_THERMAL_FEDERATION_CATALOG',
   'V1014_INTERREGIONAL_GRID_LINKS',
   'V1014_ENERGY_TURN_SCENARIOS',
   'V1014_REGIONAL_GRID_SCENARIOS',
@@ -261,6 +264,9 @@ const EXPORT_MANIFEST = [
   'runAgent13StewardshipSymbiosisScaleSelfTests',
   'runAgent13StewardshipSymbiosisTurnScenario',
   'V1014_STEWARDSHIP_SYMBIOSIS_TURN_SCENARIOS',
+  'runAgent13GeothermalThermalScaleSelfTests',
+  'runAgent13GeothermalThermalTurnScenario',
+  'V1014_GEOTHERMAL_THERMAL_TURN_SCENARIOS',
   'runV1014RegionalGridClimateScaleSelfTests',
   'IndustrialEnergyEnvironmentalInspector',
 ];

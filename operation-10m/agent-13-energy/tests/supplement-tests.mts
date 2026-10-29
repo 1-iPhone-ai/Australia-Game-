@@ -185,6 +185,11 @@ import {
   V1014_GEOTHERMAL_THERMAL_TURN_SCENARIOS,
 } from '../modules/geothermal-basin-industrial-thermal-federation-ledger.ts';
 import {
+  runAgent13SafeguardCertificateScaleSelfTests,
+  runAgent13SafeguardCertificateTurnScenario,
+  V1014_SAFEGUARD_CERTIFICATE_TURN_SCENARIOS,
+} from '../modules/safeguard-trade-certificate-stack-federation-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -508,6 +513,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const ssTurn = runAgent13StewardshipSymbiosisTurnScenario(V1014_STEWARDSHIP_SYMBIOSIS_TURN_SCENARIOS[0]);
   ok(ssTurn.passed);
+
+  const geothermalThermal = runAgent13GeothermalThermalScaleSelfTests();
+  ok(geothermalThermal.failed === 0 && geothermalThermal.passed >= 5);
+
+  const gtTurn = runAgent13GeothermalThermalTurnScenario(V1014_GEOTHERMAL_THERMAL_TURN_SCENARIOS[0]);
+  ok(gtTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

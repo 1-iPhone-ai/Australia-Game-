@@ -289,6 +289,13 @@ import {
   type V1014RegionalIndustrialThermalFederationLedger,
 } from './geothermal-basin-industrial-thermal-federation-ledger';
 import {
+  advanceRegionalDecarbonCertificateStackOrchestration,
+  computeRegionalSafeguardTradeBufferLedger,
+  scoreAgent13SafeguardCertificateGIAlignment,
+  type V1014RegionalDecarbonCertificateStackLedger,
+  type V1014RegionalSafeguardTradeBufferLedger,
+} from './safeguard-trade-certificate-stack-federation-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25901,6 +25908,10 @@ export interface V1014RegionalEnergyProfile {
   geothermalBasinHeatRelief: number;
   industrialThermalFederationBand: string;
   industrialThermalFederationRelief: number;
+  safeguardTradeBufferBand: string;
+  safeguardTradeBufferRelief: number;
+  decarbonCertificateStackBand: string;
+  decarbonCertificateStackRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -26015,6 +26026,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalSymbiosisFederationLedgers: Record<string, V1014RegionalSymbiosisFederationLedger>;
   regionalGeothermalBasinHeatLedgers: Record<string, V1014RegionalGeothermalBasinHeatLedger>;
   regionalIndustrialThermalFederationLedgers: Record<string, V1014RegionalIndustrialThermalFederationLedger>;
+  regionalSafeguardTradeBufferLedgers: Record<string, V1014RegionalSafeguardTradeBufferLedger>;
+  regionalDecarbonCertificateStackLedgers: Record<string, V1014RegionalDecarbonCertificateStackLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -26100,6 +26113,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalSymbiosisFederationMemory: Record<string, { symbiosisIndex: number }>;
   regionalGeothermalBasinHeatMemory: Record<string, { basinHeatBalance: number; basinHeatIndex: number }>;
   regionalIndustrialThermalFederationMemory: Record<string, { thermalIndex: number }>;
+  regionalSafeguardTradeBufferMemory: Record<string, { bufferBalance: number; bufferIndex: number }>;
+  regionalDecarbonCertificateStackMemory: Record<string, { stackIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26197,6 +26212,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalSymbiosisFederationMemory: {},
     regionalGeothermalBasinHeatMemory: {},
     regionalIndustrialThermalFederationMemory: {},
+    regionalSafeguardTradeBufferMemory: {},
+    regionalDecarbonCertificateStackMemory: {},
     history: [],
   };
 }
@@ -26434,6 +26451,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalIndustrialThermalFederationMemory === 'object' && raw.regionalIndustrialThermalFederationMemory
         ? raw.regionalIndustrialThermalFederationMemory
         : {},
+    regionalSafeguardTradeBufferMemory:
+      typeof raw.regionalSafeguardTradeBufferMemory === 'object' && raw.regionalSafeguardTradeBufferMemory
+        ? raw.regionalSafeguardTradeBufferMemory
+        : {},
+    regionalDecarbonCertificateStackMemory:
+      typeof raw.regionalDecarbonCertificateStackMemory === 'object' && raw.regionalDecarbonCertificateStackMemory
+        ? raw.regionalDecarbonCertificateStackMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26618,6 +26643,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalSymbiosisFederationLedgers: {},
       regionalGeothermalBasinHeatLedgers: {},
       regionalIndustrialThermalFederationLedgers: {},
+      regionalSafeguardTradeBufferLedgers: {},
+      regionalDecarbonCertificateStackLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26706,6 +26733,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const symbiosisFederationLedgers: Record<string, V1014RegionalSymbiosisFederationLedger> = {};
   const geothermalBasinHeatLedgers: Record<string, V1014RegionalGeothermalBasinHeatLedger> = {};
   const industrialThermalFederationLedgers: Record<string, V1014RegionalIndustrialThermalFederationLedger> = {};
+  const safeguardTradeBufferLedgers: Record<string, V1014RegionalSafeguardTradeBufferLedger> = {};
+  const decarbonCertificateStackLedgers: Record<string, V1014RegionalDecarbonCertificateStackLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26894,6 +26923,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextIndustrialThermalFederationMemory: Record<string, { thermalIndex: number }> = {
     ...persisted.regionalIndustrialThermalFederationMemory,
+  };
+  const nextSafeguardTradeBufferMemory: Record<string, { bufferBalance: number; bufferIndex: number }> = {
+    ...persisted.regionalSafeguardTradeBufferMemory,
+  };
+  const nextDecarbonCertificateStackMemory: Record<string, { stackIndex: number }> = {
+    ...persisted.regionalDecarbonCertificateStackMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -27953,6 +27988,34 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextIndustrialThermalFederationMemory[regionId] = industrialThermalFederationStep.next;
     industrialThermalFederationLedgers[regionId] = industrialThermalFederationStep.ledger;
     pressure -= industrialThermalFederationStep.ledger.industrialThermalFederationRelief;
+
+    const safeguardTradeBufferStep = computeRegionalSafeguardTradeBufferLedger({
+      regionId,
+      industrialThermalFederationRelief: industrialThermalFederationStep.ledger.industrialThermalFederationRelief,
+      geothermalBasinHeatRelief: geothermalBasinHeatStep.ledger.geothermalBasinHeatRelief,
+      carbonMarketIntegrityRelief: carbonMarketIntegrityStep.ledger.carbonMarketIntegrityRelief,
+      netZeroPathwayRelief: netZeroPathwayStep.ledger.netZeroPathwayRelief,
+      scope3HardToAbateRelief: scope3SupplyChainStep.ledger.scope3SupplyChainRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextSafeguardTradeBufferMemory[regionId] || null,
+    });
+    nextSafeguardTradeBufferMemory[regionId] = safeguardTradeBufferStep.next;
+    safeguardTradeBufferLedgers[regionId] = safeguardTradeBufferStep.ledger;
+    pressure -= safeguardTradeBufferStep.ledger.safeguardTradeBufferRelief;
+
+    const decarbonCertificateStackStep = advanceRegionalDecarbonCertificateStackOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      tradeBufferBand: safeguardTradeBufferStep.ledger.band,
+      greenProductPassportRelief: greenProductPassportStep.ledger.greenProductPassportRelief,
+      climateDisclosureRelief: climateDisclosureStep.ledger.climateDisclosureRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextDecarbonCertificateStackMemory[regionId] || null,
+    });
+    nextDecarbonCertificateStackMemory[regionId] = decarbonCertificateStackStep.next;
+    decarbonCertificateStackLedgers[regionId] = decarbonCertificateStackStep.ledger;
+    pressure -= decarbonCertificateStackStep.ledger.decarbonCertificateStackRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -28043,6 +28106,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       symbiosisFederationStep.ledger.summary,
       geothermalBasinHeatStep.ledger.summary,
       industrialThermalFederationStep.ledger.summary,
+      safeguardTradeBufferStep.ledger.summary,
+      decarbonCertificateStackStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -28275,6 +28340,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       geothermalBasinHeatRelief: geothermalBasinHeatStep.ledger.geothermalBasinHeatRelief,
       industrialThermalFederationBand: industrialThermalFederationStep.ledger.band,
       industrialThermalFederationRelief: industrialThermalFederationStep.ledger.industrialThermalFederationRelief,
+      safeguardTradeBufferBand: safeguardTradeBufferStep.ledger.band,
+      safeguardTradeBufferRelief: safeguardTradeBufferStep.ledger.safeguardTradeBufferRelief,
+      decarbonCertificateStackBand: decarbonCertificateStackStep.ledger.band,
+      decarbonCertificateStackRelief: decarbonCertificateStackStep.ledger.decarbonCertificateStackRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -28418,6 +28487,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalSymbiosisFederationLedgers: symbiosisFederationLedgers,
     regionalGeothermalBasinHeatLedgers: geothermalBasinHeatLedgers,
     regionalIndustrialThermalFederationLedgers: industrialThermalFederationLedgers,
+    regionalSafeguardTradeBufferLedgers: safeguardTradeBufferLedgers,
+    regionalDecarbonCertificateStackLedgers: decarbonCertificateStackLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -28503,6 +28574,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalSymbiosisFederationMemory: nextSymbiosisFederationMemory,
     regionalGeothermalBasinHeatMemory: nextGeothermalBasinHeatMemory,
     regionalIndustrialThermalFederationMemory: nextIndustrialThermalFederationMemory,
+    regionalSafeguardTradeBufferMemory: nextSafeguardTradeBufferMemory,
+    regionalDecarbonCertificateStackMemory: nextDecarbonCertificateStackMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -30008,6 +30081,49 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     thermalBand: rr40.state.regions.QLD?.industrialThermalFederationBand,
   });
   check('GEOTHERMAL THERMAL GI alignment', giGeothermalThermal.relevanceDelta > 0.5, giGeothermalThermal.reason || '');
+
+  const safeguardCertificateInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'trade_exposed_safeguard_buffer_hub',
+      'federation_safeguard_trade_tie',
+      'safeguard_credit_integrity_hub',
+      'hard_to_abate_certificate_stack_corridor',
+      'trade_exposed_carbon_credit_stack',
+      'geothermal_basin_heat_federation_hub',
+      'process_heat_orchestration_hub',
+      'granular_renewable_certificate_hub',
+      'digital_product_passport_hub',
+      'renewable_grid',
+      'battery_grid',
+    ],
+  };
+  const rr41 = computeIndustrialEnergyEnvironmentalState(
+    safeguardCertificateInp,
+    createInitialIndustrialEnergyEnvironmentalPersisted(),
+    null,
+  );
+  check(
+    'SAFEGUARD trade buffer tracked',
+    !!rr41.state.regionalSafeguardTradeBufferLedgers.NSW?.band,
+    rr41.state.regionalSafeguardTradeBufferLedgers.NSW?.band || '',
+  );
+  check(
+    'CERTIFICATE stack relief',
+    (rr41.state.regions.NSW?.decarbonCertificateStackRelief || 0) > 0,
+    String(rr41.state.regions.NSW?.decarbonCertificateStackRelief),
+  );
+  check(
+    'SAFEGUARD buffer memory persisted',
+    !!rr41.persisted.regionalSafeguardTradeBufferMemory.NSW,
+    String(rr41.persisted.regionalSafeguardTradeBufferMemory.NSW?.bufferIndex),
+  );
+  const giSafeguardCertificate = scoreAgent13SafeguardCertificateGIAlignment({
+    actionText: 'Trade-exposed safeguard buffer hub with safeguard credit integrity and hard-to-abate certificate stack corridor',
+    tradeBufferBand: rr41.state.regions.NSW?.safeguardTradeBufferBand,
+    certificateStackBand: rr41.state.regions.NSW?.decarbonCertificateStackBand,
+  });
+  check('SAFEGUARD CERTIFICATE GI alignment', giSafeguardCertificate.relevanceDelta > 0.5, giSafeguardCertificate.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

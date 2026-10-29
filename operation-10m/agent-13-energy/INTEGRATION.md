@@ -46,6 +46,7 @@ operation-10m/agent-13-energy/
   modules/export-hydrogen-maritime-shore-power-ledger.ts  # scale wave round 38 (O10-207)
   modules/circular-stewardship-symbiosis-federation-ledger.ts  # scale wave round 39 (O10-209)
   modules/geothermal-basin-industrial-thermal-federation-ledger.ts  # scale wave round 40 (O10-211)
+  modules/safeguard-trade-certificate-stack-federation-ledger.ts  # scale wave round 41 (O10-213)
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge
