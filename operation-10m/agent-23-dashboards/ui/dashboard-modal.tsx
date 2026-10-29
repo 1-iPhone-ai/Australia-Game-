@@ -294,6 +294,12 @@ import { nrDashBuildCombinedDerivedMajorSnippetSourceGap } from '../core/combine
 import { nrDashBuildHubAdjacencyDependencyHubBorderPulseAsymmetry } from '../core/hub-adjacency-dependency-hub-border-pulse-asymmetry.ts';
 import { nrDashBuildRimNationalChokepointBorderLinkSaturationShare } from '../core/rim-national-chokepoint-border-link-saturation-share.ts';
 import { nrDashBuildMajorDerivedDerivedCriticalHistoryOverlapGap } from '../core/major-derived-derived-critical-history-overlap-gap.ts';
+import { nrDashBuildRivalOpenNeedsSeverityTierSpread } from '../core/rival-open-needs-severity-tier-spread.ts';
+import { nrDashBuildNeutralOpenNeedsSeverityTierSpread } from '../core/neutral-open-needs-severity-tier-spread.ts';
+import { nrDashBuildHubNationalChokepointBorderLinkSaturationShare } from '../core/hub-national-chokepoint-border-link-saturation-share.ts';
+import { nrDashBuildPeripheralNationalChokepointBorderLinkSaturationShare } from '../core/peripheral-national-chokepoint-border-link-saturation-share.ts';
+import { nrDashBuildMergedDerivedMajorSnippetSourceGap } from '../core/merged-derived-major-snippet-source-gap.ts';
+import { nrDashBuildMeaningfulDerivedMajorHistoryOverlapGap } from '../core/meaningful-derived-major-history-overlap-gap.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -480,6 +486,24 @@ export const NrDashOverviewTab: React.FC<{
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-you-open-needs-severity-tier-spread">
           You open-needs severity tier spread {youSevTierSpread.severityTierSpread} · ranks {youSevTierSpread.minTierRank}–
           {youSevTierSpread.maxTierRank} across {youSevTierSpread.youRegionCount} you regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const rivalSevTierSpread = nrDashBuildRivalOpenNeedsSeverityTierSpread(lrView, snap);
+      return rivalSevTierSpread && rivalSevTierSpread.severityTierSpread > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-rival-open-needs-severity-tier-spread">
+          Rival open-needs severity tier spread {rivalSevTierSpread.severityTierSpread} · ranks {rivalSevTierSpread.minTierRank}–
+          {rivalSevTierSpread.maxTierRank} across {rivalSevTierSpread.rivalRegionCount} rival regions
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const neutralSevTierSpread = nrDashBuildNeutralOpenNeedsSeverityTierSpread(lrView, snap);
+      return neutralSevTierSpread && neutralSevTierSpread.severityTierSpread > 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-neutral-open-needs-severity-tier-spread">
+          Neutral open-needs severity tier spread {neutralSevTierSpread.severityTierSpread} · ranks {neutralSevTierSpread.minTierRank}–
+          {neutralSevTierSpread.maxTierRank} across {neutralSevTierSpread.neutralRegionCount} neutral regions
         </div>
       ) : null;
     })()}
@@ -1300,6 +1324,15 @@ export const NrDashOverviewTab: React.FC<{
       ) : null;
     })()}
     {(() => {
+      const mergedDerivedMajorSourceGap = nrDashBuildMergedDerivedMajorSnippetSourceGap(lrView, nsState, snap);
+      return mergedDerivedMajorSourceGap && mergedDerivedMajorSourceGap.sourceGap >= 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-merged-derived-major-snippet-source-gap">
+          Merged derived major snippet source gap {mergedDerivedMajorSourceGap.sourceGap} · intersection sources{' '}
+          {mergedDerivedMajorSourceGap.mergedDerivedMajorSourceCount} · matched {mergedDerivedMajorSourceGap.matchedSnippetCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
       const nsDerivedMajorSourceGap = nrDashBuildNsDerivedMajorSnippetSourceGap(lrView, nsState, snap);
       return nsDerivedMajorSourceGap && nsDerivedMajorSourceGap.sourceGap > 0 ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-ns-derived-major-snippet-source-gap">
@@ -1492,6 +1525,16 @@ export const NrDashOverviewTab: React.FC<{
           Major derived derived-critical history overlap gap {majorDerivedDerivedCriticalHistGap.overlapGap} · shared{' '}
           {majorDerivedDerivedCriticalHistGap.sharedTurnCount} · NS {majorDerivedDerivedCriticalHistGap.nsEntryCount} · major{' '}
           {majorDerivedDerivedCriticalHistGap.majorDerivedDerivedCriticalCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const meaningfulDerivedMajorHistGap = nrDashBuildMeaningfulDerivedMajorHistoryOverlapGap(lrView, nsState);
+      return meaningfulDerivedMajorHistGap && meaningfulDerivedMajorHistGap.overlapGap >= 0 ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-meaningful-derived-major-history-overlap-gap">
+          Meaningful derived major history overlap gap {meaningfulDerivedMajorHistGap.overlapGap} · shared{' '}
+          {meaningfulDerivedMajorHistGap.sharedTurnCount} · NS {meaningfulDerivedMajorHistGap.nsEntryCount} · meaningful{' '}
+          {meaningfulDerivedMajorHistGap.meaningfulDerivedMajorCount}
         </div>
       ) : null;
     })()}
@@ -2643,6 +2686,29 @@ export const NrDashMapTab: React.FC<{
             Rim national chokepoint border link saturation share {rimNationalChokepointBorderLinkSat.saturationShare} · border{' '}
             {rimNationalChokepointBorderLinkSat.borderRegionId ?? '—'} · μ {rimNationalChokepointBorderLinkSat.meanBlend} · national peak{' '}
             {rimNationalChokepointBorderLinkSat.nationalPeakBlend}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const hubNationalChokepointBorderLinkSat = nrDashBuildHubNationalChokepointBorderLinkSaturationShare(nsState, baseNodes);
+        return hubNationalChokepointBorderLinkSat && hubNationalChokepointBorderLinkSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-national-chokepoint-border-link-saturation-share">
+            Hub national chokepoint border link saturation share {hubNationalChokepointBorderLinkSat.saturationShare} · hub{' '}
+            {hubNationalChokepointBorderLinkSat.hubRegionId ?? '—'} · μ {hubNationalChokepointBorderLinkSat.meanBlend} · national peak{' '}
+            {hubNationalChokepointBorderLinkSat.nationalPeakBlend}
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const peripheralNationalChokepointBorderLinkSat = nrDashBuildPeripheralNationalChokepointBorderLinkSaturationShare(
+          nsState,
+          baseNodes
+        );
+        return peripheralNationalChokepointBorderLinkSat && peripheralNationalChokepointBorderLinkSat.saturationShare > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-peripheral-national-chokepoint-border-link-saturation-share">
+            Peripheral national chokepoint border link saturation share {peripheralNationalChokepointBorderLinkSat.saturationShare} ·{' '}
+            {peripheralNationalChokepointBorderLinkSat.peripheralNationalChokepointLinkCount} links · μ{' '}
+            {peripheralNationalChokepointBorderLinkSat.meanBlend} · national peak {peripheralNationalChokepointBorderLinkSat.nationalPeakBlend}
           </p>
         ) : null;
       })()}
