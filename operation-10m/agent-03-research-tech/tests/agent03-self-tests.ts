@@ -986,6 +986,72 @@ tests.push(
 );
 
 tests.push(
+  test('save_v12_migrates_to_v13_with_diffusion_forecast_fields', () => {
+    const v12 = {
+      schemaVersion: 'op10m-agent03-v12',
+      turn: 22,
+      revision: 3,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v11', toVersion: 'op10m-agent03-v12', turn: 21 }],
+      saveKind: 'manual',
+      updatedAtTurn: 22,
+      sessionId: 'v12',
+      persistRevision: 11,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 22,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 22, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      synergyThresholdLog: [],
+      synergySnapshot: null,
+      commercializationMilestoneLog: [],
+      commercializationSnapshot: null,
+      diffusionIntegrationLog: [],
+      diffusionIntegrationSnapshot: null,
+      portfolioBalanceLog: [],
+      portfolioBalanceSnapshot: null,
+      coreFingerprint: 'legacy',
+    };
+    const core = migrateResearchProgressSave(v12);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v12'));
+    assert(Array.isArray(core?.diffusionForecastBandLog));
+    assert(core?.diffusionForecastSnapshot === null);
+  })
+);
+
+tests.push(
+  test('diffusion_forecast_log_and_snapshot_on_compute', () => {
+    const inputs = baseInputs({
+      turn: 30,
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const state = computeResearchProgress(inputs, null);
+    assert(typeof state.diffusionForecastSnapshot?.digest === 'string');
+    assert(Array.isArray(state.diffusionForecastBandLog));
+  })
+);
+
+tests.push(
+  test('horizon_convergence_outlook_derived', () => {
+    const inputs = baseInputs({ turn: 26 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.horizonConvergenceOutlook;
+    assert(outlook != null);
+    assert(typeof outlook?.nationalConvergenceScore === 'number');
+    assert(detectForeignSaveFields({ horizonConvergenceOutlook: outlook }).includes('horizonConvergenceOutlook'));
+  })
+);
+
+tests.push(
   test('agent25_chunk_markers_and_hash', () => {
     const moduleId = 'agent-03-research-tech';
     const chunkPath = resolve(process.cwd(), 'operation-10m/modules/agent-03-research-tech/chunk.tsx');
