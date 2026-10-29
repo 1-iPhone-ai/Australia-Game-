@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: ee2aecc5f5b7fc31
+// content-sha256-prefix: 0f2d78399b326c44
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -895,6 +895,10 @@ export interface DayAdvanceUiEvolutionResult {
   focusSessionSnoozeDayHintCopy: string | null;
   touchTargetDayCoachCopy: string | null;
   keyboardHintsDayCoachCopy: string | null;
+  announcementDedupDayHintCopy: string | null;
+  layoutPresetDensityDayCoachCopy: string | null;
+  motionTimingDayCoachCopy: string | null;
+  memoryQuickActionDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -906,6 +910,7 @@ export interface TickEvolvingUiDayAdvanceContext {
   autoApplyTextScaleDensity?: boolean;
   autoRememberLegacyNav?: boolean;
   sessionMemory?: SessionUiMemory;
+  layoutPreset?: V94LayoutPreset;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -1142,6 +1147,36 @@ export function tickEvolvingUiOnDayAdvance(
         })
       : { shortcutCount: 0, conflictCount: 0, coachCopy: null };
 
+  const dedupDayHint = buildAnnouncementDedupDayHint({
+    suppressedCount: deduped.suppressedCount,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const layoutPresetDensityDayCoach = buildLayoutPresetDensityDayCoach({
+    layoutPreset: context.layoutPreset,
+    interfaceLevel: nextSignals.interfaceLevel,
+    activeDensity: densityForTouch.tier,
+    preferredTier: persistedAfterCalm.preferredDensity ?? null,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const motionTimingDayCoach = buildMotionTimingDayCoach({
+    accessibility,
+    densityTier: densityForTouch.tier,
+    interfaceLevel: nextSignals.interfaceLevel,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const memoryQuickActionDayCoach =
+    context.phase != null
+      ? buildMemoryQuickActionDayCoach({
+          signals: nextSignals,
+          phase: context.phase,
+          sessionMemory: context.sessionMemory,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { boostedNavTarget: null, coachCopy: null };
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -1198,6 +1233,10 @@ export function tickEvolvingUiOnDayAdvance(
     focusSessionSnoozeDayHintCopy: focusSnoozeDayHint.coachCopy,
     touchTargetDayCoachCopy: touchTargetDayCoach.coachCopy,
     keyboardHintsDayCoachCopy: keyboardHintsDayCoach.coachCopy,
+    announcementDedupDayHintCopy: dedupDayHint.coachCopy,
+    layoutPresetDensityDayCoachCopy: layoutPresetDensityDayCoach.coachCopy,
+    motionTimingDayCoachCopy: motionTimingDayCoach.coachCopy,
+    memoryQuickActionDayCoachCopy: memoryQuickActionDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -4829,6 +4868,304 @@ export function buildKeyboardHintsDayCoach(input: {
   };
 }
 
+// --- source: engine/announcement-dedup-day-hint.ts ---
+export interface AnnouncementDedupDayHint {
+  suppressedCount: number;
+  coachCopy: string | null;
+}
+
+export function buildAnnouncementDedupDayHint(input: {
+  suppressedCount: number;
+  nextGameDay: number;
+}): AnnouncementDedupDayHint {
+  const base = dedupStatusCopy(input.suppressedCount);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return {
+    suppressedCount: input.suppressedCount,
+    coachCopy,
+  };
+}
+
+// --- source: engine/layout-preset-density-day-coach.ts ---
+export interface LayoutPresetDensityDayCoach {
+  preset: V94LayoutPreset;
+  suggestedDensity: UiDensityTier;
+  coachCopy: string | null;
+}
+
+export function buildLayoutPresetDensityDayCoach(input: {
+  layoutPreset?: V94LayoutPreset;
+  interfaceLevel: InterfaceExperienceLevel;
+  activeDensity: UiDensityTier;
+  preferredTier?: UiDensityTier | null;
+  nextGameDay: number;
+}): LayoutPresetDensityDayCoach {
+  const recommendation = buildLayoutPresetDensityRecommendation({
+    layoutPreset: input.layoutPreset,
+    interfaceLevel: input.interfaceLevel,
+    preferredTier: input.preferredTier,
+  });
+  const mismatch = layoutDensityMismatchCopy(input.layoutPreset, input.activeDensity);
+
+  let coachCopy: string | null = null;
+  if (mismatch) {
+    coachCopy = `Day ${input.nextGameDay}: ${mismatch}`;
+  } else if (input.nextGameDay <= 3) {
+    coachCopy = `Day ${input.nextGameDay}: ${recommendation.coachCopy}`;
+  }
+
+  return {
+    preset: recommendation.preset,
+    suggestedDensity: recommendation.suggestedDensity,
+    coachCopy,
+  };
+}
+
+// --- source: engine/motion-timing-day-coach.ts ---
+export interface MotionTimingDayCoach {
+  reducedMotion: boolean;
+  transitionDurationMs: number;
+  coachCopy: string | null;
+}
+
+export function buildMotionTimingDayCoach(input: {
+  accessibility: AccessibilitySettingsSnapshot;
+  densityTier: UiDensityTier;
+  interfaceLevel: import('../types/progression.js').InterfaceExperienceLevel;
+  nextGameDay: number;
+}): MotionTimingDayCoach {
+  const density = resolveUiDensityProfile({
+    interfaceLevel: input.interfaceLevel,
+    preferredTier: input.densityTier,
+    textScaleMultiplier: input.accessibility.textScaleMultiplier,
+  });
+  const motion = resolveMotionTimingProfile(input.accessibility, density);
+  const reducedMotion = !motion.policy.allowTransitions;
+
+  let coachCopy: string | null = null;
+  if (reducedMotion) {
+    coachCopy = `Day ${input.nextGameDay}: reduced-motion settings keep chrome transitions off (${motion.transitionDurationMs}ms).`;
+  } else if (input.accessibility.textScaleMultiplier >= 1.2) {
+    coachCopy = `Day ${input.nextGameDay}: motion timing stretched to ${motion.transitionDurationMs}ms for text scale.`;
+  }
+
+  return {
+    reducedMotion,
+    transitionDurationMs: motion.transitionDurationMs,
+    coachCopy,
+  };
+}
+
+// --- source: engine/memory-quick-action-day-coach.ts ---
+export interface MemoryQuickActionDayCoach {
+  boostedNavTarget: string | null;
+  coachCopy: string | null;
+}
+
+export function buildMemoryQuickActionDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  phase: V94StandardizedGamePhase;
+  sessionMemory?: SessionUiMemory;
+  nextGameDay: number;
+}): MemoryQuickActionDayCoach {
+  const memory = input.sessionMemory ?? createDefaultSessionUiMemory();
+  const actions = listContextualQuickActions(input.phase, input.signals.gameDay);
+  const ranked = rankContextualQuickActionsWithMemory(actions, memory);
+  const top = ranked[0];
+  if (!top || !memory.lastNavTarget) {
+    return { boostedNavTarget: null, coachCopy: null };
+  }
+
+  const boostedNavTarget = memory.lastNavTarget;
+  const baseCopy = memoryQuickActionCoachCopy(boostedNavTarget);
+  const coachCopy = baseCopy ? `Day ${input.nextGameDay}: ${baseCopy}` : null;
+
+  return { boostedNavTarget, coachCopy };
+}
+
+// --- source: engine/round20-self-tests.ts ---
+export function runAgent22Round20SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r20_dedup_hint',
+    'announcement dedup day hint mentions day',
+    (() => {
+      const hint = buildAnnouncementDedupDayHint({ suppressedCount: 2, nextGameDay: 4 });
+      return hint.suppressedCount === 2 && Boolean(hint.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r20_dedup_empty',
+    'announcement dedup day hint null when none suppressed',
+    (() => {
+      const hint = buildAnnouncementDedupDayHint({ suppressedCount: 0, nextGameDay: 2 });
+      return hint.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r20_layout_mismatch',
+    'layout preset density mismatch day coach',
+    (() => {
+      const coach = buildLayoutPresetDensityDayCoach({
+        layoutPreset: 'Advanced',
+        interfaceLevel: 'advanced',
+        activeDensity: 'spacious',
+        nextGameDay: 5,
+      });
+      return Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r20_layout_early_day',
+    'layout preset density early day coach',
+    (() => {
+      const coach = buildLayoutPresetDensityDayCoach({
+        interfaceLevel: 'simple',
+        activeDensity: 'comfortable',
+        nextGameDay: 2,
+      });
+      return Boolean(coach.coachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r20_motion_reduced',
+    'motion timing day coach under reduced motion',
+    (() => {
+      const coach = buildMotionTimingDayCoach({
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, reducedMotion: true },
+        densityTier: 'comfortable',
+        interfaceLevel: 'guided',
+        nextGameDay: 3,
+      });
+      return coach.reducedMotion && Boolean(coach.coachCopy?.includes('reduced-motion'));
+    })()
+  );
+
+  check(
+    'r20_motion_standard',
+    'motion timing day coach off at defaults',
+    (() => {
+      const coach = buildMotionTimingDayCoach({
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, reducedMotion: false, textScaleMultiplier: 1.0 },
+        densityTier: 'compact',
+        interfaceLevel: 'simple',
+        nextGameDay: 6,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r20_memory_quick_action',
+    'memory quick action day coach from session',
+    (() => {
+      const memory = recordNavSelection(createDefaultSessionUiMemory(), 'map');
+      const coach = buildMemoryQuickActionDayCoach({
+        signals: { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        phase: 'human_turn',
+        sessionMemory: memory,
+        nextGameDay: 3,
+      });
+      return Boolean(coach.coachCopy?.includes('Day 3') && coach.boostedNavTarget === 'map');
+    })()
+  );
+
+  check(
+    'r20_memory_empty',
+    'memory quick action day coach null without memory',
+    (() => {
+      const coach = buildMemoryQuickActionDayCoach({
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        phase: 'human_turn',
+        sessionMemory: createDefaultSessionUiMemory(),
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r20_tick_dedup_field',
+    'day advance exposes announcement dedup day hint copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.announcementDedupDayHintCopy === 'string' || r.announcementDedupDayHintCopy === null;
+    })()
+  );
+
+  check(
+    'r20_tick_layout_field',
+    'day advance exposes layout preset density day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn', layoutPreset: 'Assisted' }
+      );
+      return typeof r.layoutPresetDensityDayCoachCopy === 'string' || r.layoutPresetDensityDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r20_tick_motion_field',
+    'day advance exposes motion timing day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        {
+          phase: 'human_turn',
+          accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, reducedMotion: true },
+        }
+      );
+      return typeof r.motionTimingDayCoachCopy === 'string' || r.motionTimingDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r20_tick_memory_field',
+    'day advance exposes memory quick action day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        {
+          phase: 'human_turn',
+          sessionMemory: recordNavSelection(createDefaultSessionUiMemory(), 'map'),
+        }
+      );
+      return typeof r.memoryQuickActionDayCoachCopy === 'string' || r.memoryQuickActionDayCoachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
 // --- source: engine/round19-self-tests.ts ---
 export function runAgent22Round19SelfTests(): {
   passed: number;
@@ -8454,6 +8791,18 @@ export function SimulationUiEvolutionBridge({
       {result.keyboardHintsDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-keyboard-hints-day">{result.keyboardHintsDayCoachCopy}</div>
       ) : null}
+      {result.announcementDedupDayHintCopy ? (
+        <div data-testid="sim-ui-evolution-dedup-day">{result.announcementDedupDayHintCopy}</div>
+      ) : null}
+      {result.layoutPresetDensityDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-layout-density-day">{result.layoutPresetDensityDayCoachCopy}</div>
+      ) : null}
+      {result.motionTimingDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-motion-day">{result.motionTimingDayCoachCopy}</div>
+      ) : null}
+      {result.memoryQuickActionDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-memory-qa-day">{result.memoryQuickActionDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -10145,8 +10494,100 @@ export function KeyboardHintsDayCoachStrip({
   );
 }
 
+// --- source: react/AnnouncementDedupDayHintStrip.tsx ---
+export function AnnouncementDedupDayHintStrip({
+  hint,
+  accessibility,
+}: {
+  hint: AnnouncementDedupDayHint;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!hint.coachCopy) return null;
+  return (
+    <div
+      data-testid="announcement-dedup-day-hint"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-slate-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-suppressed-count={hint.suppressedCount}
+    >
+      {hint.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/LayoutPresetDensityDayCoachStrip.tsx ---
+export function LayoutPresetDensityDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: LayoutPresetDensityDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="layout-preset-density-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-emerald-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-preset={coach.preset}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/MotionTimingDayCoachStrip.tsx ---
+export function MotionTimingDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: MotionTimingDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="motion-timing-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-fuchsia-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-reduced-motion={coach.reducedMotion ? 'true' : 'false'}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/MemoryQuickActionDayCoachStrip.tsx ---
+export function MemoryQuickActionDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: MemoryQuickActionDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="memory-quick-action-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-yellow-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-boosted-nav={coach.boostedNavTarget ?? undefined}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.19.0';
+export const AGENT_22_MODULE_VERSION = '1.20.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -10282,6 +10723,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round19 = runAgent22Round19SelfTests();
   for (const r of round19.results) {
     check(`agent22_round19_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round20 = runAgent22Round20SelfTests();
+  for (const r of round20.results) {
+    check(`agent22_round20_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

@@ -57,7 +57,12 @@ import { buildCognitiveLoadDayCoach } from '../engine/cognitive-load-day-coach.j
 import { buildFocusSessionSnoozeDayHint } from '../engine/focus-session-snooze-day-hint.js';
 import { buildTouchTargetDayCoach } from '../engine/touch-target-day-coach.js';
 import { buildKeyboardHintsDayCoach } from '../engine/keyboard-hints-day-coach.js';
+import { buildAnnouncementDedupDayHint } from '../engine/announcement-dedup-day-hint.js';
+import { buildLayoutPresetDensityDayCoach } from '../engine/layout-preset-density-day-coach.js';
+import { buildMotionTimingDayCoach } from '../engine/motion-timing-day-coach.js';
+import { buildMemoryQuickActionDayCoach } from '../engine/memory-quick-action-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
+import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
 import type { V94StandardizedGamePhase } from '../adapters/v94-phase-bridge.js';
 import type { AccessibilitySettingsSnapshot } from '../types/accessibility.js';
@@ -121,6 +126,10 @@ export interface DayAdvanceUiEvolutionResult {
   focusSessionSnoozeDayHintCopy: string | null;
   touchTargetDayCoachCopy: string | null;
   keyboardHintsDayCoachCopy: string | null;
+  announcementDedupDayHintCopy: string | null;
+  layoutPresetDensityDayCoachCopy: string | null;
+  motionTimingDayCoachCopy: string | null;
+  memoryQuickActionDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -132,6 +141,7 @@ export interface TickEvolvingUiDayAdvanceContext {
   autoApplyTextScaleDensity?: boolean;
   autoRememberLegacyNav?: boolean;
   sessionMemory?: SessionUiMemory;
+  layoutPreset?: V94LayoutPreset;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -368,6 +378,36 @@ export function tickEvolvingUiOnDayAdvance(
         })
       : { shortcutCount: 0, conflictCount: 0, coachCopy: null };
 
+  const dedupDayHint = buildAnnouncementDedupDayHint({
+    suppressedCount: deduped.suppressedCount,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const layoutPresetDensityDayCoach = buildLayoutPresetDensityDayCoach({
+    layoutPreset: context.layoutPreset,
+    interfaceLevel: nextSignals.interfaceLevel,
+    activeDensity: densityForTouch.tier,
+    preferredTier: persistedAfterCalm.preferredDensity ?? null,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const motionTimingDayCoach = buildMotionTimingDayCoach({
+    accessibility,
+    densityTier: densityForTouch.tier,
+    interfaceLevel: nextSignals.interfaceLevel,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const memoryQuickActionDayCoach =
+    context.phase != null
+      ? buildMemoryQuickActionDayCoach({
+          signals: nextSignals,
+          phase: context.phase,
+          sessionMemory: context.sessionMemory,
+          nextGameDay: nextSignals.gameDay,
+        })
+      : { boostedNavTarget: null, coachCopy: null };
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
@@ -424,6 +464,10 @@ export function tickEvolvingUiOnDayAdvance(
     focusSessionSnoozeDayHintCopy: focusSnoozeDayHint.coachCopy,
     touchTargetDayCoachCopy: touchTargetDayCoach.coachCopy,
     keyboardHintsDayCoachCopy: keyboardHintsDayCoach.coachCopy,
+    announcementDedupDayHintCopy: dedupDayHint.coachCopy,
+    layoutPresetDensityDayCoachCopy: layoutPresetDensityDayCoach.coachCopy,
+    motionTimingDayCoachCopy: motionTimingDayCoach.coachCopy,
+    memoryQuickActionDayCoachCopy: memoryQuickActionDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

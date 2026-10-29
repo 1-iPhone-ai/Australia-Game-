@@ -53,3 +53,7 @@ export { CognitiveLoadDayCoachStrip } from './CognitiveLoadDayCoachStrip.js';
 export { FocusSessionSnoozeDayHintStrip } from './FocusSessionSnoozeDayHintStrip.js';
 export { TouchTargetDayCoachStrip } from './TouchTargetDayCoachStrip.js';
 export { KeyboardHintsDayCoachStrip } from './KeyboardHintsDayCoachStrip.js';
+export { AnnouncementDedupDayHintStrip } from './AnnouncementDedupDayHintStrip.js';
+export { LayoutPresetDensityDayCoachStrip } from './LayoutPresetDensityDayCoachStrip.js';
+export { MotionTimingDayCoachStrip } from './MotionTimingDayCoachStrip.js';
+export { MemoryQuickActionDayCoachStrip } from './MemoryQuickActionDayCoachStrip.js';
