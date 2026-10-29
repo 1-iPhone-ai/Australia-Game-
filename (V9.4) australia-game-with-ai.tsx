@@ -135131,6 +135131,126 @@ export function runV62DynamicEvolutionaryUiSelfTests(): V9SelfTestResult[] {
 
 
 
+// SECTION 20P-A69: O111 RESPONSIVE UI (Agent 69) — VIEWPORT BANDS • ADAPTIVE SHELL
+// ============================================================================
+// Presentation only. Breakpoints drive root data attributes, bounded CSS, and optional
+// settings-hub category navigation overrides on narrow viewports. Never persisted.
+
+export type O111ViewportBand = 'compact' | 'cozy' | 'comfortable' | 'wide';
+
+export const O111_VIEWPORT_BREAKPOINTS = {
+  compactMax: 639,
+  cozyMax: 1023,
+  comfortableMax: 1439,
+} as const;
+
+export interface O111ViewportSnapshot {
+  width: number;
+  height: number;
+  band: O111ViewportBand;
+}
+
+export function classifyO111ViewportBand(width: number, _height?: number): O111ViewportBand {
+  const w = Math.max(0, Math.round(Number(width) || 0));
+  if (w <= O111_VIEWPORT_BREAKPOINTS.compactMax) return 'compact';
+  if (w <= O111_VIEWPORT_BREAKPOINTS.cozyMax) return 'cozy';
+  if (w <= O111_VIEWPORT_BREAKPOINTS.comfortableMax) return 'comfortable';
+  return 'wide';
+}
+
+export function readO111ViewportSnapshot(viewport?: { width: number; height: number }): O111ViewportSnapshot {
+  const width = viewport?.width ?? (typeof window !== 'undefined' ? window.innerWidth : 1920);
+  const height = viewport?.height ?? (typeof window !== 'undefined' ? window.innerHeight : 1080);
+  const safeW = width > 0 ? width : 1920;
+  const safeH = height > 0 ? height : 1080;
+  return { width: safeW, height: safeH, band: classifyO111ViewportBand(safeW, safeH) };
+}
+
+/** When auto-collapse is enabled, map wide "full" nav to compact-friendly modes on small bands. */
+export function resolveEffectiveSettingsCategoryNavMode(
+  settings: {
+    settingsCategoryNavigationMode?: SettingsCategoryNavigationMode;
+    autoCollapseCategoriesOnNarrow?: boolean;
+    rememberCategoryNavigationMode?: boolean;
+    allowSettingsCategoryCollapse?: boolean;
+  },
+  band: O111ViewportBand
+): SettingsCategoryNavigationMode {
+  const base = settings.settingsCategoryNavigationMode || 'full';
+  if (settings.rememberCategoryNavigationMode) return base;
+  if (!settings.autoCollapseCategoriesOnNarrow) return base;
+  if (settings.allowSettingsCategoryCollapse === false) return base;
+  if (band === 'compact') {
+    if (base === 'full' || base === 'full_categories') return 'category_dropdown';
+    return base;
+  }
+  if (band === 'cozy') {
+    if (base === 'full' || base === 'full_categories') return 'compact';
+    return base;
+  }
+  return base;
+}
+
+export const O111_RESPONSIVE_STYLESHEET = `
+:root { --o111-viewport-pad: 16px; --o111-shell-gap: 12px; }
+[data-o111-viewport="compact"] { --o111-viewport-pad: 8px; --o111-shell-gap: 6px; }
+[data-o111-viewport="cozy"] { --o111-viewport-pad: 12px; --o111-shell-gap: 8px; }
+[data-o111-viewport="compact"] [data-settings-hub-shell] { max-width: 100% !important; width: 100% !important; border-radius: 0.65rem; }
+[data-o111-viewport="compact"] [data-settings-hub-shell].max-w-5xl { max-width: 100% !important; }
+[data-o111-viewport="compact"] .fixed.inset-0.flex.items-center.justify-center { padding: var(--o111-viewport-pad) !important; }
+[data-o111-viewport="compact"] .fixed.inset-0.flex.items-center.justify-center > div { max-width: calc(100vw - var(--o111-viewport-pad) * 2) !important; }
+[data-o111-viewport="compact"] [data-o111-stack-toolbar] { flex-wrap: wrap !important; gap: var(--o111-shell-gap) !important; }
+[data-o111-viewport="compact"] button, [data-o111-viewport="cozy"] button { min-height: 40px; }
+[data-o111-viewport="compact"] [data-settings-category-nav] { padding-left: var(--o111-viewport-pad); padding-right: var(--o111-viewport-pad); }
+`;
+
+export function runO111ResponsiveUiSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  check('o111_a69_01_breakpoints', 'Viewport bands classify at documented width edges', () => {
+    return (
+      classifyO111ViewportBand(320) === 'compact'
+      && classifyO111ViewportBand(639) === 'compact'
+      && classifyO111ViewportBand(640) === 'cozy'
+      && classifyO111ViewportBand(1023) === 'cozy'
+      && classifyO111ViewportBand(1024) === 'comfortable'
+      && classifyO111ViewportBand(1440) === 'wide'
+    ) || 'band edges mismatch';
+  });
+  check('o111_a69_02_auto_collapse', 'Auto collapse maps full nav to dropdown/compact by band', () => {
+    const s = { settingsCategoryNavigationMode: 'full' as const, autoCollapseCategoriesOnNarrow: true, rememberCategoryNavigationMode: false, allowSettingsCategoryCollapse: true };
+    return resolveEffectiveSettingsCategoryNavMode(s, 'compact') === 'category_dropdown'
+      && resolveEffectiveSettingsCategoryNavMode(s, 'cozy') === 'compact'
+      && resolveEffectiveSettingsCategoryNavMode(s, 'wide') === 'full';
+  });
+  check('o111_a69_03_remember_mode', 'Remember navigation mode disables automatic override', () => {
+    const s = { settingsCategoryNavigationMode: 'full' as const, autoCollapseCategoriesOnNarrow: true, rememberCategoryNavigationMode: true, allowSettingsCategoryCollapse: true };
+    return resolveEffectiveSettingsCategoryNavMode(s, 'compact') === 'full';
+  });
+  check('o111_a69_04_stylesheet', 'Responsive stylesheet is self-contained and targets data-o111-viewport', () => {
+    const css = O111_RESPONSIVE_STYLESHEET;
+    return /\[data-o111-viewport="compact"\]/.test(css) && !/url\(|https?:|@import/.test(css);
+  });
+  check('o111_a69_05_not_persisted', 'Responsive engine adds no persisted settings keys', () => {
+    const keys = Object.keys(DEFAULT_GAME_SETTINGS).filter(k => /o111|viewportBand/i.test(k));
+    return keys.length === 0 || `unexpected keys: ${keys.join(',')}`;
+  });
+  check('o111_a69_06_read_snapshot', 'readO111ViewportSnapshot accepts explicit viewport sizes', () => {
+    const snap = readO111ViewportSnapshot({ width: 500, height: 800 });
+    return snap.band === 'compact' && snap.width === 500 && snap.height === 800;
+  });
+  return results;
+}
+
+
+// ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
 // Local-only diagnostics. No network, workers, telemetry or storage writes happen in this section; every
@@ -137680,6 +137800,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'o111_a69', label: 'O111 Responsive UI (Agent 69)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111ResponsiveUiSelfTests() },
   { id: 'o111_a61', label: 'O111 Visual Design (Agent 61)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111VisualDesignSelfTests() },
   { id: 'nav63', label: 'Intent Navigation (Agent 63)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runIntentNavigationSelfTests() },
   { id: 'v62', label: 'V9.4 Dynamic Evolutionary UI', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV62DynamicEvolutionaryUiSelfTests() },
