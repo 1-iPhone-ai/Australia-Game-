@@ -1,10 +1,12 @@
 // OP10M_MODULE_BEGIN agent-20-automation
+// OP10M_MANIFEST_SHA256: 917a498cd73e120e51da55628a5b315d31d8f902f2bc39a40947c6a5c182abc9
+// OP10M_MODULE_VERSION: 10m.1.2.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
 /** Operation 10M Agent 20 — shared types (mirror V9.4 SECTION 20AN + HA2). */
 
-export const O10_AGENT20_MODULE_VERSION = '10m.1.1.0-agent20';
+export const O10_AGENT20_MODULE_VERSION = '10m.1.2.0-agent20';
 export const O10_AGENT20_SCHEMA_VERSION = '10.14.0-agent20';
 
 export const O10_AUTOMATION_PATH_IDS = [
@@ -1666,6 +1668,514 @@ export function runO10Agent20IdleDepthSelfTests(): O10SelfTestResult[] {
 }
 
 
+// --- source: turn-compute-engine.ts ---
+
+export const O10_TURN_COMPUTE_SCHEMA = '10m.turn-compute.v1';
+
+export interface O10TurnComputeInput {
+  turn: number;
+  day: number;
+  actorId: string;
+  gameMode: string;
+  humanCommittedThisTurn: boolean;
+  msSinceLastHumanInput: number;
+  msSinceLastCommittedAction: number;
+  playerInTransit: boolean;
+  humanAutomationEnabled: boolean;
+  humanAutomationExecuting: boolean;
+  pendingHumanAutomationApprovals: number;
+  pendingGenericApprovals: number;
+  copilotTakeoverActive: boolean;
+  copilotStepInFlight: boolean;
+  autoModeReplayRecording: boolean;
+  dialogBlockingTime: boolean;
+  matchEnded?: boolean;
+  gameState: Record<string, unknown>;
+  settings: Record<string, unknown>;
+  automationRules: PortableHumanAutomationRule[];
+  conditionalCtx: import('./conditional-actions.js').ConditionalActionContext;
+}
+
+export interface O10TurnComputeEffects {
+  steward: NationalStewardPersisted;
+  stewardStep: NationalStewardPlanStep | null;
+  selectedRule: PortableHumanAutomationRule | null;
+  idleBand: IdleAutomationBand;
+  endTurnAllowed: boolean;
+  advanceDayAllowed: boolean;
+  timeBlockers: string[];
+  committedStewardSpend: number;
+  hookTrace: string[];
+}
+
+export interface O10TurnComputeState {
+  schema: string;
+  lastTurnKey: string;
+  effects: O10TurnComputeEffects | null;
+}
+
+export function createDefaultO10TurnComputeState(): O10TurnComputeState {
+  return { schema: O10_TURN_COMPUTE_SCHEMA, lastTurnKey: '', effects: null };
+}
+
+export function buildO10TurnKey(actorId: string, turn: number): string {
+  return `${actorId}:${turn}`;
+}
+
+/** Stable digest for replay-safe turn compute snapshots (excludes wall-clock fields). */
+export function digestO10TurnComputeEffects(effects: O10TurnComputeEffects): string {
+  const payload = {
+    band: effects.idleBand,
+    endTurnAllowed: effects.endTurnAllowed,
+    advanceDayAllowed: effects.advanceDayAllowed,
+    committedStewardSpend: effects.committedStewardSpend,
+    selectedRuleId: effects.selectedRule?.id ?? null,
+    stewardStepId: effects.stewardStep?.stepId ?? null,
+    stewardPath: effects.steward.automationPath,
+    hookTrace: effects.hookTrace,
+  };
+  let h = 2166136261;
+  const s = JSON.stringify(payload);
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `o10tc_${(h >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+export function runO10Agent20TurnComputeSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+  push('turn_key', 'turn key format', buildO10TurnKey('player', 3) === 'player:3');
+  const fx: O10TurnComputeEffects = {
+    steward: {
+      schemaVersion: '10.14.0-agent20',
+      enabled: true,
+      operatingMode: 'watch_only',
+      automationPath: 'v94_idle_steward_watch',
+      categoryLocks: [],
+      spendingCap: { perTurnCash: 1, perCycleCash: 1, perActionCash: 1, cycleTurns: 1 },
+      playerOverride: {
+        latched: false,
+        paused: false,
+        reason: '',
+        sinceTurn: 0,
+        sinceTimestampMs: 0,
+        frozenCategories: [],
+        resumeRequiresExplicitStart: true,
+      },
+      idleTelemetry: { msSinceLastHumanInput: 0, msSinceLastCommittedAction: 0, consecutiveIdleTurns: 0 },
+      turnSpendAccumulator: 0,
+      cycleSpendAccumulator: 0,
+      cycleStartTurn: 1,
+      history: [],
+    },
+    stewardStep: null,
+    selectedRule: null,
+    idleBand: 'active',
+    endTurnAllowed: true,
+    advanceDayAllowed: true,
+    timeBlockers: [],
+    committedStewardSpend: 0,
+    hookTrace: ['init'],
+  };
+  const d1 = digestO10TurnComputeEffects(fx);
+  const d2 = digestO10TurnComputeEffects({ ...fx, hookTrace: ['init'] });
+  push('digest_stable', 'effects digest stable', d1 === d2 && d1.startsWith('o10tc_'));
+  push('default_state', 'default compute state schema', createDefaultO10TurnComputeState().schema === O10_TURN_COMPUTE_SCHEMA);
+  return results;
+}
+
+
+// --- source: turn-hooks.ts ---
+  classifyIdleAutomationBand,
+  commitNationalStewardSpend,
+  selectHumanAutomationCandidate,
+  summarizeIdleAutomationSafety,
+  buildSafeTimeAdvanceContextFromIdle,
+} from './idle-automation-depth.js';
+  createDefaultAutonomousIdleNationalPersisted,
+  planNationalStewardTurnStep,
+  tickIdleNationalStewardTelemetry,
+} from './national-steward.js';
+
+export type O10TurnHookPhase =
+  | 'telemetry'
+  | 'steward_plan'
+  | 'automation_select'
+  | 'safe_time'
+  | 'steward_commit';
+
+export interface O10TurnHookContext {
+  input: O10TurnComputeInput;
+  steward: NationalStewardPersisted;
+  effects: Partial<O10TurnComputeEffects>;
+  trace: string[];
+  vetoEndTurn: boolean;
+  vetoAdvanceDay: boolean;
+}
+
+export type O10TurnHookFn = (ctx: O10TurnHookContext) => void;
+
+export interface O10TurnHookRegistration {
+  id: string;
+  phase: O10TurnHookPhase;
+  order: number;
+  run: O10TurnHookFn;
+}
+
+export const O10_TURN_HOOK_TELEMETRY: O10TurnHookRegistration = {
+  id: 'idle_telemetry',
+  phase: 'telemetry',
+  order: 10,
+  run: ctx => {
+    ctx.steward = tickIdleNationalStewardTelemetry(ctx.steward, {
+      msSinceLastHumanInput: ctx.input.msSinceLastHumanInput,
+      msSinceLastCommittedAction: ctx.input.msSinceLastCommittedAction,
+      humanCommittedThisTurn: ctx.input.humanCommittedThisTurn,
+      turn: ctx.input.turn,
+    });
+    ctx.effects.idleBand = classifyIdleAutomationBand({
+      idleMs: ctx.input.msSinceLastHumanInput,
+      consecutiveIdleTurns: ctx.steward.idleTelemetry.consecutiveIdleTurns,
+      stewardEnabled: ctx.steward.enabled,
+      playerPaused: ctx.steward.playerOverride.paused,
+    });
+    ctx.trace.push(`telemetry:band=${ctx.effects.idleBand}`);
+  },
+};
+
+export const O10_TURN_HOOK_STEWARD_PLAN: O10TurnHookRegistration = {
+  id: 'steward_plan',
+  phase: 'steward_plan',
+  order: 20,
+  run: ctx => {
+    const forceTick = ctx.effects.idleBand === 'steward_tick';
+    const planned = planNationalStewardTurnStep(ctx.input.gameState, ctx.input.settings, ctx.steward, {
+      forceNationalTick: forceTick,
+    });
+    ctx.steward = planned.persisted;
+    ctx.effects.stewardStep = planned.step;
+    ctx.trace.push(`steward:step=${planned.step.stepId}:blocked=${planned.step.blocked}`);
+  },
+};
+
+export const O10_TURN_HOOK_AUTOMATION_SELECT: O10TurnHookRegistration = {
+  id: 'automation_select',
+  phase: 'automation_select',
+  order: 30,
+  run: ctx => {
+    if (!ctx.input.humanAutomationEnabled || ctx.input.humanAutomationExecuting) {
+      ctx.trace.push('automation:skipped');
+      return;
+    }
+    const sel = selectHumanAutomationCandidate(ctx.input.automationRules, ctx.input.conditionalCtx);
+    ctx.effects.selectedRule = sel.selected;
+    ctx.trace.push(sel.selected ? `automation:selected=${sel.selected.id}` : 'automation:none');
+  },
+};
+
+export const O10_TURN_HOOK_SAFE_TIME: O10TurnHookRegistration = {
+  id: 'safe_time',
+  phase: 'safe_time',
+  order: 40,
+  run: ctx => {
+    const step = ctx.effects.stewardStep;
+    const safeCtx = buildSafeTimeAdvanceContextFromIdle({
+      gameMode: ctx.input.gameMode,
+      matchEnded: ctx.input.matchEnded ?? false,
+      currentActorId: ctx.input.actorId,
+      humanAutomationEnabled: ctx.input.humanAutomationEnabled,
+      humanAutomationExecuting: ctx.input.humanAutomationExecuting,
+      pendingHumanAutomationApprovals: ctx.input.pendingHumanAutomationApprovals,
+      pendingGenericApprovals: ctx.input.pendingGenericApprovals,
+      copilotTakeoverActive: ctx.input.copilotTakeoverActive,
+      copilotStepInFlight: ctx.input.copilotStepInFlight,
+      playerInTransit: ctx.input.playerInTransit,
+      stewardPlanBlocked: Boolean(step?.blocked),
+      stewardPaused: ctx.steward.playerOverride.paused,
+      autoModeReplayRecording: ctx.input.autoModeReplayRecording,
+      dialogBlockingTime: ctx.input.dialogBlockingTime,
+    });
+    const summary = summarizeIdleAutomationSafety(safeCtx);
+    ctx.effects.endTurnAllowed = summary.endTurnOk;
+    ctx.effects.advanceDayAllowed = summary.advanceDayOk;
+    ctx.effects.timeBlockers = summary.blockers;
+    ctx.vetoEndTurn = !summary.endTurnOk;
+    ctx.vetoAdvanceDay = !summary.advanceDayOk;
+    ctx.trace.push(`safe_time:end=${summary.endTurnOk}:day=${summary.advanceDayOk}`);
+  },
+};
+
+export const O10_TURN_HOOK_STEWARD_COMMIT: O10TurnHookRegistration = {
+  id: 'steward_commit',
+  phase: 'steward_commit',
+  order: 50,
+  run: ctx => {
+    const step = ctx.effects.stewardStep;
+    if (!step || step.blocked || step.intentKind === 'idle') {
+      ctx.trace.push('steward_commit:skip');
+      return;
+    }
+    const spend = Math.max(0, -step.proposedCashDelta);
+    if (spend <= 0) {
+      ctx.trace.push('steward_commit:no_spend');
+      return;
+    }
+    ctx.steward = commitNationalStewardSpend(ctx.steward, ctx.input.turn, spend);
+    ctx.effects.committedStewardSpend = (ctx.effects.committedStewardSpend || 0) + spend;
+    ctx.trace.push(`steward_commit:spent=${spend}`);
+  },
+};
+
+export const O10_DEFAULT_TURN_HOOKS: O10TurnHookRegistration[] = [
+  O10_TURN_HOOK_TELEMETRY,
+  O10_TURN_HOOK_STEWARD_PLAN,
+  O10_TURN_HOOK_AUTOMATION_SELECT,
+  O10_TURN_HOOK_SAFE_TIME,
+  O10_TURN_HOOK_STEWARD_COMMIT,
+];
+
+export function executeO10TurnHooks(
+  hooks: O10TurnHookRegistration[],
+  input: O10TurnComputeInput,
+  stewardIn?: NationalStewardPersisted
+): O10TurnComputeEffects {
+  const ctx: O10TurnHookContext = {
+    input,
+    steward: stewardIn || createDefaultAutonomousIdleNationalPersisted(),
+    effects: {
+      stewardStep: null,
+      selectedRule: null,
+      idleBand: 'active',
+      endTurnAllowed: true,
+      advanceDayAllowed: true,
+      timeBlockers: [],
+      committedStewardSpend: 0,
+      hookTrace: [],
+    },
+    trace: [],
+    vetoEndTurn: false,
+    vetoAdvanceDay: false,
+  };
+
+  const sorted = [...hooks].sort((a, b) => a.order - b.order);
+  for (const hook of sorted) {
+    hook.run(ctx);
+  }
+
+  return {
+    steward: ctx.steward,
+    stewardStep: ctx.effects.stewardStep ?? null,
+    selectedRule: ctx.effects.selectedRule ?? null,
+    idleBand: ctx.effects.idleBand ?? 'active',
+    endTurnAllowed: ctx.effects.endTurnAllowed ?? true,
+    advanceDayAllowed: ctx.effects.advanceDayAllowed ?? true,
+    timeBlockers: ctx.effects.timeBlockers ?? [],
+    committedStewardSpend: ctx.effects.committedStewardSpend ?? 0,
+    hookTrace: ctx.trace,
+  };
+}
+
+export function runO10Agent20TurnHooksSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const conditionalCtx: ConditionalActionContext = {
+    actor: { money: 800, inventory: [], currentRegion: 'NSW', actionPoints: 2 },
+    currentDay: 1,
+    currentTurn: 1,
+    isNewDayForActor: false,
+    extendedTriggersEnabled: true,
+    consecutiveIdleTurns: 0,
+    settingsFlags: {},
+  };
+
+  const stewardSeed = createDefaultAutonomousIdleNationalPersisted();
+  stewardSeed.idleTelemetry.consecutiveIdleTurns = 3;
+
+  const input: O10TurnComputeInput = {
+    turn: 1,
+    day: 1,
+    actorId: 'player',
+    gameMode: 'game',
+    matchEnded: false,
+    humanCommittedThisTurn: false,
+    msSinceLastHumanInput: 200_000,
+    msSinceLastCommittedAction: 200_000,
+    playerInTransit: false,
+    humanAutomationEnabled: true,
+    humanAutomationExecuting: false,
+    pendingHumanAutomationApprovals: 0,
+    pendingGenericApprovals: 0,
+    copilotTakeoverActive: false,
+    copilotStepInFlight: false,
+    autoModeReplayRecording: false,
+    dialogBlockingTime: false,
+    gameState: { turnCounter: 1 },
+    settings: { playerControlMode: 'manual' },
+    automationRules: [
+      {
+        id: 'r1',
+        name: 'Turn start',
+        enabled: true,
+        authorityDisabled: false,
+        priority: 1,
+        activeFromDay: 0,
+        activeUntilDay: 999,
+        trigger: { type: 'turn_start' },
+        conditions: null,
+        limits: { maxRunsPerDay: 5, maxRunsTotal: null, cooldownTurns: 0 },
+        safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+        stats: {
+          totalRuns: 0,
+          totalSuccesses: 0,
+          totalSkipped: 0,
+          totalFailed: 0,
+          lastRunDay: null,
+          lastRunTurn: null,
+          runsToday: 0,
+          runsTodayDay: -1,
+          consecutiveNoChangeCount: 0,
+          lastResultSummary: '',
+        },
+        actionType: 'wait',
+        resolvedCost: 0,
+        spendableCash: 800,
+      },
+    ],
+    conditionalCtx,
+  };
+
+  const fx = executeO10TurnHooks(O10_DEFAULT_TURN_HOOKS, input, stewardSeed);
+  push('hooks_run', 'default hook chain produces trace', fx.hookTrace.length >= 4);
+  push('hooks_steward_tick', 'deep idle plans steward tick band', fx.idleBand === 'steward_tick');
+  push('hooks_automation', 'selects turn_start rule', fx.selectedRule?.id === 'r1');
+  push('hooks_order', 'hook registration sorted', O10_DEFAULT_TURN_HOOKS[0].order < O10_DEFAULT_TURN_HOOKS[1].order);
+
+  const blocked = executeO10TurnHooks(O10_DEFAULT_TURN_HOOKS, {
+    ...input,
+    humanAutomationExecuting: true,
+  });
+  push('hooks_block_time', 'executing automation blocks end turn', blocked.endTurnAllowed === false);
+
+  return results;
+}
+
+
+// --- source: idle-automation-simulation.ts ---
+  buildO10TurnKey,
+  createDefaultO10TurnComputeState,
+  digestO10TurnComputeEffects,
+  type O10TurnComputeInput,
+  type O10TurnComputeState,
+} from './turn-compute-engine.js';
+
+export interface O10IdleAutomationTurnResult {
+  turnKey: string;
+  digest: string;
+  effects: NonNullable<O10TurnComputeState['effects']>;
+  state: O10TurnComputeState;
+}
+
+/** Full turn simulation: telemetry → steward plan → automation select → safe time → steward commit. */
+export function simulateO10IdleAutomationTurn(
+  input: O10TurnComputeInput,
+  prior?: O10TurnComputeState | null,
+  hooks: O10TurnHookRegistration[] = O10_DEFAULT_TURN_HOOKS
+): O10IdleAutomationTurnResult {
+  const stewardSeed: NationalStewardPersisted | undefined =
+    prior?.effects?.steward || createDefaultAutonomousIdleNationalPersisted();
+  const effects = executeO10TurnHooks(hooks, input, stewardSeed);
+  const turnKey = buildO10TurnKey(input.actorId, input.turn);
+  const state: O10TurnComputeState = {
+    schema: createDefaultO10TurnComputeState().schema,
+    lastTurnKey: turnKey,
+    effects,
+  };
+  return {
+    turnKey,
+    digest: digestO10TurnComputeEffects(effects),
+    effects,
+    state,
+  };
+}
+
+export function runO10Agent20SimulationSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const baseInput: O10TurnComputeInput = {
+    turn: 2,
+    day: 1,
+    actorId: 'player',
+    gameMode: 'game',
+    humanCommittedThisTurn: false,
+    msSinceLastHumanInput: 190_000,
+    msSinceLastCommittedAction: 190_000,
+    playerInTransit: false,
+    humanAutomationEnabled: false,
+    humanAutomationExecuting: false,
+    pendingHumanAutomationApprovals: 0,
+    pendingGenericApprovals: 0,
+    copilotTakeoverActive: false,
+    copilotStepInFlight: false,
+    autoModeReplayRecording: false,
+    dialogBlockingTime: false,
+    gameState: { turnCounter: 2 },
+    settings: { playerControlMode: 'manual' },
+    automationRules: [],
+    conditionalCtx: {
+      actor: { money: 500, inventory: [], currentRegion: 'NSW' },
+      currentDay: 1,
+      currentTurn: 2,
+      isNewDayForActor: false,
+      extendedTriggersEnabled: true,
+      consecutiveIdleTurns: 3,
+      settingsFlags: {},
+    },
+  };
+
+  const seed = createDefaultO10TurnComputeState();
+  seed.effects = createEmptyEffects();
+  seed.effects.steward.idleTelemetry.consecutiveIdleTurns = 3;
+
+  const t1 = simulateO10IdleAutomationTurn(
+    { ...baseInput, turn: 1, msSinceLastHumanInput: 200_000 },
+    seed
+  );
+  push('sim_turn_digest', 'simulation yields digest', t1.digest.startsWith('o10tc_'));
+  push(
+    'sim_steward_tick_step',
+    'deep idle simulation reaches national tick planning',
+    t1.effects.stewardStep?.automationPath === 'v94_idle_steward_national_tick' ||
+      t1.effects.idleBand === 'steward_tick'
+  );
+
+  const t2 = simulateO10IdleAutomationTurn({ ...baseInput, turn: 2 }, t1.state);
+  push('sim_chain_turns', 'chained turns advance turn key', t1.turnKey === 'player:1' && t2.turnKey === 'player:2');
+
+  return results;
+}
+
+function createEmptyEffects(): NonNullable<O10TurnComputeState['effects']> {
+  return {
+    steward: createDefaultAutonomousIdleNationalPersisted(),
+    stewardStep: null,
+    selectedRule: null,
+    idleBand: 'active',
+    endTurnAllowed: true,
+    advanceDayAllowed: true,
+    timeBlockers: [],
+    committedStewardSpend: 0,
+    hookTrace: [],
+  };
+}
+
+
 // --- source: index.ts ---
 
 
@@ -1704,6 +2214,9 @@ export function runO10Agent20ModuleSelfTests(): {
     passed: interrupted?.playerOverride.latched === true,
   });
   results.push(...runO10Agent20IdleDepthSelfTests());
+  results.push(...runO10Agent20TurnComputeSelfTests());
+  results.push(...runO10Agent20TurnHooksSelfTests());
+  results.push(...runO10Agent20SimulationSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

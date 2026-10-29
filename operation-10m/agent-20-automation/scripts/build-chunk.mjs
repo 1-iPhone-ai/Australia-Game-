@@ -2,6 +2,7 @@
 /**
  * Bundles agent-20-automation src into operation-10m/modules/agent-20-automation/chunk.tsx (no top-level imports).
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +12,9 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const srcRoot = path.join(repoRoot, 'operation-10m/agent-20-automation/src');
 const outDir = path.join(repoRoot, 'operation-10m/modules/agent-20-automation');
 const outFile = path.join(outDir, 'chunk.tsx');
+const manifestFile = path.join(outDir, 'module.manifest.json');
+
+const MODULE_VERSION = '10m.1.2.0-agent20';
 
 const FILES = [
   'types.ts',
@@ -21,6 +25,9 @@ const FILES = [
   'national-steward.ts',
   'bridge-hooks.ts',
   'idle-automation-depth.ts',
+  'turn-compute-engine.ts',
+  'turn-hooks.ts',
+  'idle-automation-simulation.ts',
   'index.ts',
 ];
 
@@ -36,27 +43,47 @@ function stripModulePreamble(source) {
     .join('\n');
 }
 
-const parts = [
-  '// OP10M_MODULE_BEGIN agent-20-automation',
-  '// Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)',
-  '',
-];
-
+const sourceBlocks = [];
 for (const rel of FILES) {
   const abs = path.join(srcRoot, rel);
   if (!fs.existsSync(abs)) {
     console.error('Missing source file:', rel);
     process.exit(1);
   }
-  parts.push(`// --- source: ${rel} ---`);
-  parts.push(stripModulePreamble(fs.readFileSync(abs, 'utf8')));
-  parts.push('');
+  sourceBlocks.push(`// --- source: ${rel} ---`);
+  sourceBlocks.push(stripModulePreamble(fs.readFileSync(abs, 'utf8')));
+  sourceBlocks.push('');
 }
 
-parts.push('// OP10M_MODULE_END agent-20-automation');
-parts.push('');
+const hashedBody = [...sourceBlocks, '// OP10M_MODULE_END agent-20-automation', ''].join('\n');
+const chunkSha256 = crypto.createHash('sha256').update(hashedBody, 'utf8').digest('hex');
+
+const header = [
+  '// OP10M_MODULE_BEGIN agent-20-automation',
+  `// OP10M_MANIFEST_SHA256: ${chunkSha256}`,
+  `// OP10M_MODULE_VERSION: ${MODULE_VERSION}`,
+  '// Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)',
+  '',
+];
+
+const body = [...header, ...sourceBlocks, '// OP10M_MODULE_END agent-20-automation', ''].join('\n');
+const lineCount = body.split('\n').length;
 
 fs.mkdirSync(outDir, { recursive: true });
-const body = parts.join('\n');
 fs.writeFileSync(outFile, body);
-console.log('Wrote', outFile, `(${body.split('\n').length} lines)`);
+
+const manifest = {
+  moduleId: 'agent-20-automation',
+  moduleVersion: MODULE_VERSION,
+  slot: 'append-only-self-tests',
+  touchesSaveFormat: true,
+  anchorComment: 'O10_AGENT20_INTEGRATION_ANCHOR',
+  sourceRoot: 'operation-10m/agent-20-automation/src',
+  regenerate: 'node operation-10m/agent-20-automation/scripts/build-chunk.mjs',
+  chunkSha256,
+  chunkLineCount: lineCount,
+  sourceFiles: FILES,
+};
+
+fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + '\n');
+console.log('Wrote', outFile, `(${lineCount} lines)`, 'sha256', chunkSha256.slice(0, 12) + '…');

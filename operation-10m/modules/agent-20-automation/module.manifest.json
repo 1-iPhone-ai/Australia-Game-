@@ -1,8 +1,25 @@
 {
   "moduleId": "agent-20-automation",
+  "moduleVersion": "10m.1.2.0-agent20",
   "slot": "append-only-self-tests",
   "touchesSaveFormat": true,
   "anchorComment": "O10_AGENT20_INTEGRATION_ANCHOR",
   "sourceRoot": "operation-10m/agent-20-automation/src",
-  "regenerate": "node operation-10m/agent-20-automation/scripts/build-chunk.mjs"
+  "regenerate": "node operation-10m/agent-20-automation/scripts/build-chunk.mjs",
+  "chunkSha256": "917a498cd73e120e51da55628a5b315d31d8f902f2bc39a40947c6a5c182abc9",
+  "chunkLineCount": 2226,
+  "sourceFiles": [
+    "types.ts",
+    "conditional-actions.ts",
+    "limits.ts",
+    "logs.ts",
+    "safe-time-advance.ts",
+    "national-steward.ts",
+    "bridge-hooks.ts",
+    "idle-automation-depth.ts",
+    "turn-compute-engine.ts",
+    "turn-hooks.ts",
+    "idle-automation-simulation.ts",
+    "index.ts"
+  ]
 }
