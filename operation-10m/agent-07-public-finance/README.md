@@ -13,7 +13,8 @@ National **budget envelopes**, **revenue** (tax instruments + ledger), **soverei
 | Fiscal outcomes (V10.14) | `modules/fiscal-outcomes/` | Tax catalog, budget envelope, debt outcomes, GI hooks, policy scenarios |
 | Revenue ledger | `modules/revenue-ledger/` | Stream-level revenue accounting tied to V10.12 structural capacity |
 | Infrastructure financing | `modules/infrastructure-financing/` | Pay-go vs debt-funded capital stacks for projects |
-| Recurring commitments | `modules/recurring-commitments/` | Cadence-based public load pulses vs budget envelope flex |
+| Budget appropriation lines | `modules/budget-lines/` | Sub-line appropriation paper reconciled to envelope rows |
+| Federal–state IGR | `modules/federal-state/` | GST/health/education transfer reconciliation across 8 states |
 | Fiscal resilience | `modules/fiscal-resilience/` | Shock catalog and stacked stress assessment |
 | Debt rollover | `modules/debt-rollover/` | Maturity ladder rollover outcomes and liquidity edge cases |
 | Reconciliation | `modules/reconciliation/` | Envelope + ledger + boundary checks |

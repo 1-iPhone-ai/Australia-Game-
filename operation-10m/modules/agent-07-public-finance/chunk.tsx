@@ -3547,6 +3547,614 @@ export function defaultMaturityLadder(turn: number): MaturityTranche[] {
 }
 
 
+// --- source: budget-lines/types.ts ---
+
+export const BUDGET_LINES_SCHEMA = 'op10m-agent07-budget-lines-v2';
+
+export type AppropriationTier = 'department' | 'program' | 'measure';
+
+export interface AppropriationLineItem {
+  id: string;
+  category: BudgetEnvelopeCategory;
+  tier: AppropriationTier;
+  code: string;
+  title: string;
+  description: string;
+  /** Share of parent category allocation (0..1). */
+  weight: number;
+  recurring: boolean;
+  capital: boolean;
+}
+
+export interface BudgetSubLine {
+  lineId: string;
+  code: string;
+  title: string;
+  allocatedPoints: number;
+  committedPoints: number;
+  forwardEstimateY1: number;
+  forwardEstimateY2: number;
+  varianceBand: 'under' | 'on_track' | 'pressure' | 'blown';
+  explanation: string;
+}
+
+export interface CategoryBudgetBreakdown {
+  category: BudgetEnvelopeCategory;
+  envelopeAllocated: number;
+  subLines: BudgetSubLine[];
+  subtotalAllocated: number;
+  subtotalCommitted: number;
+  linesBalanced: boolean;
+}
+
+export interface DetailedBudgetPaper {
+  schemaVersion: string;
+  fiscalYearLabel: string;
+  turn: number;
+  categories: CategoryBudgetBreakdown[];
+  totalSubLines: number;
+  aggregateVarianceWarnings: string[];
+}
+
+
+// --- source: budget-lines/catalog/appropriation-lines.ts ---
+
+/** Federal appropriation structure (normalized points, not AUD). */
+export const APPROPRIATION_LINE_CATALOG: AppropriationLineItem[] = [
+  {
+    id: 'cs_health_admin',
+    category: 'core_services',
+    tier: 'department',
+    code: 'CS-010',
+    title: 'Health portfolio administration',
+    description: 'Departmental operating for national health policy coordination.',
+    weight: 0.18,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'cs_social_services',
+    category: 'core_services',
+    tier: 'department',
+    code: 'CS-020',
+    title: 'Social services delivery support',
+    description: 'Platform costs for services payment integrity and compliance.',
+    weight: 0.22,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'cs_treasury_ops',
+    category: 'core_services',
+    tier: 'program',
+    code: 'CS-030',
+    title: 'Treasury & fiscal operations',
+    description: 'Budget execution, appropriation management, fiscal reporting.',
+    weight: 0.15,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'cs_digital_gov',
+    category: 'core_services',
+    tier: 'measure',
+    code: 'CS-040',
+    title: 'Digital government shared services',
+    description: 'Whole-of-government platforms; amortized operating charge.',
+    weight: 0.12,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'cs_other_admin',
+    category: 'core_services',
+    tier: 'program',
+    code: 'CS-090',
+    title: 'Residual administration',
+    description: 'Cross-portfolio admin not allocated to specific measures.',
+    weight: 0.33,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'ic_transport_corridor',
+    category: 'infrastructure_capital',
+    tier: 'program',
+    code: 'IC-110',
+    title: 'National transport corridor capital',
+    description: 'Rail and highway packages with multi-year profiles.',
+    weight: 0.35,
+    recurring: false,
+    capital: true
+  },
+  {
+    id: 'ic_energy_transition',
+    category: 'infrastructure_capital',
+    tier: 'program',
+    code: 'IC-120',
+    title: 'Energy transition infrastructure',
+    description: 'Grid, storage, and connection assets (capital).',
+    weight: 0.25,
+    recurring: false,
+    capital: true
+  },
+  {
+    id: 'ic_water_security',
+    category: 'infrastructure_capital',
+    tier: 'measure',
+    code: 'IC-130',
+    title: 'Water security capital',
+    description: 'Dams, pipelines, and basin projects.',
+    weight: 0.2,
+    recurring: false,
+    capital: true
+  },
+  {
+    id: 'ic_regional_alloc',
+    category: 'infrastructure_capital',
+    tier: 'measure',
+    code: 'IC-140',
+    title: 'Regional infrastructure allocation',
+    description: 'State-identified priority capital with federal co-funding rules.',
+    weight: 0.2,
+    recurring: false,
+    capital: true
+  },
+  {
+    id: 'mb_road_network',
+    category: 'maintenance_backlog',
+    tier: 'program',
+    code: 'MB-210',
+    title: 'National road network maintenance',
+    description: 'Pavement, bridges, and safety remediation backlog.',
+    weight: 0.4,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'mb_rail_network',
+    category: 'maintenance_backlog',
+    tier: 'program',
+    code: 'MB-220',
+    title: 'Rail network upkeep',
+    description: 'Track, signalling, and rolling stock lifecycle maintenance.',
+    weight: 0.35,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'mb_public_housing',
+    category: 'maintenance_backlog',
+    tier: 'measure',
+    code: 'MB-230',
+    title: 'Public housing maintenance',
+    description: 'Stock remediation tied to V10.14 services delivery.',
+    weight: 0.25,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'ri_research_council',
+    category: 'research_innovation',
+    tier: 'program',
+    code: 'RI-310',
+    title: 'Research councils & competitive grants',
+    description: 'Discovery and linkage programs (accrual profile).',
+    weight: 0.55,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'ri_innovation_agency',
+    category: 'research_innovation',
+    tier: 'program',
+    code: 'RI-320',
+    title: 'Innovation commercialization agency',
+    description: 'Translation, industry collaboration, startup support.',
+    weight: 0.45,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'rd_regional_growth',
+    category: 'regional_development',
+    tier: 'program',
+    code: 'RD-410',
+    title: 'Regional growth packages',
+    description: 'Place-based investment outside capital cities.',
+    weight: 0.5,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'rd_remote_services',
+    category: 'regional_development',
+    tier: 'measure',
+    code: 'RD-420',
+    title: 'Remote & Indigenous community services',
+    description: 'Service delivery load in remote jurisdictions.',
+    weight: 0.5,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'rr_disaster_recovery',
+    category: 'resilience_recovery',
+    tier: 'program',
+    code: 'RR-510',
+    title: 'Disaster recovery funding',
+    description: 'Event-driven recovery; contingent appropriation drawdown.',
+    weight: 0.6,
+    recurring: false,
+    capital: false
+  },
+  {
+    id: 'rr_resilience_fund',
+    category: 'resilience_recovery',
+    tier: 'measure',
+    code: 'RR-520',
+    title: 'National resilience fund',
+    description: 'Mitigation and preparedness baseline.',
+    weight: 0.4,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'ds_coupon_service',
+    category: 'debt_service_reserve',
+    tier: 'program',
+    code: 'DS-610',
+    title: 'Sovereign coupon & interest',
+    description: 'Debt service on issued securities (non-discretionary).',
+    weight: 0.7,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'ds_liquidity_buffer',
+    category: 'debt_service_reserve',
+    tier: 'measure',
+    code: 'DS-620',
+    title: 'Fiscal liquidity buffer',
+    description: 'Cash management and short-term facility costs.',
+    weight: 0.3,
+    recurring: true,
+    capital: false
+  },
+  {
+    id: 'ct_unallocated',
+    category: 'contingency',
+    tier: 'measure',
+    code: 'CT-710',
+    title: 'Unallocated contingency',
+    description: 'Held for mid-year estimates and unforeseen pressures.',
+    weight: 0.65,
+    recurring: false,
+    capital: false
+  },
+  {
+    id: 'ct_economic_risk',
+    category: 'contingency',
+    tier: 'measure',
+    code: 'CT-720',
+    title: 'Economic risk reserve',
+    description: 'Macro shock buffer (draw rules tied to fiscal resilience layer).',
+    weight: 0.35,
+    recurring: false,
+    capital: false
+  }
+];
+
+export function linesForCategory(category: AppropriationLineItem['category']): AppropriationLineItem[] {
+  return APPROPRIATION_LINE_CATALOG.filter(l => l.category === category);
+}
+
+export function normalizedWeights(category: AppropriationLineItem['category']): Map<string, number> {
+  const items = linesForCategory(category);
+  const sum = items.reduce((s, i) => s + i.weight, 0) || 1;
+  const map = new Map<string, number>();
+  for (const item of items) {
+    map.set(item.id, item.weight / sum);
+  }
+  return map;
+}
+
+
+// --- source: budget-lines/compute.ts ---
+
+function varianceBand(
+  allocated: number,
+  committed: number,
+  pressure: V1012FiscalSnapshot['pressure']
+): CategoryBudgetBreakdown['subLines'][0]['varianceBand'] {
+  const ratio = allocated > 0 ? committed / allocated : 0;
+  if (ratio > 1.12) return 'blown';
+  if (ratio > 1.02) return 'pressure';
+  if (ratio < 0.55) return 'under';
+  if (pressure === 'critical' && ratio > 0.95) return 'pressure';
+  return 'on_track';
+}
+
+function buildCategoryBreakdown(
+  envelopeLine: NationalBudgetEnvelope['lines'][0],
+  v1012: V1012FiscalSnapshot
+): CategoryBudgetBreakdown {
+  const weights = normalizedWeights(envelopeLine.category);
+  const items = linesForCategory(envelopeLine.category);
+  const subLines = items.map(item => {
+    const w = weights.get(item.id) ?? 0;
+    const allocatedPoints = Math.max(0, Math.round(envelopeLine.allocatedPoints * w));
+    const commitFactor = item.capital ? 0.42 : item.recurring ? 0.58 : 0.35;
+    const pressureMult =
+      v1012.pressure === 'critical' ? 1.45 : v1012.pressure === 'strained' ? 1.06 : 1;
+    const committedPoints =
+      v1012.pressure === 'critical'
+        ? Math.round(allocatedPoints * 1.09)
+        : Math.round(allocatedPoints * commitFactor * pressureMult);
+    const forwardEstimateY1 = Math.round(allocatedPoints * (item.capital ? 0.85 : 1.02));
+    const forwardEstimateY2 = Math.round(forwardEstimateY1 * (item.recurring ? 1.01 : 0.75));
+    return {
+      lineId: item.id,
+      code: item.code,
+      title: item.title,
+      allocatedPoints,
+      committedPoints,
+      forwardEstimateY1,
+      forwardEstimateY2,
+      varianceBand: varianceBand(allocatedPoints, committedPoints, v1012.pressure),
+      explanation: item.description
+    };
+  });
+
+  const subtotalAllocated = subLines.reduce((s, l) => s + l.allocatedPoints, 0);
+  const subtotalCommitted = subLines.reduce((s, l) => s + l.committedPoints, 0);
+  const allocDrift = envelopeLine.allocatedPoints - subtotalAllocated;
+  if (subLines.length > 0 && allocDrift !== 0) {
+    subLines[subLines.length - 1]!.allocatedPoints += allocDrift;
+    subLines[subLines.length - 1]!.varianceBand = varianceBand(
+      subLines[subLines.length - 1]!.allocatedPoints,
+      subLines[subLines.length - 1]!.committedPoints,
+      v1012.pressure
+    );
+  }
+  const subtotalAllocatedFixed = subLines.reduce((s, l) => s + l.allocatedPoints, 0);
+  const linesBalanced = Math.abs(subtotalAllocatedFixed - envelopeLine.allocatedPoints) <= 1;
+
+  return {
+    category: envelopeLine.category,
+    envelopeAllocated: envelopeLine.allocatedPoints,
+    subLines,
+    subtotalAllocated: subtotalAllocatedFixed,
+    subtotalCommitted,
+    linesBalanced
+  };
+}
+
+export function buildDetailedBudgetPaper(
+  v1012: V1012FiscalSnapshot,
+  envelope: NationalBudgetEnvelope
+): DetailedBudgetPaper {
+  const categories = envelope.lines.map(line => buildCategoryBreakdown(line, v1012));
+  const aggregateVarianceWarnings: string[] = [];
+
+  for (const cat of categories) {
+    if (!cat.linesBalanced) {
+      aggregateVarianceWarnings.push(
+        `${cat.category}: sub-lines sum ${cat.subtotalAllocated} vs envelope ${cat.envelopeAllocated}.`
+      );
+    }
+    const blown = cat.subLines.filter(s => s.varianceBand === 'blown');
+    if (blown.length) {
+      aggregateVarianceWarnings.push(`${cat.category}: ${blown.length} sub-line(s) in blown variance.`);
+    }
+  }
+
+  if (categories.every(c => c.subtotalCommitted > c.envelopeAllocated * 1.05)) {
+    aggregateVarianceWarnings.push('Aggregate committed load exceeds envelope across all categories.');
+  }
+
+  return {
+    schemaVersion: BUDGET_LINES_SCHEMA,
+    fiscalYearLabel: envelope.fiscalYearLabel,
+    turn: v1012.turn,
+    categories,
+    totalSubLines: APPROPRIATION_LINE_CATALOG.length,
+    aggregateVarianceWarnings
+  };
+}
+
+export function countAppropriationLines(): number {
+  return APPROPRIATION_LINE_CATALOG.length;
+}
+
+
+// --- source: federal-state/types.ts ---
+export const FEDERAL_STATE_SCHEMA = 'op10m-agent07-federal-state-v1';
+
+export type AustralianStateCode = 'NSW' | 'VIC' | 'QLD' | 'WA' | 'SA' | 'TAS' | 'ACT' | 'NT';
+
+export type TransferInstrumentKind =
+  | 'gst_igr'
+  | 'health_specific'
+  | 'education_specific'
+  | 'infrastructure_partner'
+  | 'general_purpose';
+
+export interface StateFiscalProfile {
+  stateCode: AustralianStateCode;
+  populationWeight: number;
+  fiscalCapacityIndex: number;
+  remoteLoadFactor: number;
+}
+
+export interface IntergovernmentalTransferLine {
+  stateCode: AustralianStateCode;
+  instrument: TransferInstrumentKind;
+  entitlementPoints: number;
+  adjustmentPoints: number;
+  netPoints: number;
+  explanation: string;
+}
+
+export interface FederalStateReconciliation {
+  schemaVersion: string;
+  turn: number;
+  federalRevenuePool: number;
+  totalEntitlements: number;
+  totalAdjustments: number;
+  residualFederal: number;
+  reconciled: boolean;
+  tolerancePoints: number;
+  transfers: IntergovernmentalTransferLine[];
+  verticalImbalanceIndex: number;
+  warnings: string[];
+}
+
+
+// --- source: federal-state/catalog/state-profiles.ts ---
+
+export const STATE_FISCAL_PROFILES: StateFiscalProfile[] = [
+  { stateCode: 'NSW', populationWeight: 0.32, fiscalCapacityIndex: 1.05, remoteLoadFactor: 0.02 },
+  { stateCode: 'VIC', populationWeight: 0.26, fiscalCapacityIndex: 1.02, remoteLoadFactor: 0.02 },
+  { stateCode: 'QLD', populationWeight: 0.2, fiscalCapacityIndex: 0.92, remoteLoadFactor: 0.08 },
+  { stateCode: 'WA', populationWeight: 0.11, fiscalCapacityIndex: 1.12, remoteLoadFactor: 0.12 },
+  { stateCode: 'SA', populationWeight: 0.07, fiscalCapacityIndex: 0.88, remoteLoadFactor: 0.05 },
+  { stateCode: 'TAS', populationWeight: 0.02, fiscalCapacityIndex: 0.78, remoteLoadFactor: 0.06 },
+  { stateCode: 'ACT', populationWeight: 0.017, fiscalCapacityIndex: 1.15, remoteLoadFactor: 0.01 },
+  { stateCode: 'NT', populationWeight: 0.013, fiscalCapacityIndex: 0.65, remoteLoadFactor: 0.35 }
+];
+
+export function profileFor(stateCode: StateFiscalProfile['stateCode']): StateFiscalProfile {
+  const p = STATE_FISCAL_PROFILES.find(s => s.stateCode === stateCode);
+  if (!p) throw new Error(`Unknown state ${stateCode}`);
+  return p;
+}
+
+
+// --- source: federal-state/reconcile.ts ---
+  FederalStateReconciliation,
+  IntergovernmentalTransferLine,
+  TransferInstrumentKind
+} from './types';
+
+const INSTRUMENT_SHARE: Record<TransferInstrumentKind, number> = {
+  gst_igr: 0.42,
+  health_specific: 0.22,
+  education_specific: 0.18,
+  infrastructure_partner: 0.1,
+  general_purpose: 0.08
+};
+
+function equalizationFactor(capacityIndex: number): number {
+  const rel = 1 / Math.max(0.5, capacityIndex);
+  return Math.min(1.35, Math.max(0.75, rel));
+}
+
+function buildTransfer(
+  stateCode: IntergovernmentalTransferLine['stateCode'],
+  instrument: TransferInstrumentKind,
+  poolSlice: number,
+  profile: (typeof STATE_FISCAL_PROFILES)[0]
+): IntergovernmentalTransferLine {
+  const base = poolSlice * profile.populationWeight;
+  const eq = equalizationFactor(profile.fiscalCapacityIndex);
+  const remote = 1 + profile.remoteLoadFactor * (instrument === 'general_purpose' ? 0.5 : 0.25);
+  const entitlementPoints = Math.round(base * eq * remote * 10) / 10;
+  let adjustmentPoints = 0;
+  if (profile.fiscalCapacityIndex > 1.08 && instrument === 'gst_igr') {
+    adjustmentPoints = -Math.round(entitlementPoints * 0.06 * 10) / 10;
+  }
+  if (profile.fiscalCapacityIndex < 0.85) {
+    adjustmentPoints += Math.round(entitlementPoints * 0.08 * 10) / 10;
+  }
+  const netPoints = Math.round((entitlementPoints + adjustmentPoints) * 10) / 10;
+  return {
+    stateCode,
+    instrument,
+    entitlementPoints,
+    adjustmentPoints,
+    netPoints,
+    explanation: `${instrument} for ${stateCode}: pop=${profile.populationWeight}, eq=${eq.toFixed(2)}, remote=${remote.toFixed(2)}.`
+  };
+}
+
+export function reconcileFederalStateTransfers(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  tolerancePoints = 3.5
+): FederalStateReconciliation {
+  const federalRevenuePool = Math.max(
+    10,
+    Math.round(v1012.revenueCapacity * 0.55 + Math.max(0, v1012.fiscalHeadroom * 0.15))
+  );
+  const transfers: IntergovernmentalTransferLine[] = [];
+
+  for (const profile of STATE_FISCAL_PROFILES) {
+    for (const [instrument, share] of Object.entries(INSTRUMENT_SHARE) as [TransferInstrumentKind, number][]) {
+      const poolSlice = federalRevenuePool * share;
+      transfers.push(buildTransfer(profile.stateCode, instrument, poolSlice, profile));
+    }
+  }
+
+  const totalEntitlements = Math.round(transfers.reduce((s, t) => s + t.entitlementPoints, 0) * 10) / 10;
+  const totalAdjustments = Math.round(transfers.reduce((s, t) => s + t.adjustmentPoints, 0) * 10) / 10;
+  let totalNet = Math.round(transfers.reduce((s, t) => s + t.netPoints, 0) * 10) / 10;
+
+  if (totalNet > 0 && Math.abs(totalNet - federalRevenuePool) > tolerancePoints) {
+    const scale = federalRevenuePool / totalNet;
+    for (const t of transfers) {
+      t.netPoints = Math.round(t.netPoints * scale * 10) / 10;
+      t.entitlementPoints = Math.round(t.entitlementPoints * scale * 10) / 10;
+      t.adjustmentPoints = Math.round(t.adjustmentPoints * scale * 10) / 10;
+    }
+    totalNet = Math.round(transfers.reduce((s, t) => s + t.netPoints, 0) * 10) / 10;
+  }
+
+  const residualFederal = Math.round((federalRevenuePool - totalNet) * 10) / 10;
+
+  const warnings: string[] = [];
+  if (Math.abs(residualFederal) > tolerancePoints + federalRevenuePool * 0.08) {
+    warnings.push('Federal residual outside IGR tolerance — review pool definition or adjustments.');
+  }
+  if (v1012.pressure === 'critical') {
+    warnings.push('Critical national pressure — state transfer growth may be deferred (policy hook).');
+  }
+
+  const verticalImbalanceIndex = Math.round((totalNet / Math.max(1, federalRevenuePool)) * 100) / 100;
+  if (verticalImbalanceIndex > 0.92) {
+    warnings.push('High vertical transfer share — limited federal discretionary room.');
+  }
+
+  const reconciled =
+    Math.abs(residualFederal) <= tolerancePoints + federalRevenuePool * 0.06 &&
+    totalEntitlements > 0 &&
+    transfers.length === STATE_FISCAL_PROFILES.length * Object.keys(INSTRUMENT_SHARE).length;
+
+  return {
+    schemaVersion: FEDERAL_STATE_SCHEMA,
+    turn,
+    federalRevenuePool,
+    totalEntitlements,
+    totalAdjustments,
+    residualFederal,
+    reconciled,
+    tolerancePoints,
+    transfers,
+    verticalImbalanceIndex,
+    warnings
+  };
+}
+
+export function sumTransfersByState(
+  reconciliation: FederalStateReconciliation,
+  stateCode: IntergovernmentalTransferLine['stateCode']
+): number {
+  return reconciliation.transfers
+    .filter(t => t.stateCode === stateCode)
+    .reduce((s, t) => s + t.netPoints, 0);
+}
+
+
 // --- source: reconciliation/reconcile.ts ---
 
 export const RECONCILIATION_SCHEMA = 'op10m-agent07-reconciliation-v1';
@@ -4307,6 +4915,156 @@ export function runDebtRolloverSelfTests(): {
     'Trajectory computed after rollover',
     plan.trajectoryAfter !== null && plan.trajectoryAfter.sustainability !== undefined,
     `sustainability=${plan.trajectoryAfter?.sustainability}`
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: budget-lines/self-tests.ts ---
+
+export interface BudgetLinesSelfTestResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 3,
+    revenueCapacity: partial.revenueCapacity ?? 64,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 4,
+    debtLevel: partial.debtLevel ?? 14,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 5,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runBudgetLinesSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: BudgetLinesSelfTestResult[];
+} {
+  const results: BudgetLinesSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v1012 = snap({});
+  const envelope = buildBudgetEnvelope(v1012);
+  const paper = buildDetailedBudgetPaper(v1012, envelope);
+
+  record(
+    'BL01',
+    'Every envelope category has sub-line breakdown',
+    paper.categories.length === envelope.lines.length,
+    `categories=${paper.categories.length}`
+  );
+
+  const allBalanced = paper.categories.every(c => c.linesBalanced);
+  record('BL02', 'Sub-line sums reconcile to envelope rows', allBalanced, `balanced=${allBalanced}`);
+
+  const core = paper.categories.find(c => c.category === 'core_services');
+  record(
+    'BL03',
+    'Core services has multiple appropriation codes',
+    (core?.subLines.length ?? 0) >= 4,
+    `sublines=${core?.subLines.length ?? 0}`
+  );
+
+  const critical = buildDetailedBudgetPaper(
+    snap({ pressure: 'critical', fiscalHeadroom: -5 }),
+    buildBudgetEnvelope(snap({ pressure: 'critical', fiscalHeadroom: -5 }))
+  );
+  const hasPressure = critical.categories.some(c => c.subLines.some(s => s.varianceBand === 'pressure' || s.varianceBand === 'blown'));
+  record('BL04', 'Critical pressure elevates variance bands', hasPressure, `warnings=${critical.aggregateVarianceWarnings.length}`);
+
+  record('BL05', 'Appropriation catalog minimum depth', countAppropriationLines() >= 20, `lines=${countAppropriationLines()}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: federal-state/self-tests.ts ---
+
+export interface FederalStateSelfTestResult {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 6,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 9,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 3,
+    debtLevel: partial.debtLevel ?? 10,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 5,
+    commitmentCount: partial.commitmentCount ?? 4,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFederalStateReconciliationSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: FederalStateSelfTestResult[];
+} {
+  const results: FederalStateSelfTestResult[] = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const report = reconcileFederalStateTransfers(6, snap({}));
+  record(
+    'FS01',
+    'IGR reconciliation closes within tolerance',
+    report.reconciled,
+    `residual=${report.residualFederal}, pool=${report.federalRevenuePool}`
+  );
+
+  record(
+    'FS02',
+    'Eight states × five instruments',
+    report.transfers.length === STATE_FISCAL_PROFILES.length * 5,
+    `transfers=${report.transfers.length}`
+  );
+
+  const nt = sumTransfersByState(report, 'NT');
+  const act = sumTransfersByState(report, 'ACT');
+  record('FS03', 'Remote NT load exceeds ACT total net', nt > act, `NT=${nt}, ACT=${act}`);
+
+  const waGst = report.transfers.find(t => t.stateCode === 'WA' && t.instrument === 'gst_igr');
+  record(
+    'FS04',
+    'High-capacity WA GST adjustment non-positive',
+    (waGst?.adjustmentPoints ?? 0) <= 0,
+    `adj=${waGst?.adjustmentPoints}`
+  );
+
+  const tas = report.transfers.find(t => t.stateCode === 'TAS' && t.instrument === 'general_purpose');
+  record(
+    'FS05',
+    'Low-capacity TAS receives positive equalization uplift',
+    (tas?.adjustmentPoints ?? 0) >= 0 && (tas?.netPoints ?? 0) > 0,
+    `net=${tas?.netPoints}`
   );
 
   const passed = results.filter(r => r.passed).length;

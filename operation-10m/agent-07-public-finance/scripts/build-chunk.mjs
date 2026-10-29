@@ -36,13 +36,21 @@ const FILES = [
   'fiscal-resilience/compute.ts',
   'debt-rollover/types.ts',
   'debt-rollover/compute.ts',
+  'budget-lines/types.ts',
+  'budget-lines/catalog/appropriation-lines.ts',
+  'budget-lines/compute.ts',
+  'federal-state/types.ts',
+  'federal-state/catalog/state-profiles.ts',
+  'federal-state/reconcile.ts',
   'reconciliation/reconcile.ts',
   'fiscal-outcomes/react/FiscalOutcomesInspector.tsx',
   'fiscal-outcomes/self-tests.ts',
   'reconciliation/self-tests.ts',
   'recurring-commitments/self-tests.ts',
   'fiscal-resilience/self-tests.ts',
-  'debt-rollover/self-tests.ts'
+  'debt-rollover/self-tests.ts',
+  'budget-lines/self-tests.ts',
+  'federal-state/self-tests.ts'
 ];
 
 function stripModulePreamble(source) {
