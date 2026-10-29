@@ -43,6 +43,7 @@ import { computeResearchScaleWaveHandoffIntegrationSealOutlook } from './scale-w
 import { computeResearchScaleWaveIntegrationSealHandoffOutlook } from './scale-wave-integration-seal-handoff-outlook.ts';
 import { computeResearchScaleWaveSealHandoffContinuityOutlook } from './scale-wave-seal-handoff-continuity-outlook.ts';
 import { computeResearchScaleWaveSealHandoffIntegrationOutlook } from './scale-wave-seal-handoff-integration-outlook.ts';
+import { computeResearchScaleWaveSealHandoffIntegrationSealOutlook } from './scale-wave-seal-handoff-integration-seal-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -468,6 +469,16 @@ export function computeResearchProgress(
     integrationSealHandoffSnapshot: coreBase.integrationSealHandoffSnapshot ?? null,
   });
 
+  const scaleWaveSealHandoffIntegrationSealOutlook = computeResearchScaleWaveSealHandoffIntegrationSealOutlook(
+    inputs,
+    {
+      scaleWaveSealHandoffIntegrationOutlook,
+      scaleWaveSealHandoffContinuityOutlook,
+      sealHandoffIntegrationSnapshot: coreBase.sealHandoffIntegrationSnapshot ?? null,
+      sealHandoffContinuitySnapshot: coreBase.sealHandoffContinuitySnapshot ?? null,
+    }
+  );
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -511,6 +522,7 @@ export function computeResearchProgress(
     scaleWaveIntegrationSealHandoffOutlook,
     scaleWaveSealHandoffContinuityOutlook,
     scaleWaveSealHandoffIntegrationOutlook,
+    scaleWaveSealHandoffIntegrationSealOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };

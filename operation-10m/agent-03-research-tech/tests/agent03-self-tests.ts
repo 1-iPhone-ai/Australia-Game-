@@ -2459,6 +2459,104 @@ tests.push(
 );
 
 tests.push(
+  test('save_v32_migrates_to_v33_with_seal_handoff_integration_fields', () => {
+    const v32 = {
+      schemaVersion: 'op10m-agent03-v32',
+      turn: 62,
+      revision: 3,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v31', toVersion: 'op10m-agent03-v32', turn: 61 }],
+      saveKind: 'manual',
+      updatedAtTurn: 62,
+      sessionId: 'v32',
+      persistRevision: 32,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 62,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 62, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      synergyThresholdLog: [],
+      synergySnapshot: null,
+      commercializationMilestoneLog: [],
+      commercializationSnapshot: null,
+      diffusionIntegrationLog: [],
+      diffusionIntegrationSnapshot: null,
+      portfolioBalanceLog: [],
+      portfolioBalanceSnapshot: null,
+      diffusionForecastBandLog: [],
+      diffusionForecastSnapshot: null,
+      horizonConvergenceBandLog: [],
+      horizonConvergenceSnapshot: null,
+      researchExecutionBandLog: [],
+      researchExecutionSnapshot: null,
+      strategicDeliveryBandLog: [],
+      strategicDeliverySnapshot: null,
+      scaleWaveMaturityBandLog: [],
+      scaleWaveMaturitySnapshot: null,
+      nationalIntegrationBandLog: [],
+      nationalIntegrationSnapshot: null,
+      scaleWaveProjectionBandLog: [],
+      scaleWaveProjectionSnapshot: null,
+      trancheProjectionBandLog: [],
+      trancheProjectionSnapshot: null,
+      integrationGateBandLog: [],
+      integrationGateSnapshot: null,
+      dryRunHandoffBandLog: [],
+      dryRunHandoffSnapshot: null,
+      mergedIntegrationBaselineBandLog: [],
+      mergedIntegrationBaselineSnapshot: null,
+      postIntegrationDryRunBandLog: [],
+      postIntegrationDryRunSnapshot: null,
+      integrationSealBandLog: [],
+      integrationSealSnapshot: null,
+      postSealHandoffBandLog: [],
+      postSealHandoffSnapshot: null,
+      integrationContinuityBandLog: [],
+      integrationContinuitySnapshot: null,
+      continuityHandoffBandLog: [],
+      continuityHandoffSnapshot: null,
+      handoffIntegrationBandLog: [],
+      handoffIntegrationSnapshot: null,
+      handoffIntegrationSealBandLog: [],
+      handoffIntegrationSealSnapshot: null,
+      integrationSealHandoffBandLog: [],
+      integrationSealHandoffSnapshot: null,
+      sealHandoffContinuityBandLog: [],
+      sealHandoffContinuitySnapshot: null,
+    };
+    const core = migrateResearchProgressSave(v32);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v32'));
+    assert(Array.isArray(core?.sealHandoffIntegrationBandLog));
+    assert(core?.sealHandoffIntegrationSnapshot === null);
+    const state = computeResearchProgress(baseInputs({ turn: 63 }), core);
+    assert(typeof state.sealHandoffIntegrationSnapshot?.digest === 'string');
+    assert(Array.isArray(state.sealHandoffIntegrationBandLog));
+  })
+);
+
+tests.push(
+  test('scale_wave_seal_handoff_integration_seal_outlook_derived_wave33', () => {
+    const inputs = baseInputs({ turn: 33 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.scaleWaveSealHandoffIntegrationSealOutlook;
+    assert(outlook != null);
+    assert(outlook?.waveOrdinal === 33);
+    assert(outlook?.integrationBaselineShaHint === 'c5f6d0b');
+    assert(outlook?.projectedFunctionalHint === 1_836_529);
+    assert(detectForeignSaveFields({ scaleWaveSealHandoffIntegrationSealOutlook: outlook }).includes('scaleWaveSealHandoffIntegrationSealOutlook'));
+  })
+);
+
+tests.push(
   test('scale_wave_seal_handoff_integration_outlook_derived_wave32', () => {
     const inputs = baseInputs({ turn: 32 });
     const state = computeResearchProgress(inputs, null);
