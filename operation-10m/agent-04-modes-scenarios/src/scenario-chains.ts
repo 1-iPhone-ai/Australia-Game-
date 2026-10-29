@@ -178,6 +178,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_marathon_sprint',
+    title: 'Marathon Sprint',
+    description:
+      'Three-scenario gauntlet with save-safe marathon queue rotation — round-5 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_marathon_sprint',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_marathon_pace_setter',
+        title: 'Pace Setter',
+        narrativeBridge: 'Establish rhythm before the midfield hold.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 200 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_marathon_rhythm_hold',
+        title: 'Rhythm Hold',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, SA: 6 },
+          forcedSettingsPatch: { o10mMarathonMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_marathon_sprint_close',
+        title: 'Sprint Close',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainMarathonSprintComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

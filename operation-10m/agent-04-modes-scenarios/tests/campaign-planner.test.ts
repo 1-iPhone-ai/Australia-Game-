@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   O10M_SCENARIO_CHAINS,
+  attachMarathonQueueToState,
   campaignProgressSummary,
   createEmptyO10mModesPersistedState,
+  createMarathonQueue,
   initializeChainProgress,
   pinCampaignSlot,
   planNextCampaignAction,
@@ -30,7 +32,22 @@ describe('scenario campaign planner round 4', () => {
     assert.equal(plan.chainId, 'o10m_chain_continuity_arc');
   });
 
-  it('prefers active campaign slot over chain', () => {
+  it('prefers active marathon queue over campaign slot', () => {
+    const { queue } = createMarathonQueue({
+      queueId: 'o10m_marathon_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_marathon_pace_setter', 'o10m_marathon_rhythm_hold'],
+    });
+    let state = pinCampaignSlot(createEmptyO10mModesPersistedState(), {
+      slotId: 'o10m_slot_lab',
+      scenarioId: 'o10m_slot_rotation_lab',
+      turn: 4,
+    }).state;
+    state = attachMarathonQueueToState(state, queue!);
+    assert.equal(planNextCampaignAction(state).kind, 'marathon_step');
+  });
+
+  it('prefers active campaign slot over chain when no marathon', () => {
     const base = {
       ...createEmptyO10mModesPersistedState(),
       chainProgress: initializeChainProgress('o10m_chain_continuity_arc'),

@@ -13,6 +13,7 @@ import type {
   O10mModesSaveKind,
 } from './types.js';
 import { sanitizeCampaignSlots } from './save-format-campaign.js';
+import { mergeReplayLedgers } from './save-format-marathon.js';
 import { mergeObjectiveProgressOnImport } from './save-format-objective-sync.js';
 
 const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
@@ -27,6 +28,8 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'campaignSlots',
   'activeCampaignSlotId',
   'challengeStreak',
+  'marathonQueue',
+  'replayLedger',
 ];
 
 function stableStringify(value: unknown): string {
@@ -116,6 +119,7 @@ export function mergeO10mModesPersistedStates(
         secondary.objectiveProgress ?? [],
       ),
       campaignSlots: sanitizeCampaignSlots([...(primary.campaignSlots ?? []), ...(secondary.campaignSlots ?? [])]),
+      replayLedger: mergeReplayLedgers(primary.replayLedger ?? [], secondary.replayLedger ?? []),
     };
   }
 

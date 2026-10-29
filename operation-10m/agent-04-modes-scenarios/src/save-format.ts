@@ -4,6 +4,7 @@ import {
   sanitizeChallengeStreak,
   createEmptyChallengeStreak,
 } from './save-format-campaign.js';
+import { sanitizeMarathonQueue, sanitizeReplayLedger } from './save-format-marathon.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -22,7 +23,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 4;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 5;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -123,6 +124,8 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     campaignSlots: [],
     activeCampaignSlotId: null,
     challengeStreak: createEmptyChallengeStreak(),
+    marathonQueue: null,
+    replayLedger: [],
   };
 }
 
@@ -144,6 +147,8 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       campaignSlots: merged.campaignSlots ?? [],
       activeCampaignSlotId: merged.activeCampaignSlotId ?? null,
       challengeStreak: merged.challengeStreak ?? createEmptyChallengeStreak(),
+      marathonQueue: merged.marathonQueue ?? null,
+      replayLedger: merged.replayLedger ?? [],
     };
     return upgraded;
   }
@@ -189,6 +194,8 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
         ? o.activeCampaignSlotId
         : null,
     challengeStreak: sanitizeChallengeStreak(o.challengeStreak),
+    marathonQueue: sanitizeMarathonQueue(o.marathonQueue),
+    replayLedger: sanitizeReplayLedger(o.replayLedger),
   };
 }
 
@@ -223,6 +230,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
 
   if (state.challengeModeIds.length > 3) {
     errors.push('Save contains more than three challenge overlays.');
+  }
+
+  const marathon = sanitizeMarathonQueue(state.marathonQueue);
+  if (state.marathonQueue && !marathon) {
+    warnings.push('Marathon queue failed sanitization; planner will ignore it.');
+  } else if (marathon && marathon.cursor >= marathon.scenarioIds.length) {
+    warnings.push('Marathon cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

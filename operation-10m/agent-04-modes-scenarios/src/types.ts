@@ -333,12 +333,32 @@ export interface O10mChallengeStreak {
   lastScenarioId: string | null;
 }
 
+/** Schema v5 — ordered scenario rotation for marathon / gauntlet play. */
+export interface O10mMarathonQueue {
+  queueId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  loopOnComplete: boolean;
+  active: boolean;
+}
+
+/** Schema v5 — bounded replay statistics per scenario id. */
+export interface O10mScenarioReplayRow {
+  scenarioId: string;
+  playCount: number;
+  primaryVictories: number;
+  lastPlayedTurn: number;
+}
+
 export interface O10mCampaignPlan {
-  kind: 'chain_step' | 'slot_resume' | 'free_play';
+  kind: 'marathon_step' | 'chain_step' | 'slot_resume' | 'free_play';
   scenarioId: string | null;
   chainId: string | null;
   chainStepIndex: number | null;
   slotId: string | null;
+  marathonQueueId: string | null;
+  marathonCursor: number | null;
   reason: string;
 }
 
@@ -366,6 +386,10 @@ export interface O10mModesPersistedState {
   activeCampaignSlotId?: string | null;
   /** Schema v4 — consecutive primary-victory streak on challenge overlays. */
   challengeStreak?: O10mChallengeStreak;
+  /** Schema v5 — active marathon rotation queue. */
+  marathonQueue?: O10mMarathonQueue | null;
+  /** Schema v5 — replay counts for scenario selection UX. */
+  replayLedger?: O10mScenarioReplayRow[];
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

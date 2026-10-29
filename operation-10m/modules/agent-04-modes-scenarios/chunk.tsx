@@ -337,12 +337,32 @@ export interface O10mChallengeStreak {
   lastScenarioId: string | null;
 }
 
+/** Schema v5 — ordered scenario rotation for marathon / gauntlet play. */
+export interface O10mMarathonQueue {
+  queueId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  loopOnComplete: boolean;
+  active: boolean;
+}
+
+/** Schema v5 — bounded replay statistics per scenario id. */
+export interface O10mScenarioReplayRow {
+  scenarioId: string;
+  playCount: number;
+  primaryVictories: number;
+  lastPlayedTurn: number;
+}
+
 export interface O10mCampaignPlan {
-  kind: 'chain_step' | 'slot_resume' | 'free_play';
+  kind: 'marathon_step' | 'chain_step' | 'slot_resume' | 'free_play';
   scenarioId: string | null;
   chainId: string | null;
   chainStepIndex: number | null;
   slotId: string | null;
+  marathonQueueId: string | null;
+  marathonCursor: number | null;
   reason: string;
 }
 
@@ -370,6 +390,10 @@ export interface O10mModesPersistedState {
   activeCampaignSlotId?: string | null;
   /** Schema v4 — consecutive primary-victory streak on challenge overlays. */
   challengeStreak?: O10mChallengeStreak;
+  /** Schema v5 — active marathon rotation queue. */
+  marathonQueue?: O10mMarathonQueue | null;
+  /** Schema v5 — replay counts for scenario selection UX. */
+  replayLedger?: O10mScenarioReplayRow[];
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -1276,6 +1300,118 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Standing recovery', 'Crisis resolution', 'Campaign finales'],
   },
+  {
+    id: 'o10m_marathon_pace_setter',
+    title: 'Marathon Pace Setter',
+    description: 'Open a marathon queue with a short cash-and-days gate before longer scenarios.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100417,
+    startingMoney: 1800,
+    startingRegions: ['SA'],
+    badgeId: 'badge_o10m_marathon_pace_setter',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100417),
+      scenarioEngineV73Enabled: true,
+      o10mMarathonPaceSetter: true,
+      totalDays: 10,
+    },
+    objectives: [
+      {
+        id: 'o10m_mps_obj_day',
+        label: 'Opening Pace',
+        description: 'Reach day 5',
+        targetType: 'daysPassed',
+        targetValue: 5,
+        isPrimary: true,
+      },
+      {
+        id: 'o10m_mps_obj_cash',
+        label: 'Float Buffer',
+        description: 'Hold $2,600',
+        targetType: 'money',
+        targetValue: 2600,
+        isPrimary: false,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Marathon queues', 'Rotation pacing', 'Replay ledger'],
+  },
+  {
+    id: 'o10m_marathon_rhythm_hold',
+    title: 'Marathon Rhythm Hold',
+    description: 'Mid-gauntlet standing maintenance under marathon rotation pressure.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100418,
+    startingMoney: 2400,
+    startingRegions: ['VIC', 'SA'],
+    startingStanding: { VIC: 44, SA: 40 },
+    badgeId: 'badge_o10m_marathon_rhythm_hold',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100418),
+      regionalStandingEnabled: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_mrh_obj_avg',
+        label: 'Hold the Line',
+        description: 'Average standing of 50',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 50,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Standing maintenance', 'Marathon midpoints'],
+  },
+  {
+    id: 'o10m_marathon_sprint_close',
+    title: 'Marathon Sprint Close',
+    description: 'Finale scenario for marathon sprint chain and non-looping queue completion.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100419,
+    startingMoney: 3600,
+    startingRegions: ['NSW', 'QLD', 'VIC'],
+    badgeId: 'badge_o10m_marathon_sprint_close',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100419),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      totalDays: 16,
+    },
+    objectives: [
+      {
+        id: 'o10m_msc_obj_net',
+        label: 'Sprint Net Worth',
+        description: 'Reach $18,000 net worth',
+        targetType: 'netWorth',
+        targetValue: 18000,
+        isPrimary: true,
+      },
+      {
+        id: 'o10m_msc_obj_regions',
+        label: 'Tri-State Control',
+        description: 'Control 3 regions',
+        targetType: 'regions_controlled',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Marathon finales', 'Queue completion', 'Gauntlet closure'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -1891,6 +2027,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
         title: 'Trust Rebound',
         requiresPrimaryVictory: true,
         carryBonusOnComplete: { forcedSettingsPatch: { o10mChainContinuityArcComplete: true } },
+      },
+    ],
+  },
+  {
+    id: 'o10m_chain_marathon_sprint',
+    title: 'Marathon Sprint',
+    description:
+      'Three-scenario gauntlet with save-safe marathon queue rotation — round-5 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_marathon_sprint',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_marathon_pace_setter',
+        title: 'Pace Setter',
+        narrativeBridge: 'Establish rhythm before the midfield hold.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 200 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_marathon_rhythm_hold',
+        title: 'Rhythm Hold',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { VIC: 6, SA: 6 },
+          forcedSettingsPatch: { o10mMarathonMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_marathon_sprint_close',
+        title: 'Sprint Close',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainMarathonSprintComplete: true } },
       },
     ],
   },
@@ -2720,7 +2890,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 4;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 5;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -2821,6 +2991,8 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     campaignSlots: [],
     activeCampaignSlotId: null,
     challengeStreak: createEmptyChallengeStreak(),
+    marathonQueue: null,
+    replayLedger: [],
   };
 }
 
@@ -2842,6 +3014,8 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       campaignSlots: merged.campaignSlots ?? [],
       activeCampaignSlotId: merged.activeCampaignSlotId ?? null,
       challengeStreak: merged.challengeStreak ?? createEmptyChallengeStreak(),
+      marathonQueue: merged.marathonQueue ?? null,
+      replayLedger: merged.replayLedger ?? [],
     };
     return upgraded;
   }
@@ -2887,6 +3061,8 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
         ? o.activeCampaignSlotId
         : null,
     challengeStreak: sanitizeChallengeStreak(o.challengeStreak),
+    marathonQueue: sanitizeMarathonQueue(o.marathonQueue),
+    replayLedger: sanitizeReplayLedger(o.replayLedger),
   };
 }
 
@@ -2921,6 +3097,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
 
   if (state.challengeModeIds.length > 3) {
     errors.push('Save contains more than three challenge overlays.');
+  }
+
+  const marathon = sanitizeMarathonQueue(state.marathonQueue);
+  if (state.marathonQueue && !marathon) {
+    warnings.push('Marathon queue failed sanitization; planner will ignore it.');
+  } else if (marathon && marathon.cursor >= marathon.scenarioIds.length) {
+    warnings.push('Marathon cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -3028,6 +3211,8 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'campaignSlots',
   'activeCampaignSlotId',
   'challengeStreak',
+  'marathonQueue',
+  'replayLedger',
 ];
 
 function stableStringify(value: unknown): string {
@@ -3117,6 +3302,7 @@ export function mergeO10mModesPersistedStates(
         secondary.objectiveProgress ?? [],
       ),
       campaignSlots: sanitizeCampaignSlots([...(primary.campaignSlots ?? []), ...(secondary.campaignSlots ?? [])]),
+      replayLedger: mergeReplayLedgers(primary.replayLedger ?? [], secondary.replayLedger ?? []),
     };
   }
 
@@ -3430,8 +3616,240 @@ export function summarizeCampaignSlots(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-marathon.ts ---
+export const O10M_MARATHON_QUEUE_CAP = 8;
+export const O10M_REPLAY_LEDGER_CAP = 20;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+export function sanitizeReplayLedger(raw: unknown): O10mScenarioReplayRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(r => r && typeof r === 'object')
+    .map(r => {
+      const row = r as Record<string, unknown>;
+      const scenarioId = typeof row.scenarioId === 'string' && row.scenarioId.startsWith('o10m_') ? row.scenarioId : '';
+      if (!scenarioId) return null;
+      return {
+        scenarioId,
+        playCount: Math.max(0, Math.floor(num(row.playCount, 0))),
+        primaryVictories: Math.max(0, Math.floor(num(row.primaryVictories, 0))),
+        lastPlayedTurn: Math.max(0, Math.floor(num(row.lastPlayedTurn, 0))),
+      };
+    })
+    .filter((r): r is O10mScenarioReplayRow => r !== null)
+    .slice(0, O10M_REPLAY_LEDGER_CAP);
+}
+
+export function sanitizeMarathonQueue(raw: unknown): O10mMarathonQueue | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const queueId =
+    typeof o.queueId === 'string' && o.queueId.startsWith('o10m_marathon_') ? o.queueId : null;
+  if (!queueId) return null;
+  const label = typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : queueId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_MARATHON_QUEUE_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const loopOnComplete = o.loopOnComplete === true;
+  const active = o.active !== false;
+  return { queueId, label, scenarioIds, cursor, loopOnComplete, active };
+}
+
+export function createMarathonQueue(params: {
+  queueId: string;
+  label: string;
+  scenarioIds: string[];
+  loopOnComplete?: boolean;
+}): { queue: O10mMarathonQueue | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.queueId.startsWith('o10m_marathon_')) {
+    return { queue: null, warnings: ['Marathon queue ids must start with o10m_marathon_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_MARATHON_QUEUE_CAP);
+  if (trimmed.length === 0) {
+    return { queue: null, warnings: [...warnings, 'Marathon queue requires at least one valid scenario.'] };
+  }
+  return {
+    queue: {
+      queueId: params.queueId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      loopOnComplete: params.loopOnComplete === true,
+      active: true,
+    },
+    warnings,
+  };
+}
+
+export function attachMarathonQueueToState(
+  state: O10mModesPersistedState,
+  queue: O10mMarathonQueue,
+): O10mModesPersistedState {
+  const sanitized = sanitizeMarathonQueue(queue);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    marathonQueue: sanitized,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearMarathonQueue(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, marathonQueue: null };
+}
+
+export function getMarathonScenarioAtCursor(queue: O10mMarathonQueue | null | undefined): string | null {
+  const q = sanitizeMarathonQueue(queue);
+  if (!q || !q.active) return null;
+  return q.scenarioIds[q.cursor] ?? null;
+}
+
+export function recordScenarioReplayEntry(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+  turn: number,
+): O10mModesPersistedState {
+  const scenarioId = run.scenarioId;
+  if (!scenarioId || !scenarioId.startsWith('o10m_')) return state;
+  const ledger = sanitizeReplayLedger(state.replayLedger);
+  const idx = ledger.findIndex(r => r.scenarioId === scenarioId);
+  const prev =
+    idx >= 0
+      ? ledger[idx]!
+      : { scenarioId, playCount: 0, primaryVictories: 0, lastPlayedTurn: 0 };
+  const next: O10mScenarioReplayRow = {
+    scenarioId,
+    playCount: prev.playCount + 1,
+    primaryVictories: prev.primaryVictories + (run.primaryVictory ? 1 : 0),
+    lastPlayedTurn: turn,
+  };
+  const merged = idx >= 0 ? ledger.map((r, i) => (i === idx ? next : r)) : [...ledger, next];
+  merged.sort((a, b) => b.lastPlayedTurn - a.lastPlayedTurn);
+  return { ...state, replayLedger: merged.slice(0, O10M_REPLAY_LEDGER_CAP) };
+}
+
+export function advanceMarathonQueueAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const queue = sanitizeMarathonQueue(state.marathonQueue);
+  if (!queue || !queue.active) return state;
+  const atCursor = queue.scenarioIds[queue.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) {
+    return { ...state, marathonQueue: { ...queue, active: true } };
+  }
+
+  const atEnd = queue.cursor >= queue.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = queue.cursor + 1;
+    const nextScenario = queue.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      marathonQueue: { ...queue, cursor },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  if (queue.loopOnComplete) {
+    const nextScenario = queue.scenarioIds[0] ?? null;
+    return {
+      ...state,
+      marathonQueue: { ...queue, cursor: 0 },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  return {
+    ...state,
+    marathonQueue: { ...queue, active: false },
+  };
+}
+
+export function mergeReplayLedgers(
+  a: O10mScenarioReplayRow[],
+  b: O10mScenarioReplayRow[],
+): O10mScenarioReplayRow[] {
+  const map = new Map<string, O10mScenarioReplayRow>();
+  for (const row of [...a, ...b]) {
+    const prev = map.get(row.scenarioId);
+    if (!prev) {
+      map.set(row.scenarioId, { ...row });
+      continue;
+    }
+    map.set(row.scenarioId, {
+      scenarioId: row.scenarioId,
+      playCount: Math.max(prev.playCount, row.playCount),
+      primaryVictories: Math.max(prev.primaryVictories, row.primaryVictories),
+      lastPlayedTurn: Math.max(prev.lastPlayedTurn, row.lastPlayedTurn),
+    });
+  }
+  return [...map.values()].sort((x, y) => y.lastPlayedTurn - x.lastPlayedTurn).slice(0, O10M_REPLAY_LEDGER_CAP);
+}
+
+export function replayLedgerSummary(state: O10mModesPersistedState): {
+  trackedScenarios: number;
+  totalPlays: number;
+  totalPrimaryVictories: number;
+} {
+  const ledger = sanitizeReplayLedger(state.replayLedger);
+  return {
+    trackedScenarios: ledger.length,
+    totalPlays: ledger.reduce((s, r) => s + r.playCount, 0),
+    totalPrimaryVictories: ledger.reduce((s, r) => s + r.primaryVictories, 0),
+  };
+}
+
+export function applyPostRunPersistedUpdates(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+  turn: number,
+): O10mModesPersistedState {
+  let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceMarathonQueueAfterRun(next, run);
+  return next;
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const marathon = sanitizeMarathonQueue(state.marathonQueue);
+  const marathonScenario = getMarathonScenarioAtCursor(marathon);
+  if (marathon && marathon.active && marathonScenario) {
+    return {
+      kind: 'marathon_step',
+      scenarioId: marathonScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      marathonQueueId: marathon.queueId,
+      marathonCursor: marathon.cursor,
+      reason: `Marathon "${marathon.label}" step ${marathon.cursor + 1}/${marathon.scenarioIds.length}.`,
+    };
+  }
+
   if (state.activeCampaignSlotId) {
     const slot = sanitizeCampaignSlots(state.campaignSlots).find(s => s.slotId === state.activeCampaignSlotId);
     if (slot?.scenarioId) {
@@ -3441,6 +3859,8 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
         chainId: slot.chainId,
         chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
         slotId: slot.slotId,
+        marathonQueueId: null,
+        marathonCursor: null,
         reason: `Resume pinned slot "${slot.label}".`,
       };
     }
@@ -3456,6 +3876,8 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
         chainId: state.chainProgress.chainId,
         chainStepIndex: step.stepIndex,
         slotId: null,
+        marathonQueueId: null,
+        marathonCursor: null,
         reason: `Continue chain "${chain?.title ?? state.chainProgress.chainId}" at step ${step.stepIndex + 1}.`,
       };
     }
@@ -3469,6 +3891,8 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
       chainId: state.chainProgress?.chainId ?? null,
       chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
       slotId: null,
+      marathonQueueId: null,
+      marathonCursor: null,
       reason:
         ratio > 0 && ratio < 1
           ? `Resume in-progress scenario (${Math.round(ratio * 100)}% objectives captured).`
@@ -3482,6 +3906,8 @@ export function planNextCampaignAction(state: O10mModesPersistedState): O10mCamp
     chainId: null,
     chainStepIndex: null,
     slotId: null,
+    marathonQueueId: null,
+    marathonCursor: null,
     reason: 'No active chain, slot, or scenario — pick from catalog.',
   };
 }
@@ -3496,15 +3922,20 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   completedChains: number;
   recentVictories: number;
   activeChainTitle: string | null;
+  marathonActive: boolean;
+  replayTracked: number;
   nextPlan: O10mCampaignPlan;
 } {
   const nextPlan = planNextCampaignAction(state);
   const chain = state.chainProgress ? getO10mScenarioChain(state.chainProgress.chainId) : undefined;
   const recentVictories = state.recentRuns.filter(r => r.primaryVictory).length;
+  const marathon = sanitizeMarathonQueue(state.marathonQueue);
   return {
     completedChains: state.completedChainIds.length,
     recentVictories,
     activeChainTitle: chain?.title ?? null,
+    marathonActive: marathon?.active === true,
+    replayTracked: (state.replayLedger ?? []).length,
     nextPlan,
   };
 }
@@ -3521,7 +3952,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 14, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 5, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 6, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -3549,6 +3980,13 @@ export function runAgent04ModesScenariosSelfTests(): {
   push('agent04_chunk_11', verifyO10mModesIntegrity(sealed));
   const plan = planNextCampaignAction(createEmptyO10mModesPersistedState());
   push('agent04_chunk_12', plan.kind === 'free_play' && plan.reason.length > 0);
+  const marathon = createMarathonQueue({
+    queueId: 'o10m_marathon_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_marathon_pace_setter'],
+  }).queue;
+  const marathonState = marathon ? attachMarathonQueueToState(createEmptyO10mModesPersistedState(), marathon) : null;
+  push('agent04_chunk_13', marathonState !== null && planNextCampaignAction(marathonState!).kind === 'marathon_step');
 
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
@@ -3556,10 +3994,10 @@ export function runAgent04ModesScenariosSelfTests(): {
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v5',
+  schemaVersion: 'op10m-agent04-v6',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 4,
+  saveSchemaVersion: 5,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

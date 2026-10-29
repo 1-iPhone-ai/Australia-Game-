@@ -15,4 +15,5 @@ export * from './save-format.js';
 export * from './save-format-lifecycle.js';
 export * from './save-format-objective-sync.js';
 export * from './save-format-campaign.js';
+export * from './save-format-marathon.js';
 export * from './scenario-campaign-planner.js';
