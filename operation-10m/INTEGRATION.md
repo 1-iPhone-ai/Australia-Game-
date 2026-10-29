@@ -6,6 +6,8 @@
 
 **Exports:** `runGuardianCoPilotAdvisoryCycle`, `buildGuardianCoPilotMonitorSnapshot`, `runAgent16GuardianCoPilotSelfTests`, UI panel type `GuardianCoPilotAdvisoryStreamPanel` (optional React — assemble from canonical if duplicated).
 
+**Assembly chunk:** `operation-10m/modules/agent-16-guardian/chunk.tsx` — regenerate with `npm run build:agent16-chunk` (markers `OP10M_MODULE_BEGIN agent-16-guardian`).
+
 **State:** Advisory output is ephemeral — not persisted in `initialGameState`.
 
 **Execution boundary:** Advisory recommendations MUST NOT call dispatch, execute hooks, or widen Co-Pilot permissions. Co-Pilot execution remains on the existing confirmation / Guardian pipeline.

@@ -29,7 +29,10 @@ Modular **recommendations-only** layer for Operation 10M. Observes Guardian + Co
 
 ```bash
 npm run test:agent16
+npm run build:agent16-chunk
 ```
+
+Assembly output: `operation-10m/modules/agent-16-guardian/chunk.tsx` (`OP10M_MODULE_BEGIN agent-16-guardian`).
 
 ## Agent 25 assembly
 
