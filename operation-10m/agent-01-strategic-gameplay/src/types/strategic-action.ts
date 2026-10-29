@@ -48,6 +48,8 @@ export interface StrategicActionDefinition {
   repeatable?: boolean;
   /** Optional cap guard — validated against gameplay state pending queue. */
   requiresMaxPendingTradeOffs?: number;
+  /** All listed actions must appear in completedActionIds before this runs. */
+  prerequisiteActionIds?: string[];
 }
 
 export interface MultiStageChoiceOption {
@@ -104,11 +106,22 @@ export interface StrategicActionJournalEntry {
   scheduledTradeOffCount: number;
 }
 
+export interface ConsequenceForecast {
+  actionId: string;
+  immediateSummary: string[];
+  delayedSummary: string[];
+  totalDelayedEffects: number;
+  earliestTradeOffDay: number | null;
+  populationStressDelta: number;
+  treasuryDeltaEstimate: number;
+}
+
 export interface StrategicGameplayState {
   day: number;
   pendingDelayed: DelayedTradeOff[];
   completedActionIds: string[];
   journal: StrategicActionJournalEntry[];
+  priorityMomentum: Partial<Record<NationalPriorityId, number>>;
   activeChoice: {
     choiceId: string;
     stageId: string;

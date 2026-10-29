@@ -201,6 +201,66 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
       },
     ],
   },
+  'sga_national_resilience_compact': {
+    id: 'sga_national_resilience_compact',
+    title: 'National Resilience Compact',
+    category: 'governance',
+    apCost: 3,
+    cashCost: 60_000,
+    treasuryCost: 250_000,
+    minApproval: 48,
+    alignedPriorities: ['energy_resilience', 'supply_chain_security', 'water_security'],
+    conflictingPriorities: [],
+    tags: ['compact', 'cross-domain'],
+    repeatable: false,
+    prerequisiteActionIds: ['sga_energy_resilience_reserve', 'sga_supply_chain_buffer'],
+    immediateEffects: {
+      economy: { cashDelta: -60_000, treasuryDelta: -250_000 },
+      government: { approvalDelta: 6, directiveSlotsDelta: 1 },
+      population: { publicStabilityDelta: 5, essentialAccessDelta: 4 },
+      tech: { momentumDelta: 8 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Compact compliance audits',
+        warning: 'Audits increase regulatory burden before dividends arrive.',
+        effects: {
+          government: { regulatoryBurdenDelta: 4, approvalDelta: -1 },
+          economy: { treasuryDelta: -35_000 },
+        },
+      },
+    ],
+  },
+  'sga_water_energy_nexus_program': {
+    id: 'sga_water_energy_nexus_program',
+    title: 'Water–Energy Nexus Program',
+    category: 'investment',
+    apCost: 2,
+    cashCost: 55_000,
+    treasuryCost: 160_000,
+    minApproval: 46,
+    alignedPriorities: ['water_security', 'energy_resilience'],
+    conflictingPriorities: ['economic_diversification'],
+    tags: ['nexus', 'infrastructure'],
+    repeatable: false,
+    prerequisiteActionIds: ['sga_water_grid_upgrade'],
+    immediateEffects: {
+      economy: { cashDelta: -55_000, treasuryDelta: -160_000 },
+      population: { essentialAccessDelta: 5 },
+      tech: { readinessDelta: { renewable_energy: 10 } },
+      government: { approvalDelta: 3 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Integrated tariff adjustment',
+        warning: 'Combined utilities pricing stresses households temporarily.',
+        effects: {
+          population: { affordabilityStressDelta: 5 },
+          economy: { priceMultiplierFactor: 1.05 },
+        },
+      },
+    ],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {
@@ -340,6 +400,54 @@ export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefiniti
             optionId: 'freight_defer',
             label: 'Defer',
             description: 'Exit without commitment.',
+            nextStageId: null,
+          },
+        ],
+      },
+    ],
+  },
+  'msc_diversification_pilot': {
+    choiceId: 'msc_diversification_pilot',
+    title: 'Diversification Pilot Path',
+    linkedActionId: 'sga_economic_diversification_pilot',
+    entryStageId: 'div_sector',
+    stages: [
+      {
+        stageId: 'div_sector',
+        prompt: 'Pick pilot sector focus.',
+        options: [
+          {
+            optionId: 'sector_manufacturing',
+            label: 'Advanced manufacturing',
+            description: 'Industrial diversification track.',
+            nextStageId: 'div_commit',
+            requirements: [{ kind: 'tech_readiness', track: 'advanced_manufacturing', min: 8 }],
+          },
+          {
+            optionId: 'sector_biotech',
+            label: 'Biotech cluster',
+            description: 'High research, slower household payoff.',
+            nextStageId: 'div_commit',
+            requirements: [{ kind: 'tech_readiness', track: 'biotech', min: 3 }],
+          },
+        ],
+      },
+      {
+        stageId: 'div_commit',
+        prompt: 'Confirm pilot — two delayed trade-offs will queue.',
+        options: [
+          {
+            optionId: 'div_execute',
+            label: 'Launch pilot',
+            description: 'Execute diversification pilot.',
+            nextStageId: null,
+            resolvesActionId: 'sga_economic_diversification_pilot',
+            requirements: [{ kind: 'max_pending_tradeoffs', max: 7 }],
+          },
+          {
+            optionId: 'div_cancel',
+            label: 'Cancel',
+            description: 'Exit without launch.',
             nextStageId: null,
           },
         ],

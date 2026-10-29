@@ -73,6 +73,6 @@ describe('commitment journal', () => {
 
 describe('catalog depth', () => {
   it('ships six strategic actions and two multi-stage flows', () => {
-    expect(listStrategicActions().length).toBe(6);
+    expect(listStrategicActions().length).toBe(8);
   });
 });

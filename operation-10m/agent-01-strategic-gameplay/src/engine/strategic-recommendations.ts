@@ -6,6 +6,7 @@ import type {
   StrategicActionRecommendation,
   StrategicGameplayState,
 } from '../types/strategic-action.ts';
+import { priorityMomentumBonus } from './priority-momentum.ts';
 import { scoreNationalPriorityAlignment, validateAction } from './validation.ts';
 
 export function rankStrategicActions(
@@ -28,7 +29,7 @@ export function rankStrategicActions(
       actionId: action.id,
       title: action.title,
       feasible: issues.length === 0,
-      alignmentScore: alignment?.score ?? 0,
+      alignmentScore: (alignment?.score ?? 0) + priorityMomentumBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });

@@ -21,6 +21,14 @@ export {
 
 export { rankStrategicActions } from './engine/strategic-recommendations.ts';
 
+export { buildConsequenceForecast, mergeConsequenceForecasts } from './engine/consequence-forecast.ts';
+export { validatePrerequisites } from './engine/action-prerequisites.ts';
+export {
+  applyPriorityMomentum,
+  createEmptyPriorityMomentum,
+  priorityMomentumBonus,
+} from './engine/priority-momentum.ts';
+
 export {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -46,4 +54,4 @@ export {
 export { createMemoryStrategicContracts } from './adapters/memory-contracts.ts';
 
 export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
-export const AGENT_01_MODULE_VERSION = '1.1.0';
+export const AGENT_01_MODULE_VERSION = '1.2.0';

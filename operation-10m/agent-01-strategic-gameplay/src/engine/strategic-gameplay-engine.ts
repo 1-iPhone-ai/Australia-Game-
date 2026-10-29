@@ -11,6 +11,7 @@ import {
   appendJournalEntry,
   DEFAULT_MAX_PENDING_TRADE_OFFS,
 } from './commitment-journal.ts';
+import { applyPriorityMomentum } from './priority-momentum.ts';
 import {
   applyDomainEffects,
   scheduleDelayedTradeOffs,
@@ -27,6 +28,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     pendingDelayed: [],
     completedActionIds: [],
     journal: [],
+    priorityMomentum: {},
     activeChoice: null,
   };
 }
@@ -147,6 +149,7 @@ export function executeStrategicAction(
     alignment?.band ?? null,
     action.delayedTradeOffs.length,
   );
+  nextState = applyPriorityMomentum(nextState, action);
 
   contracts.ui.pushToast({
     id: `action_${action.id}_${state.day}`,

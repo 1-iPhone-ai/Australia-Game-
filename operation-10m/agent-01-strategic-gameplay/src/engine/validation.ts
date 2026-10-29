@@ -15,6 +15,7 @@ import {
   actionAlreadyCompleted,
   pendingTradeOffCount,
 } from './commitment-journal.ts';
+import { validatePrerequisites } from './action-prerequisites.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -181,6 +182,10 @@ export function validateAction(
       message: `Delayed trade-off queue full (max ${maxPending}).`,
       requirement: { kind: 'max_pending_tradeoffs', max: maxPending },
     });
+  }
+
+  if (state) {
+    issues.push(...validatePrerequisites(state, action));
   }
 
   return issues;

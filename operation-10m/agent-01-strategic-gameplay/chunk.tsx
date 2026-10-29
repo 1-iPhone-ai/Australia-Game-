@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: 4a51a972efa32839
+// content-sha256-prefix: 57059d758172a937
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -259,6 +259,8 @@ export interface StrategicActionDefinition {
   repeatable?: boolean;
   /** Optional cap guard — validated against gameplay state pending queue. */
   requiresMaxPendingTradeOffs?: number;
+  /** All listed actions must appear in completedActionIds before this runs. */
+  prerequisiteActionIds?: string[];
 }
 
 export interface MultiStageChoiceOption {
@@ -315,11 +317,22 @@ export interface StrategicActionJournalEntry {
   scheduledTradeOffCount: number;
 }
 
+export interface ConsequenceForecast {
+  actionId: string;
+  immediateSummary: string[];
+  delayedSummary: string[];
+  totalDelayedEffects: number;
+  earliestTradeOffDay: number | null;
+  populationStressDelta: number;
+  treasuryDeltaEstimate: number;
+}
+
 export interface StrategicGameplayState {
   day: number;
   pendingDelayed: DelayedTradeOff[];
   completedActionIds: string[];
   journal: StrategicActionJournalEntry[];
+  priorityMomentum: Partial<Record<NationalPriorityId, number>>;
   activeChoice: {
     choiceId: string;
     stageId: string;
@@ -381,6 +394,135 @@ export function actionAlreadyCompleted(
 
 export function pendingTradeOffCount(state: StrategicGameplayState): number {
   return state.pendingDelayed.length;
+}
+
+// --- src/engine/action-prerequisites.ts ---
+
+export function validatePrerequisites(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): StrategicValidationIssue[] {
+  const ids = action.prerequisiteActionIds ?? [];
+  if (ids.length === 0) return [];
+
+  const missing = ids.filter((id) => !actionAlreadyCompleted(state, id));
+  if (missing.length === 0) return [];
+
+  return [
+    {
+      code: 'MISSING_PREREQUISITES',
+      message: `Complete first: ${missing.join(', ')}`,
+      requirement: { kind: 'action_not_yet_completed', actionId: missing[0] },
+    },
+  ];
+}
+
+// --- src/engine/priority-momentum.ts ---
+
+export function createEmptyPriorityMomentum(): Partial<Record<NationalPriorityId, number>> {
+  return {};
+}
+
+export function applyPriorityMomentum(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): StrategicGameplayState {
+  const momentum = { ...state.priorityMomentum };
+  for (const id of action.alignedPriorities) {
+    momentum[id] = Math.min(100, (momentum[id] ?? 0) + 8);
+  }
+  for (const id of action.conflictingPriorities) {
+    momentum[id] = Math.max(0, (momentum[id] ?? 0) - 5);
+  }
+  return { ...state, priorityMomentum: momentum };
+}
+
+export function priorityMomentumBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  let bonus = 0;
+  for (const id of action.alignedPriorities) {
+    bonus += Math.floor((state.priorityMomentum[id] ?? 0) / 10);
+  }
+  return bonus;
+}
+
+// --- src/engine/consequence-forecast.ts ---
+
+function sumTreasuryFromAction(action: StrategicActionDefinition): number {
+  let total = 0;
+  const immediate = action.immediateEffects.economy;
+  if (immediate?.cashDelta) total += immediate.cashDelta;
+  if (immediate?.treasuryDelta) total += immediate.treasuryDelta;
+  for (const trade of action.delayedTradeOffs) {
+    total += trade.effects.economy?.cashDelta ?? 0;
+    total += trade.effects.economy?.treasuryDelta ?? 0;
+    total += trade.effects.economy?.debtDelta ?? 0;
+  }
+  return total;
+}
+
+function sumPopulationStressFromAction(action: StrategicActionDefinition): number {
+  let total = 0;
+  total += action.immediateEffects.population?.affordabilityStressDelta ?? 0;
+  for (const trade of action.delayedTradeOffs) {
+    total += trade.effects.population?.affordabilityStressDelta ?? 0;
+  }
+  return total;
+}
+
+export function buildConsequenceForecast(
+  action: StrategicActionDefinition,
+  currentDay: number,
+  delayDays = 3,
+): ConsequenceForecast {
+  const immediateSummary: string[] = [];
+  if (action.immediateEffects.economy?.ledgerNote) {
+    immediateSummary.push(action.immediateEffects.economy.ledgerNote);
+  }
+  immediateSummary.push(
+    `Up-front: cash ${action.cashCost.toLocaleString()}, treasury ${action.treasuryCost.toLocaleString()}, AP ${action.apCost}.`,
+  );
+
+  const delayedSummary = action.delayedTradeOffs.map(
+    (t, i) => `Day ${currentDay + delayDays + i}: ${t.warning}`,
+  );
+
+  return {
+    actionId: action.id,
+    immediateSummary,
+    delayedSummary,
+    totalDelayedEffects: action.delayedTradeOffs.length,
+    earliestTradeOffDay:
+      action.delayedTradeOffs.length > 0 ? currentDay + delayDays : null,
+    populationStressDelta: sumPopulationStressFromAction(action),
+    treasuryDeltaEstimate: sumTreasuryFromAction(action),
+  };
+}
+
+export function mergeConsequenceForecasts(
+  forecasts: ConsequenceForecast[],
+): ConsequenceForecast | null {
+  if (forecasts.length === 0) return null;
+  const first = forecasts[0];
+  return forecasts.slice(1).reduce(
+    (acc, f) => ({
+      actionId: acc.actionId,
+      immediateSummary: [...acc.immediateSummary, ...f.immediateSummary],
+      delayedSummary: [...acc.delayedSummary, ...f.delayedSummary],
+      totalDelayedEffects: acc.totalDelayedEffects + f.totalDelayedEffects,
+      earliestTradeOffDay:
+        acc.earliestTradeOffDay === null
+          ? f.earliestTradeOffDay
+          : f.earliestTradeOffDay === null
+            ? acc.earliestTradeOffDay
+            : Math.min(acc.earliestTradeOffDay, f.earliestTradeOffDay),
+      populationStressDelta: acc.populationStressDelta + f.populationStressDelta,
+      treasuryDeltaEstimate: acc.treasuryDeltaEstimate + f.treasuryDeltaEstimate,
+    }),
+    { ...first },
+  );
 }
 
 // --- src/engine/validation.ts ---
@@ -552,6 +694,10 @@ export function validateAction(
     });
   }
 
+  if (state) {
+    issues.push(...validatePrerequisites(state, action));
+  }
+
   return issues;
 }
 
@@ -644,7 +790,7 @@ export function rankStrategicActions(
       actionId: action.id,
       title: action.title,
       feasible: issues.length === 0,
-      alignmentScore: alignment?.score ?? 0,
+      alignmentScore: (alignment?.score ?? 0) + priorityMomentumBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
@@ -745,6 +891,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     pendingDelayed: [],
     completedActionIds: [],
     journal: [],
+    priorityMomentum: {},
     activeChoice: null,
   };
 }
@@ -865,6 +1012,7 @@ export function executeStrategicAction(
     alignment?.band ?? null,
     action.delayedTradeOffs.length,
   );
+  nextState = applyPriorityMomentum(nextState, action);
 
   contracts.ui.pushToast({
     id: `action_${action.id}_${state.day}`,
@@ -1130,6 +1278,66 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
       },
     ],
   },
+  'sga_national_resilience_compact': {
+    id: 'sga_national_resilience_compact',
+    title: 'National Resilience Compact',
+    category: 'governance',
+    apCost: 3,
+    cashCost: 60_000,
+    treasuryCost: 250_000,
+    minApproval: 48,
+    alignedPriorities: ['energy_resilience', 'supply_chain_security', 'water_security'],
+    conflictingPriorities: [],
+    tags: ['compact', 'cross-domain'],
+    repeatable: false,
+    prerequisiteActionIds: ['sga_energy_resilience_reserve', 'sga_supply_chain_buffer'],
+    immediateEffects: {
+      economy: { cashDelta: -60_000, treasuryDelta: -250_000 },
+      government: { approvalDelta: 6, directiveSlotsDelta: 1 },
+      population: { publicStabilityDelta: 5, essentialAccessDelta: 4 },
+      tech: { momentumDelta: 8 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Compact compliance audits',
+        warning: 'Audits increase regulatory burden before dividends arrive.',
+        effects: {
+          government: { regulatoryBurdenDelta: 4, approvalDelta: -1 },
+          economy: { treasuryDelta: -35_000 },
+        },
+      },
+    ],
+  },
+  'sga_water_energy_nexus_program': {
+    id: 'sga_water_energy_nexus_program',
+    title: 'Water–Energy Nexus Program',
+    category: 'investment',
+    apCost: 2,
+    cashCost: 55_000,
+    treasuryCost: 160_000,
+    minApproval: 46,
+    alignedPriorities: ['water_security', 'energy_resilience'],
+    conflictingPriorities: ['economic_diversification'],
+    tags: ['nexus', 'infrastructure'],
+    repeatable: false,
+    prerequisiteActionIds: ['sga_water_grid_upgrade'],
+    immediateEffects: {
+      economy: { cashDelta: -55_000, treasuryDelta: -160_000 },
+      population: { essentialAccessDelta: 5 },
+      tech: { readinessDelta: { renewable_energy: 10 } },
+      government: { approvalDelta: 3 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Integrated tariff adjustment',
+        warning: 'Combined utilities pricing stresses households temporarily.',
+        effects: {
+          population: { affordabilityStressDelta: 5 },
+          economy: { priceMultiplierFactor: 1.05 },
+        },
+      },
+    ],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {
@@ -1269,6 +1477,54 @@ export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefiniti
             optionId: 'freight_defer',
             label: 'Defer',
             description: 'Exit without commitment.',
+            nextStageId: null,
+          },
+        ],
+      },
+    ],
+  },
+  'msc_diversification_pilot': {
+    choiceId: 'msc_diversification_pilot',
+    title: 'Diversification Pilot Path',
+    linkedActionId: 'sga_economic_diversification_pilot',
+    entryStageId: 'div_sector',
+    stages: [
+      {
+        stageId: 'div_sector',
+        prompt: 'Pick pilot sector focus.',
+        options: [
+          {
+            optionId: 'sector_manufacturing',
+            label: 'Advanced manufacturing',
+            description: 'Industrial diversification track.',
+            nextStageId: 'div_commit',
+            requirements: [{ kind: 'tech_readiness', track: 'advanced_manufacturing', min: 8 }],
+          },
+          {
+            optionId: 'sector_biotech',
+            label: 'Biotech cluster',
+            description: 'High research, slower household payoff.',
+            nextStageId: 'div_commit',
+            requirements: [{ kind: 'tech_readiness', track: 'biotech', min: 3 }],
+          },
+        ],
+      },
+      {
+        stageId: 'div_commit',
+        prompt: 'Confirm pilot — two delayed trade-offs will queue.',
+        options: [
+          {
+            optionId: 'div_execute',
+            label: 'Launch pilot',
+            description: 'Execute diversification pilot.',
+            nextStageId: null,
+            resolvesActionId: 'sga_economic_diversification_pilot',
+            requirements: [{ kind: 'max_pending_tradeoffs', max: 7 }],
+          },
+          {
+            optionId: 'div_cancel',
+            label: 'Cancel',
+            description: 'Exit without launch.',
             nextStageId: null,
           },
         ],
@@ -1493,7 +1749,7 @@ export function createMemoryStrategicContracts(
 
 export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
 
-export const AGENT_01_MODULE_VERSION = '1.1.0';
+export const AGENT_01_MODULE_VERSION = '1.2.0';
 
 
 
@@ -1515,7 +1771,7 @@ export function runOp10mAgent01StrategicGameplaySelfTests(): {
 
     name: 'strategic action catalog non-empty',
 
-    passed: listStrategicActions().length >= 6,
+    passed: listStrategicActions().length >= 8,
 
   });
 
