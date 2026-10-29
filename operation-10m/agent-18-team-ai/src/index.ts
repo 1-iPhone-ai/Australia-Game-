@@ -108,4 +108,7 @@ export * from './synthesis-resonance-stack-index.ts';
 export * from './convergence-fusion-pressure-index.ts';
 export * from './synthesis-cascade-stack-index.ts';
 export * from './resonance-stack-fusion-index.ts';
+export * from './pressure-stack-resonance-index.ts';
+export * from './stack-fusion-cascade-index.ts';
+export * from './fusion-cascade-convergence-index.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

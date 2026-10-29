@@ -130,6 +130,9 @@ import { computeSynthesisResonanceStackIndex } from './synthesis-resonance-stack
 import { computeConvergenceFusionPressureIndex } from './convergence-fusion-pressure-index.ts';
 import { computeSynthesisCascadeStackIndex } from './synthesis-cascade-stack-index.ts';
 import { computeResonanceStackFusionIndex } from './resonance-stack-fusion-index.ts';
+import { computePressureStackResonanceIndex } from './pressure-stack-resonance-index.ts';
+import { computeStackFusionCascadeIndex } from './stack-fusion-cascade-index.ts';
+import { computeFusionCascadeConvergenceIndex } from './fusion-cascade-convergence-index.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -3167,6 +3170,56 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.convergenceFusionPressureCombined === 'number' &&
       typeof dual.synthesisCascadeStackCombined === 'number' &&
       typeof dual.resonanceStackFusionCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_pressure_stack_resonance', 'Pressure–stack resonance: fusion pressure plus cascade stack scores high', () => {
+    const report = computePressureStackResonanceIndex(50, 48, 3);
+    return report.resonanceIndex >= 48;
+  });
+
+  check(results, 'a18_stack_fusion_cascade', 'Stack–fusion cascade: cascade stack plus stack fusion scores high', () => {
+    const report = computeStackFusionCascadeIndex(48, 50, 42);
+    return report.cascadeIndex >= 47;
+  });
+
+  check(results, 'a18_fusion_cascade_convergence', 'Fusion–cascade convergence: stack fusion plus fusion pressure scores high', () => {
+    const report = computeFusionCascadeConvergenceIndex(48, 50, 48);
+    return report.convergenceIndex >= 46;
+  });
+
+  check(results, 'a18_eval_round35_meta', 'Layer: round-35 meta exposes stack resonance, fusion cascade, cascade convergence', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.pressureStackResonanceIndex === 'number' &&
+      typeof m.stackFusionCascadeIndex === 'number' &&
+      typeof m.fusionCascadeConvergenceIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_pressure_stack_resonance', 'Audit: pressure–stack resonance surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, pressureStackResonanceIndex: 72 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /Pressure–stack resonance/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round35_combined', 'Dual team: round-35 combined resonance, cascade, convergence exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.pressureStackResonanceCombined === 'number' &&
+      typeof dual.stackFusionCascadeCombined === 'number' &&
+      typeof dual.fusionCascadeConvergenceCombined === 'number'
     );
   });
 
