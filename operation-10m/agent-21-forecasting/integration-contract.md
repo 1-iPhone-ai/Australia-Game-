@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `2.15.0`
+- `O10M_AGENT21_MODULE_VERSION` = `2.16.0`
 
 ## Assembly chunk
 
@@ -109,6 +109,9 @@
 | `syncAg21Wave23ProjectionBaseline` | Round 23 wave-23 projection sync tags (O10-177) |
 | `handoffAg21IntegrationWave23OriginGate` | Round 23 origin handoff for O10-178 dry-run |
 | `Ag21ForecastRound23Console` | Round 23 UI (`data-testid="ag21-round23-console"`) |
+| `syncAg21Wave24ProjectionBaseline` | Round 24 wave-24 projection sync tags (O10-179) |
+| `handoffAg21IntegrationWave24OriginGate` | Round 24 origin handoff for O10-180 dry-run |
+| `Ag21ForecastRound24Console` | Round 24 UI (`data-testid="ag21-round24-console"`) |
 
 ## Upstream dependencies (canonical only)
 
