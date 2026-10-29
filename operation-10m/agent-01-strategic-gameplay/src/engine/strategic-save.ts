@@ -35,18 +35,24 @@ export interface StrategicGameplaySaveV5 extends Omit<StrategicGameplaySaveV4, '
   coalitionRecoveryStreakDays: number;
 }
 
+export interface StrategicGameplaySaveV6 extends Omit<StrategicGameplaySaveV5, 'version'> {
+  version: 6;
+  coalitionVolatilityEvents: number;
+}
+
 export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV1
   | StrategicGameplaySaveV2
   | StrategicGameplaySaveV3
   | StrategicGameplaySaveV4
-  | StrategicGameplaySaveV5;
+  | StrategicGameplaySaveV5
+  | StrategicGameplaySaveV6;
 
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV5 {
+): StrategicGameplaySaveV6 {
   return {
-    version: 5,
+    version: 6,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -61,6 +67,7 @@ export function serializeStrategicGameplayState(
     lastAlignedActionDay: state.lastAlignedActionDay ?? state.day,
     coalitionCrisisStreakDays: state.coalitionCrisisStreakDays ?? 0,
     coalitionRecoveryStreakDays: state.coalitionRecoveryStreakDays ?? 0,
+    coalitionVolatilityEvents: state.coalitionVolatilityEvents ?? 0,
   };
 }
 
@@ -81,6 +88,7 @@ export function deserializeStrategicGameplayState(
       lastAlignedActionDay: save.day,
       coalitionCrisisStreakDays: 0,
       coalitionRecoveryStreakDays: 0,
+      coalitionVolatilityEvents: 0,
     };
   }
   if (save.version === 2) {
@@ -97,6 +105,7 @@ export function deserializeStrategicGameplayState(
       lastAlignedActionDay: save.day,
       coalitionCrisisStreakDays: 0,
       coalitionRecoveryStreakDays: 0,
+      coalitionVolatilityEvents: 0,
     };
   }
   if (save.version === 3) {
@@ -113,6 +122,7 @@ export function deserializeStrategicGameplayState(
       lastAlignedActionDay: save.lastAlignedActionDay,
       coalitionCrisisStreakDays: 0,
       coalitionRecoveryStreakDays: 0,
+      coalitionVolatilityEvents: 0,
     };
   }
   if (save.version === 4) {
@@ -129,9 +139,27 @@ export function deserializeStrategicGameplayState(
       lastAlignedActionDay: save.lastAlignedActionDay,
       coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
       coalitionRecoveryStreakDays: 0,
+      coalitionVolatilityEvents: 0,
     };
   }
-  if (save.version !== 5) {
+  if (save.version === 5) {
+    return {
+      day: save.day,
+      completedActionIds: [...save.completedActionIds],
+      pendingDelayed: save.pendingDelayed.slice(),
+      journal: save.journal.slice(),
+      priorityMomentum: { ...save.priorityMomentum },
+      actionCooldowns: { ...save.actionCooldowns },
+      activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+      mandateProgress: { ...save.mandateProgress },
+      stakeholderSentiment: { ...save.stakeholderSentiment },
+      lastAlignedActionDay: save.lastAlignedActionDay,
+      coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
+      coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
+      coalitionVolatilityEvents: 0,
+    };
+  }
+  if (save.version !== 6) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   return {
@@ -147,6 +175,7 @@ export function deserializeStrategicGameplayState(
     lastAlignedActionDay: save.lastAlignedActionDay,
     coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
     coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
+    coalitionVolatilityEvents: save.coalitionVolatilityEvents,
   };
 }
 

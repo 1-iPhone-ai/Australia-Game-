@@ -9,6 +9,7 @@ import { classifyMandateDriftRisk } from './mandate-idle-drift.ts';
 import { computeCoalitionBalanceIndex } from './coalition-balance.ts';
 import { classifyCoalitionCrisisLevel } from './coalition-crisis.ts';
 import { isProlongedCoalitionCrisis } from './coalition-crisis-pressure.ts';
+import { isSustainedCoalitionRecovery } from './coalition-recovery-pressure.ts';
 import { listStakeholderWarnings } from './stakeholder-coalition.ts';
 import { rankStrategicActions } from './strategic-recommendations.ts';
 import { listStrategicActions } from '../catalog/strategic-action-catalog.ts';
@@ -39,6 +40,8 @@ export function buildTurnStrategicBriefing(
     coalitionCrisisStreakDays: state.coalitionCrisisStreakDays ?? 0,
     coalitionRecoveryStreakDays: state.coalitionRecoveryStreakDays ?? 0,
     prolongedCoalitionCrisis: isProlongedCoalitionCrisis(state),
+    sustainedCoalitionRecovery: isSustainedCoalitionRecovery(state),
+    coalitionVolatilityEvents: state.coalitionVolatilityEvents ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,

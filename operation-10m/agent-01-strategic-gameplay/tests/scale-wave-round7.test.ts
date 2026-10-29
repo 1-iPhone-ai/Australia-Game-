@@ -93,6 +93,7 @@ describe('scale wave round 7 — coalition recovery and prolonged crisis', () =>
     );
     expect(result.ok).toBe(true);
     expect(result.state.coalitionCrisisStreakDays).toBe(0);
+    expect(result.state.coalitionVolatilityEvents).toBe(1);
   });
 
   it('extends turn briefing with recovery and prolonged crisis fields', () => {
@@ -110,13 +111,13 @@ describe('scale wave round 7 — coalition recovery and prolonged crisis', () =>
     expect(briefing.prolongedCoalitionCrisis).toBe(true);
   });
 
-  it('serializes save v5 with coalitionRecoveryStreakDays', () => {
+  it('serializes save v6 with coalitionRecoveryStreakDays', () => {
     const state = {
       ...createInitialStrategicState(5),
       coalitionRecoveryStreakDays: 4,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(5);
+    expect(save.version).toBe(6);
     expect(save.coalitionRecoveryStreakDays).toBe(4);
   });
 });

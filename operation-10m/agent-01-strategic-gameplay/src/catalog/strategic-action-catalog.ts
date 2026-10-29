@@ -476,6 +476,57 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
     },
     delayedTradeOffs: [],
   },
+  'sga_coalition_sustained_trust_charter': {
+    id: 'sga_coalition_sustained_trust_charter',
+    title: 'Coalition Sustained Trust Charter',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 14_000,
+    treasuryCost: 52_000,
+    minApproval: 54,
+    alignedPriorities: ['economic_diversification', 'technology_competitiveness'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'sustained_recovery', 'trust'],
+    repeatable: false,
+    minCoalitionBalanceIndex: 74,
+    minCoalitionRecoveryStreakDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -14_000, treasuryDelta: -52_000 },
+      government: { approvalDelta: 5, directiveSlotsDelta: 1, regulatoryBurdenDelta: -1 },
+      population: { publicStabilityDelta: 4, migrationDelta: 2 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Charter audit cadence',
+        warning: 'Independent trust audits add treasury draw next week.',
+        effects: {
+          economy: { treasuryDelta: -16_000 },
+          government: { regulatoryBurdenDelta: 1 },
+        },
+      },
+    ],
+  },
+  'sga_coalition_volatility_review': {
+    id: 'sga_coalition_volatility_review',
+    title: 'Coalition Volatility Review',
+    category: 'governance',
+    apCost: 1,
+    cashCost: 8_000,
+    treasuryCost: 32_000,
+    minApproval: 44,
+    alignedPriorities: ['supply_chain_security', 'freight_modernization'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'volatility', 'governance'],
+    repeatable: true,
+    minCoalitionVolatilityEvents: 1,
+    cooldownDays: 2,
+    immediateEffects: {
+      economy: { cashDelta: -8_000, treasuryDelta: -32_000 },
+      government: { approvalDelta: 2, regulatoryBurdenDelta: -1 },
+      population: { publicStabilityDelta: 3, affordabilityStressDelta: -1 },
+    },
+    delayedTradeOffs: [],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {

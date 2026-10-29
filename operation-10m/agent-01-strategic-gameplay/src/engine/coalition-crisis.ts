@@ -1,6 +1,8 @@
 import type { CoalitionCrisisLevel } from '../types/coalition-mandate.ts';
 import type { StrategicGameplayState } from '../types/strategic-action.ts';
 import { computeCoalitionBalanceIndex } from './coalition-balance.ts';
+import { PROLONGED_COALITION_CRISIS_THRESHOLD } from './coalition-crisis-pressure.ts';
+import { incrementCoalitionVolatilityEvents } from './coalition-volatility.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 
 const STABLE_MIN_INDEX = 70;
@@ -35,5 +37,10 @@ export function advanceCoalitionCrisisStreak(
 export function resetCoalitionCrisisStreak(
   state: StrategicGameplayState,
 ): StrategicGameplayState {
-  return { ...state, coalitionCrisisStreakDays: 0 };
+  const peak = state.coalitionCrisisStreakDays ?? 0;
+  let next: StrategicGameplayState = { ...state, coalitionCrisisStreakDays: 0 };
+  if (peak >= PROLONGED_COALITION_CRISIS_THRESHOLD) {
+    next = incrementCoalitionVolatilityEvents(next);
+  }
+  return next;
 }

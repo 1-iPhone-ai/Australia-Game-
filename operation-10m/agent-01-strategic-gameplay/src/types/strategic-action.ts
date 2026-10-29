@@ -69,6 +69,8 @@ export interface StrategicActionDefinition {
   minCoalitionCrisisStreakDays?: number;
   /** Action requires this many consecutive stable coalition calendar days. */
   minCoalitionRecoveryStreakDays?: number;
+  /** Action requires at least this many coalition volatility events (post crisis/recovery cycles). */
+  minCoalitionVolatilityEvents?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -109,7 +111,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_balance'; minIndex: number }
   | { kind: 'max_coalition_balance'; maxIndex: number }
   | { kind: 'min_coalition_crisis_streak'; minDays: number }
-  | { kind: 'min_coalition_recovery_streak'; minDays: number };
+  | { kind: 'min_coalition_recovery_streak'; minDays: number }
+  | { kind: 'min_coalition_volatility_events'; minEvents: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -155,6 +158,8 @@ export interface StrategicGameplayState {
   coalitionCrisisStreakDays?: number;
   /** Consecutive calendar days coalition balance remained stable. */
   coalitionRecoveryStreakDays?: number;
+  /** Times a prolonged crisis or sustained recovery cycle ended (oscillation meter). */
+  coalitionVolatilityEvents?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

@@ -94,6 +94,7 @@ export {
   computeCoalitionBalanceIndex,
   coalitionBalanceRankingBonus,
   coalitionRecoveryRankingBonus,
+  sustainedRecoveryRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -122,15 +123,28 @@ export {
 } from './engine/coalition-crisis-pressure.ts';
 
 export {
+  SUSTAINED_COALITION_RECOVERY_THRESHOLD,
+  isSustainedCoalitionRecovery,
+  applySustainedRecoveryMandateBonus,
+} from './engine/coalition-recovery-pressure.ts';
+
+export {
   coalitionCrisisStreakIssues,
   coalitionRecoveryStreakIssues,
 } from './engine/coalition-crisis-gates.ts';
+
+export { coalitionVolatilityIssues } from './engine/coalition-volatility-gates.ts';
 
 export {
   advanceCoalitionRecoveryStreak,
   resetCoalitionRecoveryStreak,
 } from './engine/coalition-recovery.ts';
 
+export {
+  resetCoalitionVolatilityEvents,
+  incrementCoalitionVolatilityEvents,
+} from './engine/coalition-volatility.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '1.7.0';
+export const AGENT_01_MODULE_VERSION = '1.8.0';

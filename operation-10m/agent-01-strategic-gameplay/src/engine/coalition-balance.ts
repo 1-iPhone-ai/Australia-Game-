@@ -38,3 +38,13 @@ export function coalitionRecoveryRankingBonus(
   if (streak >= action.minCoalitionRecoveryStreakDays) return 5;
   return 2;
 }
+
+export function sustainedRecoveryRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionRecoveryStreakDays === undefined) return 0;
+  const streak = state.coalitionRecoveryStreakDays ?? 0;
+  if (streak >= 4) return 4;
+  return 0;
+}
