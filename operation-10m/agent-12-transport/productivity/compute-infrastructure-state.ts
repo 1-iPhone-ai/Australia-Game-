@@ -805,6 +805,23 @@ import {
   nationalPortAmmoniaBunkeringLogisticsThroughputIndex,
   portAmmoniaBunkeringLogisticsProductivityMultiplier,
 } from './port-ammonia-bunkering-logistics-index.ts';
+import {
+  computeSuperconductingHvdcExportByRegion,
+  nationalSuperconductingHvdcExportIndex,
+  superconductingHvdcExportProductivityMultiplier,
+} from '../network/superconducting-hvdc-export-index.ts';
+import {
+  computeRemoteNeonatalIcuSupplyStagingByRegion,
+  computeRemoteNeonatalIcuSupplyStagingShare,
+  nationalRemoteNeonatalIcuSupplyStagingIndex,
+  remoteNeonatalIcuSupplyStagingProductivityMultiplier,
+} from '../operations/remote-neonatal-icu-supply-staging-index.ts';
+import {
+  computePortMethanolDualFuelBunkeringLogisticsShare,
+  computePortMethanolDualFuelBunkeringLogisticsThroughputByRegion,
+  nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex,
+  portMethanolDualFuelBunkeringLogisticsProductivityMultiplier,
+} from './port-methanol-dual-fuel-bunkering-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -2443,6 +2460,35 @@ export function computeTransportInfrastructureState(
     portAmmoniaBunkeringLogisticsShare,
     options?.portAmmoniaBunkeringLogisticsPolicy ?? 'baseline',
   );
+  const superconductingHvdcExportByRegion = computeSuperconductingHvdcExportByRegion(ops);
+  const nationalSuperconductingHvdc = nationalSuperconductingHvdcExportIndex(superconductingHvdcExportByRegion);
+  const superconductingHvdcMult = superconductingHvdcExportProductivityMultiplier(
+    nationalSuperconductingHvdc,
+    options?.superconductingHvdcExportPolicy ?? 'baseline',
+  );
+  const remoteNeonatalIcuSupplyStagingByRegion = computeRemoteNeonatalIcuSupplyStagingByRegion(ops, networkStress);
+  const nationalNeonatalIcu = nationalRemoteNeonatalIcuSupplyStagingIndex(remoteNeonatalIcuSupplyStagingByRegion);
+  const remoteNeonatalIcuSupplyStagingShare = computeRemoteNeonatalIcuSupplyStagingShare(
+    ops,
+    options?.remoteNeonatalIcuSupplyStagingPolicy ?? 'baseline',
+  );
+  const neonatalIcuMult = remoteNeonatalIcuSupplyStagingProductivityMultiplier(
+    remoteNeonatalIcuSupplyStagingShare,
+    options?.remoteNeonatalIcuSupplyStagingPolicy ?? 'baseline',
+  );
+  const portMethanolDualFuelBunkeringLogisticsThroughputByRegion =
+    computePortMethanolDualFuelBunkeringLogisticsThroughputByRegion(ops);
+  const nationalMethanolDualFuelBunkering = nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex(
+    portMethanolDualFuelBunkeringLogisticsThroughputByRegion,
+  );
+  const portMethanolDualFuelBunkeringLogisticsShare = computePortMethanolDualFuelBunkeringLogisticsShare(
+    ops,
+    options?.portMethanolDualFuelBunkeringLogisticsPolicy ?? 'baseline',
+  );
+  const methanolBunkeringMult = portMethanolDualFuelBunkeringLogisticsProductivityMultiplier(
+    portMethanolDualFuelBunkeringLogisticsShare,
+    options?.portMethanolDualFuelBunkeringLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2550,6 +2596,9 @@ export function computeTransportInfrastructureState(
     const quantumCryogenicBoost = (quantumCryogenicExportByRegion[code] - 5) * 0.0018;
     const ecmoBoost = (remoteEcmoSupplyStagingByRegion[code] - 6) * 0.0014;
     const ammoniaBunkeringBoost = (portAmmoniaBunkeringLogisticsThroughputByRegion[code] - 2) * 0.001;
+    const superconductingHvdcBoost = (superconductingHvdcExportByRegion[code] - 5) * 0.0017;
+    const neonatalIcuBoost = (remoteNeonatalIcuSupplyStagingByRegion[code] - 6) * 0.0013;
+    const methanolBunkeringBoost = (portMethanolDualFuelBunkeringLogisticsThroughputByRegion[code] - 2) * 0.0009;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2656,7 +2705,10 @@ export function computeTransportInfrastructureState(
         windBerthingBoost +
         quantumCryogenicBoost +
         ecmoBoost +
-        ammoniaBunkeringBoost) *
+        ammoniaBunkeringBoost +
+        superconductingHvdcBoost +
+        neonatalIcuBoost +
+        methanolBunkeringBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2761,7 +2813,10 @@ export function computeTransportInfrastructureState(
       windBerthingMult *
       quantumCryogenicMult *
       ecmoMult *
-      ammoniaBunkeringMult;
+      ammoniaBunkeringMult *
+      superconductingHvdcMult *
+      neonatalIcuMult *
+      methanolBunkeringMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2901,7 +2956,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/51',
+    schemaVersion: 'agent12/52',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -3275,6 +3330,14 @@ export function computeTransportInfrastructureState(
     portAmmoniaBunkeringLogisticsShare,
     nationalPortAmmoniaBunkeringLogisticsThroughputIndex: nationalAmmoniaBunkering,
     portAmmoniaBunkeringLogisticsThroughputByRegion,
+    nationalSuperconductingHvdcExportIndex: nationalSuperconductingHvdc,
+    superconductingHvdcExportByRegion,
+    remoteNeonatalIcuSupplyStagingShare,
+    nationalRemoteNeonatalIcuSupplyStagingIndex: nationalNeonatalIcu,
+    remoteNeonatalIcuSupplyStagingByRegion,
+    portMethanolDualFuelBunkeringLogisticsShare,
+    nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex: nationalMethanolDualFuelBunkering,
+    portMethanolDualFuelBunkeringLogisticsThroughputByRegion,
     computeMs,
   };
 }

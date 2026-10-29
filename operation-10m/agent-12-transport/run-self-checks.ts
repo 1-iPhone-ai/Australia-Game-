@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/51' &&
+      infra.schemaVersion === 'agent12/52' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -245,8 +245,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalQuantumCryogenicExportIndex >= 5 &&
       infra.nationalRemoteEcmoSupplyStagingIndex >= 6 &&
       infra.portAmmoniaBunkeringLogisticsShare >= 0.03 &&
-      infra.nationalPortAmmoniaBunkeringLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)} semi=${infra.nationalAdvancedSemiconductorPackagingExportIndex.toFixed(1)} cryo=${infra.nationalQuantumCryogenicExportIndex.toFixed(1)}`,
+      infra.nationalPortAmmoniaBunkeringLogisticsThroughputIndex >= 2 &&
+      infra.nationalSuperconductingHvdcExportIndex >= 5 &&
+      infra.nationalRemoteNeonatalIcuSupplyStagingIndex >= 6 &&
+      infra.portMethanolDualFuelBunkeringLogisticsShare >= 0.03 &&
+      infra.nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)} semi=${infra.nationalAdvancedSemiconductorPackagingExportIndex.toFixed(1)} hvdc=${infra.nationalSuperconductingHvdcExportIndex.toFixed(1)}`,
   });
 
   return results;

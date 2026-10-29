@@ -453,6 +453,12 @@ export type RemoteEcmoSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortAmmoniaBunkeringLogisticsPolicy = 'baseline' | 'expand';
 
+export type SuperconductingHvdcExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteNeonatalIcuSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortMethanolDualFuelBunkeringLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
   schemaVersion: 'agent12/50';
   turn: number;
@@ -828,6 +834,14 @@ export interface TransportInfrastructureState {
   portAmmoniaBunkeringLogisticsShare: number;
   nationalPortAmmoniaBunkeringLogisticsThroughputIndex: number;
   portAmmoniaBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalSuperconductingHvdcExportIndex: number;
+  superconductingHvdcExportByRegion: Record<AuRegionCode, number>;
+  remoteNeonatalIcuSupplyStagingShare: number;
+  nationalRemoteNeonatalIcuSupplyStagingIndex: number;
+  remoteNeonatalIcuSupplyStagingByRegion: Record<AuRegionCode, number>;
+  portMethanolDualFuelBunkeringLogisticsShare: number;
+  nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex: number;
+  portMethanolDualFuelBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -971,6 +985,9 @@ export interface TransportInfrastructureOptions {
   quantumCryogenicExportPolicy?: QuantumCryogenicExportPolicy;
   remoteEcmoSupplyStagingPolicy?: RemoteEcmoSupplyStagingPolicy;
   portAmmoniaBunkeringLogisticsPolicy?: PortAmmoniaBunkeringLogisticsPolicy;
+  superconductingHvdcExportPolicy?: SuperconductingHvdcExportPolicy;
+  remoteNeonatalIcuSupplyStagingPolicy?: RemoteNeonatalIcuSupplyStagingPolicy;
+  portMethanolDualFuelBunkeringLogisticsPolicy?: PortMethanolDualFuelBunkeringLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
