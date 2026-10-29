@@ -1,6 +1,6 @@
 import { o6kAgent24Fingerprint } from './fingerprint.ts';
 import type { Agent24ArchiveScaleWaveWave52ExportGateReport } from './archive-scale-wave-wave52-export-gate.ts';
-import type { Agent24ReplayScaleWaveWave51IntegrationVerificationReport } from './replay-scale-wave-wave51-integration-verification.ts';
+import type { Agent24ReplayScaleWaveWave51IntegrationVerificationReport } from './replay-scale-wave-wave52-integration-verification.ts';
 import { O6K_AGENT24_WAVE52_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
 
 export interface Agent24ReplayScaleWaveWave52IntegrationHandoffCheckpoint {

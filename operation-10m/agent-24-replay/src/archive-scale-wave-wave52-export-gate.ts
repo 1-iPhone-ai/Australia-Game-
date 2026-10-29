@@ -1,5 +1,5 @@
 import { o6kAgent24Fingerprint } from './fingerprint.ts';
-import type { Agent24ReplayScaleWaveWave51IntegrationVerificationReport } from './replay-scale-wave-wave51-integration-verification.ts';
+import type { Agent24ReplayScaleWaveWave51IntegrationVerificationReport } from './replay-scale-wave-wave52-integration-verification.ts';
 import type { Agent24SealVerificationReport } from './seal-verification.ts';
 import type { Agent24SnapshotSeal } from './snapshot-seal.ts';
 
