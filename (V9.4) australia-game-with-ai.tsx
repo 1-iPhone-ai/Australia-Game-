@@ -165101,6 +165101,54 @@ export function stateCapacityInputHash(inputs: StateCapacitySystemInputs, persis
   return `v1011:${inputs.turn}:p[${progSig}]:mp[${mpSig}]:cr[${crisisSig}]:st[${stabSig}]:ns[${nsSig}]:sc[${scSig}]:in[${inSig}]:nd[${ndSig}]:ic[${icSig}]:sr[${srSig}]:np[${npSig}]:eg[${egSig}]:cap[${capSig}]:wf[${wfSig}]:fk[${stSig}]:ad[${adaptSig}]`;
 }
 
+
+/** O111 Agent 108 — map live Regional Factions 2.0 state into V10.11 stakeholder inputs (read-only bridge). */
+export function buildStateCapacityStakeholdersFromRegionalFactions(
+  regionalFactions: RegionalFactionsState | null | undefined,
+  viewerId: string,
+  programs: StateCapacityProgramInput[]
+): StateCapacityStakeholderInput[] {
+  const stakeholders: StateCapacityStakeholderInput[] = [];
+  if (!regionalFactions?.factions) return stakeholders;
+  const viewer = String(viewerId || 'player');
+  for (const [fid, fState] of Object.entries(regionalFactions.factions)) {
+    const def = RF_DEF_BY_ID[fid];
+    const f = fState as RegionalFaction;
+    if (!def || !f || f.status !== 'active') continue;
+    const rel = f.relationshipsByActor?.[viewer];
+    const standingWithViewer = Number(rel?.value ?? 0) || 0;
+    const isPublicInstitution =
+      def.type === 'public_institution' ||
+      def.type === 'infrastructure_authority' ||
+      fid === 'federal_infrastructure_office' ||
+      fid === 'csiro_ai_directorate' ||
+      fid === 'qld_port_authority';
+    const homeRegs = Array.isArray(def.homeRegions) ? def.homeRegions : [];
+    const activeRegions = f.activeRegions?.length ? f.activeRegions : homeRegs;
+    const influenceVals = Object.values(f.influenceByRegion || {}).map(v => Number(v) || 0);
+    const influence = influenceVals.length ? Math.max(...influenceVals) : 0;
+    const relActiveCount = programs.filter(
+      p =>
+        (p.status === 'active' || p.status === 'under_construction') &&
+        p.regionIds.some(r => activeRegions.includes(r) || homeRegs.includes(r))
+    ).length;
+    const activeRequests = (regionalFactions.requests || []).filter(rq => rq.factionId === fid && rq.status === 'open').length;
+    stakeholders.push({
+      factionId: fid,
+      name: String(def.name || fid),
+      regionIds: homeRegs.filter(r => V1011_VALID_REGIONS.has(r)),
+      isPublicInstitution,
+      influence: influence || 50,
+      standingWithViewer,
+      supportTopics: [...def.supportedSectors.map(String), ...def.preferredInfrastructure, ...def.policyInterests],
+      opposeTopics: [...def.opposedInfrastructure, ...def.opposedSectors.map(String)],
+      activeRequests,
+      relevantActiveProjectCount: relActiveCount
+    });
+  }
+  return stakeholders;
+}
+
 export function buildStateCapacityInputs(raw: {
   turn: number;
   viewerId?: string;
@@ -165257,33 +165305,8 @@ export function buildStateCapacityInputs(raw: {
     }
   }
 
-  // 4. Regional Factions & Public Institutions (`federal_infrastructure_office`, `csiro_ai_directorate`, `qld_port_authority`, etc.)
-  const stakeholders: StateCapacityStakeholderInput[] = [];
-  if (raw.regionalFactions?.factions) {
-    for (const [fid, fState] of Object.entries(raw.regionalFactions.factions)) {
-      const def: any = (RF_DEF_BY_ID as any)[fid];
-      const fAny: any = fState;
-      if (!def || !fAny) continue;
-      const rel = fAny.relations?.[viewerId] || fAny.standingByActor?.[viewerId] || { score: fAny.standing ?? 0, stance: 'neutral' };
-      const isPublic = def.category === 'public_institution' || fid === 'federal_infrastructure_office' || fid === 'csiro_ai_directorate' || fid === 'qld_port_authority';
-      const homeRegs: string[] = Array.isArray(def.homeRegions) ? def.homeRegions : [];
-      const relActiveCount = programs.filter(
-        p => (p.status === 'active' || p.status === 'under_construction') && p.regionIds.some(r => homeRegs.includes(r))
-      ).length;
-      stakeholders.push({
-        factionId: fid,
-        name: String(def.name || fid),
-        regionIds: homeRegs.filter(r => V1011_VALID_REGIONS.has(r)),
-        isPublicInstitution: isPublic,
-        influence: Number(fAny.influence ?? def.baseInfluence ?? 50) || 50,
-        standingWithViewer: Number(typeof rel === 'number' ? rel : rel?.score ?? 0) || 0,
-        supportTopics: [...(def.interests?.sectors || def.preferredProjectTypes || []), ...(def.interests?.needs || [])],
-        opposeTopics: [...(def.interests?.dislikes || def.dislikedProjectTypes || [])],
-        activeRequests: (raw.regionalFactions.requests || []).filter((rq: any) => rq.factionId === fid && rq.status === 'open').length,
-        relevantActiveProjectCount: relActiveCount
-      });
-    }
-  }
+  // 4. Regional Factions & public institutions (Agent 108 bridge — see buildStateCapacityStakeholdersFromRegionalFactions)
+  const stakeholders = buildStateCapacityStakeholdersFromRegionalFactions(raw.regionalFactions, viewerId, programs);
 
   // 5. Public Stability (read-only context)
   const ps = raw.publicStability || (raw.gameState?.publicStabilityState as PublicStabilityState | undefined) || null;
@@ -168819,7 +168842,7 @@ export const StateCapacityInspector: React.FC<{
               className="rounded border border-indigo-500/50 bg-indigo-950/60 px-2.5 py-1 text-xs font-semibold text-indigo-200"
               data-testid="sc11-run-tests"
             >
-              Run 52 V10.11 Self-Tests (SC1–SC52)
+              Run 53 V10.11 Self-Tests (SC1–SC53)
             </button>
             {testReport && (
               <span className={testReport.failed === 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
@@ -168869,7 +168892,7 @@ export const StateCapacityInspector: React.FC<{
 };
 
 // ============================================================================
-// PART 130: V10.11 SELF-TEST SUITE (52 REQUIRED TESTS SC1–SC52)
+// PART 130: V10.11 SELF-TEST SUITE (53 REQUIRED TESTS SC1–SC53)
 // ============================================================================
 
 export function runV1011AdaptiveGovernanceSelfTests(): {
@@ -169819,6 +169842,66 @@ export function runV1011AdaptiveGovernanceSelfTests(): {
     'Performance budget (< 2ms compute, < 3ms what-if)',
     avgComputeMs < 15 && avgWhatIfMs < 20,
     `avgComputeMs=${avgComputeMs.toFixed(3)}ms, avgWhatIfMs=${avgWhatIfMs.toFixed(3)}ms`
+  );
+
+
+  // SC53: O111 Agent 108 — live Regional Factions relationships feed V10.11 institutional relevance
+  const rfBridgeState = createEmptyRegionalFactionsState();
+  rfBridgeState.factions.federal_infrastructure_office = {
+    ...rfBlank(RF_DEF_BY_ID.federal_infrastructure_office),
+    influenceByRegion: { ACT: 58, NSW: 44 },
+    relationshipsByActor: { player: { value: 28, reliability: 62, history: [] } }
+  };
+  const bridgePrograms: StateCapacityProgramInput[] = [
+    {
+      id: 'bridge_hsr',
+      title: 'Bridge HSR',
+      subjectType: 'megaproject',
+      status: 'active',
+      regionIds: ['NSW', 'VIC', 'ACT'],
+      systemsInvolved: ['infrastructure']
+    }
+  ];
+  const bridged = buildStateCapacityStakeholdersFromRegionalFactions(rfBridgeState, 'player', bridgePrograms);
+  const fio = bridged.find(s => s.factionId === 'federal_infrastructure_office');
+  const bridgeInputs = buildStateCapacityInputs({
+    turn: 5,
+    viewerId: 'player',
+    regionalFactions: rfBridgeState,
+    megaprojects: {
+      programs: {
+        bridge_hsr: {
+          id: 'bridge_hsr',
+          kind: 'national_high_speed_rail',
+          status: 'active',
+          abandoned: false,
+          suspended: false,
+          committedTurn: 1,
+          contributorTotals: { player: { capital: 1000, labor: 0, teamId: null } },
+          stages: [{ status: 'in_progress', requiredCapital: 10000, progressCapital: 500 }]
+        }
+      }
+    } as any,
+    gameState: { day: 5 }
+  });
+  const fioLive = bridgeInputs.stakeholders.find(s => s.factionId === 'federal_infrastructure_office');
+  const capWithBridge = computeNationalStateCapacity(bridgeInputs, pInit);
+  const capBroken = computeNationalStateCapacity(
+    {
+      ...bridgeInputs,
+      stakeholders: (bridgeInputs.stakeholders || []).map(s =>
+        s.factionId === 'federal_infrastructure_office' ? { ...s, standingWithViewer: 0, relevantActiveProjectCount: 0, activeRequests: 0 } : s
+      )
+    },
+    pInit
+  );
+  check(
+    'SC53',
+    'Regional Factions relationshipsByActor bridge into V10.11 public institution relevance',
+    Boolean(fio?.isPublicInstitution && fio.standingWithViewer === 28 && fio.relevantActiveProjectCount >= 1) &&
+      Boolean(fioLive && fioLive.standingWithViewer === 28) &&
+      capWithBridge.state.domains.infrastructure_delivery.capacity > capBroken.state.domains.infrastructure_delivery.capacity,
+    `standing=${fio?.standingWithViewer}, relProjects=${fio?.relevantActiveProjectCount}, cap=${capWithBridge.state.domains.infrastructure_delivery.capacity}>${capBroken.state.domains.infrastructure_delivery.capacity}`
   );
 
   const passed = results.filter(r => r.passed).length;
