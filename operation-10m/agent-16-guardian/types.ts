@@ -195,6 +195,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   substantiationStrainIndex: number;
   substantiationIntegrityScore: number;
   governanceZestScore: number;
+  corroborationStrainIndex: number;
+  corroborationIntegrityScore: number;
+  governanceElanScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {

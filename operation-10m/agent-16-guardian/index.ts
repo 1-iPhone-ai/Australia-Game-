@@ -86,6 +86,7 @@ export {
   buildGuardianDepthJustificationReport,
   buildGuardianDepthLegitimationReport,
   buildGuardianDepthSubstantiationReport,
+  buildGuardianDepthCorroborationReport,
   computeContainmentBurdenIndex,
   computeHumanRelayPressure,
   computeRecoveryHeadroomScore,
@@ -200,6 +201,9 @@ export {
   computeSubstantiationStrainIndex,
   computeSubstantiationIntegrityScore,
   computeGovernanceZestScore,
+  computeCorroborationStrainIndex,
+  computeCorroborationIntegrityScore,
+  computeGovernanceElanScore,
   runGuardianDepthUnitSelfTests,
 } from './guardian-depth.js';
 export { ADVISORY_MONITOR_RULES_EXPANSION, countExpansionRulesByKind } from './monitor-rules-expansion.js';
@@ -372,5 +376,9 @@ export {
   ADVISORY_MONITOR_RULES_SCALE_WAVE_43,
   ADVISORY_MONITOR_RULES_SCALE_WAVE_43_COUNT,
 } from './monitor-rules-scale-wave-43.js';
+export {
+  ADVISORY_MONITOR_RULES_SCALE_WAVE_44,
+  ADVISORY_MONITOR_RULES_SCALE_WAVE_44_COUNT,
+} from './monitor-rules-scale-wave-44.js';
 export { ADVISORY_SCENARIO_CATALOG } from './scenarios.js';
 export { runAgent16GuardianCoPilotSelfTests, summarizeAgent16SelfTests } from './self-tests.js';
