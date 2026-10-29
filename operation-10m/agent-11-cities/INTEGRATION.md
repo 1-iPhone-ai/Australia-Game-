@@ -33,6 +33,14 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 4. Persist infra slice under `gameState.op10mAgent11IntercityInfra` (`createEmptyOP10M_A11_InfraPersisted()`).
 5. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
 
+### Scale wave round 19 (schema `10m.a11.composite.18`)
+
+- **Regional settlement legitimacy collapse** — social contract fragility × capital flight panic × irrecoverable collapse threshold (`op10mA11ComputeRegionalSettlementLegitimacyCollapse`)
+- **Interregional fiscal panic contagion** — capital flight panic × liquidity fragmentation × social contract fragility (`op10mA11ComputeInterregionalFiscalPanicContagion`)
+- **Settlement terminal state lock-in** — irrecoverable collapse threshold × cascading failure risk × social contract fragility (`op10mA11ComputeSettlementTerminalStateLockIn`)
+- **10-turn regression harness** — extended bounds for legitimacy collapse, fiscal contagion, terminal lock-in
+- Derived events: `settlement_legitimacy_collapse`, `fiscal_panic_contagion`, `terminal_state_lock_in`
+
 ### Scale wave round 18 (schema `10m.a11.composite.17`)
 
 - **Regional social contract fragility** — institutional trust erosion × liquidity fragmentation × cascading failure risk (`op10mA11ComputeRegionalSocialContractFragility`)

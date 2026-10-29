@@ -96,6 +96,9 @@ import { op10mA11ComputeSettlementCascadingFailureRisk } from './settlement-casc
 import { op10mA11ComputeRegionalSocialContractFragility } from './regional-social-contract-fragility.ts';
 import { op10mA11ComputeInterregionalCapitalFlightPanic } from './interregional-capital-flight-panic.ts';
 import { op10mA11ComputeSettlementIrrecoverableCollapseThreshold } from './settlement-irrecoverable-collapse-threshold.ts';
+import { op10mA11ComputeRegionalSettlementLegitimacyCollapse } from './regional-settlement-legitimacy-collapse.ts';
+import { op10mA11ComputeInterregionalFiscalPanicContagion } from './interregional-fiscal-panic-contagion.ts';
+import { op10mA11ComputeSettlementTerminalStateLockIn } from './settlement-terminal-state-lock-in.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -422,7 +425,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.17',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.18',
     composite.state.schemaVersion,
   );
 
@@ -549,7 +552,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastCascadingFailureRiskIndex === composite.state.nationalCascadingFailureRiskIndex &&
       composite.persisted.lastSocialContractFragilityIndex === composite.state.nationalSocialContractFragilityIndex &&
       composite.persisted.lastCapitalFlightPanicIndex === composite.state.nationalCapitalFlightPanicIndex &&
-      composite.persisted.lastIrrecoverableCollapseThresholdIndex === composite.state.nationalIrrecoverableCollapseThresholdIndex,
+      composite.persisted.lastIrrecoverableCollapseThresholdIndex === composite.state.nationalIrrecoverableCollapseThresholdIndex &&
+      composite.persisted.lastSettlementLegitimacyCollapseIndex === composite.state.nationalSettlementLegitimacyCollapseIndex &&
+      composite.persisted.lastFiscalPanicContagionIndex === composite.state.nationalFiscalPanicContagionIndex &&
+      composite.persisted.lastTerminalStateLockInIndex === composite.state.nationalTerminalStateLockInIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -1696,6 +1702,90 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_158',
     composite.state.irrecoverableCollapseThreshold.every((i) => i.narrative.includes('irrecoverable collapse threshold')),
     composite.state.irrecoverableCollapseThreshold[0]?.band ?? 'none',
+  );
+
+  const settlementLegitimacyCollapse = op10mA11ComputeRegionalSettlementLegitimacyCollapse({
+    socialContractFragility: composite.state.socialContractFragility,
+    capitalFlightPanic: composite.state.capitalFlightPanic,
+    irrecoverableCollapseThreshold: composite.state.irrecoverableCollapseThreshold,
+  });
+  push(
+    out,
+    'a11_159',
+    composite.state.settlementLegitimacyCollapse.length === 8 &&
+      composite.state.nationalSettlementLegitimacyCollapseIndex === settlementLegitimacyCollapse.nationalIndex,
+    `legitimacy collapse ${composite.state.nationalSettlementLegitimacyCollapseIndex}`,
+  );
+
+  const fiscalPanicContagion = op10mA11ComputeInterregionalFiscalPanicContagion({
+    capitalFlightPanic: composite.state.capitalFlightPanic,
+    liquidityFragmentation: composite.state.liquidityFragmentation,
+    socialContractFragility: composite.state.socialContractFragility,
+  });
+  push(
+    out,
+    'a11_160',
+    composite.state.fiscalPanicContagion.length === 8 &&
+      composite.state.nationalFiscalPanicContagionIndex === fiscalPanicContagion.nationalIndex,
+    `fiscal contagion ${composite.state.nationalFiscalPanicContagionIndex}`,
+  );
+
+  const terminalStateLockIn = op10mA11ComputeSettlementTerminalStateLockIn({
+    irrecoverableCollapseThreshold: composite.state.irrecoverableCollapseThreshold,
+    cascadingFailureRisk: composite.state.cascadingFailureRisk,
+    socialContractFragility: composite.state.socialContractFragility,
+  });
+  push(
+    out,
+    'a11_161',
+    composite.state.terminalStateLockIn.length === 8 &&
+      composite.state.nationalTerminalStateLockInIndex === terminalStateLockIn.nationalIndex,
+    `terminal lock-in ${composite.state.nationalTerminalStateLockInIndex}`,
+  );
+
+  push(
+    out,
+    'a11_162',
+    composite.state.settlementLegitimacyCollapse.every((s) => s.narrative.includes('settlement legitimacy collapse')),
+    composite.state.settlementLegitimacyCollapse[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_163',
+    composite.derived.some((d) => d.kind === 'settlement_legitimacy_collapse') ||
+      composite.state.settlementLegitimacyCollapse.some((s) => s.band === 'delegitimized' || s.band === 'collapsed'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_164',
+    composite.derived.some((d) => d.kind === 'fiscal_panic_contagion') ||
+      composite.state.fiscalPanicContagion.some((f) => f.band === 'contagion' || f.band === 'systemic'),
+    composite.state.fiscalPanicContagion[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_165',
+    composite.persisted.lastFiscalPanicContagionIndex === composite.state.nationalFiscalPanicContagionIndex,
+    `persisted fiscal contagion ${composite.persisted.lastFiscalPanicContagionIndex}`,
+  );
+
+  push(
+    out,
+    'a11_166',
+    composite.derived.some((d) => d.kind === 'terminal_state_lock_in') ||
+      composite.state.terminalStateLockIn.some((t) => t.band === 'locked' || t.band === 'terminal'),
+    composite.state.terminalStateLockIn[0]?.band ?? 'none',
+  );
+
+  push(
+    out,
+    'a11_167',
+    composite.state.terminalStateLockIn.every((t) => t.narrative.includes('terminal state lock-in')),
+    composite.state.terminalStateLockIn[0]?.band ?? 'none',
   );
 
   return out;

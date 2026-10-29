@@ -58,5 +58,8 @@ export * from './settlement-cascading-failure-risk.ts';
 export * from './regional-social-contract-fragility.ts';
 export * from './interregional-capital-flight-panic.ts';
 export * from './settlement-irrecoverable-collapse-threshold.ts';
+export * from './regional-settlement-legitimacy-collapse.ts';
+export * from './interregional-fiscal-panic-contagion.ts';
+export * from './settlement-terminal-state-lock-in.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';
