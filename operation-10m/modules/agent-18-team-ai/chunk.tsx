@@ -234,6 +234,12 @@ export interface TeamMultiAgentCoordinationMeta {
   thrashingRegions: string[];
   /** Rolling mutex snapshots for thrashing detection (newest last). */
   mutexHistory: Array<Record<string, string>>;
+  handoffSlaCompliance?: number;
+  overdueHandoffIds?: string[];
+  capacityBalanceScore?: number;
+  overloadedActorIds?: string[];
+  idleActorIds?: string[];
+  directiveQuotaRemaining?: Record<string, number>;
 }
 
 export const AGENT18_LIMITS = {
@@ -245,6 +251,9 @@ export const AGENT18_LIMITS = {
   maxAuditFindings: 16,
   maxSuppressedDirectives: 24,
   maxCommitsPerTurn: 8,
+  maxDirectivesPerActorPerTurn: 3,
+  maxDirectivesPerTeamPerTurn: 8,
+  handoffSlaMaxPendingTurns: 2,
   roleMinTurnsDefault: 2,
 } as const;
 
@@ -1423,6 +1432,24 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (state.meta.overdueHandoffIds && state.meta.overdueHandoffIds.length > 0) {
+    push({
+      severity: 'warning',
+      message: `Handoff SLA overdue: ${state.meta.overdueHandoffIds.join(', ')}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (state.meta.overloadedActorIds && state.meta.overloadedActorIds.length > 0) {
+    push({
+      severity: 'info',
+      message: `Capacity overload: ${state.meta.overloadedActorIds.join(', ')}`,
+      actorIds: state.meta.overloadedActorIds,
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({
@@ -1609,6 +1636,9 @@ export function summarizeArbitrationDemotions(log: PriorityArbitrationRecord[]):
   decideTeamMultiAgentPersistence,
   teamMultiAgentPersistSignature,
 } from './layer-persistence.ts';
+  buildActorCapacityLedger,
+  suggestCapacityRebalanceNotes,
+} from './actor-capacity-ledger.ts';
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
   teamActorScope,
@@ -1694,6 +1724,23 @@ export function sanitizeTeamMultiAgentCoordinationState(
       mutexHistory: Array.isArray(metaRaw.mutexHistory)
         ? (metaRaw.mutexHistory as Array<Record<string, string>>).slice(-5)
         : [],
+      handoffSlaCompliance:
+        typeof metaRaw.handoffSlaCompliance === 'number' ? metaRaw.handoffSlaCompliance : undefined,
+      overdueHandoffIds: Array.isArray(metaRaw.overdueHandoffIds)
+        ? metaRaw.overdueHandoffIds.map(String).slice(0, 8)
+        : undefined,
+      capacityBalanceScore:
+        typeof metaRaw.capacityBalanceScore === 'number' ? metaRaw.capacityBalanceScore : undefined,
+      overloadedActorIds: Array.isArray(metaRaw.overloadedActorIds)
+        ? metaRaw.overloadedActorIds.map(String).slice(0, 8)
+        : undefined,
+      idleActorIds: Array.isArray(metaRaw.idleActorIds)
+        ? metaRaw.idleActorIds.map(String).slice(0, 8)
+        : undefined,
+      directiveQuotaRemaining:
+        metaRaw.directiveQuotaRemaining && typeof metaRaw.directiveQuotaRemaining === 'object'
+          ? (metaRaw.directiveQuotaRemaining as Record<string, number>)
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -1732,8 +1779,21 @@ export function evaluateTeamMultiAgentLayer(
   scoped.rejected.forEach(r =>
     diagnostics.push(`Rejected cross-team directive ${r.proposal.id}: ${r.reason}`),
   );
-  const proposals = scoped.inTeam;
+  const quota = applyDirectiveQuotaGuard(scoped.inTeam, {
+    maxPerActorPerTurn: AGENT18_LIMITS.maxDirectivesPerActorPerTurn,
+    maxPerTeamPerTurn: AGENT18_LIMITS.maxDirectivesPerTeamPerTurn,
+  });
+  quota.dropped.forEach(d =>
+    diagnostics.push(`Dropped directive ${d.proposal.id}: ${d.reason}`),
+  );
+  const proposals = quota.allowed;
   const directiveResult = coordinateTeammateDirectives(proposals, coordination, roles);
+  const handoffSla = evaluateHandoffSla(inputs.turn, coordination.handoffs, {
+    maxPendingTurns: AGENT18_LIMITS.handoffSlaMaxPendingTurns,
+  });
+  handoffSla.notes.forEach(n => diagnostics.push(n));
+  const capacityLedger = buildActorCapacityLedger(inputs.actors, inputs.tasks, roles);
+  suggestCapacityRebalanceNotes(capacityLedger).forEach(n => diagnostics.push(n));
   directiveResult.suppressed.forEach(s =>
     diagnostics.push(`Suppressed directive ${s.proposal.id}: ${s.reason}`),
   );
@@ -1782,12 +1842,19 @@ export function evaluateTeamMultiAgentLayer(
     meta: {
       ...emptyCoordinationMeta(),
       directiveConstraints: directiveResult.constraintsByActor,
-      suppressedDirectiveIds: directiveResult.suppressed
-        .map(s => s.proposal.id)
-        .slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
+      suppressedDirectiveIds: [
+        ...quota.dropped.map(d => d.proposal.id),
+        ...directiveResult.suppressed.map(s => s.proposal.id),
+      ].slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
       lastReconcileStable: reconcile.stable,
       thrashingRegions: reconcile.thrashingRegions,
       mutexHistory,
+      handoffSlaCompliance: handoffSla.complianceScore,
+      overdueHandoffIds: handoffSla.overdueHandoffIds,
+      capacityBalanceScore: capacityLedger.balanceScore,
+      overloadedActorIds: capacityLedger.overloadedActorIds,
+      idleActorIds: capacityLedger.idleActorIds,
+      directiveQuotaRemaining: quota.remainingByActor,
     },
   };
 
@@ -1959,6 +2026,7 @@ export interface DualTeamMultiAgentResult {
   enemy: TeamMultiAgentEvaluation | null;
   isolationIssues: string[];
   byTeam: Record<string, TeamMultiAgentLayerState>;
+  handoffSlaCombinedCompliance: number;
 }
 
 /**
@@ -1983,11 +2051,16 @@ export function evaluateDualTeamMultiAgentLayers(
   friendly.coordinationIssues.push(...boundaryIssues);
 
   if (!enemyInputs) {
+    const friendlySla = evaluateHandoffSla(
+      friendlyInputs.turn,
+      friendly.state.coordination.handoffs,
+    );
     return {
       friendly,
       enemy: null,
       isolationIssues: boundaryIssues,
       byTeam: { [friendlyInputs.teamId]: friendly.state },
+      handoffSlaCombinedCompliance: friendlySla.complianceScore,
     };
   }
 
@@ -2008,6 +2081,15 @@ export function evaluateDualTeamMultiAgentLayers(
 
   const isolationIssues = [...boundaryIssues, ...enemyBoundary, ...mutexIssues, ...crossActorIssues];
 
+  const friendlySla = evaluateHandoffSla(friendlyInputs.turn, friendly.state.coordination.handoffs);
+  const enemySla = evaluateHandoffSla(enemyInputs.turn, enemy.state.coordination.handoffs);
+  const slaSummary = summarizeDualTeamHandoffSla(
+    friendlyInputs.teamId,
+    friendlySla,
+    enemyInputs.teamId,
+    enemySla,
+  );
+
   return {
     friendly,
     enemy,
@@ -2016,7 +2098,269 @@ export function evaluateDualTeamMultiAgentLayers(
       [friendlyInputs.teamId]: friendly.state,
       [enemyInputs.teamId]: enemy.state,
     },
+    handoffSlaCombinedCompliance: slaSummary.combinedCompliance,
   };
+}
+
+
+// --- source: handoff-sla-monitor.ts ---
+
+export interface HandoffSlaPolicy {
+  maxPendingTurns: number;
+}
+
+export interface HandoffSlaReport {
+  pendingCount: number;
+  overdueHandoffIds: string[];
+  complianceScore: number;
+  notes: string[];
+}
+
+const DEFAULT_HANDOFF_SLA: HandoffSlaPolicy = {
+  maxPendingTurns: 2,
+};
+
+/**
+ * Score pending handoffs against a turn budget; overdue ids can drive audit/diagnostics.
+ */
+export function evaluateHandoffSla(
+  turn: number,
+  handoffs: HandoffRequest[],
+  policy: Partial<HandoffSlaPolicy> = {},
+): HandoffSlaReport {
+  const maxPending = policy.maxPendingTurns ?? DEFAULT_HANDOFF_SLA.maxPendingTurns;
+  const pending = handoffs.filter(h => h.status === 'pending').slice(0, AGENT18_LIMITS.maxHandoffs);
+  const overdueHandoffIds: string[] = [];
+  const notes: string[] = [];
+
+  pending.forEach(h => {
+    const age = turn - h.requestedTurn;
+    if (age > maxPending) {
+      overdueHandoffIds.push(h.id);
+      notes.push(`Handoff ${h.id} overdue (${age} turns pending, max ${maxPending})`);
+    }
+  });
+
+  const complianceScore =
+    pending.length === 0
+      ? 100
+      : Math.max(0, Math.round(100 * (1 - overdueHandoffIds.length / pending.length)));
+
+  return {
+    pendingCount: pending.length,
+    overdueHandoffIds,
+    complianceScore,
+    notes,
+  };
+}
+
+export function handoffSlaAuditMessages(report: HandoffSlaReport): string[] {
+  return report.overdueHandoffIds.map(id => `Handoff SLA breach: ${id} exceeded pending turn budget`);
+}
+
+export function summarizeDualTeamHandoffSla(
+  friendlyTeamId: string,
+  friendly: HandoffSlaReport,
+  enemyTeamId: string | null,
+  enemy: HandoffSlaReport | null,
+): { combinedCompliance: number; teamReports: Record<string, HandoffSlaReport> } {
+  if (!enemy || !enemyTeamId) {
+    return {
+      combinedCompliance: friendly.complianceScore,
+      teamReports: { [friendlyTeamId]: friendly },
+    };
+  }
+  const combinedCompliance = Math.round((friendly.complianceScore + enemy.complianceScore) / 2);
+  return {
+    combinedCompliance,
+    teamReports: { [friendlyTeamId]: friendly, [enemyTeamId]: enemy },
+  };
+}
+
+export function handoffsFromPlan(plan: CoordinationPlan): HandoffRequest[] {
+  return plan.handoffs;
+}
+
+
+// --- source: actor-capacity-ledger.ts ---
+
+export interface ActorCapacityRow {
+  actorId: string;
+  apRemaining: number | null;
+  readyTaskCount: number;
+  activeTaskCount: number;
+  loadScore: number;
+  status: 'balanced' | 'overloaded' | 'idle';
+}
+
+export interface CapacityLedgerSnapshot {
+  rows: ActorCapacityRow[];
+  balanceScore: number;
+  overloadedActorIds: string[];
+  idleActorIds: string[];
+  notes: string[];
+}
+
+const ACTIVE_STATUSES = new Set(['ready', 'active', 'blocked']);
+
+function taskLoadForActor(actorId: string, tasks: TeamTaskSnapshot[]): { ready: number; active: number } {
+  let ready = 0;
+  let active = 0;
+  tasks.forEach(t => {
+    if (!t.assignedActorIds.includes(actorId)) return;
+    if (t.status === 'ready') ready += 1;
+    if (t.status === 'active') active += 1;
+  });
+  return { ready, active };
+}
+
+function roleWeight(role: RoleAssignment | undefined): number {
+  if (!role) return 1;
+  if (role.primaryRole === 'recovery') return 0.5;
+  if (role.primaryRole === 'support') return 0.75;
+  return 1;
+}
+
+/**
+ * Read-only capacity view: compares AP budget vs assigned work for rebalance hints.
+ */
+export function buildActorCapacityLedger(
+  actors: TeamActorSnapshot[],
+  tasks: TeamTaskSnapshot[],
+  roles: RoleAssignment[],
+): CapacityLedgerSnapshot {
+  const rows: ActorCapacityRow[] = [];
+  const overloadedActorIds: string[] = [];
+  const idleActorIds: string[] = [];
+  const notes: string[] = [];
+
+  actors.forEach(actor => {
+    const role = roles.find(r => r.actorId === actor.id);
+    const { ready, active } = taskLoadForActor(actor.id, tasks);
+    const weight = roleWeight(role);
+    const ap = actor.apRemaining;
+    const demand = (ready + active * 1.25) * weight;
+    const supply = ap === null ? Math.max(1, demand) : Math.max(0, ap);
+    const loadScore = supply <= 0 ? demand : demand / supply;
+
+    let status: ActorCapacityRow['status'] = 'balanced';
+    if (actor.inRecovery) {
+      status = ready + active > 1 ? 'overloaded' : 'balanced';
+    } else if (ap !== null && ap === 0 && ready > 0) {
+      status = 'overloaded';
+    } else if (loadScore > 1.35) {
+      status = 'overloaded';
+    } else if (ap !== null && ap >= 3 && ready === 0 && active === 0) {
+      status = 'idle';
+    }
+
+    if (status === 'overloaded') {
+      overloadedActorIds.push(actor.id);
+      notes.push(`Actor ${actor.id} overloaded (load ${loadScore.toFixed(2)})`);
+    }
+    if (status === 'idle') {
+      idleActorIds.push(actor.id);
+      notes.push(`Actor ${actor.id} idle with ${ap} AP remaining`);
+    }
+
+    rows.push({
+      actorId: actor.id,
+      apRemaining: ap,
+      readyTaskCount: ready,
+      activeTaskCount: active,
+      loadScore: Math.round(loadScore * 100) / 100,
+      status,
+    });
+  });
+
+  const balanceScore =
+    rows.length === 0
+      ? 100
+      : Math.round(
+          (rows.filter(r => r.status === 'balanced').length / rows.length) * 100,
+        );
+
+  return {
+    rows,
+    balanceScore,
+    overloadedActorIds,
+    idleActorIds,
+    notes: notes.slice(0, 8),
+  };
+}
+
+export function suggestCapacityRebalanceNotes(ledger: CapacityLedgerSnapshot): string[] {
+  if (ledger.overloadedActorIds.length === 0 || ledger.idleActorIds.length === 0) {
+    return [];
+  }
+  return [
+    `Rebalance hint: shift work from ${ledger.overloadedActorIds.join(', ')} to ${ledger.idleActorIds.join(', ')}`,
+  ];
+}
+
+
+// --- source: directive-quota-guard.ts ---
+
+export interface DirectiveQuotaPolicy {
+  maxPerActorPerTurn: number;
+  maxPerTeamPerTurn: number;
+}
+
+export interface DirectiveQuotaReport {
+  allowed: TeammateDirectiveProposal[];
+  dropped: Array<{ proposal: TeammateDirectiveProposal; reason: string }>;
+  remainingByActor: Record<string, number>;
+}
+
+const DEFAULT_QUOTA: DirectiveQuotaPolicy = {
+  maxPerActorPerTurn: 3,
+  maxPerTeamPerTurn: 8,
+};
+
+/**
+ * Enforce per-actor and team-wide directive proposal caps before coordination filtering.
+ */
+export function applyDirectiveQuotaGuard(
+  proposals: TeammateDirectiveProposal[],
+  policy: Partial<DirectiveQuotaPolicy> = {},
+): DirectiveQuotaReport {
+  const maxActor = policy.maxPerActorPerTurn ?? DEFAULT_QUOTA.maxPerActorPerTurn;
+  const maxTeam = policy.maxPerTeamPerTurn ?? DEFAULT_QUOTA.maxPerTeamPerTurn;
+  const sorted = [...proposals].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+  const allowed: TeammateDirectiveProposal[] = [];
+  const dropped: DirectiveQuotaReport['dropped'] = [];
+  const perActor: Record<string, number> = {};
+  const remainingByActor: Record<string, number> = {};
+
+  sorted.forEach(p => {
+    perActor[p.actorId] = perActor[p.actorId] ?? 0;
+    if (allowed.length >= maxTeam) {
+      dropped.push({ proposal: p, reason: 'team_quota_exceeded' });
+      return;
+    }
+    if (perActor[p.actorId] >= maxActor) {
+      dropped.push({ proposal: p, reason: 'actor_quota_exceeded' });
+      return;
+    }
+    allowed.push(p);
+    perActor[p.actorId] += 1;
+  });
+
+  Object.keys(perActor).forEach(actorId => {
+    remainingByActor[actorId] = Math.max(0, maxActor - perActor[actorId]);
+  });
+
+  return {
+    allowed: allowed.slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
+    dropped: dropped.slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
+    remainingByActor,
+  };
+}
+
+export function mergeQuotaDroppedIntoSuppressed(
+  quota: DirectiveQuotaReport,
+): string[] {
+  return quota.dropped.map(d => d.proposal.id);
 }
 
 
@@ -2043,6 +2387,9 @@ export function evaluateDualTeamMultiAgentLayers(
   filterCrossTeamDirectives,
   teamActorScope,
 } from './team-boundary-guard.ts';
+  buildActorCapacityLedger,
+  suggestCapacityRebalanceNotes,
+} from './actor-capacity-ledger.ts';
   DuplicateActionGuard,
   buildActionFingerprint,
   detectDuplicateIntents,
@@ -2856,7 +3203,8 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       dual.enemy !== null &&
       dual.byTeam.team_player &&
       dual.byTeam.team_opponent &&
-      dual.isolationIssues.length === 0
+      dual.isolationIssues.length === 0 &&
+      typeof dual.handoffSlaCombinedCompliance === 'number'
     ) || JSON.stringify({ issues: dual.isolationIssues });
   });
 
@@ -2868,6 +3216,117 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
   check(results, 'a18_eval_persistence_field', 'Layer evaluation exposes persistence decision', () => {
     const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
     return typeof ev.persistence.commit === 'boolean' && Boolean(ev.persistence.signature);
+  });
+
+  check(results, 'a18_handoff_sla_overdue', 'Handoff SLA: stale pending handoff flagged overdue', () => {
+    const report = evaluateHandoffSla(10, [
+      {
+        id: 'h_old',
+        fromActorId: 'player',
+        toActorId: 'mate',
+        regionId: 'NSW',
+        taskId: 't1',
+        status: 'pending',
+        requestedTurn: 5,
+        reason: 'test',
+      },
+    ]);
+    return report.overdueHandoffIds.includes('h_old') && report.complianceScore === 0;
+  });
+
+  check(results, 'a18_handoff_sla_clean', 'Handoff SLA: fresh pending handoff stays compliant', () => {
+    const report = evaluateHandoffSla(6, [
+      {
+        id: 'h_new',
+        fromActorId: 'player',
+        toActorId: 'mate',
+        regionId: 'NSW',
+        taskId: 't1',
+        status: 'pending',
+        requestedTurn: 6,
+        reason: 'test',
+      },
+    ]);
+    return report.overdueHandoffIds.length === 0 && report.complianceScore === 100;
+  });
+
+  check(results, 'a18_capacity_overload', 'Capacity: zero AP with ready tasks marks overloaded', () => {
+    const inp = baseInputs();
+    inp.actors = inp.actors.map(a => (a.id === 'player' ? { ...a, apRemaining: 0 } : a));
+    const roles = assignTeamRolesWithSlots(inp).roles;
+    const ledger = buildActorCapacityLedger(inp.actors, inp.tasks, roles);
+    return ledger.overloadedActorIds.includes('player') || JSON.stringify(ledger);
+  });
+
+  check(results, 'a18_capacity_idle', 'Capacity: high AP without tasks marks idle', () => {
+    const inp = baseInputs({ command: null });
+    inp.actors = [
+      { id: 'solo', name: 'S', isHuman: false, inRecovery: false, location: 'NSW', apRemaining: 5, brainRole: null },
+    ];
+    inp.tasks = [];
+    const roles = assignTeamRolesWithSlots(inp).roles;
+    const ledger = buildActorCapacityLedger(inp.actors, inp.tasks, roles);
+    return ledger.idleActorIds.includes('solo') && ledger.rows[0]?.status === 'idle';
+  });
+
+  check(results, 'a18_capacity_rebalance_hint', 'Capacity: rebalance hint when overload and idle coexist', () => {
+    const ledger = {
+      rows: [],
+      balanceScore: 50,
+      overloadedActorIds: ['a'],
+      idleActorIds: ['b'],
+      notes: [],
+    };
+    const hints = suggestCapacityRebalanceNotes(ledger);
+    return hints.length === 1 && hints[0].includes('a') && hints[0].includes('b');
+  });
+
+  check(results, 'a18_quota_actor_cap', 'Directive quota: actor cap drops lower-priority extras', () => {
+    const proposals: TeammateDirectiveProposal[] = [
+      { id: 'p1', actorId: 'mate', goalKind: 'travel', targetRegionId: 'VIC', taskId: null, priority: 1 },
+      { id: 'p2', actorId: 'mate', goalKind: 'travel', targetRegionId: 'QLD', taskId: null, priority: 2 },
+      { id: 'p3', actorId: 'mate', goalKind: 'travel', targetRegionId: 'SA', taskId: null, priority: 3 },
+      { id: 'p4', actorId: 'mate', goalKind: 'travel', targetRegionId: 'WA', taskId: null, priority: 4 },
+    ];
+    const q = applyDirectiveQuotaGuard(proposals, { maxPerActorPerTurn: 2, maxPerTeamPerTurn: 8 });
+    return q.allowed.length === 2 && q.dropped.some(d => d.proposal.id === 'p3');
+  });
+
+  check(results, 'a18_quota_team_cap', 'Directive quota: team cap enforced across actors', () => {
+    const proposals: TeammateDirectiveProposal[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `d${i}`,
+      actorId: i % 2 === 0 ? 'player' : 'mate',
+      goalKind: 'travel',
+      targetRegionId: 'VIC',
+      taskId: null,
+      priority: i,
+    }));
+    const q = applyDirectiveQuotaGuard(proposals, { maxPerActorPerTurn: 5, maxPerTeamPerTurn: 4 });
+    return q.allowed.length === 4 && q.dropped.length === 6;
+  });
+
+  check(results, 'a18_eval_round4_meta', 'Layer: round-4 meta exposes SLA, capacity, quota fields', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.handoffSlaCompliance === 'number' &&
+      typeof m.capacityBalanceScore === 'number' &&
+      m.directiveQuotaRemaining !== undefined
+    );
+  });
+
+  check(results, 'a18_dual_sla_compliance', 'Dual team: combined handoff SLA compliance exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return typeof dual.handoffSlaCombinedCompliance === 'number';
   });
 
   return results;

@@ -26,6 +26,9 @@ const FILES = [
   'team-boundary-guard.ts',
   'layer-persistence.ts',
   'dual-team-coordination.ts',
+  'handoff-sla-monitor.ts',
+  'actor-capacity-ledger.ts',
+  'directive-quota-guard.ts',
   'self-tests.ts',
 ];
 

@@ -230,6 +230,12 @@ export interface TeamMultiAgentCoordinationMeta {
   thrashingRegions: string[];
   /** Rolling mutex snapshots for thrashing detection (newest last). */
   mutexHistory: Array<Record<string, string>>;
+  handoffSlaCompliance?: number;
+  overdueHandoffIds?: string[];
+  capacityBalanceScore?: number;
+  overloadedActorIds?: string[];
+  idleActorIds?: string[];
+  directiveQuotaRemaining?: Record<string, number>;
 }
 
 export const AGENT18_LIMITS = {
@@ -241,6 +247,9 @@ export const AGENT18_LIMITS = {
   maxAuditFindings: 16,
   maxSuppressedDirectives: 24,
   maxCommitsPerTurn: 8,
+  maxDirectivesPerActorPerTurn: 3,
+  maxDirectivesPerTeamPerTurn: 8,
+  handoffSlaMaxPendingTurns: 2,
   roleMinTurnsDefault: 2,
 } as const;
 

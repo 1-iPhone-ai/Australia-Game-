@@ -152,6 +152,24 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (state.meta.overdueHandoffIds && state.meta.overdueHandoffIds.length > 0) {
+    push({
+      severity: 'warning',
+      message: `Handoff SLA overdue: ${state.meta.overdueHandoffIds.join(', ')}`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (state.meta.overloadedActorIds && state.meta.overloadedActorIds.length > 0) {
+    push({
+      severity: 'info',
+      message: `Capacity overload: ${state.meta.overloadedActorIds.join(', ')}`,
+      actorIds: state.meta.overloadedActorIds,
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({

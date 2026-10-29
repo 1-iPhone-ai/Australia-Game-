@@ -15,4 +15,7 @@ export {
   bumpPersistTracker,
 } from './layer-persistence.ts';
 export * from './team-boundary-guard.ts';
+export * from './handoff-sla-monitor.ts';
+export * from './actor-capacity-ledger.ts';
+export * from './directive-quota-guard.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';

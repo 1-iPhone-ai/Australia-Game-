@@ -24,6 +24,12 @@ import {
   teamMultiAgentPersistSignature,
 } from './layer-persistence.ts';
 import {
+  buildActorCapacityLedger,
+  suggestCapacityRebalanceNotes,
+} from './actor-capacity-ledger.ts';
+import { applyDirectiveQuotaGuard } from './directive-quota-guard.ts';
+import { evaluateHandoffSla } from './handoff-sla-monitor.ts';
+import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
   teamActorScope,
@@ -110,6 +116,23 @@ export function sanitizeTeamMultiAgentCoordinationState(
       mutexHistory: Array.isArray(metaRaw.mutexHistory)
         ? (metaRaw.mutexHistory as Array<Record<string, string>>).slice(-5)
         : [],
+      handoffSlaCompliance:
+        typeof metaRaw.handoffSlaCompliance === 'number' ? metaRaw.handoffSlaCompliance : undefined,
+      overdueHandoffIds: Array.isArray(metaRaw.overdueHandoffIds)
+        ? metaRaw.overdueHandoffIds.map(String).slice(0, 8)
+        : undefined,
+      capacityBalanceScore:
+        typeof metaRaw.capacityBalanceScore === 'number' ? metaRaw.capacityBalanceScore : undefined,
+      overloadedActorIds: Array.isArray(metaRaw.overloadedActorIds)
+        ? metaRaw.overloadedActorIds.map(String).slice(0, 8)
+        : undefined,
+      idleActorIds: Array.isArray(metaRaw.idleActorIds)
+        ? metaRaw.idleActorIds.map(String).slice(0, 8)
+        : undefined,
+      directiveQuotaRemaining:
+        metaRaw.directiveQuotaRemaining && typeof metaRaw.directiveQuotaRemaining === 'object'
+          ? (metaRaw.directiveQuotaRemaining as Record<string, number>)
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -148,8 +171,21 @@ export function evaluateTeamMultiAgentLayer(
   scoped.rejected.forEach(r =>
     diagnostics.push(`Rejected cross-team directive ${r.proposal.id}: ${r.reason}`),
   );
-  const proposals = scoped.inTeam;
+  const quota = applyDirectiveQuotaGuard(scoped.inTeam, {
+    maxPerActorPerTurn: AGENT18_LIMITS.maxDirectivesPerActorPerTurn,
+    maxPerTeamPerTurn: AGENT18_LIMITS.maxDirectivesPerTeamPerTurn,
+  });
+  quota.dropped.forEach(d =>
+    diagnostics.push(`Dropped directive ${d.proposal.id}: ${d.reason}`),
+  );
+  const proposals = quota.allowed;
   const directiveResult = coordinateTeammateDirectives(proposals, coordination, roles);
+  const handoffSla = evaluateHandoffSla(inputs.turn, coordination.handoffs, {
+    maxPendingTurns: AGENT18_LIMITS.handoffSlaMaxPendingTurns,
+  });
+  handoffSla.notes.forEach(n => diagnostics.push(n));
+  const capacityLedger = buildActorCapacityLedger(inputs.actors, inputs.tasks, roles);
+  suggestCapacityRebalanceNotes(capacityLedger).forEach(n => diagnostics.push(n));
   directiveResult.suppressed.forEach(s =>
     diagnostics.push(`Suppressed directive ${s.proposal.id}: ${s.reason}`),
   );
@@ -198,12 +234,19 @@ export function evaluateTeamMultiAgentLayer(
     meta: {
       ...emptyCoordinationMeta(),
       directiveConstraints: directiveResult.constraintsByActor,
-      suppressedDirectiveIds: directiveResult.suppressed
-        .map(s => s.proposal.id)
-        .slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
+      suppressedDirectiveIds: [
+        ...quota.dropped.map(d => d.proposal.id),
+        ...directiveResult.suppressed.map(s => s.proposal.id),
+      ].slice(0, AGENT18_LIMITS.maxSuppressedDirectives),
       lastReconcileStable: reconcile.stable,
       thrashingRegions: reconcile.thrashingRegions,
       mutexHistory,
+      handoffSlaCompliance: handoffSla.complianceScore,
+      overdueHandoffIds: handoffSla.overdueHandoffIds,
+      capacityBalanceScore: capacityLedger.balanceScore,
+      overloadedActorIds: capacityLedger.overloadedActorIds,
+      idleActorIds: capacityLedger.idleActorIds,
+      directiveQuotaRemaining: quota.remainingByActor,
     },
   };
 

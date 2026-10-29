@@ -1,3 +1,4 @@
+import { evaluateHandoffSla, summarizeDualTeamHandoffSla } from './handoff-sla-monitor.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -15,6 +16,7 @@ export interface DualTeamMultiAgentResult {
   enemy: TeamMultiAgentEvaluation | null;
   isolationIssues: string[];
   byTeam: Record<string, TeamMultiAgentLayerState>;
+  handoffSlaCombinedCompliance: number;
 }
 
 /**
@@ -39,11 +41,16 @@ export function evaluateDualTeamMultiAgentLayers(
   friendly.coordinationIssues.push(...boundaryIssues);
 
   if (!enemyInputs) {
+    const friendlySla = evaluateHandoffSla(
+      friendlyInputs.turn,
+      friendly.state.coordination.handoffs,
+    );
     return {
       friendly,
       enemy: null,
       isolationIssues: boundaryIssues,
       byTeam: { [friendlyInputs.teamId]: friendly.state },
+      handoffSlaCombinedCompliance: friendlySla.complianceScore,
     };
   }
 
@@ -64,6 +71,15 @@ export function evaluateDualTeamMultiAgentLayers(
 
   const isolationIssues = [...boundaryIssues, ...enemyBoundary, ...mutexIssues, ...crossActorIssues];
 
+  const friendlySla = evaluateHandoffSla(friendlyInputs.turn, friendly.state.coordination.handoffs);
+  const enemySla = evaluateHandoffSla(enemyInputs.turn, enemy.state.coordination.handoffs);
+  const slaSummary = summarizeDualTeamHandoffSla(
+    friendlyInputs.teamId,
+    friendlySla,
+    enemyInputs.teamId,
+    enemySla,
+  );
+
   return {
     friendly,
     enemy,
@@ -72,5 +88,6 @@ export function evaluateDualTeamMultiAgentLayers(
       [friendlyInputs.teamId]: friendly.state,
       [enemyInputs.teamId]: enemy.state,
     },
+    handoffSlaCombinedCompliance: slaSummary.combinedCompliance,
   };
 }

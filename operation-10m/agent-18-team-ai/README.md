@@ -24,6 +24,12 @@ npx --yes tsx operation-10m/agent-18-team-ai/run-self-tests.mts
 | `src/coordination-orchestrator.ts` | Leases, mutexes, handoffs |
 | `src/priority-arbitration.ts` | Mission-tier mutex arbitration |
 | `src/duplicate-action-guard.ts` | Fingerprint store + commit gate |
+| `src/team-boundary-guard.ts` | Team-scoped directives/tasks |
+| `src/layer-persistence.ts` | Signature commit gate |
+| `src/dual-team-coordination.ts` | Friendly + enemy evaluation |
+| `src/handoff-sla-monitor.ts` | Pending handoff SLA compliance |
+| `src/actor-capacity-ledger.ts` | AP vs task load balance |
+| `src/directive-quota-guard.ts` | Per-turn directive caps |
 | `src/multi-agent-state.ts` | Layer evaluator + sanitize |
 | `src/self-tests.ts` | Deterministic test suite |
 | `run-self-tests.mts` | CLI runner |

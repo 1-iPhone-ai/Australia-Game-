@@ -29,6 +29,12 @@ import {
   teamActorScope,
 } from './team-boundary-guard.ts';
 import {
+  buildActorCapacityLedger,
+  suggestCapacityRebalanceNotes,
+} from './actor-capacity-ledger.ts';
+import { applyDirectiveQuotaGuard } from './directive-quota-guard.ts';
+import { evaluateHandoffSla } from './handoff-sla-monitor.ts';
+import {
   DuplicateActionGuard,
   buildActionFingerprint,
   detectDuplicateIntents,
@@ -845,7 +851,8 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       dual.enemy !== null &&
       dual.byTeam.team_player &&
       dual.byTeam.team_opponent &&
-      dual.isolationIssues.length === 0
+      dual.isolationIssues.length === 0 &&
+      typeof dual.handoffSlaCombinedCompliance === 'number'
     ) || JSON.stringify({ issues: dual.isolationIssues });
   });
 
@@ -857,6 +864,117 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
   check(results, 'a18_eval_persistence_field', 'Layer evaluation exposes persistence decision', () => {
     const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
     return typeof ev.persistence.commit === 'boolean' && Boolean(ev.persistence.signature);
+  });
+
+  check(results, 'a18_handoff_sla_overdue', 'Handoff SLA: stale pending handoff flagged overdue', () => {
+    const report = evaluateHandoffSla(10, [
+      {
+        id: 'h_old',
+        fromActorId: 'player',
+        toActorId: 'mate',
+        regionId: 'NSW',
+        taskId: 't1',
+        status: 'pending',
+        requestedTurn: 5,
+        reason: 'test',
+      },
+    ]);
+    return report.overdueHandoffIds.includes('h_old') && report.complianceScore === 0;
+  });
+
+  check(results, 'a18_handoff_sla_clean', 'Handoff SLA: fresh pending handoff stays compliant', () => {
+    const report = evaluateHandoffSla(6, [
+      {
+        id: 'h_new',
+        fromActorId: 'player',
+        toActorId: 'mate',
+        regionId: 'NSW',
+        taskId: 't1',
+        status: 'pending',
+        requestedTurn: 6,
+        reason: 'test',
+      },
+    ]);
+    return report.overdueHandoffIds.length === 0 && report.complianceScore === 100;
+  });
+
+  check(results, 'a18_capacity_overload', 'Capacity: zero AP with ready tasks marks overloaded', () => {
+    const inp = baseInputs();
+    inp.actors = inp.actors.map(a => (a.id === 'player' ? { ...a, apRemaining: 0 } : a));
+    const roles = assignTeamRolesWithSlots(inp).roles;
+    const ledger = buildActorCapacityLedger(inp.actors, inp.tasks, roles);
+    return ledger.overloadedActorIds.includes('player') || JSON.stringify(ledger);
+  });
+
+  check(results, 'a18_capacity_idle', 'Capacity: high AP without tasks marks idle', () => {
+    const inp = baseInputs({ command: null });
+    inp.actors = [
+      { id: 'solo', name: 'S', isHuman: false, inRecovery: false, location: 'NSW', apRemaining: 5, brainRole: null },
+    ];
+    inp.tasks = [];
+    const roles = assignTeamRolesWithSlots(inp).roles;
+    const ledger = buildActorCapacityLedger(inp.actors, inp.tasks, roles);
+    return ledger.idleActorIds.includes('solo') && ledger.rows[0]?.status === 'idle';
+  });
+
+  check(results, 'a18_capacity_rebalance_hint', 'Capacity: rebalance hint when overload and idle coexist', () => {
+    const ledger = {
+      rows: [],
+      balanceScore: 50,
+      overloadedActorIds: ['a'],
+      idleActorIds: ['b'],
+      notes: [],
+    };
+    const hints = suggestCapacityRebalanceNotes(ledger);
+    return hints.length === 1 && hints[0].includes('a') && hints[0].includes('b');
+  });
+
+  check(results, 'a18_quota_actor_cap', 'Directive quota: actor cap drops lower-priority extras', () => {
+    const proposals: TeammateDirectiveProposal[] = [
+      { id: 'p1', actorId: 'mate', goalKind: 'travel', targetRegionId: 'VIC', taskId: null, priority: 1 },
+      { id: 'p2', actorId: 'mate', goalKind: 'travel', targetRegionId: 'QLD', taskId: null, priority: 2 },
+      { id: 'p3', actorId: 'mate', goalKind: 'travel', targetRegionId: 'SA', taskId: null, priority: 3 },
+      { id: 'p4', actorId: 'mate', goalKind: 'travel', targetRegionId: 'WA', taskId: null, priority: 4 },
+    ];
+    const q = applyDirectiveQuotaGuard(proposals, { maxPerActorPerTurn: 2, maxPerTeamPerTurn: 8 });
+    return q.allowed.length === 2 && q.dropped.some(d => d.proposal.id === 'p3');
+  });
+
+  check(results, 'a18_quota_team_cap', 'Directive quota: team cap enforced across actors', () => {
+    const proposals: TeammateDirectiveProposal[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `d${i}`,
+      actorId: i % 2 === 0 ? 'player' : 'mate',
+      goalKind: 'travel',
+      targetRegionId: 'VIC',
+      taskId: null,
+      priority: i,
+    }));
+    const q = applyDirectiveQuotaGuard(proposals, { maxPerActorPerTurn: 5, maxPerTeamPerTurn: 4 });
+    return q.allowed.length === 4 && q.dropped.length === 6;
+  });
+
+  check(results, 'a18_eval_round4_meta', 'Layer: round-4 meta exposes SLA, capacity, quota fields', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.handoffSlaCompliance === 'number' &&
+      typeof m.capacityBalanceScore === 'number' &&
+      m.directiveQuotaRemaining !== undefined
+    );
+  });
+
+  check(results, 'a18_dual_sla_compliance', 'Dual team: combined handoff SLA compliance exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return typeof dual.handoffSlaCombinedCompliance === 'number';
   });
 
   return results;
