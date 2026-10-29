@@ -17,6 +17,7 @@ import {
 } from './narrative-runtime.ts';
 import { evaluatePendingResponseOrchestration } from './pending-response-orchestrator.ts';
 import { evaluatePendingResponseExpiryCoordination } from './pending-response-expiry-coordinator.ts';
+import { evaluatePendingResponseStabilizationCoordination } from './pending-response-stabilization-coordinator.ts';
 import type {
   Op10mChainDescriptor,
   Op10mComputeTurnStage,
@@ -147,6 +148,15 @@ export function executeOp10mNarrativeComputeTurnHook(
   simulation = pendingPass.simulation;
   narrative = pendingPass.narrative;
   log.push(...pendingPass.log);
+
+  const stabilizationPass = evaluatePendingResponseStabilizationCoordination(
+    simulation,
+    narrative,
+    params.day
+  );
+  simulation = stabilizationPass.simulation;
+  narrative = stabilizationPass.narrative;
+  log.push(...stabilizationPass.log);
 
   const deferredCount = getDeferredQueueDepth(narrative);
   const digest = buildTurnComputeDigest(

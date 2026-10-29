@@ -79,6 +79,8 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       responsesArbitrated: 0,
       pendingResponsesExpired: 0,
       pendingQueueClears: 0,
+      pendingStabilizationWaves: 0,
+      postQueueCalmPasses: 0,
     },
     regional: createDefaultRegionalContagionLedger(),
   };
@@ -144,6 +146,8 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.responsesArbitrated = Math.max(0, Number(t.responsesArbitrated) || 0);
     base.telemetry.pendingResponsesExpired = Math.max(0, Number(t.pendingResponsesExpired) || 0);
     base.telemetry.pendingQueueClears = Math.max(0, Number(t.pendingQueueClears) || 0);
+    base.telemetry.pendingStabilizationWaves = Math.max(0, Number(t.pendingStabilizationWaves) || 0);
+    base.telemetry.postQueueCalmPasses = Math.max(0, Number(t.postQueueCalmPasses) || 0);
   }
 
   if (r.turnCompute) {

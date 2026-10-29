@@ -13,6 +13,7 @@ export * from './compute-turn-reconcile.ts';
 export * from './compute-turn-drift-settle.ts';
 export * from './pending-response-orchestrator.ts';
 export * from './pending-response-expiry-coordinator.ts';
+export * from './pending-response-stabilization-coordinator.ts';
 export * from './compute-turn-hooks.ts';
 export * from './chain-catalog-aggregate.ts';
 export {
