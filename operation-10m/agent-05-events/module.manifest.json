@@ -7,6 +7,6 @@
   "contentSha256Prefix": "bed5cb6ca5f1fb3c",
   "chunkPath": "operation-10m/agent-05-events/chunk.tsx",
   "chunkLineCount": 2715708,
-  "chainCount": 22100,
+  "chainCount": 22320,
   "regenerate": "npm run bundle:agent05"
 }
