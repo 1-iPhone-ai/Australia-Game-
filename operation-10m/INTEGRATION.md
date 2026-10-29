@@ -11,7 +11,7 @@ Agent 05 owns **state-triggered narrative chains** outside canonical V9.4 until 
 | Export | Role |
 |--------|------|
 | `OP10M_AGENT05_MODULE_ID` | Stable integrator key |
-| `OP10M_AGENT05_CHAIN_CATALOG` | 600 gated chain descriptors (8 regions × 15 themes × 5 variants) |
+| `OP10M_AGENT05_CHAIN_CATALOG` | 840 chain descriptors (tranche1: 600 theme chains, tranche2: 240 crisis archetypes) |
 | `createDefaultOp10mSimulationSlice` | Minimal mutable sim slice for hooks |
 | `createDefaultOp10mNarrativeEngineState` | Persistent narrative runtime state |
 | `sanitizeOp10mNarrativeEngineState` | Save/load hygiene |
@@ -37,6 +37,13 @@ Maps to existing concepts without editing V9.4:
 2. After day/turn simulation step, call `evaluateOp10mNarrativeTick(mappedSim, state, OP10M_AGENT05_CHAIN_CATALOG, { enabled: gameSettings.dynamicCrisisChainsEnabled, regionalHooks: OP10M_AGENT05_REGIONAL_HOOK_CATALOG })`.
 3. Write back **both** returned `simulation` fields (money, stability, flags, crises) and `narrative` sub-state.
 4. UI routes pending `pendingResponses` to dilemma/crisis modals; resolve via `resolveOp10mNarrativeResponse`.
+
+## Assembly chunk (Agent 25)
+
+- Path: `operation-10m/agent-05-events/chunk.tsx`
+- Markers: `// OP10M_MODULE_BEGIN agent-05-events` … `// OP10M_MODULE_END agent-05-events`
+- Regenerate: `npm run bundle:agent05` (concatenates `src/` + generated catalogs; strips imports)
+- Inline self-test: `runOp10mAgent05EventsAssemblySelfTests()`
 
 ## Regeneration
 

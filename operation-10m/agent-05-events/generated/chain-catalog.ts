@@ -1,13 +1,14 @@
 // AUTO-GENERATED — scripts/generate-catalog.py
 import type { Op10mChainDescriptor } from '../src/types.ts';
 
-export const OP10M_AGENT05_CATALOG_STATS = {
+export const OP10M_AGENT05_CATALOG_TRANCHE1_STATS = {
   regions: 8,
   themes: 15,
   variantsPerPair: 5,
+  chainCount: 600,
 } as const;
 
-export const OP10M_AGENT05_CHAIN_CATALOG: Op10mChainDescriptor[] = [
+export const OP10M_AGENT05_CHAIN_CATALOG_TRANCHE1: Op10mChainDescriptor[] = [
 {
                       chainId: 'op10m_nsw_mining_v0_0',
                       region: 'NSW',

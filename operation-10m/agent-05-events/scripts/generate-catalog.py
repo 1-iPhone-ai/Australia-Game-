@@ -164,13 +164,14 @@ def main() -> None:
     lines.append("// AUTO-GENERATED — scripts/generate-catalog.py")
     lines.append("import type { Op10mChainDescriptor } from '../src/types.ts';")
     lines.append("")
-    lines.append("export const OP10M_AGENT05_CATALOG_STATS = {")
+    lines.append("export const OP10M_AGENT05_CATALOG_TRANCHE1_STATS = {")
     lines.append("  regions: 8,")
     lines.append("  themes: 15,")
     lines.append("  variantsPerPair: 5,")
+    lines.append("  chainCount: 600,")
     lines.append("} as const;")
     lines.append("")
-    lines.append("export const OP10M_AGENT05_CHAIN_CATALOG: Op10mChainDescriptor[] = [")
+    lines.append("export const OP10M_AGENT05_CHAIN_CATALOG_TRANCHE1: Op10mChainDescriptor[] = [")
 
     idx = 0
     entries: list[str] = []
