@@ -269,6 +269,10 @@ export interface NationalLaborDemographicsState {
   coordinationBindOutlook?: NationalCoordinationBindOutlook;
   subjectBindReadinessBrief?: NationalSubjectBindReadinessBrief;
   nationalWorkforceFortitudeIndex?: NationalWorkforceFortitudeIndex;
+  fortitudeInclusionCouplingBrief?: NationalFortitudeInclusionCouplingBrief;
+  hybridAnchorOutlook?: NationalHybridAnchorOutlook;
+  subjectCrownReadinessBrief?: NationalSubjectCrownReadinessBrief;
+  nationalWorkforceCulminationIndex?: NationalWorkforceCulminationIndex;
 }
 
 export type MigrationShockKind =
@@ -1161,6 +1165,50 @@ export interface NationalWorkforceFortitudeIndex {
   fortitudeIndex: number;
   band: WorkforceFortitudeBand;
   bindDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type FortitudeInclusionCouplingBand = 'decoupled' | 'strained' | 'inclusive' | 'elevated';
+
+export interface NationalFortitudeInclusionCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: FortitudeInclusionCouplingBand;
+  fortitudeDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type HybridAnchorBand = 'drifting' | 'mixed' | 'anchored' | 'fixed';
+
+export interface NationalHybridAnchorOutlook {
+  turn: number;
+  anchorIndex: number;
+  band: HybridAnchorBand;
+  bindDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectCrownReadinessBand = 'uncrowned' | 'pending' | 'crowned' | 'sealed';
+
+export interface NationalSubjectCrownReadinessBrief {
+  turn: number;
+  crownIndex: number;
+  band: SubjectCrownReadinessBand;
+  crownDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceCulminationBand = 'fragile' | 'thin' | 'ready' | 'summit';
+
+export interface NationalWorkforceCulminationIndex {
+  turn: number;
+  culminationIndex: number;
+  band: WorkforceCulminationBand;
+  crownDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -2311,7 +2359,11 @@ export type LaborGiQueryTopic =
   | 'resolve_upskilling_coupling'
   | 'coordination_bind'
   | 'subject_bind_readiness'
-  | 'workforce_fortitude';
+  | 'workforce_fortitude'
+  | 'fortitude_inclusion_coupling'
+  | 'hybrid_anchor'
+  | 'subject_crown_readiness'
+  | 'workforce_culmination';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2392,6 +2444,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(coordination bind|labor coordination bind)/.test(q)) return 'coordination_bind';
   if (/\b(subject bind readiness|bind readiness subject)/.test(q)) return 'subject_bind_readiness';
   if (/\b(workforce fortitude|fortitude index labor)/.test(q)) return 'workforce_fortitude';
+  if (/\b(fortitude inclusion|fortitude-inclusion coupling)/.test(q)) return 'fortitude_inclusion_coupling';
+  if (/\b(hybrid anchor|hybrid work anchor)/.test(q)) return 'hybrid_anchor';
+  if (/\b(subject crown readiness|crown readiness subject)/.test(q)) return 'subject_crown_readiness';
+  if (/\b(workforce culmination|culmination index labor)/.test(q)) return 'workforce_culmination';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -3050,6 +3106,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Fortitude band ${state.nationalWorkforceFortitudeIndex?.band ?? 'unknown'}; bind drag ${Math.round(state.nationalWorkforceFortitudeIndex?.bindDrag ?? 0)}.`,
         inference: state.nationalWorkforceFortitudeIndex?.stewardNote || state.summary,
         projection: 'Fortitude synthesizes upskilling coupling, coordination bind, and subject bind readiness.'
+      };
+    case 'fortitude_inclusion_coupling':
+      return {
+        topic,
+        headline: state.fortitudeInclusionCouplingBrief?.summary || 'Fortitude-inclusion coupling unavailable.',
+        fact: `Coupling band ${state.fortitudeInclusionCouplingBrief?.band ?? 'unknown'}; fortitude drag ${Math.round(state.fortitudeInclusionCouplingBrief?.fortitudeDrag ?? 0)}.`,
+        inference: state.fortitudeInclusionCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce fortitude with inclusion levers — bounded indices only.'
+      };
+    case 'hybrid_anchor':
+      return {
+        topic,
+        headline: state.hybridAnchorOutlook?.summary || 'Hybrid anchor unavailable.',
+        fact: `Anchor band ${state.hybridAnchorOutlook?.band ?? 'unknown'}; bind drag ${Math.round(state.hybridAnchorOutlook?.bindDrag ?? 0)}.`,
+        inference: state.hybridAnchorOutlook?.stewardNote || state.outlook,
+        projection: 'Hybrid anchor blends flexibility levers with coordination bind depth.'
+      };
+    case 'subject_crown_readiness':
+      return {
+        topic,
+        headline: state.subjectCrownReadinessBrief?.summary || 'Subject crown readiness unavailable.',
+        fact: `Crown band ${state.subjectCrownReadinessBrief?.band ?? 'unknown'}; crown drag ${Math.round(state.subjectCrownReadinessBrief?.crownDrag ?? 0)}.`,
+        inference: state.subjectCrownReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject crown readiness gates bind against fortitude for O10-181 wave culmination.'
+      };
+    case 'workforce_culmination':
+      return {
+        topic,
+        headline: state.nationalWorkforceCulminationIndex?.summary || 'Workforce culmination unavailable.',
+        fact: `Culmination band ${state.nationalWorkforceCulminationIndex?.band ?? 'unknown'}; crown drag ${Math.round(state.nationalWorkforceCulminationIndex?.crownDrag ?? 0)}.`,
+        inference: state.nationalWorkforceCulminationIndex?.stewardNote || state.summary,
+        projection: 'Culmination synthesizes inclusion coupling, hybrid anchor, and subject crown for Agent 25 merge.'
       };
     default:
       return {
@@ -3775,6 +3863,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceFortitudeIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceFortitudeIndex.stewardNote);
+  }
+  if (
+    state.fortitudeInclusionCouplingBrief?.band === 'decoupled' ||
+    state.fortitudeInclusionCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.fortitudeInclusionCouplingBrief.stewardNote);
+  }
+  if (
+    state.hybridAnchorOutlook?.band === 'drifting' ||
+    state.hybridAnchorOutlook?.band === 'mixed'
+  ) {
+    hints.push(state.hybridAnchorOutlook.stewardNote);
+  }
+  if (
+    state.subjectCrownReadinessBrief?.band === 'uncrowned' ||
+    state.subjectCrownReadinessBrief?.band === 'pending'
+  ) {
+    hints.push(state.subjectCrownReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceCulminationIndex?.band === 'fragile' ||
+    state.nationalWorkforceCulminationIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceCulminationIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -10295,6 +10407,278 @@ export function computeNationalWorkforceFortitudeIndex(
 }
 
 
+// --- source: fortitude-inclusion-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type FortitudeInclusionCouplingBand,
+  type NationalFortitudeInclusionCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceFortitudeIndex
+} from './types';
+
+function couplingBand(index: number): FortitudeInclusionCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'inclusive';
+  return 'elevated';
+}
+
+export function computeNationalFortitudeInclusionCouplingBrief(
+  state: NationalLaborDemographicsState,
+  fortitude: NationalWorkforceFortitudeIndex | null | undefined
+): NationalFortitudeInclusionCouplingBrief {
+  if (!state.enabled || !fortitude) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      fortitudeDrag: 0,
+      summary: 'Fortitude-inclusion coupling idle — workforce fortitude unavailable.',
+      stewardNote: 'Compute workforce fortitude before inclusion coupling guidance.'
+    };
+  }
+
+  let inclusionLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    inclusionLift += inclusionEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  inclusionLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const fortitudeDrag = v1014laborClamp(
+    fortitude.bindDrag * 0.48 +
+      (fortitude.band === 'fragile' || fortitude.band === 'thin' ? 11 : 3)
+  );
+  const fortitudeLift =
+    fortitude.band === 'solid' || fortitude.band === 'unshakable'
+      ? fortitude.fortitudeIndex * 0.24
+      : fortitude.fortitudeIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + inclusionLift * 21 + fortitudeLift - fortitudeDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained fortitude-inclusion link — deploy inclusion levers before round-25 crown commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard hybrid anchor spikes that drain inclusion buffers.'
+        : 'Inclusive coupling — pair inclusion packs with subject crown readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    fortitudeDrag,
+    summary: `Fortitude-inclusion coupling ${band} (index ${Math.round(couplingIndex)}); fortitude drag ${Math.round(fortitudeDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: hybrid-anchor-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type HybridAnchorBand,
+  type NationalCoordinationBindOutlook,
+  type NationalHybridAnchorOutlook,
+  type NationalLaborDemographicsState
+} from './types';
+
+function anchorBand(index: number): HybridAnchorBand {
+  if (index <= 34) return 'drifting';
+  if (index <= 48) return 'mixed';
+  if (index <= 62) return 'anchored';
+  return 'fixed';
+}
+
+export function computeNationalHybridAnchorOutlook(
+  state: NationalLaborDemographicsState,
+  coordinationBind: NationalCoordinationBindOutlook | null | undefined
+): NationalHybridAnchorOutlook {
+  if (!state.enabled || !coordinationBind) {
+    return {
+      turn: state.turn,
+      anchorIndex: 50,
+      band: 'mixed',
+      bindDrag: 0,
+      summary: 'Hybrid anchor idle — coordination bind unavailable.',
+      stewardNote: 'Compute coordination bind before hybrid anchor guidance.'
+    };
+  }
+
+  let flexibilityLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    flexibilityLift += flexibilityEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  flexibilityLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const bindDrag = v1014laborClamp(
+    coordinationBind.schedulingDrag * 0.46 +
+      (coordinationBind.band === 'loose' || coordinationBind.band === 'patchy' ? 10 : 3)
+  );
+  const bindLift =
+    coordinationBind.band === 'bound' || coordinationBind.band === 'locked'
+      ? coordinationBind.bindIndex * 0.2
+      : coordinationBind.bindIndex * 0.1;
+
+  const anchorIndex = v1014laborClamp(24 + flexibilityLift * 22 + bindLift - bindDrag);
+  const band = anchorBand(anchorIndex);
+
+  const stewardNote =
+    band === 'drifting' || band === 'mixed'
+      ? 'Mixed hybrid anchor — ease flexibility levers before subject crown assembly.'
+      : band === 'fixed'
+        ? 'Fixed anchor band — verify fortitude-inclusion coupling before auto workforce pushes.'
+        : 'Anchored hybrid — align anchor with hybrid remote participation checks.';
+
+  return {
+    turn: state.turn,
+    anchorIndex,
+    band,
+    bindDrag,
+    summary: `National hybrid anchor ${band} (index ${Math.round(anchorIndex)}); bind drag ${Math.round(bindDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-crown-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectBindReadinessBrief,
+  type NationalSubjectCrownReadinessBrief,
+  type NationalWorkforceFortitudeIndex,
+  type SubjectCrownReadinessBand
+} from './types';
+
+function crownBand(index: number): SubjectCrownReadinessBand {
+  if (index <= 34) return 'uncrowned';
+  if (index <= 48) return 'pending';
+  if (index <= 62) return 'crowned';
+  return 'sealed';
+}
+
+/** Round-25 subject crown readiness — bind × fortitude gate for wave-25 culmination. */
+export function computeNationalSubjectCrownReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectBind: NationalSubjectBindReadinessBrief | null | undefined,
+  fortitude: NationalWorkforceFortitudeIndex | null | undefined
+): NationalSubjectCrownReadinessBrief {
+  if (!state.enabled || !subjectBind || !fortitude) {
+    return {
+      turn: state.turn,
+      crownIndex: 50,
+      band: 'pending',
+      crownDrag: 0,
+      summary: 'Subject crown readiness idle — subject bind or fortitude unavailable.',
+      stewardNote: 'Compute subject bind readiness and workforce fortitude before crown guidance.'
+    };
+  }
+
+  const crownDrag = v1014laborClamp(
+    subjectBind.bindDrag * 0.38 +
+      fortitude.bindDrag * 0.38 +
+      (subjectBind.band === 'unbound' || fortitude.band === 'fragile' ? 12 : 3)
+  );
+  const bindLift =
+    subjectBind.band === 'bound' || subjectBind.band === 'locked'
+      ? subjectBind.bindIndex * 0.27
+      : subjectBind.bindIndex * 0.14;
+  const fortitudeLift =
+    fortitude.band === 'solid' || fortitude.band === 'unshakable'
+      ? fortitude.fortitudeIndex * 0.25
+      : fortitude.fortitudeIndex * 0.12;
+
+  const crownIndex = v1014laborClamp(20 + bindLift + fortitudeLift - crownDrag);
+  const band = crownBand(crownIndex);
+
+  const stewardNote =
+    band === 'uncrowned' || band === 'pending'
+      ? 'Pending subject crown — hold O10-181 scale crown until fortitude-inclusion syncs.'
+      : band === 'sealed'
+        ? 'Sealed crown band — still monitor hybrid anchor during corridor peaks.'
+        : 'Crowned band — pair with workforce culmination index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    crownIndex,
+    band,
+    crownDrag,
+    summary: `Subject crown readiness ${band} (index ${Math.round(crownIndex)}); crown drag ${Math.round(crownDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-culmination-index.ts ---
+  type NationalFortitudeInclusionCouplingBrief,
+  type NationalHybridAnchorOutlook,
+  type NationalLaborDemographicsState,
+  type NationalSubjectCrownReadinessBrief,
+  type NationalWorkforceCulminationIndex,
+  type WorkforceCulminationBand
+} from './types';
+
+function culminationBand(index: number): WorkforceCulminationBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'ready';
+  return 'summit';
+}
+
+export function computeNationalWorkforceCulminationIndex(
+  state: NationalLaborDemographicsState,
+  inclusionCoupling: NationalFortitudeInclusionCouplingBrief | null | undefined,
+  hybridAnchor: NationalHybridAnchorOutlook | null | undefined,
+  subjectCrown: NationalSubjectCrownReadinessBrief | null | undefined
+): NationalWorkforceCulminationIndex {
+  if (!state.enabled || !inclusionCoupling || !hybridAnchor || !subjectCrown) {
+    return {
+      turn: state.turn,
+      culminationIndex: 50,
+      band: 'thin',
+      crownDrag: 0,
+      summary: 'Workforce culmination idle — inclusion coupling, hybrid anchor, or subject crown unavailable.',
+      stewardNote: 'Compute round-25 depth stack before culmination guidance.'
+    };
+  }
+
+  const crownDrag = v1014laborClamp(
+    subjectCrown.crownDrag * 0.35 +
+      inclusionCoupling.fortitudeDrag * 0.3 +
+      hybridAnchor.bindDrag * 0.25 +
+      (subjectCrown.band === 'uncrowned' || inclusionCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const inclusionLift =
+    inclusionCoupling.band === 'inclusive' || inclusionCoupling.band === 'elevated'
+      ? inclusionCoupling.couplingIndex * 0.2
+      : inclusionCoupling.couplingIndex * 0.1;
+  const anchorLift =
+    hybridAnchor.band === 'anchored' || hybridAnchor.band === 'fixed'
+      ? hybridAnchor.anchorIndex * 0.18
+      : hybridAnchor.anchorIndex * 0.09;
+  const crownLift =
+    subjectCrown.band === 'crowned' || subjectCrown.band === 'sealed'
+      ? subjectCrown.crownIndex * 0.22
+      : subjectCrown.crownIndex * 0.11;
+
+  const culminationIndex = v1014laborClamp(18 + inclusionLift + anchorLift + crownLift - crownDrag);
+  const band = culminationBand(culminationIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce culmination — sequence fortitude-inclusion, hybrid anchor, and subject crown before post-8d741ac7 tranche.'
+      : band === 'summit'
+        ? 'Summit culmination — avoid corridor overload that breaks subject crown bands.'
+        : 'Ready culmination — refresh subject crown checks before Agent 25 chunk merge.';
+
+  return {
+    turn: state.turn,
+    culminationIndex,
+    band,
+    crownDrag,
+    summary: `National workforce culmination ${band} (index ${Math.round(culminationIndex)}); crown drag ${Math.round(crownDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -11124,6 +11508,22 @@ export function computeNationalLaborDemographics(
     state.coordinationBindOutlook,
     state.subjectBindReadinessBrief
   );
+  state.fortitudeInclusionCouplingBrief = computeNationalFortitudeInclusionCouplingBrief(
+    state,
+    state.nationalWorkforceFortitudeIndex
+  );
+  state.hybridAnchorOutlook = computeNationalHybridAnchorOutlook(state, state.coordinationBindOutlook);
+  state.subjectCrownReadinessBrief = computeNationalSubjectCrownReadinessBrief(
+    state,
+    state.subjectBindReadinessBrief,
+    state.nationalWorkforceFortitudeIndex
+  );
+  state.nationalWorkforceCulminationIndex = computeNationalWorkforceCulminationIndex(
+    state,
+    state.fortitudeInclusionCouplingBrief,
+    state.hybridAnchorOutlook,
+    state.subjectCrownReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -11582,6 +11982,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceFortitudeIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.fortitudeInclusionCouplingBrief?.band === 'decoupled' ||
+      state.fortitudeInclusionCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.fortitudeInclusionCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.hybridAnchorOutlook?.band === 'drifting' ||
+      state.hybridAnchorOutlook?.band === 'mixed') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.hybridAnchorOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectCrownReadinessBrief?.band === 'uncrowned' ||
+      state.subjectCrownReadinessBrief?.band === 'pending') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectCrownReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceCulminationIndex?.band === 'fragile' ||
+      state.nationalWorkforceCulminationIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceCulminationIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -13008,6 +13436,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'fortitude steward note'
   );
   check('R2416', upskillingUpliftForRegion('NSW', 'technology') > 0, 'upskilling uplift for region');
+
+  check('R2501', Boolean(r1.state.fortitudeInclusionCouplingBrief?.band), 'fortitude inclusion on state');
+  check(
+    'R2502',
+    (r1.state.fortitudeInclusionCouplingBrief?.fortitudeDrag ?? 0) >= 0,
+    'fortitude inclusion drag'
+  );
+  check('R2503', Boolean(r1.state.hybridAnchorOutlook?.band), 'hybrid anchor on state');
+  check('R2504', (r1.state.hybridAnchorOutlook?.bindDrag ?? 0) >= 0, 'hybrid bind drag');
+  check('R2505', Boolean(r1.state.subjectCrownReadinessBrief?.band), 'subject crown on state');
+  check('R2506', Boolean(r1.state.nationalWorkforceCulminationIndex?.band), 'workforce culmination on state');
+  check(
+    'R2507',
+    detectLaborDemographicsQuery('fortitude inclusion coupling') === 'fortitude_inclusion_coupling',
+    'GI fortitude inclusion detect'
+  );
+  check('R2508', detectLaborDemographicsQuery('hybrid anchor') === 'hybrid_anchor', 'GI hybrid anchor detect');
+  check(
+    'R2509',
+    detectLaborDemographicsQuery('subject crown readiness') === 'subject_crown_readiness',
+    'GI subject crown detect'
+  );
+  check(
+    'R2510',
+    detectLaborDemographicsQuery('workforce culmination') === 'workforce_culmination',
+    'GI workforce culmination detect'
+  );
+  check(
+    'R2511',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_culmination').headline.length > 5,
+    'GI workforce culmination answer'
+  );
+  const inclusionCouplingOnly = computeNationalFortitudeInclusionCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceFortitudeIndex
+  );
+  check('R2512', inclusionCouplingOnly.summary.length > 10, 'inclusion coupling standalone summary');
+  const hybridAnchorOnly = computeNationalHybridAnchorOutlook(r1.state, r1.state.coordinationBindOutlook);
+  check('R2513', hybridAnchorOnly.band.length > 3, 'hybrid anchor band string');
+  const crownOnly = computeNationalSubjectCrownReadinessBrief(
+    r1.state,
+    r1.state.subjectBindReadinessBrief,
+    r1.state.nationalWorkforceFortitudeIndex
+  );
+  check('R2514', crownOnly.crownDrag >= 0, 'subject crown drag');
+  check(
+    'R2515',
+    computeNationalWorkforceCulminationIndex(
+      rHhBad.state,
+      rHhBad.state.fortitudeInclusionCouplingBrief,
+      rHhBad.state.hybridAnchorOutlook,
+      rHhBad.state.subjectCrownReadinessBrief
+    ).stewardNote.length > 8,
+    'culmination steward note'
+  );
+  check('R2516', inclusionEaseForRegion('NSW', 'technology') > 0, 'inclusion ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

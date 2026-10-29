@@ -106,6 +106,10 @@ import { computeNationalResolveUpskillingCouplingBrief } from './resolve-upskill
 import { computeNationalCoordinationBindOutlook } from './coordination-bind-outlook';
 import { computeNationalSubjectBindReadinessBrief } from './subject-bind-readiness-brief';
 import { computeNationalWorkforceFortitudeIndex } from './national-workforce-fortitude-index';
+import { computeNationalFortitudeInclusionCouplingBrief } from './fortitude-inclusion-coupling-brief';
+import { computeNationalHybridAnchorOutlook } from './hybrid-anchor-outlook';
+import { computeNationalSubjectCrownReadinessBrief } from './subject-crown-readiness-brief';
+import { computeNationalWorkforceCulminationIndex } from './national-workforce-culmination-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -764,6 +768,22 @@ export function computeNationalLaborDemographics(
     state.coordinationBindOutlook,
     state.subjectBindReadinessBrief
   );
+  state.fortitudeInclusionCouplingBrief = computeNationalFortitudeInclusionCouplingBrief(
+    state,
+    state.nationalWorkforceFortitudeIndex
+  );
+  state.hybridAnchorOutlook = computeNationalHybridAnchorOutlook(state, state.coordinationBindOutlook);
+  state.subjectCrownReadinessBrief = computeNationalSubjectCrownReadinessBrief(
+    state,
+    state.subjectBindReadinessBrief,
+    state.nationalWorkforceFortitudeIndex
+  );
+  state.nationalWorkforceCulminationIndex = computeNationalWorkforceCulminationIndex(
+    state,
+    state.fortitudeInclusionCouplingBrief,
+    state.hybridAnchorOutlook,
+    state.subjectCrownReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -1222,6 +1242,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceFortitudeIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.fortitudeInclusionCouplingBrief?.band === 'decoupled' ||
+      state.fortitudeInclusionCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.fortitudeInclusionCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.hybridAnchorOutlook?.band === 'drifting' ||
+      state.hybridAnchorOutlook?.band === 'mixed') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.hybridAnchorOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectCrownReadinessBrief?.band === 'uncrowned' ||
+      state.subjectCrownReadinessBrief?.band === 'pending') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectCrownReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceCulminationIndex?.band === 'fragile' ||
+      state.nationalWorkforceCulminationIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceCulminationIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

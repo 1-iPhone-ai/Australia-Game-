@@ -150,6 +150,10 @@ import { computeNationalResolveUpskillingCouplingBrief } from './resolve-upskill
 import { computeNationalCoordinationBindOutlook } from './coordination-bind-outlook';
 import { computeNationalSubjectBindReadinessBrief } from './subject-bind-readiness-brief';
 import { computeNationalWorkforceFortitudeIndex } from './national-workforce-fortitude-index';
+import { computeNationalFortitudeInclusionCouplingBrief } from './fortitude-inclusion-coupling-brief';
+import { computeNationalHybridAnchorOutlook } from './hybrid-anchor-outlook';
+import { computeNationalSubjectCrownReadinessBrief } from './subject-crown-readiness-brief';
+import { computeNationalWorkforceCulminationIndex } from './national-workforce-culmination-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1507,6 +1511,62 @@ export function runV1014LaborDemographicsSelfTests(): {
     'fortitude steward note'
   );
   check('R2416', upskillingUpliftForRegion('NSW', 'technology') > 0, 'upskilling uplift for region');
+
+  check('R2501', Boolean(r1.state.fortitudeInclusionCouplingBrief?.band), 'fortitude inclusion on state');
+  check(
+    'R2502',
+    (r1.state.fortitudeInclusionCouplingBrief?.fortitudeDrag ?? 0) >= 0,
+    'fortitude inclusion drag'
+  );
+  check('R2503', Boolean(r1.state.hybridAnchorOutlook?.band), 'hybrid anchor on state');
+  check('R2504', (r1.state.hybridAnchorOutlook?.bindDrag ?? 0) >= 0, 'hybrid bind drag');
+  check('R2505', Boolean(r1.state.subjectCrownReadinessBrief?.band), 'subject crown on state');
+  check('R2506', Boolean(r1.state.nationalWorkforceCulminationIndex?.band), 'workforce culmination on state');
+  check(
+    'R2507',
+    detectLaborDemographicsQuery('fortitude inclusion coupling') === 'fortitude_inclusion_coupling',
+    'GI fortitude inclusion detect'
+  );
+  check('R2508', detectLaborDemographicsQuery('hybrid anchor') === 'hybrid_anchor', 'GI hybrid anchor detect');
+  check(
+    'R2509',
+    detectLaborDemographicsQuery('subject crown readiness') === 'subject_crown_readiness',
+    'GI subject crown detect'
+  );
+  check(
+    'R2510',
+    detectLaborDemographicsQuery('workforce culmination') === 'workforce_culmination',
+    'GI workforce culmination detect'
+  );
+  check(
+    'R2511',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_culmination').headline.length > 5,
+    'GI workforce culmination answer'
+  );
+  const inclusionCouplingOnly = computeNationalFortitudeInclusionCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceFortitudeIndex
+  );
+  check('R2512', inclusionCouplingOnly.summary.length > 10, 'inclusion coupling standalone summary');
+  const hybridAnchorOnly = computeNationalHybridAnchorOutlook(r1.state, r1.state.coordinationBindOutlook);
+  check('R2513', hybridAnchorOnly.band.length > 3, 'hybrid anchor band string');
+  const crownOnly = computeNationalSubjectCrownReadinessBrief(
+    r1.state,
+    r1.state.subjectBindReadinessBrief,
+    r1.state.nationalWorkforceFortitudeIndex
+  );
+  check('R2514', crownOnly.crownDrag >= 0, 'subject crown drag');
+  check(
+    'R2515',
+    computeNationalWorkforceCulminationIndex(
+      rHhBad.state,
+      rHhBad.state.fortitudeInclusionCouplingBrief,
+      rHhBad.state.hybridAnchorOutlook,
+      rHhBad.state.subjectCrownReadinessBrief
+    ).stewardNote.length > 8,
+    'culmination steward note'
+  );
+  check('R2516', inclusionEaseForRegion('NSW', 'technology') > 0, 'inclusion ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

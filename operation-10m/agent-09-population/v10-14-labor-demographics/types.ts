@@ -265,6 +265,10 @@ export interface NationalLaborDemographicsState {
   coordinationBindOutlook?: NationalCoordinationBindOutlook;
   subjectBindReadinessBrief?: NationalSubjectBindReadinessBrief;
   nationalWorkforceFortitudeIndex?: NationalWorkforceFortitudeIndex;
+  fortitudeInclusionCouplingBrief?: NationalFortitudeInclusionCouplingBrief;
+  hybridAnchorOutlook?: NationalHybridAnchorOutlook;
+  subjectCrownReadinessBrief?: NationalSubjectCrownReadinessBrief;
+  nationalWorkforceCulminationIndex?: NationalWorkforceCulminationIndex;
 }
 
 export type MigrationShockKind =
@@ -1157,6 +1161,50 @@ export interface NationalWorkforceFortitudeIndex {
   fortitudeIndex: number;
   band: WorkforceFortitudeBand;
   bindDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type FortitudeInclusionCouplingBand = 'decoupled' | 'strained' | 'inclusive' | 'elevated';
+
+export interface NationalFortitudeInclusionCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: FortitudeInclusionCouplingBand;
+  fortitudeDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type HybridAnchorBand = 'drifting' | 'mixed' | 'anchored' | 'fixed';
+
+export interface NationalHybridAnchorOutlook {
+  turn: number;
+  anchorIndex: number;
+  band: HybridAnchorBand;
+  bindDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectCrownReadinessBand = 'uncrowned' | 'pending' | 'crowned' | 'sealed';
+
+export interface NationalSubjectCrownReadinessBrief {
+  turn: number;
+  crownIndex: number;
+  band: SubjectCrownReadinessBand;
+  crownDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceCulminationBand = 'fragile' | 'thin' | 'ready' | 'summit';
+
+export interface NationalWorkforceCulminationIndex {
+  turn: number;
+  culminationIndex: number;
+  band: WorkforceCulminationBand;
+  crownDrag: number;
   summary: string;
   stewardNote: string;
 }

@@ -83,7 +83,11 @@ export type LaborGiQueryTopic =
   | 'resolve_upskilling_coupling'
   | 'coordination_bind'
   | 'subject_bind_readiness'
-  | 'workforce_fortitude';
+  | 'workforce_fortitude'
+  | 'fortitude_inclusion_coupling'
+  | 'hybrid_anchor'
+  | 'subject_crown_readiness'
+  | 'workforce_culmination';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -164,6 +168,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(coordination bind|labor coordination bind)/.test(q)) return 'coordination_bind';
   if (/\b(subject bind readiness|bind readiness subject)/.test(q)) return 'subject_bind_readiness';
   if (/\b(workforce fortitude|fortitude index labor)/.test(q)) return 'workforce_fortitude';
+  if (/\b(fortitude inclusion|fortitude-inclusion coupling)/.test(q)) return 'fortitude_inclusion_coupling';
+  if (/\b(hybrid anchor|hybrid work anchor)/.test(q)) return 'hybrid_anchor';
+  if (/\b(subject crown readiness|crown readiness subject)/.test(q)) return 'subject_crown_readiness';
+  if (/\b(workforce culmination|culmination index labor)/.test(q)) return 'workforce_culmination';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -822,6 +830,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Fortitude band ${state.nationalWorkforceFortitudeIndex?.band ?? 'unknown'}; bind drag ${Math.round(state.nationalWorkforceFortitudeIndex?.bindDrag ?? 0)}.`,
         inference: state.nationalWorkforceFortitudeIndex?.stewardNote || state.summary,
         projection: 'Fortitude synthesizes upskilling coupling, coordination bind, and subject bind readiness.'
+      };
+    case 'fortitude_inclusion_coupling':
+      return {
+        topic,
+        headline: state.fortitudeInclusionCouplingBrief?.summary || 'Fortitude-inclusion coupling unavailable.',
+        fact: `Coupling band ${state.fortitudeInclusionCouplingBrief?.band ?? 'unknown'}; fortitude drag ${Math.round(state.fortitudeInclusionCouplingBrief?.fortitudeDrag ?? 0)}.`,
+        inference: state.fortitudeInclusionCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce fortitude with inclusion levers — bounded indices only.'
+      };
+    case 'hybrid_anchor':
+      return {
+        topic,
+        headline: state.hybridAnchorOutlook?.summary || 'Hybrid anchor unavailable.',
+        fact: `Anchor band ${state.hybridAnchorOutlook?.band ?? 'unknown'}; bind drag ${Math.round(state.hybridAnchorOutlook?.bindDrag ?? 0)}.`,
+        inference: state.hybridAnchorOutlook?.stewardNote || state.outlook,
+        projection: 'Hybrid anchor blends flexibility levers with coordination bind depth.'
+      };
+    case 'subject_crown_readiness':
+      return {
+        topic,
+        headline: state.subjectCrownReadinessBrief?.summary || 'Subject crown readiness unavailable.',
+        fact: `Crown band ${state.subjectCrownReadinessBrief?.band ?? 'unknown'}; crown drag ${Math.round(state.subjectCrownReadinessBrief?.crownDrag ?? 0)}.`,
+        inference: state.subjectCrownReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject crown readiness gates bind against fortitude for O10-181 wave culmination.'
+      };
+    case 'workforce_culmination':
+      return {
+        topic,
+        headline: state.nationalWorkforceCulminationIndex?.summary || 'Workforce culmination unavailable.',
+        fact: `Culmination band ${state.nationalWorkforceCulminationIndex?.band ?? 'unknown'}; crown drag ${Math.round(state.nationalWorkforceCulminationIndex?.crownDrag ?? 0)}.`,
+        inference: state.nationalWorkforceCulminationIndex?.stewardNote || state.summary,
+        projection: 'Culmination synthesizes inclusion coupling, hybrid anchor, and subject crown for Agent 25 merge.'
       };
     default:
       return {
