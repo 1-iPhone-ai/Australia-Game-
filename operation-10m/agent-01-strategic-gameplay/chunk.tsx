@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: 0274307517f5f9e4
+// content-sha256-prefix: 2882875111d9aa11
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -323,6 +323,8 @@ export interface TurnStrategicBriefing {
   coalitionVanguardSynthesisStreakDays: number;
   sentinelCoalitionAscendancy: boolean;
   coalitionSentinelAscendancyStreakDays: number;
+  oracleCoalitionPerpetuity: boolean;
+  coalitionOraclePerpetuityStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;
@@ -459,6 +461,8 @@ export interface StrategicActionDefinition {
   minCoalitionVanguardSynthesisStreakDays?: number;
   /** Action requires sentinel ascendancy streak after vanguard synthesis. */
   minCoalitionSentinelAscendancyStreakDays?: number;
+  /** Action requires oracle perpetuity streak after sentinel ascendancy. */
+  minCoalitionOraclePerpetuityStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -535,7 +539,8 @@ export type StrategicValidationRequirement =
   | { kind: 'min_coalition_imperial_perpetuity_streak'; minDays: number }
   | { kind: 'min_coalition_custodial_eternity_streak'; minDays: number }
   | { kind: 'min_coalition_vanguard_synthesis_streak'; minDays: number }
-  | { kind: 'min_coalition_sentinel_ascendancy_streak'; minDays: number };
+  | { kind: 'min_coalition_sentinel_ascendancy_streak'; minDays: number }
+  | { kind: 'min_coalition_oracle_perpetuity_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -651,6 +656,8 @@ export interface StrategicGameplayState {
   coalitionVanguardSynthesisStreakDays?: number;
   /** Days vanguard synthesis held sentinel ascendancy eligibility. */
   coalitionSentinelAscendancyStreakDays?: number;
+  /** Days sentinel ascendancy held oracle perpetuity eligibility. */
+  coalitionOraclePerpetuityStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
@@ -1500,6 +1507,16 @@ export function sentinelAscendancyRankingBonus(
   return 2;
 }
 
+export function oraclePerpetuityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionOraclePerpetuityStreakDays === undefined) return 0;
+  const streak = state.coalitionOraclePerpetuityStreakDays ?? 0;
+  if (streak >= action.minCoalitionOraclePerpetuityStreakDays) return 35;
+  return 2;
+}
+
 // --- src/engine/mandate-idle-drift.ts ---
 
 const IDLE_GRACE_DAYS = 3;
@@ -2125,6 +2142,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionVanguardSynthesisStreakDays: number;
   sentinelCoalitionAscendancy: boolean;
   coalitionSentinelAscendancyStreakDays: number;
+  oracleCoalitionPerpetuity: boolean;
+  coalitionOraclePerpetuityStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -2202,6 +2221,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionVanguardSynthesisStreakDays: state.coalitionVanguardSynthesisStreakDays ?? 0,
     sentinelCoalitionAscendancy: isSentinelCoalitionAscendancy(state),
     coalitionSentinelAscendancyStreakDays: state.coalitionSentinelAscendancyStreakDays ?? 0,
+    oracleCoalitionPerpetuity: isOracleCoalitionPerpetuity(state),
+    coalitionOraclePerpetuityStreakDays: state.coalitionOraclePerpetuityStreakDays ?? 0,
   };
 }
 
@@ -2279,6 +2300,8 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionVanguardSynthesisStreakDays: raw?.coalitionVanguardSynthesisStreakDays ?? 0,
     sentinelCoalitionAscendancy: raw?.sentinelCoalitionAscendancy ?? false,
     coalitionSentinelAscendancyStreakDays: raw?.coalitionSentinelAscendancyStreakDays ?? 0,
+    oracleCoalitionPerpetuity: raw?.oracleCoalitionPerpetuity ?? false,
+    coalitionOraclePerpetuityStreakDays: raw?.coalitionOraclePerpetuityStreakDays ?? 0,
   };
 }
 
@@ -3276,6 +3299,11 @@ export interface StrategicGameplaySaveV39 extends Omit<StrategicGameplaySaveV38,
   coalitionSentinelAscendancyStreakDays: number;
 }
 
+export interface StrategicGameplaySaveV40 extends Omit<StrategicGameplaySaveV39, 'version'> {
+  version: 40;
+  coalitionOraclePerpetuityStreakDays: number;
+}
+
 export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV1
   | StrategicGameplaySaveV2
@@ -3315,13 +3343,14 @@ export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV36
   | StrategicGameplaySaveV37
   | StrategicGameplaySaveV38
-  | StrategicGameplaySaveV39;
+  | StrategicGameplaySaveV39
+  | StrategicGameplaySaveV40;
 
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV39 {
+): StrategicGameplaySaveV40 {
   return {
-    version: 39,
+    version: 40,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -3371,6 +3400,7 @@ export function serializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: state.coalitionCustodialEternityStreakDays ?? 0,
     coalitionVanguardSynthesisStreakDays: state.coalitionVanguardSynthesisStreakDays ?? 0,
     coalitionSentinelAscendancyStreakDays: state.coalitionSentinelAscendancyStreakDays ?? 0,
+    coalitionOraclePerpetuityStreakDays: state.coalitionOraclePerpetuityStreakDays ?? 0,
   };
 }
 
@@ -3426,6 +3456,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 2) {
@@ -3477,6 +3508,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 3) {
@@ -3528,6 +3560,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 4) {
@@ -3579,6 +3612,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 5) {
@@ -3630,6 +3664,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 6) {
@@ -3681,6 +3716,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 7) {
@@ -3732,6 +3768,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 8) {
@@ -3783,6 +3820,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 9) {
@@ -3834,6 +3872,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 10) {
@@ -3885,6 +3924,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 11) {
@@ -3936,6 +3976,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 12) {
@@ -3987,6 +4028,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 13) {
@@ -4038,6 +4080,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     };
   }
   if (save.version === 14) {
@@ -4089,6 +4132,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 15) {
@@ -4140,6 +4184,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 16) {
@@ -4191,6 +4236,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 17) {
@@ -4242,6 +4288,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 18) {
@@ -4293,6 +4340,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 19) {
@@ -4344,6 +4392,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 20) {
@@ -4395,6 +4444,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 21) {
@@ -4446,6 +4496,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 22) {
@@ -4497,6 +4548,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 23) {
@@ -4548,6 +4600,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 24) {
@@ -4599,6 +4652,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 25) {
@@ -4650,6 +4704,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 26) {
@@ -4701,6 +4756,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 27) {
@@ -4752,6 +4808,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 28) {
@@ -4803,6 +4860,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 29) {
@@ -4854,6 +4912,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 30) {
@@ -4905,6 +4964,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 31) {
@@ -4956,6 +5016,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 32) {
@@ -5007,6 +5068,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 33) {
@@ -5058,6 +5120,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 34) {
@@ -5109,6 +5172,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 35) {
@@ -5160,6 +5224,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 36) {
@@ -5211,6 +5276,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 37) {
@@ -5262,6 +5328,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: save.coalitionCustodialEternityStreakDays,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
   if (save.version === 38) {
@@ -5313,9 +5380,62 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: save.coalitionCustodialEternityStreakDays,
     coalitionVanguardSynthesisStreakDays: save.coalitionVanguardSynthesisStreakDays,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
   };
   }
-  if (save.version !== 39) {
+  if (save.version === 39) {
+    return {
+    day: save.day,
+    completedActionIds: [...save.completedActionIds],
+    pendingDelayed: save.pendingDelayed.slice(),
+    journal: save.journal.slice(),
+    priorityMomentum: { ...save.priorityMomentum },
+    actionCooldowns: { ...save.actionCooldowns },
+    activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+    mandateProgress: { ...save.mandateProgress },
+    stakeholderSentiment: { ...save.stakeholderSentiment },
+    lastAlignedActionDay: save.lastAlignedActionDay,
+    coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
+    coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
+    coalitionVolatilityEvents: save.coalitionVolatilityEvents,
+    coalitionStabilizationStreakDays: save.coalitionStabilizationStreakDays,
+    coalitionLockInStreakDays: save.coalitionLockInStreakDays,
+    crossModuleSyncStreakDays: save.crossModuleSyncStreakDays,
+    integratedCoalitionMaturityStreakDays: save.integratedCoalitionMaturityStreakDays,
+    coalitionStewardshipStreakDays: save.coalitionStewardshipStreakDays,
+    coalitionAnchoredGovernanceStreakDays: save.coalitionAnchoredGovernanceStreakDays,
+    coalitionInstitutionalPermanenceStreakDays: save.coalitionInstitutionalPermanenceStreakDays,
+    coalitionGenerationalContinuityStreakDays: save.coalitionGenerationalContinuityStreakDays,
+    coalitionCivilizationalEnduranceStreakDays: save.coalitionCivilizationalEnduranceStreakDays,
+    coalitionTranscendentLegacyStreakDays: save.coalitionTranscendentLegacyStreakDays,
+    coalitionSovereignContinuumStreakDays: save.coalitionSovereignContinuumStreakDays,
+    coalitionEternalAscendanceStreakDays: save.coalitionEternalAscendanceStreakDays,
+    coalitionInfinitePersistenceStreakDays: save.coalitionInfinitePersistenceStreakDays,
+    coalitionPrimordialContinuityStreakDays: save.coalitionPrimordialContinuityStreakDays,
+    coalitionAbsoluteSanctityStreakDays: save.coalitionAbsoluteSanctityStreakDays,
+    coalitionUniversalImmortalityStreakDays: save.coalitionUniversalImmortalityStreakDays,
+    coalitionCosmicPerpetuityStreakDays: save.coalitionCosmicPerpetuityStreakDays,
+    coalitionGalacticInfinityStreakDays: save.coalitionGalacticInfinityStreakDays,
+    coalitionStellarTranscendenceStreakDays: save.coalitionStellarTranscendenceStreakDays,
+    coalitionQuantumOmnipresenceStreakDays: save.coalitionQuantumOmnipresenceStreakDays,
+    coalitionMultiversalPersistenceStreakDays: save.coalitionMultiversalPersistenceStreakDays,
+    coalitionMetaversalContinuityStreakDays: save.coalitionMetaversalContinuityStreakDays,
+    coalitionOmniversalSynthesisStreakDays: save.coalitionOmniversalSynthesisStreakDays,
+    coalitionHyperversalHarmonizationStreakDays: save.coalitionHyperversalHarmonizationStreakDays,
+    coalitionTranscendentOmniumStreakDays: save.coalitionTranscendentOmniumStreakDays,
+    coalitionSupremeConvergenceStreakDays: save.coalitionSupremeConvergenceStreakDays,
+    coalitionApexTranscendenceStreakDays: save.coalitionApexTranscendenceStreakDays,
+    coalitionZenithPerpetuityStreakDays: save.coalitionZenithPerpetuityStreakDays,
+    coalitionParagonInfinityStreakDays: save.coalitionParagonInfinityStreakDays,
+    coalitionParamountAscendancyStreakDays: save.coalitionParamountAscendancyStreakDays,
+    coalitionImperialPerpetuityStreakDays: save.coalitionImperialPerpetuityStreakDays,
+    coalitionCustodialEternityStreakDays: save.coalitionCustodialEternityStreakDays,
+    coalitionVanguardSynthesisStreakDays: save.coalitionVanguardSynthesisStreakDays,
+    coalitionSentinelAscendancyStreakDays: save.coalitionSentinelAscendancyStreakDays,
+    coalitionOraclePerpetuityStreakDays: 0,
+  };
+  }
+  if (save.version !== 40) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   return {
@@ -5366,6 +5486,7 @@ export function deserializeStrategicGameplayState(
     coalitionCustodialEternityStreakDays: save.coalitionCustodialEternityStreakDays,
     coalitionVanguardSynthesisStreakDays: save.coalitionVanguardSynthesisStreakDays,
     coalitionSentinelAscendancyStreakDays: save.coalitionSentinelAscendancyStreakDays,
+    coalitionOraclePerpetuityStreakDays: save.coalitionOraclePerpetuityStreakDays,
   };
 }
 
@@ -5744,6 +5865,7 @@ export function validateAction(
     issues.push(...coalitionCustodialEternityStreakIssues(action, state));
     issues.push(...coalitionVanguardSynthesisStreakIssues(action, state));
     issues.push(...coalitionSentinelAscendancyStreakIssues(action, state));
+    issues.push(...coalitionOraclePerpetuityStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({
@@ -5888,7 +6010,8 @@ export function rankStrategicActions(
         imperialPerpetuityRankingBonus(state, action) +
         custodialEternityRankingBonus(state, action) +
         vanguardSynthesisRankingBonus(state, action) +
-        sentinelAscendancyRankingBonus(state, action),
+        sentinelAscendancyRankingBonus(state, action) +
+        oraclePerpetuityRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
@@ -5998,6 +6121,8 @@ export function buildTurnStrategicBriefing(
     coalitionVanguardSynthesisStreakDays: state.coalitionVanguardSynthesisStreakDays ?? 0,
     sentinelCoalitionAscendancy: isSentinelCoalitionAscendancy(state),
     coalitionSentinelAscendancyStreakDays: state.coalitionSentinelAscendancyStreakDays ?? 0,
+    oracleCoalitionPerpetuity: isOracleCoalitionPerpetuity(state),
+    coalitionOraclePerpetuityStreakDays: state.coalitionOraclePerpetuityStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,
@@ -6210,6 +6335,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyVanguardSynthesisMandateBonus(next, daysAdvanced);
   next = advanceCoalitionSentinelAscendancyStreak(next, daysAdvanced);
   next = applySentinelAscendancyMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionOraclePerpetuityStreak(next, daysAdvanced);
+  next = applyOraclePerpetuityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
@@ -6266,6 +6393,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     coalitionCustodialEternityStreakDays: 0,
     coalitionVanguardSynthesisStreakDays: 0,
     coalitionSentinelAscendancyStreakDays: 0,
+    coalitionOraclePerpetuityStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -6618,6 +6746,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_sentinel_continuity_mandate') {
     nextState = resetCoalitionSentinelAscendancyStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_oracle_perpetuity_charter') {
+    nextState = resetCoalitionOraclePerpetuityStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_oracle_continuity_covenant') {
+    nextState = resetCoalitionOraclePerpetuityStreak(nextState);
   }
 
   contracts.ui.pushToast({
@@ -8702,6 +8836,51 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
     },
     delayedTradeOffs: [],
   },
+  'sga_coalition_oracle_perpetuity_charter': {
+    id: 'sga_coalition_oracle_perpetuity_charter',
+    title: 'Oracle Coalition Perpetuity Charter',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 62_000,
+    treasuryCost: 176_000,
+    minApproval: 65,
+    alignedPriorities: ['technology_competitiveness', 'economic_diversification'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'oracle_perpetuity', 'charter'],
+    repeatable: false,
+    minCoalitionBalanceIndex: 105,
+    maxCoalitionVolatilityEvents: 0,
+    minCoalitionSentinelAscendancyStreakDays: 4,
+    minCoalitionOraclePerpetuityStreakDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -62_000, treasuryDelta: -176_000, netWorthMultiplier: 1.035 },
+      government: { approvalDelta: 11, directiveSlotsDelta: 2, regulatoryBurdenDelta: -6 },
+      population: { publicStabilityDelta: 10, migrationDelta: 6 },
+    },
+    delayedTradeOffs: [],
+  },
+  'sga_coalition_oracle_continuity_covenant': {
+    id: 'sga_coalition_oracle_continuity_covenant',
+    title: 'Oracle Coalition Continuity Covenant',
+    category: 'investment',
+    apCost: 1,
+    cashCost: 43_000,
+    treasuryCost: 114_000,
+    minApproval: 55,
+    alignedPriorities: ['energy_resilience', 'freight_modernization'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'oracle', 'covenant'],
+    repeatable: true,
+    maxCoalitionVolatilityEvents: 0,
+    minCoalitionOraclePerpetuityStreakDays: 2,
+    cooldownDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -43_000, treasuryDelta: -114_000 },
+      government: { approvalDelta: 7 },
+      population: { publicStabilityDelta: 8, essentialAccessDelta: 5 },
+    },
+    delayedTradeOffs: [],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {
@@ -9238,7 +9417,7 @@ export function createMemoryStrategicContracts(
 
 export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
 
-export const AGENT_01_MODULE_VERSION = '5.1.0';
+export const AGENT_01_MODULE_VERSION = '5.2.0';
 
 
 
