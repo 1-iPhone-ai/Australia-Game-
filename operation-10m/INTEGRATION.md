@@ -7,8 +7,10 @@ Modular work lives under `operation-10m/agent-NN-*` until Agent 25 controlled as
 | Field | Value |
 |--------|--------|
 | Root | `operation-10m/agent-19-ai-memory/` |
+| Assembly chunk | `operation-10m/modules/agent-19-ai-memory/chunk.tsx` (`OP10M_MODULE_BEGIN agent-19-ai-memory`) |
+| Regenerate | `npm run build:agent19-chunk` |
 | Canonical anchor | V9.4 `SECTION 1B` (inlined AI memory) + Agent 19 horizon / influence slices |
-| Assembly | Agent 25 may inline `horizon.ts`, `explainability.ts`, `influence-audit.ts` adjacent to existing `buildAiMemoryHorizonSnapshot` or replace with re-exports after parity tests pass |
+| Assembly | Agent 25 inlines `chunk.tsx` or merges modular sources after parity tests pass |
 
 ### Exported surface (pre-assembly)
 
