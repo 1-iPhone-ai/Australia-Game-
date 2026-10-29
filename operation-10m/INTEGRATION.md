@@ -16,3 +16,4 @@ Modular worker slices live under `operation-10m/agent-NN-*` until **Agent 25** p
 | Anchor | `O10M_AGENT21_INTEGRATION_ANCHOR` (replaces / supersedes inline `SECTION 20AQ` during next assembly tranche) |
 | Contract | `operation-10m/agent-21-forecasting/integration-contract.md` |
 | Tests | `npm run test:ag21` |
+| Assembly chunk | `operation-10m/modules/agent-21-forecasting/chunk.tsx` (`npm run bundle:agent-21-chunk`) |

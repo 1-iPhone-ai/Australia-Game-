@@ -10,6 +10,13 @@
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
 - `O10M_AGENT21_MODULE_VERSION` = `1.2.0`
 
+## Assembly chunk
+
+- **Path:** `operation-10m/modules/agent-21-forecasting/chunk.tsx`
+- **Markers:** `OP10M_MODULE_BEGIN agent-21-forecasting` … `OP10M_MODULE_END agent-21-forecasting`
+- **Regenerate:** `npm run bundle:agent-21-chunk`
+- **Manifest:** `operation-10m/modules/agent-21-forecasting/module.manifest.json`
+
 ## Primary exports (Agent 25 wiring)
 
 | Export | Purpose |
@@ -22,6 +29,7 @@
 | `AG21_FORECAST_SCENARIO_CATALOG` / `lookupAg21Scenario` | Scenario library |
 | `evaluateAg21ForecastRun` / `compareAg21Scenarios` | Forecast evaluation metrics |
 | `Ag21ScenarioComparisonStrip` | Scenario comparison UI (`data-testid="ag21-scenario-comparison"`) |
+| `runAgent21ForecastingChunkSelfTests` | Bundled chunk smoke tests (Agent 25) |
 
 ## Upstream dependencies (canonical only)
 
