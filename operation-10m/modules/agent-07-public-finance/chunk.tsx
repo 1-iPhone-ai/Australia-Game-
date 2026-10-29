@@ -9694,6 +9694,223 @@ export function buildCostRecoveryFiscalBufferBridgeReport(
 }
 
 
+// --- source: multi-year-supplementary-coherence/types.ts ---
+export const MULTI_YEAR_SUPPLEMENTARY_COHERENCE_SCHEMA =
+  'op10m-agent07-multi-year-supplementary-coherence-v1';
+
+export interface MyefoSupplementaryCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface MultiYearSupplementaryCoherenceReport {
+  schemaVersion: string;
+  turn: number;
+  checks: MyefoSupplementaryCheck[];
+  aggregateCoherenceGapPoints: number;
+  withinMyefoSupplementaryBand: boolean;
+  alignedWithForwardIntegrity: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: multi-year-supplementary-coherence/compute.ts ---
+  MultiYearSupplementaryCoherenceReport,
+  MyefoSupplementaryCheck
+} from './types';
+
+const MYEFO_SUPP_TOLERANCE = 5.9;
+
+export function buildMultiYearSupplementaryCoherenceReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  myefo: MultiYearExpenditureFramework,
+  supplementary: SupplementaryEstimatesReport,
+  forwardIntegrity: ForwardEstimatesIntegrityReport
+): MultiYearSupplementaryCoherenceReport {
+  const ceilingGap = Math.abs(
+    (myefo.forwardBands[0]?.envelopeCapacity ?? 0) - Math.abs(supplementary.netRevisionPoints) * 0.42
+  );
+  const revisionGap = Math.abs(forwardIntegrity.aggregateRevisionGap - Math.abs(supplementary.netRevisionPoints));
+  const aggregateCoherenceGapPoints = Math.round((ceilingGap + revisionGap) * 10) / 20;
+
+  const checks: MyefoSupplementaryCheck[] = [
+    {
+      id: 'MYSC01',
+      label: 'MYEFO forward bands within ceiling',
+      passed:
+        !myefo.aggregateCeilingBinding ||
+        myefo.forwardBands.every(b => b.withinCeiling) ||
+        v1012.pressure === 'critical',
+      detail: `growth=${myefo.parameterSettingsGrowth}, binding=${myefo.aggregateCeilingBinding}`
+    },
+    {
+      id: 'MYSC02',
+      label: 'Supplementary within revision tolerance',
+      passed: supplementary.withinRevisionTolerance || v1012.pressure === 'critical',
+      detail: `net=${supplementary.netRevisionPoints}, up=${supplementary.aggregateUpwardRevision}`
+    },
+    {
+      id: 'MYSC03',
+      label: 'Supplementary net vs forward integrity',
+      passed:
+        revisionGap <= MYEFO_SUPP_TOLERANCE + 2 ||
+        forwardIntegrity.allPassed ||
+        v1012.pressure === 'critical',
+      detail: `revisionGap=${forwardIntegrity.aggregateRevisionGap}, net=${supplementary.netRevisionPoints}`
+    }
+  ];
+
+  const withinMyefoSupplementaryBand =
+    checks.every(c => c.passed) ||
+    (supplementary.withinRevisionTolerance && forwardIntegrity.allPassed) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithForwardIntegrity =
+    forwardIntegrity.coherentWithSupplementary &&
+    (aggregateCoherenceGapPoints <= forwardIntegrity.aggregateRevisionGap + 2.2 ||
+      forwardIntegrity.allPassed ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinMyefoSupplementaryBand) {
+    warnings.push(`Multi-year supplementary gap ${aggregateCoherenceGapPoints}.`);
+  }
+  if (!alignedWithForwardIntegrity) {
+    warnings.push('MYEFO supplementary diverges from forward integrity.');
+  }
+
+  const narrative = withinMyefoSupplementaryBand
+    ? `Multi-year supplementary gap ${aggregateCoherenceGapPoints} within tolerance.`
+    : `Multi-year supplementary alert: gap ${aggregateCoherenceGapPoints}.`;
+
+  return {
+    schemaVersion: MULTI_YEAR_SUPPLEMENTARY_COHERENCE_SCHEMA,
+    turn,
+    checks,
+    aggregateCoherenceGapPoints,
+    withinMyefoSupplementaryBand,
+    alignedWithForwardIntegrity,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: fiscal-rules-offset-bridge/types.ts ---
+export const FISCAL_RULES_OFFSET_BRIDGE_SCHEMA =
+  'op10m-agent07-fiscal-rules-offset-bridge-v1';
+
+export interface RulesOffsetCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  observed: number;
+  tolerance: number;
+}
+
+export interface FiscalRulesOffsetBridgeReport {
+  schemaVersion: string;
+  turn: number;
+  checks: RulesOffsetCheck[];
+  bridgeGapPoints: number;
+  withinRulesOffsetBand: boolean;
+  alignedWithEfficiencyRegister: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: fiscal-rules-offset-bridge/compute.ts ---
+
+const RULES_OFFSET_TOLERANCE = 6.4;
+
+export function buildFiscalRulesOffsetBridgeReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  fiscalRules: FiscalRulesFrameworkReport,
+  spendingOffsets: SpendingOffsetsReport,
+  efficiencyRegister: EfficiencyDividendRegisterReport
+): FiscalRulesOffsetBridgeReport {
+  const breachStress = fiscalRules.breachCount * 1.6;
+  const offsetGap = Math.max(0, spendingOffsets.aggregateNewSpending - spendingOffsets.aggregateOffsets) * 0.35;
+  const efficiencyGap = Math.abs(
+    efficiencyRegister.aggregateRealizedPoints - spendingOffsets.aggregateOffsets * 0.38
+  );
+  const bridgeGapPoints = Math.round((breachStress + offsetGap + efficiencyGap) * 10) / 30;
+
+  const checks: RulesOffsetCheck[] = [
+    {
+      id: 'FROB01',
+      label: 'Fiscal rules framework compliant',
+      passed:
+        fiscalRules.allCompliant ||
+        fiscalRules.breachCount <= 1 ||
+        v1012.pressure === 'critical',
+      observed: fiscalRules.breachCount,
+      tolerance: 0
+    },
+    {
+      id: 'FROB02',
+      label: 'Spending offsets within portfolio target',
+      passed: spendingOffsets.withinPortfolioTarget || v1012.pressure === 'critical',
+      observed: spendingOffsets.portfolioCoverageRatio,
+      tolerance: 0.9
+    },
+    {
+      id: 'FROB03',
+      label: 'Offsets vs efficiency realization',
+      passed:
+        efficiencyGap <= RULES_OFFSET_TOLERANCE + 2 ||
+        efficiencyRegister.coherentWithSpendingOffsets ||
+        v1012.pressure === 'critical',
+      observed: efficiencyGap,
+      tolerance: RULES_OFFSET_TOLERANCE + 2
+    }
+  ];
+
+  const withinRulesOffsetBand =
+    checks.every(c => c.passed) ||
+    (fiscalRules.allCompliant && spendingOffsets.withinPortfolioTarget) ||
+    (fiscalRules.breachCount <= 1 &&
+      spendingOffsets.withinPortfolioTarget &&
+      efficiencyRegister.coherentWithSpendingOffsets) ||
+    v1012.pressure === 'critical';
+
+  const alignedWithEfficiencyRegister =
+    efficiencyRegister.coherentWithSpendingOffsets &&
+    (bridgeGapPoints <= efficiencyRegister.aggregateRealizedPoints * 0.12 + 2.5 ||
+      efficiencyRegister.withinPortfolioSchedule ||
+      v1012.pressure === 'critical');
+
+  const warnings: string[] = [];
+  if (!withinRulesOffsetBand) {
+    warnings.push(`Fiscal rules offset bridge gap ${bridgeGapPoints}.`);
+  }
+  if (!alignedWithEfficiencyRegister) {
+    warnings.push('Rules offset bridge diverges from efficiency register.');
+  }
+
+  const narrative = withinRulesOffsetBand
+    ? `Fiscal rules offset bridge gap ${bridgeGapPoints} within tolerance.`
+    : `Fiscal rules offset alert: gap ${bridgeGapPoints}.`;
+
+  return {
+    schemaVersion: FISCAL_RULES_OFFSET_BRIDGE_SCHEMA,
+    turn,
+    checks,
+    bridgeGapPoints,
+    withinRulesOffsetBand,
+    alignedWithEfficiencyRegister,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -11790,6 +12007,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     fiscalBufferCoherence,
     costRecoveryRevenueCoherence
   );
+  const multiYearSupplementaryCoherence = buildMultiYearSupplementaryCoherenceReport(
+    turn,
+    v1012,
+    myefo,
+    supplementary,
+    forwardEstimatesIntegrity
+  );
+  const fiscalRulesOffsetBridge = buildFiscalRulesOffsetBridgeReport(
+    turn,
+    v1012,
+    fiscalRules,
+    spendingOffsets,
+    efficiencyDividendRegister
+  );
 
   checks.push({
     id: 'CF01',
@@ -12759,13 +12990,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `recovery=${costRecovery.weightedRecoveryRatio}, coherence=${costRecoveryRevenueCoherence.aggregateCoherenceGapPoints}`
   });
 
+  checks.push({
+    id: 'CF137',
+    label: 'Multi-year supplementary coherence within band',
+    passed: multiYearSupplementaryCoherence.withinMyefoSupplementaryBand || v1012.pressure === 'critical',
+    detail: `gap=${multiYearSupplementaryCoherence.aggregateCoherenceGapPoints}, checks=${multiYearSupplementaryCoherence.checks.filter(c => c.passed).length}/${multiYearSupplementaryCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF138',
+    label: 'Fiscal rules offset bridge within band',
+    passed: fiscalRulesOffsetBridge.withinRulesOffsetBand || v1012.pressure === 'critical',
+    detail: `gap=${fiscalRulesOffsetBridge.bridgeGapPoints}, checks=${fiscalRulesOffsetBridge.checks.filter(c => c.passed).length}/${fiscalRulesOffsetBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF139',
+    label: 'MYEFO supplementary aligned with forward integrity',
+    passed: multiYearSupplementaryCoherence.alignedWithForwardIntegrity,
+    detail: `net=${supplementary.netRevisionPoints}, revision=${forwardEstimatesIntegrity.aggregateRevisionGap}`
+  });
+
+  checks.push({
+    id: 'CF140',
+    label: 'Rules offset aligned with efficiency register',
+    passed: fiscalRulesOffsetBridge.alignedWithEfficiencyRegister,
+    detail: `breaches=${fiscalRules.breachCount}, realized=${efficiencyDividendRegister.aggregateRealizedPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 96
+    layerCount: 98
   };
 }
 
@@ -14645,12 +14904,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Ninety-six fiscal layers integrated', healthy.layerCount === 96, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Ninety-eight fiscal layers integrated', healthy.layerCount === 98, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 136,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 140,
     'ok'
   );
 
@@ -14662,10 +14921,10 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF136 ids present',
-    healthy.checks.length === 136 &&
+    'CF01–CF140 ids present',
+    healthy.checks.length === 140 &&
       healthy.checks[0]?.id === 'CF01' &&
-      healthy.checks[135]?.id === 'CF136',
+      healthy.checks[139]?.id === 'CF140',
     healthy.checks.map(c => c.id).join(',')
   );
 
@@ -19312,6 +19571,125 @@ export function runCostRecoveryFiscalBufferBridgeSelfTests(): {
     'CRFBB-T03',
     'Aligned with recovery revenue coherence',
     healthy.alignedWithRecoveryRevenueCoherence,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: multi-year-supplementary-coherence/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runMultiYearSupplementaryCoherenceSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(9);
+  const { state } = computeFiscalOutcomesLayer({ turn: 9, v1012: v }, persisted);
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const supplementary = buildSupplementaryEstimatesReport(9, v);
+  const recurring = scheduleRecurringCommitments(9, v, state.budget);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const forwardIntegrity = buildForwardEstimatesIntegrityReport(9, v, myefo, supplementary, outlook);
+  const healthy = buildMultiYearSupplementaryCoherenceReport(9, v, myefo, supplementary, forwardIntegrity);
+
+  record('MYSC-T01', 'Three MYEFO supplementary checks', healthy.checks.length === 3, 'ok');
+  record(
+    'MYSC-T02',
+    'Within MYEFO supplementary band',
+    healthy.withinMyefoSupplementaryBand,
+    `gap=${healthy.aggregateCoherenceGapPoints}`
+  );
+  record(
+    'MYSC-T03',
+    'Aligned with forward integrity',
+    healthy.alignedWithForwardIntegrity,
+    healthy.narrative
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: fiscal-rules-offset-bridge/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 5,
+    debtLevel: partial.debtLevel ?? 20,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runFiscalRulesOffsetBridgeSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const offsets = buildSpendingOffsetsReport(9, v);
+  const rules = assessFiscalRulesFramework({
+    turn: 9,
+    v1012: v,
+    envelopeContingencyPoints: 2,
+    forwardSpendingGrowth: 2
+  });
+  const efficiency = buildEfficiencyDividendRegisterReport(9, v, offsets, rules);
+  const healthy = buildFiscalRulesOffsetBridgeReport(9, v, rules, offsets, efficiency);
+
+  record('FROB-T01', 'Three rules offset checks', healthy.checks.length === 3, 'ok');
+  record(
+    'FROB-T02',
+    'Within rules offset band',
+    healthy.withinRulesOffsetBand,
+    `gap=${healthy.bridgeGapPoints}`
+  );
+  record(
+    'FROB-T03',
+    'Aligned with efficiency register',
+    healthy.alignedWithEfficiencyRegister,
     healthy.narrative
   );
 

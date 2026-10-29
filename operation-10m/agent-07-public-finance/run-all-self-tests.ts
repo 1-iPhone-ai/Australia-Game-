@@ -79,6 +79,8 @@ import { runLapseCarryWarrantCoherenceSelfTests } from './modules/lapse-carry-wa
 import { runTransparencyProgramForwardBridgeSelfTests } from './modules/transparency-program-forward-bridge/self-tests';
 import { runFiscalRiskOutlookCoherenceSelfTests } from './modules/fiscal-risk-outlook-coherence/self-tests';
 import { runCostRecoveryFiscalBufferBridgeSelfTests } from './modules/cost-recovery-fiscal-buffer-bridge/self-tests';
+import { runMultiYearSupplementaryCoherenceSelfTests } from './modules/multi-year-supplementary-coherence/self-tests';
+import { runFiscalRulesOffsetBridgeSelfTests } from './modules/fiscal-rules-offset-bridge/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -167,6 +169,8 @@ ok = runSuite('Lapse carry warrant coherence', runLapseCarryWarrantCoherenceSelf
 ok = runSuite('Transparency program forward bridge', runTransparencyProgramForwardBridgeSelfTests) && ok;
 ok = runSuite('Fiscal risk outlook coherence', runFiscalRiskOutlookCoherenceSelfTests) && ok;
 ok = runSuite('Cost recovery fiscal buffer bridge', runCostRecoveryFiscalBufferBridgeSelfTests) && ok;
+ok = runSuite('Multi-year supplementary coherence', runMultiYearSupplementaryCoherenceSelfTests) && ok;
+ok = runSuite('Fiscal rules offset bridge', runFiscalRulesOffsetBridgeSelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);

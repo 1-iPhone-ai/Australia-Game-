@@ -71,6 +71,8 @@ import { buildLapseCarryWarrantCoherenceReport } from '../lapse-carry-warrant-co
 import { buildTransparencyProgramForwardBridgeReport } from '../transparency-program-forward-bridge/compute';
 import { buildFiscalRiskOutlookCoherenceReport } from '../fiscal-risk-outlook-coherence/compute';
 import { buildCostRecoveryFiscalBufferBridgeReport } from '../cost-recovery-fiscal-buffer-bridge/compute';
+import { buildMultiYearSupplementaryCoherenceReport } from '../multi-year-supplementary-coherence/compute';
+import { buildFiscalRulesOffsetBridgeReport } from '../fiscal-rules-offset-bridge/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -478,6 +480,20 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     costRecovery,
     fiscalBufferCoherence,
     costRecoveryRevenueCoherence
+  );
+  const multiYearSupplementaryCoherence = buildMultiYearSupplementaryCoherenceReport(
+    turn,
+    v1012,
+    myefo,
+    supplementary,
+    forwardEstimatesIntegrity
+  );
+  const fiscalRulesOffsetBridge = buildFiscalRulesOffsetBridgeReport(
+    turn,
+    v1012,
+    fiscalRules,
+    spendingOffsets,
+    efficiencyDividendRegister
   );
 
   checks.push({
@@ -1448,12 +1464,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `recovery=${costRecovery.weightedRecoveryRatio}, coherence=${costRecoveryRevenueCoherence.aggregateCoherenceGapPoints}`
   });
 
+  checks.push({
+    id: 'CF137',
+    label: 'Multi-year supplementary coherence within band',
+    passed: multiYearSupplementaryCoherence.withinMyefoSupplementaryBand || v1012.pressure === 'critical',
+    detail: `gap=${multiYearSupplementaryCoherence.aggregateCoherenceGapPoints}, checks=${multiYearSupplementaryCoherence.checks.filter(c => c.passed).length}/${multiYearSupplementaryCoherence.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF138',
+    label: 'Fiscal rules offset bridge within band',
+    passed: fiscalRulesOffsetBridge.withinRulesOffsetBand || v1012.pressure === 'critical',
+    detail: `gap=${fiscalRulesOffsetBridge.bridgeGapPoints}, checks=${fiscalRulesOffsetBridge.checks.filter(c => c.passed).length}/${fiscalRulesOffsetBridge.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF139',
+    label: 'MYEFO supplementary aligned with forward integrity',
+    passed: multiYearSupplementaryCoherence.alignedWithForwardIntegrity,
+    detail: `net=${supplementary.netRevisionPoints}, revision=${forwardEstimatesIntegrity.aggregateRevisionGap}`
+  });
+
+  checks.push({
+    id: 'CF140',
+    label: 'Rules offset aligned with efficiency register',
+    passed: fiscalRulesOffsetBridge.alignedWithEfficiencyRegister,
+    detail: `breaches=${fiscalRules.breachCount}, realized=${efficiencyDividendRegister.aggregateRealizedPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 96
+    layerCount: 98
   };
 }
