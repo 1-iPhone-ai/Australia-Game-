@@ -158,6 +158,10 @@ export interface GTELPersisted {
   tradeFxHedgingSmoothing?: number;
   /** Smoothed import arrival lane pressure (0–1). */
   importLanePressureSmoothing?: number;
+  /** Smoothed diplomatic trade coherence score (0–1). */
+  diplomaticTradeCoherenceSmoothing?: number;
+  /** Smoothed trade balance stabilization index (0–1). */
+  tradeBalanceStabilizationSmoothing?: number;
 }
 
 export interface GTELState {
@@ -197,6 +201,8 @@ export interface GTELState {
   sanctionsSpillover: GTELSanctionsSpilloverSnapshot;
   tradeFxHedging: GTELTradeFxHedgingSnapshot;
   importLanePressure: GTELImportLanePressureSnapshot;
+  diplomaticTradeCoherence: GTELDiplomaticTradeCoherenceSnapshot;
+  tradeBalanceStabilization: GTELTradeBalanceStabilizationSnapshot;
   inputHash: string;
 }
 
@@ -584,6 +590,26 @@ export interface GTELImportLanePressureSnapshot {
   summary: string;
 }
 
+export type GTELDiplomaticTradeCoherenceBand = 'aligned' | 'coordinated' | 'fragmented' | 'divergent';
+
+export interface GTELDiplomaticTradeCoherenceSnapshot {
+  score: number;
+  band: GTELDiplomaticTradeCoherenceBand;
+  trackAlignment: number;
+  narrativeConsistency: number;
+  summary: string;
+}
+
+export type GTELTradeBalanceStabilizationBand = 'anchored' | 'steady' | 'volatile' | 'unstable';
+
+export interface GTELTradeBalanceStabilizationSnapshot {
+  index: number;
+  band: GTELTradeBalanceStabilizationBand;
+  surplusSupport: number;
+  volatilityDampening: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -755,6 +781,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     sanctionsSpilloverSmoothing: 0.24,
     tradeFxHedgingSmoothing: 0.5,
     importLanePressureSmoothing: 0.38,
+    diplomaticTradeCoherenceSmoothing: 0.48,
+    tradeBalanceStabilizationSmoothing: 0.52,
   };
 }
 
@@ -927,6 +955,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.sanctionsSpilloverSmoothing = sanitizeSanctionsSpilloverSmoothing(r.sanctionsSpilloverSmoothing);
   base.tradeFxHedgingSmoothing = sanitizeTradeFxHedgingSmoothing(r.tradeFxHedgingSmoothing);
   base.importLanePressureSmoothing = sanitizeImportLanePressureSmoothing(r.importLanePressureSmoothing);
+  base.diplomaticTradeCoherenceSmoothing = sanitizeDiplomaticTradeCoherenceSmoothing(
+    r.diplomaticTradeCoherenceSmoothing,
+  );
+  base.tradeBalanceStabilizationSmoothing = sanitizeTradeBalanceStabilizationSmoothing(
+    r.tradeBalanceStabilizationSmoothing,
+  );
   return base;
 }
 
@@ -5426,6 +5460,305 @@ export function importLanePressureGiNotes(
 }
 
 
+// --- source: diplomatic-trade-coherence.ts ---
+  GTELDiplomaticEngagementState,
+  GTELPartnerAccessRestorationSnapshot,
+  GTELPersisted,
+  GTELDiplomaticTradeCoherenceSnapshot,
+  GTELTradeDeescalationSnapshot,
+  GTELTradeReconciliationSnapshot,
+  GTELTurnResult,
+} from './types.ts';
+
+export type GTELDiplomaticTradeCoherenceBand = GTELDiplomaticTradeCoherenceSnapshot['band'];
+
+function coherenceBand(score: number): GTELDiplomaticTradeCoherenceBand {
+  if (score >= 0.74) return 'aligned';
+  if (score >= 0.52) return 'coordinated';
+  if (score >= 0.34) return 'fragmented';
+  return 'divergent';
+}
+
+export function sanitizeDiplomaticTradeCoherenceSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.48), 0.16, 0.92);
+}
+
+export function createEmptyDiplomaticTradeCoherenceSnapshot(): GTELDiplomaticTradeCoherenceSnapshot {
+  return {
+    score: 0.48,
+    band: 'coordinated',
+    trackAlignment: 0.52,
+    narrativeConsistency: 0.5,
+    summary: 'Diplomatic and trade tracks are moderately coordinated.',
+  };
+}
+
+export function advanceDiplomaticTradeCoherenceSmoothing(
+  persisted: GTELPersisted,
+  rawScore: number,
+): GTELPersisted {
+  const prev = sanitizeDiplomaticTradeCoherenceSmoothing(persisted.diplomaticTradeCoherenceSmoothing);
+  const next = gtelClamp(prev * 0.72 + gtelClamp(rawScore, 0.16, 0.92) * 0.28, 0.16, 0.92);
+  return { ...persisted, diplomaticTradeCoherenceSmoothing: Math.round(next * 1000) / 1000 };
+}
+
+export function computeDiplomaticTradeCoherenceSnapshot(input: {
+  engagement: GTELDiplomaticEngagementState;
+  tradeDeescalation: GTELTradeDeescalationSnapshot;
+  tradeReconciliation: GTELTradeReconciliationSnapshot;
+  partnerAccessRestoration: GTELPartnerAccessRestorationSnapshot;
+  persisted: GTELPersisted;
+}): { snapshot: GTELDiplomaticTradeCoherenceSnapshot; persisted: GTELPersisted } {
+  const activeTracks = Object.values(input.engagement.tracks || {}).filter(
+    t => t && (t.band === 'active' || t.band === 'breakthrough'),
+  ).length;
+  const engagementLift = gtelClamp(activeTracks * 0.08 + input.engagement.summitPulse * 0.14, 0, 0.28);
+  const deescalationLift =
+    input.tradeDeescalation.band === 'breakthrough'
+      ? 0.16
+      : input.tradeDeescalation.band === 'warming'
+        ? 0.1
+        : 0.04;
+  const reconciliationLift =
+    input.tradeReconciliation.band === 'settled'
+      ? 0.14
+      : input.tradeReconciliation.band === 'substantive'
+        ? 0.08
+        : 0.03;
+  const restorationLift =
+    input.partnerAccessRestoration.band === 'reopened'
+      ? 0.12
+      : input.partnerAccessRestoration.band === 'recovering'
+        ? 0.07
+        : 0.02;
+  const rawScore = gtelClamp(0.32 + engagementLift + deescalationLift + reconciliationLift + restorationLift, 0.16, 0.92);
+  const persisted = advanceDiplomaticTradeCoherenceSmoothing(input.persisted, rawScore);
+  const score = sanitizeDiplomaticTradeCoherenceSmoothing(persisted.diplomaticTradeCoherenceSmoothing);
+  const band = coherenceBand(score);
+  const trackAlignment = gtelClamp(score * 0.55 + activeTracks * 0.06, 0.2, 0.88);
+  const narrativeConsistency = gtelClamp(
+    score * 0.5 + deescalationLift + reconciliationLift,
+    0.18,
+    0.9,
+  );
+
+  const summary =
+    band === 'aligned'
+      ? 'Diplomatic messaging and trade measures are aligned — partners see a single coherent story.'
+      : band === 'divergent'
+        ? 'Trade retaliation and diplomatic outreach are sending mixed signals to partners.'
+        : band === 'fragmented'
+          ? 'Diplomatic tracks and trade enforcement are pulling in different directions.'
+          : 'Diplomatic and trade tracks are moderately coordinated.';
+
+  return {
+    snapshot: {
+      score: Math.round(score * 1000) / 1000,
+      band,
+      trackAlignment: Math.round(trackAlignment * 1000) / 1000,
+      narrativeConsistency: Math.round(narrativeConsistency * 1000) / 1000,
+      summary,
+    },
+    persisted,
+  };
+}
+
+export function diplomaticTradeCoherenceDomesticStressRelief(snapshot: GTELDiplomaticTradeCoherenceSnapshot): number {
+  if (snapshot.band === 'aligned') return gtelClamp(snapshot.score * 0.05, 0.02, 0.045);
+  if (snapshot.band === 'coordinated') return gtelClamp(snapshot.score * 0.03, 0, 0.03);
+  return 0;
+}
+
+export function diplomaticTradeCoherenceExportScale(snapshot: GTELDiplomaticTradeCoherenceSnapshot): number {
+  if (snapshot.band === 'aligned') return gtelClamp(1 + snapshot.trackAlignment * 0.025, 1, 1.03);
+  if (snapshot.band === 'divergent') return gtelClamp(0.93 + snapshot.score * 0.05, 0.9, 0.97);
+  if (snapshot.band === 'fragmented') return gtelClamp(0.96 + snapshot.score * 0.03, 0.93, 0.99);
+  return gtelClamp(0.98 + snapshot.score * 0.02, 0.96, 1.02);
+}
+
+export function diplomaticTradeCoherenceWorldEvent(
+  snapshot: GTELDiplomaticTradeCoherenceSnapshot,
+  turn: number,
+): GTELTurnResult['worldEvents'][0] | null {
+  if (snapshot.band !== 'aligned' && snapshot.band !== 'divergent') return null;
+  if (snapshot.band === 'aligned' && snapshot.score < 0.72) return null;
+  return {
+    id: `gtel_dipl_coherence_${turn}`,
+    turn,
+    kind: 'diplomacy',
+    title: snapshot.band === 'aligned' ? 'Diplomatic trade alignment' : 'Diplomatic trade divergence',
+    summary: snapshot.summary,
+    regionIds: ['ACT', 'NSW', 'VIC'],
+  };
+}
+
+export function diplomaticTradeCoherenceGiNotes(
+  coherence: GTELDiplomaticTradeCoherenceSnapshot | null | undefined,
+): string[] {
+  if (!coherence) return [];
+  return [
+    `Diplomatic trade coherence: ${coherence.band} (${Math.round(coherence.score * 100)}% score).`,
+    coherence.summary,
+  ];
+}
+
+
+// --- source: trade-balance-stabilization.ts ---
+  GTELExportInsuranceStackSnapshot,
+  GTELPersisted,
+  GTELTradeBalanceSnapshot,
+  GTELTradeBalanceStabilizationSnapshot,
+  GTELTradeFxHedgingSnapshot,
+  GTELTradeReconciliationSnapshot,
+  GTELTermsOfTradeSnapshot,
+  GTELTurnResult,
+} from './types.ts';
+
+export type GTELTradeBalanceStabilizationBand = GTELTradeBalanceStabilizationSnapshot['band'];
+
+function stabilizationBand(index: number): GTELTradeBalanceStabilizationBand {
+  if (index >= 0.72) return 'anchored';
+  if (index >= 0.52) return 'steady';
+  if (index >= 0.34) return 'volatile';
+  return 'unstable';
+}
+
+export function sanitizeTradeBalanceStabilizationSmoothing(raw: unknown): number {
+  return gtelClamp(gtelNum(raw, 0.52), 0.2, 0.9);
+}
+
+export function createEmptyTradeBalanceStabilizationSnapshot(): GTELTradeBalanceStabilizationSnapshot {
+  return {
+    index: 0.52,
+    band: 'steady',
+    surplusSupport: 0.08,
+    volatilityDampening: 0.12,
+    summary: 'Trade balance adjustments are proceeding at a steady pace.',
+  };
+}
+
+export function advanceTradeBalanceStabilizationSmoothing(
+  persisted: GTELPersisted,
+  rawIndex: number,
+): GTELPersisted {
+  const prev = sanitizeTradeBalanceStabilizationSmoothing(persisted.tradeBalanceStabilizationSmoothing);
+  const next = gtelClamp(prev * 0.73 + gtelClamp(rawIndex, 0.2, 0.9) * 0.27, 0.2, 0.9);
+  return { ...persisted, tradeBalanceStabilizationSmoothing: Math.round(next * 1000) / 1000 };
+}
+
+export function computeTradeBalanceStabilizationSnapshot(input: {
+  tradeBalance: GTELTradeBalanceSnapshot;
+  termsOfTrade: GTELTermsOfTradeSnapshot;
+  tradeFxHedging: GTELTradeFxHedgingSnapshot;
+  exportInsuranceStack: GTELExportInsuranceStackSnapshot;
+  tradeReconciliation: GTELTradeReconciliationSnapshot;
+  persisted: GTELPersisted;
+}): { snapshot: GTELTradeBalanceStabilizationSnapshot; persisted: GTELPersisted } {
+  const surplusLift =
+    input.tradeBalance.currentAccountTone === 'surplus' || input.tradeBalance.currentAccountTone === 'mild_surplus'
+      ? 0.16
+      : input.tradeBalance.currentAccountTone === 'deficit'
+        ? -0.1
+        : 0.04;
+  const termsLift =
+    input.termsOfTrade.band === 'favorable'
+      ? 0.1
+      : input.termsOfTrade.band === 'severely_unfavorable'
+        ? -0.08
+        : 0;
+  const hedgingLift = gtelClamp((input.tradeFxHedging.effectiveness - 0.5) * 0.2, -0.06, 0.1);
+  const insuranceLift =
+    input.exportInsuranceStack.band === 'robust'
+      ? 0.08
+      : input.exportInsuranceStack.band === 'impaired'
+        ? -0.1
+        : 0.02;
+  const reconciliationLift =
+    input.tradeReconciliation.band === 'settled'
+      ? 0.08
+      : input.tradeReconciliation.band === 'substantive'
+        ? 0.05
+        : 0;
+  const rawIndex = gtelClamp(
+    0.46 + surplusLift + termsLift + hedgingLift + insuranceLift + reconciliationLift,
+    0.2,
+    0.9,
+  );
+  const persisted = advanceTradeBalanceStabilizationSmoothing(input.persisted, rawIndex);
+  const index = sanitizeTradeBalanceStabilizationSmoothing(persisted.tradeBalanceStabilizationSmoothing);
+  const band = stabilizationBand(index);
+  const surplusSupport = gtelClamp(
+    (input.tradeBalance.netExportPulse > 0.08 ? 0.1 : 0.04) + surplusLift * 0.5,
+    0.02,
+    0.18,
+  );
+  const volatilityDampening = gtelClamp(
+    index * 0.15 + input.tradeFxHedging.passThroughBuffer * 0.35 + reconciliationLift,
+    0.04,
+    0.28,
+  );
+
+  const summary =
+    band === 'anchored'
+      ? 'Trade balance stabilizers are anchoring the current account despite external shocks.'
+      : band === 'unstable'
+        ? 'Trade balance swings are outpacing hedging and reconciliation buffers.'
+        : band === 'volatile'
+          ? 'External terms and finance stress are making trade balance outcomes harder to predict.'
+          : 'Trade balance adjustments are proceeding at a steady pace.';
+
+  return {
+    snapshot: {
+      index: Math.round(index * 1000) / 1000,
+      band,
+      surplusSupport: Math.round(surplusSupport * 1000) / 1000,
+      volatilityDampening: Math.round(volatilityDampening * 1000) / 1000,
+      summary,
+    },
+    persisted,
+  };
+}
+
+export function tradeBalanceStabilizationExportScale(snapshot: GTELTradeBalanceStabilizationSnapshot): number {
+  if (snapshot.band === 'anchored') return gtelClamp(1 + snapshot.surplusSupport * 0.15, 1, 1.04);
+  if (snapshot.band === 'unstable') return gtelClamp(0.88 + snapshot.index * 0.08, 0.84, 0.92);
+  if (snapshot.band === 'volatile') return gtelClamp(0.92 + snapshot.index * 0.06, 0.88, 0.96);
+  return gtelClamp(0.97 + snapshot.index * 0.03, 0.94, 1.02);
+}
+
+export function tradeBalanceStabilizationDomesticStress(snapshot: GTELTradeBalanceStabilizationSnapshot): number {
+  if (snapshot.band === 'unstable') return gtelClamp((0.5 - snapshot.index) * 0.12, 0.03, 0.08);
+  if (snapshot.band === 'volatile') return gtelClamp((0.48 - snapshot.index) * 0.08, 0, 0.05);
+  return 0;
+}
+
+export function tradeBalanceStabilizationWorldEvent(
+  snapshot: GTELTradeBalanceStabilizationSnapshot,
+  turn: number,
+): GTELTurnResult['worldEvents'][0] | null {
+  if (snapshot.band !== 'volatile' && snapshot.band !== 'unstable') return null;
+  if (snapshot.index > 0.42) return null;
+  return {
+    id: `gtel_balance_stab_${turn}`,
+    turn,
+    kind: 'trade',
+    title: 'Trade balance volatility',
+    summary: snapshot.summary,
+    regionIds: ['NSW', 'QLD', 'WA'],
+  };
+}
+
+export function tradeBalanceStabilizationGiNotes(
+  stabilization: GTELTradeBalanceStabilizationSnapshot | null | undefined,
+): string[] {
+  if (!stabilization) return [];
+  return [
+    `Trade balance stabilization: ${stabilization.band} (${Math.round(stabilization.index * 100)}% index).`,
+    stabilization.summary,
+  ];
+}
+
+
 // --- source: domestic-consequences.ts ---
   GTELCommodityQuote,
   GTELDomesticCoupling,
@@ -5675,6 +6008,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   importLanePressureGiNotes,
   importLanePressureWorldEvent,
 } from './import-lane-pressure.ts';
+  computeDiplomaticTradeCoherenceSnapshot,
+  diplomaticTradeCoherenceDomesticStressRelief,
+  diplomaticTradeCoherenceExportScale,
+  diplomaticTradeCoherenceGiNotes,
+  diplomaticTradeCoherenceWorldEvent,
+} from './diplomatic-trade-coherence.ts';
+  computeTradeBalanceStabilizationSnapshot,
+  tradeBalanceStabilizationDomesticStress,
+  tradeBalanceStabilizationExportScale,
+  tradeBalanceStabilizationGiNotes,
+  tradeBalanceStabilizationWorldEvent,
+} from './trade-balance-stabilization.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -6087,12 +6432,37 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const insuranceStackEvent = exportInsuranceStackWorldEvent(exportInsuranceStack, turn);
   if (insuranceStackEvent) worldEvents.push(insuranceStackEvent);
 
+  const coherenceStep = computeDiplomaticTradeCoherenceSnapshot({
+    engagement: engagementStep.state,
+    tradeDeescalation,
+    tradeReconciliation,
+    partnerAccessRestoration,
+    persisted,
+  });
+  persisted = coherenceStep.persisted;
+  const diplomaticTradeCoherence = coherenceStep.snapshot;
+  const coherenceEvent = diplomaticTradeCoherenceWorldEvent(diplomaticTradeCoherence, turn);
+  if (coherenceEvent) worldEvents.push(coherenceEvent);
+
   const tradeBalanceAdjusted = computeTradeBalanceSnapshot({
     commodities,
     partners,
     logistics,
     exportThroughput: net.throughput,
   });
+
+  const stabilizationStep = computeTradeBalanceStabilizationSnapshot({
+    tradeBalance: tradeBalanceAdjusted,
+    termsOfTrade,
+    tradeFxHedging,
+    exportInsuranceStack,
+    tradeReconciliation,
+    persisted,
+  });
+  persisted = stabilizationStep.persisted;
+  const tradeBalanceStabilization = stabilizationStep.snapshot;
+  const stabilizationEvent = tradeBalanceStabilizationWorldEvent(tradeBalanceStabilization, turn);
+  if (stabilizationEvent) worldEvents.push(stabilizationEvent);
 
   const financeScaledThroughput =
     Math.round(
@@ -6109,6 +6479,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         sanctionsSpilloverExportScale(sanctionsSpillover) *
         tradeFxHedgingExportScale(tradeFxHedging) *
         importLanePressureExportScale(importLanePressure) *
+        diplomaticTradeCoherenceExportScale(diplomaticTradeCoherence) *
+        tradeBalanceStabilizationExportScale(tradeBalanceStabilization) *
         10,
     ) / 10;
 
@@ -6168,14 +6540,16 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       retaliationMods.domesticStress -
       deescalationMods.domesticStressRelief -
       reconciliationMods.domesticStressRelief -
-      restorationMods.domesticStressRelief +
+      restorationMods.domesticStressRelief -
+      diplomaticTradeCoherenceDomesticStressRelief(diplomaticTradeCoherence) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
       exportInsuranceStackDomesticStress(exportInsuranceStack) +
       tradeCorridorDomesticStress(tradeCorridorResilience) +
       spilloverMods.domesticStress +
-      importLanePressureDomesticStress(importLanePressure),
+      importLanePressureDomesticStress(importLanePressure) +
+      tradeBalanceStabilizationDomesticStress(tradeBalanceStabilization),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -6212,6 +6586,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.sanctionsSpilloverSmoothing,
     persisted.tradeFxHedgingSmoothing,
     persisted.importLanePressureSmoothing,
+    persisted.diplomaticTradeCoherenceSmoothing,
+    persisted.tradeBalanceStabilizationSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -6280,6 +6656,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     sanctionsSpillover,
     tradeFxHedging,
     importLanePressure,
+    diplomaticTradeCoherence,
+    tradeBalanceStabilization,
     inputHash,
   };
 
@@ -6327,6 +6705,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...sanctionsSpilloverGiNotes(state.sanctionsSpillover));
   lines.push(...tradeFxHedgingGiNotes(state.tradeFxHedging));
   lines.push(...importLanePressureGiNotes(state.importLanePressure));
+  lines.push(...diplomaticTradeCoherenceGiNotes(state.diplomaticTradeCoherence));
+  lines.push(...tradeBalanceStabilizationGiNotes(state.tradeBalanceStabilization));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -6370,9 +6750,11 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   enforcementExportScale,
 } from './trade-enforcement-intensity.ts';
   computeExportInsuranceStackSnapshot,
+  createEmptyExportInsuranceStackSnapshot,
   exportInsuranceStackExportScale,
 } from './export-credit-insurance-stack.ts';
   computePartnerAccessRestorationSnapshot,
+  createEmptyPartnerAccessRestorationSnapshot,
   deriveAccessRestorationPartnerModifiers,
 } from './partner-access-restoration.ts';
   computeSanctionsSpilloverSnapshot,
@@ -6383,11 +6765,18 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   tradeCorridorExportScale,
 } from './trade-corridor-resilience.ts';
   computeTradeFxHedgingSnapshot,
+  createEmptyTradeFxHedgingSnapshot,
   tradeFxHedgingExportScale,
 } from './trade-fx-hedging.ts';
   computeImportLanePressureSnapshot,
   importLanePressureExportScale,
 } from './import-lane-pressure.ts';
+  computeDiplomaticTradeCoherenceSnapshot,
+  diplomaticTradeCoherenceExportScale,
+} from './diplomatic-trade-coherence.ts';
+  computeTradeBalanceStabilizationSnapshot,
+  tradeBalanceStabilizationExportScale,
+} from './trade-balance-stabilization.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -7236,6 +7625,64 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     }).snapshot;
     gtelAssert(gridlocked.load > fluid.load, 'expected higher import lane load');
     gtelAssert(importLanePressureExportScale(gridlocked) <= importLanePressureExportScale(fluid) + 0.01, 'expected import lane scale drag');
+  });
+
+  ok('diplomatic trade coherence rises with aligned tracks', () => {
+    const fragmented = computeDiplomaticTradeCoherenceSnapshot({
+      engagement: { tracks: {}, summitPulse: 0.1, summary: 'test' },
+      tradeDeescalation: createEmptyTradeDeescalationSnapshot(),
+      tradeReconciliation: createEmptyTradeReconciliationSnapshot(),
+      partnerAccessRestoration: createEmptyPartnerAccessRestorationSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const aligned = computeDiplomaticTradeCoherenceSnapshot({
+      engagement: {
+        tracks: { asia_pacific: { partnerId: 'asia_pacific', momentum: 0.8, band: 'breakthrough', lastEventTurn: 1, highlights: [] } },
+        summitPulse: 0.82,
+        summary: 'test',
+      },
+      tradeDeescalation: { ...createEmptyTradeDeescalationSnapshot(), band: 'breakthrough', momentum: 0.76 },
+      tradeReconciliation: { ...createEmptyTradeReconciliationSnapshot(), band: 'settled', progress: 0.82 },
+      partnerAccessRestoration: { ...createEmptyPartnerAccessRestorationSnapshot(), band: 'reopened', momentum: 0.74 },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(aligned.score > fragmented.score, 'expected higher coherence');
+    gtelAssert(diplomaticTradeCoherenceExportScale(aligned) >= diplomaticTradeCoherenceExportScale(fragmented), 'expected coherence scale lift');
+  });
+
+  ok('trade balance stabilization weakens under deficit and impaired insurance', () => {
+    const anchored = computeTradeBalanceStabilizationSnapshot({
+      tradeBalance: {
+        exportValueIndex: 110,
+        importPressureIndex: 90,
+        netExportPulse: 0.12,
+        currentAccountTone: 'surplus',
+        effectiveThroughput: 100,
+        narrative: 'test',
+      },
+      termsOfTrade: { index: 1.05, band: 'favorable', exportBasketIndex: 106, importBasketIndex: 98, summary: 'test' },
+      tradeFxHedging: { ...createEmptyTradeFxHedgingSnapshot(), band: 'well_hedged', effectiveness: 0.78 },
+      exportInsuranceStack: { ...createEmptyExportInsuranceStackSnapshot(), band: 'robust', compositeScore: 0.76 },
+      tradeReconciliation: { ...createEmptyTradeReconciliationSnapshot(), band: 'settled', progress: 0.8 },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const unstable = computeTradeBalanceStabilizationSnapshot({
+      tradeBalance: {
+        exportValueIndex: 92,
+        importPressureIndex: 118,
+        netExportPulse: -0.08,
+        currentAccountTone: 'deficit',
+        effectiveThroughput: 80,
+        narrative: 'test',
+      },
+      termsOfTrade: { index: 0.84, band: 'severely_unfavorable', exportBasketIndex: 88, importBasketIndex: 112, summary: 'test' },
+      tradeFxHedging: { ...createEmptyTradeFxHedgingSnapshot(), band: 'unhedged', effectiveness: 0.28 },
+      exportInsuranceStack: { ...createEmptyExportInsuranceStackSnapshot(), band: 'impaired', compositeScore: 0.32 },
+      tradeReconciliation: createEmptyTradeReconciliationSnapshot(),
+      persisted: { ...createEmptyGTELPersisted(), tradeBalanceStabilizationSmoothing: 0.34 },
+    }).snapshot;
+    gtelAssert(unstable.index < anchored.index, 'expected weaker stabilization');
+    gtelAssert(tradeBalanceStabilizationExportScale(unstable) <= tradeBalanceStabilizationExportScale(anchored) + 0.01, 'expected stabilization scale drag');
   });
 
   return { passed, failed };

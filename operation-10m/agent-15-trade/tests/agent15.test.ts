@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 37);
+  assert.ok(r.passed >= 39);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -653,4 +653,57 @@ test('round 13: critical import dependency raises lane load vs healthy baseline'
     persisted,
   });
   assert.ok(stressed.state.importLanePressure.load >= healthy.state.importLanePressure.load - 0.02);
+});
+
+test('round 14: diplomatic trade coherence and balance stabilization on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.diplomaticTradeCoherenceSmoothing = 0.58;
+  persisted.tradeBalanceStabilizationSmoothing = 0.54;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 45,
+    diplomacyState: {
+      deals: [
+        {
+          id: 'd1',
+          type: 'resource_trade',
+          status: 'active',
+          participants: ['player', 'rival_east'],
+          compliance: 'compliant',
+        },
+      ],
+    },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 95 } } },
+    persisted,
+  });
+  assert.ok(r.state.diplomaticTradeCoherence);
+  assert.ok(['aligned', 'coordinated', 'fragmented', 'divergent'].includes(r.state.diplomaticTradeCoherence.band));
+  assert.ok(r.state.tradeBalanceStabilization);
+  assert.ok(['anchored', 'steady', 'volatile', 'unstable'].includes(r.state.tradeBalanceStabilization.band));
+  assert.ok(r.persisted.diplomaticTradeCoherenceSmoothing != null);
+  assert.ok(r.persisted.tradeBalanceStabilizationSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Diplomatic trade coherence/i.test(n)));
+  assert.ok(notes.some(n => /Trade balance stabilization/i.test(n)));
+});
+
+test('round 14: deficit stress lowers stabilization vs healthy baseline', () => {
+  const healthy = advanceGlobalTradeEconomyTurn({
+    turn: 46,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 80 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  let persisted = createEmptyGTELPersisted();
+  persisted.tradeFinanceSmoothing = 0.2;
+  persisted.tradeBalanceStabilizationSmoothing = 0.35;
+  const stressed = advanceGlobalTradeEconomyTurn({
+    turn: 46,
+    diplomacyState: {
+      deals: [{ id: 'v', type: 'resource_trade', status: 'violated', participants: ['player', 'ai'], compliance: 'violated' }],
+      events: [{ kind: 'violation', turn: 45, text: 'breach' }],
+    },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 80 } } },
+    persisted,
+  });
+  assert.ok(stressed.state.tradeBalanceStabilization.index <= healthy.state.tradeBalanceStabilization.index + 0.08);
 });

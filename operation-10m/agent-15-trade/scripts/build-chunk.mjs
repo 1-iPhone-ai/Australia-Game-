@@ -49,6 +49,8 @@ const FILES = [
   'sanctions-spillover-depth.ts',
   'trade-fx-hedging.ts',
   'import-lane-pressure.ts',
+  'diplomatic-trade-coherence.ts',
+  'trade-balance-stabilization.ts',
   'domestic-consequences.ts',
   'household-bridge.ts',
   'trade-turn.ts',

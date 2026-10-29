@@ -154,6 +154,10 @@ export interface GTELPersisted {
   tradeFxHedgingSmoothing?: number;
   /** Smoothed import arrival lane pressure (0–1). */
   importLanePressureSmoothing?: number;
+  /** Smoothed diplomatic trade coherence score (0–1). */
+  diplomaticTradeCoherenceSmoothing?: number;
+  /** Smoothed trade balance stabilization index (0–1). */
+  tradeBalanceStabilizationSmoothing?: number;
 }
 
 export interface GTELState {
@@ -193,6 +197,8 @@ export interface GTELState {
   sanctionsSpillover: GTELSanctionsSpilloverSnapshot;
   tradeFxHedging: GTELTradeFxHedgingSnapshot;
   importLanePressure: GTELImportLanePressureSnapshot;
+  diplomaticTradeCoherence: GTELDiplomaticTradeCoherenceSnapshot;
+  tradeBalanceStabilization: GTELTradeBalanceStabilizationSnapshot;
   inputHash: string;
 }
 
@@ -577,6 +583,26 @@ export interface GTELImportLanePressureSnapshot {
   band: GTELImportLanePressureBand;
   clearanceBacklog: number;
   consumerPricePassThrough: number;
+  summary: string;
+}
+
+export type GTELDiplomaticTradeCoherenceBand = 'aligned' | 'coordinated' | 'fragmented' | 'divergent';
+
+export interface GTELDiplomaticTradeCoherenceSnapshot {
+  score: number;
+  band: GTELDiplomaticTradeCoherenceBand;
+  trackAlignment: number;
+  narrativeConsistency: number;
+  summary: string;
+}
+
+export type GTELTradeBalanceStabilizationBand = 'anchored' | 'steady' | 'volatile' | 'unstable';
+
+export interface GTELTradeBalanceStabilizationSnapshot {
+  index: number;
+  band: GTELTradeBalanceStabilizationBand;
+  surplusSupport: number;
+  volatilityDampening: number;
   summary: string;
 }
 

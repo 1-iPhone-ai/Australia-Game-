@@ -22,6 +22,8 @@ import { sanitizeTradeCorridorSmoothing } from './trade-corridor-resilience.ts';
 import { sanitizeSanctionsSpilloverSmoothing } from './sanctions-spillover-depth.ts';
 import { sanitizeTradeFxHedgingSmoothing } from './trade-fx-hedging.ts';
 import { sanitizeImportLanePressureSmoothing } from './import-lane-pressure.ts';
+import { sanitizeDiplomaticTradeCoherenceSmoothing } from './diplomatic-trade-coherence.ts';
+import { sanitizeTradeBalanceStabilizationSmoothing } from './trade-balance-stabilization.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -62,6 +64,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     sanctionsSpilloverSmoothing: 0.24,
     tradeFxHedgingSmoothing: 0.5,
     importLanePressureSmoothing: 0.38,
+    diplomaticTradeCoherenceSmoothing: 0.48,
+    tradeBalanceStabilizationSmoothing: 0.52,
   };
 }
 
@@ -234,5 +238,11 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.sanctionsSpilloverSmoothing = sanitizeSanctionsSpilloverSmoothing(r.sanctionsSpilloverSmoothing);
   base.tradeFxHedgingSmoothing = sanitizeTradeFxHedgingSmoothing(r.tradeFxHedgingSmoothing);
   base.importLanePressureSmoothing = sanitizeImportLanePressureSmoothing(r.importLanePressureSmoothing);
+  base.diplomaticTradeCoherenceSmoothing = sanitizeDiplomaticTradeCoherenceSmoothing(
+    r.diplomaticTradeCoherenceSmoothing,
+  );
+  base.tradeBalanceStabilizationSmoothing = sanitizeTradeBalanceStabilizationSmoothing(
+    r.tradeBalanceStabilizationSmoothing,
+  );
   return base;
 }

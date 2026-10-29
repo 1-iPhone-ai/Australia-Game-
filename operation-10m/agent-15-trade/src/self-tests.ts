@@ -60,10 +60,12 @@ import {
 } from './trade-enforcement-intensity.ts';
 import {
   computeExportInsuranceStackSnapshot,
+  createEmptyExportInsuranceStackSnapshot,
   exportInsuranceStackExportScale,
 } from './export-credit-insurance-stack.ts';
 import {
   computePartnerAccessRestorationSnapshot,
+  createEmptyPartnerAccessRestorationSnapshot,
   deriveAccessRestorationPartnerModifiers,
 } from './partner-access-restoration.ts';
 import {
@@ -77,12 +79,21 @@ import {
 } from './trade-corridor-resilience.ts';
 import {
   computeTradeFxHedgingSnapshot,
+  createEmptyTradeFxHedgingSnapshot,
   tradeFxHedgingExportScale,
 } from './trade-fx-hedging.ts';
 import {
   computeImportLanePressureSnapshot,
   importLanePressureExportScale,
 } from './import-lane-pressure.ts';
+import {
+  computeDiplomaticTradeCoherenceSnapshot,
+  diplomaticTradeCoherenceExportScale,
+} from './diplomatic-trade-coherence.ts';
+import {
+  computeTradeBalanceStabilizationSnapshot,
+  tradeBalanceStabilizationExportScale,
+} from './trade-balance-stabilization.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -935,6 +946,64 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     }).snapshot;
     gtelAssert(gridlocked.load > fluid.load, 'expected higher import lane load');
     gtelAssert(importLanePressureExportScale(gridlocked) <= importLanePressureExportScale(fluid) + 0.01, 'expected import lane scale drag');
+  });
+
+  ok('diplomatic trade coherence rises with aligned tracks', () => {
+    const fragmented = computeDiplomaticTradeCoherenceSnapshot({
+      engagement: { tracks: {}, summitPulse: 0.1, summary: 'test' },
+      tradeDeescalation: createEmptyTradeDeescalationSnapshot(),
+      tradeReconciliation: createEmptyTradeReconciliationSnapshot(),
+      partnerAccessRestoration: createEmptyPartnerAccessRestorationSnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const aligned = computeDiplomaticTradeCoherenceSnapshot({
+      engagement: {
+        tracks: { asia_pacific: { partnerId: 'asia_pacific', momentum: 0.8, band: 'breakthrough', lastEventTurn: 1, highlights: [] } },
+        summitPulse: 0.82,
+        summary: 'test',
+      },
+      tradeDeescalation: { ...createEmptyTradeDeescalationSnapshot(), band: 'breakthrough', momentum: 0.76 },
+      tradeReconciliation: { ...createEmptyTradeReconciliationSnapshot(), band: 'settled', progress: 0.82 },
+      partnerAccessRestoration: { ...createEmptyPartnerAccessRestorationSnapshot(), band: 'reopened', momentum: 0.74 },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(aligned.score > fragmented.score, 'expected higher coherence');
+    gtelAssert(diplomaticTradeCoherenceExportScale(aligned) >= diplomaticTradeCoherenceExportScale(fragmented), 'expected coherence scale lift');
+  });
+
+  ok('trade balance stabilization weakens under deficit and impaired insurance', () => {
+    const anchored = computeTradeBalanceStabilizationSnapshot({
+      tradeBalance: {
+        exportValueIndex: 110,
+        importPressureIndex: 90,
+        netExportPulse: 0.12,
+        currentAccountTone: 'surplus',
+        effectiveThroughput: 100,
+        narrative: 'test',
+      },
+      termsOfTrade: { index: 1.05, band: 'favorable', exportBasketIndex: 106, importBasketIndex: 98, summary: 'test' },
+      tradeFxHedging: { ...createEmptyTradeFxHedgingSnapshot(), band: 'well_hedged', effectiveness: 0.78 },
+      exportInsuranceStack: { ...createEmptyExportInsuranceStackSnapshot(), band: 'robust', compositeScore: 0.76 },
+      tradeReconciliation: { ...createEmptyTradeReconciliationSnapshot(), band: 'settled', progress: 0.8 },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const unstable = computeTradeBalanceStabilizationSnapshot({
+      tradeBalance: {
+        exportValueIndex: 92,
+        importPressureIndex: 118,
+        netExportPulse: -0.08,
+        currentAccountTone: 'deficit',
+        effectiveThroughput: 80,
+        narrative: 'test',
+      },
+      termsOfTrade: { index: 0.84, band: 'severely_unfavorable', exportBasketIndex: 88, importBasketIndex: 112, summary: 'test' },
+      tradeFxHedging: { ...createEmptyTradeFxHedgingSnapshot(), band: 'unhedged', effectiveness: 0.28 },
+      exportInsuranceStack: { ...createEmptyExportInsuranceStackSnapshot(), band: 'impaired', compositeScore: 0.32 },
+      tradeReconciliation: createEmptyTradeReconciliationSnapshot(),
+      persisted: { ...createEmptyGTELPersisted(), tradeBalanceStabilizationSmoothing: 0.34 },
+    }).snapshot;
+    gtelAssert(unstable.index < anchored.index, 'expected weaker stabilization');
+    gtelAssert(tradeBalanceStabilizationExportScale(unstable) <= tradeBalanceStabilizationExportScale(anchored) + 0.01, 'expected stabilization scale drag');
   });
 
   return { passed, failed };
