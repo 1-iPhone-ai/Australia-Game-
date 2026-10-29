@@ -18,7 +18,7 @@
 | Integration merge | **`a5b1edb`** | `merge(op10m): O10-228 integration baseline 73e5e01` |
 | Module base (round 48 docs tip) | **`6c7f1e5`** | `docs(op10m): O10-227 · wave 48 · round 48 handoff tip pin` |
 | Gate feat (origin, push-first) | **`feb78f2`** | `feat(op10m): O10-229 · wave 49 · round 49` |
-| Origin tip | **`feb78f2`** | *(pending docs handoff push)* |
+| Origin tip | **`d07eaa5`** | `docs(op10m): O10-229 · wave 49 · round 49 handoff` |
 
 Gate subject scan: **O10-229 · wave 49 · round 49** (feat before docs; **448/448** post-push).
 
