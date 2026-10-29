@@ -8,7 +8,10 @@
     "preview": "vite preview --host 0.0.0.0 --port 5173",
     "measure-loc": "node scripts/measure-loc.mjs",
     "op10m:audit": "node operation-10m/assembly/validate-manifest.mjs && node operation-10m/assembly/audit-duplication.mjs --write-audit operation-10m/assembly/audits/duplication-latest.json && node operation-10m/assembly/audit-save-migrations.mjs && node scripts/measure-loc.mjs",
-    "op10m:assemble:dry": "node operation-10m/assembly/assemble.mjs --dry-run"
+    "op10m:assemble:dry": "node operation-10m/assembly/assemble.mjs --dry-run",
+    "op10m:sync-manifest": "node operation-10m/assembly/sync-manifest.mjs",
+    "op10m:dry-run-bundle": "node operation-10m/assembly/dry-run-bundle.mjs",
+    "op10m:promote-tranche": "node operation-10m/assembly/promote-tranche.mjs"
   },
   "dependencies": {
     "react": "19.3.1",

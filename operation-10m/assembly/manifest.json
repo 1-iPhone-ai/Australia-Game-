@@ -2,6 +2,14 @@
   "$schema": "./manifest.schema.json",
   "version": 1,
   "canonical": "(V9.4) australia-game-with-ai.tsx",
-  "baselineAuditedFunctional": 372625,
-  "modules": []
+  "baselineAuditedFunctional": 389566,
+  "canonicalBaseCommit": "bc1adf3",
+  "modules": [
+    {
+      "moduleId": "agent-25-op10m-registry",
+      "path": "operation-10m/modules/agent-25-op10m-registry/chunk.tsx",
+      "slot": "pre-final-export",
+      "contentSha256": "ab4c5979022091045987084038013d0911b9789f54fdcc58804a4d37ec9e6ff8"
+    }
+  ]
 }

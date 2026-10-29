@@ -1,15 +1,15 @@
 {
-  "benchmarkedAt": "2026-10-29T05:55:53.306Z",
+  "benchmarkedAt": "2026-10-29T05:59:14.451Z",
   "file": "(V9.4) australia-game-with-ai.tsx",
-  "readMs": 17,
-  "hashMs": 20,
-  "scanMs": 168,
-  "bytes": 36690885,
-  "lines": 399195,
-  "exportLines": 7265,
-  "sha256": "0d2891081ebbb7c22e95e38b9d2a315ae996fd117ba1ca835f9f02e3f890ded2",
+  "readMs": 18,
+  "hashMs": 21,
+  "scanMs": 170,
+  "bytes": 37827738,
+  "lines": 419353,
+  "exportLines": 10082,
+  "sha256": "15321b841ead9bdf89b12ae3209cb604a0a8b59e018bb0cafdfc95cc446820fd",
   "extrapolation10M": {
     "note": "Linear extrapolation from current scan; not predictive for tsc/vite at 10M.",
-    "estimatedScanMsAt10M": 4208
+    "estimatedScanMsAt10M": 4054
   }
 }

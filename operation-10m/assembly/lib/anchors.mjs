@@ -8,7 +8,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(__dirname, "../..");
+const repoRoot = resolve(__dirname, "../../..");
 
 const SLOT_ANCHORS = {
   "post-v10z": {
@@ -54,6 +54,16 @@ export function findSlotInsertLine(canonicalText, slotId) {
   return beforeLine - 1;
 }
 
+export function hashModuleBody(moduleId, chunkText) {
+  const begin = `// OP10M_MODULE_BEGIN ${moduleId}`;
+  const end = `// OP10M_MODULE_END ${moduleId}`;
+  const bi = chunkText.indexOf(begin);
+  const ei = chunkText.indexOf(end);
+  if (bi < 0 || ei < 0) throw new Error(`${moduleId}: missing OP10M markers`);
+  const body = chunkText.slice(bi + begin.length, ei).trim();
+  return createHash("sha256").update(body, "utf8").digest("hex");
+}
+
 export function sha256File(absPath) {
   const data = readFileSync(absPath);
   return createHash("sha256").update(data).digest("hex");
@@ -77,7 +87,8 @@ export function validateManifest(manifest = loadManifest()) {
     hashes.add(mod.contentSha256);
     const abs = resolve(repoRoot, mod.path);
     try {
-      const diskHash = sha256File(abs);
+      const raw = readFileSync(abs, "utf8");
+      const diskHash = hashModuleBody(mod.moduleId, raw);
       if (diskHash !== mod.contentSha256) {
         errors.push(`${mod.moduleId}: hash mismatch manifest=${mod.contentSha256} disk=${diskHash}`);
       }

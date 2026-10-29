@@ -1,19 +1,19 @@
 {
-  "measuredAt": "2026-10-29T05:55:51.681Z",
+  "measuredAt": "2026-10-29T05:59:07.813Z",
   "method": "cloc@2.11.0 --include-lang=TypeScript,TSX",
   "canonical": "(V9.4) australia-game-with-ai.tsx",
   "gateAuditedFunctional": 10000000,
   "totals": {
-    "code": 372625,
-    "blank": 16216,
-    "comment": 10353,
+    "code": 389566,
+    "blank": 19166,
+    "comment": 10620,
     "nFiles": 1
   },
   "files": [
     {
       "path": "(V9.4) australia-game-with-ai.tsx",
-      "physicalLines": 399195
+      "physicalLines": 419353
     }
   ],
-  "netToGate": 9627375
+  "netToGate": 9610434
 }
