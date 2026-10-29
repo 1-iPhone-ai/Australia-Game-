@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: eb4069aa176d27c9
+// content-sha256-prefix: ef2d2f4a85005658
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -991,6 +991,10 @@ export interface DayAdvanceUiEvolutionResult {
   dualDeferredQueueDayCoachCopy: string | null;
   interfaceLevelStableDayCoachCopy: string | null;
   previewPanelSnapshotDayCoachCopy: string | null;
+  fifthUnlockHeadlineDayCoachCopy: string | null;
+  tripleDeferredQueueDayCoachCopy: string | null;
+  hiddenPanelSnapshotDayCoachCopy: string | null;
+  flushRehydrateBatchDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1868,6 +1872,27 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const fifthUnlockHeadlineDayCoach = buildFifthUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const tripleDeferredQueueDayCoach = buildTripleDeferredQueueDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const hiddenPanelSnapshotDayCoach = buildHiddenPanelSnapshotDayCoach({
+    snapshot: coverage,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const flushRehydrateBatchDayCoach = buildFlushRehydrateBatchDayCoach({
+    flushedCount: flush.flushedAnnouncements.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -2030,6 +2055,10 @@ export function tickEvolvingUiOnDayAdvance(
     dualDeferredQueueDayCoachCopy: dualDeferredQueueDayCoach.coachCopy,
     interfaceLevelStableDayCoachCopy: interfaceLevelStableDayCoach.coachCopy,
     previewPanelSnapshotDayCoachCopy: previewPanelSnapshotDayCoach.coachCopy,
+    fifthUnlockHeadlineDayCoachCopy: fifthUnlockHeadlineDayCoach.coachCopy,
+    tripleDeferredQueueDayCoachCopy: tripleDeferredQueueDayCoach.coachCopy,
+    hiddenPanelSnapshotDayCoachCopy: hiddenPanelSnapshotDayCoach.coachCopy,
+    flushRehydrateBatchDayCoachCopy: flushRehydrateBatchDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -7929,6 +7958,263 @@ export function buildPreviewPanelSnapshotDayCoach(input: {
     previewCount: input.snapshot.preview,
     coachCopy: `Day ${input.nextGameDay}: ${input.snapshot.preview} panels sit in preview — unlock hints stay visible without full chrome.`,
   };
+}
+
+// --- source: engine/fifth-unlock-headline-day-coach.ts ---
+export interface FifthUnlockHeadlineDayCoach {
+  panelId: string | null;
+  coachCopy: string | null;
+}
+
+export function buildFifthUnlockHeadlineDayCoach(input: {
+  newlyUnlockedPanelIds: string[];
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): FifthUnlockHeadlineDayCoach {
+  const panelId = input.newlyUnlockedPanelIds[4];
+  if (!panelId) {
+    return { panelId: null, coachCopy: null };
+  }
+  const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+  if (!panel) {
+    return { panelId, coachCopy: null };
+  }
+  return {
+    panelId,
+    coachCopy: `Day ${input.nextGameDay}: Fifth unlock today — ${buildCoachHeadline(panel, input.signals)}`,
+  };
+}
+
+// --- source: engine/triple-deferred-queue-day-coach.ts ---
+export interface TripleDeferredQueueDayCoach {
+  queueDepth: number;
+  coachCopy: string | null;
+}
+
+export function buildTripleDeferredQueueDayCoach(input: {
+  combinedQueueDepth: number;
+  nextGameDay: number;
+}): TripleDeferredQueueDayCoach {
+  if (input.combinedQueueDepth !== 3) {
+    return { queueDepth: input.combinedQueueDepth, coachCopy: null };
+  }
+  return {
+    queueDepth: 3,
+    coachCopy: `Day ${input.nextGameDay}: Three coach announcements remain staggered — live region delivery will pace them across ticks.`,
+  };
+}
+
+// --- source: engine/hidden-panel-snapshot-day-coach.ts ---
+export interface HiddenPanelSnapshotDayCoach {
+  hiddenCount: number;
+  coachCopy: string | null;
+}
+
+export function buildHiddenPanelSnapshotDayCoach(input: {
+  snapshot: ProgressionCoverageSnapshot;
+  nextGameDay: number;
+}): HiddenPanelSnapshotDayCoach {
+  if (input.nextGameDay > 14 || input.snapshot.hidden < 4) {
+    return { hiddenCount: input.snapshot.hidden, coachCopy: null };
+  }
+  return {
+    hiddenCount: input.snapshot.hidden,
+    coachCopy: `Day ${input.nextGameDay}: ${input.snapshot.hidden} evolving UI panels stay hidden until progression catches up.`,
+  };
+}
+
+// --- source: engine/flush-rehydrate-batch-day-coach.ts ---
+export interface FlushRehydrateBatchDayCoach {
+  flushedCount: number;
+  coachCopy: string | null;
+}
+
+export function buildFlushRehydrateBatchDayCoach(input: {
+  flushedCount: number;
+  nextGameDay: number;
+}): FlushRehydrateBatchDayCoach {
+  if (input.flushedCount < 2) {
+    return { flushedCount: input.flushedCount, coachCopy: null };
+  }
+  return {
+    flushedCount: input.flushedCount,
+    coachCopy: `Day ${input.nextGameDay}: Rehydrated ${input.flushedCount} deferred coach lines into today's immediate delivery batch.`,
+  };
+}
+
+// --- source: engine/round44-self-tests.ts ---
+export function runAgent22Round44SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const fiveIds = EVOLVING_UI_PANEL_REGISTRY.slice(0, 5).map(p => p.id);
+
+  check(
+    'r44_fifth_unlock',
+    'fifth unlock headline day coach',
+    (() => {
+      const coach = buildFifthUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: fiveIds,
+        signals: { gameDay: 7, turnCount: 7, interfaceLevel: 'guided' },
+        nextGameDay: 7,
+      });
+      return coach.panelId === fiveIds[4] && Boolean(coach.coachCopy?.includes('Day 7'));
+    })()
+  );
+
+  check(
+    'r44_triple_deferred',
+    'triple deferred queue day coach',
+    (() => {
+      const coach = buildTripleDeferredQueueDayCoach({ combinedQueueDepth: 3, nextGameDay: 8 });
+      return coach.queueDepth === 3 && Boolean(coach.coachCopy?.includes('Day 8'));
+    })()
+  );
+
+  check(
+    'r44_hidden_snapshot',
+    'hidden panel snapshot day coach',
+    (() => {
+      const snapshot = buildProgressionCoverageSnapshot(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      );
+      const coach = buildHiddenPanelSnapshotDayCoach({
+        snapshot: { ...snapshot, hidden: Math.max(snapshot.hidden, 4) },
+        nextGameDay: 3,
+      });
+      return coach.hiddenCount >= 4 && Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r44_flush_rehydrate',
+    'flush rehydrate batch day coach',
+    (() => {
+      const coach = buildFlushRehydrateBatchDayCoach({ flushedCount: 2, nextGameDay: 4 });
+      return coach.flushedCount === 2 && Boolean(coach.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r44_tick_fifth_unlock',
+    'tick exposes fifth unlock headline day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.fifthUnlockHeadlineDayCoachCopy === 'string' || r.fifthUnlockHeadlineDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r44_tick_triple_deferred',
+    'tick exposes triple deferred queue day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.tripleDeferredQueueDayCoachCopy === 'string' || r.tripleDeferredQueueDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r44_tick_hidden_snapshot',
+    'tick exposes hidden panel snapshot day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return Boolean(r.hiddenPanelSnapshotDayCoachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r44_tick_flush_rehydrate',
+    'tick exposes flush rehydrate batch day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.flushRehydrateBatchDayCoachCopy === 'string' || r.flushRehydrateBatchDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r44_fifth_unlock_short',
+    'fifth unlock null with fewer than five unlocks',
+    (() => {
+      const coach = buildFifthUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: fiveIds.slice(0, 4),
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r44_triple_not_three',
+    'triple deferred null when depth not three',
+    (() => {
+      const coach = buildTripleDeferredQueueDayCoach({ combinedQueueDepth: 2, nextGameDay: 1 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r44_hidden_late',
+    'hidden snapshot null after day 14',
+    (() => {
+      const coach = buildHiddenPanelSnapshotDayCoach({
+        snapshot: {
+          visible: 2,
+          preview: 1,
+          hidden: 10,
+          total: 13,
+          coverageRatio: 0.2,
+          coachCopy: null,
+          tierLabel: 'late',
+        },
+        nextGameDay: 20,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r44_flush_single',
+    'flush rehydrate null when flushed count below two',
+    (() => {
+      const coach = buildFlushRehydrateBatchDayCoach({ flushedCount: 1, nextGameDay: 2 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round43-self-tests.ts ---
@@ -16136,6 +16422,18 @@ export function SimulationUiEvolutionBridge({
       {result.previewPanelSnapshotDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-preview-panel-snapshot-day">{result.previewPanelSnapshotDayCoachCopy}</div>
       ) : null}
+      {result.fifthUnlockHeadlineDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-fifth-unlock-headline-day">{result.fifthUnlockHeadlineDayCoachCopy}</div>
+      ) : null}
+      {result.tripleDeferredQueueDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-triple-deferred-day">{result.tripleDeferredQueueDayCoachCopy}</div>
+      ) : null}
+      {result.hiddenPanelSnapshotDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-hidden-panel-snapshot-day">{result.hiddenPanelSnapshotDayCoachCopy}</div>
+      ) : null}
+      {result.flushRehydrateBatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-flush-rehydrate-day">{result.flushRehydrateBatchDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -18537,8 +18835,96 @@ export function PreviewPanelSnapshotDayCoachStrip({
   );
 }
 
+// --- source: react/FifthUnlockHeadlineDayCoachStrip.tsx ---
+export function FifthUnlockHeadlineDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: FifthUnlockHeadlineDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="fifth-unlock-headline-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-emerald-950/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/TripleDeferredQueueDayCoachStrip.tsx ---
+export function TripleDeferredQueueDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: TripleDeferredQueueDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="triple-deferred-queue-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-indigo-800/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/HiddenPanelSnapshotDayCoachStrip.tsx ---
+export function HiddenPanelSnapshotDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: HiddenPanelSnapshotDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="hidden-panel-snapshot-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-neutral-600/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/FlushRehydrateBatchDayCoachStrip.tsx ---
+export function FlushRehydrateBatchDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: FlushRehydrateBatchDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="flush-rehydrate-batch-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-cyan-700/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.43.0';
+export const AGENT_22_MODULE_VERSION = '1.44.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -18689,6 +19075,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round44 = runAgent22Round44SelfTests();
+  for (const r of round44.results) {
+    check(`agent22_round44_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round43 = runAgent22Round43SelfTests();

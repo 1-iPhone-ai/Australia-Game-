@@ -187,6 +187,11 @@ const FILES = [
   'engine/dual-deferred-queue-day-coach.ts',
   'engine/interface-level-stable-day-coach.ts',
   'engine/preview-panel-snapshot-day-coach.ts',
+  'engine/fifth-unlock-headline-day-coach.ts',
+  'engine/triple-deferred-queue-day-coach.ts',
+  'engine/hidden-panel-snapshot-day-coach.ts',
+  'engine/flush-rehydrate-batch-day-coach.ts',
+  'engine/round44-self-tests.ts',
   'engine/round43-self-tests.ts',
   'engine/round42-self-tests.ts',
   'engine/round41-self-tests.ts',
@@ -325,6 +330,10 @@ const FILES = [
   'react/DualDeferredQueueDayCoachStrip.tsx',
   'react/InterfaceLevelStableDayCoachStrip.tsx',
   'react/PreviewPanelSnapshotDayCoachStrip.tsx',
+  'react/FifthUnlockHeadlineDayCoachStrip.tsx',
+  'react/TripleDeferredQueueDayCoachStrip.tsx',
+  'react/HiddenPanelSnapshotDayCoachStrip.tsx',
+  'react/FlushRehydrateBatchDayCoachStrip.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -366,7 +375,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.43.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.44.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -519,6 +528,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round22_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round44 = runAgent22Round44SelfTests();
+  for (const r of round44.results) {
+    check(\`agent22_round44_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const round43 = runAgent22Round43SelfTests();
   for (const r of round43.results) {
     check(\`agent22_round43_\${r.id}\`, r.name, r.passed, r.detail);
@@ -650,7 +664,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.43.0',
+  moduleVersion: '1.44.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),
