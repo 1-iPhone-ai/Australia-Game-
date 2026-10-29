@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: afe13f7a4efe04c895c13424146688930c8939919eae67f01247dc1b21a5596d
-// OP10M_MODULE_VERSION: 10m.1.12.0-agent20
+// OP10M_MANIFEST_SHA256: 35911d487aee2b4047f5e921e1b92049d6ef2d4131c60576a7032d94b7bbdd35
+// OP10M_MODULE_VERSION: 10m.1.13.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -6604,6 +6604,402 @@ export function runO10Agent20IdleGovernanceSustainedWatchSelfTests(): O10SelfTes
 }
 
 
+// --- source: automation-idle-governance-watch-replay-tape.ts ---
+
+export interface O10IdleGovernanceReplayFrame {
+  schema: '10m.agent20.idle-governance-replay-frame.v1';
+  label: string;
+  turn: number;
+  digest: string;
+}
+
+export interface O10IdleGovernanceReplayTape {
+  schema: '10m.agent20.idle-governance-replay-tape.v1';
+  frameCount: number;
+  frames: O10IdleGovernanceReplayFrame[];
+  rollupRecommendation: string;
+}
+
+/** Materialize sustained-watch journal into a replay-friendly tape for Agent 24 hooks. */
+export function buildIdleGovernanceReplayTapeFromWatch(
+  watch: O10IdleGovernanceSustainedWatchResult
+): O10IdleGovernanceReplayTape {
+  const frames: O10IdleGovernanceReplayFrame[] = watch.journal.entries.map((entry, idx) => ({
+    schema: '10m.agent20.idle-governance-replay-frame.v1',
+    label: `gov_watch_${entry.turn}`,
+    turn: entry.turn,
+    digest: `${entry.attestationFingerprint}|${entry.reconcileStatus}|${entry.watchUrgency}|${entry.attestValid ? 1 : 0}`,
+  }));
+
+  return {
+    schema: '10m.agent20.idle-governance-replay-tape.v1',
+    frameCount: frames.length,
+    frames,
+    rollupRecommendation: watch.rollup.recommendation,
+  };
+}
+
+export function verifyIdleGovernanceReplayTapeDeterminism(
+  watch: O10IdleGovernanceSustainedWatchResult,
+  tape: O10IdleGovernanceReplayTape
+): { ok: boolean; mismatches: string[] } {
+  const rerun = buildIdleGovernanceReplayTapeFromWatch(watch);
+  const mismatches: string[] = [];
+  if (rerun.frameCount !== tape.frameCount) {
+    mismatches.push(`frames:${rerun.frameCount}!=${tape.frameCount}`);
+  }
+  const n = Math.min(rerun.frames.length, tape.frames.length);
+  for (let i = 0; i < n; i++) {
+    if (rerun.frames[i].digest !== tape.frames[i].digest) {
+      mismatches.push(`${tape.frames[i].label}:digest`);
+    }
+  }
+  if (rerun.rollupRecommendation !== tape.rollupRecommendation) {
+    mismatches.push('rollup_recommendation');
+  }
+  return { ok: mismatches.length === 0, mismatches };
+}
+
+export function buildIdleGovernanceReplayTapeFromJournal(
+  journal: O10IdleGovernanceAssuranceJournal,
+  rollupRecommendation: string
+): O10IdleGovernanceReplayTape {
+  const frames = journal.entries.map(entry => ({
+    schema: '10m.agent20.idle-governance-replay-frame.v1' as const,
+    label: `gov_journal_${entry.turn}`,
+    turn: entry.turn,
+    digest: `${entry.trendDirection}|${entry.watchUrgency}|${entry.attestValid ? 1 : 0}`,
+  }));
+  return {
+    schema: '10m.agent20.idle-governance-replay-tape.v1',
+    frameCount: frames.length,
+    frames,
+    rollupRecommendation,
+  };
+}
+
+export function runO10Agent20IdleGovernanceWatchReplayTapeSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const mockWatch: O10IdleGovernanceSustainedWatchResult = {
+    schema: '10m.agent20.idle-governance-sustained-watch.v1',
+    cyclesRun: 2,
+    summaryLine: 'mock',
+    finalTrail: { schema: '10m.agent20.idle-governance-audit-trail.v1', entries: [] },
+    lastPass: {} as never,
+    journal: {
+      schema: '10m.agent20.idle-governance-assurance-journal.v1',
+      entries: [
+        {
+          schema: '10m.agent20.idle-governance-assurance-journal-entry.v1',
+          turn: 1,
+          attestationFingerprint: 'fnv1a_aa',
+          reconcileStatus: 'aligned',
+          trendDirection: 'stable',
+          watchUrgency: 'low',
+          attestValid: true,
+        },
+        {
+          schema: '10m.agent20.idle-governance-assurance-journal-entry.v1',
+          turn: 2,
+          attestationFingerprint: 'fnv1a_bb',
+          reconcileStatus: 'aligned',
+          trendDirection: 'improving',
+          watchUrgency: 'low',
+          attestValid: true,
+        },
+      ],
+    },
+    rollup: {
+      schema: '10m.agent20.idle-governance-assurance-rollup.v1',
+      entryCount: 2,
+      validRatio: 1,
+      highUrgencyCount: 0,
+      dominantTrend: 'improving',
+      recommendation: 'relax_watch_cadence',
+      summaryLine: 'rollup ok',
+    },
+  };
+
+  const tape = buildIdleGovernanceReplayTapeFromWatch(mockWatch);
+  push('gov_replay_frames', 'watch journal becomes replay frames', tape.frameCount === 2 && tape.frames[0].label === 'gov_watch_1');
+  const verify = verifyIdleGovernanceReplayTapeDeterminism(mockWatch, tape);
+  push('gov_replay_deterministic', 'tape rebuild is deterministic', verify.ok);
+
+  const journalTape = buildIdleGovernanceReplayTapeFromJournal(mockWatch.journal, 'continue_scheduled_watch');
+  push('gov_replay_journal', 'journal-only tape preserves recommendation', journalTape.rollupRecommendation === 'continue_scheduled_watch');
+
+  push('gov_replay_schema', 'replay tape schema marker', tape.schema === '10m.agent20.idle-governance-replay-tape.v1');
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-charter.ts ---
+
+export interface O10IdleGovernanceProgramCharter {
+  schema: '10m.agent20.idle-governance-program-charter.v1';
+  maxAutonomyTier: number;
+  maxSustainedCycles: number;
+  requireHumanCommit: boolean;
+  stewardModeCap: 'autonomous_idle' | 'recommend' | 'watch_only';
+  policyLine: string;
+}
+
+/** Translate assurance rollup into enforceable program charter caps. */
+export function deriveIdleGovernanceProgramCharter(
+  rollup: O10IdleGovernanceAssuranceRollupResult
+): O10IdleGovernanceProgramCharter {
+  switch (rollup.recommendation) {
+    case 'escalate_to_human_takeover':
+      return {
+        schema: '10m.agent20.idle-governance-program-charter.v1',
+        maxAutonomyTier: 0,
+        maxSustainedCycles: 1,
+        requireHumanCommit: true,
+        stewardModeCap: 'watch_only',
+        policyLine: 'charter hard_pause human_commit_required',
+      };
+    case 'tighten_watch_cadence':
+      return {
+        schema: '10m.agent20.idle-governance-program-charter.v1',
+        maxAutonomyTier: 1,
+        maxSustainedCycles: 3,
+        requireHumanCommit: rollup.highUrgencyCount > 0,
+        stewardModeCap: 'recommend',
+        policyLine: 'charter tighten_watch recommend_cap',
+      };
+    case 'relax_watch_cadence':
+      return {
+        schema: '10m.agent20.idle-governance-program-charter.v1',
+        maxAutonomyTier: 2,
+        maxSustainedCycles: 8,
+        requireHumanCommit: false,
+        stewardModeCap: 'autonomous_idle',
+        policyLine: 'charter relax_watch autonomous_cap',
+      };
+    case 'run_initial_assurance_pass':
+      return {
+        schema: '10m.agent20.idle-governance-program-charter.v1',
+        maxAutonomyTier: 1,
+        maxSustainedCycles: 2,
+        requireHumanCommit: false,
+        stewardModeCap: 'recommend',
+        policyLine: 'charter bootstrap_assurance',
+      };
+    default:
+      return {
+        schema: '10m.agent20.idle-governance-program-charter.v1',
+        maxAutonomyTier: 2,
+        maxSustainedCycles: 5,
+        requireHumanCommit: false,
+        stewardModeCap: 'autonomous_idle',
+        policyLine: 'charter continue_scheduled_watch',
+      };
+  }
+}
+
+export function charterPermitsSustainedWatchCycles(
+  charter: O10IdleGovernanceProgramCharter,
+  requestedCycles: number
+): { permitted: boolean; effectiveCycles: number; reason: string } {
+  const effective = Math.min(requestedCycles, charter.maxSustainedCycles);
+  if (requestedCycles > charter.maxSustainedCycles) {
+    return {
+      permitted: effective > 0,
+      effectiveCycles: effective,
+      reason: 'charter_cycle_cap',
+    };
+  }
+  return { permitted: true, effectiveCycles: effective, reason: 'charter_ok' };
+}
+
+export function runO10Agent20IdleGovernanceProgramCharterSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const escalate = deriveIdleGovernanceProgramCharter({
+    schema: '10m.agent20.idle-governance-assurance-rollup.v1',
+    entryCount: 2,
+    validRatio: 0,
+    highUrgencyCount: 2,
+    dominantTrend: 'degrading',
+    recommendation: 'escalate_to_human_takeover',
+    summaryLine: 'bad',
+  });
+  push('gov_charter_escalate', 'escalate caps watch_only and human commit', escalate.stewardModeCap === 'watch_only' && escalate.requireHumanCommit);
+
+  const relax = deriveIdleGovernanceProgramCharter({
+    schema: '10m.agent20.idle-governance-assurance-rollup.v1',
+    entryCount: 3,
+    validRatio: 1,
+    highUrgencyCount: 0,
+    dominantTrend: 'improving',
+    recommendation: 'relax_watch_cadence',
+    summaryLine: 'good',
+  });
+  const permit = charterPermitsSustainedWatchCycles(relax, 10);
+  push('gov_charter_cap', 'relax charter caps sustained cycles', permit.effectiveCycles === 8 && permit.reason === 'charter_cycle_cap');
+
+  push('gov_charter_schema', 'charter schema marker', relax.schema === '10m.agent20.idle-governance-program-charter.v1');
+
+  push('gov_charter_bootstrap', 'initial pass uses bootstrap policy', deriveIdleGovernanceProgramCharter({
+    schema: '10m.agent20.idle-governance-assurance-rollup.v1',
+    entryCount: 0,
+    validRatio: 0,
+    highUrgencyCount: 0,
+    dominantTrend: 'none',
+    recommendation: 'run_initial_assurance_pass',
+    summaryLine: 'empty',
+  }).policyLine.includes('bootstrap'));
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-pass.ts ---
+  buildIdleGovernanceReplayTapeFromWatch,
+  verifyIdleGovernanceReplayTapeDeterminism,
+} from './automation-idle-governance-watch-replay-tape.js';
+
+export interface O10IdleGovernanceProgramPassResult {
+  schema: '10m.agent20.idle-governance-program-pass.v1';
+  requestedCycles: number;
+  effectiveCycles: number;
+  charterPolicyLine: string;
+  watch: ReturnType<typeof runIdleGovernanceSustainedWatch>;
+  replayTape: ReturnType<typeof buildIdleGovernanceReplayTapeFromWatch>;
+  replayDeterministic: boolean;
+  summaryLine: string;
+}
+
+/** Round-13 program pass: charter-gated sustained watch + replay tape export. */
+export function runIdleGovernanceProgramPass(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number
+): O10IdleGovernanceProgramPassResult {
+  const bootstrap = runIdleGovernanceSustainedWatch(spec, rule, startTurn, 1);
+  const charter = deriveIdleGovernanceProgramCharter(bootstrap.rollup);
+  const permit = charterPermitsSustainedWatchCycles(charter, requestedCycles);
+  const effective = permit.effectiveCycles;
+
+  const humanSpec =
+    charter.requireHumanCommit && spec.humanCommittedEvery === 0
+      ? { ...spec, humanCommittedEvery: 1 }
+      : spec;
+
+  const watch =
+    effective <= 1
+      ? bootstrap
+      : runIdleGovernanceSustainedWatch(humanSpec, rule, startTurn, effective);
+
+  const replayTape = buildIdleGovernanceReplayTapeFromWatch(watch);
+  const replayDeterministic = verifyIdleGovernanceReplayTapeDeterminism(watch, replayTape).ok;
+
+  const summaryLine = [
+    'gov_program_pass',
+    charter.policyLine,
+    `cycles=${watch.cyclesRun}/${requestedCycles}`,
+    `replay_frames=${replayTape.frameCount}`,
+    `deterministic=${replayDeterministic}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-program-pass.v1',
+    requestedCycles,
+    effectiveCycles: watch.cyclesRun,
+    charterPolicyLine: charter.policyLine,
+    watch,
+    replayTape,
+    replayDeterministic,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramPassSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'pp1',
+    name: 'Program pass',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const pass = runIdleGovernanceProgramPass(calmSpec, sampleRule, 1, 4);
+  push(
+    'gov_program_calm',
+    'calm program pass exports replay tape',
+    pass.replayTape.frameCount >= 1 && pass.replayDeterministic && pass.summaryLine.includes('gov_program_pass')
+  );
+
+  const stressSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 6,
+    humanCommittedEvery: 0,
+    idleMsStart: 220_000,
+    idleMsStep: 100_000,
+    consecutiveIdleStart: 9,
+  };
+  const stressPass = runIdleGovernanceProgramPass(stressSpec, sampleRule, 5, 6);
+  push(
+    'gov_program_stress',
+    'stressed program pass respects charter cycle cap',
+    stressPass.effectiveCycles <= 6 && stressPass.watch.journal.entries.length >= 1
+  );
+
+  push('gov_program_schema', 'program pass schema marker', pass.schema === '10m.agent20.idle-governance-program-pass.v1');
+
+  push(
+    'gov_program_charter',
+    'program pass surfaces charter policy line',
+    pass.charterPolicyLine.startsWith('charter')
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -6675,6 +7071,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceAssuranceJournalSelfTests());
   results.push(...runO10Agent20IdleGovernanceAssuranceRollupSelfTests());
   results.push(...runO10Agent20IdleGovernanceSustainedWatchSelfTests());
+  results.push(...runO10Agent20IdleGovernanceWatchReplayTapeSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramCharterSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramPassSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

@@ -39,6 +39,9 @@ export * from './automation-idle-governance-assurance-pass.js';
 export * from './automation-idle-governance-assurance-journal.js';
 export * from './automation-idle-governance-assurance-rollup.js';
 export * from './automation-idle-governance-sustained-watch.js';
+export * from './automation-idle-governance-watch-replay-tape.js';
+export * from './automation-idle-governance-program-charter.js';
+export * from './automation-idle-governance-program-pass.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
@@ -78,6 +81,9 @@ import { runO10Agent20IdleGovernanceAssurancePassSelfTests } from './automation-
 import { runO10Agent20IdleGovernanceAssuranceJournalSelfTests } from './automation-idle-governance-assurance-journal.js';
 import { runO10Agent20IdleGovernanceAssuranceRollupSelfTests } from './automation-idle-governance-assurance-rollup.js';
 import { runO10Agent20IdleGovernanceSustainedWatchSelfTests } from './automation-idle-governance-sustained-watch.js';
+import { runO10Agent20IdleGovernanceWatchReplayTapeSelfTests } from './automation-idle-governance-watch-replay-tape.js';
+import { runO10Agent20IdleGovernanceProgramCharterSelfTests } from './automation-idle-governance-program-charter.js';
+import { runO10Agent20IdleGovernanceProgramPassSelfTests } from './automation-idle-governance-program-pass.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -147,6 +153,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceAssuranceJournalSelfTests());
   results.push(...runO10Agent20IdleGovernanceAssuranceRollupSelfTests());
   results.push(...runO10Agent20IdleGovernanceSustainedWatchSelfTests());
+  results.push(...runO10Agent20IdleGovernanceWatchReplayTapeSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramCharterSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramPassSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

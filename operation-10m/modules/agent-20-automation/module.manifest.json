@@ -1,13 +1,13 @@
 {
   "moduleId": "agent-20-automation",
-  "moduleVersion": "10m.1.12.0-agent20",
+  "moduleVersion": "10m.1.13.0-agent20",
   "slot": "append-only-self-tests",
   "touchesSaveFormat": true,
   "anchorComment": "O10_AGENT20_INTEGRATION_ANCHOR",
   "sourceRoot": "operation-10m/agent-20-automation/src",
   "regenerate": "node operation-10m/agent-20-automation/scripts/build-chunk.mjs",
-  "chunkSha256": "afe13f7a4efe04c895c13424146688930c8939919eae67f01247dc1b21a5596d",
-  "chunkLineCount": 6684,
+  "chunkSha256": "35911d487aee2b4047f5e921e1b92049d6ef2d4131c60576a7032d94b7bbdd35",
+  "chunkLineCount": 7083,
   "sourceFiles": [
     "types.ts",
     "conditional-actions.ts",
@@ -50,6 +50,9 @@
     "automation-idle-governance-assurance-journal.ts",
     "automation-idle-governance-assurance-rollup.ts",
     "automation-idle-governance-sustained-watch.ts",
+    "automation-idle-governance-watch-replay-tape.ts",
+    "automation-idle-governance-program-charter.ts",
+    "automation-idle-governance-program-pass.ts",
     "index.ts"
   ]
 }
