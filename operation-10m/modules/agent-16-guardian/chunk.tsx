@@ -160,6 +160,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   indulgenceStrainIndex: number;
   indulgenceIntegrityScore: number;
   governanceVigorScore: number;
+  exemptionStrainIndex: number;
+  exemptionIntegrityScore: number;
+  governanceStaminaScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -2138,6 +2141,62 @@ export function buildGuardianDepthIndulgenceReport(snapshot: GuardianCoPilotMoni
   return lines.slice(0, 3);
 }
 
+export function computeExemptionStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governanceVigorScore < 50) load += Math.min(25, 50 - snapshot.governanceVigorScore);
+  if (snapshot.governanceVigorScore < 35) load += 10;
+  if (snapshot.indulgenceIntegrityScore < 45) load += 20;
+  if (snapshot.indulgenceIntegrityScore < 35) load += 10;
+  if (snapshot.indulgenceStrainIndex >= 55) load += 20;
+  if (snapshot.indulgenceStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeExemptionIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.exemptionStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.exemptionStrainIndex * 0.35));
+  if (snapshot.indulgenceIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.indulgenceIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governanceVigorScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceStaminaScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.exemptionStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.exemptionStrainIndex * 0.32));
+  if (snapshot.exemptionIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.exemptionIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governanceVigorScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthExemptionReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.exemptionStrainIndex >= 55) {
+    lines.push(
+      `Exemption strain ${snapshot.exemptionStrainIndex} — stacked exemption review may exceed operator exemption capacity`
+    );
+  }
+  if (snapshot.exemptionIntegrityScore < 45) {
+    lines.push(
+      `Exemption integrity ${snapshot.exemptionIntegrityScore} — align Co-Pilot exemptions with Guardian exemption posture`
+    );
+  }
+  if (snapshot.governanceStaminaScore < 40) {
+    lines.push(
+      `Governance stamina ${snapshot.governanceStaminaScore} — little stamina to sustain exemption oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -2453,9 +2512,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withIndulgenceStrain: GuardianCoPilotMonitorSnapshot = { ...withFortitude, indulgenceStrainIndex };
   const indulgenceIntegrityScore = computeIndulgenceIntegrityScore(withIndulgenceStrain);
   const withIndulgence: GuardianCoPilotMonitorSnapshot = { ...withIndulgenceStrain, indulgenceIntegrityScore };
-  return {
+  const withVigor: GuardianCoPilotMonitorSnapshot = {
     ...withIndulgence,
     governanceVigorScore: computeGovernanceVigorScore(withIndulgence),
+    exemptionStrainIndex: 0,
+    exemptionIntegrityScore: 100,
+    governanceStaminaScore: 100,
+  };
+  const exemptionStrainIndex = computeExemptionStrainIndex(withVigor);
+  const withExemptionStrain: GuardianCoPilotMonitorSnapshot = { ...withVigor, exemptionStrainIndex };
+  const exemptionIntegrityScore = computeExemptionIntegrityScore(withExemptionStrain);
+  const withExemption: GuardianCoPilotMonitorSnapshot = { ...withExemptionStrain, exemptionIntegrityScore };
+  return {
+    ...withExemption,
+    governanceStaminaScore: computeGovernanceStaminaScore(withExemption),
   };
 }
 
@@ -3458,6 +3528,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernanceVigorScore(snap) < 35;
+  });
+  ok('gd_exemption_strain', () => {
+    const snap = {
+      governanceVigorScore: 30,
+      indulgenceIntegrityScore: 32,
+      indulgenceStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeExemptionStrainIndex(snap) >= 70;
+  });
+  ok('gd_exemption_integrity', () => {
+    const snap = {
+      exemptionStrainIndex: 72,
+      indulgenceIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governanceVigorScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeExemptionIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_stamina', () => {
+    const snap = {
+      exemptionStrainIndex: 78,
+      exemptionIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governanceVigorScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceStaminaScore(snap) < 35;
   });
   return out;
 }
@@ -7626,6 +7730,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_30: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_30_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_30.length;
 
 
+// --- source: monitor-rules-scale-wave-31.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_31: AdvisoryMonitorRule[] = [
+  {
+    id: 'exemption_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Exemption Strain High',
+    detailTemplate: 'Exemption strain is in the high band — reduce overlapping warn-only exemption review demands',
+    evidenceFields: ['exemptionStrainIndex', 'governanceVigorScore', 'exemptionIntegrityScore'],
+    evaluate: s => s.exemptionStrainIndex >= 70,
+  },
+  {
+    id: 'exemption_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Exemption Strain Elevated',
+    detailTemplate: 'Exemption strain is elevated — expect slower exemption review across turns',
+    evidenceFields: ['exemptionStrainIndex', 'indulgenceStrainIndex'],
+    evaluate: s => s.exemptionStrainIndex >= 45 && s.exemptionStrainIndex < 70,
+  },
+  {
+    id: 'exemption_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Exemption Integrity Low',
+    detailTemplate: 'Exemption integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['exemptionIntegrityScore', 'exemptionStrainIndex', 'indulgenceIntegrityScore'],
+    evaluate: s => s.exemptionIntegrityScore < 35,
+  },
+  {
+    id: 'exemption_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Exemption While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate exemption integrity',
+    evidenceFields: ['exemptionIntegrityScore', 'copilotAutonomousActive', 'exemptionStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.exemptionIntegrityScore >= 35 && s.exemptionIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_stamina_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Stamina Low',
+    detailTemplate: 'Little governance stamina remains for warn-only exemption oversight across turns',
+    evidenceFields: ['governanceStaminaScore', 'exemptionStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceStaminaScore < 35,
+  },
+  {
+    id: 'governance_stamina_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Stamina While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance stamina',
+    evidenceFields: ['governanceStaminaScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceStaminaScore >= 35 && s.governanceStaminaScore < 55,
+  },
+  {
+    id: 'exemption_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Exemption Envelope Pressured',
+    detailTemplate: 'Exemption strain and low exemption integrity align in the pressured envelope band',
+    evidenceFields: ['exemptionStrainIndex', 'exemptionIntegrityScore', 'governanceStaminaScore'],
+    evaluate: s => s.exemptionStrainIndex >= 55 && s.exemptionIntegrityScore < 50,
+  },
+  {
+    id: 'rival_exemption_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Exemption Strain',
+    detailTemplate: 'Rival victory progress plus elevated exemption strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'exemptionStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.exemptionStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_exemption_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Exemption Strain',
+    detailTemplate: 'Pending team plan while exemption strain is elevated',
+    evidenceFields: ['teamPlanPending', 'exemptionStrainIndex', 'governanceStaminaScore'],
+    evaluate: s => s.teamPlanPending && s.exemptionStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_exemption_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Exemption Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance stamina',
+    evidenceFields: ['guardianRiskBand', 'governanceStaminaScore', 'exemptionStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceStaminaScore < 40,
+  },
+  {
+    id: 'copilot_exemption_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Exemption Strain',
+    detailTemplate: 'Autonomous Co-Pilot while exemption strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'exemptionStrainIndex', 'exemptionIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.exemptionStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_stamina',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Stamina',
+    detailTemplate: 'Expiring contracts while governance stamina is low',
+    evidenceFields: ['expiringContractCount', 'governanceStaminaScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceStaminaScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_31_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_31.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -7885,6 +8122,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_28,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_29,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_30,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_31,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -8291,6 +8529,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     indulgenceStrainIndex: 0,
     indulgenceIntegrityScore: 100,
     governanceVigorScore: 100,
+    exemptionStrainIndex: 0,
+    exemptionIntegrityScore: 100,
+    governanceStaminaScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -10591,6 +10832,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['indulgence_envelope_pressured', 'guardian_indulgence_envelope_critical'],
     notes: 'Pressured indulgence envelope with critical Guardian band',
   },
+  {
+    id: 'sc_exemption_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2260,
+      maxSpendPerAction: 10580,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['exemption_strain_high', 'exemption_integrity_low'],
+    notes: 'High exemption strain with critical exemption integrity',
+  },
+  {
+    id: 'sc_governance_stamina_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1380,
+      maxSpendPerAction: 8080,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_stamina_low', 'contracts_governance_stamina'],
+    notes: 'Low governance stamina with expiring contracts',
+  },
+  {
+    id: 'sc_exemption_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 1300,
+      maxSpendPerAction: 8280,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['exemption_envelope_pressured', 'guardian_exemption_envelope_critical'],
+    notes: 'Pressured exemption envelope with critical Guardian band',
+  },
 ];
 
 
@@ -10766,8 +11075,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 30 scale wave brings monitor catalog to 394+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 394;
+  check(results, 'a16_expansion_count', 'Round 31 scale wave brings monitor catalog to 406+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 406;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -11854,6 +12163,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthIndulgenceReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round31_metrics', 'Round 31 exemption envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.exemptionStrainIndex >= 40 &&
+      snap.exemptionIntegrityScore <= 100 &&
+      snap.governanceStaminaScore <= 100
+    );
+  });
+
+  check(results, 'a16_exemption_report', 'Guardian depth exemption report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthExemptionReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
