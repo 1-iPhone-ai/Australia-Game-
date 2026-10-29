@@ -317,6 +317,10 @@ export interface NationalLaborDemographicsState {
   onboardingIntegrationOutlook?: NationalOnboardingIntegrationOutlook;
   subjectIntegrationReadinessBrief?: NationalSubjectIntegrationReadinessBrief;
   nationalWorkforceIntegrationIndex?: NationalWorkforceIntegrationIndex;
+  integrationRetentionCouplingBrief?: NationalIntegrationRetentionCouplingBrief;
+  retentionCohesionOutlook?: NationalRetentionCohesionOutlook;
+  subjectRetentionReadinessBrief?: NationalSubjectRetentionReadinessBrief;
+  nationalWorkforceRetentionIndex?: NationalWorkforceRetentionIndex;
 }
 
 export type MigrationShockKind =
@@ -1757,6 +1761,54 @@ export interface NationalWorkforceIntegrationIndex {
   stewardNote: string;
 }
 
+export type IntegrationRetentionCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalIntegrationRetentionCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: IntegrationRetentionCouplingBand;
+  integrationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type RetentionCohesionBand = 'ebbing' | 'patchy' | 'rising' | 'cohesion';
+
+export interface NationalRetentionCohesionOutlook {
+  turn: number;
+  cohesionIndex: number;
+  band: RetentionCohesionBand;
+  integrationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectRetentionReadinessBand =
+  | 'below_retention'
+  | 'approaching'
+  | 'retention_ready'
+  | 'integration_locked';
+
+export interface NationalSubjectRetentionReadinessBrief {
+  turn: number;
+  retentionIndex: number;
+  band: SubjectRetentionReadinessBand;
+  retentionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceRetentionBand = 'fragile' | 'thin' | 'elevated' | 'retention';
+
+export interface NationalWorkforceRetentionIndex {
+  turn: number;
+  retentionIndex: number;
+  band: WorkforceRetentionBand;
+  retentionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -2951,7 +3003,11 @@ export type LaborGiQueryTopic =
   | 'synthesis_onboarding_coupling'
   | 'onboarding_integration'
   | 'subject_integration_readiness'
-  | 'workforce_integration';
+  | 'workforce_integration'
+  | 'integration_retention_coupling'
+  | 'retention_cohesion'
+  | 'subject_retention_readiness'
+  | 'workforce_retention';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3086,6 +3142,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_integration_readiness';
   }
   if (/\b(workforce integration|integration index labor)/.test(q)) return 'workforce_integration';
+  if (/\b(integration retention|integration-retention coupling)/.test(q)) return 'integration_retention_coupling';
+  if (/\b(retention cohesion|retention pipeline cohesion)/.test(q)) return 'retention_cohesion';
+  if (/\b(subject retention readiness|retention readiness subject)/.test(q)) {
+    return 'subject_retention_readiness';
+  }
+  if (/\b(workforce retention|retention index labor)/.test(q)) return 'workforce_retention';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -4129,6 +4191,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceIntegrationIndex?.stewardNote || state.summary,
         projection: 'Workforce integration synthesizes onboarding coupling, onboarding integration, and subject integration.'
       };
+    case 'integration_retention_coupling':
+      return {
+        topic,
+        headline: state.integrationRetentionCouplingBrief?.summary || 'Integration-retention coupling unavailable.',
+        fact: `Coupling band ${state.integrationRetentionCouplingBrief?.band ?? 'unknown'}; integration drag ${Math.round(state.integrationRetentionCouplingBrief?.integrationDrag ?? 0)}.`,
+        inference: state.integrationRetentionCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce integration with retention levers — wave 37 / O10-205 depth.'
+      };
+    case 'retention_cohesion':
+      return {
+        topic,
+        headline: state.retentionCohesionOutlook?.summary || 'Retention cohesion unavailable.',
+        fact: `Cohesion band ${state.retentionCohesionOutlook?.band ?? 'unknown'}; integration drag ${Math.round(state.retentionCohesionOutlook?.integrationDrag ?? 0)}.`,
+        inference: state.retentionCohesionOutlook?.stewardNote || state.outlook,
+        projection: 'Cohesion blends retention levers with onboarding integration — bounded indices only.'
+      };
+    case 'subject_retention_readiness':
+      return {
+        topic,
+        headline: state.subjectRetentionReadinessBrief?.summary || 'Subject retention readiness unavailable.',
+        fact: `Retention band ${state.subjectRetentionReadinessBrief?.band ?? 'unknown'}; retention drag ${Math.round(state.subjectRetentionReadinessBrief?.retentionDrag ?? 0)}.`,
+        inference: state.subjectRetentionReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject retention readiness gates subject integration against workforce integration for O10-205 wave 37.'
+      };
+    case 'workforce_retention':
+      return {
+        topic,
+        headline: state.nationalWorkforceRetentionIndex?.summary || 'Workforce retention unavailable.',
+        fact: `Retention band ${state.nationalWorkforceRetentionIndex?.band ?? 'unknown'}; retention drag ${Math.round(state.nationalWorkforceRetentionIndex?.retentionDrag ?? 0)}.`,
+        inference: state.nationalWorkforceRetentionIndex?.stewardNote || state.summary,
+        projection: 'Workforce retention synthesizes integration-retention coupling, retention cohesion, and subject retention.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -5141,6 +5235,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceIntegrationIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceIntegrationIndex.stewardNote);
+  }
+  if (
+    state.integrationRetentionCouplingBrief?.band === 'decoupled' ||
+    state.integrationRetentionCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.integrationRetentionCouplingBrief.stewardNote);
+  }
+  if (
+    state.retentionCohesionOutlook?.band === 'ebbing' ||
+    state.retentionCohesionOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.retentionCohesionOutlook.stewardNote);
+  }
+  if (
+    state.subjectRetentionReadinessBrief?.band === 'below_retention' ||
+    state.subjectRetentionReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectRetentionReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceRetentionIndex?.band === 'fragile' ||
+    state.nationalWorkforceRetentionIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceRetentionIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -14922,6 +15040,278 @@ export function computeNationalWorkforceIntegrationIndex(
 }
 
 
+// --- source: integration-retention-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type IntegrationRetentionCouplingBand,
+  type NationalIntegrationRetentionCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalWorkforceIntegrationIndex
+} from './types';
+
+function couplingBand(index: number): IntegrationRetentionCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-37 / wave-37 integration-retention coupling — integration × retention (O10-205). */
+export function computeNationalIntegrationRetentionCouplingBrief(
+  state: NationalLaborDemographicsState,
+  integration: NationalWorkforceIntegrationIndex | null | undefined
+): NationalIntegrationRetentionCouplingBrief {
+  if (!state.enabled || !integration) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      integrationDrag: 0,
+      summary: 'Integration-retention coupling idle — workforce integration unavailable.',
+      stewardNote: 'Compute workforce integration before retention coupling guidance.'
+    };
+  }
+
+  let retentionLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    retentionLift += retentionPullForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  retentionLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const integrationDrag = v1014laborClamp(
+    integration.integrationDrag * 0.48 + (integration.band === 'fragile' || integration.band === 'thin' ? 11 : 3)
+  );
+  const integrationLift =
+    integration.band === 'elevated' || integration.band === 'integration'
+      ? integration.integrationIndex * 0.24
+      : integration.integrationIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + retentionLift * 21 + integrationLift - integrationDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained integration-retention link — deploy retention levers before wave-37 retention commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard retention cohesion spikes that drain integration buffers.'
+        : 'Amplified coupling — pair retention packs with subject retention readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    integrationDrag,
+    summary: `Integration-retention coupling ${band} (index ${Math.round(couplingIndex)}); integration drag ${Math.round(integrationDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: retention-cohesion-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalOnboardingIntegrationOutlook,
+  type NationalRetentionCohesionOutlook,
+  type RetentionCohesionBand
+} from './types';
+
+function cohesionBand(index: number): RetentionCohesionBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'cohesion';
+}
+
+export function computeNationalRetentionCohesionOutlook(
+  state: NationalLaborDemographicsState,
+  onboardingIntegration: NationalOnboardingIntegrationOutlook | null | undefined
+): NationalRetentionCohesionOutlook {
+  if (!state.enabled || !onboardingIntegration) {
+    return {
+      turn: state.turn,
+      cohesionIndex: 50,
+      band: 'patchy',
+      integrationDrag: 0,
+      summary: 'Retention cohesion idle — onboarding integration unavailable.',
+      stewardNote: 'Compute onboarding integration before retention cohesion guidance.'
+    };
+  }
+
+  let retentionLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    retentionLift += retentionPullForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  retentionLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const integrationDrag = v1014laborClamp(
+    onboardingIntegration.synthesisDrag * 0.46 +
+      (onboardingIntegration.band === 'ebbing' || onboardingIntegration.band === 'patchy' ? 10 : 3)
+  );
+  const integrationLift =
+    onboardingIntegration.band === 'rising' || onboardingIntegration.band === 'integration'
+      ? onboardingIntegration.integrationIndex * 0.2
+      : onboardingIntegration.integrationIndex * 0.1;
+
+  const cohesionIndex = v1014laborClamp(24 + retentionLift * 22 + integrationLift - integrationDrag);
+  const band = cohesionBand(cohesionIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy retention cohesion — deploy retention levers before subject retention assembly.'
+      : band === 'cohesion'
+        ? 'Cohesion band — verify integration-retention coupling before auto workforce pushes.'
+        : 'Rising cohesion — align with integration sustain outlook checks.';
+
+  return {
+    turn: state.turn,
+    cohesionIndex,
+    band,
+    integrationDrag,
+    summary: `National retention cohesion ${band} (index ${Math.round(cohesionIndex)}); integration drag ${Math.round(integrationDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-retention-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectIntegrationReadinessBrief,
+  type NationalSubjectRetentionReadinessBrief,
+  type NationalWorkforceIntegrationIndex,
+  type SubjectRetentionReadinessBand
+} from './types';
+
+function retentionBand(index: number): SubjectRetentionReadinessBand {
+  if (index <= 34) return 'below_retention';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'retention_ready';
+  return 'integration_locked';
+}
+
+/** Round-37 / wave-37 subject retention readiness — integration × workforce integration (O10-205). */
+export function computeNationalSubjectRetentionReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectIntegration: NationalSubjectIntegrationReadinessBrief | null | undefined,
+  workforceIntegration: NationalWorkforceIntegrationIndex | null | undefined
+): NationalSubjectRetentionReadinessBrief {
+  if (!state.enabled || !subjectIntegration || !workforceIntegration) {
+    return {
+      turn: state.turn,
+      retentionIndex: 50,
+      band: 'approaching',
+      retentionDrag: 0,
+      summary: 'Subject retention readiness idle — subject integration or workforce integration unavailable.',
+      stewardNote: 'Compute subject integration and workforce integration before retention guidance.'
+    };
+  }
+
+  const retentionDrag = v1014laborClamp(
+    subjectIntegration.integrationDrag * 0.38 +
+      workforceIntegration.integrationDrag * 0.38 +
+      (subjectIntegration.band === 'below_integration' || workforceIntegration.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectIntegration.band === 'integration_ready' || subjectIntegration.band === 'synthesis_locked'
+      ? subjectIntegration.integrationIndex * 0.27
+      : subjectIntegration.integrationIndex * 0.14;
+  const workforceLift =
+    workforceIntegration.band === 'elevated' || workforceIntegration.band === 'integration'
+      ? workforceIntegration.integrationIndex * 0.25
+      : workforceIntegration.integrationIndex * 0.12;
+
+  const retentionIndex = v1014laborClamp(20 + subjectLift + workforceLift - retentionDrag);
+  const band = retentionBand(retentionIndex);
+
+  const stewardNote =
+    band === 'below_retention' || band === 'approaching'
+      ? 'Approaching retention — hold O10-205 wave-37 scale until integration-retention syncs.'
+      : band === 'integration_locked'
+        ? 'Integration-locked retention — still monitor retention cohesion during corridor peaks.'
+        : 'Retention-ready — pair with workforce retention index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    retentionIndex,
+    band,
+    retentionDrag,
+    summary: `Subject retention readiness ${band} (index ${Math.round(retentionIndex)}); retention drag ${Math.round(retentionDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-retention-index.ts ---
+  type NationalIntegrationRetentionCouplingBrief,
+  type NationalLaborDemographicsState,
+  type NationalRetentionCohesionOutlook,
+  type NationalSubjectRetentionReadinessBrief,
+  type NationalWorkforceRetentionIndex,
+  type WorkforceRetentionBand
+} from './types';
+
+function retentionBand(index: number): WorkforceRetentionBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'retention';
+}
+
+export function computeNationalWorkforceRetentionIndex(
+  state: NationalLaborDemographicsState,
+  retentionCoupling: NationalIntegrationRetentionCouplingBrief | null | undefined,
+  retentionCohesion: NationalRetentionCohesionOutlook | null | undefined,
+  subjectRetention: NationalSubjectRetentionReadinessBrief | null | undefined
+): NationalWorkforceRetentionIndex {
+  if (!state.enabled || !retentionCoupling || !retentionCohesion || !subjectRetention) {
+    return {
+      turn: state.turn,
+      retentionIndex: 50,
+      band: 'thin',
+      retentionDrag: 0,
+      summary: 'Workforce retention idle — retention coupling, retention cohesion, or subject retention unavailable.',
+      stewardNote: 'Compute O10-205 wave-37 depth stack before retention guidance.'
+    };
+  }
+
+  const retentionDrag = v1014laborClamp(
+    subjectRetention.retentionDrag * 0.35 +
+      retentionCoupling.integrationDrag * 0.3 +
+      retentionCohesion.integrationDrag * 0.25 +
+      (subjectRetention.band === 'below_retention' || retentionCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    retentionCoupling.band === 'amplified' || retentionCoupling.band === 'elevated'
+      ? retentionCoupling.couplingIndex * 0.2
+      : retentionCoupling.couplingIndex * 0.1;
+  const cohesionLift =
+    retentionCohesion.band === 'rising' || retentionCohesion.band === 'cohesion'
+      ? retentionCohesion.cohesionIndex * 0.18
+      : retentionCohesion.cohesionIndex * 0.09;
+  const subjectLift =
+    subjectRetention.band === 'retention_ready' || subjectRetention.band === 'integration_locked'
+      ? subjectRetention.retentionIndex * 0.22
+      : subjectRetention.retentionIndex * 0.11;
+
+  const retentionIndex = v1014laborClamp(18 + couplingLift + cohesionLift + subjectLift - retentionDrag);
+  const band = retentionBand(retentionIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce retention — sequence integration-retention, retention cohesion, and subject retention before post-cfb4603 tranche.'
+      : band === 'retention'
+        ? 'Retention band — avoid corridor overload that breaks subject retention bands.'
+        : 'Elevated retention — refresh subject retention checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    retentionIndex,
+    band,
+    retentionDrag,
+    summary: `National workforce retention ${band} (index ${Math.round(retentionIndex)}); retention drag ${Math.round(retentionDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -15973,6 +16363,25 @@ export function computeNationalLaborDemographics(
     state.onboardingIntegrationOutlook,
     state.subjectIntegrationReadinessBrief
   );
+  state.integrationRetentionCouplingBrief = computeNationalIntegrationRetentionCouplingBrief(
+    state,
+    state.nationalWorkforceIntegrationIndex
+  );
+  state.retentionCohesionOutlook = computeNationalRetentionCohesionOutlook(
+    state,
+    state.onboardingIntegrationOutlook
+  );
+  state.subjectRetentionReadinessBrief = computeNationalSubjectRetentionReadinessBrief(
+    state,
+    state.subjectIntegrationReadinessBrief,
+    state.nationalWorkforceIntegrationIndex
+  );
+  state.nationalWorkforceRetentionIndex = computeNationalWorkforceRetentionIndex(
+    state,
+    state.integrationRetentionCouplingBrief,
+    state.retentionCohesionOutlook,
+    state.subjectRetentionReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -16767,6 +17176,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceIntegrationIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.integrationRetentionCouplingBrief?.band === 'decoupled' ||
+      state.integrationRetentionCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.integrationRetentionCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.retentionCohesionOutlook?.band === 'ebbing' ||
+      state.retentionCohesionOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.retentionCohesionOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectRetentionReadinessBrief?.band === 'below_retention' ||
+      state.subjectRetentionReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectRetentionReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceRetentionIndex?.band === 'fragile' ||
+      state.nationalWorkforceRetentionIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceRetentionIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -18877,6 +19314,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'integration steward note'
   );
   check('R3616', onboardingEaseForRegion('NSW', 'technology') > 0, 'onboarding ease for region');
+
+  check('R3701', Boolean(r1.state.integrationRetentionCouplingBrief?.band), 'integration retention on state');
+  check(
+    'R3702',
+    (r1.state.integrationRetentionCouplingBrief?.integrationDrag ?? 0) >= 0,
+    'integration retention drag'
+  );
+  check('R3703', Boolean(r1.state.retentionCohesionOutlook?.band), 'retention cohesion on state');
+  check(
+    'R3704',
+    (r1.state.retentionCohesionOutlook?.integrationDrag ?? 0) >= 0,
+    'retention cohesion integration drag'
+  );
+  check('R3705', Boolean(r1.state.subjectRetentionReadinessBrief?.band), 'subject retention on state');
+  check('R3706', Boolean(r1.state.nationalWorkforceRetentionIndex?.band), 'workforce retention on state');
+  check(
+    'R3707',
+    detectLaborDemographicsQuery('integration retention coupling') === 'integration_retention_coupling',
+    'GI integration retention detect'
+  );
+  check(
+    'R3708',
+    detectLaborDemographicsQuery('retention cohesion') === 'retention_cohesion',
+    'GI retention cohesion detect'
+  );
+  check(
+    'R3709',
+    detectLaborDemographicsQuery('subject retention readiness') === 'subject_retention_readiness',
+    'GI subject retention detect'
+  );
+  check(
+    'R3710',
+    detectLaborDemographicsQuery('workforce retention') === 'workforce_retention',
+    'GI workforce retention detect'
+  );
+  check(
+    'R3711',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_retention').headline.length > 5,
+    'GI workforce retention answer'
+  );
+  const integrationRetentionOnly = computeNationalIntegrationRetentionCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceIntegrationIndex
+  );
+  check('R3712', integrationRetentionOnly.summary.length > 10, 'integration retention standalone summary');
+  const retentionCohesionOnly = computeNationalRetentionCohesionOutlook(
+    r1.state,
+    r1.state.onboardingIntegrationOutlook
+  );
+  check('R3713', retentionCohesionOnly.band.length > 3, 'retention cohesion band string');
+  const subjectRetentionOnly = computeNationalSubjectRetentionReadinessBrief(
+    r1.state,
+    r1.state.subjectIntegrationReadinessBrief,
+    r1.state.nationalWorkforceIntegrationIndex
+  );
+  check('R3714', subjectRetentionOnly.retentionDrag >= 0, 'subject retention drag');
+  check(
+    'R3715',
+    computeNationalWorkforceRetentionIndex(
+      rHhBad.state,
+      rHhBad.state.integrationRetentionCouplingBrief,
+      rHhBad.state.retentionCohesionOutlook,
+      rHhBad.state.subjectRetentionReadinessBrief
+    ).stewardNote.length > 8,
+    'retention steward note'
+  );
+  check('R3716', retentionPullForRegion('NSW', 'technology') > 0, 'retention pull for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

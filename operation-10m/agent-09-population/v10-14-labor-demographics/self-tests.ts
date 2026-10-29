@@ -198,6 +198,10 @@ import { computeNationalSynthesisOnboardingCouplingBrief } from './synthesis-onb
 import { computeNationalOnboardingIntegrationOutlook } from './onboarding-integration-outlook';
 import { computeNationalSubjectIntegrationReadinessBrief } from './subject-integration-readiness-brief';
 import { computeNationalWorkforceIntegrationIndex } from './national-workforce-integration-index';
+import { computeNationalIntegrationRetentionCouplingBrief } from './integration-retention-coupling-brief';
+import { computeNationalRetentionCohesionOutlook } from './retention-cohesion-outlook';
+import { computeNationalSubjectRetentionReadinessBrief } from './subject-retention-readiness-brief';
+import { computeNationalWorkforceRetentionIndex } from './national-workforce-retention-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2239,6 +2243,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'integration steward note'
   );
   check('R3616', onboardingEaseForRegion('NSW', 'technology') > 0, 'onboarding ease for region');
+
+  check('R3701', Boolean(r1.state.integrationRetentionCouplingBrief?.band), 'integration retention on state');
+  check(
+    'R3702',
+    (r1.state.integrationRetentionCouplingBrief?.integrationDrag ?? 0) >= 0,
+    'integration retention drag'
+  );
+  check('R3703', Boolean(r1.state.retentionCohesionOutlook?.band), 'retention cohesion on state');
+  check(
+    'R3704',
+    (r1.state.retentionCohesionOutlook?.integrationDrag ?? 0) >= 0,
+    'retention cohesion integration drag'
+  );
+  check('R3705', Boolean(r1.state.subjectRetentionReadinessBrief?.band), 'subject retention on state');
+  check('R3706', Boolean(r1.state.nationalWorkforceRetentionIndex?.band), 'workforce retention on state');
+  check(
+    'R3707',
+    detectLaborDemographicsQuery('integration retention coupling') === 'integration_retention_coupling',
+    'GI integration retention detect'
+  );
+  check(
+    'R3708',
+    detectLaborDemographicsQuery('retention cohesion') === 'retention_cohesion',
+    'GI retention cohesion detect'
+  );
+  check(
+    'R3709',
+    detectLaborDemographicsQuery('subject retention readiness') === 'subject_retention_readiness',
+    'GI subject retention detect'
+  );
+  check(
+    'R3710',
+    detectLaborDemographicsQuery('workforce retention') === 'workforce_retention',
+    'GI workforce retention detect'
+  );
+  check(
+    'R3711',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_retention').headline.length > 5,
+    'GI workforce retention answer'
+  );
+  const integrationRetentionOnly = computeNationalIntegrationRetentionCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceIntegrationIndex
+  );
+  check('R3712', integrationRetentionOnly.summary.length > 10, 'integration retention standalone summary');
+  const retentionCohesionOnly = computeNationalRetentionCohesionOutlook(
+    r1.state,
+    r1.state.onboardingIntegrationOutlook
+  );
+  check('R3713', retentionCohesionOnly.band.length > 3, 'retention cohesion band string');
+  const subjectRetentionOnly = computeNationalSubjectRetentionReadinessBrief(
+    r1.state,
+    r1.state.subjectIntegrationReadinessBrief,
+    r1.state.nationalWorkforceIntegrationIndex
+  );
+  check('R3714', subjectRetentionOnly.retentionDrag >= 0, 'subject retention drag');
+  check(
+    'R3715',
+    computeNationalWorkforceRetentionIndex(
+      rHhBad.state,
+      rHhBad.state.integrationRetentionCouplingBrief,
+      rHhBad.state.retentionCohesionOutlook,
+      rHhBad.state.subjectRetentionReadinessBrief
+    ).stewardNote.length > 8,
+    'retention steward note'
+  );
+  check('R3716', retentionPullForRegion('NSW', 'technology') > 0, 'retention pull for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

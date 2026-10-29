@@ -313,6 +313,10 @@ export interface NationalLaborDemographicsState {
   onboardingIntegrationOutlook?: NationalOnboardingIntegrationOutlook;
   subjectIntegrationReadinessBrief?: NationalSubjectIntegrationReadinessBrief;
   nationalWorkforceIntegrationIndex?: NationalWorkforceIntegrationIndex;
+  integrationRetentionCouplingBrief?: NationalIntegrationRetentionCouplingBrief;
+  retentionCohesionOutlook?: NationalRetentionCohesionOutlook;
+  subjectRetentionReadinessBrief?: NationalSubjectRetentionReadinessBrief;
+  nationalWorkforceRetentionIndex?: NationalWorkforceRetentionIndex;
 }
 
 export type MigrationShockKind =
@@ -1749,6 +1753,54 @@ export interface NationalWorkforceIntegrationIndex {
   integrationIndex: number;
   band: WorkforceIntegrationBand;
   integrationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type IntegrationRetentionCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalIntegrationRetentionCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: IntegrationRetentionCouplingBand;
+  integrationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type RetentionCohesionBand = 'ebbing' | 'patchy' | 'rising' | 'cohesion';
+
+export interface NationalRetentionCohesionOutlook {
+  turn: number;
+  cohesionIndex: number;
+  band: RetentionCohesionBand;
+  integrationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectRetentionReadinessBand =
+  | 'below_retention'
+  | 'approaching'
+  | 'retention_ready'
+  | 'integration_locked';
+
+export interface NationalSubjectRetentionReadinessBrief {
+  turn: number;
+  retentionIndex: number;
+  band: SubjectRetentionReadinessBand;
+  retentionDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceRetentionBand = 'fragile' | 'thin' | 'elevated' | 'retention';
+
+export interface NationalWorkforceRetentionIndex {
+  turn: number;
+  retentionIndex: number;
+  band: WorkforceRetentionBand;
+  retentionDrag: number;
   summary: string;
   stewardNote: string;
 }

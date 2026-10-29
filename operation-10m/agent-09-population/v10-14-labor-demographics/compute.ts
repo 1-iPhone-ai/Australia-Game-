@@ -154,6 +154,10 @@ import { computeNationalSynthesisOnboardingCouplingBrief } from './synthesis-onb
 import { computeNationalOnboardingIntegrationOutlook } from './onboarding-integration-outlook';
 import { computeNationalSubjectIntegrationReadinessBrief } from './subject-integration-readiness-brief';
 import { computeNationalWorkforceIntegrationIndex } from './national-workforce-integration-index';
+import { computeNationalIntegrationRetentionCouplingBrief } from './integration-retention-coupling-brief';
+import { computeNationalRetentionCohesionOutlook } from './retention-cohesion-outlook';
+import { computeNationalSubjectRetentionReadinessBrief } from './subject-retention-readiness-brief';
+import { computeNationalWorkforceRetentionIndex } from './national-workforce-retention-index';
 import { applyWageMigrationCouplingToRegions } from './wage-migration-coupling';
 import { laborDemographicsInputHash, sanitizeLaborDemographicsPersisted } from './persistence';
 import { lookupRegionalLaborBaseline } from './catalog/regional-labor-baselines';
@@ -1034,6 +1038,25 @@ export function computeNationalLaborDemographics(
     state.onboardingIntegrationOutlook,
     state.subjectIntegrationReadinessBrief
   );
+  state.integrationRetentionCouplingBrief = computeNationalIntegrationRetentionCouplingBrief(
+    state,
+    state.nationalWorkforceIntegrationIndex
+  );
+  state.retentionCohesionOutlook = computeNationalRetentionCohesionOutlook(
+    state,
+    state.onboardingIntegrationOutlook
+  );
+  state.subjectRetentionReadinessBrief = computeNationalSubjectRetentionReadinessBrief(
+    state,
+    state.subjectIntegrationReadinessBrief,
+    state.nationalWorkforceIntegrationIndex
+  );
+  state.nationalWorkforceRetentionIndex = computeNationalWorkforceRetentionIndex(
+    state,
+    state.integrationRetentionCouplingBrief,
+    state.retentionCohesionOutlook,
+    state.subjectRetentionReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -1828,6 +1851,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceIntegrationIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.integrationRetentionCouplingBrief?.band === 'decoupled' ||
+      state.integrationRetentionCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.integrationRetentionCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.retentionCohesionOutlook?.band === 'ebbing' ||
+      state.retentionCohesionOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.retentionCohesionOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectRetentionReadinessBrief?.band === 'below_retention' ||
+      state.subjectRetentionReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectRetentionReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceRetentionIndex?.band === 'fragile' ||
+      state.nationalWorkforceRetentionIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceRetentionIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);

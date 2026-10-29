@@ -131,7 +131,11 @@ export type LaborGiQueryTopic =
   | 'synthesis_onboarding_coupling'
   | 'onboarding_integration'
   | 'subject_integration_readiness'
-  | 'workforce_integration';
+  | 'workforce_integration'
+  | 'integration_retention_coupling'
+  | 'retention_cohesion'
+  | 'subject_retention_readiness'
+  | 'workforce_retention';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -266,6 +270,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
     return 'subject_integration_readiness';
   }
   if (/\b(workforce integration|integration index labor)/.test(q)) return 'workforce_integration';
+  if (/\b(integration retention|integration-retention coupling)/.test(q)) return 'integration_retention_coupling';
+  if (/\b(retention cohesion|retention pipeline cohesion)/.test(q)) return 'retention_cohesion';
+  if (/\b(subject retention readiness|retention readiness subject)/.test(q)) {
+    return 'subject_retention_readiness';
+  }
+  if (/\b(workforce retention|retention index labor)/.test(q)) return 'workforce_retention';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1308,6 +1318,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Integration band ${state.nationalWorkforceIntegrationIndex?.band ?? 'unknown'}; integration drag ${Math.round(state.nationalWorkforceIntegrationIndex?.integrationDrag ?? 0)}.`,
         inference: state.nationalWorkforceIntegrationIndex?.stewardNote || state.summary,
         projection: 'Workforce integration synthesizes onboarding coupling, onboarding integration, and subject integration.'
+      };
+    case 'integration_retention_coupling':
+      return {
+        topic,
+        headline: state.integrationRetentionCouplingBrief?.summary || 'Integration-retention coupling unavailable.',
+        fact: `Coupling band ${state.integrationRetentionCouplingBrief?.band ?? 'unknown'}; integration drag ${Math.round(state.integrationRetentionCouplingBrief?.integrationDrag ?? 0)}.`,
+        inference: state.integrationRetentionCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce integration with retention levers — wave 37 / O10-205 depth.'
+      };
+    case 'retention_cohesion':
+      return {
+        topic,
+        headline: state.retentionCohesionOutlook?.summary || 'Retention cohesion unavailable.',
+        fact: `Cohesion band ${state.retentionCohesionOutlook?.band ?? 'unknown'}; integration drag ${Math.round(state.retentionCohesionOutlook?.integrationDrag ?? 0)}.`,
+        inference: state.retentionCohesionOutlook?.stewardNote || state.outlook,
+        projection: 'Cohesion blends retention levers with onboarding integration — bounded indices only.'
+      };
+    case 'subject_retention_readiness':
+      return {
+        topic,
+        headline: state.subjectRetentionReadinessBrief?.summary || 'Subject retention readiness unavailable.',
+        fact: `Retention band ${state.subjectRetentionReadinessBrief?.band ?? 'unknown'}; retention drag ${Math.round(state.subjectRetentionReadinessBrief?.retentionDrag ?? 0)}.`,
+        inference: state.subjectRetentionReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject retention readiness gates subject integration against workforce integration for O10-205 wave 37.'
+      };
+    case 'workforce_retention':
+      return {
+        topic,
+        headline: state.nationalWorkforceRetentionIndex?.summary || 'Workforce retention unavailable.',
+        fact: `Retention band ${state.nationalWorkforceRetentionIndex?.band ?? 'unknown'}; retention drag ${Math.round(state.nationalWorkforceRetentionIndex?.retentionDrag ?? 0)}.`,
+        inference: state.nationalWorkforceRetentionIndex?.stewardNote || state.summary,
+        projection: 'Workforce retention synthesizes integration-retention coupling, retention cohesion, and subject retention.'
       };
     default:
       return {
