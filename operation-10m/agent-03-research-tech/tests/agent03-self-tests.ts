@@ -204,6 +204,102 @@ tests.push(
   })
 );
 
+tests.push(
+  test('institution_upgrade_affiliate_at_standing', () => {
+    const inputs = baseInputs({ factionStanding: { csiro_ai_directorate: 40 } });
+    const state = computeResearchProgress(inputs, null);
+    const csiro = state.institutionUpgrades.find(u => u.institutionId === 'csiro_ai_directorate');
+    assert(csiro?.tier === 'affiliate', csiro?.tier);
+  })
+);
+
+tests.push(
+  test('institution_upgrade_partner_with_contract', () => {
+    const inputs = baseInputs({
+      factionStanding: { csiro_ai_directorate: 50 },
+      completedContracts: [{ contractType: 'ai_research_center', regionId: 'ACT' }],
+    });
+    const state = computeResearchProgress(inputs, null);
+    const csiro = state.institutionUpgrades.find(u => u.institutionId === 'csiro_ai_directorate');
+    assert(csiro?.tier === 'partner', csiro?.tier);
+  })
+);
+
+tests.push(
+  test('institution_upgrade_monotonic_on_standing_drop', () => {
+    const rich = baseInputs({
+      factionStanding: { csiro_ai_directorate: 55 },
+      completedContracts: [{ contractType: 'ai_research_center', regionId: 'ACT' }],
+    });
+    const s1 = computeResearchProgress(rich, null);
+    const s2 = computeResearchProgress(
+      baseInputs({ factionStanding: { csiro_ai_directorate: 10 } }),
+      s1
+    );
+    const before = s1.institutionUpgrades.find(u => u.institutionId === 'csiro_ai_directorate')!;
+    const after = s2.institutionUpgrades.find(u => u.institutionId === 'csiro_ai_directorate')!;
+    assert(
+      after.tier === before.tier || before.tier === 'dormant',
+      `${before.tier} -> ${after.tier}`
+    );
+  })
+);
+
+tests.push(
+  test('late_game_cascade_activates_on_tier4', () => {
+    const inputs = baseInputs({
+      turn: 120,
+      projects: [
+        { id: 'c1', regionId: 'ACT', projectType: 'research_campus', status: 'active' },
+        { id: 's1', regionId: 'NSW', projectType: 'subsea_cable_hub', status: 'active' },
+        { id: 'd1', regionId: 'ACT', projectType: 'data_center', status: 'active' },
+      ],
+      capabilities: {
+        ai_compute_infrastructure: { maturity: 'nationally_integrated', activeRegionIds: ['ACT', 'NSW'] },
+      },
+      megaprojects: {
+        continental_digital_backbone: { completedStages: 3, status: 'under_construction' },
+      },
+      factionStanding: { csiro_ai_directorate: 60 },
+    });
+    const state = computeResearchProgress(inputs, null);
+    assert(state.lateGameDiffusion?.active === true, 'cascade inactive');
+    assert((state.lateGameDiffusion?.tier4UnlockCount ?? 0) >= 1);
+    const nt = state.diffusion.find(d => d.regionId === 'NT');
+    assert(nt != null && (nt.cascadeBoost ?? 0) >= 0);
+  })
+);
+
+tests.push(
+  test('national_institution_boosts_readiness_over_affiliate', () => {
+    const affiliate = computeResearchProgress(
+      baseInputs({ factionStanding: { csiro_ai_directorate: 40 } }),
+      null
+    );
+    const endgame = computeResearchProgress(
+      baseInputs({
+        turn: 120,
+        projects: [
+          { id: 'c1', regionId: 'ACT', projectType: 'research_campus', status: 'active' },
+          { id: 's1', regionId: 'NSW', projectType: 'subsea_cable_hub', status: 'active' },
+          { id: 'd1', regionId: 'ACT', projectType: 'data_center', status: 'active' },
+        ],
+        capabilities: {
+          ai_compute_infrastructure: { maturity: 'nationally_integrated', activeRegionIds: ['ACT'] },
+        },
+        megaprojects: { continental_digital_backbone: { completedStages: 3, status: 'active' } },
+        factionStanding: { csiro_ai_directorate: 75 },
+        completedContracts: [{ contractType: 'ai_research_center', regionId: 'ACT' }],
+      }),
+      null
+    );
+    const aff = affiliate.institutionUpgrades.find(u => u.institutionId === 'csiro_ai_directorate');
+    const nat = endgame.institutionUpgrades.find(u => u.institutionId === 'csiro_ai_directorate');
+    assert((nat?.readinessMultiplier ?? 0) > (aff?.readinessMultiplier ?? 0));
+    assert(endgame.readinessByBranch.digital_frontier >= affiliate.readinessByBranch.digital_frontier);
+  })
+);
+
 const passed = tests.filter(t => t.passed).length;
 const failed = tests.filter(t => !t.passed);
 

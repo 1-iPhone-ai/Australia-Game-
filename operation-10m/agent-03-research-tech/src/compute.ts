@@ -1,9 +1,12 @@
 import { RESEARCH_BRANCHES, RESEARCH_BRANCH_NODES, RESEARCH_NODE_BY_ID } from './branches.ts';
 import { computeRegionalDiffusion, pickLeadingResearchRegion } from './diffusion.ts';
-import { RESEARCH_INSTITUTIONS } from './institutions.ts';
+import { computeInstitutionUpgrades, institutionUpgradesById, INSTITUTION_UPGRADE_TIER_RANK } from './institution-upgrades.ts';
+import { applyLateGameDiffusionCascade } from './late-game-diffusion.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
+import { RESEARCH_INSTITUTIONS } from './institutions.ts';
 import type {
+  InstitutionUpgradeState,
   ResearchBranchId,
   ResearchProgressInputs,
   ResearchProgressState,
@@ -46,7 +49,12 @@ export function researchInputHash(inputs: ResearchProgressInputs): string {
   return h.toString(36);
 }
 
-function computeBranchReadiness(inputs: ResearchProgressInputs, branchId: ResearchBranchId): number {
+function computeBranchReadiness(
+  inputs: ResearchProgressInputs,
+  branchId: ResearchBranchId,
+  institutionUpgrades: InstitutionUpgradeState[]
+): number {
+  const upgrades = institutionUpgradesById(institutionUpgrades);
   const branch = RESEARCH_BRANCHES.find(b => b.id === branchId);
   if (!branch) return 0;
 
@@ -69,7 +77,10 @@ function computeBranchReadiness(inputs: ResearchProgressInputs, branchId: Resear
   for (const inst of RESEARCH_INSTITUTIONS) {
     if (!inst.supportedBranches.includes(branchId)) continue;
     const standing = inputs.factionStanding[inst.id as keyof typeof inputs.factionStanding] ?? 0;
-    if (standing >= inst.minStanding) score += inst.readinessBonus;
+    const upgrade = upgrades[inst.id];
+    if (standing >= inst.minStanding) {
+      score += inst.readinessBonus * (upgrade?.readinessMultiplier ?? 1);
+    }
   }
 
   return Math.round(Math.min(100, score));
@@ -110,6 +121,8 @@ export function createEmptyResearchProgressState(turn = 0): ResearchProgressStat
     activeHookIds: [],
     leadingResearchRegion: null,
     inputHash: '',
+    institutionUpgrades: [],
+    lateGameDiffusion: null,
   };
 }
 
@@ -127,6 +140,8 @@ export function sanitizeResearchProgressPersisted(raw: unknown): ResearchProgres
     activeHookIds: Array.isArray(o.activeHookIds) ? o.activeHookIds.map(String) : [],
     leadingResearchRegion: o.leadingResearchRegion ?? null,
     inputHash: typeof o.inputHash === 'string' ? o.inputHash : '',
+    institutionUpgrades: Array.isArray(o.institutionUpgrades) ? o.institutionUpgrades : [],
+    lateGameDiffusion: o.lateGameDiffusion ?? null,
   };
 }
 
@@ -162,11 +177,23 @@ export function computeResearchProgress(
   const unlockedNodes = [...unlockedMap.values()].sort((a, b) =>
     a.unlockedTurn !== b.unlockedTurn ? a.unlockedTurn - b.unlockedTurn : a.nodeId.localeCompare(b.nodeId)
   );
-  const diffusion = computeRegionalDiffusion(inputs, unlockedNodes);
+
+  const institutionUpgrades = mergeMonotonicInstitutionUpgrades(
+    computeInstitutionUpgrades(inputs, unlockedNodes),
+    previous?.institutionUpgrades ?? []
+  );
+
+  const baseDiffusion = computeRegionalDiffusion(inputs, unlockedNodes, institutionUpgrades);
+  const { cells: diffusion, report: lateGameDiffusion } = applyLateGameDiffusionCascade(
+    baseDiffusion,
+    unlockedNodes,
+    institutionUpgrades
+  );
+
   const hooks = resolveActiveStrategyHooks(new Set(unlockedNodes.map(u => u.nodeId)));
 
   const readinessByBranch = Object.fromEntries(
-    RESEARCH_BRANCHES.map(b => [b.id, computeBranchReadiness(inputs, b.id)])
+    RESEARCH_BRANCHES.map(b => [b.id, computeBranchReadiness(inputs, b.id, institutionUpgrades)])
   ) as Record<ResearchBranchId, number>;
 
   return {
@@ -178,7 +205,21 @@ export function computeResearchProgress(
     activeHookIds: hooks.map(h => h.id),
     leadingResearchRegion: pickLeadingResearchRegion(diffusion),
     inputHash: researchInputHash(inputs),
+    institutionUpgrades,
+    lateGameDiffusion,
   };
+}
+
+function mergeMonotonicInstitutionUpgrades(
+  next: InstitutionUpgradeState[],
+  prev: InstitutionUpgradeState[]
+): InstitutionUpgradeState[] {
+  const prevById = institutionUpgradesById(prev);
+  return next.map(u => {
+    const old = prevById[u.institutionId];
+    if (!old) return u;
+    return INSTITUTION_UPGRADE_TIER_RANK[old.tier] > INSTITUTION_UPGRADE_TIER_RANK[u.tier] ? old : u;
+  });
 }
 
 /** Integration adapter: map V10.5 innovation snapshot fields into Agent 03 inputs (pure). */

@@ -1,6 +1,7 @@
 import { V94_REGION_CODES } from './v94-ids.ts';
 import type { V94AustralianRegionCode } from './v94-ids.ts';
-import type { RegionalDiffusionCell, ResearchProgressInputs, UnlockedResearchNode } from './types.ts';
+import type { InstitutionUpgradeState, RegionalDiffusionCell, ResearchProgressInputs, UnlockedResearchNode } from './types.ts';
+import { institutionUpgradesById } from './institution-upgrades.ts';
 import { RESEARCH_BRANCH_BY_ID, RESEARCH_NODE_BY_ID } from './branches.ts';
 import { INSTITUTION_DIFFUSION_NEIGHBORS, RESEARCH_INSTITUTIONS } from './institutions.ts';
 
@@ -23,18 +24,21 @@ function diffusionLevel(score: number): RegionalDiffusionCell['level'] {
 
 function institutionDiffusionBoost(
   inputs: ResearchProgressInputs,
-  regionId: V94AustralianRegionCode
+  regionId: V94AustralianRegionCode,
+  upgrades: Record<string, InstitutionUpgradeState>
 ): number {
   let boost = 0;
   for (const inst of RESEARCH_INSTITUTIONS) {
+    const upgrade = upgrades[inst.id];
     const standing = inputs.factionStanding[inst.id as keyof typeof inputs.factionStanding];
     if (standing == null || standing < inst.minStanding) continue;
+    const mult = upgrade?.diffusionMultiplier ?? 1;
     const inHome = inst.homeRegions.includes(regionId);
     const neighborOfHome = inst.homeRegions.some(h =>
       (INSTITUTION_DIFFUSION_NEIGHBORS[h] || []).includes(regionId)
     );
-    if (inHome) boost += inst.readinessBonus * 0.008;
-    else if (neighborOfHome) boost += inst.readinessBonus * 0.004;
+    if (inHome) boost += inst.readinessBonus * 0.008 * mult;
+    else if (neighborOfHome) boost += inst.readinessBonus * 0.004 * mult;
   }
   return boost;
 }
@@ -60,9 +64,12 @@ function sectorAlignmentBoost(
  */
 export function computeRegionalDiffusion(
   inputs: ResearchProgressInputs,
-  unlocked: UnlockedResearchNode[]
+  unlocked: UnlockedResearchNode[],
+  institutionUpgrades: InstitutionUpgradeState[] = []
 ): RegionalDiffusionCell[] {
+  const upgrades = institutionUpgradesById(institutionUpgrades);
   const scores: Record<string, number> = Object.fromEntries(V94_REGION_CODES.map(c => [c, 0]));
+  const institutionBoost: Record<string, number> = Object.fromEntries(V94_REGION_CODES.map(c => [c, 0]));
   const sources: Record<string, Set<string>> = Object.fromEntries(
     V94_REGION_CODES.map(c => [c, new Set<string>()])
   );
@@ -79,7 +86,9 @@ export function computeRegionalDiffusion(
       if (u.anchorRegionId === code) add += seed * 0.45;
       else if (anchors.includes(code)) add += seed * 0.25;
       add += sectorAlignmentBoost(inputs, code, node.branchId);
-      add += institutionDiffusionBoost(inputs, code);
+      const instAdd = institutionDiffusionBoost(inputs, code, upgrades);
+      add += instAdd;
+      institutionBoost[code] = (institutionBoost[code] ?? 0) + instAdd;
       if (add > 0) {
         scores[code] = Math.min(DIFFUSION_CAP, (scores[code] ?? 0) + add);
         sources[code]?.add(u.nodeId);
@@ -92,6 +101,8 @@ export function computeRegionalDiffusion(
     score: Math.round((scores[regionId] ?? 0) * 1000) / 1000,
     level: diffusionLevel(scores[regionId] ?? 0),
     sourceNodeIds: [...(sources[regionId] ?? [])],
+    institutionBoost: Math.round((institutionBoost[regionId] ?? 0) * 1000) / 1000,
+    cascadeBoost: 0,
   }));
 }
 

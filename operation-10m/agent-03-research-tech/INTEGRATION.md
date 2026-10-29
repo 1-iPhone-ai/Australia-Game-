@@ -56,6 +56,15 @@ Use `buildResearchProgressInputs()` at assembly boundary.
 | Regional LAB / map overlays | `diffusion[]` (`level`, `score`, `sourceNodeIds`) |
 | Branch panel | `readinessByBranch`, `unlockedNodes` |
 | Copilot / GI | Hook `targets.*` literals matching V9.4 catalogs |
+| Institution panel (slice 2) | `institutionUpgrades[]` (`tier`, multipliers, `reasons`) |
+| Endgame map cascade (slice 2) | `lateGameDiffusion` (`active`, `pulses`, `nationalPenetration`) |
+
+### Slice 2 — institution upgrades + late-game diffusion
+
+- **`institutionUpgrades`**: tiers `dormant → affiliate → partner → strategic → national_integration` from faction standing, preferred projects/contracts, and unlocked branch tiers. Tiers are **monotonic** across turns (persisted state merged on recompute).
+- **`lateGameDiffusion`**: neighbor-graph cascade from integrated regions when **any tier-4 branch node** is unlocked and/or an institution reaches **national_integration**. Adds bounded `cascadeBoost` on `diffusion[]` (still capped at 0.85).
+
+Pure helpers: `computeInstitutionUpgrades`, `applyLateGameDiffusionCascade` (also invoked inside `computeResearchProgress`).
 
 ### Feature flag (proposed)
 
@@ -82,7 +91,9 @@ Exit code 0 required in CI for Operation 10M worker gates.
 | `src/branches.ts` | 6 branches × 4 tiers (24 nodes) |
 | `src/institutions.ts` | Research institutions + diffusion neighbors |
 | `src/prerequisites.ts` | DAG evaluation |
-| `src/diffusion.ts` | Regional diffusion grid |
+| `src/diffusion.ts` | Regional diffusion grid (+ institution boost fields) |
+| `src/institution-upgrades.ts` | Institution tier evaluation (slice 2) |
+| `src/late-game-diffusion.ts` | Endgame cascade (slice 2) |
 | `src/strategy-hooks.ts` | 24 late/mid/endgame hooks |
 | `src/compute.ts` | Turn recompute + input hash |
 | `tests/agent03-self-tests.ts` | Self-tests + contract checks |

@@ -71,6 +71,38 @@ export interface ResearchInstitutionDefinition {
   description: string;
 }
 
+export type InstitutionUpgradeTier =
+  | 'dormant'
+  | 'affiliate'
+  | 'partner'
+  | 'strategic'
+  | 'national_integration';
+
+export interface InstitutionUpgradeState {
+  institutionId: string;
+  tier: InstitutionUpgradeTier;
+  readinessMultiplier: number;
+  diffusionMultiplier: number;
+  assessedTurn: number;
+  reasons: string[];
+}
+
+export interface LateGameDiffusionPulse {
+  fromRegionId: V94AustralianRegionCode;
+  toRegionId: V94AustralianRegionCode;
+  hops: number;
+  strength: number;
+}
+
+export interface LateGameDiffusionReport {
+  active: boolean;
+  trigger: 'tier4_unlock' | 'national_institution' | 'both' | 'none';
+  tier4UnlockCount: number;
+  nationalInstitutionCount: number;
+  pulses: LateGameDiffusionPulse[];
+  nationalPenetration: number;
+}
+
 export interface ResearchProgressInputs {
   turn: number;
   regions: Array<{
@@ -98,6 +130,8 @@ export interface RegionalDiffusionCell {
   score: number;
   level: 'latent' | 'aware' | 'adopting' | 'integrated';
   sourceNodeIds: string[];
+  institutionBoost?: number;
+  cascadeBoost?: number;
 }
 
 export interface UnlockedResearchNode {
@@ -116,6 +150,9 @@ export interface ResearchProgressState {
   activeHookIds: string[];
   leadingResearchRegion: V94AustralianRegionCode | null;
   inputHash: string;
+  /** Slice 2: institution upgrade tiers (monotonic per institution). */
+  institutionUpgrades: InstitutionUpgradeState[];
+  lateGameDiffusion: LateGameDiffusionReport | null;
 }
 
 export interface StrategyHookDefinition {
