@@ -285,8 +285,21 @@ export interface ResearchScaleWaveReport {
   dominantCapabilityCluster: V94EmergingCapabilityId | null;
 }
 
+export type ResearchProgramEmphasis = 'applied' | 'fundamental' | 'commercial' | 'sovereign';
+
+export interface ResearchBranchEmphasisState {
+  branchId: ResearchBranchId;
+  emphasis: ResearchProgramEmphasis;
+  setTurn: number;
+}
+
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v2' as const;
+
+export type ResearchProgressSchemaVersion = typeof RESEARCH_PROGRESS_SCHEMA_VERSION | 'op10m-agent03-v1';
+
 export interface ResearchProgressState {
-  schemaVersion: 'op10m-agent03-v1';
+  schemaVersion: ResearchProgressSchemaVersion;
+  revision: number;
   turn: number;
   unlockedNodes: UnlockedResearchNode[];
   diffusion: RegionalDiffusionCell[];
@@ -294,10 +307,11 @@ export interface ResearchProgressState {
   activeHookIds: string[];
   leadingResearchRegion: V94AustralianRegionCode | null;
   inputHash: string;
-  /** Slice 2: institution upgrade tiers (monotonic per institution). */
   institutionUpgrades: InstitutionUpgradeState[];
   lateGameDiffusion: LateGameDiffusionReport | null;
   scaleWave: ResearchScaleWaveReport | null;
+  unlockSeq: number;
+  branchEmphasis?: ResearchBranchEmphasisState[];
 }
 
 export interface StrategyHookDefinition {
@@ -1887,6 +1901,279 @@ export function scaleWaveDiffusionBonus(report: ResearchScaleWaveReport | null):
   return Math.min(0.06, report.tier5UnlockCount * 0.008 + report.technologyTransferLinks.length * 0.003);
 }
 
+// --- bundled from src/save-migration.ts ---
+export function defaultBranchEmphasis(): ResearchBranchEmphasisState[] {
+  return RESEARCH_BRANCHES.map(b => ({
+    branchId: b.id,
+    emphasis: (
+      {
+        sovereign_research: 'sovereign',
+        industrial_transformation: 'commercial',
+        digital_frontier: 'applied',
+      } as Partial<Record<ResearchBranchId, ResearchProgramEmphasis>>
+    )[b.id] ?? 'fundamental',
+    setTurn: 0,
+  }));
+}
+
+/** Fields written to disk; derived analytics recomputed on load/turn. */
+export interface ResearchProgressPersistedCore {
+  schemaVersion: typeof RESEARCH_PROGRESS_SCHEMA_VERSION;
+  revision: number;
+  turn: number;
+  unlockedNodes: UnlockedResearchNode[];
+  institutionUpgrades: InstitutionUpgradeState[];
+  leadingResearchRegion: ResearchProgressState['leadingResearchRegion'];
+  unlockSeq: number;
+  branchEmphasis: ResearchBranchEmphasisState[];
+}
+
+const LEGACY_V1 = 'op10m-agent03-v1' as const;
+
+export function emptyResearchProgressCore(turn = 0): ResearchProgressPersistedCore {
+  return emptyCore(turn);
+}
+
+function emptyCore(turn = 0): ResearchProgressPersistedCore {
+  return {
+    schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+    revision: 0,
+    turn,
+    unlockedNodes: [],
+    institutionUpgrades: [],
+    leadingResearchRegion: null,
+    unlockSeq: 0,
+    branchEmphasis: defaultBranchEmphasis(),
+  };
+}
+
+function sanitizeUnlockedNodes(raw: unknown): UnlockedResearchNode[] {
+  if (!Array.isArray(raw)) return [];
+  const out: UnlockedResearchNode[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as UnlockedResearchNode;
+    if (typeof o.nodeId !== 'string' || !RESEARCH_NODE_BY_ID[o.nodeId]) continue;
+    const def = RESEARCH_NODE_BY_ID[o.nodeId];
+    out.push({
+      nodeId: o.nodeId,
+      branchId: def.branchId,
+      unlockedTurn: Number(o.unlockedTurn) || 0,
+      anchorRegionId: o.anchorRegionId ?? null,
+    });
+  }
+  return out.sort((a, b) => a.unlockedTurn - b.unlockedTurn || a.nodeId.localeCompare(b.nodeId));
+}
+
+function sanitizeInstitutionUpgrades(raw: unknown): InstitutionUpgradeState[] {
+  if (!Array.isArray(raw)) return [];
+  const tiers = new Set<InstitutionUpgradeTier>([
+    'dormant',
+    'affiliate',
+    'partner',
+    'strategic',
+    'national_integration',
+  ]);
+  return raw
+    .filter(x => x && typeof x === 'object' && typeof (x as InstitutionUpgradeState).institutionId === 'string')
+    .map(x => {
+      const o = x as InstitutionUpgradeState;
+      const tier = tiers.has(o.tier) ? o.tier : 'dormant';
+      return {
+        institutionId: String(o.institutionId),
+        tier,
+        readinessMultiplier: Number(o.readinessMultiplier) || 0,
+        diffusionMultiplier: Number(o.diffusionMultiplier) || 0,
+        assessedTurn: Number(o.assessedTurn) || 0,
+        reasons: Array.isArray(o.reasons) ? o.reasons.map(String) : [],
+      };
+    });
+}
+
+function sanitizeBranchEmphasis(raw: unknown): ResearchBranchEmphasisState[] {
+  const defaults = defaultBranchEmphasis();
+  if (!Array.isArray(raw)) return defaults;
+  const byId = Object.fromEntries(defaults.map(d => [d.branchId, d]));
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as ResearchBranchEmphasisState;
+    if (!byId[o.branchId]) continue;
+    const emph = o.emphasis;
+    if (emph === 'applied' || emph === 'fundamental' || emph === 'commercial' || emph === 'sovereign') {
+      byId[o.branchId] = { branchId: o.branchId, emphasis: emph, setTurn: Number(o.setTurn) || 0 };
+    }
+  }
+  return RESEARCH_BRANCHES.map(b => byId[b.id]);
+}
+
+function mergeMonotonicUpgrades(
+  incoming: InstitutionUpgradeState[],
+  previous: InstitutionUpgradeState[]
+): InstitutionUpgradeState[] {
+  const prevById = Object.fromEntries(previous.map(u => [u.institutionId, u]));
+  return incoming.map(u => {
+    const old = prevById[u.institutionId];
+    if (!old) return u;
+    return INSTITUTION_UPGRADE_TIER_RANK[old.tier] > INSTITUTION_UPGRADE_TIER_RANK[u.tier] ? old : u;
+  });
+}
+
+function computeUnlockSeq(nodes: UnlockedResearchNode[]): number {
+  return nodes.length;
+}
+
+export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersistedCore | null {
+  if (raw == null) return null;
+  if (typeof raw !== 'object') return null;
+
+  const o = raw as Record<string, unknown>;
+  const ver = o.schemaVersion as ResearchProgressSchemaVersion | undefined;
+
+  if (ver === RESEARCH_PROGRESS_SCHEMA_VERSION) {
+    const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
+    return {
+      schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+      revision: Number(o.revision) || 0,
+      turn: Number(o.turn) || 0,
+      unlockedNodes: nodes,
+      institutionUpgrades: sanitizeInstitutionUpgrades(o.institutionUpgrades),
+      leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
+      unlockSeq: Number(o.unlockSeq) || computeUnlockSeq(nodes),
+      branchEmphasis: sanitizeBranchEmphasis(o.branchEmphasis),
+    };
+  }
+
+  if (ver === LEGACY_V1) {
+    const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
+    return {
+      schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+      revision: 1,
+      turn: Number(o.turn) || 0,
+      unlockedNodes: nodes,
+      institutionUpgrades: sanitizeInstitutionUpgrades(o.institutionUpgrades),
+      leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
+      unlockSeq: computeUnlockSeq(nodes),
+      branchEmphasis: defaultBranchEmphasis(),
+    };
+  }
+
+  if (Array.isArray(raw)) {
+    const nodes = sanitizeUnlockedNodes(raw);
+    return { ...emptyCore(0), revision: 1, unlockedNodes: nodes, unlockSeq: computeUnlockSeq(nodes) };
+  }
+
+  return null;
+}
+
+export function extractPersistedCore(state: ResearchProgressState): ResearchProgressPersistedCore {
+  return {
+    schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+    revision: state.revision ?? 0,
+    turn: state.turn,
+    unlockedNodes: state.unlockedNodes,
+    institutionUpgrades: state.institutionUpgrades,
+    leadingResearchRegion: state.leadingResearchRegion,
+    unlockSeq: state.unlockSeq ?? computeUnlockSeq(state.unlockedNodes),
+    branchEmphasis: state.branchEmphasis ?? defaultBranchEmphasis(),
+  };
+}
+
+export function prepareResearchProgressForSave(state: ResearchProgressState): ResearchProgressPersistedCore {
+  return extractPersistedCore(state);
+}
+
+export function hydrateResearchProgressCore(core: ResearchProgressPersistedCore | null): ResearchProgressState | null {
+  if (!core) return null;
+  const readinessByBranch = Object.fromEntries(RESEARCH_BRANCHES.map(b => [b.id, 0])) as Record<
+    ResearchBranchId,
+    number
+  >;
+  return {
+    schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+    revision: core.revision,
+    turn: core.turn,
+    unlockedNodes: core.unlockedNodes,
+    institutionUpgrades: core.institutionUpgrades,
+    leadingResearchRegion: core.leadingResearchRegion,
+    unlockSeq: core.unlockSeq,
+    branchEmphasis: core.branchEmphasis,
+    diffusion: V94_REGION_CODES.map(regionId => ({
+      regionId,
+      score: 0,
+      level: 'latent' as const,
+      sourceNodeIds: [],
+    })),
+    readinessByBranch,
+    activeHookIds: [],
+    inputHash: '',
+    lateGameDiffusion: null,
+    scaleWave: null,
+  };
+}
+
+export function mergeComputedResearchState(
+  core: ResearchProgressPersistedCore,
+  computed: ResearchProgressState
+): ResearchProgressState {
+  const mergedUpgrades = mergeMonotonicUpgrades(computed.institutionUpgrades, core.institutionUpgrades);
+  const unlockSet = new Map<string, UnlockedResearchNode>();
+  core.unlockedNodes.forEach(u => unlockSet.set(u.nodeId, u));
+  computed.unlockedNodes.forEach(u => {
+    if (!unlockSet.has(u.nodeId)) unlockSet.set(u.nodeId, u);
+  });
+  const unlockedNodes = [...unlockSet.values()].sort(
+    (a, b) => a.unlockedTurn - b.unlockedTurn || a.nodeId.localeCompare(b.nodeId)
+  );
+  const newUnlocks = unlockedNodes.length - core.unlockedNodes.length;
+  return {
+    ...computed,
+    schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+    revision: core.revision + (newUnlocks > 0 ? 1 : 0),
+    turn: computed.turn,
+    unlockedNodes,
+    institutionUpgrades: mergedUpgrades,
+    unlockSeq: Math.max(core.unlockSeq, unlockedNodes.length),
+    branchEmphasis: core.branchEmphasis,
+  };
+}
+
+export function sanitizeResearchProgressPersisted(raw: unknown): ResearchProgressState | null {
+  const core = migrateResearchProgressSave(raw);
+  return hydrateResearchProgressCore(core);
+}
+
+export function assertResearchProgressSaveIntegrity(state: ResearchProgressState): string[] {
+  const issues: string[] = [];
+  if (state.schemaVersion !== RESEARCH_PROGRESS_SCHEMA_VERSION && state.schemaVersion !== LEGACY_V1) {
+    issues.push(`unexpected schema ${state.schemaVersion}`);
+  }
+  if ((state.unlockSeq ?? 0) < state.unlockedNodes.length) {
+    issues.push('unlockSeq behind unlockedNodes length');
+  }
+  for (const id of state.unlockedNodes.map(u => u.nodeId)) {
+    if (!RESEARCH_NODE_BY_ID[id]) issues.push(`unknown node ${id}`);
+  }
+  const readinessKeys = Object.keys(state.readinessByBranch ?? {});
+  if (readinessKeys.length && readinessKeys.length !== RESEARCH_BRANCHES.length) {
+    issues.push('readinessByBranch incomplete');
+  }
+  for (const cell of state.diffusion ?? []) {
+    if (!V94_REGION_CODES.includes(cell.regionId)) issues.push(`bad region ${cell.regionId}`);
+  }
+  return issues;
+}
+
+export function applyBranchEmphasisReadinessBonus(
+  readinessByBranch: Record<ResearchBranchId, number>,
+  emphasis: ResearchBranchEmphasisState[]
+): Record<ResearchBranchId, number> {
+  const out = { ...readinessByBranch };
+  for (const e of emphasis) {
+    out[e.branchId] = Math.min(100, (out[e.branchId] ?? 0) + (e.emphasis === 'sovereign' ? 2 : 1));
+  }
+  return out;
+}
+
 // --- bundled from src/compute.ts ---
 export function researchInputHash(inputs: ResearchProgressInputs): string {
   let h = 2166136261 >>> 0;
@@ -1982,7 +2269,8 @@ export function createEmptyResearchProgressState(turn = 0): ResearchProgressStat
     number
   >;
   return {
-    schemaVersion: 'op10m-agent03-v1',
+    schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+    revision: 0,
     turn,
     unlockedNodes: [],
     diffusion: V94_REGION_CODES.map(regionId => ({
@@ -1998,37 +2286,16 @@ export function createEmptyResearchProgressState(turn = 0): ResearchProgressStat
     institutionUpgrades: [],
     lateGameDiffusion: null,
     scaleWave: null,
+    unlockSeq: 0,
+    branchEmphasis: defaultBranchEmphasis(),
   };
 }
 
-/** Safe hydrate from save JSON at assembly boundary. */
-export function sanitizeResearchProgressPersisted(raw: unknown): ResearchProgressState | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const o = raw as ResearchProgressState;
-  if (o.schemaVersion !== 'op10m-agent03-v1') return null;
-  return {
-    schemaVersion: 'op10m-agent03-v1',
-    turn: Number(o.turn) || 0,
-    unlockedNodes: Array.isArray(o.unlockedNodes) ? o.unlockedNodes : [],
-    diffusion: Array.isArray(o.diffusion) ? o.diffusion : createEmptyResearchProgressState().diffusion,
-    readinessByBranch: o.readinessByBranch ?? createEmptyResearchProgressState().readinessByBranch,
-    activeHookIds: Array.isArray(o.activeHookIds) ? o.activeHookIds.map(String) : [],
-    leadingResearchRegion: o.leadingResearchRegion ?? null,
-    inputHash: typeof o.inputHash === 'string' ? o.inputHash : '',
-    institutionUpgrades: Array.isArray(o.institutionUpgrades) ? o.institutionUpgrades : [],
-    lateGameDiffusion: o.lateGameDiffusion ?? null,
-    scaleWave: o.scaleWave ?? null,
-  };
-}
-
-/**
- * Recompute research branch unlocks, diffusion, and strategy hooks from game snapshots.
- * Idempotent for identical inputs + prior unlock list (monotonic unlocks).
- */
 export function computeResearchProgress(
   inputs: ResearchProgressInputs,
   previous: ResearchProgressState | null
 ): ResearchProgressState {
+  const coreBase = previous ? extractPersistedCore(previous) : emptyResearchProgressCore(inputs.turn);
   const unlockedMap = new Map<string, UnlockedResearchNode>();
   (previous?.unlockedNodes ?? []).forEach(u => unlockedMap.set(u.nodeId, u));
 
@@ -2079,9 +2346,11 @@ export function computeResearchProgress(
     RESEARCH_BRANCHES.map(b => [b.id, computeBranchReadiness(inputs, b.id, institutionUpgrades)])
   ) as Record<ResearchBranchId, number>;
   readinessByBranch = applyScaleWaveReadinessBonus(readinessByBranch, scaleWave);
+  readinessByBranch = applyBranchEmphasisReadinessBonus(readinessByBranch, coreBase.branchEmphasis);
 
-  return {
-    schemaVersion: 'op10m-agent03-v1',
+  const computed: ResearchProgressState = {
+    schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+    revision: coreBase.revision,
     turn: inputs.turn,
     unlockedNodes,
     diffusion,
@@ -2092,7 +2361,19 @@ export function computeResearchProgress(
     institutionUpgrades,
     lateGameDiffusion,
     scaleWave,
+    unlockSeq: coreBase.unlockSeq,
+    branchEmphasis: coreBase.branchEmphasis,
   };
+
+  return mergeComputedResearchState(coreBase, computed);
+}
+
+export function computeResearchProgressFromSave(
+  inputs: ResearchProgressInputs,
+  persistedRaw: unknown
+): ResearchProgressState {
+  const hydrated = sanitizeResearchProgressPersisted(persistedRaw);
+  return computeResearchProgress(inputs, hydrated);
 }
 
 function mergeMonotonicInstitutionUpgrades(
@@ -2164,6 +2445,7 @@ export function runAgent03ResearchTechSelfTests(): {
   const state = computeResearchProgress(inputs, createEmptyResearchProgressState());
   push('agent03_chunk_04', state.unlockedNodes.some(u => u.nodeId === 'df_t1_campus_foundation'));
   push('agent03_chunk_05', (state.institutionUpgrades?.length ?? 0) >= 6, String(state.institutionUpgrades?.length));
+  push('agent03_chunk_06', OP10M_AGENT03_MODULE_META.schemaVersion === 'op10m-agent03-v2');
 
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
@@ -2171,7 +2453,10 @@ export function runAgent03ResearchTechSelfTests(): {
 
 export const OP10M_AGENT03_MODULE_META = {
   moduleId: 'agent-03-research-tech',
-  schemaVersion: 'op10m-agent03-v1',
+  schemaVersion: 'op10m-agent03-v2',
+  saveFormatVersion: 2,
+  touchesSaveFormat: true,
+  proposedGameStateField: 'researchProgress',
   integrationDoc: 'operation-10m/agent-03-research-tech/INTEGRATION.md',
   slot: 'post-v10z',
 } as const;

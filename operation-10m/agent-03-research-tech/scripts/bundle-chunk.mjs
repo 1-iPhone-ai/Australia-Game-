@@ -23,6 +23,7 @@ const SOURCE_FILES = [
   "operation-10m/agent-03-research-tech/src/diffusion.ts",
   "operation-10m/agent-03-research-tech/src/strategy-hooks.ts",
   "operation-10m/agent-03-research-tech/src/scale-wave.ts",
+  "operation-10m/agent-03-research-tech/src/save-migration.ts",
   "operation-10m/agent-03-research-tech/src/compute.ts",
 ];
 
@@ -72,6 +73,7 @@ export function runAgent03ResearchTechSelfTests(): {
   const state = computeResearchProgress(inputs, createEmptyResearchProgressState());
   push('agent03_chunk_04', state.unlockedNodes.some(u => u.nodeId === 'df_t1_campus_foundation'));
   push('agent03_chunk_05', (state.institutionUpgrades?.length ?? 0) >= 6, String(state.institutionUpgrades?.length));
+  push('agent03_chunk_06', OP10M_AGENT03_MODULE_META.schemaVersion === 'op10m-agent03-v2');
 
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
@@ -79,7 +81,10 @@ export function runAgent03ResearchTechSelfTests(): {
 
 export const OP10M_AGENT03_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent03-v1',
+  schemaVersion: 'op10m-agent03-v2',
+  saveFormatVersion: 2,
+  touchesSaveFormat: true,
+  proposedGameStateField: 'researchProgress',
   integrationDoc: 'operation-10m/agent-03-research-tech/INTEGRATION.md',
   slot: 'post-v10z',
 } as const;

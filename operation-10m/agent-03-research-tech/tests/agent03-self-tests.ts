@@ -19,6 +19,11 @@ import {
   createEmptyResearchProgressState,
   detectPrerequisiteCycle,
   evaluateNodePrerequisites,
+  prepareResearchProgressForSave,
+  migrateResearchProgressSave,
+  assertResearchProgressSaveIntegrity,
+  RESEARCH_PROGRESS_SCHEMA_VERSION,
+  computeResearchProgressFromSave,
   type Agent03SelfTestResult,
   type ResearchProgressInputs,
 } from '../src/index.ts';
@@ -301,6 +306,53 @@ tests.push(
     const nat = endgame.institutionUpgrades.find(u => u.institutionId === 'csiro_ai_directorate');
     assert((nat?.readinessMultiplier ?? 0) > (aff?.readinessMultiplier ?? 0));
     assert(endgame.readinessByBranch.digital_frontier >= affiliate.readinessByBranch.digital_frontier);
+  })
+);
+
+tests.push(
+  test('save_v1_migrates_to_v2_core', () => {
+    const legacy = {
+      schemaVersion: 'op10m-agent03-v1',
+      turn: 42,
+      unlockedNodes: [
+        { nodeId: 'df_t1_campus_foundation', branchId: 'digital_frontier', unlockedTurn: 5, anchorRegionId: 'ACT' },
+      ],
+      institutionUpgrades: [],
+      diffusion: [{ regionId: 'ACT', score: 0.5, level: 'adopting', sourceNodeIds: ['x'] }],
+      readinessByBranch: {},
+    };
+    const core = migrateResearchProgressSave(legacy);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.revision === 1);
+    assert(core?.unlockedNodes.length === 1);
+    assert(!('diffusion' in (core as object)));
+  })
+);
+
+tests.push(
+  test('prepare_save_strips_derived_fields', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const state = computeResearchProgress(inputs, null);
+    const saved = prepareResearchProgressForSave(state);
+    assert(saved.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(saved.branchEmphasis.length === 6);
+    assert(assertResearchProgressSaveIntegrity(state).length === 0);
+  })
+);
+
+tests.push(
+  test('compute_from_save_roundtrip', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const s1 = computeResearchProgress(inputs, null);
+    const saved = prepareResearchProgressForSave(s1);
+    const s2 = computeResearchProgressFromSave(inputs, saved);
+    assert(s2.unlockedNodes.some(u => u.nodeId === 'df_t1_campus_foundation'));
+    assert(s2.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert((s2.diffusion?.[0]?.score ?? 0) >= 0);
   })
 );
 

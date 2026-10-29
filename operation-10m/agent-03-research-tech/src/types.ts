@@ -154,8 +154,21 @@ export interface ResearchScaleWaveReport {
   dominantCapabilityCluster: V94EmergingCapabilityId | null;
 }
 
+export type ResearchProgramEmphasis = 'applied' | 'fundamental' | 'commercial' | 'sovereign';
+
+export interface ResearchBranchEmphasisState {
+  branchId: ResearchBranchId;
+  emphasis: ResearchProgramEmphasis;
+  setTurn: number;
+}
+
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v2' as const;
+
+export type ResearchProgressSchemaVersion = typeof RESEARCH_PROGRESS_SCHEMA_VERSION | 'op10m-agent03-v1';
+
 export interface ResearchProgressState {
-  schemaVersion: 'op10m-agent03-v1';
+  schemaVersion: ResearchProgressSchemaVersion;
+  revision: number;
   turn: number;
   unlockedNodes: UnlockedResearchNode[];
   diffusion: RegionalDiffusionCell[];
@@ -163,10 +176,11 @@ export interface ResearchProgressState {
   activeHookIds: string[];
   leadingResearchRegion: V94AustralianRegionCode | null;
   inputHash: string;
-  /** Slice 2: institution upgrade tiers (monotonic per institution). */
   institutionUpgrades: InstitutionUpgradeState[];
   lateGameDiffusion: LateGameDiffusionReport | null;
   scaleWave: ResearchScaleWaveReport | null;
+  unlockSeq: number;
+  branchEmphasis?: ResearchBranchEmphasisState[];
 }
 
 export interface StrategyHookDefinition {

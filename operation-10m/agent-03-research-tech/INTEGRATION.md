@@ -1,7 +1,7 @@
 # Agent 03 — Integration Contract (Research / Technology / Progression)
 
 **Module root:** `operation-10m/agent-03-research-tech/`  
-**Schema version:** `op10m-agent03-v1`  
+**Schema version:** `op10m-agent03-v2` (persisted core; derived fields recomputed on load)  
 **Owner:** Agent 03 (content + pure engine). **Assembly:** Agent 25 only.
 
 ## Purpose
@@ -30,10 +30,15 @@ import {
 ### Persisted field (proposed on `gameState`)
 
 ```typescript
-gameState.researchProgress: ResearchProgressState | null;
+gameState.researchProgress: ResearchProgressPersistedCore | null;
 ```
 
-Serialization: JSON-compatible; recompute each turn from snapshots (same pattern as `innovation`).
+Use `prepareResearchProgressForSave(state)` before write; on load `computeResearchProgressFromSave(inputs, raw)`.
+
+**v2 persisted core** (migration-safe): `revision`, `unlockSeq`, `unlockedNodes`, `institutionUpgrades`, `branchEmphasis`, `leadingResearchRegion`, `turn`.  
+**Derived (not saved):** `diffusion`, `readinessByBranch`, `activeHookIds`, `lateGameDiffusion`, `scaleWave`, `inputHash`.
+
+Legacy `op10m-agent03-v1` full blobs migrate via `migrateResearchProgressSave()`.
 
 ### Input wiring
 

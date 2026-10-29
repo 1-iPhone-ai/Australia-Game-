@@ -9,7 +9,17 @@ import {
 } from './scale-wave.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
+import {
+  applyBranchEmphasisReadinessBonus,
+  defaultBranchEmphasis,
+  emptyResearchProgressCore,
+  extractPersistedCore,
+  mergeComputedResearchState,
+  prepareResearchProgressForSave,
+  sanitizeResearchProgressPersisted,
+} from './save-migration.ts';
 import { RESEARCH_INSTITUTIONS } from './institutions.ts';
+import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import type {
   InstitutionUpgradeState,
   ResearchBranchId,
@@ -113,7 +123,8 @@ export function createEmptyResearchProgressState(turn = 0): ResearchProgressStat
     number
   >;
   return {
-    schemaVersion: 'op10m-agent03-v1',
+    schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+    revision: 0,
     turn,
     unlockedNodes: [],
     diffusion: V94_REGION_CODES.map(regionId => ({
@@ -129,37 +140,16 @@ export function createEmptyResearchProgressState(turn = 0): ResearchProgressStat
     institutionUpgrades: [],
     lateGameDiffusion: null,
     scaleWave: null,
+    unlockSeq: 0,
+    branchEmphasis: defaultBranchEmphasis(),
   };
 }
 
-/** Safe hydrate from save JSON at assembly boundary. */
-export function sanitizeResearchProgressPersisted(raw: unknown): ResearchProgressState | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const o = raw as ResearchProgressState;
-  if (o.schemaVersion !== 'op10m-agent03-v1') return null;
-  return {
-    schemaVersion: 'op10m-agent03-v1',
-    turn: Number(o.turn) || 0,
-    unlockedNodes: Array.isArray(o.unlockedNodes) ? o.unlockedNodes : [],
-    diffusion: Array.isArray(o.diffusion) ? o.diffusion : createEmptyResearchProgressState().diffusion,
-    readinessByBranch: o.readinessByBranch ?? createEmptyResearchProgressState().readinessByBranch,
-    activeHookIds: Array.isArray(o.activeHookIds) ? o.activeHookIds.map(String) : [],
-    leadingResearchRegion: o.leadingResearchRegion ?? null,
-    inputHash: typeof o.inputHash === 'string' ? o.inputHash : '',
-    institutionUpgrades: Array.isArray(o.institutionUpgrades) ? o.institutionUpgrades : [],
-    lateGameDiffusion: o.lateGameDiffusion ?? null,
-    scaleWave: o.scaleWave ?? null,
-  };
-}
-
-/**
- * Recompute research branch unlocks, diffusion, and strategy hooks from game snapshots.
- * Idempotent for identical inputs + prior unlock list (monotonic unlocks).
- */
 export function computeResearchProgress(
   inputs: ResearchProgressInputs,
   previous: ResearchProgressState | null
 ): ResearchProgressState {
+  const coreBase = previous ? extractPersistedCore(previous) : emptyResearchProgressCore(inputs.turn);
   const unlockedMap = new Map<string, UnlockedResearchNode>();
   (previous?.unlockedNodes ?? []).forEach(u => unlockedMap.set(u.nodeId, u));
 
@@ -210,9 +200,11 @@ export function computeResearchProgress(
     RESEARCH_BRANCHES.map(b => [b.id, computeBranchReadiness(inputs, b.id, institutionUpgrades)])
   ) as Record<ResearchBranchId, number>;
   readinessByBranch = applyScaleWaveReadinessBonus(readinessByBranch, scaleWave);
+  readinessByBranch = applyBranchEmphasisReadinessBonus(readinessByBranch, coreBase.branchEmphasis);
 
-  return {
-    schemaVersion: 'op10m-agent03-v1',
+  const computed: ResearchProgressState = {
+    schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+    revision: coreBase.revision,
     turn: inputs.turn,
     unlockedNodes,
     diffusion,
@@ -223,7 +215,19 @@ export function computeResearchProgress(
     institutionUpgrades,
     lateGameDiffusion,
     scaleWave,
+    unlockSeq: coreBase.unlockSeq,
+    branchEmphasis: coreBase.branchEmphasis,
   };
+
+  return mergeComputedResearchState(coreBase, computed);
+}
+
+export function computeResearchProgressFromSave(
+  inputs: ResearchProgressInputs,
+  persistedRaw: unknown
+): ResearchProgressState {
+  const hydrated = sanitizeResearchProgressPersisted(persistedRaw);
+  return computeResearchProgress(inputs, hydrated);
 }
 
 function mergeMonotonicInstitutionUpgrades(
