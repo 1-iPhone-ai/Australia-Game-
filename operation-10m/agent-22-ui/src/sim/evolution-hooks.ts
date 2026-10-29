@@ -105,6 +105,10 @@ import { buildCoachLiveRegionDeliveryDayCoach } from '../engine/coach-live-regio
 import { buildShortcutConflictWarningDayCoach } from '../engine/shortcut-conflict-warning-day-coach.js';
 import { buildAttentionDeferralDayCoach } from '../engine/attention-deferral-day-coach.js';
 import { buildProgressionVisibilitySummaryDayCoach } from '../engine/progression-visibility-summary-day-coach.js';
+import { buildProgressionCoverageDeltaDayCoach } from '../engine/progression-coverage-delta-day-coach.js';
+import { buildPreviewPanelUnlockHintDayCoach } from '../engine/preview-panel-unlock-hint-day-coach.js';
+import { buildImmediateCoachBatchDayCoach } from '../engine/immediate-coach-batch-day-coach.js';
+import { buildDedupLedgerFootprintDayCoach } from '../engine/dedup-ledger-footprint-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -218,6 +222,10 @@ export interface DayAdvanceUiEvolutionResult {
   shortcutConflictWarningDayCoachCopy: string | null;
   attentionDeferralDayCoachCopy: string | null;
   progressionVisibilitySummaryDayCoachCopy: string | null;
+  progressionCoverageDeltaDayCoachCopy: string | null;
+  previewPanelUnlockHintDayCoachCopy: string | null;
+  immediateCoachBatchDayCoachCopy: string | null;
+  dedupLedgerFootprintDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -826,6 +834,28 @@ export function tickEvolvingUiOnDayAdvance(
         })
       : { deferredSurfaceCount: 0, coachCopy: null };
 
+  const progressionCoverageDeltaDayCoach = buildProgressionCoverageDeltaDayCoach({
+    previousCoverageRatio: persisted.lastProgressionCoverageRatio,
+    currentCoverageRatio: coverage.coverageRatio,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const previewPanelUnlockHintDayCoach = buildPreviewPanelUnlockHintDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const immediateCoachBatchDayCoach = buildImmediateCoachBatchDayCoach({
+    immediateCoachLineCount: immediateCoach.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const dedupLedgerFootprintDayCoach = buildDedupLedgerFootprintDayCoach({
+    ledger: deduped.ledger,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -940,6 +970,10 @@ export function tickEvolvingUiOnDayAdvance(
     shortcutConflictWarningDayCoachCopy: shortcutConflictWarningDayCoach.coachCopy,
     attentionDeferralDayCoachCopy: attentionDeferralDayCoach.coachCopy,
     progressionVisibilitySummaryDayCoachCopy: progressionVisibilitySummaryDayCoach.coachCopy,
+    progressionCoverageDeltaDayCoachCopy: progressionCoverageDeltaDayCoach.coachCopy,
+    previewPanelUnlockHintDayCoachCopy: previewPanelUnlockHintDayCoach.coachCopy,
+    immediateCoachBatchDayCoachCopy: immediateCoachBatchDayCoach.coachCopy,
+    dedupLedgerFootprintDayCoachCopy: dedupLedgerFootprintDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

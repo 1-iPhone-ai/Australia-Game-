@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 82ca0411e5989fb0
+// content-sha256-prefix: 196893107fb93ebb
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -943,6 +943,10 @@ export interface DayAdvanceUiEvolutionResult {
   shortcutConflictWarningDayCoachCopy: string | null;
   attentionDeferralDayCoachCopy: string | null;
   progressionVisibilitySummaryDayCoachCopy: string | null;
+  progressionCoverageDeltaDayCoachCopy: string | null;
+  previewPanelUnlockHintDayCoachCopy: string | null;
+  immediateCoachBatchDayCoachCopy: string | null;
+  dedupLedgerFootprintDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1551,6 +1555,28 @@ export function tickEvolvingUiOnDayAdvance(
         })
       : { deferredSurfaceCount: 0, coachCopy: null };
 
+  const progressionCoverageDeltaDayCoach = buildProgressionCoverageDeltaDayCoach({
+    previousCoverageRatio: persisted.lastProgressionCoverageRatio,
+    currentCoverageRatio: coverage.coverageRatio,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const previewPanelUnlockHintDayCoach = buildPreviewPanelUnlockHintDayCoach({
+    signals: nextSignals,
+    policy,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const immediateCoachBatchDayCoach = buildImmediateCoachBatchDayCoach({
+    immediateCoachLineCount: immediateCoach.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const dedupLedgerFootprintDayCoach = buildDedupLedgerFootprintDayCoach({
+    ledger: deduped.ledger,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1665,6 +1691,10 @@ export function tickEvolvingUiOnDayAdvance(
     shortcutConflictWarningDayCoachCopy: shortcutConflictWarningDayCoach.coachCopy,
     attentionDeferralDayCoachCopy: attentionDeferralDayCoach.coachCopy,
     progressionVisibilitySummaryDayCoachCopy: progressionVisibilitySummaryDayCoach.coachCopy,
+    progressionCoverageDeltaDayCoachCopy: progressionCoverageDeltaDayCoach.coachCopy,
+    previewPanelUnlockHintDayCoachCopy: previewPanelUnlockHintDayCoach.coachCopy,
+    immediateCoachBatchDayCoachCopy: immediateCoachBatchDayCoach.coachCopy,
+    dedupLedgerFootprintDayCoachCopy: dedupLedgerFootprintDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -6491,6 +6521,279 @@ export function buildProgressionVisibilitySummaryDayCoach(input: {
     hiddenCount: stats.hidden,
     coachCopy,
   };
+}
+
+// --- source: engine/progression-coverage-delta-day-coach.ts ---
+export interface ProgressionCoverageDeltaDayCoach {
+  deltaRatio: number | null;
+  coachCopy: string | null;
+}
+
+export function buildProgressionCoverageDeltaDayCoach(input: {
+  previousCoverageRatio: number | undefined;
+  currentCoverageRatio: number;
+  nextGameDay: number;
+}): ProgressionCoverageDeltaDayCoach {
+  const previous = input.previousCoverageRatio;
+  if (previous == null) {
+    return { deltaRatio: null, coachCopy: null };
+  }
+  const delta = input.currentCoverageRatio - previous;
+  if (Math.abs(delta) < 0.01) {
+    return { deltaRatio: 0, coachCopy: null };
+  }
+  const pct = Math.round(Math.abs(delta) * 100);
+  const base =
+    delta > 0
+      ? `Interface coverage increased ${pct}% since your last turn.`
+      : `Interface coverage dipped ${pct}%.`;
+  return {
+    deltaRatio: delta,
+    coachCopy: `Day ${input.nextGameDay}: ${base}`,
+  };
+}
+
+// --- source: engine/preview-panel-unlock-hint-day-coach.ts ---
+export interface PreviewPanelUnlockHintDayCoach {
+  previewPanelId: string | null;
+  coachCopy: string | null;
+}
+
+export function buildPreviewPanelUnlockHintDayCoach(input: {
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+  nextGameDay: number;
+}): PreviewPanelUnlockHintDayCoach {
+  for (const panel of Object.values(EVOLVING_UI_PANEL_BY_ID)) {
+    const vis = resolveEvolvingPanelVisibility(panel.id, input.signals, input.policy);
+    if (vis.state !== 'preview') continue;
+    const hint = buildUnlockHintForPanel(panel, input.signals);
+    if (hint === 'Unlocked') continue;
+    return {
+      previewPanelId: panel.id,
+      coachCopy: `Day ${input.nextGameDay}: Preview — ${panel.label} unlocks when ${hint}.`,
+    };
+  }
+  return { previewPanelId: null, coachCopy: null };
+}
+
+// --- source: engine/immediate-coach-batch-day-coach.ts ---
+export interface ImmediateCoachBatchDayCoach {
+  immediateCount: number;
+  coachCopy: string | null;
+}
+
+export function buildImmediateCoachBatchDayCoach(input: {
+  immediateCoachLineCount: number;
+  nextGameDay: number;
+}): ImmediateCoachBatchDayCoach {
+  const count = input.immediateCoachLineCount;
+  if (count <= 0) {
+    return { immediateCount: 0, coachCopy: null };
+  }
+  const noun = count === 1 ? 'line' : 'lines';
+  return {
+    immediateCount: count,
+    coachCopy: `Day ${input.nextGameDay}: ${count} coach ${noun} ready for immediate screen reader delivery.`,
+  };
+}
+
+// --- source: engine/dedup-ledger-footprint-day-coach.ts ---
+export interface DedupLedgerFootprintDayCoach {
+  ledgerEntryCount: number;
+  coachCopy: string | null;
+}
+
+export function dedupLedgerFootprintCopy(entryCount: number): string | null {
+  if (entryCount <= 0) return null;
+  if (entryCount === 1) {
+    return 'One recent unlock announcement is remembered to prevent repeats.';
+  }
+  return `${entryCount} recent unlock announcements are remembered to prevent repeats.`;
+}
+
+export function buildDedupLedgerFootprintDayCoach(input: {
+  ledger: AnnouncementDedupLedger | undefined;
+  nextGameDay: number;
+}): DedupLedgerFootprintDayCoach {
+  const ledgerEntryCount = input.ledger ? Object.keys(input.ledger).length : 0;
+  const base = dedupLedgerFootprintCopy(ledgerEntryCount);
+  const coachCopy =
+    base && ledgerEntryCount >= 2 ? `Day ${input.nextGameDay}: ${base}` : null;
+  return { ledgerEntryCount, coachCopy };
+}
+
+// --- source: engine/round32-self-tests.ts ---
+export function runAgent22Round32SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r32_coverage_delta_up',
+    'progression coverage delta day coach increase',
+    (() => {
+      const coach = buildProgressionCoverageDeltaDayCoach({
+        previousCoverageRatio: 0.2,
+        currentCoverageRatio: 0.35,
+        nextGameDay: 4,
+      });
+      return Boolean(coach.coachCopy?.includes('Day 4') && coach.coachCopy.includes('increased'));
+    })()
+  );
+
+  check(
+    'r32_coverage_delta_flat',
+    'progression coverage delta null when flat',
+    (() => {
+      const coach = buildProgressionCoverageDeltaDayCoach({
+        previousCoverageRatio: 0.5,
+        currentCoverageRatio: 0.505,
+        nextGameDay: 5,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r32_preview_hint',
+    'preview panel unlock hint day coach shape',
+    (() => {
+      const coach = buildPreviewPanelUnlockHintDayCoach({
+        signals: { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        nextGameDay: 3,
+      });
+      return coach.previewPanelId === null || Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r32_immediate_batch',
+    'immediate coach batch day coach with lines',
+    (() => {
+      const coach = buildImmediateCoachBatchDayCoach({
+        immediateCoachLineCount: 2,
+        nextGameDay: 6,
+      });
+      return coach.immediateCount === 2 && Boolean(coach.coachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r32_dedup_footprint',
+    'dedup ledger footprint day coach with entries',
+    (() => {
+      const coach = buildDedupLedgerFootprintDayCoach({
+        ledger: { a1: 1, b2: 2 },
+        nextGameDay: 7,
+      });
+      return coach.ledgerEntryCount === 2 && Boolean(coach.coachCopy?.includes('Day 7'));
+    })()
+  );
+
+  check(
+    'r32_tick_coverage_delta',
+    'tick exposes progression coverage delta day coach field',
+    (() => {
+      const persisted = {
+        ...createDefaultEvolvingUiPersistedState(),
+        lastProgressionCoverageRatio: 0.1,
+      };
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        persisted,
+        { phase: 'human_turn' }
+      );
+      return typeof r.progressionCoverageDeltaDayCoachCopy === 'string' || r.progressionCoverageDeltaDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r32_tick_preview_hint',
+    'tick exposes preview panel unlock hint day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.previewPanelUnlockHintDayCoachCopy === 'string' || r.previewPanelUnlockHintDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r32_tick_immediate_batch',
+    'tick exposes immediate coach batch day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.immediateCoachBatchDayCoachCopy === 'string' || r.immediateCoachBatchDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r32_tick_dedup_footprint',
+    'tick exposes dedup ledger footprint day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 6, turnCount: 6, interfaceLevel: 'guided' },
+        { gameDay: 7, turnCount: 7, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.dedupLedgerFootprintDayCoachCopy === 'string' || r.dedupLedgerFootprintDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r32_immediate_empty',
+    'immediate coach batch null when zero',
+    (() => {
+      const coach = buildImmediateCoachBatchDayCoach({ immediateCoachLineCount: 0, nextGameDay: 1 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r32_dedup_small_ledger',
+    'dedup footprint null with single ledger entry',
+    (() => {
+      const coach = buildDedupLedgerFootprintDayCoach({ ledger: { only: 1 }, nextGameDay: 2 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r32_coverage_delta_no_prior',
+    'coverage delta null without prior ratio',
+    (() => {
+      const coach = buildProgressionCoverageDeltaDayCoach({
+        previousCoverageRatio: undefined,
+        currentCoverageRatio: 0.4,
+        nextGameDay: 3,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round31-self-tests.ts ---
@@ -12477,6 +12780,18 @@ export function SimulationUiEvolutionBridge({
       {result.progressionVisibilitySummaryDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-visibility-summary-day">{result.progressionVisibilitySummaryDayCoachCopy}</div>
       ) : null}
+      {result.progressionCoverageDeltaDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-coverage-delta-day">{result.progressionCoverageDeltaDayCoachCopy}</div>
+      ) : null}
+      {result.previewPanelUnlockHintDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-preview-unlock-hint-day">{result.previewPanelUnlockHintDayCoachCopy}</div>
+      ) : null}
+      {result.immediateCoachBatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-immediate-batch-day">{result.immediateCoachBatchDayCoachCopy}</div>
+      ) : null}
+      {result.dedupLedgerFootprintDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-dedup-ledger-day">{result.dedupLedgerFootprintDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -14527,7 +14842,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.31.0';
+export const AGENT_22_MODULE_VERSION = '1.32.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -14678,6 +14993,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round32 = runAgent22Round32SelfTests();
+  for (const r of round32.results) {
+    check(`agent22_round32_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round31 = runAgent22Round31SelfTests();

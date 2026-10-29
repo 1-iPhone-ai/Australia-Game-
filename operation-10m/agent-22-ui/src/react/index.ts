@@ -101,3 +101,7 @@ export { CoachLiveRegionDeliveryDayCoachStrip } from './CoachLiveRegionDeliveryD
 export { ShortcutConflictWarningDayCoachStrip } from './ShortcutConflictWarningDayCoachStrip.js';
 export { AttentionDeferralDayCoachStrip } from './AttentionDeferralDayCoachStrip.js';
 export { ProgressionVisibilitySummaryDayCoachStrip } from './ProgressionVisibilitySummaryDayCoachStrip.js';
+export { ProgressionCoverageDeltaDayCoachStrip } from './ProgressionCoverageDeltaDayCoachStrip.js';
+export { PreviewPanelUnlockHintDayCoachStrip } from './PreviewPanelUnlockHintDayCoachStrip.js';
+export { ImmediateCoachBatchDayCoachStrip } from './ImmediateCoachBatchDayCoachStrip.js';
+export { DedupLedgerFootprintDayCoachStrip } from './DedupLedgerFootprintDayCoachStrip.js';
