@@ -23,3 +23,6 @@ export { DeferredAnnouncementFlushBanner } from './DeferredAnnouncementFlushBann
 export { OnboardingFunnelCoachStrip } from './OnboardingFunnelCoachStrip.js';
 export { ResponsiveNavRailHintBanner } from './ResponsiveNavRailHintBanner.js';
 export { CoachLiveRegionDeliveryStrip } from './CoachLiveRegionDeliveryStrip.js';
+export { PhaseCoachGateBanner } from './PhaseCoachGateBanner.js';
+export { ProgressionCoverageCoachStrip } from './ProgressionCoverageCoachStrip.js';
+export { ShowAllSafetyCoachBanner } from './ShowAllSafetyCoachBanner.js';

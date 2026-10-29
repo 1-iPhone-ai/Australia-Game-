@@ -21,6 +21,11 @@ import {
 } from '../engine/deferred-announcement-flush.js';
 import { buildCoachLiveRegionDeliveryPlan } from '../engine/coach-live-region-scheduler.js';
 import { onboardingHighlightedPanelIds } from '../engine/onboarding-persist-bridge.js';
+import {
+  buildProgressionCoverageSnapshot,
+  coverageDeltaCopy,
+  mergeCoverageRatioIntoPersisted,
+} from '../engine/progression-coverage-snapshot.js';
 
 /** Persisted slice proposed for `gameSettings.evolvingUi` (assembly-owned). */
 export interface EvolvingUiPersistedState {
@@ -45,6 +50,7 @@ export interface EvolvingUiPersistedState {
   announcementPacingQueue?: string[];
   /** onboarding funnel dismiss keys persisted for host */
   onboardingDismissedKeys?: string[];
+  lastProgressionCoverageRatio?: number;
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -54,6 +60,8 @@ export interface DayAdvanceUiEvolutionResult {
   deferredCoachAnnouncementCount: number;
   flushedDeferredAnnouncementCount: number;
   coachLiveRegionMessageCount: number;
+  progressionCoverageRatio: number;
+  progressionCoverageDeltaCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -164,12 +172,18 @@ export function tickEvolvingUiOnDayAdvance(
   const liveRegionPlan = buildCoachLiveRegionDeliveryPlan(immediateCoach, DEFAULT_ACCESSIBILITY_SNAPSHOT);
 
   const highlightIds = onboardingHighlightedPanelIds(nextSignals.gameDay, updatedPersistedWithPacing);
-  const updatedPersistedFinal: EvolvingUiPersistedState = {
-    ...updatedPersistedWithPacing,
-    rememberedPanelIds: [
-      ...new Set([...(updatedPersistedWithPacing.rememberedPanelIds ?? []), ...highlightIds]),
-    ],
-  };
+  const coverage = buildProgressionCoverageSnapshot(nextSignals, policy);
+  const deltaCopy = coverageDeltaCopy(persisted.lastProgressionCoverageRatio, coverage.coverageRatio);
+
+  const updatedPersistedFinal = mergeCoverageRatioIntoPersisted(
+    {
+      ...updatedPersistedWithPacing,
+      rememberedPanelIds: [
+        ...new Set([...(updatedPersistedWithPacing.rememberedPanelIds ?? []), ...highlightIds]),
+      ],
+    },
+    coverage.coverageRatio
+  );
 
   return {
     gameDay: nextSignals.gameDay,
@@ -178,6 +192,8 @@ export function tickEvolvingUiOnDayAdvance(
     deferredCoachAnnouncementCount: combinedQueue.length,
     flushedDeferredAnnouncementCount: flush.flushedAnnouncements.length,
     coachLiveRegionMessageCount: liveRegionPlan.messages.length,
+    progressionCoverageRatio: coverage.coverageRatio,
+    progressionCoverageDeltaCopy: deltaCopy,
     updatedPersisted: updatedPersistedFinal,
     visiblePanelCount,
   };

@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: fb9609c274caf4c0
+// content-sha256-prefix: 1778d595a3c59c5d
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -859,6 +859,7 @@ export interface EvolvingUiPersistedState {
   announcementPacingQueue?: string[];
   /** onboarding funnel dismiss keys persisted for host */
   onboardingDismissedKeys?: string[];
+  lastProgressionCoverageRatio?: number;
 }
 
 export interface DayAdvanceUiEvolutionResult {
@@ -868,6 +869,8 @@ export interface DayAdvanceUiEvolutionResult {
   deferredCoachAnnouncementCount: number;
   flushedDeferredAnnouncementCount: number;
   coachLiveRegionMessageCount: number;
+  progressionCoverageRatio: number;
+  progressionCoverageDeltaCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -978,12 +981,18 @@ export function tickEvolvingUiOnDayAdvance(
   const liveRegionPlan = buildCoachLiveRegionDeliveryPlan(immediateCoach, DEFAULT_ACCESSIBILITY_SNAPSHOT);
 
   const highlightIds = onboardingHighlightedPanelIds(nextSignals.gameDay, updatedPersistedWithPacing);
-  const updatedPersistedFinal: EvolvingUiPersistedState = {
-    ...updatedPersistedWithPacing,
-    rememberedPanelIds: [
-      ...new Set([...(updatedPersistedWithPacing.rememberedPanelIds ?? []), ...highlightIds]),
-    ],
-  };
+  const coverage = buildProgressionCoverageSnapshot(nextSignals, policy);
+  const deltaCopy = coverageDeltaCopy(persisted.lastProgressionCoverageRatio, coverage.coverageRatio);
+
+  const updatedPersistedFinal = mergeCoverageRatioIntoPersisted(
+    {
+      ...updatedPersistedWithPacing,
+      rememberedPanelIds: [
+        ...new Set([...(updatedPersistedWithPacing.rememberedPanelIds ?? []), ...highlightIds]),
+      ],
+    },
+    coverage.coverageRatio
+  );
 
   return {
     gameDay: nextSignals.gameDay,
@@ -992,6 +1001,8 @@ export function tickEvolvingUiOnDayAdvance(
     deferredCoachAnnouncementCount: combinedQueue.length,
     flushedDeferredAnnouncementCount: flush.flushedAnnouncements.length,
     coachLiveRegionMessageCount: liveRegionPlan.messages.length,
+    progressionCoverageRatio: coverage.coverageRatio,
+    progressionCoverageDeltaCopy: deltaCopy,
     updatedPersisted: updatedPersistedFinal,
     visiblePanelCount,
   };
@@ -3287,6 +3298,240 @@ export function layoutOnboardingCoachCopy(hints: LayoutOnboardingVisibilityHint[
   return `${blocked.length} onboarding panels preview-only under the current layout preset.`;
 }
 
+// --- source: engine/phase-coach-gate.ts ---
+export type PhaseCoachSurfaceId =
+  | 'panel_unlock_coach'
+  | 'onboarding_funnel'
+  | 'progression_coverage'
+  | 'keyboard_hints';
+
+export interface PhaseCoachGatePlan {
+  allowedSurfaces: PhaseCoachSurfaceId[];
+  suppressedSurfaces: PhaseCoachSurfaceId[];
+  phase: V94StandardizedGamePhase;
+}
+
+const ALWAYS_OFF_PHASES = new Set<V94StandardizedGamePhase>(['save_load', 'replay']);
+
+const PHASE_ALLOWED: Partial<Record<V94StandardizedGamePhase, PhaseCoachSurfaceId[]>> = {
+  main_menu: ['onboarding_funnel', 'keyboard_hints'],
+  setup: ['onboarding_funnel', 'progression_coverage'],
+  human_turn: ['panel_unlock_coach', 'onboarding_funnel', 'progression_coverage', 'keyboard_hints'],
+  paused: ['panel_unlock_coach', 'progression_coverage', 'keyboard_hints'],
+  approval_waiting: ['panel_unlock_coach', 'keyboard_hints'],
+  ai_turn: ['progression_coverage'],
+  post_match: ['progression_coverage'],
+};
+
+export function planPhaseCoachSurfaces(
+  phase: V94StandardizedGamePhase,
+  band: CognitiveLoadBand = 'moderate'
+): PhaseCoachGatePlan {
+  if (ALWAYS_OFF_PHASES.has(phase)) {
+    return {
+      phase,
+      allowedSurfaces: [],
+      suppressedSurfaces: ['panel_unlock_coach', 'onboarding_funnel', 'progression_coverage', 'keyboard_hints'],
+    };
+  }
+
+  const base = PHASE_ALLOWED[phase] ?? ['progression_coverage'];
+  let allowed = [...base];
+  if (band === 'heavy') {
+    allowed = allowed.filter(id => id !== 'panel_unlock_coach' && id !== 'onboarding_funnel');
+  }
+
+  const all: PhaseCoachSurfaceId[] = [
+    'panel_unlock_coach',
+    'onboarding_funnel',
+    'progression_coverage',
+    'keyboard_hints',
+  ];
+  const allowedSet = new Set(allowed);
+  return {
+    phase,
+    allowedSurfaces: allowed,
+    suppressedSurfaces: all.filter(id => !allowedSet.has(id)),
+  };
+}
+
+export function isPhaseCoachSurfaceAllowed(plan: PhaseCoachGatePlan, surface: PhaseCoachSurfaceId): boolean {
+  return plan.allowedSurfaces.includes(surface);
+}
+
+export function phaseCoachGateCopy(plan: PhaseCoachGatePlan): string | null {
+  if (!plan.suppressedSurfaces.length) return null;
+  return `Phase ${plan.phase}: ${plan.suppressedSurfaces.length} coaching surfaces deferred.`;
+}
+
+// --- source: engine/show-all-progressive-safety.ts ---
+export interface ShowAllOverrideSafetyAssessment {
+  overrideActive: boolean;
+  riskyPhase: boolean;
+  suppressedCategoriesDuringPhase: string[];
+  coachCopy: string | null;
+}
+
+export function evaluateShowAllOverrideSafety(input: {
+  persisted: EvolvingUiPersistedState;
+  phase: V94StandardizedGamePhase;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+}): ShowAllOverrideSafetyAssessment {
+  const overrideActive = Boolean(input.persisted.showAllPanelsOverride ?? input.policy.showAllPanelsOverride);
+  const coverage = computeProgressionCoverage(input.signals, input.policy);
+  const riskyPhase = ['save_load', 'main_menu', 'setup'].includes(input.phase);
+  const suppressedCategoriesDuringPhase = ['economy', 'strategic', 'regional'].filter(cat =>
+    listPhasesThatSuppressCategory(cat).includes(input.phase)
+  );
+
+  let coachCopy: string | null = null;
+  if (overrideActive && riskyPhase) {
+    coachCopy = 'Show-all override is on — some panels stay in preview during setup and menu phases.';
+  } else if (overrideActive && coverage.preview > coverage.visible) {
+    coachCopy = 'Show-all override reveals previews, but phase rules still gate full visibility.';
+  }
+
+  return {
+    overrideActive,
+    riskyPhase,
+    suppressedCategoriesDuringPhase,
+    coachCopy,
+  };
+}
+
+// --- source: engine/progression-coverage-snapshot.ts ---
+export interface ProgressionCoverageSnapshot {
+  visible: number;
+  preview: number;
+  hidden: number;
+  total: number;
+  coverageRatio: number;
+  coachCopy: string | null;
+  tierLabel: 'early' | 'mid' | 'late';
+}
+
+export function buildProgressionCoverageSnapshot(
+  signals: ProgressionSignalSnapshot,
+  policy: EvolvingUiAccessPolicy
+): ProgressionCoverageSnapshot {
+  const stats = computeProgressionCoverage(signals, policy);
+  const tierLabel: ProgressionCoverageSnapshot['tierLabel'] =
+    signals.gameDay < 5 ? 'early' : signals.gameDay < 12 ? 'mid' : 'late';
+
+  let coachCopy: string | null = null;
+  if (stats.coverageRatio >= 0.75) {
+    coachCopy = 'Most interface panels are unlocked — expert shortcuts are available.';
+  } else if (stats.coverageRatio >= 0.45) {
+    coachCopy = 'Mid-game coverage — focus on upcoming milestone unlocks.';
+  } else if (stats.visible >= 3) {
+    coachCopy = 'Early coverage — onboarding highlights guide the next unlocks.';
+  }
+
+  return {
+    ...stats,
+    coachCopy,
+    tierLabel,
+  };
+}
+
+export function mergeCoverageRatioIntoPersisted<
+  T extends { lastProgressionCoverageRatio?: number },
+>(persisted: T, ratio: number): T {
+  return {
+    ...persisted,
+    lastProgressionCoverageRatio: Math.max(0, Math.min(1, ratio)),
+  };
+}
+
+export function coverageDeltaCopy(previous: number | undefined, current: number): string | null {
+  if (previous == null) return null;
+  const delta = current - previous;
+  if (Math.abs(delta) < 0.01) return null;
+  const pct = Math.round(Math.abs(delta) * 100);
+  return delta > 0 ? `Interface coverage increased ${pct}% since last turn.` : `Interface coverage dipped ${pct}%.`;
+}
+
+// --- source: engine/keyboard-hints-priority-plan.ts ---
+const PHASE_PRIORITY: Partial<Record<V94StandardizedGamePhase, string[]>> = {
+  human_turn: ['kb_open_map', 'kb_open_help', 'kb_open_market'],
+  paused: ['kb_open_map', 'kb_open_settings'],
+  main_menu: ['kb_open_settings'],
+};
+
+export function prioritizeKeyboardHints(
+  shortcuts: KeyboardShortcutDefinition[],
+  phase: V94StandardizedGamePhase
+): KeyboardShortcutDefinition[] {
+  const preferred = PHASE_PRIORITY[phase] ?? [];
+  return [...shortcuts].sort((a, b) => {
+    const aIdx = preferred.indexOf(a.id);
+    const bIdx = preferred.indexOf(b.id);
+    const aPref = aIdx >= 0 ? aIdx : 100;
+    const bPref = bIdx >= 0 ? bIdx : 100;
+    if (aPref !== bPref) return aPref - bPref;
+    return a.actionLabel.localeCompare(b.actionLabel);
+  });
+}
+
+export function planKeyboardHintsDisplay(
+  interfaceLevel: InterfaceExperienceLevel,
+  phase: V94StandardizedGamePhase,
+  limit = 6
+): {
+  shortcuts: KeyboardShortcutDefinition[];
+  conflictCount: number;
+  coachCopy: string | null;
+} {
+  const available = listAvailableKeyboardShortcuts(interfaceLevel, phase);
+  const conflicts = planKeyboardShortcutConflicts(interfaceLevel, phase);
+  const prioritized = prioritizeKeyboardHints(available, phase).slice(0, limit);
+  const coachCopy =
+    conflicts.length > 0
+      ? `${conflicts.length} shortcut conflicts hidden from hints — rebind in settings.`
+      : prioritized.length < available.length
+        ? `Showing ${prioritized.length} of ${available.length} shortcuts for this phase.`
+        : null;
+
+  return { shortcuts: prioritized, conflictCount: conflicts.length, coachCopy };
+}
+
+// --- source: engine/contextual-widget-coach.ts ---
+export interface WidgetContextualCoachEntry {
+  widgetId: string;
+  show: boolean;
+  reason: string;
+  panelIds: string[];
+}
+
+export function auditWidgetContextualVisibility(input: {
+  widgetIds: string[];
+  contextualShouldShowByWidget: Record<string, boolean>;
+  signals: ProgressionSignalSnapshot;
+  policy: EvolvingUiAccessPolicy;
+}): WidgetContextualCoachEntry[] {
+  return input.widgetIds.map(widgetId => {
+    const contextualShouldShow = input.contextualShouldShowByWidget[widgetId] ?? true;
+    const merged = mergeEvolvingUiWithContextualHiding(
+      { widgetId, contextualShouldShow },
+      input.signals,
+      input.policy
+    );
+    return {
+      widgetId,
+      show: merged.show,
+      reason: merged.reason,
+      panelIds: listPanelsForWidget(widgetId).map(p => p.id),
+    };
+  });
+}
+
+export function widgetContextualCoachCopy(entries: WidgetContextualCoachEntry[]): string | null {
+  const hidden = entries.filter(e => !e.show);
+  if (!hidden.length) return null;
+  return `${hidden.length} widgets stay hidden by contextual or progression rules.`;
+}
+
 // --- source: engine/legacy-access.ts ---
 /** Mirrors V9.4 resolveIntentNavToUiPatch targets (standalone copy for module tests). */
 export function resolveIntentNavToUiPatch(target: string): Record<string, boolean | string> {
@@ -4862,6 +5107,140 @@ export function runAgent22Round11SelfTests(): {
   return { passed: results.length - failed, failed, results };
 }
 
+// --- source: engine/round12-self-tests.ts ---
+export function runAgent22Round12SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r12_phase_gate_save_load',
+    'save_load suppresses coach surfaces',
+    (() => {
+      const plan = planPhaseCoachSurfaces('save_load');
+      return plan.allowedSurfaces.length === 0;
+    })()
+  );
+
+  check(
+    'r12_phase_gate_human_turn',
+    'human turn allows panel unlock coach',
+    isPhaseCoachSurfaceAllowed(planPhaseCoachSurfaces('human_turn'), 'panel_unlock_coach')
+  );
+
+  check(
+    'r12_phase_gate_heavy',
+    'heavy band trims onboarding coach',
+    (() => {
+      const plan = planPhaseCoachSurfaces('human_turn', 'heavy');
+      return !isPhaseCoachSurfaceAllowed(plan, 'onboarding_funnel');
+    })()
+  );
+
+  check(
+    'r12_phase_gate_copy',
+    'phase gate copy mentions deferred surfaces',
+    Boolean(phaseCoachGateCopy(planPhaseCoachSurfaces('main_menu'))?.includes('deferred'))
+  );
+
+  check(
+    'r12_show_all_safety',
+    'show-all safety warns on menu phase',
+    (() => {
+      const assessment = evaluateShowAllOverrideSafety({
+        persisted: { ...createDefaultEvolvingUiPersistedState(), showAllPanelsOverride: true },
+        phase: 'main_menu',
+        signals: { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        policy: { ...DEFAULT_EVOLVING_UI_ACCESS_POLICY, showAllPanelsOverride: true },
+      });
+      return Boolean(assessment.coachCopy);
+    })()
+  );
+
+  check(
+    'r12_coverage_snapshot',
+    'coverage snapshot includes tier label',
+    (() => {
+      const snap = buildProgressionCoverageSnapshot(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY
+      );
+      return snap.tierLabel === 'early' && snap.total > 0;
+    })()
+  );
+
+  check(
+    'r12_coverage_delta',
+    'coverage delta copy reports increase',
+    Boolean(coverageDeltaCopy(0.2, 0.35)?.includes('increased'))
+  );
+
+  check(
+    'r12_tick_persists_coverage',
+    'day advance persists coverage ratio',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'guided' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState()
+      );
+      return typeof r.progressionCoverageRatio === 'number' && r.updatedPersisted.lastProgressionCoverageRatio != null;
+    })()
+  );
+
+  check(
+    'r12_merge_coverage_persisted',
+    'merge coverage clamps ratio',
+    mergeCoverageRatioIntoPersisted(createDefaultEvolvingUiPersistedState(), 1.5).lastProgressionCoverageRatio === 1
+  );
+
+  check(
+    'r12_keyboard_hints_plan',
+    'keyboard hints plan prioritizes map on human turn',
+    (() => {
+      const plan = planKeyboardHintsDisplay('simple', 'human_turn');
+      return plan.shortcuts[0]?.id === 'kb_open_map';
+    })()
+  );
+
+  check(
+    'r12_widget_contextual_audit',
+    'widget audit hides when contextual false',
+    (() => {
+      const entries = auditWidgetContextualVisibility({
+        widgetIds: ['quick_actions'],
+        contextualShouldShowByWidget: { quick_actions: false },
+        signals: { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+      });
+      return entries[0]?.show === false && entries[0]?.reason === 'contextual_hiding';
+    })()
+  );
+
+  check(
+    'r12_widget_contextual_copy',
+    'widget contextual copy mentions hidden count',
+    (() => {
+      const entries = auditWidgetContextualVisibility({
+        widgetIds: ['quick_actions', 'objectives'],
+        contextualShouldShowByWidget: { quick_actions: false, objectives: false },
+        signals: { gameDay: 5, turnCount: 5, interfaceLevel: 'guided' },
+        policy: DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+      });
+      return Boolean(widgetContextualCoachCopy(entries)?.includes('2'));
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
 // --- source: a11y/aria-builders.ts ---
 const RING_CLASSES: Record<FocusRingStyle, string> = {
   emerald: 'focus-visible:ring-emerald-400',
@@ -5406,10 +5785,19 @@ export function ShowAllPanelsToggle({ enabled, accessibility, onChange }: ShowAl
 export interface PanelUnlockCoachProps {
   signals: ProgressionSignalSnapshot;
   policy: EvolvingUiAccessPolicy;
+  phase?: V94StandardizedGamePhase;
   onSelectPanel?: (panelId: string) => void;
 }
 
-export function PanelUnlockCoach({ signals, policy, onSelectPanel }: PanelUnlockCoachProps): React.ReactElement {
+export function PanelUnlockCoach({ signals, policy, phase = 'human_turn', onSelectPanel }: PanelUnlockCoachProps): React.ReactElement {
+  const gate = planPhaseCoachSurfaces(phase, 'moderate');
+  if (!isPhaseCoachSurfaceAllowed(gate, 'panel_unlock_coach')) {
+    return (
+      <div data-testid="panel-unlock-coach" className="text-xs opacity-70">
+        Panel unlock coach paused for {phase}.
+      </div>
+    );
+  }
   const recs = listNextUnlockRecommendations(signals, policy, 3);
   const milestones = listMilestonesApproaching(signals, 2);
   if (recs.length === 0 && milestones.length === 0) {
@@ -5528,6 +5916,9 @@ export function SimulationUiEvolutionBridge({
           Scheduled {result.coachLiveRegionMessageCount} live-region coach messages
         </div>
       ) : null}
+      {result.progressionCoverageDeltaCopy ? (
+        <div data-testid="sim-ui-evolution-coverage-delta">{result.progressionCoverageDeltaCopy}</div>
+      ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
         <div key={i}>{line}</div>
       ))}
@@ -5582,11 +5973,11 @@ export function KeyboardHintsOverlay({
   accessibility,
   onInvoke,
 }: KeyboardHintsOverlayProps): React.ReactElement | null {
-  const shortcuts = useMemo(
-    () => listAvailableKeyboardShortcuts(interfaceLevel, phase),
+  const display = useMemo(
+    () => planKeyboardHintsDisplay(interfaceLevel, phase, 6),
     [interfaceLevel, phase]
   );
-  if (!accessibility.keyboardNavigationHints || shortcuts.length === 0) return null;
+  if (!accessibility.keyboardNavigationHints || display.shortcuts.length === 0) return null;
   const focusClass = buildFocusRingClassName({
     highContrast: accessibility.highContrastFocusRings,
     style: accessibility.focusRingStyle,
@@ -5599,7 +5990,12 @@ export function KeyboardHintsOverlay({
       aria-label="Keyboard shortcuts"
       className="text-xs opacity-90 space-y-0.5"
     >
-      {shortcuts.slice(0, 6).map(s => (
+      {display.coachCopy ? (
+        <p data-testid="keyboard-hints-coach-copy" className="opacity-80">
+          {display.coachCopy}
+        </p>
+      ) : null}
+      {display.shortcuts.map(s => (
         <button
           key={s.id}
           type="button"
@@ -6362,8 +6758,102 @@ export function CoachLiveRegionDeliveryStrip({
   );
 }
 
+// --- source: react/PhaseCoachGateBanner.tsx ---
+export interface PhaseCoachGateBannerProps {
+  phase: V94StandardizedGamePhase;
+  cognitiveBand?: CognitiveLoadBand;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function PhaseCoachGateBanner({
+  phase,
+  cognitiveBand = 'moderate',
+  accessibility,
+}: PhaseCoachGateBannerProps): React.ReactElement | null {
+  const plan = planPhaseCoachSurfaces(phase, cognitiveBand);
+  const copy = phaseCoachGateCopy(plan);
+  if (!copy) return null;
+
+  return (
+    <div
+      data-testid="phase-coach-gate-banner"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-orange-500/30 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {copy}
+    </div>
+  );
+}
+
+// --- source: react/ProgressionCoverageCoachStrip.tsx ---
+export interface ProgressionCoverageCoachStripProps {
+  snapshot: ProgressionCoverageSnapshot;
+  previousCoverageRatio?: number;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function ProgressionCoverageCoachStrip({
+  snapshot,
+  previousCoverageRatio,
+  accessibility,
+}: ProgressionCoverageCoachStripProps): React.ReactElement | null {
+  const delta = coverageDeltaCopy(previousCoverageRatio, snapshot.coverageRatio);
+  if (!snapshot.coachCopy && !delta) return null;
+
+  return (
+    <div
+      data-testid="progression-coverage-coach-strip"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-cyan-500/30 rounded p-2 space-y-1"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-coverage-tier={snapshot.tierLabel}
+    >
+      {snapshot.coachCopy ? <p>{snapshot.coachCopy}</p> : null}
+      {delta ? <p data-testid="progression-coverage-delta">{delta}</p> : null}
+      <p className="opacity-80">
+        {snapshot.visible}/{snapshot.total} panels visible ({Math.round(snapshot.coverageRatio * 100)}%)
+      </p>
+    </div>
+  );
+}
+
+// --- source: react/ShowAllSafetyCoachBanner.tsx ---
+export interface ShowAllSafetyCoachBannerProps {
+  persisted: EvolvingUiPersistedState;
+  policy: EvolvingUiAccessPolicy;
+  signals: ProgressionSignalSnapshot;
+  phase: V94StandardizedGamePhase;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function ShowAllSafetyCoachBanner({
+  persisted,
+  policy,
+  signals,
+  phase,
+  accessibility,
+}: ShowAllSafetyCoachBannerProps): React.ReactElement | null {
+  const assessment = evaluateShowAllOverrideSafety({ persisted, phase, signals, policy });
+  if (!assessment.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="show-all-safety-coach-banner"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-yellow-500/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {assessment.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.11.0';
+export const AGENT_22_MODULE_VERSION = '1.12.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -6459,6 +6949,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round11 = runAgent22Round11SelfTests();
   for (const r of round11.results) {
     check(`agent22_round11_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round12 = runAgent22Round12SelfTests();
+  for (const r of round12.results) {
+    check(`agent22_round12_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

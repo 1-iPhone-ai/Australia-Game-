@@ -39,6 +39,9 @@ export function SimulationUiEvolutionBridge({
           Scheduled {result.coachLiveRegionMessageCount} live-region coach messages
         </div>
       ) : null}
+      {result.progressionCoverageDeltaCopy ? (
+        <div data-testid="sim-ui-evolution-coverage-delta">{result.progressionCoverageDeltaCopy}</div>
+      ) : null}
       {result.coachAnnouncements.slice(0, 3).map((line, i) => (
         <div key={i}>{line}</div>
       ))}

@@ -59,6 +59,11 @@ const FILES = [
   'engine/responsive-nav-rail-plan.ts',
   'engine/coach-live-region-scheduler.ts',
   'engine/layout-onboarding-visibility.ts',
+  'engine/phase-coach-gate.ts',
+  'engine/show-all-progressive-safety.ts',
+  'engine/progression-coverage-snapshot.ts',
+  'engine/keyboard-hints-priority-plan.ts',
+  'engine/contextual-widget-coach.ts',
   'engine/legacy-access.ts',
   'engine/merge-with-v94-contextual-hiding.ts',
   'engine/progression-coach.ts',
@@ -72,6 +77,7 @@ const FILES = [
   'engine/round9-self-tests.ts',
   'engine/round10-self-tests.ts',
   'engine/round11-self-tests.ts',
+  'engine/round12-self-tests.ts',
   'a11y/aria-builders.ts',
   'a11y/focus-management.ts',
   'a11y/live-region-controller.ts',
@@ -103,6 +109,9 @@ const FILES = [
   'react/OnboardingFunnelCoachStrip.tsx',
   'react/ResponsiveNavRailHintBanner.tsx',
   'react/CoachLiveRegionDeliveryStrip.tsx',
+  'react/PhaseCoachGateBanner.tsx',
+  'react/ProgressionCoverageCoachStrip.tsx',
+  'react/ShowAllSafetyCoachBanner.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -144,7 +153,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.11.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.12.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -242,6 +251,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round11_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round12 = runAgent22Round12SelfTests();
+  for (const r of round12.results) {
+    check(\`agent22_round12_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -268,7 +282,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.11.0',
+  moduleVersion: '1.12.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),

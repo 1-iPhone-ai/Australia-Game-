@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { listAvailableKeyboardShortcuts } from '../engine/keyboard-shortcut-progression.js';
+import { planKeyboardHintsDisplay } from '../engine/keyboard-hints-priority-plan.js';
 import type { AccessibilitySettingsSnapshot } from '../types/accessibility.js';
 import type { InterfaceExperienceLevel } from '../types/progression.js';
 import type { V94StandardizedGamePhase } from '../adapters/v94-phase-bridge.js';
@@ -18,11 +18,11 @@ export function KeyboardHintsOverlay({
   accessibility,
   onInvoke,
 }: KeyboardHintsOverlayProps): React.ReactElement | null {
-  const shortcuts = useMemo(
-    () => listAvailableKeyboardShortcuts(interfaceLevel, phase),
+  const display = useMemo(
+    () => planKeyboardHintsDisplay(interfaceLevel, phase, 6),
     [interfaceLevel, phase]
   );
-  if (!accessibility.keyboardNavigationHints || shortcuts.length === 0) return null;
+  if (!accessibility.keyboardNavigationHints || display.shortcuts.length === 0) return null;
   const focusClass = buildFocusRingClassName({
     highContrast: accessibility.highContrastFocusRings,
     style: accessibility.focusRingStyle,
@@ -35,7 +35,12 @@ export function KeyboardHintsOverlay({
       aria-label="Keyboard shortcuts"
       className="text-xs opacity-90 space-y-0.5"
     >
-      {shortcuts.slice(0, 6).map(s => (
+      {display.coachCopy ? (
+        <p data-testid="keyboard-hints-coach-copy" className="opacity-80">
+          {display.coachCopy}
+        </p>
+      ) : null}
+      {display.shortcuts.map(s => (
         <button
           key={s.id}
           type="button"
