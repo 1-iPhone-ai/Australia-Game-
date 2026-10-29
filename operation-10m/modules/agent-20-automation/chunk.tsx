@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 8de1e3a2a1ec18de2e0780e90795904be75f1056671d64674125fedb18a9e0ee
-// OP10M_MODULE_VERSION: 10m.1.9.0-agent20
+// OP10M_MANIFEST_SHA256: 041bbdce2aceb68c288997088e21b60329c0ba1a29569324604e3c4a4e4e4cc4
+// OP10M_MODULE_VERSION: 10m.1.10.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -5347,6 +5347,447 @@ export function runO10Agent20IdleGovernanceStabilizationSelfTests(): O10SelfTest
 }
 
 
+// --- source: automation-idle-governance-reconciliation.ts ---
+  formatIdleGovernanceAuditDigest,
+  type O10IdleGovernanceAuditTrail,
+} from './automation-idle-governance-audit-trail.js';
+  runIdleGovernanceStabilizationPass,
+  type O10IdleGovernanceStabilizationPassResult,
+} from './automation-idle-governance-stabilization.js';
+  runIdleAutomationOpsGovernance,
+  type O10IdleOpsGovernanceResult,
+} from './automation-idle-ops-governance.js';
+
+export type O10IdleGovernanceReconciliationStatus = 'aligned' | 'improved' | 'drift' | 'blocked';
+
+export interface O10IdleGovernanceReconciliationResult {
+  schema: '10m.agent20.idle-governance-reconciliation.v1';
+  status: O10IdleGovernanceReconciliationStatus;
+  priorAlertLevel: string | null;
+  deltaPeakTier: number;
+  auditMatchesPass: boolean;
+  summaryLine: string;
+}
+
+function lastAuditAlert(trail: O10IdleGovernanceAuditTrail): string | null {
+  if (trail.entries.length === 0) return null;
+  return trail.entries[trail.entries.length - 1].alertLevel;
+}
+
+/** Compare stabilization pass outcomes against prior audit state and in-pass audit entry. */
+export function reconcileIdleGovernancePass(
+  pass: O10IdleGovernanceStabilizationPassResult,
+  priorTrail: O10IdleGovernanceAuditTrail
+): O10IdleGovernanceReconciliationResult {
+  const priorAlert = lastAuditAlert(priorTrail);
+  const latest = pass.auditTrail.entries[pass.auditTrail.entries.length - 1];
+  const auditMatchesPass =
+    !!latest &&
+    latest.alertLevel === pass.governance.alertLevel &&
+    latest.peakTier === pass.governance.window.summary.peakEffectiveTier &&
+    latest.appliedStepCount === pass.remediationRun.appliedStepCount;
+
+  const priorPeak =
+    priorTrail.entries.length > 0 ? priorTrail.entries[priorTrail.entries.length - 1].peakTier : null;
+  const deltaPeakTier =
+    priorPeak === null ? 0 : pass.governance.window.summary.peakEffectiveTier - priorPeak;
+
+  let status: O10IdleGovernanceReconciliationStatus = 'aligned';
+  if (!auditMatchesPass) status = 'drift';
+  else if (pass.stabilization.wave === 'idle_governance_blocked') status = 'blocked';
+  else if (
+    priorAlert &&
+    priorAlert !== 'none' &&
+    pass.governance.alertLevel === 'none'
+  ) {
+    status = 'improved';
+  } else if (deltaPeakTier < 0) status = 'improved';
+
+  const summaryLine = [
+    `gov_reconcile status=${status}`,
+    `audit_ok=${auditMatchesPass}`,
+    `delta_peak=${deltaPeakTier}`,
+  ].join(' ');
+
+  return {
+    schema: '10m.agent20.idle-governance-reconciliation.v1',
+    status,
+    priorAlertLevel: priorAlert,
+    deltaPeakTier,
+    auditMatchesPass,
+    summaryLine,
+  };
+}
+
+export interface O10IdleGovernanceComplianceCycleResult {
+  schema: '10m.agent20.idle-governance-compliance-cycle.v1';
+  governance: O10IdleOpsGovernanceResult;
+  pass: O10IdleGovernanceStabilizationPassResult;
+  reconciliation: O10IdleGovernanceReconciliationResult;
+  auditDigest: string;
+}
+
+/** End-to-end governance compliance cycle for round-10 integration hooks. */
+export function runIdleGovernanceComplianceCycle(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  turn: number,
+  priorTrail: O10IdleGovernanceAuditTrail
+): O10IdleGovernanceComplianceCycleResult {
+  const governance = runIdleAutomationOpsGovernance(
+    spec,
+    rule,
+    createDefaultAutonomousIdleNationalPersisted()
+  );
+  const pass = runIdleGovernanceStabilizationPass(governance, turn, priorTrail);
+  const reconciliation = reconcileIdleGovernancePass(pass, priorTrail);
+  return {
+    schema: '10m.agent20.idle-governance-compliance-cycle.v1',
+    governance,
+    pass,
+    reconciliation,
+    auditDigest: formatIdleGovernanceAuditDigest(pass.auditTrail),
+  };
+}
+
+export function runO10Agent20IdleGovernanceReconciliationSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'rec1',
+    name: 'Reconcile sample',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const cycle = runIdleGovernanceComplianceCycle(calmSpec, sampleRule, 2, {
+    schema: '10m.agent20.idle-governance-audit-trail.v1',
+    entries: [],
+  });
+  push(
+    'gov_reconcile_calm',
+    'calm cycle reconciles aligned',
+    cycle.reconciliation.status === 'aligned' && cycle.reconciliation.auditMatchesPass
+  );
+
+  const stressedSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 6,
+    humanCommittedEvery: 0,
+    idleMsStart: 200_000,
+    idleMsStep: 150_000,
+    consecutiveIdleStart: 8,
+  };
+  const stressCycle = runIdleGovernanceComplianceCycle(stressedSpec, sampleRule, 5, cycle.pass.auditTrail);
+  push(
+    'gov_reconcile_stress',
+    'stressed cycle may block or drift with elevated tier',
+    stressCycle.reconciliation.auditMatchesPass &&
+      (stressCycle.reconciliation.status === 'blocked' || stressCycle.governance.alertLevel !== 'none')
+  );
+
+  push(
+    'gov_reconcile_schema',
+    'reconciliation schema marker',
+    cycle.reconciliation.schema === '10m.agent20.idle-governance-reconciliation.v1' &&
+      cycle.schema === '10m.agent20.idle-governance-compliance-cycle.v1'
+  );
+
+  push(
+    'gov_reconcile_digest',
+    'compliance cycle exposes audit digest',
+    cycle.auditDigest.includes('entries=1') && stressCycle.auditDigest.includes('entries=')
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-escalation-ladder.ts ---
+
+export type O10IdleGovernanceEscalationLevel = 0 | 1 | 2 | 3;
+
+export interface O10IdleGovernanceEscalationLadderResult {
+  schema: '10m.agent20.idle-governance-escalation-ladder.v1';
+  level: O10IdleGovernanceEscalationLevel;
+  blockedStreak: number;
+  criticalStreak: number;
+  recommendedAction: string;
+  summaryLine: string;
+}
+
+function isStressEntry(alertLevel: string, pendingHumanCommit: boolean): boolean {
+  return alertLevel === 'critical' || (alertLevel === 'warn' && pendingHumanCommit);
+}
+
+/** Derive co-pilot escalation level from trailing audit entries. */
+export function evaluateIdleGovernanceEscalationLadder(
+  trail: O10IdleGovernanceAuditTrail
+): O10IdleGovernanceEscalationLadderResult {
+  let blockedStreak = 0;
+  let criticalStreak = 0;
+
+  for (let i = trail.entries.length - 1; i >= 0; i--) {
+    const e = trail.entries[i];
+    if (e.pendingHumanCommit && e.alertLevel !== 'none') {
+      blockedStreak += 1;
+    } else {
+      break;
+    }
+  }
+
+  for (let i = trail.entries.length - 1; i >= 0; i--) {
+    const e = trail.entries[i];
+    if (isStressEntry(e.alertLevel, e.pendingHumanCommit)) {
+      criticalStreak += 1;
+    } else {
+      break;
+    }
+  }
+
+  let level: O10IdleGovernanceEscalationLevel = 0;
+  let recommendedAction = 'monitor';
+
+  if (criticalStreak >= 3 || blockedStreak >= 3) {
+    level = 3;
+    recommendedAction = 'hard_pause_automation';
+  } else if (blockedStreak >= 2 || criticalStreak >= 2) {
+    level = 2;
+    recommendedAction = 'surface_takeover_banner';
+  } else if (blockedStreak >= 1 || criticalStreak >= 1) {
+    level = 1;
+    recommendedAction = 'nudge_human_commit';
+  }
+
+  const summaryLine = `gov_escalation level=${level} blocked_streak=${blockedStreak} critical_streak=${criticalStreak}`;
+
+  return {
+    schema: '10m.agent20.idle-governance-escalation-ladder.v1',
+    level,
+    blockedStreak,
+    criticalStreak,
+    recommendedAction,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceEscalationLadderSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const empty = evaluateIdleGovernanceEscalationLadder({
+    schema: '10m.agent20.idle-governance-audit-trail.v1',
+    entries: [],
+  });
+  push('gov_esc_empty', 'empty trail is level 0', empty.level === 0 && empty.recommendedAction === 'monitor');
+
+  const mk = (alert: string, pending: boolean, turn: number) => ({
+    schema: '10m.agent20.idle-governance-audit.v1' as const,
+    turn,
+    alertLevel: alert,
+    peakTier: 3 as const,
+    appliedStepCount: 2,
+    pendingHumanCommit: pending,
+    fingerprint: `${alert}-${turn}`,
+  });
+
+  const oneBlocked = evaluateIdleGovernanceEscalationLadder({
+    schema: '10m.agent20.idle-governance-audit-trail.v1',
+    entries: [mk('critical', true, 1)],
+  });
+  push('gov_esc_nudge', 'single blocked entry nudges human', oneBlocked.level === 1);
+
+  const streak = evaluateIdleGovernanceEscalationLadder({
+    schema: '10m.agent20.idle-governance-audit-trail.v1',
+    entries: [mk('warn', true, 1), mk('critical', true, 2), mk('critical', true, 3)],
+  });
+  push('gov_esc_hard', 'triple blocked streak hits level 3', streak.level === 3 && streak.blockedStreak === 3);
+
+  push(
+    'gov_esc_schema',
+    'escalation ladder schema marker',
+    streak.schema === '10m.agent20.idle-governance-escalation-ladder.v1' && streak.summaryLine.includes('level=3')
+  );
+
+  return results;
+}
+
+
+// --- source: automation-idle-governance-copilot-brief.ts ---
+  evaluateIdleGovernanceEscalationLadder,
+  type O10IdleGovernanceEscalationLadderResult,
+} from './automation-idle-governance-escalation-ladder.js';
+
+export interface O10IdleGovernanceCopilotBrief {
+  schema: '10m.agent20.idle-governance-copilot-brief.v1';
+  headline: string;
+  markdown: string;
+  escalationLevel: number;
+}
+
+export function buildIdleGovernanceCopilotBrief(
+  pass: O10IdleGovernanceStabilizationPassResult,
+  reconciliation: O10IdleGovernanceReconciliationResult,
+  ladder: O10IdleGovernanceEscalationLadderResult
+): O10IdleGovernanceCopilotBrief {
+  const report = buildIdleGovernanceReport(pass.governance);
+  const headline = [
+    'idle_gov_brief',
+    `wave=${pass.stabilization.wave}`,
+    `reconcile=${reconciliation.status}`,
+    `escalation=L${ladder.level}`,
+  ].join(' ');
+
+  const lines = [
+    '## Agent 20 idle governance co-pilot brief',
+    '',
+    `- ${pass.stabilization.summaryLine}`,
+    `- ${reconciliation.summaryLine}`,
+    `- ${ladder.summaryLine} action=${ladder.recommendedAction}`,
+    '',
+    report.markdown,
+    '',
+    pass.remediationRun.summaryLine,
+  ];
+
+  return {
+    schema: '10m.agent20.idle-governance-copilot-brief.v1',
+    headline,
+    markdown: lines.join('\n'),
+    escalationLevel: ladder.level,
+  };
+}
+
+/** Build brief from a full compliance cycle (round-10 dashboard hook). */
+export function buildIdleGovernanceCopilotBriefFromCycle(
+  cycle: O10IdleGovernanceComplianceCycleResult
+): O10IdleGovernanceCopilotBrief {
+  const ladder = evaluateIdleGovernanceEscalationLadder(cycle.pass.auditTrail);
+  return buildIdleGovernanceCopilotBrief(cycle.pass, cycle.reconciliation, ladder);
+}
+
+export function runO10Agent20IdleGovernanceCopilotBriefSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const mockPass: O10IdleGovernanceStabilizationPassResult = {
+    schema: '10m.agent20.idle-governance-stabilization-pass.v1',
+    governance: {
+      schema: '10m.agent20.idle-ops-governance.v1',
+      alertLevel: 'warn',
+      remediationStepCount: 2,
+      summaryLine: 'mock gov',
+      steward: { persisted: {} as never, throttled: true, reason: 'idle_ops_tier2_throttle_autonomy' },
+      window: {
+        queue: { maxDepth: 6, items: [] },
+        deescalationState: {} as never,
+        telemetry: [],
+        summary: {
+          schema: '10m.agent20.idle-ops-window.v1',
+          turnsRun: 2,
+          humanCommitCount: 0,
+          peakEffectiveTier: 2,
+          finalScheduleAction: 'defer',
+          digestSummary: 'defer=1/2',
+        },
+        lastTurn: {} as never,
+      },
+    },
+    remediationRun: {
+      schema: '10m.agent20.governance-remediation-run.v1',
+      plan: { schema: '10m.agent20.backpressure-remediation.v1', alertLevel: 'warn', steps: [] },
+      queue: { maxDepth: 6, items: [] },
+      appliedKinds: ['surface_warn_banner'],
+      appliedStepCount: 1,
+      pendingHumanCommit: false,
+      summaryLine: 'gov_remediation_run level=warn applied=1',
+    },
+    auditTrail: {
+      schema: '10m.agent20.idle-governance-audit-trail.v1',
+      entries: [
+        {
+          schema: '10m.agent20.idle-governance-audit.v1',
+          turn: 1,
+          alertLevel: 'warn',
+          peakTier: 2,
+          appliedStepCount: 1,
+          pendingHumanCommit: false,
+          fingerprint: 'w1',
+        },
+      ],
+    },
+    stabilization: {
+      schema: '10m.agent20.idle-governance-stabilization.v1',
+      wave: 'idle_governance_remediating',
+      stabilized: false,
+      auditDigest: 'idle_gov_audit entries=1',
+      reportHeadline: 'idle_governance alert=warn peak=t2',
+      summaryLine: 'gov_stabilization wave=idle_governance_remediating stabilized=false',
+    },
+  };
+
+  const reconciliation: O10IdleGovernanceReconciliationResult = {
+    schema: '10m.agent20.idle-governance-reconciliation.v1',
+    status: 'aligned',
+    priorAlertLevel: null,
+    deltaPeakTier: 0,
+    auditMatchesPass: true,
+    summaryLine: 'gov_reconcile status=aligned audit_ok=true delta_peak=0',
+  };
+
+  const ladder = evaluateIdleGovernanceEscalationLadder(mockPass.auditTrail);
+  const brief = buildIdleGovernanceCopilotBrief(mockPass, reconciliation, ladder);
+
+  push('gov_brief_md', 'brief markdown includes co-pilot header', brief.markdown.includes('## Agent 20 idle governance co-pilot brief'));
+  push(
+    'gov_brief_headline',
+    'headline encodes wave and reconcile',
+    brief.headline.includes('wave=idle_governance_remediating') && brief.headline.includes('reconcile=aligned')
+  );
+  push('gov_brief_schema', 'copilot brief schema marker', brief.schema === '10m.agent20.idle-governance-copilot-brief.v1');
+  push('gov_brief_escalation', 'brief carries escalation level', brief.escalationLevel === ladder.level);
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -5409,6 +5850,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20GovernanceRemediationRunnerSelfTests());
   results.push(...runO10Agent20IdleGovernanceAuditTrailSelfTests());
   results.push(...runO10Agent20IdleGovernanceStabilizationSelfTests());
+  results.push(...runO10Agent20IdleGovernanceReconciliationSelfTests());
+  results.push(...runO10Agent20IdleGovernanceEscalationLadderSelfTests());
+  results.push(...runO10Agent20IdleGovernanceCopilotBriefSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

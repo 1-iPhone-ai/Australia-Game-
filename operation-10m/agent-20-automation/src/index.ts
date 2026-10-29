@@ -30,6 +30,9 @@ export * from './automation-idle-governance-report.js';
 export * from './automation-governance-remediation-runner.js';
 export * from './automation-idle-governance-audit-trail.js';
 export * from './automation-idle-governance-stabilization.js';
+export * from './automation-idle-governance-reconciliation.js';
+export * from './automation-idle-governance-escalation-ladder.js';
+export * from './automation-idle-governance-copilot-brief.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
@@ -60,6 +63,9 @@ import { runO10Agent20IdleGovernanceReportSelfTests } from './automation-idle-go
 import { runO10Agent20GovernanceRemediationRunnerSelfTests } from './automation-governance-remediation-runner.js';
 import { runO10Agent20IdleGovernanceAuditTrailSelfTests } from './automation-idle-governance-audit-trail.js';
 import { runO10Agent20IdleGovernanceStabilizationSelfTests } from './automation-idle-governance-stabilization.js';
+import { runO10Agent20IdleGovernanceReconciliationSelfTests } from './automation-idle-governance-reconciliation.js';
+import { runO10Agent20IdleGovernanceEscalationLadderSelfTests } from './automation-idle-governance-escalation-ladder.js';
+import { runO10Agent20IdleGovernanceCopilotBriefSelfTests } from './automation-idle-governance-copilot-brief.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -120,6 +126,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20GovernanceRemediationRunnerSelfTests());
   results.push(...runO10Agent20IdleGovernanceAuditTrailSelfTests());
   results.push(...runO10Agent20IdleGovernanceStabilizationSelfTests());
+  results.push(...runO10Agent20IdleGovernanceReconciliationSelfTests());
+  results.push(...runO10Agent20IdleGovernanceEscalationLadderSelfTests());
+  results.push(...runO10Agent20IdleGovernanceCopilotBriefSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
