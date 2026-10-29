@@ -32973,8 +32973,10 @@ const calculateCreditScore = (player: any, gameState: any): number => {
   // Defaults (-20 per default)
   score -= loanHistory.defaultCount * 20;
 
-  // Net worth (±20 points)
-  const netWorth = player.money + (player.inventory?.length || 0) * 50;
+  // Net worth (±20 points) — debt-aware, aligned with calculateNetWorth / win metrics
+  const netWorth = calculateNetWorth(player);
+  const outstandingDebt = calculateActorOutstandingDebt(player);
+  if (outstandingDebt >= 3000) score -= Math.min(15, Math.floor(outstandingDebt / 400));
   if (netWorth > 5000) score += 20;
   else if (netWorth > 3000) score += 10;
   else if (netWorth > 1000) score += 0;
@@ -33327,6 +33329,36 @@ export function calculateActorOutstandingDebt(player: any): number {
     ? (simpleLoanDebt + advancedLoanDebt)
     : (typeof player.debt === 'number' && Number.isFinite(player.debt) ? player.debt : (typeof player.loans === 'number' && Number.isFinite(player.loans) ? player.loans : 0));
   return Number.isFinite(totalDebt) ? Math.max(0, totalDebt) : 0;
+}
+
+/** Next-turn simple + advanced loan interest (matches daily tick rules; used by Guardian liquidity checks). */
+export function estimateActorDailyLoanInterest(
+  actor: any,
+  gameSettings: GameSettingsState = DEFAULT_GAME_SETTINGS
+): number {
+  if (!actor) return 0;
+  let interest = 0;
+  const simpleLoans = Array.isArray(actor.loans) ? actor.loans : [];
+  for (const loan of simpleLoans) {
+    if (!loan || typeof loan !== 'object') continue;
+    const amount = typeof loan.amount === 'number' && Number.isFinite(loan.amount) ? loan.amount : 0;
+    if (amount <= 0) continue;
+    const principal =
+      typeof loan.principal === 'number' && loan.principal > 0 ? loan.principal : Math.min(amount, LOAN_AMOUNT);
+    interest += Math.floor(principal * LOAN_INTEREST_RATE);
+  }
+  if (gameSettings.advancedLoansEnabled) {
+    const creditScore = gameSettings.creditScoreEnabled ? calculateCreditScore(actor, {}) : 50;
+    const creditRange = getCreditScoreRange(creditScore);
+    const advancedLoans = Array.isArray(actor.advancedLoans) ? actor.advancedLoans : [];
+    for (const loan of advancedLoans) {
+      if (!loan || typeof loan !== 'object') continue;
+      const amount = typeof loan.amount === 'number' && Number.isFinite(loan.amount) ? loan.amount : 0;
+      if (amount <= 0) continue;
+      interest += calculateLoanInterest(loan as AdvancedLoan, gameSettings.creditScoreEnabled ? creditRange.multiplier : 1, gameSettings.interestAccrualRate);
+    }
+  }
+  return Number.isFinite(interest) ? Math.max(0, interest) : 0;
 }
 
 /**
@@ -43303,9 +43335,9 @@ function extractActorDebt(actor: Record<string, unknown> | null): {
   loans.forEach((l: unknown) => {
     if (l && typeof l === 'object') {
       const loanObj = l as Record<string, unknown>;
-      const amount = typeof loanObj.amount === 'number' ? loanObj.amount : 0;
-      const accrued = typeof loanObj.accrued === 'number' ? loanObj.accrued : 0;
-      simpleLoansDebt += amount + accrued;
+      const amount = typeof loanObj.amount === 'number' && Number.isFinite(loanObj.amount) ? loanObj.amount : 0;
+      const totalOwed = typeof loanObj.totalOwed === 'number' && Number.isFinite(loanObj.totalOwed) ? loanObj.totalOwed : 0;
+      simpleLoansDebt += totalOwed || amount || 0;
     }
   });
 
@@ -43313,14 +43345,21 @@ function extractActorDebt(actor: Record<string, unknown> | null): {
   advLoans.forEach((l: unknown) => {
     if (l && typeof l === 'object') {
       const loanObj = l as Record<string, unknown>;
-      const amount = typeof loanObj.amount === 'number' ? loanObj.amount : 0;
-      const accruedInterest = typeof loanObj.accruedInterest === 'number' ? loanObj.accruedInterest : 0;
-      advLoansDebt += amount + accruedInterest;
+      const amount = typeof loanObj.amount === 'number' && Number.isFinite(loanObj.amount) ? loanObj.amount : 0;
+      const accruedInterest =
+        typeof loanObj.accruedInterest === 'number' && Number.isFinite(loanObj.accruedInterest)
+          ? loanObj.accruedInterest
+          : typeof loanObj.accrued === 'number' && Number.isFinite(loanObj.accrued)
+          ? loanObj.accrued
+          : 0;
+      const totalOwed = typeof loanObj.totalOwed === 'number' && Number.isFinite(loanObj.totalOwed) ? loanObj.totalOwed : 0;
+      advLoansDebt += totalOwed || (amount + accruedInterest) || 0;
     }
   });
 
-  const totalDebt = simpleLoansDebt + advLoansDebt;
-  const dailyLoanInterest = simpleLoansDebt * 0.05 + advLoansDebt * 0.08;
+  const summed = simpleLoansDebt + advLoansDebt;
+  const totalDebt = summed > 0 ? summed : calculateActorOutstandingDebt(actor);
+  const dailyLoanInterest = estimateActorDailyLoanInterest(actor);
 
   return { simpleLoansDebt, advLoansDebt, totalDebt, dailyLoanInterest };
 }
@@ -136509,6 +136548,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1010', label: 'V10.10 Workforce, Skills & Human Capital', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1010WorkforceHumanCapitalSelfTests() },
   { id: 'v1011', label: 'V10.11 Adaptive Governance & State Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1011AdaptiveGovernanceSelfTests() },
   { id: 'v1012', label: 'V10.12 Public Finance & Fiscal Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1012PublicFinanceSelfTests() },
+  { id: 'o111_d24', label: 'O111 Agent 24 — Debt & Financial Stability', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runO111DebtFinancialStabilitySelfTests() },
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
@@ -181922,6 +181962,84 @@ export function triggerJsonFileDownload(filename: string, data: unknown): boolea
     console.warn('[download] blocked or unavailable:', error);
     return false;
   }
+}
+
+
+// ============================================================================
+// SECTION 20AG: OPERATION 111 — DEBT & FINANCIAL STABILITY (Agent 24)
+// Actor-loan accounting, credit scoring, Guardian liquidity, sovereign-debt boundaries.
+// ============================================================================
+
+export function runO111DebtFinancialStabilitySelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  check('o111_d24_outstanding_debt', 'calculateActorOutstandingDebt ignores accrued double-count on simple loans', () => {
+    const actor = {
+      money: 2000,
+      loans: [{ id: 'l1', amount: 480, principal: 500, accrued: 120 }],
+      advancedLoans: []
+    };
+    return calculateActorOutstandingDebt(actor) === 480 || `got ${calculateActorOutstandingDebt(actor)}`;
+  });
+
+  check('o111_d24_extract_align', 'extractActorDebt total matches calculateActorOutstandingDebt', () => {
+    const actor = {
+      money: 900,
+      loans: [{ id: 'l1', amount: 480, principal: 500, accrued: 120 }],
+      advancedLoans: [{ id: 'a1', amount: 200, accrued: 15, term: 10, actualInterestRate: 0.2, daysRemaining: 5 }]
+    };
+    const ext = extractActorDebt(actor as any);
+    const canon = calculateActorOutstandingDebt(actor);
+    return (ext.totalDebt === canon && ext.totalDebt > 0) || JSON.stringify({ ext, canon });
+  });
+
+  check('o111_d24_daily_interest', 'estimateActorDailyLoanInterest uses principal-based simple loan rate', () => {
+    const actor = { loans: [{ amount: 500, principal: 500 }], advancedLoans: [] };
+    const interest = estimateActorDailyLoanInterest(actor);
+    const expected = Math.floor(500 * LOAN_INTEREST_RATE);
+    return interest === expected || `${interest} vs ${expected}`;
+  });
+
+  check('o111_d24_credit_debt_penalty', 'Credit score penalizes high outstanding debt via net worth', () => {
+    const base = { money: 6000, inventory: [], investments: [], equipment: [], loans: [], advancedLoans: [], loanHistory: { totalTaken: 0, totalRepaid: 0, defaultCount: 0, earlyRepaymentCount: 0 }, daysSinceLastBankruptcy: 30, challengesCompleted: [] };
+    const clean = calculateCreditScore(base, {});
+    const levered = calculateCreditScore({ ...base, money: 6000, loans: [{ amount: 4000, principal: 4000 }] }, {});
+    return levered < clean || `${levered} vs ${clean}`;
+  });
+
+  check('o111_d24_sovereign_boundary', 'Actor loans do not inflate sovereign fiscal debt (V10.12)', () => {
+    const p0 = createInitialPublicFinancePersisted();
+    const st = computeNationalPublicFinance(
+      {
+        turn: 3,
+        enabled: true,
+        debtEnabled: true,
+        completedInfrastructureCount: 1,
+        completedInfrastructureByNetwork: { freight: 1, energy: 0, water: 0, digital: 0, research: 0, regional_infra: 0 },
+        programs: [],
+        crises: [],
+        actorLoans: [{ id: 'x', principal: 90000, interest: 9000 }]
+      } as any,
+      p0
+    ).state;
+    return st.debt.level === 0 && st.debt.debtServiceLoad === 0;
+  });
+
+  check('o111_d24_simple_tick', 'applySimpleLoanTick charges interest on principal, not compounding full balance', () => {
+    const after = applySimpleLoanTick({ money: 0, loans: [{ amount: 500, principal: 500, accrued: 0 }] });
+    const interest = Math.floor(500 * LOAN_INTEREST_RATE);
+    return after.loans[0].amount === 500 + interest || JSON.stringify(after);
+  });
+
+  return results;
 }
 
 // ============================================================================
