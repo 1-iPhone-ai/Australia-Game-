@@ -150,6 +150,10 @@ import {
   advanceCoalitionPrimarchPerpetuityStreak,
   applyPrimarchPerpetuityMandateBonus,
 } from './coalition-primarch-perpetuity.ts';
+import {
+  advanceCoalitionPatriarchEternityStreak,
+  applyPatriarchEternityMandateBonus,
+} from './coalition-patriarch-eternity.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -279,6 +283,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyExarchAscendancyMandateBonus(next, daysAdvanced);
   next = advanceCoalitionPrimarchPerpetuityStreak(next, daysAdvanced);
   next = applyPrimarchPerpetuityMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionPatriarchEternityStreak(next, daysAdvanced);
+  next = applyPatriarchEternityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 

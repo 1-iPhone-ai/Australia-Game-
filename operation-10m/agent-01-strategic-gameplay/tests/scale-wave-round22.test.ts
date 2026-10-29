@@ -120,7 +120,7 @@ describe('scale wave round 22 — absolute coalition sanctity', () => {
       coalitionAbsoluteSanctityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(43);
+    expect(save.version).toBe(44);
     expect(save.coalitionAbsoluteSanctityStreakDays).toBe(5);
   });
 });

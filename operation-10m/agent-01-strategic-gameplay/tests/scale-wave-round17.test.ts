@@ -114,7 +114,7 @@ describe('scale wave round 17 — transcendent coalition legacy', () => {
       coalitionTranscendentLegacyStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(43);
+    expect(save.version).toBe(44);
     expect(save.coalitionTranscendentLegacyStreakDays).toBe(5);
   });
 });

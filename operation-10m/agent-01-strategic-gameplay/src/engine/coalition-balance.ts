@@ -428,3 +428,13 @@ export function primarchPerpetuityRankingBonus(
   if (streak >= action.minCoalitionPrimarchPerpetuityStreakDays) return 38;
   return 2;
 }
+
+export function patriarchEternityRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionPatriarchEternityStreakDays === undefined) return 0;
+  const streak = state.coalitionPatriarchEternityStreakDays ?? 0;
+  if (streak >= action.minCoalitionPatriarchEternityStreakDays) return 39;
+  return 2;
+}
