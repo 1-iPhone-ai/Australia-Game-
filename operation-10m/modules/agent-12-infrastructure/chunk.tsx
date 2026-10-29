@@ -445,8 +445,14 @@ export type RemoteOrganTransplantSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortShorePowerColdIroningLogisticsPolicy = 'baseline' | 'expand';
 
+export type AdvancedSemiconductorPackagingExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteBurnUnitSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortWindAssistedShipBerthingLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/49';
+  schemaVersion: 'agent12/50';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -804,6 +810,14 @@ export interface TransportInfrastructureState {
   portShorePowerColdIroningLogisticsShare: number;
   nationalPortShorePowerColdIroningLogisticsThroughputIndex: number;
   portShorePowerColdIroningLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalAdvancedSemiconductorPackagingExportIndex: number;
+  advancedSemiconductorPackagingExportByRegion: Record<AuRegionCode, number>;
+  remoteBurnUnitSupplyStagingShare: number;
+  nationalRemoteBurnUnitSupplyStagingIndex: number;
+  remoteBurnUnitSupplyStagingByRegion: Record<AuRegionCode, number>;
+  portWindAssistedShipBerthingLogisticsShare: number;
+  nationalPortWindAssistedShipBerthingLogisticsThroughputIndex: number;
+  portWindAssistedShipBerthingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -941,6 +955,9 @@ export interface TransportInfrastructureOptions {
   greenHydrogenElectrolyzerExportPolicy?: GreenHydrogenElectrolyzerExportPolicy;
   remoteOrganTransplantSupplyStagingPolicy?: RemoteOrganTransplantSupplyStagingPolicy;
   portShorePowerColdIroningLogisticsPolicy?: PortShorePowerColdIroningLogisticsPolicy;
+  advancedSemiconductorPackagingExportPolicy?: AdvancedSemiconductorPackagingExportPolicy;
+  remoteBurnUnitSupplyStagingPolicy?: RemoteBurnUnitSupplyStagingPolicy;
+  portWindAssistedShipBerthingLogisticsPolicy?: PortWindAssistedShipBerthingLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -3016,6 +3033,48 @@ export const TRANSPORT_CORRIDORS_ROUND48: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round49.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND49: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_nsw_vic_semiconductor_packaging',
+    name: 'NSW–VIC Semiconductor Packaging',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['advanced_semiconductor_packaging', 'chiplet_export_logistics', 'cleanroom_freight_corridor'],
+      VIC: ['advanced_semiconductor_packaging', 'chiplet_export_logistics', 'cleanroom_freight_corridor'],
+    },
+    productivitySynergyPoints: 7.3,
+    logisticsRelief: 0.044,
+  },
+  {
+    id: 'corr_nt_sa_burn_unit_remote',
+    name: 'NT–SA Remote Burn Unit',
+    networkKind: 'mobility',
+    regionSequence: ['NT', 'SA'],
+    requiredTagsByRegion: {
+      NT: ['remote_burn_unit_supply', 'burn_care_staging', 'trauma_logistics'],
+      SA: ['remote_burn_unit_supply', 'burn_care_staging', 'trauma_logistics'],
+    },
+    productivitySynergyPoints: 7.1,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_wa_qld_wind_assisted_berthing',
+    name: 'WA–QLD Wind-Assisted Berthing',
+    networkKind: 'freight',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['port_wind_assisted_berthing', 'kite_tow_logistics', 'emission_free_mooring'],
+      QLD: ['port_wind_assisted_berthing', 'kite_tow_logistics', 'emission_free_mooring'],
+    },
+    productivitySynergyPoints: 7.0,
+    logisticsRelief: 0.041,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -3211,6 +3270,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND46,
   ...TRANSPORT_CORRIDORS_ROUND47,
   ...TRANSPORT_CORRIDORS_ROUND48,
+  ...TRANSPORT_CORRIDORS_ROUND49,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -5931,6 +5991,62 @@ export const TRANSPORT_SCENARIOS_ROUND48: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round49.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND49: TransportStressScenario[] = [
+  {
+    id: 'scn_nsw_semiconductor_export_surge',
+    label: 'NSW Semiconductor Export Surge',
+    description: 'Packaging restart overloads Botany cleanroom berths.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_vic_chiplet_feed_delay',
+    label: 'VIC Chiplet Feed Delay',
+    description: 'Heat slows Dandenong cleanroom feed.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail', 'road'],
+  },
+  {
+    id: 'scn_nt_burn_unit_resupply',
+    label: 'NT Burn Unit Resupply',
+    description: 'Trauma surge strains Darwin burn hub.',
+    targetRegions: ['NT', 'SA'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.32,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_wa_wind_berthing_peak',
+    label: 'WA Wind Berthing Peak',
+    description: 'Cyclone season loads Fremantle kite-tow terminal.',
+    targetRegions: ['WA', 'QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_qld_wind_mooring_backlog',
+    label: 'QLD Wind Mooring Backlog',
+    description: 'Calm weather hold delays Gladstone mooring depot.',
+    targetRegions: ['QLD', 'WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -6140,6 +6256,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND46,
   ...TRANSPORT_SCENARIOS_ROUND47,
   ...TRANSPORT_SCENARIOS_ROUND48,
+  ...TRANSPORT_SCENARIOS_ROUND49,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -17878,6 +17995,265 @@ export const SCALE_WAVE_ROUND48_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round49-assets.ts ---
+
+export const ROUND49_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_nsw_sydney_semiconductor_haul',
+    category: 'road',
+    name: 'Sydney Semiconductor Haul',
+    description: 'NSW chiplet export staging road.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['advanced_semiconductor_packaging', 'chiplet_export_logistics', 'cleanroom_freight_corridor'],
+    laneKilometres: 29,
+    designSpeedKmh: 88,
+    freightShare: 0.33,
+    urbanShare: 0.13,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_dandenong_semiconductor_feed',
+    category: 'road',
+    name: 'Dandenong Semiconductor Feed',
+    description: 'VIC cleanroom freight connector.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade'],
+    tags: ['advanced_semiconductor_packaging', 'chiplet_export_logistics', 'cleanroom_freight_corridor'],
+    laneKilometres: 27,
+    designSpeedKmh: 86,
+    freightShare: 0.31,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_alice_burn_unit_access',
+    category: 'road',
+    name: 'Alice Burn Unit Access',
+    description: 'NT trauma logistics staging road.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_burn_unit_supply', 'burn_care_staging', 'trauma_logistics'],
+    laneKilometres: 22,
+    designSpeedKmh: 78,
+    freightShare: 0.09,
+    urbanShare: 0.16,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_port_augusta_burn_staging',
+    category: 'road',
+    name: 'Port Augusta Burn Staging',
+    description: 'SA burn-care logistics connector.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['remote_burn_unit_supply', 'burn_care_staging', 'trauma_logistics'],
+    laneKilometres: 20,
+    designSpeedKmh: 76,
+    freightShare: 0.08,
+    urbanShare: 0.15,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_fremantle_wind_berthing_feed',
+    category: 'road',
+    name: 'Fremantle Wind Berthing Feed',
+    description: 'WA kite-tow logistics road.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_wind_assisted_berthing', 'kite_tow_logistics', 'emission_free_mooring'],
+    laneKilometres: 24,
+    designSpeedKmh: 84,
+    freightShare: 0.28,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_gladstone_wind_mooring_staging',
+    category: 'road',
+    name: 'Gladstone Wind Mooring Staging',
+    description: 'QLD emission-free mooring connector.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade'],
+    tags: ['port_wind_assisted_berthing', 'kite_tow_logistics', 'emission_free_mooring'],
+    laneKilometres: 21,
+    designSpeedKmh: 80,
+    freightShare: 0.26,
+    urbanShare: 0.11,
+    tollRoad: false,
+  },
+];
+
+export const ROUND49_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_nsw_sydney_semiconductor_rail',
+    category: 'rail',
+    name: 'Sydney Semiconductor Rail',
+    description: 'NSW chiplet export feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 6.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['advanced_semiconductor_packaging', 'chiplet_export_logistics', 'cleanroom_freight_corridor'],
+    trackKilometres: 41,
+    dualTrackShare: 0.51,
+    electrifiedShare: 0.49,
+    designFreightTonnesPerYear: 2_100_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nt_ghan_burn_unit_rail',
+    category: 'rail',
+    name: 'Ghan Burn Unit Rail',
+    description: 'NT trauma staging express feed.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['remote_burn_unit_supply', 'burn_care_staging', 'trauma_logistics'],
+    trackKilometres: 35,
+    dualTrackShare: 0.38,
+    electrifiedShare: 0.22,
+    designFreightTonnesPerYear: 980_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_wa_pilbara_wind_berthing_rail',
+    category: 'rail',
+    name: 'Pilbara Wind Berthing Rail',
+    description: 'WA kite-tow port feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 6.0,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_wind_assisted_berthing', 'kite_tow_logistics', 'emission_free_mooring'],
+    trackKilometres: 37,
+    dualTrackShare: 0.46,
+    electrifiedShare: 0.44,
+    designFreightTonnesPerYear: 2_700_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND49_PORTS: PortAsset[] = [
+  {
+    id: 'port_nsw_botany_semiconductor_export',
+    category: 'port',
+    name: 'Botany Semiconductor Export',
+    description: 'NSW advanced packaging export port.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 6.5,
+    strategicNetworks: ['trade'],
+    tags: ['advanced_semiconductor_packaging', 'chiplet_export_logistics', 'cleanroom_freight_corridor'],
+    berthCount: 3,
+    maxDraftMetres: 12.9,
+    teuCapacityPerYear: 92_000,
+    automationLevel: 3,
+    bulkShare: 0.06,
+  },
+  {
+    id: 'port_nt_darwin_burn_unit_hub',
+    category: 'port',
+    name: 'Darwin Burn Unit Hub',
+    description: 'NT remote burn-care logistics port.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['remote_burn_unit_supply', 'burn_care_staging', 'trauma_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.4,
+    teuCapacityPerYear: 86_000,
+    automationLevel: 1,
+    bulkShare: 0.1,
+  },
+  {
+    id: 'port_wa_fremantle_wind_berthing_terminal',
+    category: 'port',
+    name: 'Fremantle Wind Berthing Terminal',
+    description: 'WA wind-assisted ship mooring staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 6.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_wind_assisted_berthing', 'kite_tow_logistics', 'emission_free_mooring'],
+    berthCount: 4,
+    maxDraftMetres: 13.2,
+    teuCapacityPerYear: 198_000,
+    automationLevel: 2,
+    bulkShare: 0.05,
+  },
+];
+
+export const ROUND49_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_vic_dandenong_semiconductor_stores',
+    category: 'logistics',
+    name: 'Dandenong Semiconductor Stores',
+    description: 'VIC chiplet consolidation yard.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['trade'],
+    tags: ['advanced_semiconductor_packaging', 'chiplet_export_logistics', 'cleanroom_freight_corridor'],
+    warehouseSqm: 52_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port', 'rail'],
+    lastMileCoveragePct: 45,
+  },
+  {
+    id: 'log_sa_port_augusta_burn_stores',
+    category: 'logistics',
+    name: 'Port Augusta Burn Stores',
+    description: 'SA trauma supply consolidation yard.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_burn_unit_supply', 'burn_care_staging', 'trauma_logistics'],
+    warehouseSqm: 29_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 47,
+  },
+  {
+    id: 'log_qld_gladstone_wind_mooring_depot',
+    category: 'logistics',
+    name: 'Gladstone Wind Mooring Depot',
+    description: 'QLD kite-tow logistics depot.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_wind_assisted_berthing', 'kite_tow_logistics', 'emission_free_mooring'],
+    warehouseSqm: 39_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 53,
+  },
+];
+
+export const SCALE_WAVE_ROUND49_ASSETS = [
+  ...ROUND49_ROADS,
+  ...ROUND49_RAIL,
+  ...ROUND49_PORTS,
+  ...ROUND49_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -17934,6 +18310,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND46_ASSETS,
     ...SCALE_WAVE_ROUND47_ASSETS,
     ...SCALE_WAVE_ROUND48_ASSETS,
+    ...SCALE_WAVE_ROUND49_ASSETS,
   ];
 }
 
@@ -20687,6 +21064,67 @@ export function nationalGreenHydrogenElectrolyzerExportIndex(
 export function greenHydrogenElectrolyzerExportProductivityMultiplier(
   index: number,
   policy: GreenHydrogenElectrolyzerExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.03 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.033 + policyBoost, 0.93, 1.09);
+}
+
+
+// --- source: network/advanced-semiconductor-packaging-export-index.ts ---
+  AU_REGION_CODES,
+  type AdvancedSemiconductorPackagingExportPolicy,
+  type AuRegionCode,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 advanced semiconductor packaging export throughput by region. */
+export function computeAdvancedSemiconductorPackagingExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'advanced_semiconductor_packaging' ||
+        t === 'chiplet_export_logistics' ||
+        t === 'cleanroom_freight_corridor',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.84 + asset.maxDraftMetres * 0.31;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 61_000 + asset.intermodalLinks.length * 0.56;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 418;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 7_900_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAdvancedSemiconductorPackagingExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.45 + max * 0.55, 5, 72) * 10) / 10;
+}
+
+export function advancedSemiconductorPackagingExportProductivityMultiplier(
+  index: number,
+  policy: AdvancedSemiconductorPackagingExportPolicy = 'baseline',
 ): number {
   const policyBoost = policy === 'accelerate' ? 0.03 : 0;
   const normalized = (index - 5) / 100;
@@ -24371,6 +24809,96 @@ export function computeRemoteOrganTransplantSupplyStagingShare(
 export function remoteOrganTransplantSupplyStagingProductivityMultiplier(
   share: number,
   policy: RemoteOrganTransplantSupplyStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.01 : 1;
+  return (1 + (share - 0.04) * 0.016) * bias;
+}
+
+
+// --- source: operations/remote-burn-unit-supply-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RemoteBurnUnitSupplyStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 remote burn-unit supply staging readiness by region. */
+export function computeRemoteBurnUnitSupplyStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'remote_burn_unit_supply' ||
+          t === 'burn_care_staging' ||
+          t === 'trauma_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 53_000 + (asset.coldChainCapable ? 1.33 : 0.72);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 388;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.81;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 226;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.021 - stress * 0.016), 5, 74) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRemoteBurnUnitSupplyStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 72) * 10) / 10;
+}
+
+export function computeRemoteBurnUnitSupplyStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: RemoteBurnUnitSupplyStagingPolicy = 'baseline',
+): number {
+  let burnUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('remote_burn_unit_supply') || asset.tags.includes('trauma_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 49_000;
+        burnUnits += (asset.warehouseSqm / 49_000) * 0.53;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 352;
+        burnUnits += (asset.laneKilometres / 352) * 0.45;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.03;
+  const policyBoost = policy === 'surge' ? 0.018 : 0;
+  return Math.round(clamp(burnUnits / totalUnits + policyBoost, 0.028, 0.18) * 1000) / 1000;
+}
+
+export function remoteBurnUnitSupplyStagingProductivityMultiplier(
+  share: number,
+  policy: RemoteBurnUnitSupplyStagingPolicy,
 ): number {
   const bias = policy === 'surge' ? 1.01 : 1;
   return (1 + (share - 0.04) * 0.016) * bias;
@@ -28337,6 +28865,102 @@ export function nationalPortShorePowerColdIroningLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/port-wind-assisted-ship-berthing-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PortWindAssistedShipBerthingLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of port logistics supporting wind-assisted ship berthing. */
+export function computePortWindAssistedShipBerthingLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: PortWindAssistedShipBerthingLogisticsPolicy = 'baseline',
+): number {
+  let windUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'port_wind_assisted_berthing' ||
+          t === 'kite_tow_logistics' ||
+          t === 'emission_free_mooring',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 0.9 + asset.teuCapacityPerYear / 425_000;
+        windUnits += (asset.berthCount * 0.9) * 0.49;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 46_000;
+        windUnits += (asset.warehouseSqm / 46_000) * 0.46;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 325;
+        windUnits += (asset.laneKilometres / 325) * 0.38;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.032;
+  const policyBoost = policy === 'expand' ? 0.02 : 0;
+  return Math.round(clamp(windUnits / totalUnits + policyBoost, 0.031, 0.19) * 1000) / 1000;
+}
+
+export function portWindAssistedShipBerthingLogisticsProductivityMultiplier(
+  share: number,
+  policy: PortWindAssistedShipBerthingLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.012 : 1;
+  return (1 + (share - 0.05) * 0.016) * bias;
+}
+
+export function computePortWindAssistedShipBerthingLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'port_wind_assisted_berthing' ||
+          t === 'kite_tow_logistics' ||
+          t === 'emission_free_mooring',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 42_000 + asset.lastMileCoveragePct / 91;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 332;
+    }
+    if (asset.category === 'rail' && 'trackKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 200;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPortWindAssistedShipBerthingLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.43 + max * 0.57, 2, 68) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -29134,6 +29758,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalPortShorePowerColdIroningLogisticsThroughputIndex,
   portShorePowerColdIroningLogisticsProductivityMultiplier,
 } from './port-shore-power-cold-ironing-logistics-index.ts';
+  computeAdvancedSemiconductorPackagingExportByRegion,
+  advancedSemiconductorPackagingExportProductivityMultiplier,
+  nationalAdvancedSemiconductorPackagingExportIndex,
+} from '../network/advanced-semiconductor-packaging-export-index.ts';
+  computeRemoteBurnUnitSupplyStagingByRegion,
+  computeRemoteBurnUnitSupplyStagingShare,
+  nationalRemoteBurnUnitSupplyStagingIndex,
+  remoteBurnUnitSupplyStagingProductivityMultiplier,
+} from '../operations/remote-burn-unit-supply-staging-index.ts';
+  computePortWindAssistedShipBerthingLogisticsShare,
+  computePortWindAssistedShipBerthingLogisticsThroughputByRegion,
+  nationalPortWindAssistedShipBerthingLogisticsThroughputIndex,
+  portWindAssistedShipBerthingLogisticsProductivityMultiplier,
+} from './port-wind-assisted-ship-berthing-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -30707,6 +31345,41 @@ export function computeTransportInfrastructureState(
     portShorePowerColdIroningLogisticsShare,
     options?.portShorePowerColdIroningLogisticsPolicy ?? 'baseline',
   );
+  const advancedSemiconductorPackagingExportByRegion =
+    computeAdvancedSemiconductorPackagingExportByRegion(ops);
+  const nationalSemiconductor = nationalAdvancedSemiconductorPackagingExportIndex(
+    advancedSemiconductorPackagingExportByRegion,
+  );
+  const semiconductorMult = advancedSemiconductorPackagingExportProductivityMultiplier(
+    nationalSemiconductor,
+    options?.advancedSemiconductorPackagingExportPolicy ?? 'baseline',
+  );
+  const remoteBurnUnitSupplyStagingByRegion = computeRemoteBurnUnitSupplyStagingByRegion(
+    ops,
+    networkStress,
+  );
+  const nationalBurnUnit = nationalRemoteBurnUnitSupplyStagingIndex(remoteBurnUnitSupplyStagingByRegion);
+  const remoteBurnUnitSupplyStagingShare = computeRemoteBurnUnitSupplyStagingShare(
+    ops,
+    options?.remoteBurnUnitSupplyStagingPolicy ?? 'baseline',
+  );
+  const burnUnitMult = remoteBurnUnitSupplyStagingProductivityMultiplier(
+    remoteBurnUnitSupplyStagingShare,
+    options?.remoteBurnUnitSupplyStagingPolicy ?? 'baseline',
+  );
+  const portWindAssistedShipBerthingLogisticsThroughputByRegion =
+    computePortWindAssistedShipBerthingLogisticsThroughputByRegion(ops);
+  const nationalWindBerthing = nationalPortWindAssistedShipBerthingLogisticsThroughputIndex(
+    portWindAssistedShipBerthingLogisticsThroughputByRegion,
+  );
+  const portWindAssistedShipBerthingLogisticsShare = computePortWindAssistedShipBerthingLogisticsShare(
+    ops,
+    options?.portWindAssistedShipBerthingLogisticsPolicy ?? 'baseline',
+  );
+  const windBerthingMult = portWindAssistedShipBerthingLogisticsProductivityMultiplier(
+    portWindAssistedShipBerthingLogisticsShare,
+    options?.portWindAssistedShipBerthingLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -30808,6 +31481,9 @@ export function computeTransportInfrastructureState(
     const greenH2Boost = (greenHydrogenElectrolyzerExportByRegion[code] - 5) * 0.002;
     const organTransplantBoost = (remoteOrganTransplantSupplyStagingByRegion[code] - 6) * 0.0016;
     const shorePowerBoost = (portShorePowerColdIroningLogisticsThroughputByRegion[code] - 2) * 0.0012;
+    const semiconductorBoost = (advancedSemiconductorPackagingExportByRegion[code] - 5) * 0.0019;
+    const burnUnitBoost = (remoteBurnUnitSupplyStagingByRegion[code] - 6) * 0.0015;
+    const windBerthingBoost = (portWindAssistedShipBerthingLogisticsThroughputByRegion[code] - 2) * 0.0011;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -30908,7 +31584,10 @@ export function computeTransportInfrastructureState(
         autonomousTugBoost +
         greenH2Boost +
         organTransplantBoost +
-        shorePowerBoost) *
+        shorePowerBoost +
+        semiconductorBoost +
+        burnUnitBoost +
+        windBerthingBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -31007,7 +31686,10 @@ export function computeTransportInfrastructureState(
       autonomousTugMult *
       greenH2Mult *
       organTransplantMult *
-      shorePowerMult;
+      shorePowerMult *
+      semiconductorMult *
+      burnUnitMult *
+      windBerthingMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -31129,7 +31811,10 @@ export function computeTransportInfrastructureState(
     nationalAutonomousTug * 0.003 +
     nationalGreenH2 * 0.003 +
     nationalOrganTransplant * 0.003 +
-    nationalShorePower * 0.003;
+    nationalShorePower * 0.003 +
+    nationalSemiconductor * 0.003 +
+    nationalBurnUnit * 0.003 +
+    nationalWindBerthing * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -31144,7 +31829,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/49',
+    schemaVersion: 'agent12/50',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -31502,6 +32187,14 @@ export function computeTransportInfrastructureState(
     portShorePowerColdIroningLogisticsShare,
     nationalPortShorePowerColdIroningLogisticsThroughputIndex: nationalShorePower,
     portShorePowerColdIroningLogisticsThroughputByRegion,
+    nationalAdvancedSemiconductorPackagingExportIndex: nationalSemiconductor,
+    advancedSemiconductorPackagingExportByRegion,
+    remoteBurnUnitSupplyStagingShare,
+    nationalRemoteBurnUnitSupplyStagingIndex: nationalBurnUnit,
+    remoteBurnUnitSupplyStagingByRegion,
+    portWindAssistedShipBerthingLogisticsShare,
+    nationalPortWindAssistedShipBerthingLogisticsThroughputIndex: nationalWindBerthing,
+    portWindAssistedShipBerthingLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -31584,7 +32277,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/49' &&
+      infra.schemaVersion === 'agent12/50' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -31753,8 +32446,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalGreenHydrogenElectrolyzerExportIndex >= 5 &&
       infra.nationalRemoteOrganTransplantSupplyStagingIndex >= 6 &&
       infra.portShorePowerColdIroningLogisticsShare >= 0.03 &&
-      infra.nationalPortShorePowerColdIroningLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)}`,
+      infra.nationalPortShorePowerColdIroningLogisticsThroughputIndex >= 2 &&
+      infra.nationalAdvancedSemiconductorPackagingExportIndex >= 5 &&
+      infra.nationalRemoteBurnUnitSupplyStagingIndex >= 6 &&
+      infra.portWindAssistedShipBerthingLogisticsShare >= 0.03 &&
+      infra.nationalPortWindAssistedShipBerthingLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)} semi=${infra.nationalAdvancedSemiconductorPackagingExportIndex.toFixed(1)}`,
   });
 
   return results;
