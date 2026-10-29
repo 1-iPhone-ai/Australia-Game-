@@ -7,6 +7,8 @@ import type {
   Op10mSimulationSlice,
   Op10mTriggerRequirement,
 } from './types.ts';
+import { getContagionLevel } from './regional-graph.ts';
+import { hasArmedBypass } from './deep-chain-orchestrator.ts';
 
 export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
   const slot = Math.floor(((day - 1) % 360) / 90);
@@ -16,11 +18,13 @@ export function seasonForDay(day: number): Op10mSimulationSlice['season'] {
 export function evaluateRequirements(
   requires: Op10mTriggerRequirement[],
   sim: Op10mSimulationSlice,
-  chainRuntime: Op10mActiveChainRuntime | null
+  chainRuntime: Op10mActiveChainRuntime | null,
+  context?: { armedBypass?: boolean; chainId?: string; narrative?: Op10mNarrativeEngineState }
 ): { ok: boolean; reason: string } {
   for (const req of requires) {
     switch (req.k) {
       case 'season':
+        if (context?.armedBypass) break;
         if (!req.seasons.includes(sim.season)) {
           return { ok: false, reason: `season ${sim.season}` };
         }
@@ -67,6 +71,18 @@ export function evaluateRequirements(
           return { ok: false, reason: `phase!=${req.phase}` };
         }
         break;
+      case 'regional_contagion': {
+        const level = getContagionLevel(sim, req.region, req.theme);
+        if (level < req.min) return { ok: false, reason: `contagion ${level}<${req.min}` };
+        break;
+      }
+      case 'armed_bypass': {
+        const narrative = context?.narrative;
+        if (!narrative || !hasArmedBypass(narrative, req.chainId)) {
+          return { ok: false, reason: 'no armed bypass' };
+        }
+        break;
+      }
       default:
         break;
     }

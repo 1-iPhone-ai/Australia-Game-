@@ -1,7 +1,7 @@
 /** Operation 10M · Agent 05 — dynamic events & narrative (standalone contract). */
 
 export const OP10M_AGENT05_MODULE_ID = 'op10m_agent05_dynamic_events';
-export const OP10M_AGENT05_MODULE_VERSION = '1.0.0';
+export const OP10M_AGENT05_MODULE_VERSION = '1.1.0';
 
 export type Op10mChainPhase = 'signal' | 'pressure' | 'rupture' | 'recovery';
 
@@ -94,6 +94,55 @@ export interface Op10mTriggerRequireMinDay {
   day: number;
 }
 
+export type Op10mRegionId = 'NSW' | 'VIC' | 'QLD' | 'WA' | 'SA' | 'TAS' | 'NT' | 'ACT';
+
+export interface Op10mRegionalContagionLedger {
+  /** Per-target-region pressure used for deep-chain arming thresholds. */
+  pressureByRegion: Record<string, number>;
+  firedHookIds: string[];
+  armedFollowUps: Op10mArmedDeepChainFollowUp[];
+  /** Chain ids that may bypass seasonal gates on signal entry (cross-region escalation). */
+  armedBypassChainIds: string[];
+}
+
+export interface Op10mArmedDeepChainFollowUp {
+  id: string;
+  sourceChainId: string;
+  targetChainId: string;
+  targetRegion: string;
+  theme: Op10mContentTheme;
+  armedDay: number;
+  expiresDay: number;
+}
+
+export interface Op10mRegionalNarrativeHook {
+  hookId: string;
+  sourceRegion: Op10mRegionId;
+  /** Minimum active-chain phase in the source region required to fire. */
+  watchPhase: Op10mChainPhase;
+  theme: Op10mContentTheme;
+  category: Op10mCrisisCategory;
+  targetRegions: Op10mRegionId[];
+  narrativeBeat: string;
+  cooldownTurns: number;
+  contagionDelta: number;
+  neighborStabilityDelta: number;
+  setsContagionFlag: boolean;
+  armNeighborFollowUp: boolean;
+}
+
+export interface Op10mTriggerRequireRegionalContagion {
+  k: 'regional_contagion';
+  region: string;
+  theme: Op10mContentTheme;
+  min: number;
+}
+
+export interface Op10mTriggerRequireArmedBypass {
+  k: 'armed_bypass';
+  chainId: string;
+}
+
 export interface Op10mTriggerRequireActivePhase {
   k: 'chain_phase';
   phase: Op10mChainPhase;
@@ -107,7 +156,9 @@ export type Op10mTriggerRequirement =
   | Op10mTriggerRequireFlag
   | Op10mTriggerRequireNoFlag
   | Op10mTriggerRequireMinDay
-  | Op10mTriggerRequireActivePhase;
+  | Op10mTriggerRequireActivePhase
+  | Op10mTriggerRequireRegionalContagion
+  | Op10mTriggerRequireArmedBypass;
 
 export interface Op10mConsequenceMutation {
   moneyDelta?: number;
@@ -189,7 +240,10 @@ export interface Op10mNarrativeEngineState {
     responsesOpened: number;
     responsesResolved: number;
     consequencesApplied: number;
+    regionalHooksFired: number;
+    deepFollowUpsArmed: number;
   };
+  regional?: Op10mRegionalContagionLedger;
 }
 
 export interface Op10mTickResult {

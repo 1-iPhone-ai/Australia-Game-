@@ -17,6 +17,8 @@ Agent 05 owns **state-triggered narrative chains** outside canonical V9.4 until 
 | `sanitizeOp10mNarrativeEngineState` | Save/load hygiene |
 | `evaluateOp10mNarrativeTick` | Turn/day advance: eligibility, cooldowns, passive modifiers, pending UI |
 | `resolveOp10mNarrativeResponse` | Player choice → **real** money/stability/flags/crisis counters |
+| `OP10M_AGENT05_REGIONAL_HOOK_CATALOG` | 120 rupture-triggered cross-region hooks (contagion + deep follow-up arming) |
+| `evaluateRegionalNarrativeHooks` | Standalone regional pass (also wired via `regionalHooks` tick option) |
 | `runOp10mNarrativeSelfTests` | Lightweight integrity harness |
 
 ## V9.4 alignment (read-only contract)
@@ -32,7 +34,7 @@ Maps to existing concepts without editing V9.4:
 ## Assembly hook (Agent 25)
 
 1. Mount `agent05NarrativeState` on game save (default via `createDefaultOp10mNarrativeEngineState`).
-2. After day/turn simulation step, call `evaluateOp10mNarrativeTick(mappedSim, state, OP10M_AGENT05_CHAIN_CATALOG, { enabled: gameSettings.dynamicCrisisChainsEnabled })`.
+2. After day/turn simulation step, call `evaluateOp10mNarrativeTick(mappedSim, state, OP10M_AGENT05_CHAIN_CATALOG, { enabled: gameSettings.dynamicCrisisChainsEnabled, regionalHooks: OP10M_AGENT05_REGIONAL_HOOK_CATALOG })`.
 3. Write back **both** returned `simulation` fields (money, stability, flags, crises) and `narrative` sub-state.
 4. UI routes pending `pendingResponses` to dilemma/crisis modals; resolve via `resolveOp10mNarrativeResponse`.
 
@@ -40,6 +42,7 @@ Maps to existing concepts without editing V9.4:
 
 ```bash
 npm run generate:agent05
+npm run generate:agent05-regional
 ```
 
 ## Verification

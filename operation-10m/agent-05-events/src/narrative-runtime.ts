@@ -1,4 +1,6 @@
 import { applyConsequenceMutation, applyPersistentModifiers } from './consequence-applier.ts';
+import { hasArmedBypass } from './deep-chain-orchestrator.ts';
+import { createDefaultRegionalContagionLedger, evaluateRegionalNarrativeHooks, sanitizeRegionalContagionLedger } from './regional-hook-engine.ts';
 import {
   evaluateRequirements,
   findStageForPhase,
@@ -9,6 +11,7 @@ import {
 import type {
   Op10mChainDescriptor,
   Op10mNarrativeEngineState,
+  Op10mRegionalNarrativeHook,
   Op10mResolveResult,
   Op10mSimulationSlice,
   Op10mTickResult,
@@ -63,7 +66,10 @@ export function createDefaultOp10mNarrativeEngineState(): Op10mNarrativeEngineSt
       responsesOpened: 0,
       responsesResolved: 0,
       consequencesApplied: 0,
+      regionalHooksFired: 0,
+      deepFollowUpsArmed: 0,
     },
+    regional: createDefaultRegionalContagionLedger(),
   };
 }
 
@@ -117,7 +123,11 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
     base.telemetry.responsesOpened = Math.max(0, Number(t.responsesOpened) || 0);
     base.telemetry.responsesResolved = Math.max(0, Number(t.responsesResolved) || 0);
     base.telemetry.consequencesApplied = Math.max(0, Number(t.consequencesApplied) || 0);
+    base.telemetry.regionalHooksFired = Math.max(0, Number(t.regionalHooksFired) || 0);
+    base.telemetry.deepFollowUpsArmed = Math.max(0, Number(t.deepFollowUpsArmed) || 0);
   }
+
+  base.regional = sanitizeRegionalContagionLedger(r.regional);
 
   return base;
 }
@@ -125,6 +135,7 @@ export function sanitizeOp10mNarrativeEngineState(raw: unknown): Op10mNarrativeE
 export interface Op10mTickOptions {
   enabled?: boolean;
   maxNewResponsesPerTick?: number;
+  regionalHooks?: Op10mRegionalNarrativeHook[];
 }
 
 export function evaluateOp10mNarrativeTick(
@@ -171,7 +182,11 @@ export function evaluateOp10mNarrativeTick(
     if (!isCooldownReady(narrative.cooldowns, cooldownKey, simulation.day)) continue;
     if (runtime && simulation.day < runtime.stageCooldownUntilDay) continue;
 
-    const eligibility = evaluateRequirements(stage.requires, simulation, runtime);
+    const eligibility = evaluateRequirements(stage.requires, simulation, runtime, {
+      armedBypass: hasArmedBypass(narrative, descriptor.chainId),
+      chainId: descriptor.chainId,
+      narrative,
+    });
     if (!eligibility.ok) continue;
 
     if (!runtime) {
@@ -242,6 +257,19 @@ export function evaluateOp10mNarrativeTick(
     ...narrative,
     pendingResponses: narrative.pendingResponses.filter((p) => p.expiresDay >= simulation.day),
   };
+
+  const regionalHooks = options?.regionalHooks ?? [];
+  if (regionalHooks.length > 0) {
+    const regionalPass = evaluateRegionalNarrativeHooks(
+      simulation,
+      narrative,
+      catalog,
+      regionalHooks
+    );
+    simulation = regionalPass.simulation;
+    narrative = regionalPass.narrative;
+    log.push(...regionalPass.log);
+  }
 
   return { simulation, narrative, log };
 }
