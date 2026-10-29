@@ -385,8 +385,14 @@ export type CoastalFloodEvacStagingPolicy = 'baseline' | 'surge';
 
 export type WarehouseRobotSortationLogisticsPolicy = 'baseline' | 'expand';
 
+export type OffshoreWaveEnergyExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteSchoolSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortLithiumHydroxideLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/39';
+  schemaVersion: 'agent12/40';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -664,6 +670,14 @@ export interface TransportInfrastructureState {
   warehouseRobotSortationLogisticsShare: number;
   nationalWarehouseRobotSortationLogisticsThroughputIndex: number;
   warehouseRobotSortationLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalOffshoreWaveEnergyExportIndex: number;
+  offshoreWaveEnergyExportByRegion: Record<AuRegionCode, number>;
+  remoteSchoolSupplyStagingShare: number;
+  nationalRemoteSchoolSupplyStagingIndex: number;
+  remoteSchoolSupplyStagingByRegion: Record<AuRegionCode, number>;
+  portLithiumHydroxideLogisticsShare: number;
+  nationalPortLithiumHydroxideLogisticsThroughputIndex: number;
+  portLithiumHydroxideLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -771,6 +785,9 @@ export interface TransportInfrastructureOptions {
   deepGeothermalExportPolicy?: DeepGeothermalExportPolicy;
   coastalFloodEvacStagingPolicy?: CoastalFloodEvacStagingPolicy;
   warehouseRobotSortationLogisticsPolicy?: WarehouseRobotSortationLogisticsPolicy;
+  offshoreWaveEnergyExportPolicy?: OffshoreWaveEnergyExportPolicy;
+  remoteSchoolSupplyStagingPolicy?: RemoteSchoolSupplyStagingPolicy;
+  portLithiumHydroxideLogisticsPolicy?: PortLithiumHydroxideLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2426,6 +2443,48 @@ export const TRANSPORT_CORRIDORS_ROUND38: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round39.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND39: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_tas_vic_offshore_wave_energy',
+    name: 'TAS–VIC Offshore Wave Energy',
+    networkKind: 'trade',
+    regionSequence: ['TAS', 'VIC'],
+    requiredTagsByRegion: {
+      TAS: ['offshore_wave_energy_export', 'wave_farm_cable_feed', 'marine_renewable_export'],
+      VIC: ['offshore_wave_energy_export', 'wave_farm_cable_feed', 'marine_renewable_export'],
+    },
+    productivitySynergyPoints: 6.3,
+    logisticsRelief: 0.04,
+  },
+  {
+    id: 'corr_nt_wa_remote_school_supply',
+    name: 'NT–WA Remote School Supply',
+    networkKind: 'mobility',
+    regionSequence: ['NT', 'WA'],
+    requiredTagsByRegion: {
+      NT: ['remote_school_supply_staging', 'outback_education_logistics', 'community_supply_airlift'],
+      WA: ['remote_school_supply_staging', 'outback_education_logistics', 'community_supply_airlift'],
+    },
+    productivitySynergyPoints: 6.1,
+    logisticsRelief: 0.033,
+  },
+  {
+    id: 'corr_wa_qld_lithium_hydroxide',
+    name: 'WA–QLD Lithium Hydroxide',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['port_lithium_hydroxide_logistics', 'battery_precursor_staging', 'cathode_export_hub'],
+      QLD: ['port_lithium_hydroxide_logistics', 'battery_precursor_staging', 'cathode_export_hub'],
+    },
+    productivitySynergyPoints: 6.0,
+    logisticsRelief: 0.036,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2611,6 +2670,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND36,
   ...TRANSPORT_CORRIDORS_ROUND37,
   ...TRANSPORT_CORRIDORS_ROUND38,
+  ...TRANSPORT_CORRIDORS_ROUND39,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -4771,6 +4831,62 @@ export const TRANSPORT_SCENARIOS_ROUND38: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round39.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND39: TransportStressScenario[] = [
+  {
+    id: 'scn_tas_wave_export_surge',
+    label: 'Tasmania Wave Export Surge',
+    description: 'Wave farm build overloads Burnie export berths.',
+    targetRegions: ['TAS', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_vic_marine_feed_delay',
+    label: 'Victoria Marine Feed Delay',
+    description: 'Swell delays Portland wave staging.',
+    targetRegions: ['VIC', 'TAS'],
+    networkKind: 'trade',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+  {
+    id: 'scn_nt_school_term_resupply',
+    label: 'NT School Term Resupply',
+    description: 'Term start strains Darwin school supply hub.',
+    targetRegions: ['NT', 'WA'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_wa_hydroxide_export_peak',
+    label: 'WA Hydroxide Export Peak',
+    description: 'Cathode demand peaks Kwinana hydroxide port.',
+    targetRegions: ['WA', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_qld_precursor_handoff_hold',
+    label: 'Queensland Precursor Handoff Hold',
+    description: 'Customs hold backs hydroxide eastbound handoff.',
+    targetRegions: ['QLD', 'WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics', 'port'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -4970,6 +5086,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND36,
   ...TRANSPORT_SCENARIOS_ROUND37,
   ...TRANSPORT_SCENARIOS_ROUND38,
+  ...TRANSPORT_SCENARIOS_ROUND39,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -14359,6 +14476,248 @@ export const SCALE_WAVE_ROUND38_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round39-assets.ts ---
+
+export const ROUND39_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_tas_burnie_wave_haul',
+    category: 'road',
+    name: 'Burnie Wave Haul',
+    description: 'Tasmanian offshore wave energy staging road.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['offshore_wave_energy_export', 'wave_farm_cable_feed', 'marine_renewable_export'],
+    laneKilometres: 23,
+    designSpeedKmh: 81,
+    freightShare: 0.31,
+    urbanShare: 0.11,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_portland_wave_feed',
+    category: 'road',
+    name: 'Portland Wave Feed',
+    description: 'Victorian marine renewable export connector.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade'],
+    tags: ['offshore_wave_energy_export', 'wave_farm_cable_feed', 'marine_renewable_export'],
+    laneKilometres: 21,
+    designSpeedKmh: 78,
+    freightShare: 0.28,
+    urbanShare: 0.13,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_alice_school_supply_access',
+    category: 'road',
+    name: 'Alice School Supply Access',
+    description: 'NT remote education logistics road feed.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_school_supply_staging', 'outback_education_logistics', 'community_supply_airlift'],
+    laneKilometres: 18,
+    designSpeedKmh: 75,
+    freightShare: 0.1,
+    urbanShare: 0.19,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_kalgoorlie_school_staging',
+    category: 'road',
+    name: 'Kalgoorlie School Staging',
+    description: 'WA outback school supply connector.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NT'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['remote_school_supply_staging', 'outback_education_logistics', 'community_supply_airlift'],
+    laneKilometres: 17,
+    designSpeedKmh: 73,
+    freightShare: 0.09,
+    urbanShare: 0.18,
+    tollRoad: false,
+  },
+];
+
+export const ROUND39_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_tas_northwest_wave_rail',
+    category: 'rail',
+    name: 'Tasmania Northwest Wave Rail',
+    description: 'TAS wave farm cable export feed.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['offshore_wave_energy_export', 'wave_farm_cable_feed', 'marine_renewable_export'],
+    trackKilometres: 42,
+    dualTrackShare: 0.43,
+    electrifiedShare: 0.4,
+    designFreightTonnesPerYear: 3_500_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_vic_warrnambool_wave_link',
+    category: 'rail',
+    name: 'Warrnambool Wave Link',
+    description: 'Victorian marine renewable export rail handoff.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade'],
+    tags: ['offshore_wave_energy_export', 'wave_farm_cable_feed', 'marine_renewable_export'],
+    trackKilometres: 33,
+    dualTrackShare: 0.49,
+    electrifiedShare: 0.51,
+    designFreightTonnesPerYear: 2_850_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_wa_kwinana_hydroxide_rail',
+    category: 'rail',
+    name: 'Kwinana Hydroxide Rail',
+    description: 'WA lithium hydroxide export rail feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_lithium_hydroxide_logistics', 'battery_precursor_staging', 'cathode_export_hub'],
+    trackKilometres: 32,
+    dualTrackShare: 0.53,
+    electrifiedShare: 0.46,
+    designFreightTonnesPerYear: 3_200_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND39_PORTS: PortAsset[] = [
+  {
+    id: 'port_tas_burnie_wave_export',
+    category: 'port',
+    name: 'Burnie Wave Export',
+    description: 'Tasmanian offshore wave energy export port.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['trade'],
+    tags: ['offshore_wave_energy_export', 'wave_farm_cable_feed', 'marine_renewable_export'],
+    berthCount: 3,
+    maxDraftMetres: 12.9,
+    teuCapacityPerYear: 100_000,
+    automationLevel: 2,
+    bulkShare: 0.36,
+  },
+  {
+    id: 'port_nt_darwin_school_supply_hub',
+    category: 'port',
+    name: 'Darwin School Supply Hub',
+    description: 'NT remote education logistics port.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['remote_school_supply_staging', 'outback_education_logistics', 'community_supply_airlift'],
+    berthCount: 2,
+    maxDraftMetres: 11.7,
+    teuCapacityPerYear: 118_000,
+    automationLevel: 1,
+    bulkShare: 0.15,
+  },
+  {
+    id: 'port_wa_kwinana_hydroxide_export',
+    category: 'port',
+    name: 'Kwinana Hydroxide Export',
+    description: 'WA battery precursor cathode export port.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_lithium_hydroxide_logistics', 'battery_precursor_staging', 'cathode_export_hub'],
+    berthCount: 3,
+    maxDraftMetres: 13.2,
+    teuCapacityPerYear: 195_000,
+    automationLevel: 2,
+    bulkShare: 0.22,
+  },
+];
+
+export const ROUND39_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_tas_devonport_wave_stores',
+    category: 'logistics',
+    name: 'Devonport Wave Stores',
+    description: 'TAS marine renewable export yard.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade'],
+    tags: ['offshore_wave_energy_export', 'wave_farm_cable_feed', 'marine_renewable_export'],
+    warehouseSqm: 48_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 44,
+  },
+  {
+    id: 'log_nt_tennant_school_stores',
+    category: 'logistics',
+    name: 'Tennant Creek School Stores',
+    description: 'NT outback education supply consolidation.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_school_supply_staging', 'outback_education_logistics', 'community_supply_airlift'],
+    warehouseSqm: 26_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 46,
+  },
+  {
+    id: 'log_qld_gladstone_hydroxide_handoff',
+    category: 'logistics',
+    name: 'Gladstone Hydroxide Handoff',
+    description: 'QLD cathode precursor eastbound handoff yard.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade'],
+    tags: ['port_lithium_hydroxide_logistics', 'battery_precursor_staging', 'cathode_export_hub'],
+    warehouseSqm: 44_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 50,
+  },
+  {
+    id: 'log_wa_fremantle_hydroxide_stores',
+    category: 'logistics',
+    name: 'Fremantle Hydroxide Stores',
+    description: 'WA lithium hydroxide staging yard.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['trade'],
+    tags: ['port_lithium_hydroxide_logistics', 'battery_precursor_staging', 'cathode_export_hub'],
+    warehouseSqm: 56_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 58,
+  },
+];
+
+export const SCALE_WAVE_ROUND39_ASSETS = [
+  ...ROUND39_ROADS,
+  ...ROUND39_RAIL,
+  ...ROUND39_PORTS,
+  ...ROUND39_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -14405,6 +14764,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND36_ASSETS,
     ...SCALE_WAVE_ROUND37_ASSETS,
     ...SCALE_WAVE_ROUND38_ASSETS,
+    ...SCALE_WAVE_ROUND39_ASSETS,
   ];
 }
 
@@ -16556,6 +16916,67 @@ export function deepGeothermalExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.034 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.039 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/offshore-wave-energy-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type OffshoreWaveEnergyExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 offshore wave energy export throughput by region. */
+export function computeOffshoreWaveEnergyExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'offshore_wave_energy_export' ||
+        t === 'wave_farm_cable_feed' ||
+        t === 'marine_renewable_export',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.05 + asset.maxDraftMetres * 0.37;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 73_000 + asset.intermodalLinks.length * 0.73;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 485;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_200_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalOffshoreWaveEnergyExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.47 + max * 0.53, 5, 74) * 10) / 10;
+}
+
+export function offshoreWaveEnergyExportProductivityMultiplier(
+  index: number,
+  policy: OffshoreWaveEnergyExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.036 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.038 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -19336,6 +19757,99 @@ export function coastalFloodEvacStagingProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.019 : 1;
   return (1 + (share - 0.05) * 0.024) * bias;
+}
+
+
+// --- source: operations/remote-school-supply-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RemoteSchoolSupplyStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 remote school supply staging readiness by region. */
+export function computeRemoteSchoolSupplyStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'remote_school_supply_staging' ||
+          t === 'outback_education_logistics' ||
+          t === 'community_supply_airlift',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 67_000 + (asset.coldChainCapable ? 1.3 : 0.72);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 455;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.92;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 295;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.037 - stress * 0.024), 5, 78) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRemoteSchoolSupplyStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 77) * 10) / 10;
+}
+
+export function computeRemoteSchoolSupplyStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: RemoteSchoolSupplyStagingPolicy = 'baseline',
+): number {
+  let schoolUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.includes('remote_school_supply_staging') ||
+      asset.tags.includes('outback_education_logistics')
+    ) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 60_000;
+        schoolUnits += (asset.warehouseSqm / 60_000) * 0.53;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 425;
+        schoolUnits += (asset.laneKilometres / 425) * 0.47;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.036;
+  const policyBoost = policy === 'surge' ? 0.026 : 0;
+  return Math.round(clamp(schoolUnits / totalUnits + policyBoost, 0.035, 0.24) * 1000) / 1000;
+}
+
+export function remoteSchoolSupplyStagingProductivityMultiplier(
+  share: number,
+  policy: RemoteSchoolSupplyStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.018 : 1;
+  return (1 + (share - 0.048) * 0.023) * bias;
 }
 
 
@@ -22364,6 +22878,98 @@ export function nationalWarehouseRobotSortationLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/port-lithium-hydroxide-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PortLithiumHydroxideLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of port logistics supporting lithium hydroxide export. */
+export function computePortLithiumHydroxideLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: PortLithiumHydroxideLogisticsPolicy = 'baseline',
+): number {
+  let hydroxideUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'port_lithium_hydroxide_logistics' ||
+          t === 'battery_precursor_staging' ||
+          t === 'cathode_export_hub',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.25 + asset.teuCapacityPerYear / 340_000;
+        hydroxideUnits += (asset.berthCount * 1.25) * 0.62;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 54_000;
+        hydroxideUnits += (asset.warehouseSqm / 54_000) * 0.58;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.038;
+  const policyBoost = policy === 'expand' ? 0.028 : 0;
+  return Math.round(clamp(hydroxideUnits / totalUnits + policyBoost, 0.037, 0.27) * 1000) / 1000;
+}
+
+export function portLithiumHydroxideLogisticsProductivityMultiplier(
+  share: number,
+  policy: PortLithiumHydroxideLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.02 : 1;
+  return (1 + (share - 0.057) * 0.024) * bias;
+}
+
+export function computePortLithiumHydroxideLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'port_lithium_hydroxide_logistics' ||
+          t === 'battery_precursor_staging' ||
+          t === 'cathode_export_hub',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.65 + asset.teuCapacityPerYear / 300_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 58_000 + asset.lastMileCoveragePct / 110;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 410;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPortLithiumHydroxideLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.52 + max * 0.48, 2, 53) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -23021,6 +23627,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalWarehouseRobotSortationLogisticsThroughputIndex,
   warehouseRobotSortationLogisticsProductivityMultiplier,
 } from './warehouse-robot-sortation-logistics-index.ts';
+  computeOffshoreWaveEnergyExportByRegion,
+  nationalOffshoreWaveEnergyExportIndex,
+  offshoreWaveEnergyExportProductivityMultiplier,
+} from '../network/offshore-wave-energy-export-index.ts';
+  computeRemoteSchoolSupplyStagingByRegion,
+  computeRemoteSchoolSupplyStagingShare,
+  nationalRemoteSchoolSupplyStagingIndex,
+  remoteSchoolSupplyStagingProductivityMultiplier,
+} from '../operations/remote-school-supply-staging-index.ts';
+  computePortLithiumHydroxideLogisticsShare,
+  computePortLithiumHydroxideLogisticsThroughputByRegion,
+  nationalPortLithiumHydroxideLogisticsThroughputIndex,
+  portLithiumHydroxideLogisticsProductivityMultiplier,
+} from './port-lithium-hydroxide-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -24289,6 +24909,35 @@ export function computeTransportInfrastructureState(
     warehouseRobotSortationLogisticsShare,
     options?.warehouseRobotSortationLogisticsPolicy ?? 'baseline',
   );
+  const offshoreWaveEnergyExportByRegion = computeOffshoreWaveEnergyExportByRegion(ops);
+  const nationalWaveEnergy = nationalOffshoreWaveEnergyExportIndex(offshoreWaveEnergyExportByRegion);
+  const waveEnergyMult = offshoreWaveEnergyExportProductivityMultiplier(
+    nationalWaveEnergy,
+    options?.offshoreWaveEnergyExportPolicy ?? 'baseline',
+  );
+  const remoteSchoolSupplyStagingByRegion = computeRemoteSchoolSupplyStagingByRegion(ops, networkStress);
+  const nationalSchoolSupply = nationalRemoteSchoolSupplyStagingIndex(remoteSchoolSupplyStagingByRegion);
+  const remoteSchoolSupplyStagingShare = computeRemoteSchoolSupplyStagingShare(
+    ops,
+    options?.remoteSchoolSupplyStagingPolicy ?? 'baseline',
+  );
+  const schoolSupplyMult = remoteSchoolSupplyStagingProductivityMultiplier(
+    remoteSchoolSupplyStagingShare,
+    options?.remoteSchoolSupplyStagingPolicy ?? 'baseline',
+  );
+  const portLithiumHydroxideLogisticsThroughputByRegion =
+    computePortLithiumHydroxideLogisticsThroughputByRegion(ops);
+  const nationalLithiumHydroxide = nationalPortLithiumHydroxideLogisticsThroughputIndex(
+    portLithiumHydroxideLogisticsThroughputByRegion,
+  );
+  const portLithiumHydroxideLogisticsShare = computePortLithiumHydroxideLogisticsShare(
+    ops,
+    options?.portLithiumHydroxideLogisticsPolicy ?? 'baseline',
+  );
+  const lithiumHydroxideMult = portLithiumHydroxideLogisticsProductivityMultiplier(
+    portLithiumHydroxideLogisticsShare,
+    options?.portLithiumHydroxideLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -24360,6 +25009,9 @@ export function computeTransportInfrastructureState(
     const geothermalBoost = (deepGeothermalExportByRegion[code] - 5) * 0.003;
     const floodEvacBoost = (coastalFloodEvacStagingByRegion[code] - 6) * 0.0026;
     const robotSortationBoost = (warehouseRobotSortationLogisticsThroughputByRegion[code] - 2) * 0.0022;
+    const waveEnergyBoost = (offshoreWaveEnergyExportByRegion[code] - 5) * 0.0029;
+    const schoolSupplyBoost = (remoteSchoolSupplyStagingByRegion[code] - 6) * 0.0025;
+    const lithiumHydroxideBoost = (portLithiumHydroxideLogisticsThroughputByRegion[code] - 2) * 0.0021;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -24430,7 +25082,10 @@ export function computeTransportInfrastructureState(
         suburbanMicroBoost +
         geothermalBoost +
         floodEvacBoost +
-        robotSortationBoost) *
+        robotSortationBoost +
+        waveEnergyBoost +
+        schoolSupplyBoost +
+        lithiumHydroxideBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -24499,7 +25154,10 @@ export function computeTransportInfrastructureState(
       suburbanMicroMult *
       geothermalMult *
       floodEvacMult *
-      robotSortationMult;
+      robotSortationMult *
+      waveEnergyMult *
+      schoolSupplyMult *
+      lithiumHydroxideMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -24591,7 +25249,10 @@ export function computeTransportInfrastructureState(
     nationalSuburbanMicro * 0.003 +
     nationalGeothermal * 0.003 +
     nationalFloodEvac * 0.003 +
-    nationalRobotSortation * 0.003;
+    nationalRobotSortation * 0.003 +
+    nationalWaveEnergy * 0.003 +
+    nationalSchoolSupply * 0.003 +
+    nationalLithiumHydroxide * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -24606,7 +25267,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/39',
+    schemaVersion: 'agent12/40',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -24884,6 +25545,14 @@ export function computeTransportInfrastructureState(
     warehouseRobotSortationLogisticsShare,
     nationalWarehouseRobotSortationLogisticsThroughputIndex: nationalRobotSortation,
     warehouseRobotSortationLogisticsThroughputByRegion,
+    nationalOffshoreWaveEnergyExportIndex: nationalWaveEnergy,
+    offshoreWaveEnergyExportByRegion,
+    remoteSchoolSupplyStagingShare,
+    nationalRemoteSchoolSupplyStagingIndex: nationalSchoolSupply,
+    remoteSchoolSupplyStagingByRegion,
+    portLithiumHydroxideLogisticsShare,
+    nationalPortLithiumHydroxideLogisticsThroughputIndex: nationalLithiumHydroxide,
+    portLithiumHydroxideLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -24966,7 +25635,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/39' &&
+      infra.schemaVersion === 'agent12/40' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -25104,8 +25773,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalDeepGeothermalExportIndex >= 5 &&
       infra.nationalCoastalFloodEvacStagingIndex >= 6 &&
       infra.warehouseRobotSortationLogisticsShare >= 0.03 &&
-      infra.nationalWarehouseRobotSortationLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} geo=${infra.nationalDeepGeothermalExportIndex.toFixed(1)} evac=${infra.nationalCoastalFloodEvacStagingIndex.toFixed(1)} robot=${infra.nationalWarehouseRobotSortationLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalWarehouseRobotSortationLogisticsThroughputIndex >= 2 &&
+      infra.nationalOffshoreWaveEnergyExportIndex >= 5 &&
+      infra.nationalRemoteSchoolSupplyStagingIndex >= 6 &&
+      infra.portLithiumHydroxideLogisticsShare >= 0.03 &&
+      infra.nationalPortLithiumHydroxideLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} wave=${infra.nationalOffshoreWaveEnergyExportIndex.toFixed(1)} school=${infra.nationalRemoteSchoolSupplyStagingIndex.toFixed(1)} hydroxide=${infra.nationalPortLithiumHydroxideLogisticsThroughputIndex.toFixed(1)}`,
   });
 
   return results;
