@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: ef2d2f4a85005658
+// content-sha256-prefix: 893ecef55cb11d85
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -995,6 +995,10 @@ export interface DayAdvanceUiEvolutionResult {
   tripleDeferredQueueDayCoachCopy: string | null;
   hiddenPanelSnapshotDayCoachCopy: string | null;
   flushRehydrateBatchDayCoachCopy: string | null;
+  sixthUnlockHeadlineDayCoachCopy: string | null;
+  quadDeferredQueueDayCoachCopy: string | null;
+  coverageVisibleBreadthDayCoachCopy: string | null;
+  pacingImmediateBatchDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1893,6 +1897,27 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const sixthUnlockHeadlineDayCoach = buildSixthUnlockHeadlineDayCoach({
+    newlyUnlockedPanelIds,
+    signals: nextSignals,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const quadDeferredQueueDayCoach = buildQuadDeferredQueueDayCoach({
+    combinedQueueDepth: combinedQueue.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const coverageVisibleBreadthDayCoach = buildCoverageVisibleBreadthDayCoach({
+    snapshot: coverage,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const pacingImmediateBatchDayCoach = buildPacingImmediateBatchDayCoach({
+    immediateAnnouncementCount: pacing.immediateAnnouncements.length,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -2059,6 +2084,10 @@ export function tickEvolvingUiOnDayAdvance(
     tripleDeferredQueueDayCoachCopy: tripleDeferredQueueDayCoach.coachCopy,
     hiddenPanelSnapshotDayCoachCopy: hiddenPanelSnapshotDayCoach.coachCopy,
     flushRehydrateBatchDayCoachCopy: flushRehydrateBatchDayCoach.coachCopy,
+    sixthUnlockHeadlineDayCoachCopy: sixthUnlockHeadlineDayCoach.coachCopy,
+    quadDeferredQueueDayCoachCopy: quadDeferredQueueDayCoach.coachCopy,
+    coverageVisibleBreadthDayCoachCopy: coverageVisibleBreadthDayCoach.coachCopy,
+    pacingImmediateBatchDayCoachCopy: pacingImmediateBatchDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -8040,6 +8069,267 @@ export function buildFlushRehydrateBatchDayCoach(input: {
     flushedCount: input.flushedCount,
     coachCopy: `Day ${input.nextGameDay}: Rehydrated ${input.flushedCount} deferred coach lines into today's immediate delivery batch.`,
   };
+}
+
+// --- source: engine/sixth-unlock-headline-day-coach.ts ---
+export interface SixthUnlockHeadlineDayCoach {
+  panelId: string | null;
+  coachCopy: string | null;
+}
+
+export function buildSixthUnlockHeadlineDayCoach(input: {
+  newlyUnlockedPanelIds: string[];
+  signals: ProgressionSignalSnapshot;
+  nextGameDay: number;
+}): SixthUnlockHeadlineDayCoach {
+  const panelId = input.newlyUnlockedPanelIds[5];
+  if (!panelId) {
+    return { panelId: null, coachCopy: null };
+  }
+  const panel = EVOLVING_UI_PANEL_BY_ID[panelId];
+  if (!panel) {
+    return { panelId, coachCopy: null };
+  }
+  return {
+    panelId,
+    coachCopy: `Day ${input.nextGameDay}: Sixth unlock today — ${buildCoachHeadline(panel, input.signals)}`,
+  };
+}
+
+// --- source: engine/quad-deferred-queue-day-coach.ts ---
+export interface QuadDeferredQueueDayCoach {
+  queueDepth: number;
+  coachCopy: string | null;
+}
+
+export function buildQuadDeferredQueueDayCoach(input: {
+  combinedQueueDepth: number;
+  nextGameDay: number;
+}): QuadDeferredQueueDayCoach {
+  if (input.combinedQueueDepth !== 4) {
+    return { queueDepth: input.combinedQueueDepth, coachCopy: null };
+  }
+  return {
+    queueDepth: 4,
+    coachCopy: `Day ${input.nextGameDay}: Four coach announcements remain queued — stagger pacing protects focus during day advance.`,
+  };
+}
+
+// --- source: engine/coverage-visible-breadth-day-coach.ts ---
+export interface CoverageVisibleBreadthDayCoach {
+  visibleCount: number;
+  coachCopy: string | null;
+}
+
+export function buildCoverageVisibleBreadthDayCoach(input: {
+  snapshot: ProgressionCoverageSnapshot;
+  nextGameDay: number;
+}): CoverageVisibleBreadthDayCoach {
+  if (input.nextGameDay > 12 || input.snapshot.visible < 6) {
+    return { visibleCount: input.snapshot.visible, coachCopy: null };
+  }
+  return {
+    visibleCount: input.snapshot.visible,
+    coachCopy: `Day ${input.nextGameDay}: ${input.snapshot.visible} panels are fully visible — keyboard and screen reader routes expand accordingly.`,
+  };
+}
+
+// --- source: engine/pacing-immediate-batch-day-coach.ts ---
+export interface PacingImmediateBatchDayCoach {
+  immediateCount: number;
+  coachCopy: string | null;
+}
+
+export function buildPacingImmediateBatchDayCoach(input: {
+  immediateAnnouncementCount: number;
+  nextGameDay: number;
+}): PacingImmediateBatchDayCoach {
+  if (input.immediateAnnouncementCount < 2) {
+    return { immediateCount: input.immediateAnnouncementCount, coachCopy: null };
+  }
+  return {
+    immediateCount: input.immediateAnnouncementCount,
+    coachCopy: `Day ${input.nextGameDay}: Pacing released ${input.immediateAnnouncementCount} coach lines for immediate live-region delivery.`,
+  };
+}
+
+// --- source: engine/round45-self-tests.ts ---
+export function runAgent22Round45SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const sixIds = EVOLVING_UI_PANEL_REGISTRY.slice(0, 6).map(p => p.id);
+
+  check(
+    'r45_sixth_unlock',
+    'sixth unlock headline day coach',
+    (() => {
+      const coach = buildSixthUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: sixIds,
+        signals: { gameDay: 8, turnCount: 8, interfaceLevel: 'guided' },
+        nextGameDay: 8,
+      });
+      return coach.panelId === sixIds[5] && Boolean(coach.coachCopy?.includes('Day 8'));
+    })()
+  );
+
+  check(
+    'r45_quad_deferred',
+    'quad deferred queue day coach',
+    (() => {
+      const coach = buildQuadDeferredQueueDayCoach({ combinedQueueDepth: 4, nextGameDay: 9 });
+      return coach.queueDepth === 4 && Boolean(coach.coachCopy?.includes('Day 9'));
+    })()
+  );
+
+  check(
+    'r45_visible_breadth',
+    'coverage visible breadth day coach',
+    (() => {
+      const coach = buildCoverageVisibleBreadthDayCoach({
+        snapshot: {
+          visible: 7,
+          preview: 2,
+          hidden: 4,
+          total: 13,
+          coverageRatio: 0.5,
+          coachCopy: null,
+          tierLabel: 'mid',
+        },
+        nextGameDay: 10,
+      });
+      return coach.visibleCount === 7 && Boolean(coach.coachCopy?.includes('Day 10'));
+    })()
+  );
+
+  check(
+    'r45_pacing_immediate',
+    'pacing immediate batch day coach',
+    (() => {
+      const coach = buildPacingImmediateBatchDayCoach({ immediateAnnouncementCount: 3, nextGameDay: 5 });
+      return coach.immediateCount === 3 && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r45_tick_sixth_unlock',
+    'tick exposes sixth unlock headline day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.sixthUnlockHeadlineDayCoachCopy === 'string' || r.sixthUnlockHeadlineDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r45_tick_quad_deferred',
+    'tick exposes quad deferred queue day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.quadDeferredQueueDayCoachCopy === 'string' || r.quadDeferredQueueDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r45_tick_visible_breadth',
+    'tick exposes coverage visible breadth day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.coverageVisibleBreadthDayCoachCopy === 'string' || r.coverageVisibleBreadthDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r45_tick_pacing_immediate',
+    'tick exposes pacing immediate batch day coach field',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.pacingImmediateBatchDayCoachCopy === 'string' || r.pacingImmediateBatchDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r45_sixth_unlock_short',
+    'sixth unlock null with fewer than six unlocks',
+    (() => {
+      const coach = buildSixthUnlockHeadlineDayCoach({
+        newlyUnlockedPanelIds: sixIds.slice(0, 5),
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        nextGameDay: 2,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r45_quad_not_four',
+    'quad deferred null when depth not four',
+    (() => {
+      const coach = buildQuadDeferredQueueDayCoach({ combinedQueueDepth: 3, nextGameDay: 1 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r45_visible_low',
+    'visible breadth null when visible below threshold',
+    (() => {
+      const coach = buildCoverageVisibleBreadthDayCoach({
+        snapshot: {
+          visible: 3,
+          preview: 1,
+          hidden: 9,
+          total: 13,
+          coverageRatio: 0.2,
+          coachCopy: null,
+          tierLabel: 'early',
+        },
+        nextGameDay: 8,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r45_pacing_single',
+    'pacing immediate null when count below two',
+    (() => {
+      const coach = buildPacingImmediateBatchDayCoach({ immediateAnnouncementCount: 1, nextGameDay: 2 });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round44-self-tests.ts ---
@@ -16434,6 +16724,18 @@ export function SimulationUiEvolutionBridge({
       {result.flushRehydrateBatchDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-flush-rehydrate-day">{result.flushRehydrateBatchDayCoachCopy}</div>
       ) : null}
+      {result.sixthUnlockHeadlineDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-sixth-unlock-headline-day">{result.sixthUnlockHeadlineDayCoachCopy}</div>
+      ) : null}
+      {result.quadDeferredQueueDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-quad-deferred-day">{result.quadDeferredQueueDayCoachCopy}</div>
+      ) : null}
+      {result.coverageVisibleBreadthDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-coverage-visible-breadth-day">{result.coverageVisibleBreadthDayCoachCopy}</div>
+      ) : null}
+      {result.pacingImmediateBatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-pacing-immediate-batch-day">{result.pacingImmediateBatchDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -18923,8 +19225,96 @@ export function FlushRehydrateBatchDayCoachStrip({
   );
 }
 
+// --- source: react/SixthUnlockHeadlineDayCoachStrip.tsx ---
+export function SixthUnlockHeadlineDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: SixthUnlockHeadlineDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="sixth-unlock-headline-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-emerald-950/50 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/QuadDeferredQueueDayCoachStrip.tsx ---
+export function QuadDeferredQueueDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: QuadDeferredQueueDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="quad-deferred-queue-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-indigo-900/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/CoverageVisibleBreadthDayCoachStrip.tsx ---
+export function CoverageVisibleBreadthDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: CoverageVisibleBreadthDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="coverage-visible-breadth-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-lime-700/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/PacingImmediateBatchDayCoachStrip.tsx ---
+export function PacingImmediateBatchDayCoachStrip({
+  coach,
+  accessibility,
+}: {
+  coach: PacingImmediateBatchDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+  return (
+    <div
+      data-testid="pacing-immediate-batch-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-fuchsia-700/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.44.0';
+export const AGENT_22_MODULE_VERSION = '1.45.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -19075,6 +19465,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round45 = runAgent22Round45SelfTests();
+  for (const r of round45.results) {
+    check(`agent22_round45_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round44 = runAgent22Round44SelfTests();

@@ -17,7 +17,7 @@ Wave baseline (coord): **`bca7e0a3`**. Builds on round 43 gate lineage.
 Version **`1.44.0`** · **19200** lines
 
 ```
-contentSha256: ef2d2f4a8500565894e8f6e2e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8e8
+contentSha256: ef2d2f4a8500565886b2abcf5b91a5a2cbb0bc550dacfafd446e530cf11d9b73
 ```
 
 ## Round 44 depth

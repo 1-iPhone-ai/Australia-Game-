@@ -153,3 +153,7 @@ export { FifthUnlockHeadlineDayCoachStrip } from './FifthUnlockHeadlineDayCoachS
 export { TripleDeferredQueueDayCoachStrip } from './TripleDeferredQueueDayCoachStrip.js';
 export { HiddenPanelSnapshotDayCoachStrip } from './HiddenPanelSnapshotDayCoachStrip.js';
 export { FlushRehydrateBatchDayCoachStrip } from './FlushRehydrateBatchDayCoachStrip.js';
+export { SixthUnlockHeadlineDayCoachStrip } from './SixthUnlockHeadlineDayCoachStrip.js';
+export { QuadDeferredQueueDayCoachStrip } from './QuadDeferredQueueDayCoachStrip.js';
+export { CoverageVisibleBreadthDayCoachStrip } from './CoverageVisibleBreadthDayCoachStrip.js';
+export { PacingImmediateBatchDayCoachStrip } from './PacingImmediateBatchDayCoachStrip.js';
