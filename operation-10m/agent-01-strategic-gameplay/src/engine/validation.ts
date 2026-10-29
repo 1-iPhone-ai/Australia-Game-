@@ -21,6 +21,7 @@ import {
 } from './strategic-synergies.ts';
 import { stakeholderOppositionIssues } from './stakeholder-coalition.ts';
 import { mandateMilestoneIssues } from './mandate-gates.ts';
+import { coalitionBalanceIssues } from './coalition-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -172,6 +173,54 @@ export function evaluateRequirements(
           );
         }
         break;
+      case 'min_coalition_balance':
+        if (state) {
+          issues.push(
+            ...coalitionBalanceIssues(
+              {
+                id: '_gate',
+                title: '',
+                category: 'governance',
+                apCost: 0,
+                cashCost: 0,
+                treasuryCost: 0,
+                minApproval: 0,
+                alignedPriorities: [],
+                conflictingPriorities: [],
+                immediateEffects: {},
+                delayedTradeOffs: [],
+                tags: [],
+                minCoalitionBalanceIndex: req.minIndex,
+              },
+              state,
+            ),
+          );
+        }
+        break;
+      case 'max_coalition_balance':
+        if (state) {
+          issues.push(
+            ...coalitionBalanceIssues(
+              {
+                id: '_gate',
+                title: '',
+                category: 'governance',
+                apCost: 0,
+                cashCost: 0,
+                treasuryCost: 0,
+                minApproval: 0,
+                alignedPriorities: [],
+                conflictingPriorities: [],
+                immediateEffects: {},
+                delayedTradeOffs: [],
+                tags: [],
+                maxCoalitionBalanceIndex: req.maxIndex,
+              },
+              state,
+            ),
+          );
+        }
+        break;
       default:
         break;
     }
@@ -218,6 +267,7 @@ export function validateAction(
   if (state) {
     issues.push(...stakeholderOppositionIssues(action, contracts, state));
     issues.push(...mandateMilestoneIssues(action, state));
+    issues.push(...coalitionBalanceIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

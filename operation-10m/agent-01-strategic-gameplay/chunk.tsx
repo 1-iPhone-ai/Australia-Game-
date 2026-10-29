@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: ce4794a7d0f6ad1c
+// content-sha256-prefix: 0f89520d2d3e9abe
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -239,6 +239,8 @@ export type MandateProgress = Partial<Record<NationalPriorityId, PriorityMandate
 
 export type StakeholderSentiment = Record<StakeholderGroupId, number>;
 
+export type CoalitionCrisisLevel = 'stable' | 'strained' | 'acute';
+
 export interface TurnStrategicBriefing {
   day: number;
   commitmentPressure: number;
@@ -248,6 +250,8 @@ export interface TurnStrategicBriefing {
   completedActionCount: number;
   activeChoiceId: string | null;
   coalitionBalanceIndex: number;
+  coalitionCrisisLevel: CoalitionCrisisLevel;
+  coalitionCrisisStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;
@@ -304,6 +308,10 @@ export interface StrategicActionDefinition {
   synergyEligible?: boolean;
   /** All listed mandate milestones must be unlocked before execution. */
   requiredMandateMilestones?: { priorityId: NationalPriorityId; milestoneId: MandateMilestoneId }[];
+  /** Coalition balance index must be at least this value (0–100). */
+  minCoalitionBalanceIndex?: number;
+  /** Crisis-only actions — balance index must be at or below this value. */
+  maxCoalitionBalanceIndex?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -340,7 +348,9 @@ export type StrategicValidationRequirement =
   | { kind: 'directive_slot_available' }
   | { kind: 'max_pending_tradeoffs'; max: number }
   | { kind: 'action_not_yet_completed'; actionId: string }
-  | { kind: 'mandate_milestone'; priorityId: NationalPriorityId; milestoneId: MandateMilestoneId };
+  | { kind: 'mandate_milestone'; priorityId: NationalPriorityId; milestoneId: MandateMilestoneId }
+  | { kind: 'min_coalition_balance'; minIndex: number }
+  | { kind: 'max_coalition_balance'; maxIndex: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -382,6 +392,8 @@ export interface StrategicGameplayState {
   stakeholderSentiment?: StakeholderSentiment;
   /** Last calendar day an aligned-priority action completed (mandate idle drift). */
   lastAlignedActionDay?: number;
+  /** Consecutive calendar days coalition balance remained acute. */
+  coalitionCrisisStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
@@ -922,6 +934,84 @@ export function touchLastAlignedActionDay(
   return { ...state, lastAlignedActionDay: day };
 }
 
+// --- src/engine/coalition-crisis.ts ---
+
+const STABLE_MIN_INDEX = 70;
+const STRAINED_MIN_INDEX = 45;
+
+export function classifyCoalitionCrisisLevel(
+  state: StrategicGameplayState,
+): CoalitionCrisisLevel {
+  const sentiment = state.stakeholderSentiment ?? createDefaultStakeholderSentiment();
+  const index = computeCoalitionBalanceIndex(sentiment);
+  if (index >= STABLE_MIN_INDEX) return 'stable';
+  if (index >= STRAINED_MIN_INDEX) return 'strained';
+  return 'acute';
+}
+
+/** Increment crisis streak while coalition balance stays acute; reset otherwise. */
+export function advanceCoalitionCrisisStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (classifyCoalitionCrisisLevel(state) !== 'acute') {
+    if ((state.coalitionCrisisStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionCrisisStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionCrisisStreakDays: (state.coalitionCrisisStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionCrisisStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionCrisisStreakDays: 0 };
+}
+
+// --- src/engine/coalition-gates.ts ---
+
+export function coalitionBalanceIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  const sentiment = state.stakeholderSentiment ?? createDefaultStakeholderSentiment();
+  const index = computeCoalitionBalanceIndex(sentiment);
+  const issues: StrategicValidationIssue[] = [];
+
+  if (
+    action.minCoalitionBalanceIndex !== undefined &&
+    index < action.minCoalitionBalanceIndex
+  ) {
+    issues.push({
+      code: 'COALITION_BALANCE_TOO_LOW',
+      message: `Coalition balance ${index} below required ${action.minCoalitionBalanceIndex}.`,
+      requirement: {
+        kind: 'min_coalition_balance',
+        minIndex: action.minCoalitionBalanceIndex,
+      },
+    });
+  }
+
+  if (
+    action.maxCoalitionBalanceIndex !== undefined &&
+    index > action.maxCoalitionBalanceIndex
+  ) {
+    issues.push({
+      code: 'COALITION_NOT_IN_CRISIS',
+      message: `Coalition balance ${index} is too healthy for crisis-only action (max ${action.maxCoalitionBalanceIndex}).`,
+      requirement: {
+        kind: 'max_coalition_balance',
+        maxIndex: action.maxCoalitionBalanceIndex,
+      },
+    });
+  }
+
+  return issues;
+}
+
 // --- src/engine/mandate-gates.ts ---
 
 function trackHasMilestone(
@@ -986,16 +1076,22 @@ export interface StrategicGameplaySaveV3 extends Omit<StrategicGameplaySaveV2, '
   lastAlignedActionDay: number;
 }
 
+export interface StrategicGameplaySaveV4 extends Omit<StrategicGameplaySaveV3, 'version'> {
+  version: 4;
+  coalitionCrisisStreakDays: number;
+}
+
 export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV1
   | StrategicGameplaySaveV2
-  | StrategicGameplaySaveV3;
+  | StrategicGameplaySaveV3
+  | StrategicGameplaySaveV4;
 
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV3 {
+): StrategicGameplaySaveV4 {
   return {
-    version: 3,
+    version: 4,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -1008,6 +1104,7 @@ export function serializeStrategicGameplayState(
       ...(state.stakeholderSentiment ?? createDefaultStakeholderSentiment()),
     },
     lastAlignedActionDay: state.lastAlignedActionDay ?? state.day,
+    coalitionCrisisStreakDays: state.coalitionCrisisStreakDays ?? 0,
   };
 }
 
@@ -1026,6 +1123,7 @@ export function deserializeStrategicGameplayState(
       mandateProgress: createEmptyMandateProgress(),
       stakeholderSentiment: createDefaultStakeholderSentiment(),
       lastAlignedActionDay: save.day,
+      coalitionCrisisStreakDays: 0,
     };
   }
   if (save.version === 2) {
@@ -1040,9 +1138,25 @@ export function deserializeStrategicGameplayState(
       mandateProgress: { ...save.mandateProgress },
       stakeholderSentiment: { ...save.stakeholderSentiment },
       lastAlignedActionDay: save.day,
+      coalitionCrisisStreakDays: 0,
     };
   }
-  if (save.version !== 3) {
+  if (save.version === 3) {
+    return {
+      day: save.day,
+      completedActionIds: [...save.completedActionIds],
+      pendingDelayed: save.pendingDelayed.slice(),
+      journal: save.journal.slice(),
+      priorityMomentum: { ...save.priorityMomentum },
+      actionCooldowns: { ...save.actionCooldowns },
+      activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+      mandateProgress: { ...save.mandateProgress },
+      stakeholderSentiment: { ...save.stakeholderSentiment },
+      lastAlignedActionDay: save.lastAlignedActionDay,
+      coalitionCrisisStreakDays: 0,
+    };
+  }
+  if (save.version !== 4) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   return {
@@ -1056,6 +1170,7 @@ export function deserializeStrategicGameplayState(
     mandateProgress: { ...save.mandateProgress },
     stakeholderSentiment: { ...save.stakeholderSentiment },
     lastAlignedActionDay: save.lastAlignedActionDay,
+    coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
   };
 }
 
@@ -1301,6 +1416,54 @@ export function evaluateRequirements(
           );
         }
         break;
+      case 'min_coalition_balance':
+        if (state) {
+          issues.push(
+            ...coalitionBalanceIssues(
+              {
+                id: '_gate',
+                title: '',
+                category: 'governance',
+                apCost: 0,
+                cashCost: 0,
+                treasuryCost: 0,
+                minApproval: 0,
+                alignedPriorities: [],
+                conflictingPriorities: [],
+                immediateEffects: {},
+                delayedTradeOffs: [],
+                tags: [],
+                minCoalitionBalanceIndex: req.minIndex,
+              },
+              state,
+            ),
+          );
+        }
+        break;
+      case 'max_coalition_balance':
+        if (state) {
+          issues.push(
+            ...coalitionBalanceIssues(
+              {
+                id: '_gate',
+                title: '',
+                category: 'governance',
+                apCost: 0,
+                cashCost: 0,
+                treasuryCost: 0,
+                minApproval: 0,
+                alignedPriorities: [],
+                conflictingPriorities: [],
+                immediateEffects: {},
+                delayedTradeOffs: [],
+                tags: [],
+                maxCoalitionBalanceIndex: req.maxIndex,
+              },
+              state,
+            ),
+          );
+        }
+        break;
       default:
         break;
     }
@@ -1347,6 +1510,7 @@ export function validateAction(
   if (state) {
     issues.push(...stakeholderOppositionIssues(action, contracts, state));
     issues.push(...mandateMilestoneIssues(action, state));
+    issues.push(...coalitionBalanceIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({
@@ -1491,6 +1655,8 @@ export function buildTurnStrategicBriefing(
     mandateHeadline: summarizeMandateProgress(state),
     stakeholderWarnings: listStakeholderWarnings(state),
     coalitionBalanceIndex: computeCoalitionBalanceIndex(state.stakeholderSentiment),
+    coalitionCrisisLevel: classifyCoalitionCrisisLevel(state),
+    coalitionCrisisStreakDays: state.coalitionCrisisStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,
@@ -1633,6 +1799,7 @@ export function advanceStrategicGameplayCalendar(
   const daysAdvanced = toDay - state.day;
   const { state: afterDelayed, fired } = advanceDayAndResolveDelayed(state, contracts, toDay);
   let next = applyMandateIdleDrift(afterDelayed, toDay);
+  next = advanceCoalitionCrisisStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
   return { state: next, firedTradeOffCount: fired.length };
@@ -1651,6 +1818,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     mandateProgress: createEmptyMandateProgress(),
     stakeholderSentiment: createDefaultStakeholderSentiment(),
     lastAlignedActionDay: day,
+    coalitionCrisisStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -1788,6 +1956,9 @@ export function executeStrategicAction(
   }
   if (action.cooldownDays && action.cooldownDays > 0) {
     nextState = startActionCooldown(nextState, action.id, action.cooldownDays);
+  }
+  if (action.id === 'sga_coalition_reconciliation_forum') {
+    nextState = resetCoalitionCrisisStreak(nextState);
   }
 
   contracts.ui.pushToast({
@@ -2223,6 +2394,56 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
         effects: {
           government: { regulatoryBurdenDelta: 2 },
           economy: { treasuryDelta: -20_000 },
+        },
+      },
+    ],
+  },
+  'sga_coalition_reconciliation_forum': {
+    id: 'sga_coalition_reconciliation_forum',
+    title: 'Coalition Reconciliation Forum',
+    category: 'governance',
+    apCost: 1,
+    cashCost: 8_000,
+    treasuryCost: 35_000,
+    minApproval: 38,
+    alignedPriorities: ['economic_diversification', 'supply_chain_security'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'crisis_response'],
+    repeatable: true,
+    maxCoalitionBalanceIndex: 44,
+    cooldownDays: 2,
+    immediateEffects: {
+      economy: { cashDelta: -8_000, treasuryDelta: -35_000 },
+      government: { approvalDelta: 2, regulatoryBurdenDelta: -1 },
+      population: { publicStabilityDelta: 3, affordabilityStressDelta: -1 },
+    },
+    delayedTradeOffs: [],
+  },
+  'sga_coalition_unity_roundtable': {
+    id: 'sga_coalition_unity_roundtable',
+    title: 'Coalition Unity Roundtable',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 15_000,
+    treasuryCost: 55_000,
+    minApproval: 48,
+    alignedPriorities: ['economic_diversification', 'freight_modernization'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'compact'],
+    repeatable: false,
+    minCoalitionBalanceIndex: 72,
+    immediateEffects: {
+      economy: { cashDelta: -15_000, treasuryDelta: -55_000 },
+      government: { approvalDelta: 4, directiveSlotsDelta: 1 },
+      population: { publicStabilityDelta: 4 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Roundtable facilitation costs',
+        warning: 'Extended stakeholder sessions add treasury draw next week.',
+        effects: {
+          economy: { treasuryDelta: -18_000 },
+          government: { regulatoryBurdenDelta: 1 },
         },
       },
     ],
@@ -2763,7 +2984,7 @@ export function createMemoryStrategicContracts(
 
 export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
 
-export const AGENT_01_MODULE_VERSION = '1.5.0';
+export const AGENT_01_MODULE_VERSION = '1.6.0';
 
 
 
@@ -2785,7 +3006,7 @@ export function runOp10mAgent01StrategicGameplaySelfTests(): {
 
     name: 'strategic action catalog non-empty',
 
-    passed: listStrategicActions().length >= 12,
+    passed: listStrategicActions().length >= 14,
 
   });
 

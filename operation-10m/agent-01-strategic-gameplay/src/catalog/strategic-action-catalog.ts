@@ -374,6 +374,56 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
       },
     ],
   },
+  'sga_coalition_reconciliation_forum': {
+    id: 'sga_coalition_reconciliation_forum',
+    title: 'Coalition Reconciliation Forum',
+    category: 'governance',
+    apCost: 1,
+    cashCost: 8_000,
+    treasuryCost: 35_000,
+    minApproval: 38,
+    alignedPriorities: ['economic_diversification', 'supply_chain_security'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'crisis_response'],
+    repeatable: true,
+    maxCoalitionBalanceIndex: 44,
+    cooldownDays: 2,
+    immediateEffects: {
+      economy: { cashDelta: -8_000, treasuryDelta: -35_000 },
+      government: { approvalDelta: 2, regulatoryBurdenDelta: -1 },
+      population: { publicStabilityDelta: 3, affordabilityStressDelta: -1 },
+    },
+    delayedTradeOffs: [],
+  },
+  'sga_coalition_unity_roundtable': {
+    id: 'sga_coalition_unity_roundtable',
+    title: 'Coalition Unity Roundtable',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 15_000,
+    treasuryCost: 55_000,
+    minApproval: 48,
+    alignedPriorities: ['economic_diversification', 'freight_modernization'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'compact'],
+    repeatable: false,
+    minCoalitionBalanceIndex: 72,
+    immediateEffects: {
+      economy: { cashDelta: -15_000, treasuryDelta: -55_000 },
+      government: { approvalDelta: 4, directiveSlotsDelta: 1 },
+      population: { publicStabilityDelta: 4 },
+    },
+    delayedTradeOffs: [
+      {
+        label: 'Roundtable facilitation costs',
+        warning: 'Extended stakeholder sessions add treasury draw next week.',
+        effects: {
+          economy: { treasuryDelta: -18_000 },
+          government: { regulatoryBurdenDelta: 1 },
+        },
+      },
+    ],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {

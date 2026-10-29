@@ -72,7 +72,7 @@ describe('commitment journal', () => {
 });
 
 describe('catalog depth', () => {
-  it('ships twelve strategic actions after round 5 expansion', () => {
-    expect(listStrategicActions().length).toBe(12);
+  it('ships fourteen strategic actions after round 6 expansion', () => {
+    expect(listStrategicActions().length).toBe(14);
   });
 });

@@ -61,6 +61,10 @@ export interface StrategicActionDefinition {
   synergyEligible?: boolean;
   /** All listed mandate milestones must be unlocked before execution. */
   requiredMandateMilestones?: { priorityId: NationalPriorityId; milestoneId: MandateMilestoneId }[];
+  /** Coalition balance index must be at least this value (0–100). */
+  minCoalitionBalanceIndex?: number;
+  /** Crisis-only actions — balance index must be at or below this value. */
+  maxCoalitionBalanceIndex?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -97,7 +101,9 @@ export type StrategicValidationRequirement =
   | { kind: 'directive_slot_available' }
   | { kind: 'max_pending_tradeoffs'; max: number }
   | { kind: 'action_not_yet_completed'; actionId: string }
-  | { kind: 'mandate_milestone'; priorityId: NationalPriorityId; milestoneId: MandateMilestoneId };
+  | { kind: 'mandate_milestone'; priorityId: NationalPriorityId; milestoneId: MandateMilestoneId }
+  | { kind: 'min_coalition_balance'; minIndex: number }
+  | { kind: 'max_coalition_balance'; maxIndex: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -139,6 +145,8 @@ export interface StrategicGameplayState {
   stakeholderSentiment?: StakeholderSentiment;
   /** Last calendar day an aligned-priority action completed (mandate idle drift). */
   lastAlignedActionDay?: number;
+  /** Consecutive calendar days coalition balance remained acute. */
+  coalitionCrisisStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;

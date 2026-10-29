@@ -21,6 +21,8 @@ export type MandateProgress = Partial<Record<NationalPriorityId, PriorityMandate
 
 export type StakeholderSentiment = Record<StakeholderGroupId, number>;
 
+export type CoalitionCrisisLevel = 'stable' | 'strained' | 'acute';
+
 export interface TurnStrategicBriefing {
   day: number;
   commitmentPressure: number;
@@ -30,6 +32,8 @@ export interface TurnStrategicBriefing {
   completedActionCount: number;
   activeChoiceId: string | null;
   coalitionBalanceIndex: number;
+  coalitionCrisisLevel: CoalitionCrisisLevel;
+  coalitionCrisisStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;

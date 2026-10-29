@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const moduleRoot = resolve(__dirname, '..');
 const moduleId = 'agent-01-strategic-gameplay';
-const moduleVersion = '1.5.0';
+const moduleVersion = '1.6.0';
 
 /** Stable concat order: dependencies before dependents. */
 const SOURCE_FILES = [
@@ -31,6 +31,8 @@ const SOURCE_FILES = [
   'src/engine/stakeholder-coalition.ts',
   'src/engine/coalition-balance.ts',
   'src/engine/mandate-idle-drift.ts',
+  'src/engine/coalition-crisis.ts',
+  'src/engine/coalition-gates.ts',
   'src/engine/mandate-gates.ts',
   'src/engine/strategic-save.ts',
   'src/engine/tradeoff-mitigation.ts',
@@ -100,7 +102,7 @@ function bundleSources(): string {
     `  results.push({`,
     `    id: 'agent01_catalog',`,
     `    name: 'strategic action catalog non-empty',`,
-    `    passed: listStrategicActions().length >= 12,`,
+    `    passed: listStrategicActions().length >= 14,`,
     `  });`,
     `  const contracts = createMemoryStrategicContracts();`,
     `  const action = getStrategicAction('sga_supply_chain_buffer');`,

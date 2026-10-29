@@ -25,6 +25,7 @@ import {
 import { advanceMandateOnAction } from './strategic-mandate.ts';
 import { applyStakeholderReaction } from './stakeholder-coalition.ts';
 import { touchLastAlignedActionDay } from './mandate-idle-drift.ts';
+import { resetCoalitionCrisisStreak } from './coalition-crisis.ts';
 import {
   scoreNationalPriorityAlignment,
   validateAction,
@@ -45,6 +46,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     mandateProgress: createEmptyMandateProgress(),
     stakeholderSentiment: createDefaultStakeholderSentiment(),
     lastAlignedActionDay: day,
+    coalitionCrisisStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -182,6 +184,9 @@ export function executeStrategicAction(
   }
   if (action.cooldownDays && action.cooldownDays > 0) {
     nextState = startActionCooldown(nextState, action.id, action.cooldownDays);
+  }
+  if (action.id === 'sga_coalition_reconciliation_forum') {
+    nextState = resetCoalitionCrisisStreak(nextState);
   }
 
   contracts.ui.pushToast({

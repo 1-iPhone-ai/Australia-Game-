@@ -108,4 +108,12 @@ export {
   applyPassiveStakeholderReversion,
 } from './engine/strategic-calendar.ts';
 
-export const AGENT_01_MODULE_VERSION = '1.5.0';
+export {
+  classifyCoalitionCrisisLevel,
+  advanceCoalitionCrisisStreak,
+  resetCoalitionCrisisStreak,
+} from './engine/coalition-crisis.ts';
+
+export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
+
+export const AGENT_01_MODULE_VERSION = '1.6.0';
