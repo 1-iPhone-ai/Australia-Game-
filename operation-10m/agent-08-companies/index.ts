@@ -608,6 +608,23 @@ export type {
   TransitionLegitimacyBand,
 } from './production-transition-legitimacy';
 
+export {
+  AGENT08_TRANSITION_RECOGNITION_SCHEMA_VERSION,
+  buildFirmProductionTransitionRecognition,
+  classifyNationalRecognitionBand,
+  computeNationalRecognitionPressure,
+  computeNationalProductionTransitionRecognition,
+  summarizeRegionalTransitionRecognition,
+  runAgent08TransitionRecognitionSelfTests,
+} from './production-transition-recognition';
+
+export type {
+  FirmProductionTransitionRecognition,
+  NationalProductionTransitionRecognition,
+  RegionalTransitionRecognitionSummary,
+  TransitionRecognitionBand,
+} from './production-transition-recognition';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -644,6 +661,7 @@ import { runAgent08TransitionAccountabilitySelfTests } from './production-transi
 import { runAgent08TransitionAssuranceSelfTests } from './production-transition-assurance';
 import { runAgent08TransitionTrustSelfTests } from './production-transition-trust';
 import { runAgent08TransitionLegitimacySelfTests } from './production-transition-legitimacy';
+import { runAgent08TransitionRecognitionSelfTests } from './production-transition-recognition';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -828,6 +846,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionRecognition = runAgent08TransitionRecognitionSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -865,5 +888,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionAssurance,
     ...transitionTrust,
     ...transitionLegitimacy,
+    ...transitionRecognition,
   ];
 }

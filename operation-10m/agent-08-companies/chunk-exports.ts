@@ -181,6 +181,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionRecognition = runAgent08TransitionRecognitionSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -218,5 +223,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionAssurance,
     ...transitionTrust,
     ...transitionLegitimacy,
+    ...transitionRecognition,
   ];
 }
