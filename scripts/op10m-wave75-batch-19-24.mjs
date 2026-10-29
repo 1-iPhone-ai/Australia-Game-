@@ -120,11 +120,8 @@ function ensureAgent18Wave75() {
   let idx = read('operation-10m/agent-18-team-ai/src/index.ts');
   if (!idx.includes('unicosagenary-harmony')) {
     idx = idx.replace(
-      "export * from './icosagenary-harmony-resonance-convergence-stack-index.ts';
-",
-      "export * from './icosagenary-harmony-resonance-convergence-stack-index.ts';
-export * from './unicosagenary-harmony-resonance-convergence-stack-index.ts';
-",
+      "export * from './icosagenary-harmony-resonance-convergence-stack-index.ts';\n",
+      "export * from './icosagenary-harmony-resonance-convergence-stack-index.ts';\nexport * from './unicosagenary-harmony-resonance-convergence-stack-index.ts';\n",
     );
     write('operation-10m/agent-18-team-ai/src/index.ts', idx);
   }
@@ -132,8 +129,7 @@ export * from './unicosagenary-harmony-resonance-convergence-stack-index.ts';
   if (!build.includes('unicosagenary-harmony')) {
     build = build.replace(
       "'src/icosagenary-harmony-resonance-convergence-stack-index.ts'",
-      "'src/icosagenary-harmony-resonance-convergence-stack-index.ts',
-  'src/unicosagenary-harmony-resonance-convergence-stack-index.ts'",
+      "'src/icosagenary-harmony-resonance-convergence-stack-index.ts',\n  'src/unicosagenary-harmony-resonance-convergence-stack-index.ts'",
     );
     write('operation-10m/agent-18-team-ai/scripts/build-chunk.mjs', build);
   }
@@ -141,14 +137,11 @@ export * from './unicosagenary-harmony-resonance-convergence-stack-index.ts';
   if (!st.includes('Ununicosagenary')) {
     st = st.replace(
       "from './src/icosagenary-harmony-resonance-convergence-stack-index.ts';",
-      "from './src/icosagenary-harmony-resonance-convergence-stack-index.ts';
-import { computeUnunicosagenaryHarmonyResonanceConvergenceStackIndex } from './src/unicosagenary-harmony-resonance-convergence-stack-index.ts';",
+      "from './src/icosagenary-harmony-resonance-convergence-stack-index.ts';\nimport { computeUnunicosagenaryHarmonyResonanceConvergenceStackIndex } from './src/unicosagenary-harmony-resonance-convergence-stack-index.ts';",
     );
     st = st.replace(
       'return { passed, failed, total: passed + failed };',
-      `const uni = computeUnunicosagenaryHarmonyResonanceConvergenceStackIndex(50, 48, 2);
-  ok(uni.stackIndex >= 0 && uni.stackIndex <= 100);
-  return { passed, failed, total: passed + failed };`,
+      `const uni = computeUnunicosagenaryHarmonyResonanceConvergenceStackIndex(50, 48, 2);\n  ok(uni.stackIndex >= 0 && uni.stackIndex <= 100);\n  return { passed, failed, total: passed + failed };`,
     );
     write('operation-10m/agent-18-team-ai/run-self-tests.mts', st);
   }
