@@ -259,6 +259,8 @@ export interface Agent17PlanningDepthSnapshot {
   testamentAccord: Agent17TestamentAccordSnapshot;
   memorialIndex: Agent17MemorialIndexSnapshot;
   remembranceAccord: Agent17RemembranceAccordSnapshot;
+  heritageIndex: Agent17HeritageIndexSnapshot;
+  legacyAccord: Agent17LegacyAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1543,6 +1545,40 @@ export interface Agent17RemembranceAccordSnapshot {
   memorialBand: Agent17MemorialIndexSnapshot['band'];
   testamentBand: Agent17TestamentAccordSnapshot['band'];
   remembranceCommemorated: boolean;
+  headline: string;
+}
+
+export interface Agent17HeritageBequest {
+  id: string;
+  label: string;
+  bequeathed: boolean;
+  weight: number;
+}
+
+export interface Agent17HeritageIndexSnapshot {
+  heritageScore: number;
+  band: 'bequeathed' | 'pending' | 'forfeited';
+  bequests: Agent17HeritageBequest[];
+  remembranceBand: Agent17RemembranceAccordSnapshot['band'];
+  memorialBand: Agent17MemorialIndexSnapshot['band'];
+  heritageBequeathed: boolean;
+  headline: string;
+}
+
+export interface Agent17LegacyArticle {
+  id: string;
+  label: string;
+  entailed: boolean;
+  weight: number;
+}
+
+export interface Agent17LegacyAccordSnapshot {
+  legacyScore: number;
+  band: 'entailed' | 'draft' | 'extinguished';
+  articles: Agent17LegacyArticle[];
+  heritageBand: Agent17HeritageIndexSnapshot['band'];
+  remembranceBand: Agent17RemembranceAccordSnapshot['band'];
+  legacyEntailed: boolean;
   headline: string;
 }
 

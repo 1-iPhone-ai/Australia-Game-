@@ -99,6 +99,8 @@ import { buildAgent17WitnessIndex } from './witness-index.ts';
 import { buildAgent17TestamentAccord } from './testament-accord.ts';
 import { buildAgent17MemorialIndex } from './memorial-index.ts';
 import { buildAgent17RemembranceAccord } from './remembrance-accord.ts';
+import { buildAgent17HeritageIndex } from './heritage-index.ts';
+import { buildAgent17LegacyAccord } from './legacy-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -583,6 +585,16 @@ export function buildAgent17PlanningDepthSnapshot(
     testamentAccord,
     witnessIndex,
   });
+  const heritageIndex = buildAgent17HeritageIndex({
+    remembranceAccord,
+    memorialIndex,
+    testamentAccord,
+  });
+  const legacyAccord = buildAgent17LegacyAccord({
+    heritageIndex,
+    remembranceAccord,
+    memorialIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -664,6 +676,8 @@ export function buildAgent17PlanningDepthSnapshot(
     testamentAccord,
     memorialIndex,
     remembranceAccord,
+    heritageIndex,
+    legacyAccord,
   };
 }
 

@@ -321,6 +321,14 @@ import {
   remembranceAccordBlocksMemorial,
 } from '../planning/remembrance-accord.ts';
 import {
+  buildAgent17HeritageIndex,
+  heritageIndexBlocksLegacy,
+} from '../planning/heritage-index.ts';
+import {
+  buildAgent17LegacyAccord,
+  legacyAccordBlocksHeritage,
+} from '../planning/legacy-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -2430,6 +2438,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const heritageIndex = depthEval.snapshot.planningDepth?.heritageIndex;
+  goalResults.push(
+    result(
+      'G17-139',
+      !!heritageIndex &&
+        heritageIndex.bequests.length >= 5 &&
+        heritageIndex.heritageScore >= 0 &&
+        heritageIndex.heritageScore <= 100 &&
+        (heritageIndex.band === 'bequeathed' ||
+          heritageIndex.band === 'pending' ||
+          heritageIndex.band === 'forfeited'),
+      `bequests=${heritageIndex?.bequests.length} score=${heritageIndex?.heritageScore}`
+    )
+  );
+
+  const legacyAccord = depthEval.snapshot.planningDepth?.legacyAccord;
+  goalResults.push(
+    result(
+      'G17-140',
+      !!legacyAccord &&
+        legacyAccord.articles.length >= 5 &&
+        legacyAccord.legacyScore >= 0 &&
+        legacyAccord.legacyScore <= 100,
+      `articles=${legacyAccord?.articles.length} score=${legacyAccord?.legacyScore}`
+    )
+  );
+
+  const forfeitedHeritage = buildAgent17HeritageIndex({
+    remembranceAccord: forgottenRemembrance,
+    memorialIndex: desecratedMemorial,
+    testamentAccord: voidedTestament,
+  });
+  const extinguishedLegacy = buildAgent17LegacyAccord({
+    heritageIndex: forfeitedHeritage,
+    remembranceAccord: forgottenRemembrance,
+    memorialIndex: desecratedMemorial,
+  });
+  goalResults.push(
+    result(
+      'G17-141',
+      remembranceAccordBlocksMemorial(forgottenRemembrance) ||
+        heritageIndexBlocksLegacy(forfeitedHeritage) ||
+        legacyAccordBlocksHeritage(extinguishedLegacy),
+      `${forfeitedHeritage.band}/${extinguishedLegacy.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2598,6 +2653,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-136',
     'G17-137',
     'G17-138',
+    'G17-139',
+    'G17-140',
+    'G17-141',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

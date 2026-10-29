@@ -263,6 +263,8 @@ export interface Agent17PlanningDepthSnapshot {
   testamentAccord: Agent17TestamentAccordSnapshot;
   memorialIndex: Agent17MemorialIndexSnapshot;
   remembranceAccord: Agent17RemembranceAccordSnapshot;
+  heritageIndex: Agent17HeritageIndexSnapshot;
+  legacyAccord: Agent17LegacyAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1547,6 +1549,40 @@ export interface Agent17RemembranceAccordSnapshot {
   memorialBand: Agent17MemorialIndexSnapshot['band'];
   testamentBand: Agent17TestamentAccordSnapshot['band'];
   remembranceCommemorated: boolean;
+  headline: string;
+}
+
+export interface Agent17HeritageBequest {
+  id: string;
+  label: string;
+  bequeathed: boolean;
+  weight: number;
+}
+
+export interface Agent17HeritageIndexSnapshot {
+  heritageScore: number;
+  band: 'bequeathed' | 'pending' | 'forfeited';
+  bequests: Agent17HeritageBequest[];
+  remembranceBand: Agent17RemembranceAccordSnapshot['band'];
+  memorialBand: Agent17MemorialIndexSnapshot['band'];
+  heritageBequeathed: boolean;
+  headline: string;
+}
+
+export interface Agent17LegacyArticle {
+  id: string;
+  label: string;
+  entailed: boolean;
+  weight: number;
+}
+
+export interface Agent17LegacyAccordSnapshot {
+  legacyScore: number;
+  band: 'entailed' | 'draft' | 'extinguished';
+  articles: Agent17LegacyArticle[];
+  heritageBand: Agent17HeritageIndexSnapshot['band'];
+  remembranceBand: Agent17RemembranceAccordSnapshot['band'];
+  legacyEntailed: boolean;
   headline: string;
 }
 
@@ -11071,6 +11107,217 @@ export function remembranceAccordBlocksMemorial(
   return snapshot.band === 'forgotten' || !snapshot.remembranceCommemorated;
 }
 
+export function remembranceAccordBlocksHeritage(
+  snapshot: Agent17RemembranceAccordSnapshot
+): boolean {
+  return remembranceAccordBlocksMemorial(snapshot);
+}
+
+
+// --- source: planning/heritage-index.ts ---
+  Agent17HeritageIndexSnapshot,
+  Agent17MemorialIndexSnapshot,
+  Agent17RemembranceAccordSnapshot,
+  Agent17TestamentAccordSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17HeritageIndexInputs {
+  remembranceAccord: Agent17RemembranceAccordSnapshot;
+  memorialIndex: Agent17MemorialIndexSnapshot;
+  testamentAccord: Agent17TestamentAccordSnapshot;
+}
+
+export function buildAgent17HeritageIndex(
+  inputs: Agent17HeritageIndexInputs
+): Agent17HeritageIndexSnapshot {
+  const bequests: Agent17HeritageIndexSnapshot['bequests'] = [];
+
+  bequests.push({
+    id: 'remembrance_commemorated',
+    label: 'Remembrance accord remembrance-commemorated',
+    bequeathed:
+      inputs.remembranceAccord.remembranceCommemorated &&
+      !remembranceAccordBlocksHeritage(inputs.remembranceAccord),
+    weight: 30,
+  });
+
+  bequests.push({
+    id: 'remembrance_band',
+    label: 'Remembrance commemorated or nascent',
+    bequeathed:
+      inputs.remembranceAccord.band === 'commemorated' ||
+      inputs.remembranceAccord.band === 'nascent',
+    weight: 25,
+  });
+
+  bequests.push({
+    id: 'memorial_enshrined',
+    label: 'Memorial index memorial-enshrined',
+    bequeathed:
+      inputs.memorialIndex.memorialEnshrined &&
+      !memorialIndexBlocksRemembrance(inputs.memorialIndex),
+    weight: 20,
+  });
+
+  bequests.push({
+    id: 'testament_clear',
+    label: 'Testament accord not blocking memorial',
+    bequeathed: !testamentAccordBlocksMemorial(inputs.testamentAccord),
+    weight: 15,
+  });
+
+  bequests.push({
+    id: 'remembrance_score',
+    label: 'Remembrance score headroom',
+    bequeathed: inputs.remembranceAccord.remembranceScore >= 10,
+    weight: 10,
+  });
+
+  const weighted = bequests.reduce(
+    (n, b) => n + (b.bequeathed ? 100 : 1) * (b.weight / 100),
+    0
+  );
+  const totalWeight = bequests.reduce((n, b) => n + b.weight, 0);
+  const heritageScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const forfeitedSignals =
+    remembranceAccordBlocksHeritage(inputs.remembranceAccord) ||
+    memorialIndexBlocksRemembrance(inputs.memorialIndex) ||
+    testamentAccordBlocksMemorial(inputs.testamentAccord);
+
+  const band: Agent17HeritageIndexSnapshot['band'] = forfeitedSignals
+    ? 'forfeited'
+    : heritageScore >= 47 &&
+        inputs.remembranceAccord.band === 'commemorated' &&
+        inputs.memorialIndex.band === 'enshrined'
+      ? 'bequeathed'
+      : 'pending';
+
+  const heritageBequeathed =
+    band === 'bequeathed' &&
+    inputs.remembranceAccord.remembranceCommemorated &&
+    !remembranceAccordBlocksHeritage(inputs.remembranceAccord);
+
+  return {
+    heritageScore,
+    band,
+    bequests,
+    remembranceBand: inputs.remembranceAccord.band,
+    memorialBand: inputs.memorialIndex.band,
+    heritageBequeathed,
+    headline: `Heritage ${band} (${heritageScore}/100) · ${bequests.filter(b => b.bequeathed).length}/${bequests.length} bequests`,
+  };
+}
+
+export function heritageIndexBlocksLegacy(snapshot: Agent17HeritageIndexSnapshot): boolean {
+  return snapshot.band === 'forfeited' || !snapshot.heritageBequeathed;
+}
+
+
+// --- source: planning/legacy-accord.ts ---
+  Agent17HeritageIndexSnapshot,
+  Agent17LegacyAccordSnapshot,
+  Agent17MemorialIndexSnapshot,
+  Agent17RemembranceAccordSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17LegacyAccordInputs {
+  heritageIndex: Agent17HeritageIndexSnapshot;
+  remembranceAccord: Agent17RemembranceAccordSnapshot;
+  memorialIndex: Agent17MemorialIndexSnapshot;
+}
+
+export function buildAgent17LegacyAccord(
+  inputs: Agent17LegacyAccordInputs
+): Agent17LegacyAccordSnapshot {
+  const articles: Agent17LegacyAccordSnapshot['articles'] = [];
+
+  articles.push({
+    id: 'heritage_bequeathed',
+    label: 'Heritage index heritage-bequeathed',
+    entailed:
+      inputs.heritageIndex.heritageBequeathed &&
+      !heritageIndexBlocksLegacy(inputs.heritageIndex),
+    weight: 30,
+  });
+
+  articles.push({
+    id: 'heritage_band',
+    label: 'Heritage bequeathed or pending',
+    entailed:
+      inputs.heritageIndex.band === 'bequeathed' || inputs.heritageIndex.band === 'pending',
+    weight: 25,
+  });
+
+  articles.push({
+    id: 'remembrance_commemorated',
+    label: 'Remembrance accord remembrance-ready',
+    entailed:
+      inputs.remembranceAccord.remembranceCommemorated &&
+      !remembranceAccordBlocksHeritage(inputs.remembranceAccord),
+    weight: 20,
+  });
+
+  articles.push({
+    id: 'memorial_clear',
+    label: 'Memorial index not blocking remembrance',
+    entailed: !memorialIndexBlocksRemembrance(inputs.memorialIndex),
+    weight: 15,
+  });
+
+  articles.push({
+    id: 'heritage_score',
+    label: 'Heritage score headroom',
+    entailed: inputs.heritageIndex.heritageScore >= 9,
+    weight: 10,
+  });
+
+  const weighted = articles.reduce(
+    (n, a) => n + (a.entailed ? 100 : 1) * (a.weight / 100),
+    0
+  );
+  const totalWeight = articles.reduce((n, a) => n + a.weight, 0);
+  const legacyScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const extinguishedSignals =
+    heritageIndexBlocksLegacy(inputs.heritageIndex) ||
+    remembranceAccordBlocksHeritage(inputs.remembranceAccord) ||
+    memorialIndexBlocksRemembrance(inputs.memorialIndex);
+
+  const band: Agent17LegacyAccordSnapshot['band'] = extinguishedSignals
+    ? 'extinguished'
+    : legacyScore >= 44 &&
+        inputs.heritageIndex.band === 'bequeathed' &&
+        inputs.remembranceAccord.band === 'commemorated'
+      ? 'entailed'
+      : 'draft';
+
+  const legacyEntailed =
+    band === 'entailed' &&
+    inputs.heritageIndex.heritageBequeathed &&
+    !memorialIndexBlocksRemembrance(inputs.memorialIndex);
+
+  return {
+    legacyScore,
+    band,
+    articles,
+    heritageBand: inputs.heritageIndex.band,
+    remembranceBand: inputs.remembranceAccord.band,
+    legacyEntailed,
+    headline: `Legacy ${band} (${legacyScore}/100) · ${articles.filter(a => a.entailed).length}/${articles.length} articles`,
+  };
+}
+
+export function legacyAccordBlocksHeritage(snapshot: Agent17LegacyAccordSnapshot): boolean {
+  return snapshot.band === 'extinguished' || !snapshot.legacyEntailed;
+}
+
 
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
@@ -11571,6 +11818,16 @@ export function buildAgent17PlanningDepthSnapshot(
     testamentAccord,
     witnessIndex,
   });
+  const heritageIndex = buildAgent17HeritageIndex({
+    remembranceAccord,
+    memorialIndex,
+    testamentAccord,
+  });
+  const legacyAccord = buildAgent17LegacyAccord({
+    heritageIndex,
+    remembranceAccord,
+    memorialIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -11652,6 +11909,8 @@ export function buildAgent17PlanningDepthSnapshot(
     testamentAccord,
     memorialIndex,
     remembranceAccord,
+    heritageIndex,
+    legacyAccord,
   };
 }
 
@@ -12915,6 +13174,28 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Desecrated memorial or voided testament yields remembranceAccordBlocksMemorial.',
     severity: 'major',
   },
+  {
+    id: 'G17-139',
+    title: 'Heritage index on planning depth',
+    category: 'telemetry',
+    acceptance: 'heritageIndex reports heritageScore 0–100 with bequeathed/pending/forfeited band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-140',
+    title: 'Legacy accord articles complete',
+    category: 'telemetry',
+    acceptance: 'legacyAccord exposes ≥5 articles and legacyScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-141',
+    title: 'Forfeited heritage extinguishes legacy accord',
+    category: 'integration',
+    acceptance:
+      'Forfeited heritage or forgotten remembrance yields legacyAccordBlocksHeritage.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -13159,6 +13440,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17RemembranceAccord,
   remembranceAccordBlocksMemorial,
 } from '../planning/remembrance-accord.ts';
+  buildAgent17HeritageIndex,
+  heritageIndexBlocksLegacy,
+} from '../planning/heritage-index.ts';
+  buildAgent17LegacyAccord,
+  legacyAccordBlocksHeritage,
+} from '../planning/legacy-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -15268,6 +15555,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const heritageIndex = depthEval.snapshot.planningDepth?.heritageIndex;
+  goalResults.push(
+    result(
+      'G17-139',
+      !!heritageIndex &&
+        heritageIndex.bequests.length >= 5 &&
+        heritageIndex.heritageScore >= 0 &&
+        heritageIndex.heritageScore <= 100 &&
+        (heritageIndex.band === 'bequeathed' ||
+          heritageIndex.band === 'pending' ||
+          heritageIndex.band === 'forfeited'),
+      `bequests=${heritageIndex?.bequests.length} score=${heritageIndex?.heritageScore}`
+    )
+  );
+
+  const legacyAccord = depthEval.snapshot.planningDepth?.legacyAccord;
+  goalResults.push(
+    result(
+      'G17-140',
+      !!legacyAccord &&
+        legacyAccord.articles.length >= 5 &&
+        legacyAccord.legacyScore >= 0 &&
+        legacyAccord.legacyScore <= 100,
+      `articles=${legacyAccord?.articles.length} score=${legacyAccord?.legacyScore}`
+    )
+  );
+
+  const forfeitedHeritage = buildAgent17HeritageIndex({
+    remembranceAccord: forgottenRemembrance,
+    memorialIndex: desecratedMemorial,
+    testamentAccord: voidedTestament,
+  });
+  const extinguishedLegacy = buildAgent17LegacyAccord({
+    heritageIndex: forfeitedHeritage,
+    remembranceAccord: forgottenRemembrance,
+    memorialIndex: desecratedMemorial,
+  });
+  goalResults.push(
+    result(
+      'G17-141',
+      remembranceAccordBlocksMemorial(forgottenRemembrance) ||
+        heritageIndexBlocksLegacy(forfeitedHeritage) ||
+        legacyAccordBlocksHeritage(extinguishedLegacy),
+      `${forfeitedHeritage.band}/${extinguishedLegacy.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -15436,6 +15770,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-136',
     'G17-137',
     'G17-138',
+    'G17-139',
+    'G17-140',
+    'G17-141',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

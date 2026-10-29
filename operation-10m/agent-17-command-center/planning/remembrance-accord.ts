@@ -103,3 +103,9 @@ export function remembranceAccordBlocksMemorial(
 ): boolean {
   return snapshot.band === 'forgotten' || !snapshot.remembranceCommemorated;
 }
+
+export function remembranceAccordBlocksHeritage(
+  snapshot: Agent17RemembranceAccordSnapshot
+): boolean {
+  return remembranceAccordBlocksMemorial(snapshot);
+}
