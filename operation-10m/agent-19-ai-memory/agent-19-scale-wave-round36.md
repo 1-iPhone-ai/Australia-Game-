@@ -3,4 +3,5 @@
 **Issue:** O10-203 · **scale wave round 36**  
 Store handoff: `/cursor/stores/self/internal/operation-10m/agent-19-scale-wave-round36.md`
 
-**Commit subject:** O10-203 Agent 19 scale wave round 36: sovereign bundle, imperial gate, sovereign recovery orchestrator
+**Commit subject:** O10-203 Agent 19 scale wave round 36: sovereign bundle, imperial gate, sovereign recovery orchestrator  
+**Origin tip:** **`57b28b60`** · baseline **`ea2bb035`** · chunk **15,478** lines · **258** self-tests
