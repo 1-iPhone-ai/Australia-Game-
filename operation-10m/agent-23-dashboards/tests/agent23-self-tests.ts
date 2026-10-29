@@ -134,6 +134,12 @@ import { nrDashBuildHubPulseSpan } from '../core/hub-pulse-span.ts';
 import { nrDashBuildRivalPortfolioSpan } from '../core/rival-portfolio-span.ts';
 import { nrDashBuildNetworkConditionSpan } from '../core/network-condition-span.ts';
 import { nrDashBuildNsHistoryTurnSpan } from '../core/ns-history-turn-span.ts';
+import { nrDashBuildLrHistoryTurnSpan } from '../core/lr-history-turn-span.ts';
+import { nrDashBuildOpenNeedsTierSpread } from '../core/open-needs-tier-spread.ts';
+import { nrDashBuildSnippetSaturationShare } from '../core/snippet-saturation-share.ts';
+import { nrDashBuildPulseAsymmetryGap } from '../core/pulse-asymmetry-gap.ts';
+import { nrDashBuildRegionalOwnerSkew } from '../core/regional-owner-skew.ts';
+import { nrDashBuildCombinedDerivedHistoryGap } from '../core/combined-derived-history-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -1053,6 +1059,43 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
   check('a23_ns_history_turn_span', 'NS history turn span is zero on single entry fixture', () => {
     const span = nrDashBuildNsHistoryTurnSpan(createAgent23NsFixture())!;
     return span.eventCount === 1 && span.turnSpread === 0 && span.minTurn === 5;
+  });
+
+  check('a23_lr_history_turn_span', 'LR history turn span covers major derived on fixture', () => {
+    const span = nrDashBuildLrHistoryTurnSpan(createAgent23LrFixture())!;
+    return span.eventCount === 1 && span.turnSpread === 0 && span.minTurn === 4;
+  });
+
+  check('a23_open_needs_tier_spread', 'Open needs tier spread is zero on uniform moderate fixture', () => {
+    const spread = nrDashBuildOpenNeedsTierSpread(createAgent23LrFixture())!;
+    return spread.tierSpread === 0 && spread.maxTierCount === 8;
+  });
+
+  check('a23_snippet_saturation_share', 'Snippet saturation share matches surfaced buffer on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const sat = nrDashBuildSnippetSaturationShare(snap)!;
+    return sat.maxSnippets === 8 && sat.snippetCount === 2 && sat.saturationShare === 0.25;
+  });
+
+  check('a23_pulse_asymmetry_gap', 'Pulse asymmetry gap is positive on NSW hotspot fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const gap = nrDashBuildPulseAsymmetryGap(nrDashBuildRegionMapNodes(snap))!;
+    return gap.regionCount === 8 && gap.asymmetryGap > 0.02;
+  });
+
+  check('a23_regional_owner_skew', 'Regional owner skew favors player on NSW ownership fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'you' })!;
+    const skew = nrDashBuildRegionalOwnerSkew(snap)!;
+    return skew.ownershipSkew === 0.125 && skew.youShare === 0.125 && skew.rivalShare === 0;
+  });
+
+  check('a23_combined_derived_history_gap', 'Combined derived-history gap counts unsurfaced meaningful events', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 3, text: 'Minor tick', significance: 'meaningful' });
+    const ns = createAgent23NsFixture();
+    const snap = nrDashBuildAuthSnapshot(5, lr, ns, null)!;
+    const gap = nrDashBuildCombinedDerivedHistoryGap(lr, ns, snap)!;
+    return gap.combinedSourceCount === 3 && gap.surfacedSnippetCount === 2 && gap.gap === 1;
   });
 
   return results;

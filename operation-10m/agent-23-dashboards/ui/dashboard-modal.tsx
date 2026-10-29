@@ -138,6 +138,12 @@ import { nrDashBuildHubPulseSpan } from '../core/hub-pulse-span.ts';
 import { nrDashBuildRivalPortfolioSpan } from '../core/rival-portfolio-span.ts';
 import { nrDashBuildNetworkConditionSpan } from '../core/network-condition-span.ts';
 import { nrDashBuildNsHistoryTurnSpan } from '../core/ns-history-turn-span.ts';
+import { nrDashBuildLrHistoryTurnSpan } from '../core/lr-history-turn-span.ts';
+import { nrDashBuildOpenNeedsTierSpread } from '../core/open-needs-tier-spread.ts';
+import { nrDashBuildSnippetSaturationShare } from '../core/snippet-saturation-share.ts';
+import { nrDashBuildPulseAsymmetryGap } from '../core/pulse-asymmetry-gap.ts';
+import { nrDashBuildRegionalOwnerSkew } from '../core/regional-owner-skew.ts';
+import { nrDashBuildCombinedDerivedHistoryGap } from '../core/combined-derived-history-gap.ts';
 import {
   NATIONAL_NETWORKS,
   NATIONAL_NETWORK_ICON,
@@ -452,6 +458,39 @@ export const NrDashOverviewTab: React.FC<{
       return snippetGap ? (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-national-snippet-gap">
           National snippet gap {snippetGap.unusedSlots} unused · {snippetGap.surfacedCount}/{snippetGap.maxSnippets} slots
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const saturation = nrDashBuildSnippetSaturationShare(snap);
+      return saturation ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-snippet-saturation-share">
+          Snippet saturation {saturation.saturationShare} · {saturation.snippetCount}/{saturation.maxSnippets} buffer
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const combinedGap = nrDashBuildCombinedDerivedHistoryGap(lrView, nsState, snap);
+      return combinedGap ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-combined-derived-history-gap">
+          Combined derived-history gap {combinedGap.gap} · sources {combinedGap.combinedSourceCount} vs surfaced{' '}
+          {combinedGap.surfacedSnippetCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const tierSpread = nrDashBuildOpenNeedsTierSpread(lrView);
+      return tierSpread ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-open-needs-tier-spread">
+          Open needs tier spread {tierSpread.tierSpread} · tier counts {tierSpread.minTierCount}–{tierSpread.maxTierCount}
+        </div>
+      ) : null;
+    })()}
+    {(() => {
+      const ownerSkew = nrDashBuildRegionalOwnerSkew(snap);
+      return ownerSkew ? (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-regional-owner-skew">
+          Regional owner skew {ownerSkew.ownershipSkew} · you {ownerSkew.youShare} · rival {ownerSkew.rivalShare}
         </div>
       ) : null;
     })()}
@@ -1163,6 +1202,18 @@ export const NrDashTrendsTab: React.FC<{
           </div>
         ) : null;
       })()}
+      {(() => {
+        const lrTurnSpan = nrDashBuildLrHistoryTurnSpan(lrView);
+        return lrTurnSpan ? (
+          <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-lr-history-turn-span">
+            <div className="font-semibold mb-1">LR history turn span</div>
+            <div>
+              turn spread {lrTurnSpan.turnSpread} · min R{lrTurnSpan.minTurn} · max R{lrTurnSpan.maxTurn} · {lrTurnSpan.eventCount}{' '}
+              major events
+            </div>
+          </div>
+        ) : null;
+      })()}
       {movers.length > 0 && (
         <div className="text-xs mb-3" data-testid="nr-dash-trend-movers">
           <div className="font-semibold mb-1">Largest momentum history deltas (authoritative)</div>
@@ -1318,6 +1369,14 @@ export const NrDashMapTab: React.FC<{
           <p className="text-[10px] opacity-75" data-testid="nr-dash-hub-pulse-span">
             Hub pulse span {hubPulse.intensitySpread} · min {hubPulse.minIntensity} · max {hubPulse.maxIntensity} ·{' '}
             {hubPulse.hubRegionCount} hubs
+          </p>
+        ) : null;
+      })()}
+      {(() => {
+        const pulseGap = nrDashBuildPulseAsymmetryGap(baseNodes);
+        return pulseGap && pulseGap.asymmetryGap > 0 ? (
+          <p className="text-[10px] opacity-75" data-testid="nr-dash-pulse-asymmetry-gap">
+            Pulse asymmetry gap {pulseGap.asymmetryGap} · max {pulseGap.maxIntensity} vs μ {pulseGap.meanIntensity}
           </p>
         ) : null;
       })()}
