@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: 700d0b62e2af0601
+// content-sha256-prefix: 0ff0315594614615
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -341,6 +341,7 @@ export interface TurnStrategicBriefing {
   coalitionMatriarchEternityStreakDays: number;
   matriarchCoalitionInfinity: boolean;
   coalitionMatriarchInfinityStreakDays: number;
+  matriarchCoalitionTranscendence: boolean;
   coalitionMatriarchTranscendenceStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
@@ -2311,6 +2312,7 @@ export interface ExternalCoalitionTurnSignals {
   coalitionMatriarchEternityStreakDays: number;
   matriarchCoalitionInfinity: boolean;
   coalitionMatriarchInfinityStreakDays: number;
+  matriarchCoalitionTranscendence: boolean;
   coalitionMatriarchTranscendenceStreakDays: number;
 }
 
@@ -2407,6 +2409,7 @@ export function buildExternalCoalitionTurnSignals(
     coalitionMatriarchEternityStreakDays: state.coalitionMatriarchEternityStreakDays ?? 0,
     matriarchCoalitionInfinity: isMatriarchCoalitionInfinity(state),
     coalitionMatriarchInfinityStreakDays: state.coalitionMatriarchInfinityStreakDays ?? 0,
+    matriarchCoalitionTranscendence: isMatriarchCoalitionTranscendence(state),
     coalitionMatriarchTranscendenceStreakDays: state.coalitionMatriarchTranscendenceStreakDays ?? 0,
   };
 }
@@ -2503,6 +2506,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionMatriarchEternityStreakDays: raw?.coalitionMatriarchEternityStreakDays ?? 0,
     matriarchCoalitionInfinity: raw?.matriarchCoalitionInfinity ?? false,
     coalitionMatriarchInfinityStreakDays: raw?.coalitionMatriarchInfinityStreakDays ?? 0,
+    matriarchCoalitionTranscendence: raw?.matriarchCoalitionTranscendence ?? false,
     coalitionMatriarchTranscendenceStreakDays: raw?.coalitionMatriarchTranscendenceStreakDays ?? 0,
   };
 }
@@ -10799,6 +10803,7 @@ export function buildTurnStrategicBriefing(
     coalitionMatriarchEternityStreakDays: state.coalitionMatriarchEternityStreakDays ?? 0,
     matriarchCoalitionInfinity: isMatriarchCoalitionInfinity(state),
     coalitionMatriarchInfinityStreakDays: state.coalitionMatriarchInfinityStreakDays ?? 0,
+    matriarchCoalitionTranscendence: isMatriarchCoalitionTranscendence(state),
     coalitionMatriarchTranscendenceStreakDays: state.coalitionMatriarchTranscendenceStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,

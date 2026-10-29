@@ -146,7 +146,7 @@ describe('scale wave round 33 — supreme coalition convergence', () => {
       coalitionSupremeConvergenceStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(48);
+    expect(save.version).toBe(49);
     expect(save.coalitionSupremeConvergenceStreakDays).toBe(5);
   });
 });

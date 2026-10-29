@@ -144,7 +144,7 @@ describe('scale wave round 32 — transcendent coalition omnium', () => {
       coalitionTranscendentOmniumStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(48);
+    expect(save.version).toBe(49);
     expect(save.coalitionTranscendentOmniumStreakDays).toBe(5);
   });
 });

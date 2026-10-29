@@ -127,7 +127,7 @@ describe('scale wave round 9 — elevated volatility and stabilization accord', 
       coalitionStabilizationStreakDays: 4,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(48);
+    expect(save.version).toBe(49);
     expect(save.coalitionStabilizationStreakDays).toBe(4);
   });
 });

@@ -142,7 +142,7 @@ describe('scale wave round 31 — hyperversal coalition harmonization', () => {
       coalitionHyperversalHarmonizationStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(48);
+    expect(save.version).toBe(49);
     expect(save.coalitionHyperversalHarmonizationStreakDays).toBe(5);
   });
 });

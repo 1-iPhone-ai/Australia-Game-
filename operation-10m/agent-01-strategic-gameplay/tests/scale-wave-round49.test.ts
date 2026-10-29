@@ -178,7 +178,7 @@ describe('scale wave round 49 — matriarch coalition eternity', () => {
       coalitionMatriarchEternityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(48);
+    expect(save.version).toBe(49);
     expect(save.coalitionMatriarchEternityStreakDays).toBe(5);
   });
 });

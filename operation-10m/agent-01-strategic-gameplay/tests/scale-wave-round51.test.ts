@@ -26,9 +26,9 @@ import {
   isMatriarchCoalitionTranscendence,
   MATRIARCH_COALITION_ASCENDANCY_THRESHOLD,
   MATRIARCH_COALITION_ETERNITY_THRESHOLD,
-  MATRIARCH_COALITION_TRANSCENDENCE_THRESHOLD,
-
+  MATRIARCH_COALITION_INFINITY_THRESHOLD,
   MATRIARCH_COALITION_PERPETUITY_THRESHOLD,
+  MATRIARCH_COALITION_TRANSCENDENCE_THRESHOLD,
   METAVERSE_COALITION_CONTINUITY_THRESHOLD,
   MULTIVERSAL_COALITION_PERSISTENCE_THRESHOLD,
   OMNIVERSAL_COALITION_SYNTHESIS_THRESHOLD,
@@ -53,10 +53,10 @@ import {
   ZENITH_COALITION_PERPETUITY_THRESHOLD,
 } from '../src/index.ts';
 
-describe('scale wave round 51 — matriarch coalition infinity', () => {
+describe('scale wave round 51 — matriarch coalition transcendence', () => {
   const inbound = { postQueueCalm: true, pendingStabilizationWave: true };
 
-  it('blocks matriarch infinity charter until infinity streak reaches threshold', () => {
+  it('blocks matriarch transcendence charter until transcendence streak reaches threshold', () => {
     const contracts = createMemoryStrategicContracts();
     const charter = getStrategicAction('sga_coalition_matriarch_transcendence_charter')!;
     const blocked = validateAction(
@@ -67,7 +67,7 @@ describe('scale wave round 51 — matriarch coalition infinity', () => {
       {
         ...createInitialStrategicState(4),
         coalitionVolatilityEvents: 0,
-        coalitionMatriarchEternityStreakDays: MATRIARCH_COALITION_ETERNITY_THRESHOLD,
+        coalitionMatriarchInfinityStreakDays: MATRIARCH_COALITION_INFINITY_THRESHOLD,
         coalitionMatriarchTranscendenceStreakDays: 2,
       },
     );
@@ -76,7 +76,7 @@ describe('scale wave round 51 — matriarch coalition infinity', () => {
     );
   });
 
-  it('accumulates matriarch infinity streak after matriarch eternity is sustained', () => {
+  it('accumulates matriarch transcendence streak after matriarch infinity is sustained', () => {
     const contracts = createMemoryStrategicContracts();
     const state = {
       ...createInitialStrategicState(1),
@@ -123,27 +123,26 @@ describe('scale wave round 51 — matriarch coalition infinity', () => {
       coalitionMatriarchAscendancyStreakDays: MATRIARCH_COALITION_ASCENDANCY_THRESHOLD,
       coalitionMatriarchPerpetuityStreakDays: MATRIARCH_COALITION_PERPETUITY_THRESHOLD,
       coalitionMatriarchEternityStreakDays: MATRIARCH_COALITION_ETERNITY_THRESHOLD,
+      coalitionMatriarchInfinityStreakDays: MATRIARCH_COALITION_INFINITY_THRESHOLD,
     };
     const { state: advanced } = advanceStrategicGameplayCalendar(state, contracts, 5, inbound);
     expect(advanced.coalitionMatriarchTranscendenceStreakDays).toBe(4);
     expect(isMatriarchCoalitionTranscendence(advanced)).toBe(true);
   });
 
-  it('exports matriarch infinity on outbound coalition signals', () => {
+  it('exports matriarch transcendence on outbound coalition signals', () => {
     const state = {
       ...createInitialStrategicState(5),
       coalitionMatriarchTranscendenceStreakDays: MATRIARCH_COALITION_TRANSCENDENCE_THRESHOLD,
-
     };
     const signals = buildExternalCoalitionTurnSignals(state);
-    expect(signals.matriarchCoalitionInfinity).toBe(true);
+    expect(signals.matriarchCoalitionTranscendence).toBe(true);
     expect(signals.coalitionMatriarchTranscendenceStreakDays).toBe(
       MATRIARCH_COALITION_TRANSCENDENCE_THRESHOLD,
-
     );
   });
 
-  it('clears matriarch infinity streak after infinity covenant executes', () => {
+  it('clears matriarch transcendence streak after transcendence covenant executes', () => {
     const contracts = createMemoryStrategicContracts();
     const state = {
       ...createInitialStrategicState(2),
@@ -161,21 +160,19 @@ describe('scale wave round 51 — matriarch coalition infinity', () => {
     expect(result.state.coalitionMatriarchTranscendenceStreakDays).toBe(0);
   });
 
-  it('extends turn briefing with matriarch infinity fields', () => {
+  it('extends turn briefing with matriarch transcendence fields', () => {
     const contracts = createMemoryStrategicContracts();
     const state = {
       ...createInitialStrategicState(3),
       coalitionMatriarchTranscendenceStreakDays: MATRIARCH_COALITION_TRANSCENDENCE_THRESHOLD,
-
     };
     const briefing = buildTurnStrategicBriefing(state, contracts, null, {
       actionsUsedThisTurn: 0,
       actionsPerTurn: 3,
     });
-    expect(briefing.matriarchCoalitionInfinity).toBe(true);
+    expect(briefing.matriarchCoalitionTranscendence).toBe(true);
     expect(briefing.coalitionMatriarchTranscendenceStreakDays).toBe(
       MATRIARCH_COALITION_TRANSCENDENCE_THRESHOLD,
-
     );
   });
 
@@ -185,7 +182,7 @@ describe('scale wave round 51 — matriarch coalition infinity', () => {
       coalitionMatriarchTranscendenceStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(48);
+    expect(save.version).toBe(49);
     expect(save.coalitionMatriarchTranscendenceStreakDays).toBe(5);
   });
 });
