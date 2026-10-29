@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 890b28df25e2cf6224dfa7903a79cace14deabe27eb69a9f147b6d8603c12092
-// OP10M_MODULE_VERSION: 10m.1.6.0-agent20
+// OP10M_MANIFEST_SHA256: 8e3f039451a240ddfc81ab2c3d8b1d278f788ee2bb7345c0d7b5dcf9ae66e584
+// OP10M_MODULE_VERSION: 10m.1.7.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -3931,6 +3931,513 @@ export function runO10Agent20IdleOpsPipelineSelfTests(): O10SelfTestResult[] {
 }
 
 
+// --- source: automation-idle-ops-window.ts ---
+  buildBackpressureTelemetryDigest,
+  type O10BackpressureTelemetrySlice,
+} from './automation-backpressure-telemetry.js';
+  runIdleAutomationOpsTurn,
+  type O10IdleOpsTurnResult,
+} from './automation-idle-ops-pipeline.js';
+
+export interface O10IdleOpsWindowSpec {
+  startTurn: number;
+  startDay: number;
+  turnCount: number;
+  /** 0 = never; N = human commit every N turns (starting when turn % N === 0). */
+  humanCommittedEvery: number;
+  idleMsStart: number;
+  idleMsStep: number;
+  consecutiveIdleStart: number;
+}
+
+export interface O10IdleOpsWindowSummary {
+  schema: '10m.agent20.idle-ops-window.v1';
+  turnsRun: number;
+  humanCommitCount: number;
+  peakEffectiveTier: O10IdleEscalationTier;
+  finalScheduleAction: string;
+  digestSummary: string;
+}
+
+export interface O10IdleOpsWindowResult {
+  queue: O10AutomationIntentQueue;
+  deescalationState: ReturnType<typeof createDefaultIdleDeescalationState>;
+  telemetry: O10BackpressureTelemetrySlice[];
+  summary: O10IdleOpsWindowSummary;
+  lastTurn: O10IdleOpsTurnResult;
+}
+
+function sampleWindowRule(overrides: Partial<PortableHumanAutomationRule> = {}): PortableHumanAutomationRule {
+  return {
+    id: 'win1',
+    name: 'Window sample',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 6,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 20, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+    ...overrides,
+  };
+}
+
+/** Run a multi-turn idle ops window with ramping idle telemetry and optional human commit cadence. */
+export function runIdleAutomationOpsWindow(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  initialQueue = createEmptyAutomationIntentQueue(8)
+): O10IdleOpsWindowResult {
+  let queue = initialQueue;
+  let deescalationState = createDefaultIdleDeescalationState();
+  let telemetry: O10BackpressureTelemetrySlice[] = [];
+  let humanCommitCount = 0;
+  let peakEffectiveTier: O10IdleEscalationTier = 0;
+  let lastTurn!: O10IdleOpsTurnResult;
+
+  const turnsRun = Math.max(0, spec.turnCount);
+  for (let i = 0; i < turnsRun; i++) {
+    const turn = spec.startTurn + i;
+    const humanCommittedThisTurn =
+      spec.humanCommittedEvery > 0 && turn % spec.humanCommittedEvery === 0;
+    if (humanCommittedThisTurn) humanCommitCount += 1;
+
+    const idleMs = spec.idleMsStart + spec.idleMsStep * i;
+    const consecutiveIdleTurns = spec.consecutiveIdleStart + i;
+
+    lastTurn = runIdleAutomationOpsTurn({
+      queue,
+      rule,
+      turn,
+      day: spec.startDay,
+      deescalationState,
+      telemetry,
+      humanCommittedThisTurn,
+      escalationInput: {
+        idleMs,
+        consecutiveIdleTurns,
+        queuedIntentCount: queue.items.filter(x => x.status === 'queued' || x.status === 'running').length,
+      },
+    });
+
+    queue = lastTurn.queue;
+    deescalationState = lastTurn.deescalationState;
+    telemetry = lastTurn.telemetry;
+    if (lastTurn.effectiveTier > peakEffectiveTier) {
+      peakEffectiveTier = lastTurn.effectiveTier as O10IdleEscalationTier;
+    }
+  }
+
+  const digest = buildBackpressureTelemetryDigest(telemetry);
+  const summary: O10IdleOpsWindowSummary = {
+    schema: '10m.agent20.idle-ops-window.v1',
+    turnsRun,
+    humanCommitCount,
+    peakEffectiveTier,
+    finalScheduleAction: lastTurn?.scheduleAction ?? 'none',
+    digestSummary: digest.summaryLine,
+  };
+
+  return {
+    queue,
+    deescalationState,
+    telemetry,
+    summary,
+    lastTurn: lastTurn ?? {
+      queue,
+      deescalationState,
+      telemetry,
+      effectiveTier: 0,
+      scheduleAction: 'none',
+      digestSummary: digest.summaryLine,
+    },
+  };
+}
+
+export function formatIdleOpsWindowSummaryLine(summary: O10IdleOpsWindowSummary): string {
+  return `ops_window turns=${summary.turnsRun} human=${summary.humanCommitCount} peak=t${summary.peakEffectiveTier} last=${summary.finalScheduleAction}`;
+}
+
+export function runO10Agent20IdleOpsWindowSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const ramp = runIdleAutomationOpsWindow(
+    {
+      startTurn: 1,
+      startDay: 1,
+      turnCount: 5,
+      humanCommittedEvery: 0,
+      idleMsStart: 100_000,
+      idleMsStep: 80_000,
+      consecutiveIdleStart: 2,
+    },
+    sampleWindowRule()
+  );
+  push(
+    'ops_win_ramp',
+    'window runs all turns and records telemetry slices',
+    ramp.summary.turnsRun === 5 && ramp.telemetry.length === 5 && ramp.summary.peakEffectiveTier >= 1
+  );
+
+  const reset = runIdleAutomationOpsWindow(
+    {
+      startTurn: 1,
+      startDay: 1,
+      turnCount: 3,
+      humanCommittedEvery: 1,
+      idleMsStart: 900_000,
+      idleMsStep: 0,
+      consecutiveIdleStart: 12,
+    },
+    sampleWindowRule()
+  );
+  push(
+    'ops_win_human',
+    'human each turn keeps peak tier at 0',
+    reset.summary.humanCommitCount === 3 && reset.summary.peakEffectiveTier === 0
+  );
+
+  push(
+    'ops_win_schema',
+    'window summary schema marker',
+    ramp.summary.schema === '10m.agent20.idle-ops-window.v1' &&
+      formatIdleOpsWindowSummaryLine(ramp.summary).includes('peak=t')
+  );
+
+  const empty = runIdleAutomationOpsWindow(
+    {
+      startTurn: 1,
+      startDay: 1,
+      turnCount: 0,
+      humanCommittedEvery: 0,
+      idleMsStart: 0,
+      idleMsStep: 0,
+      consecutiveIdleStart: 0,
+    },
+    sampleWindowRule()
+  );
+  push('ops_win_zero', 'zero-turn window is stable', empty.summary.turnsRun === 0 && empty.telemetry.length === 0);
+
+  return results;
+}
+
+
+// --- source: automation-backpressure-alerts.ts ---
+  buildBackpressureTelemetryDigest,
+  type O10BackpressureTelemetryDigest,
+  type O10BackpressureTelemetrySlice,
+} from './automation-backpressure-telemetry.js';
+
+export type O10BackpressureAlertLevel = 'none' | 'warn' | 'critical';
+
+export interface O10BackpressureAlertThresholds {
+  warnDeferRatio: number;
+  criticalDeferRatio: number;
+  warnTotalDropped: number;
+  criticalTotalDropped: number;
+  criticalPeakTier: O10IdleEscalationTier;
+}
+
+export const DEFAULT_BACKPRESSURE_ALERT_THRESHOLDS: O10BackpressureAlertThresholds = {
+  warnDeferRatio: 0.45,
+  criticalDeferRatio: 0.8,
+  warnTotalDropped: 2,
+  criticalTotalDropped: 6,
+  criticalPeakTier: 3,
+};
+
+export interface O10BackpressureAlert {
+  schema: '10m.agent20.backpressure-alert.v1';
+  level: O10BackpressureAlertLevel;
+  deferRatio: number;
+  reasons: string[];
+  digest: O10BackpressureTelemetryDigest;
+}
+
+function deferRatio(digest: O10BackpressureTelemetryDigest): number {
+  if (digest.sliceCount <= 0) return 0;
+  return digest.deferCount / digest.sliceCount;
+}
+
+/** Classify backpressure telemetry digest into none / warn / critical alert levels. */
+export function evaluateBackpressureAlerts(
+  digest: O10BackpressureTelemetryDigest,
+  thresholds: O10BackpressureAlertThresholds = DEFAULT_BACKPRESSURE_ALERT_THRESHOLDS
+): O10BackpressureAlert {
+  const ratio = deferRatio(digest);
+  const reasons: string[] = [];
+  let level: O10BackpressureAlertLevel = 'none';
+
+  const critical =
+    digest.peakTier >= thresholds.criticalPeakTier ||
+    ratio >= thresholds.criticalDeferRatio ||
+    digest.totalDropped >= thresholds.criticalTotalDropped;
+
+  if (critical) {
+    level = 'critical';
+    if (digest.peakTier >= thresholds.criticalPeakTier) reasons.push('peak_tier');
+    if (ratio >= thresholds.criticalDeferRatio) reasons.push('defer_ratio');
+    if (digest.totalDropped >= thresholds.criticalTotalDropped) reasons.push('drops');
+  } else {
+    const warn =
+      ratio >= thresholds.warnDeferRatio ||
+      digest.totalDropped >= thresholds.warnTotalDropped ||
+      digest.peakTier >= 2;
+    if (warn) {
+      level = 'warn';
+      if (ratio >= thresholds.warnDeferRatio) reasons.push('defer_ratio');
+      if (digest.totalDropped >= thresholds.warnTotalDropped) reasons.push('drops');
+      if (digest.peakTier >= 2) reasons.push('elevated_tier');
+    }
+  }
+
+  return {
+    schema: '10m.agent20.backpressure-alert.v1',
+    level,
+    deferRatio: ratio,
+    reasons,
+    digest,
+  };
+}
+
+export function evaluateBackpressureAlertsFromSlices(
+  slices: O10BackpressureTelemetrySlice[],
+  thresholds?: O10BackpressureAlertThresholds
+): O10BackpressureAlert {
+  return evaluateBackpressureAlerts(buildBackpressureTelemetryDigest(slices), thresholds);
+}
+
+export function formatBackpressureAlertLine(alert: O10BackpressureAlert): string {
+  const r = alert.reasons.length ? alert.reasons.join(',') : 'ok';
+  return `bp_alert level=${alert.level} defer=${alert.deferRatio.toFixed(2)} reasons=${r}`;
+}
+
+export function runO10Agent20BackpressureAlertsSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const calm = evaluateBackpressureAlerts(
+    buildBackpressureTelemetryDigest([
+      {
+        turn: 1,
+        day: 1,
+        tier: 0,
+        effectiveMaxDepth: 8,
+        deferLowPriorityBelow: 0,
+        decision: 'execute_now',
+        droppedLowPriority: 0,
+      },
+    ])
+  );
+  push('bp_alert_calm', 'healthy telemetry is none', calm.level === 'none');
+
+  const warn = evaluateBackpressureAlerts(
+    buildBackpressureTelemetryDigest([
+      {
+        turn: 1,
+        day: 1,
+        tier: 2,
+        effectiveMaxDepth: 6,
+        deferLowPriorityBelow: 4,
+        decision: 'defer',
+        droppedLowPriority: 0,
+      },
+      {
+        turn: 2,
+        day: 1,
+        tier: 2,
+        effectiveMaxDepth: 6,
+        deferLowPriorityBelow: 4,
+        decision: 'execute_now',
+        droppedLowPriority: 0,
+      },
+    ])
+  );
+  push('bp_alert_warn', 'elevated tier triggers warn', warn.level === 'warn' && warn.reasons.includes('elevated_tier'));
+
+  const critical = evaluateBackpressureAlerts(
+    buildBackpressureTelemetryDigest([
+      {
+        turn: 1,
+        day: 1,
+        tier: 3,
+        effectiveMaxDepth: 5,
+        deferLowPriorityBelow: 4,
+        decision: 'defer',
+        droppedLowPriority: 3,
+      },
+      {
+        turn: 2,
+        day: 1,
+        tier: 3,
+        effectiveMaxDepth: 5,
+        deferLowPriorityBelow: 4,
+        decision: 'defer',
+        droppedLowPriority: 4,
+      },
+    ])
+  );
+  push(
+    'bp_alert_critical',
+    'peak tier and drops escalate to critical',
+    critical.level === 'critical' && critical.reasons.includes('peak_tier')
+  );
+
+  push(
+    'bp_alert_line',
+    'alert line formatter includes level',
+    formatBackpressureAlertLine(critical).includes('level=critical')
+  );
+
+  return results;
+}
+
+
+// --- source: automation-steward-idle-coordination.ts ---
+
+export interface O10StewardIdleCoordinationResult {
+  persisted: NationalStewardPersisted;
+  throttled: boolean;
+  reason: string;
+}
+
+const AUTONOMOUS_MODES = new Set(['autonomous_idle', 'autonomous_active', 'assisted']);
+
+/**
+ * Clamp national steward autonomy when idle ops backpressure tier is elevated.
+ * Respects player pause/latch overrides.
+ */
+export function coordinateNationalStewardWithIdleOpsTier(
+  persisted: NationalStewardPersisted,
+  effectiveTier: O10IdleEscalationTier,
+  turn: number
+): O10StewardIdleCoordinationResult {
+  if (persisted.playerOverride.paused || persisted.playerOverride.latched) {
+    return { persisted, throttled: false, reason: 'player_override_active' };
+  }
+
+  if (effectiveTier <= 1) {
+    return { persisted, throttled: false, reason: 'tier_nominal' };
+  }
+
+  let next = { ...persisted };
+  let throttled = false;
+  let reason = 'tier_nominal';
+
+  if (effectiveTier >= 3) {
+    throttled = true;
+    reason = 'idle_ops_tier3_watch_only';
+    next = {
+      ...next,
+      operatingMode: 'watch_only',
+      automationPath: 'v94_idle_steward_watch',
+    };
+  } else if (effectiveTier >= 2 && AUTONOMOUS_MODES.has(persisted.operatingMode)) {
+    throttled = true;
+    reason = 'idle_ops_tier2_throttle_autonomy';
+    next = {
+      ...next,
+      operatingMode: 'recommend',
+      automationPath: 'v94_idle_steward_soft_nudge',
+    };
+  }
+
+  if (!throttled) {
+    return { persisted, throttled: false, reason: 'tier_nominal' };
+  }
+
+  const withHistory = appendNationalStewardHistory(
+    next,
+    turn,
+    next.automationPath,
+    'idle',
+    reason
+  );
+  return { persisted: withHistory, throttled, reason };
+}
+
+export function formatStewardIdleCoordinationLine(result: O10StewardIdleCoordinationResult): string {
+  return `steward_idle throttle=${result.throttled} reason=${result.reason}`;
+}
+
+export function runO10Agent20StewardIdleCoordinationSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const base = createDefaultAutonomousIdleNationalPersisted();
+  const nominal = coordinateNationalStewardWithIdleOpsTier(
+    { ...base, operatingMode: 'autonomous_idle' },
+    1,
+    4
+  );
+  push('steward_idle_t1', 'tier 1 leaves autonomous mode', nominal.throttled === false);
+
+  const throttle = coordinateNationalStewardWithIdleOpsTier(
+    { ...base, operatingMode: 'autonomous_active' },
+    2,
+    5
+  );
+  push(
+    'steward_idle_t2',
+    'tier 2 throttles autonomous modes to recommend',
+    throttle.throttled === true &&
+      throttle.persisted.operatingMode === 'recommend' &&
+      throttle.persisted.automationPath === 'v94_idle_steward_soft_nudge'
+  );
+
+  const watch = coordinateNationalStewardWithIdleOpsTier(
+    { ...base, operatingMode: 'autonomous_active' },
+    3,
+    6
+  );
+  push(
+    'steward_idle_t3',
+    'tier 3 forces watch-only steward path',
+    watch.throttled === true &&
+      watch.persisted.operatingMode === 'watch_only' &&
+      watch.persisted.automationPath === 'v94_idle_steward_watch'
+  );
+
+  const latched = coordinateNationalStewardWithIdleOpsTier(
+    {
+      ...base,
+      operatingMode: 'autonomous_active',
+      playerOverride: { ...base.playerOverride, latched: true },
+    },
+    3,
+    7
+  );
+  push(
+    'steward_idle_override',
+    'latched player override skips idle coordination',
+    latched.throttled === false && latched.persisted.operatingMode === 'autonomous_active'
+  );
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -3984,6 +4491,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleDeescalationSelfTests());
   results.push(...runO10Agent20BackpressureTelemetrySelfTests());
   results.push(...runO10Agent20IdleOpsPipelineSelfTests());
+  results.push(...runO10Agent20IdleOpsWindowSelfTests());
+  results.push(...runO10Agent20BackpressureAlertsSelfTests());
+  results.push(...runO10Agent20StewardIdleCoordinationSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }

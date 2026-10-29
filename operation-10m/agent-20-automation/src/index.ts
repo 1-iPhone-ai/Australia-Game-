@@ -21,6 +21,9 @@ export * from './automation-intent-backpressure.js';
 export * from './automation-idle-deescalation.js';
 export * from './automation-backpressure-telemetry.js';
 export * from './automation-idle-ops-pipeline.js';
+export * from './automation-idle-ops-window.js';
+export * from './automation-backpressure-alerts.js';
+export * from './automation-steward-idle-coordination.js';
 
 import type { O10SelfTestResult } from './types.js';
 import { runO10Agent20NationalStewardSelfTests } from './national-steward.js';
@@ -42,6 +45,9 @@ import { runO10Agent20IntentBackpressureSelfTests } from './automation-intent-ba
 import { runO10Agent20IdleDeescalationSelfTests } from './automation-idle-deescalation.js';
 import { runO10Agent20BackpressureTelemetrySelfTests } from './automation-backpressure-telemetry.js';
 import { runO10Agent20IdleOpsPipelineSelfTests } from './automation-idle-ops-pipeline.js';
+import { runO10Agent20IdleOpsWindowSelfTests } from './automation-idle-ops-window.js';
+import { runO10Agent20BackpressureAlertsSelfTests } from './automation-backpressure-alerts.js';
+import { runO10Agent20StewardIdleCoordinationSelfTests } from './automation-steward-idle-coordination.js';
 
 /** Full module self-test bundle for Agent 25 dev lab registration. */
 export function runO10Agent20ModuleSelfTests(): {
@@ -93,6 +99,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleDeescalationSelfTests());
   results.push(...runO10Agent20BackpressureTelemetrySelfTests());
   results.push(...runO10Agent20IdleOpsPipelineSelfTests());
+  results.push(...runO10Agent20IdleOpsWindowSelfTests());
+  results.push(...runO10Agent20BackpressureAlertsSelfTests());
+  results.push(...runO10Agent20StewardIdleCoordinationSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
