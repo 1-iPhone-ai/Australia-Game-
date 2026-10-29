@@ -415,6 +415,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
     },
     tags: ['inflation', 'automation', 'round13'],
   },
+  {
+    id: 'water_drought_utility_crisis',
+    label: 'Water drought utility crisis',
+    description: 'Severe drought with tariff shock — water utilities CPI.',
+    patch: {
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.23,
+      highInflationScenario: true,
+      fiscalPressure: 'critical',
+    },
+    tags: ['inflation', 'water', 'round14'],
+  },
+  {
+    id: 'domestic_travel_capacity_overheat',
+    label: 'Domestic travel capacity overheat',
+    description: 'Constrained routes with full accommodation — travel CPI.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.21,
+      publicStability: 43,
+    },
+    tags: ['inflation', 'travel', 'round14'],
+  },
+  {
+    id: 'strategic_memory_inflation_drift',
+    label: 'Strategic memory inflation drift',
+    description: 'Expansionary strategic bias with recalled high-inflation regime.',
+    patch: {
+      inflationSettingMultiplier: 1.29,
+      highInflationScenario: true,
+      creditShockActive: true,
+      activeCrises: 1,
+    },
+    tags: ['inflation', 'strategic', 'round14'],
+  },
 ] as const;
 
 export function getMacroFinancialScenarioPreset(id: string): MacroFinancialScenarioPreset | undefined {

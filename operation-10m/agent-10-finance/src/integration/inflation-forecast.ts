@@ -71,6 +71,14 @@ import {
   assessGovernmentChargesInflation,
   type GovernmentChargesPressureBand,
 } from '../inflation/government-charges-inflation.js';
+import {
+  assessWaterUtilitiesInflation,
+  type WaterUtilitiesPressureBand,
+} from '../inflation/water-utilities-inflation.js';
+import {
+  assessDomesticTravelInflation,
+  type DomesticTravelPressureBand,
+} from '../inflation/domestic-travel-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -97,6 +105,8 @@ export interface InflationForecastPoint {
   professionalServicesFeeBand: ProfessionalServicesFeeBand;
   childcareServicesPressureBand: ChildcareServicesPressureBand;
   governmentChargesPressureBand: GovernmentChargesPressureBand;
+  waterUtilitiesPressureBand: WaterUtilitiesPressureBand;
+  domesticTravelPressureBand: DomesticTravelPressureBand;
 }
 
 export interface InflationForecastPath {
@@ -252,6 +262,20 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const waterUtils = assessWaterUtilitiesInflation({
+      droughtStressBand: inputs.systemicLiquidityBand === 'critical' ? 'severe' : 'moderate',
+      infrastructureTariffShock: inputs.fiscalPressure === 'critical',
+      recyclingCostPassThrough: inputs.creditShockActive ? 'high' : 'medium',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const domesticTravel = assessDomesticTravelInflation({
+      routeCapacityBand: inputs.highInflationScenario ? 'constrained' : 'balanced',
+      fuelSurchargePassThrough: inputs.highInflationScenario,
+      accommodationOccupancyBand: inputs.householdInflationScenarioActive ? 'full' : 'normal',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -278,6 +302,8 @@ export function projectInflationForecastPath(
       professionalServicesFeeBand: professionalFees.feeBand,
       childcareServicesPressureBand: childcare.pressureBand,
       governmentChargesPressureBand: govCharges.pressureBand,
+      waterUtilitiesPressureBand: waterUtils.pressureBand,
+      domesticTravelPressureBand: domesticTravel.pressureBand,
     });
   }
 

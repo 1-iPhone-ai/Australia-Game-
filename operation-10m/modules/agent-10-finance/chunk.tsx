@@ -2621,6 +2621,138 @@ export function governmentChargesInflationScoreAdjustment(band: GovernmentCharge
 }
 
 
+// --- source: inflation/water-utilities-inflation.ts ---
+
+export type WaterUtilitiesPressureBand = 'stable' | 'firming' | 'sharp' | 'drought_crisis';
+
+export interface WaterUtilitiesInflationAssessment {
+  pressureBand: WaterUtilitiesPressureBand;
+  utilitiesIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Water and sewer utilities in macro CPI metadata (distinct from energy utilities). */
+export function assessWaterUtilitiesInflation(input: {
+  droughtStressBand: 'none' | 'moderate' | 'severe';
+  infrastructureTariffShock: boolean;
+  recyclingCostPassThrough: 'low' | 'medium' | 'high';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): WaterUtilitiesInflationAssessment {
+  let pressure = 0;
+  if (input.droughtStressBand === 'severe') pressure += 0.46;
+  else if (input.droughtStressBand === 'moderate') pressure += 0.24;
+
+  if (input.infrastructureTariffShock) pressure += 0.2;
+  if (input.recyclingCostPassThrough === 'high') pressure += 0.16;
+  else if (input.recyclingCostPassThrough === 'medium') pressure += 0.08;
+
+  if (input.inflationBand === 'elevated' || input.inflationBand === 'high') {
+    pressure += 0.06;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.005, 0, 1.05);
+  const utilitiesIndex = finRound(100 + pressure * 17, 1);
+
+  let pressureBand: WaterUtilitiesPressureBand = 'stable';
+  if (pressure >= 0.65) pressureBand = 'drought_crisis';
+  else if (pressure >= 0.42) pressureBand = 'sharp';
+  else if (pressure >= 0.2) pressureBand = 'firming';
+
+  const inflationScoreNudge =
+    pressureBand === 'drought_crisis'
+      ? 0.09
+      : pressureBand === 'sharp'
+        ? 0.06
+        : pressureBand === 'firming'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    pressureBand === 'drought_crisis' || pressureBand === 'sharp'
+      ? 'Water utilities are lifting regulated-charge CPI through drought and tariff stacks.'
+      : pressureBand === 'firming'
+        ? 'Water pass-through firming — infrastructure and recycling costs elevated.'
+        : 'Water utilities inflation stable relative to energy basket.';
+
+  return { pressureBand, utilitiesIndex, inflationScoreNudge, narrative };
+}
+
+export function waterUtilitiesInflationScoreAdjustment(band: WaterUtilitiesPressureBand): number {
+  if (band === 'drought_crisis') return 4;
+  if (band === 'sharp') return 3;
+  if (band === 'firming') return 2;
+  return 0;
+}
+
+
+// --- source: inflation/domestic-travel-inflation.ts ---
+
+export type DomesticTravelPressureBand = 'subdued' | 'recovering' | 'hot' | 'overheated';
+
+export interface DomesticTravelInflationAssessment {
+  pressureBand: DomesticTravelPressureBand;
+  travelIndex: number;
+  inflationScoreNudge: number;
+  narrative: string;
+}
+
+/** Domestic air, rail, and accommodation services in macro CPI metadata. */
+export function assessDomesticTravelInflation(input: {
+  routeCapacityBand: 'ample' | 'balanced' | 'constrained';
+  fuelSurchargePassThrough: boolean;
+  accommodationOccupancyBand: 'low' | 'normal' | 'full';
+  inflationBand: InflationConditionsBand;
+  turn: number;
+}): DomesticTravelInflationAssessment {
+  let pressure = 0;
+  if (input.routeCapacityBand === 'constrained') pressure += 0.34;
+  else if (input.routeCapacityBand === 'balanced') pressure += 0.12;
+
+  if (input.fuelSurchargePassThrough) pressure += 0.18;
+  if (input.accommodationOccupancyBand === 'full') pressure += 0.22;
+  else if (input.accommodationOccupancyBand === 'normal') pressure += 0.1;
+
+  if (input.inflationBand === 'high' || input.inflationBand === 'scenario_runaway') {
+    pressure += 0.07;
+  }
+
+  pressure = finClamp(pressure + input.turn * 0.005, 0, 1.05);
+  const travelIndex = finRound(100 + pressure * 16, 1);
+
+  let pressureBand: DomesticTravelPressureBand = 'subdued';
+  if (pressure >= 0.58) pressureBand = 'overheated';
+  else if (pressure >= 0.38) pressureBand = 'hot';
+  else if (pressure >= 0.2) pressureBand = 'recovering';
+
+  const inflationScoreNudge =
+    pressureBand === 'overheated'
+      ? 0.08
+      : pressureBand === 'hot'
+        ? 0.05
+        : pressureBand === 'recovering'
+          ? 0.03
+          : 0;
+
+  const narrative =
+    pressureBand === 'overheated' || pressureBand === 'hot'
+      ? 'Domestic travel and accommodation are feeding discretionary CPI momentum.'
+      : pressureBand === 'recovering'
+        ? 'Travel inflation recovering — capacity and fuel surcharges building.'
+        : 'Domestic travel inflation subdued versus services headline.';
+
+  return { pressureBand, travelIndex, inflationScoreNudge, narrative };
+}
+
+export function domesticTravelInflationScoreAdjustment(band: DomesticTravelPressureBand): number {
+  if (band === 'overheated') return 4;
+  if (band === 'hot') return 3;
+  if (band === 'recovering') return 2;
+  return 0;
+}
+
+
 // --- source: credit/loan-pricing.ts ---
 
 export interface LoanPricingQuote {
@@ -3273,6 +3405,42 @@ export const MACRO_FINANCIAL_SCENARIO_PRESETS: readonly MacroFinancialScenarioPr
       activeCrises: 1,
     },
     tags: ['inflation', 'automation', 'round13'],
+  },
+  {
+    id: 'water_drought_utility_crisis',
+    label: 'Water drought utility crisis',
+    description: 'Severe drought with tariff shock — water utilities CPI.',
+    patch: {
+      systemicLiquidityBand: 'critical',
+      inflationSettingMultiplier: 1.23,
+      highInflationScenario: true,
+      fiscalPressure: 'critical',
+    },
+    tags: ['inflation', 'water', 'round14'],
+  },
+  {
+    id: 'domestic_travel_capacity_overheat',
+    label: 'Domestic travel capacity overheat',
+    description: 'Constrained routes with full accommodation — travel CPI.',
+    patch: {
+      highInflationScenario: true,
+      householdInflationScenarioActive: true,
+      inflationSettingMultiplier: 1.21,
+      publicStability: 43,
+    },
+    tags: ['inflation', 'travel', 'round14'],
+  },
+  {
+    id: 'strategic_memory_inflation_drift',
+    label: 'Strategic memory inflation drift',
+    description: 'Expansionary strategic bias with recalled high-inflation regime.',
+    patch: {
+      inflationSettingMultiplier: 1.29,
+      highInflationScenario: true,
+      creditShockActive: true,
+      activeCrises: 1,
+    },
+    tags: ['inflation', 'strategic', 'round14'],
   },
 ] as const;
 
@@ -4867,6 +5035,99 @@ export function agent20AutomationBridgeIntegrationNote(): string {
 }
 
 
+// --- source: integration/agent01-strategic-bridge.ts ---
+
+/** Read-only strategic gameplay snapshot from Agent 01 (contract only). */
+export interface Agent01StrategicSnapshot {
+  turn: number;
+  nationalPriorityInflationBias: 'containment' | 'neutral' | 'expansionary';
+  strategicStockpileStress: boolean;
+  geopoliticalRiskPremium: number;
+}
+
+export function mergeAgent01IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent01StrategicSnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.nationalPriorityInflationBias === 'expansionary') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.08, 0.85, 1.45);
+  } else if (snapshot.nationalPriorityInflationBias === 'containment') {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier - 0.04, 0.85, 1.45);
+  }
+
+  if (snapshot.strategicStockpileStress) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.06, 0.85, 1.45);
+  }
+  if (snapshot.geopoliticalRiskPremium > 0.55) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + snapshot.geopoliticalRiskPremium * 0.08, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (snapshot.strategicStockpileStress && snapshot.nationalPriorityInflationBias === 'expansionary') {
+    highInflationScenario = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+  };
+}
+
+export function agent01StrategicBridgeIntegrationNote(): string {
+  return 'Agent 01 strategic snapshot adjusts national inflation bias flags; no strategy ledger writes.';
+}
+
+
+// --- source: integration/agent19-memory-bridge.ts ---
+
+/** Read-only AI memory / explainability snapshot from Agent 19 (contract only). */
+export interface Agent19MemorySnapshot {
+  turn: number;
+  recalledInflationRegimeConfidence: number;
+  narrativeDriftTowardHigherInflation: boolean;
+  explainabilityAlertActive: boolean;
+}
+
+export function mergeAgent19IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent19MemorySnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.narrativeDriftTowardHigherInflation) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+  if (snapshot.recalledInflationRegimeConfidence > 0.75 && snapshot.explainabilityAlertActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (
+    snapshot.narrativeDriftTowardHigherInflation &&
+    snapshot.recalledInflationRegimeConfidence > 0.7
+  ) {
+    highInflationScenario = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+  };
+}
+
+export function agent19MemoryBridgeIntegrationNote(): string {
+  return 'Agent 19 memory snapshot adjusts recalled inflation regime flags; no memory store writes.';
+}
+
+
 // --- source: integration/inflation-forecast.ts ---
   stepInflationRegimeTracker,
   createInitialInflationRegimeTracker,
@@ -4918,6 +5179,12 @@ export function agent20AutomationBridgeIntegrationNote(): string {
   assessGovernmentChargesInflation,
   type GovernmentChargesPressureBand,
 } from '../inflation/government-charges-inflation.js';
+  assessWaterUtilitiesInflation,
+  type WaterUtilitiesPressureBand,
+} from '../inflation/water-utilities-inflation.js';
+  assessDomesticTravelInflation,
+  type DomesticTravelPressureBand,
+} from '../inflation/domestic-travel-inflation.js';
 
 export interface InflationForecastPoint {
   turn: number;
@@ -4944,6 +5211,8 @@ export interface InflationForecastPoint {
   professionalServicesFeeBand: ProfessionalServicesFeeBand;
   childcareServicesPressureBand: ChildcareServicesPressureBand;
   governmentChargesPressureBand: GovernmentChargesPressureBand;
+  waterUtilitiesPressureBand: WaterUtilitiesPressureBand;
+  domesticTravelPressureBand: DomesticTravelPressureBand;
 }
 
 export interface InflationForecastPath {
@@ -5099,6 +5368,20 @@ export function projectInflationForecastPath(
       inflationBand: r.state.inflation,
       turn: t,
     });
+    const waterUtils = assessWaterUtilitiesInflation({
+      droughtStressBand: inputs.systemicLiquidityBand === 'critical' ? 'severe' : 'moderate',
+      infrastructureTariffShock: inputs.fiscalPressure === 'critical',
+      recyclingCostPassThrough: inputs.creditShockActive ? 'high' : 'medium',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
+    const domesticTravel = assessDomesticTravelInflation({
+      routeCapacityBand: inputs.highInflationScenario ? 'constrained' : 'balanced',
+      fuelSurchargePassThrough: inputs.highInflationScenario,
+      accommodationOccupancyBand: inputs.householdInflationScenarioActive ? 'full' : 'normal',
+      inflationBand: r.state.inflation,
+      turn: t,
+    });
     maxCost = Math.max(maxCost, r.state.modifiers.costOfLivingMultiplier);
     points.push({
       turn: t,
@@ -5125,6 +5408,8 @@ export function projectInflationForecastPath(
       professionalServicesFeeBand: professionalFees.feeBand,
       childcareServicesPressureBand: childcare.pressureBand,
       governmentChargesPressureBand: govCharges.pressureBand,
+      waterUtilitiesPressureBand: waterUtils.pressureBand,
+      domesticTravelPressureBand: domesticTravel.pressureBand,
     });
   }
 
@@ -5230,7 +5515,7 @@ export function inflationRegimePersistenceHalfLifeTurns(persistenceScore: number
 
 /** Contract surface for Agent 21 forecasting fusion (read-only bundle). */
 export interface Agent21InflationForecastBundle {
-  schemaVersion: '10.14.agent10.r13';
+  schemaVersion: '10.14.agent10.r14';
   horizonTurns: number;
   terminalBand: InflationForecastPath['terminalBand'];
   maxCostMultiplier: number;
@@ -5252,6 +5537,8 @@ export interface Agent21InflationForecastBundle {
   terminalProfessionalServicesFee: ProfessionalServicesFeeBand;
   terminalChildcareServicesPressure: ChildcareServicesPressureBand;
   terminalGovernmentChargesPressure: GovernmentChargesPressureBand;
+  terminalWaterUtilitiesPressure: WaterUtilitiesPressureBand;
+  terminalDomesticTravelPressure: DomesticTravelPressureBand;
   regime: InflationRegimeSnapshot | null;
   shockDriver: InflationShockClassification['driver'];
   fiscalDominanceBand: FiscalDominanceAssessment['band'];
@@ -5280,7 +5567,7 @@ export function buildAgent21InflationForecastBundle(input: {
   const lastPoint = input.path.points[input.path.points.length - 1];
 
   return {
-    schemaVersion: '10.14.agent10.r13',
+    schemaVersion: '10.14.agent10.r14',
     horizonTurns: input.path.points.length,
     terminalBand: input.path.terminalBand,
     maxCostMultiplier: input.path.maxCostMultiplier,
@@ -5302,6 +5589,8 @@ export function buildAgent21InflationForecastBundle(input: {
     terminalProfessionalServicesFee: lastPoint?.professionalServicesFeeBand ?? 'stable',
     terminalChildcareServicesPressure: lastPoint?.childcareServicesPressureBand ?? 'stable',
     terminalGovernmentChargesPressure: lastPoint?.governmentChargesPressureBand ?? 'flat',
+    terminalWaterUtilitiesPressure: lastPoint?.waterUtilitiesPressureBand ?? 'stable',
+    terminalDomesticTravelPressure: lastPoint?.domesticTravelPressureBand ?? 'subdued',
     regime: input.regime,
     shockDriver: input.shock.driver,
     fiscalDominanceBand: input.fiscalDominance.band,
@@ -5471,6 +5760,18 @@ export function effectiveTierLoanRate(
   mergeAgent20IntoMacroFinancialInputs,
   agent20AutomationBridgeIntegrationNote,
 } from './integration/agent20-automation-bridge.js';
+  assessWaterUtilitiesInflation,
+  waterUtilitiesInflationScoreAdjustment,
+} from './inflation/water-utilities-inflation.js';
+  assessDomesticTravelInflation,
+  domesticTravelInflationScoreAdjustment,
+} from './inflation/domestic-travel-inflation.js';
+  mergeAgent01IntoMacroFinancialInputs,
+  agent01StrategicBridgeIntegrationNote,
+} from './integration/agent01-strategic-bridge.js';
+  mergeAgent19IntoMacroFinancialInputs,
+  agent19MemoryBridgeIntegrationNote,
+} from './integration/agent19-memory-bridge.js';
 
 export function runAgent10FinanceSelfTests(): {
   passed: number;
@@ -5869,7 +6170,7 @@ export function runAgent10FinanceSelfTests(): {
       fiscalDominance: assessFiscalDominance(makeDefaultMacroFinancialTestInputs()),
       targetBreach: assessInflationTargetBreach(52),
     });
-    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r13');
+    check('a10_r5_10', 'agent21 bundle schema', bundle.schemaVersion === '10.14.agent10.r14');
     check('a10_r5_11', 'forecast core index', path.points.every((p) => p.coreCpiIndex > 0));
   }
   check(
@@ -6016,7 +6317,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r7_10',
       'agent21 r7 fields',
-      bundle.schemaVersion === '10.14.agent10.r13' &&
+      bundle.schemaVersion === '10.14.agent10.r14' &&
         bundle.terminalImportPassThrough !== undefined &&
         bundle.terminalTermPremiumSignal !== undefined,
     );
@@ -6108,7 +6409,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r8_10',
       'agent21 r8 fields',
-      bundle.schemaVersion === '10.14.agent10.r13' &&
+      bundle.schemaVersion === '10.14.agent10.r14' &&
         bundle.terminalEnergyPassThrough !== undefined &&
         bundle.terminalShelterRentPressure !== undefined,
     );
@@ -6207,7 +6508,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r9_10',
       'agent21 r9 fields',
-      bundle.schemaVersion === '10.14.agent10.r13' &&
+      bundle.schemaVersion === '10.14.agent10.r14' &&
         bundle.terminalFoodGroceryPassThrough !== undefined &&
         bundle.terminalTransportLogisticsPressure !== undefined,
     );
@@ -6305,7 +6606,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r10_10',
       'agent21 r10 fields',
-      bundle.schemaVersion === '10.14.agent10.r13' &&
+      bundle.schemaVersion === '10.14.agent10.r14' &&
         bundle.terminalHealthcareServicesPressure !== undefined &&
         bundle.terminalInsurancePremiumPassThrough !== undefined,
     );
@@ -6403,7 +6704,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r11_10',
       'agent21 r11 fields',
-      bundle.schemaVersion === '10.14.agent10.r13' &&
+      bundle.schemaVersion === '10.14.agent10.r14' &&
         bundle.terminalEducationTuitionPressure !== undefined &&
         bundle.terminalCommunicationsServicesPressure !== undefined,
     );
@@ -6493,7 +6794,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r12_10',
       'agent21 r12 fields',
-      bundle.schemaVersion === '10.14.agent10.r13' &&
+      bundle.schemaVersion === '10.14.agent10.r14' &&
         bundle.terminalRecreationLeisurePressure !== undefined &&
         bundle.terminalProfessionalServicesFee !== undefined,
     );
@@ -6583,7 +6884,7 @@ export function runAgent10FinanceSelfTests(): {
     check(
       'a10_r13_10',
       'agent21 r13 fields',
-      bundle.schemaVersion === '10.14.agent10.r13' &&
+      bundle.schemaVersion === '10.14.agent10.r14' &&
         bundle.terminalChildcareServicesPressure !== undefined &&
         bundle.terminalGovernmentChargesPressure !== undefined,
     );
@@ -7288,6 +7589,70 @@ export function ChildcareGovernmentInflationPanel(props: ChildcareGovernmentInfl
       </p>
       <p data-testid="childcare-gov-care-note">{childcare.narrative}</p>
       <p>{govCharges.narrative}</p>
+    </div>
+  );
+}
+
+
+// --- source: react/WaterTravelStrategicInflationPanel.tsx ---
+  assessWaterUtilitiesInflation,
+  waterUtilitiesInflationScoreAdjustment,
+} from '../inflation/water-utilities-inflation.js';
+  assessDomesticTravelInflation,
+  domesticTravelInflationScoreAdjustment,
+} from '../inflation/domestic-travel-inflation.js';
+
+export interface WaterTravelStrategicInflationPanelProps {
+  state: NationalMacroFinancialState;
+  inputs: MacroFinancialSystemInputs;
+  agent01?: Agent01StrategicSnapshot | null;
+  agent19?: Agent19MemorySnapshot | null;
+}
+
+export function WaterTravelStrategicInflationPanel(props: WaterTravelStrategicInflationPanelProps) {
+  const strategic = props.agent01 ?? {
+    turn: props.inputs.turn,
+    nationalPriorityInflationBias: props.inputs.highInflationScenario ? ('expansionary' as const) : ('neutral' as const),
+    strategicStockpileStress: props.inputs.creditShockActive,
+    geopoliticalRiskPremium: 0.45,
+  };
+
+  const memory = props.agent19 ?? {
+    turn: props.inputs.turn,
+    recalledInflationRegimeConfidence: 0.6,
+    narrativeDriftTowardHigherInflation: props.inputs.highInflationScenario,
+    explainabilityAlertActive: props.inputs.fiscalPressure === 'critical',
+  };
+
+  const water = assessWaterUtilitiesInflation({
+    droughtStressBand: strategic.strategicStockpileStress ? 'severe' : 'moderate',
+    infrastructureTariffShock: props.inputs.systemicLiquidityBand === 'critical',
+    recyclingCostPassThrough: memory.explainabilityAlertActive ? 'high' : 'medium',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  const travel = assessDomesticTravelInflation({
+    routeCapacityBand: strategic.nationalPriorityInflationBias === 'expansionary' ? 'constrained' : 'balanced',
+    fuelSurchargePassThrough: props.inputs.highInflationScenario,
+    accommodationOccupancyBand: memory.narrativeDriftTowardHigherInflation ? 'full' : 'normal',
+    inflationBand: props.state.inflation,
+    turn: props.inputs.turn,
+  });
+
+  return (
+    <div className="op10m-water-travel-strategic-inflation" data-testid="water-travel-strategic-inflation-panel">
+      <h4>Water, travel & strategic memory (round 14)</h4>
+      <p>
+        Water {water.pressureBand} · index {water.utilitiesIndex.toFixed(0)} · score adj{' '}
+        {waterUtilitiesInflationScoreAdjustment(water.pressureBand)}
+      </p>
+      <p>
+        Travel {travel.pressureBand} · index {travel.travelIndex.toFixed(0)} · score adj{' '}
+        {domesticTravelInflationScoreAdjustment(travel.pressureBand)}
+      </p>
+      <p data-testid="water-travel-water-note">{water.narrative}</p>
+      <p>{travel.narrative}</p>
     </div>
   );
 }

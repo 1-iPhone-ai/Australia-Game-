@@ -1,0 +1,44 @@
+import type { MacroFinancialSystemInputs } from '../definitions/types.js';
+import { finClamp } from '../compute/math.js';
+
+/** Read-only AI memory / explainability snapshot from Agent 19 (contract only). */
+export interface Agent19MemorySnapshot {
+  turn: number;
+  recalledInflationRegimeConfidence: number;
+  narrativeDriftTowardHigherInflation: boolean;
+  explainabilityAlertActive: boolean;
+}
+
+export function mergeAgent19IntoMacroFinancialInputs(
+  base: MacroFinancialSystemInputs,
+  snapshot: Agent19MemorySnapshot | null | undefined,
+): MacroFinancialSystemInputs {
+  if (!snapshot) return base;
+
+  let inflationSettingMultiplier = base.inflationSettingMultiplier ?? 1;
+  if (snapshot.narrativeDriftTowardHigherInflation) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.05, 0.85, 1.45);
+  }
+  if (snapshot.recalledInflationRegimeConfidence > 0.75 && snapshot.explainabilityAlertActive) {
+    inflationSettingMultiplier = finClamp(inflationSettingMultiplier + 0.04, 0.85, 1.45);
+  }
+
+  let highInflationScenario = base.highInflationScenario;
+  if (
+    snapshot.narrativeDriftTowardHigherInflation &&
+    snapshot.recalledInflationRegimeConfidence > 0.7
+  ) {
+    highInflationScenario = true;
+  }
+
+  return {
+    ...base,
+    turn: Math.max(base.turn, snapshot.turn),
+    inflationSettingMultiplier,
+    highInflationScenario,
+  };
+}
+
+export function agent19MemoryBridgeIntegrationNote(): string {
+  return 'Agent 19 memory snapshot adjusts recalled inflation regime flags; no memory store writes.';
+}
