@@ -108,6 +108,9 @@ export type OP10M_A11_RegressionTurnSnapshot = {
   collapseOmniSingularityCoalescenceIndex: number;
   voidTotalErosionSublimationIndex: number;
   existentialAbsoluteNullityPermanenceIndex: number;
+  collapseOmniSingularityAmalgamationIndex: number;
+  voidTotalErosionAtomizationIndex: number;
+  existentialAbsoluteNullityInevitabilityIndex: number;
   validationErrors: number;
 };
 

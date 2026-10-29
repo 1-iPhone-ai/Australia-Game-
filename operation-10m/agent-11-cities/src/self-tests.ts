@@ -156,6 +156,9 @@ import { op10mA11ComputeSettlementExistentialAbsoluteNullityImmutability } from 
 import { op10mA11ComputeRegionalCollapseOmniSingularityCoalescence } from './regional-collapse-omni-singularity-coalescence.ts';
 import { op10mA11ComputeInterregionalVoidTotalErosionSublimation } from './interregional-void-total-erosion-sublimation.ts';
 import { op10mA11ComputeSettlementExistentialAbsoluteNullityPermanence } from './settlement-existential-absolute-nullity-permanence.ts';
+import { op10mA11ComputeRegionalCollapseOmniSingularityAmalgamation } from './regional-collapse-omni-singularity-amalgamation.ts';
+import { op10mA11ComputeInterregionalVoidTotalErosionAtomization } from './interregional-void-total-erosion-atomization.ts';
+import { op10mA11ComputeSettlementExistentialAbsoluteNullityInevitability } from './settlement-existential-absolute-nullity-inevitability.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -482,7 +485,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.37',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.38',
     composite.state.schemaVersion,
   );
 
@@ -669,7 +672,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastExistentialAbsoluteNullityImmutabilityIndex === composite.state.nationalExistentialAbsoluteNullityImmutabilityIndex &&
       composite.persisted.lastCollapseOmniSingularityCoalescenceIndex === composite.state.nationalCollapseOmniSingularityCoalescenceIndex &&
       composite.persisted.lastVoidTotalErosionSublimationIndex === composite.state.nationalVoidTotalErosionSublimationIndex &&
-      composite.persisted.lastExistentialAbsoluteNullityPermanenceIndex === composite.state.nationalExistentialAbsoluteNullityPermanenceIndex,
+      composite.persisted.lastExistentialAbsoluteNullityPermanenceIndex === composite.state.nationalExistentialAbsoluteNullityPermanenceIndex &&
+      composite.persisted.lastCollapseOmniSingularityAmalgamationIndex === composite.state.nationalCollapseOmniSingularityAmalgamationIndex &&
+      composite.persisted.lastVoidTotalErosionAtomizationIndex === composite.state.nationalVoidTotalErosionAtomizationIndex &&
+      composite.persisted.lastExistentialAbsoluteNullityInevitabilityIndex === composite.state.nationalExistentialAbsoluteNullityInevitabilityIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
