@@ -8,8 +8,8 @@ import type {
 } from './types.js';
 
 export const O10M_LIQUIDATION_DEPTH_SCENARIO_CAP = 6;
-export const O10M_LIQUIDATION_DEPTH_SCORE_CAP = 1170;
-export const O10M_LIQUIDATION_DEPTH_SCORE_MONEY_CAP = 1260;
+export const O10M_LIQUIDATION_DEPTH_SCORE_CAP = 1180;
+export const O10M_LIQUIDATION_DEPTH_SCORE_MONEY_CAP = 1270;
 
 function num(v: unknown, fallback = 0): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
