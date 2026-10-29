@@ -289,6 +289,10 @@ const FILES = [
   'bridge-v1032-integration-health-wave-round55-export.ts',
   'scenario-wave55-integration-rank.ts',
   'round55-self-tests.ts',
+  'round56-self-tests.ts',
+  'scenario-wave56-integration-rank.ts',
+  'bridge-v1034-integration-health-wave-round56-export.ts',
+  'bridge-v1033-replay-wave-round56-export.ts',
   'self-tests.ts',
   'react/MacroEconomyInspectorLab.tsx'
 ];
