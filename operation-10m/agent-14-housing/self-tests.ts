@@ -403,6 +403,14 @@ import {
 } from './wave57-gate-trajectory.ts';
 import { buildWave57IntegrationMonitor } from './wave57-integration-monitor.ts';
 import { composeAgent25Wave57ProjectionHandoffBrief } from './agent25-wave57-projection-handoff-brief.ts';
+import {
+  advanceWave58GateTrajectory,
+  createInitialWave58GateTrajectory,
+  sanitizeWave58GateTrajectory,
+} from './wave58-gate-trajectory.ts';
+import { buildWave58IntegrationMonitor } from './wave58-integration-monitor.ts';
+import { composeAgent25Wave58ProjectionHandoffBrief } from './agent25-wave58-projection-handoff-brief.ts';
+
 import { AGENT14_WELLBEING_SCHEMA_VERSION } from './types.ts';
 
 export interface Agent14SelfTestResult {
@@ -6683,6 +6691,45 @@ export function runAgent14WellbeingSelfTests(): {
       wave57GateTrajectory: snap57.snapshot,
     });
     check(results, 'wave57_projection_composer', 'Standalone wave 57 projection composer returns headlines', wave57.headlines.length > 0 && wave57.summary.length > 10, wave57.summary.slice(0, 64));
+  }
+
+  {
+    const raw58 = sanitizeWave58GateTrajectory(createInitialWave58GateTrajectory());
+    check(results, 'wave58_gate_sanitize', 'Wave 58 gate trajectory sanitize preserves schema', raw58.wave58GateEma === 9, `ema=${raw58.wave58GateEma}`);
+    const wave58GateBrief = {
+      turn: 58,
+      shouldProjectWave58: true,
+      shouldRunO10m257DryRun: true,
+      headlines: ['Agent 25 wave 58'],
+      summary: 'wave58=ready',
+    };
+    const wave57Brief = {
+      turn: 57,
+      shouldProjectWave57: true,
+      shouldRunO10m257DryRun: true,
+      headlines: ['Agent 25 wave 57'],
+      summary: 'wave57=ready',
+    };
+    const snap58 = advanceWave58GateTrajectory(10, wave58GateBrief, createInitialWave58GateTrajectory());
+    check(results, 'wave58_gate_advance_unit', 'Wave 58 gate advance updates persisted EMA', snap58.persisted.lastTurn === 10 && snap58.snapshot.wave58GateEma > 0, `ema=${snap58.snapshot.wave58GateEma}`);
+    const monitor58 = buildWave58IntegrationMonitor({
+      turn: 9,
+      wave57ProjectionBrief: wave57Brief,
+      wave57IntegrationMonitor: {
+        turn: 9,
+        shouldRunO10m257DryRun: true,
+        wave57GateBand: 'ready',
+        blockingReasons: [],
+        summary: 'Wave 57 O10-257 dry-run gate ready',
+      },
+      wave58GateTrajectory: snap58.snapshot,
+    });
+    const wave58 = composeAgent25Wave58ProjectionHandoffBrief({
+      turn: 14,
+      wave58IntegrationMonitor: monitor58,
+      wave58GateTrajectory: snap58.snapshot,
+    });
+    check(results, 'wave58_projection_composer', 'Standalone wave 58 projection composer returns headlines', wave58.headlines.length > 0 && wave58.summary.length > 10, wave58.summary.slice(0, 64));
   }
 
   const passed = results.filter((r) => r.passed).length;

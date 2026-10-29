@@ -2365,3 +2365,13 @@ export interface WellbeingMultiTurnForecast {
   horizonTurns: number;
   points: WellbeingTurnForecastPoint[];
 }
+export type Wave58GateBand = 'ready' | 'pending' | 'blocked';
+
+export interface Wave58GateTrajectorySnapshot {
+  turn: number;
+  wave58GateEma: number;
+  instantaneousGate: number;
+  band: Wave58GateBand;
+  trajectory: CouplingTrajectoryTrend;
+  evidence: string[];
+}
