@@ -178,6 +178,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   clemencyStrainIndex: number;
   clemencyIntegrityScore: number;
   governancePluckScore: number;
+  reprieveStrainIndex: number;
+  reprieveIntegrityScore: number;
+  governanceNerveScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
@@ -2492,6 +2495,62 @@ export function buildGuardianDepthClemencyReport(snapshot: GuardianCoPilotMonito
   return lines.slice(0, 3);
 }
 
+export function computeReprieveStrainIndex(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let load = 0;
+  if (snapshot.governancePluckScore < 50) load += Math.min(25, 50 - snapshot.governancePluckScore);
+  if (snapshot.governancePluckScore < 35) load += 10;
+  if (snapshot.clemencyIntegrityScore < 45) load += 20;
+  if (snapshot.clemencyIntegrityScore < 35) load += 10;
+  if (snapshot.clemencyStrainIndex >= 55) load += 20;
+  if (snapshot.clemencyStrainIndex >= 70) load += 10;
+  if (snapshot.advisorySaturationIndex >= 55) load += 15;
+  if (snapshot.takeoverSessionActive) load += 10;
+  if (snapshot.teamPlanPending) load += 10;
+  if (snapshot.guardianReplayCount >= 3) load += 10;
+  return Math.min(100, load);
+}
+
+export function computeReprieveIntegrityScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.reprieveStrainIndex >= 45) score -= Math.min(30, Math.round(snapshot.reprieveStrainIndex * 0.35));
+  if (snapshot.clemencyIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.clemencyIntegrityScore);
+  if (!snapshot.guardianEnabled && snapshot.copilotAutonomousActive) score -= 20;
+  if (snapshot.guardianAutomationLikelyBlocked && snapshot.copilotAutonomousActive) score -= 10;
+  if (snapshot.governancePluckScore < 40) score -= 15;
+  if (snapshot.blockedContinueCount >= 2) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function computeGovernanceNerveScore(snapshot: GuardianCoPilotMonitorSnapshot): number {
+  let score = 100;
+  if (snapshot.reprieveStrainIndex >= 40) score -= Math.min(30, Math.round(snapshot.reprieveStrainIndex * 0.32));
+  if (snapshot.reprieveIntegrityScore < 50) score -= Math.min(25, 50 - snapshot.reprieveIntegrityScore);
+  if (snapshot.recoveryHeadroomScore < 40) score -= 10;
+  if (snapshot.governancePluckScore < 35) score -= 10;
+  if (snapshot.liquidityStressIndex >= 55) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function buildGuardianDepthReprieveReport(snapshot: GuardianCoPilotMonitorSnapshot): string[] {
+  const lines: string[] = [];
+  if (snapshot.reprieveStrainIndex >= 55) {
+    lines.push(
+      `Reprieve strain ${snapshot.reprieveStrainIndex} — stacked reprieve review may exceed operator reprieve capacity`
+    );
+  }
+  if (snapshot.reprieveIntegrityScore < 45) {
+    lines.push(
+      `Reprieve integrity ${snapshot.reprieveIntegrityScore} — align Co-Pilot reprieves with Guardian reprieve posture`
+    );
+  }
+  if (snapshot.governanceNerveScore < 40) {
+    lines.push(
+      `Governance nerve ${snapshot.governanceNerveScore} — little nerve to sustain reprieve oversight across upcoming turns`
+    );
+  }
+  return lines.slice(0, 3);
+}
+
 export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnapshot): GuardianCoPilotMonitorSnapshot {
   const posture = deriveGuardianAdvisoryPosture(snapshot);
   const objectiveBehindSchedule = computeObjectiveBehindSchedule(snapshot);
@@ -2873,9 +2932,20 @@ export function enrichSnapshotGuardianDepth(snapshot: GuardianCoPilotMonitorSnap
   const withClemencyStrain: GuardianCoPilotMonitorSnapshot = { ...withZeal, clemencyStrainIndex };
   const clemencyIntegrityScore = computeClemencyIntegrityScore(withClemencyStrain);
   const withClemency: GuardianCoPilotMonitorSnapshot = { ...withClemencyStrain, clemencyIntegrityScore };
-  return {
+  const withPluck: GuardianCoPilotMonitorSnapshot = {
     ...withClemency,
     governancePluckScore: computeGovernancePluckScore(withClemency),
+    reprieveStrainIndex: 0,
+    reprieveIntegrityScore: 100,
+    governanceNerveScore: 100,
+  };
+  const reprieveStrainIndex = computeReprieveStrainIndex(withPluck);
+  const withReprieveStrain: GuardianCoPilotMonitorSnapshot = { ...withPluck, reprieveStrainIndex };
+  const reprieveIntegrityScore = computeReprieveIntegrityScore(withReprieveStrain);
+  const withReprieve: GuardianCoPilotMonitorSnapshot = { ...withReprieveStrain, reprieveIntegrityScore };
+  return {
+    ...withReprieve,
+    governanceNerveScore: computeGovernanceNerveScore(withReprieve),
   };
 }
 
@@ -4082,6 +4152,40 @@ export function runGuardianDepthUnitSelfTests(): Array<{ id: string; passed: boo
       liquidityStressIndex: 62,
     } as GuardianCoPilotMonitorSnapshot;
     return computeGovernancePluckScore(snap) < 35;
+  });
+  ok('gd_reprieve_strain', () => {
+    const snap = {
+      governancePluckScore: 30,
+      clemencyIntegrityScore: 32,
+      clemencyStrainIndex: 72,
+      advisorySaturationIndex: 58,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeReprieveStrainIndex(snap) >= 70;
+  });
+  ok('gd_reprieve_integrity', () => {
+    const snap = {
+      reprieveStrainIndex: 72,
+      clemencyIntegrityScore: 38,
+      guardianEnabled: false,
+      copilotAutonomousActive: true,
+      guardianAutomationLikelyBlocked: true,
+      governancePluckScore: 32,
+      blockedContinueCount: 2,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeReprieveIntegrityScore(snap) < 40;
+  });
+  ok('gd_governance_nerve', () => {
+    const snap = {
+      reprieveStrainIndex: 78,
+      reprieveIntegrityScore: 32,
+      recoveryHeadroomScore: 28,
+      governancePluckScore: 28,
+      liquidityStressIndex: 62,
+    } as GuardianCoPilotMonitorSnapshot;
+    return computeGovernanceNerveScore(snap) < 35;
   });
   return out;
 }
@@ -9048,6 +9152,139 @@ export const ADVISORY_MONITOR_RULES_SCALE_WAVE_36: AdvisoryMonitorRule[] = [
 export const ADVISORY_MONITOR_RULES_SCALE_WAVE_36_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_36.length;
 
 
+// --- source: monitor-rules-scale-wave-37.ts ---
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_37: AdvisoryMonitorRule[] = [
+  {
+    id: 'reprieve_strain_high',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Reprieve Strain High',
+    detailTemplate: 'Reprieve strain is in the high band — reduce overlapping warn-only reprieve review demands',
+    evidenceFields: ['reprieveStrainIndex', 'governancePluckScore', 'reprieveIntegrityScore'],
+    evaluate: s => s.reprieveStrainIndex >= 70,
+  },
+  {
+    id: 'reprieve_strain_elevated',
+    category: 'guardian',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Reprieve Strain Elevated',
+    detailTemplate: 'Reprieve strain is elevated — expect slower reprieve review across turns',
+    evidenceFields: ['reprieveStrainIndex', 'clemencyStrainIndex'],
+    evaluate: s => s.reprieveStrainIndex >= 45 && s.reprieveStrainIndex < 70,
+  },
+  {
+    id: 'reprieve_integrity_low',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Reprieve Integrity Low',
+    detailTemplate: 'Reprieve integrity is critically low — defer stacked autonomous actions',
+    evidenceFields: ['reprieveIntegrityScore', 'reprieveStrainIndex', 'clemencyIntegrityScore'],
+    evaluate: s => s.reprieveIntegrityScore < 35,
+  },
+  {
+    id: 'reprieve_integrity_fragile_autonomous',
+    category: 'guardian',
+    kind: 'advice',
+    defaultSeverity: 'high',
+    title: 'Fragile Reprieve While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate reprieve integrity',
+    evidenceFields: ['reprieveIntegrityScore', 'copilotAutonomousActive', 'reprieveStrainIndex'],
+    evaluate: s => s.copilotAutonomousActive && s.reprieveIntegrityScore >= 35 && s.reprieveIntegrityScore < 55,
+    followUp: 'Advisory only — review Guardian protection and Co-Pilot authority manually.',
+  },
+  {
+    id: 'governance_nerve_low',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Governance Nerve Low',
+    detailTemplate: 'Little governance nerve remains for warn-only reprieve oversight across turns',
+    evidenceFields: ['governanceNerveScore', 'reprieveStrainIndex', 'recoveryHeadroomScore'],
+    evaluate: s => s.governanceNerveScore < 35,
+  },
+  {
+    id: 'governance_nerve_fragile_autonomous',
+    category: 'copilot',
+    kind: 'monitor',
+    defaultSeverity: 'medium',
+    title: 'Fragile Nerve While Autonomous',
+    detailTemplate: 'Autonomous Co-Pilot with only moderate governance nerve',
+    evidenceFields: ['governanceNerveScore', 'copilotAutonomousActive', 'operatorBandwidthScore'],
+    evaluate: s => s.copilotAutonomousActive && s.governanceNerveScore >= 35 && s.governanceNerveScore < 55,
+  },
+  {
+    id: 'reprieve_envelope_pressured',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Reprieve Envelope Pressured',
+    detailTemplate: 'Reprieve strain and low reprieve integrity align in the pressured envelope band',
+    evidenceFields: ['reprieveStrainIndex', 'reprieveIntegrityScore', 'governanceNerveScore'],
+    evaluate: s => s.reprieveStrainIndex >= 55 && s.reprieveIntegrityScore < 50,
+  },
+  {
+    id: 'rival_reprieve_strain',
+    category: 'objective',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Rival Pressure Reprieve Strain',
+    detailTemplate: 'Rival victory progress plus elevated reprieve strain',
+    evidenceFields: ['rivalVictoryProgressPct', 'reprieveStrainIndex', 'victoryThresholdPct'],
+    evaluate: s =>
+      s.rivalVictoryProgressPct !== null &&
+      s.victoryThresholdPct !== null &&
+      s.rivalVictoryProgressPct >= s.victoryThresholdPct * 0.85 &&
+      s.reprieveStrainIndex >= 50,
+  },
+  {
+    id: 'team_plan_reprieve_strain',
+    category: 'team',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Team Plan Under Reprieve Strain',
+    detailTemplate: 'Pending team plan while reprieve strain is elevated',
+    evidenceFields: ['teamPlanPending', 'reprieveStrainIndex', 'governanceNerveScore'],
+    evaluate: s => s.teamPlanPending && s.reprieveStrainIndex >= 55,
+  },
+  {
+    id: 'guardian_reprieve_envelope_critical',
+    category: 'guardian',
+    kind: 'alert',
+    defaultSeverity: 'critical',
+    title: 'Guardian Reprieve Envelope Critical',
+    detailTemplate: 'Critical Guardian band with low governance nerve',
+    evidenceFields: ['guardianRiskBand', 'governanceNerveScore', 'reprieveStrainIndex'],
+    evaluate: s => s.guardianRiskBand === 'critical' && s.governanceNerveScore < 40,
+  },
+  {
+    id: 'copilot_reprieve_autonomous',
+    category: 'copilot',
+    kind: 'alert',
+    defaultSeverity: 'high',
+    title: 'Autonomous Session Reprieve Strain',
+    detailTemplate: 'Autonomous Co-Pilot while reprieve strain is high',
+    evidenceFields: ['copilotAutonomousActive', 'reprieveStrainIndex', 'reprieveIntegrityScore'],
+    evaluate: s => s.copilotAutonomousActive && s.reprieveStrainIndex >= 55,
+  },
+  {
+    id: 'contracts_governance_nerve',
+    category: 'contracts',
+    kind: 'advice',
+    defaultSeverity: 'medium',
+    title: 'Contracts Under Low Governance Nerve',
+    detailTemplate: 'Expiring contracts while governance nerve is low',
+    evidenceFields: ['expiringContractCount', 'governanceNerveScore', 'actionBurnPressure'],
+    evaluate: s => s.expiringContractCount > 0 && s.governanceNerveScore < 45,
+  },
+];
+
+export const ADVISORY_MONITOR_RULES_SCALE_WAVE_37_COUNT = ADVISORY_MONITOR_RULES_SCALE_WAVE_37.length;
+
+
 // --- source: monitor-rules.ts ---
 
 export type { AdvisoryMonitorRule };
@@ -9313,6 +9550,7 @@ export const ADVISORY_MONITOR_RULES: AdvisoryMonitorRule[] = [
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_34,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_35,
   ...ADVISORY_MONITOR_RULES_SCALE_WAVE_36,
+  ...ADVISORY_MONITOR_RULES_SCALE_WAVE_37,
 ];
 
 export function getAdvisoryMonitorRuleById(id: string): AdvisoryMonitorRule | undefined {
@@ -9737,6 +9975,9 @@ export function buildGuardianCoPilotMonitorSnapshot(input: BuildMonitorSnapshotI
     clemencyStrainIndex: 0,
     clemencyIntegrityScore: 100,
     governancePluckScore: 100,
+    reprieveStrainIndex: 0,
+    reprieveIntegrityScore: 100,
+    governanceNerveScore: 100,
   };
 
   return enrichSnapshotGuardianDepth(mergeObjectiveContextIntoSnapshot(base, objectiveCtx));
@@ -12445,6 +12686,74 @@ export const ADVISORY_SCENARIO_CATALOG: AdvisoryScenarioDescriptor[] = [
     expectRuleIds: ['clemency_envelope_pressured', 'guardian_clemency_envelope_critical'],
     notes: 'Pressured clemency envelope with critical Guardian band',
   },
+  {
+    id: 'sc_reprieve_strain_high',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 2260,
+      maxSpendPerAction: 10580,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    },
+    expectRuleIds: ['reprieve_strain_high', 'reprieve_integrity_low'],
+    notes: 'High reprieve strain with critical reprieve integrity',
+  },
+  {
+    id: 'sc_governance_nerve_low',
+    category: 'guardian',
+    snapshot: {
+      cash: 4,
+      minCashReserve: 500,
+      debt: 1380,
+      maxSpendPerAction: 8080,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      apRemaining: 1,
+      apPerDay: 3,
+      actionsUsedThisTurn: 2,
+      objectiveActive: true,
+      objectiveProgressPct: 10,
+      objectiveTurnsRemaining: 1,
+      expiringContractCount: 1,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['governance_nerve_low', 'contracts_governance_nerve'],
+    notes: 'Low governance nerve with expiring contracts',
+  },
+  {
+    id: 'sc_reprieve_envelope_pressured',
+    category: 'guardian',
+    snapshot: {
+      cash: 0,
+      minCashReserve: 500,
+      debt: 1300,
+      maxSpendPerAction: 8280,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 2,
+    },
+    expectRuleIds: ['reprieve_envelope_pressured', 'guardian_reprieve_envelope_critical'],
+    notes: 'Pressured reprieve envelope with critical Guardian band',
+  },
 ];
 
 
@@ -12620,8 +12929,8 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
     return hints.length >= 2 && hints.some(h => /VIC/.test(h)) && hints.every(h => !/execute/i.test(h));
   });
 
-  check(results, 'a16_expansion_count', 'Round 36 scale wave brings monitor catalog to 466+ rules', () => {
-    return ADVISORY_MONITOR_RULES.length >= 466;
+  check(results, 'a16_expansion_count', 'Round 37 scale wave brings monitor catalog to 478+ rules', () => {
+    return ADVISORY_MONITOR_RULES.length >= 478;
   });
 
   check(results, 'a16_coupling_report', 'Guardian depth coupling report stays advisory-only', () => {
@@ -13954,6 +14263,47 @@ export function runAgent16GuardianCoPilotSelfTests(): Agent16SelfTestResult[] {
       guardianReplayCount: 3,
     });
     const report = buildGuardianDepthClemencyReport(snap);
+    return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
+  });
+
+  check(results, 'a16_round37_metrics', 'Round 37 reprieve envelope metrics populate on enriched snapshot', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    return (
+      snap.reprieveStrainIndex >= 40 &&
+      snap.reprieveIntegrityScore <= 100 &&
+      snap.governanceNerveScore <= 100
+    );
+  });
+
+  check(results, 'a16_reprieve_report', 'Guardian depth reprieve report stays advisory-only', () => {
+    const snap = createAdvisoryOpsFixtureSnapshot({
+      cash: 16,
+      minCashReserve: 500,
+      debt: 1400,
+      copilotEnabled: true,
+      copilotAutonomousActive: true,
+      copilotHoldsControl: true,
+      guardianRequiresConfirmation: true,
+      guardianProtectionMaximum: true,
+      blockedContinueCount: 2,
+      takeoverSessionActive: true,
+      teamPlanPending: true,
+      guardianReplayCount: 3,
+    });
+    const report = buildGuardianDepthReprieveReport(snap);
     return report.length >= 1 && report.every(line => !/\bexecute\b/i.test(line));
   });
 
