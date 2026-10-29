@@ -55,7 +55,11 @@ export type LaborGiQueryTopic =
   | 'retention_reliability_coupling'
   | 'upskilling_velocity'
   | 'subject_workforce_readiness'
-  | 'workforce_sustainment';
+  | 'workforce_sustainment'
+  | 'sustainment_retention_coupling'
+  | 'onboarding_velocity'
+  | 'subject_assembly_continuity'
+  | 'workforce_continuity';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -108,6 +112,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(upskilling velocity|skills velocity outlook)/.test(q)) return 'upskilling_velocity';
   if (/\b(subject workforce readiness|subject readiness labor)/.test(q)) return 'subject_workforce_readiness';
   if (/\b(workforce sustainment|sustainment index labor)/.test(q)) return 'workforce_sustainment';
+  if (/\b(sustainment retention|sustainment-retention coupling)/.test(q)) return 'sustainment_retention_coupling';
+  if (/\b(onboarding velocity|onboarding pipeline velocity)/.test(q)) return 'onboarding_velocity';
+  if (/\b(subject assembly continuity|assembly continuity subject)/.test(q)) return 'subject_assembly_continuity';
+  if (/\b(workforce continuity|continuity index labor)/.test(q)) return 'workforce_continuity';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -542,6 +550,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Sustainment band ${state.nationalWorkforceSustainmentIndex?.band ?? 'unknown'}; subject drag ${Math.round(state.nationalWorkforceSustainmentIndex?.subjectDrag ?? 0)}.`,
         inference: state.nationalWorkforceSustainmentIndex?.stewardNote || state.summary,
         projection: 'Sustainment synthesizes reliability, upskilling velocity, and subject readiness — steward guidance only.'
+      };
+    case 'sustainment_retention_coupling':
+      return {
+        topic,
+        headline: state.sustainmentRetentionCouplingBrief?.summary || 'Sustainment-retention coupling unavailable.',
+        fact: `Coupling band ${state.sustainmentRetentionCouplingBrief?.band ?? 'unknown'}; sustainment drag ${Math.round(state.sustainmentRetentionCouplingBrief?.sustainmentDrag ?? 0)}.`,
+        inference: state.sustainmentRetentionCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce sustainment with retention-reliability depth — bounded indices only.'
+      };
+    case 'onboarding_velocity':
+      return {
+        topic,
+        headline: state.onboardingVelocityOutlook?.summary || 'Onboarding velocity unavailable.',
+        fact: `Onboarding band ${state.onboardingVelocityOutlook?.band ?? 'unknown'}; pipeline drag ${Math.round(state.onboardingVelocityOutlook?.pipelineDrag ?? 0)}.`,
+        inference: state.onboardingVelocityOutlook?.stewardNote || state.outlook,
+        projection: 'Onboarding velocity blends onboarding levers with upskilling velocity — not literal hire counts.'
+      };
+    case 'subject_assembly_continuity':
+      return {
+        topic,
+        headline: state.subjectAssemblyContinuityBrief?.summary || 'Subject assembly continuity unavailable.',
+        fact: `Continuity band ${state.subjectAssemblyContinuityBrief?.band ?? 'unknown'}; assembly drag ${Math.round(state.subjectAssemblyContinuityBrief?.assemblyDrag ?? 0)}.`,
+        inference: state.subjectAssemblyContinuityBrief?.stewardNote || state.summary,
+        projection: 'Subject assembly continuity gates readiness against sustainment for scale-wave commits.'
+      };
+    case 'workforce_continuity':
+      return {
+        topic,
+        headline: state.nationalWorkforceContinuityIndex?.summary || 'Workforce continuity unavailable.',
+        fact: `Continuity band ${state.nationalWorkforceContinuityIndex?.band ?? 'unknown'}; assembly drag ${Math.round(state.nationalWorkforceContinuityIndex?.assemblyDrag ?? 0)}.`,
+        inference: state.nationalWorkforceContinuityIndex?.stewardNote || state.summary,
+        projection: 'Continuity synthesizes sustainment-retention, onboarding velocity, and subject assembly — steward guidance only.'
       };
     default:
       return {

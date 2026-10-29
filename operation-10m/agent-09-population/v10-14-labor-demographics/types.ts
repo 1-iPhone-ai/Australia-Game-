@@ -237,6 +237,10 @@ export interface NationalLaborDemographicsState {
   upskillingVelocityOutlook?: NationalUpskillingVelocityOutlook;
   subjectWorkforceReadinessBrief?: NationalSubjectWorkforceReadinessBrief;
   nationalWorkforceSustainmentIndex?: NationalWorkforceSustainmentIndex;
+  sustainmentRetentionCouplingBrief?: NationalSustainmentRetentionCouplingBrief;
+  onboardingVelocityOutlook?: NationalOnboardingVelocityOutlook;
+  subjectAssemblyContinuityBrief?: NationalSubjectAssemblyContinuityBrief;
+  nationalWorkforceContinuityIndex?: NationalWorkforceContinuityIndex;
 }
 
 export type MigrationShockKind =
@@ -821,6 +825,50 @@ export interface NationalWorkforceSustainmentIndex {
   sustainmentIndex: number;
   band: WorkforceSustainmentBand;
   subjectDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SustainmentRetentionCouplingBand = 'decoupled' | 'strained' | 'linked' | 'reinforced';
+
+export interface NationalSustainmentRetentionCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SustainmentRetentionCouplingBand;
+  sustainmentDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type OnboardingVelocityBand = 'stalled' | 'uneven' | 'steady' | 'surging';
+
+export interface NationalOnboardingVelocityOutlook {
+  turn: number;
+  velocityIndex: number;
+  band: OnboardingVelocityBand;
+  pipelineDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectAssemblyContinuityBand = 'broken' | 'gapped' | 'continuous' | 'locked';
+
+export interface NationalSubjectAssemblyContinuityBrief {
+  turn: number;
+  continuityIndex: number;
+  band: SubjectAssemblyContinuityBand;
+  assemblyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceContinuityBand = 'fragile' | 'thin' | 'stable' | 'durable';
+
+export interface NationalWorkforceContinuityIndex {
+  turn: number;
+  continuityIndex: number;
+  band: WorkforceContinuityBand;
+  assemblyDrag: number;
   summary: string;
   stewardNote: string;
 }

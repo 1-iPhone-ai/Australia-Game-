@@ -122,6 +122,10 @@ import { computeNationalRetentionReliabilityCouplingBrief } from './retention-re
 import { computeNationalUpskillingVelocityOutlook } from './upskilling-velocity-outlook';
 import { computeNationalSubjectWorkforceReadinessBrief } from './subject-workforce-readiness-brief';
 import { computeNationalWorkforceSustainmentIndex } from './national-workforce-sustainment-index';
+import { computeNationalSustainmentRetentionCouplingBrief } from './sustainment-retention-coupling-brief';
+import { computeNationalOnboardingVelocityOutlook } from './onboarding-velocity-outlook';
+import { computeNationalSubjectAssemblyContinuityBrief } from './subject-assembly-continuity-brief';
+import { computeNationalWorkforceContinuityIndex } from './national-workforce-continuity-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -1076,6 +1080,67 @@ export function runV1014LaborDemographicsSelfTests(): {
     ).stewardNote.length > 8,
     'sustainment steward note'
   );
+
+  check('R1801', Boolean(r1.state.sustainmentRetentionCouplingBrief?.band), 'sustainment retention coupling on state');
+  check(
+    'R1802',
+    (r1.state.sustainmentRetentionCouplingBrief?.sustainmentDrag ?? 0) >= 0,
+    'sustainment retention drag'
+  );
+  check('R1803', Boolean(r1.state.onboardingVelocityOutlook?.band), 'onboarding velocity on state');
+  check('R1804', (r1.state.onboardingVelocityOutlook?.pipelineDrag ?? 0) >= 0, 'onboarding pipeline drag');
+  check('R1805', Boolean(r1.state.subjectAssemblyContinuityBrief?.band), 'subject assembly continuity on state');
+  check('R1806', Boolean(r1.state.nationalWorkforceContinuityIndex?.band), 'workforce continuity on state');
+  check(
+    'R1807',
+    detectLaborDemographicsQuery('sustainment retention coupling') === 'sustainment_retention_coupling',
+    'GI sustainment retention detect'
+  );
+  check(
+    'R1808',
+    detectLaborDemographicsQuery('onboarding velocity') === 'onboarding_velocity',
+    'GI onboarding velocity detect'
+  );
+  check(
+    'R1809',
+    detectLaborDemographicsQuery('subject assembly continuity') === 'subject_assembly_continuity',
+    'GI subject assembly detect'
+  );
+  check(
+    'R1810',
+    detectLaborDemographicsQuery('workforce continuity') === 'workforce_continuity',
+    'GI workforce continuity detect'
+  );
+  check(
+    'R1811',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_continuity').headline.length > 5,
+    'GI workforce continuity answer'
+  );
+  const sustainmentCouplingOnly = computeNationalSustainmentRetentionCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSustainmentIndex,
+    r1.state.retentionReliabilityCouplingBrief
+  );
+  check('R1812', sustainmentCouplingOnly.summary.length > 10, 'sustainment coupling standalone summary');
+  const onboardingOnly = computeNationalOnboardingVelocityOutlook(r1.state, r1.state.upskillingVelocityOutlook);
+  check('R1813', onboardingOnly.band.length > 3, 'onboarding velocity band string');
+  const subjectContinuityOnly = computeNationalSubjectAssemblyContinuityBrief(
+    r1.state,
+    r1.state.subjectWorkforceReadinessBrief,
+    r1.state.nationalWorkforceSustainmentIndex
+  );
+  check('R1814', subjectContinuityOnly.assemblyDrag >= 0, 'subject assembly drag');
+  check(
+    'R1815',
+    computeNationalWorkforceContinuityIndex(
+      rHhBad.state,
+      rHhBad.state.sustainmentRetentionCouplingBrief,
+      rHhBad.state.onboardingVelocityOutlook,
+      rHhBad.state.subjectAssemblyContinuityBrief
+    ).stewardNote.length > 8,
+    'continuity steward note'
+  );
+  check('R1816', onboardingEaseForRegion('NSW', 'technology') > 0, 'onboarding ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

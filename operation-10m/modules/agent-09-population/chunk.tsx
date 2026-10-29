@@ -241,6 +241,10 @@ export interface NationalLaborDemographicsState {
   upskillingVelocityOutlook?: NationalUpskillingVelocityOutlook;
   subjectWorkforceReadinessBrief?: NationalSubjectWorkforceReadinessBrief;
   nationalWorkforceSustainmentIndex?: NationalWorkforceSustainmentIndex;
+  sustainmentRetentionCouplingBrief?: NationalSustainmentRetentionCouplingBrief;
+  onboardingVelocityOutlook?: NationalOnboardingVelocityOutlook;
+  subjectAssemblyContinuityBrief?: NationalSubjectAssemblyContinuityBrief;
+  nationalWorkforceContinuityIndex?: NationalWorkforceContinuityIndex;
 }
 
 export type MigrationShockKind =
@@ -825,6 +829,50 @@ export interface NationalWorkforceSustainmentIndex {
   sustainmentIndex: number;
   band: WorkforceSustainmentBand;
   subjectDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SustainmentRetentionCouplingBand = 'decoupled' | 'strained' | 'linked' | 'reinforced';
+
+export interface NationalSustainmentRetentionCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SustainmentRetentionCouplingBand;
+  sustainmentDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type OnboardingVelocityBand = 'stalled' | 'uneven' | 'steady' | 'surging';
+
+export interface NationalOnboardingVelocityOutlook {
+  turn: number;
+  velocityIndex: number;
+  band: OnboardingVelocityBand;
+  pipelineDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectAssemblyContinuityBand = 'broken' | 'gapped' | 'continuous' | 'locked';
+
+export interface NationalSubjectAssemblyContinuityBrief {
+  turn: number;
+  continuityIndex: number;
+  band: SubjectAssemblyContinuityBand;
+  assemblyDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceContinuityBand = 'fragile' | 'thin' | 'stable' | 'durable';
+
+export interface NationalWorkforceContinuityIndex {
+  turn: number;
+  continuityIndex: number;
+  band: WorkforceContinuityBand;
+  assemblyDrag: number;
   summary: string;
   stewardNote: string;
 }
@@ -1947,7 +1995,11 @@ export type LaborGiQueryTopic =
   | 'retention_reliability_coupling'
   | 'upskilling_velocity'
   | 'subject_workforce_readiness'
-  | 'workforce_sustainment';
+  | 'workforce_sustainment'
+  | 'sustainment_retention_coupling'
+  | 'onboarding_velocity'
+  | 'subject_assembly_continuity'
+  | 'workforce_continuity';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -2000,6 +2052,10 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(upskilling velocity|skills velocity outlook)/.test(q)) return 'upskilling_velocity';
   if (/\b(subject workforce readiness|subject readiness labor)/.test(q)) return 'subject_workforce_readiness';
   if (/\b(workforce sustainment|sustainment index labor)/.test(q)) return 'workforce_sustainment';
+  if (/\b(sustainment retention|sustainment-retention coupling)/.test(q)) return 'sustainment_retention_coupling';
+  if (/\b(onboarding velocity|onboarding pipeline velocity)/.test(q)) return 'onboarding_velocity';
+  if (/\b(subject assembly continuity|assembly continuity subject)/.test(q)) return 'subject_assembly_continuity';
+  if (/\b(workforce continuity|continuity index labor)/.test(q)) return 'workforce_continuity';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -2434,6 +2490,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Sustainment band ${state.nationalWorkforceSustainmentIndex?.band ?? 'unknown'}; subject drag ${Math.round(state.nationalWorkforceSustainmentIndex?.subjectDrag ?? 0)}.`,
         inference: state.nationalWorkforceSustainmentIndex?.stewardNote || state.summary,
         projection: 'Sustainment synthesizes reliability, upskilling velocity, and subject readiness — steward guidance only.'
+      };
+    case 'sustainment_retention_coupling':
+      return {
+        topic,
+        headline: state.sustainmentRetentionCouplingBrief?.summary || 'Sustainment-retention coupling unavailable.',
+        fact: `Coupling band ${state.sustainmentRetentionCouplingBrief?.band ?? 'unknown'}; sustainment drag ${Math.round(state.sustainmentRetentionCouplingBrief?.sustainmentDrag ?? 0)}.`,
+        inference: state.sustainmentRetentionCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce sustainment with retention-reliability depth — bounded indices only.'
+      };
+    case 'onboarding_velocity':
+      return {
+        topic,
+        headline: state.onboardingVelocityOutlook?.summary || 'Onboarding velocity unavailable.',
+        fact: `Onboarding band ${state.onboardingVelocityOutlook?.band ?? 'unknown'}; pipeline drag ${Math.round(state.onboardingVelocityOutlook?.pipelineDrag ?? 0)}.`,
+        inference: state.onboardingVelocityOutlook?.stewardNote || state.outlook,
+        projection: 'Onboarding velocity blends onboarding levers with upskilling velocity — not literal hire counts.'
+      };
+    case 'subject_assembly_continuity':
+      return {
+        topic,
+        headline: state.subjectAssemblyContinuityBrief?.summary || 'Subject assembly continuity unavailable.',
+        fact: `Continuity band ${state.subjectAssemblyContinuityBrief?.band ?? 'unknown'}; assembly drag ${Math.round(state.subjectAssemblyContinuityBrief?.assemblyDrag ?? 0)}.`,
+        inference: state.subjectAssemblyContinuityBrief?.stewardNote || state.summary,
+        projection: 'Subject assembly continuity gates readiness against sustainment for scale-wave commits.'
+      };
+    case 'workforce_continuity':
+      return {
+        topic,
+        headline: state.nationalWorkforceContinuityIndex?.summary || 'Workforce continuity unavailable.',
+        fact: `Continuity band ${state.nationalWorkforceContinuityIndex?.band ?? 'unknown'}; assembly drag ${Math.round(state.nationalWorkforceContinuityIndex?.assemblyDrag ?? 0)}.`,
+        inference: state.nationalWorkforceContinuityIndex?.stewardNote || state.summary,
+        projection: 'Continuity synthesizes sustainment-retention, onboarding velocity, and subject assembly — steward guidance only.'
       };
     default:
       return {
@@ -2991,6 +3079,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceSustainmentIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceSustainmentIndex.stewardNote);
+  }
+  if (
+    state.sustainmentRetentionCouplingBrief?.band === 'decoupled' ||
+    state.sustainmentRetentionCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.sustainmentRetentionCouplingBrief.stewardNote);
+  }
+  if (
+    state.onboardingVelocityOutlook?.band === 'stalled' ||
+    state.onboardingVelocityOutlook?.band === 'uneven'
+  ) {
+    hints.push(state.onboardingVelocityOutlook.stewardNote);
+  }
+  if (
+    state.subjectAssemblyContinuityBrief?.band === 'broken' ||
+    state.subjectAssemblyContinuityBrief?.band === 'gapped'
+  ) {
+    hints.push(state.subjectAssemblyContinuityBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceContinuityIndex?.band === 'fragile' ||
+    state.nationalWorkforceContinuityIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceContinuityIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -7600,6 +7712,278 @@ export function computeNationalWorkforceSustainmentIndex(
 }
 
 
+// --- source: sustainment-retention-coupling-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalRetentionReliabilityCouplingBrief,
+  type NationalSustainmentRetentionCouplingBrief,
+  type NationalWorkforceSustainmentIndex,
+  type SustainmentRetentionCouplingBand
+} from './types';
+
+function couplingBand(index: number): SustainmentRetentionCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'linked';
+  return 'reinforced';
+}
+
+export function computeNationalSustainmentRetentionCouplingBrief(
+  state: NationalLaborDemographicsState,
+  sustainment: NationalWorkforceSustainmentIndex | null | undefined,
+  retentionCoupling: NationalRetentionReliabilityCouplingBrief | null | undefined
+): NationalSustainmentRetentionCouplingBrief {
+  if (!state.enabled || !sustainment || !retentionCoupling) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      sustainmentDrag: 0,
+      summary: 'Sustainment-retention coupling idle — sustainment or retention coupling unavailable.',
+      stewardNote: 'Compute workforce sustainment and retention-reliability coupling before round-18 guidance.'
+    };
+  }
+
+  const sustainmentDrag = v1014laborClamp(
+    sustainment.subjectDrag * 0.45 +
+      retentionCoupling.reliabilityDrag * 0.35 +
+      (sustainment.band === 'depleted' || sustainment.band === 'thin' ? 10 : 2)
+  );
+  const sustainmentLift =
+    sustainment.band === 'sustained' || sustainment.band === 'resilient'
+      ? sustainment.sustainmentIndex * 0.26
+      : sustainment.sustainmentIndex * 0.13;
+  const retentionLift =
+    retentionCoupling.band === 'anchored' || retentionCoupling.band === 'reinforced'
+      ? retentionCoupling.couplingIndex * 0.24
+      : retentionCoupling.couplingIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + sustainmentLift + retentionLift - sustainmentDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained sustainment-retention link — rebuild sustainment before retention corridor moves.'
+      : band === 'reinforced'
+        ? 'Reinforced coupling — guard onboarding velocity spikes that thin retention pools.'
+        : 'Linked coupling — pair sustainment checks with retention packs each assembly wave.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    sustainmentDrag,
+    summary: `Sustainment-retention coupling ${band} (index ${Math.round(couplingIndex)}); sustainment drag ${Math.round(sustainmentDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: onboarding-velocity-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalOnboardingVelocityOutlook,
+  type NationalUpskillingVelocityOutlook,
+  type OnboardingVelocityBand
+} from './types';
+
+function velocityBand(index: number): OnboardingVelocityBand {
+  if (index <= 34) return 'stalled';
+  if (index <= 48) return 'uneven';
+  if (index <= 62) return 'steady';
+  return 'surging';
+}
+
+export function computeNationalOnboardingVelocityOutlook(
+  state: NationalLaborDemographicsState,
+  upskillingVelocity: NationalUpskillingVelocityOutlook | null | undefined
+): NationalOnboardingVelocityOutlook {
+  if (!state.enabled || !upskillingVelocity) {
+    return {
+      turn: state.turn,
+      velocityIndex: 50,
+      band: 'uneven',
+      pipelineDrag: 0,
+      summary: 'Onboarding velocity idle — upskilling velocity outlook unavailable.',
+      stewardNote: 'Compute upskilling velocity before onboarding pipeline guidance.'
+    };
+  }
+
+  let onboardingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    onboardingLift += onboardingEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  onboardingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const pipelineDrag = v1014laborClamp(
+    upskillingVelocity.mismatchDrag * 0.5 +
+      (upskillingVelocity.band === 'stalled' || upskillingVelocity.band === 'uneven' ? 11 : 3)
+  );
+  const upskillingLift =
+    upskillingVelocity.band === 'active' || upskillingVelocity.band === 'accelerating'
+      ? upskillingVelocity.velocityIndex * 0.22
+      : upskillingVelocity.velocityIndex * 0.11;
+
+  const velocityIndex = v1014laborClamp(24 + onboardingLift * 23 + upskillingLift - pipelineDrag);
+  const band = velocityBand(velocityIndex);
+
+  const stewardNote =
+    band === 'stalled' || band === 'uneven'
+      ? 'Uneven onboarding velocity — ease onboarding levers before subject assembly commits.'
+      : band === 'surging'
+        ? 'Surging onboarding band — verify sustainment-retention coupling before scale-wave intake.'
+        : 'Steady onboarding — align pipeline velocity with credential mobility checks.';
+
+  return {
+    turn: state.turn,
+    velocityIndex,
+    band,
+    pipelineDrag,
+    summary: `National onboarding velocity ${band} (index ${Math.round(velocityIndex)}); pipeline drag ${Math.round(pipelineDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-assembly-continuity-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectAssemblyContinuityBrief,
+  type NationalSubjectWorkforceReadinessBrief,
+  type NationalWorkforceSustainmentIndex,
+  type SubjectAssemblyContinuityBand
+} from './types';
+
+function continuityBand(index: number): SubjectAssemblyContinuityBand {
+  if (index <= 34) return 'broken';
+  if (index <= 48) return 'gapped';
+  if (index <= 62) return 'continuous';
+  return 'locked';
+}
+
+/** Round-18 subject continuity — assembly gate on subject readiness × sustainment. */
+export function computeNationalSubjectAssemblyContinuityBrief(
+  state: NationalLaborDemographicsState,
+  subjectReadiness: NationalSubjectWorkforceReadinessBrief | null | undefined,
+  sustainment: NationalWorkforceSustainmentIndex | null | undefined
+): NationalSubjectAssemblyContinuityBrief {
+  if (!state.enabled || !subjectReadiness || !sustainment) {
+    return {
+      turn: state.turn,
+      continuityIndex: 50,
+      band: 'gapped',
+      assemblyDrag: 0,
+      summary: 'Subject assembly continuity idle — subject readiness or sustainment unavailable.',
+      stewardNote: 'Compute subject workforce readiness and sustainment before assembly continuity guidance.'
+    };
+  }
+
+  const assemblyDrag = v1014laborClamp(
+    subjectReadiness.readinessDrag * 0.4 +
+      sustainment.subjectDrag * 0.4 +
+      (subjectReadiness.band === 'unready' || sustainment.band === 'depleted' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectReadiness.band === 'subject_ready' || subjectReadiness.band === 'primed'
+      ? subjectReadiness.subjectReadinessIndex * 0.28
+      : subjectReadiness.subjectReadinessIndex * 0.14;
+  const sustainmentLift =
+    sustainment.band === 'sustained' || sustainment.band === 'resilient'
+      ? sustainment.sustainmentIndex * 0.26
+      : sustainment.sustainmentIndex * 0.13;
+
+  const continuityIndex = v1014laborClamp(20 + subjectLift + sustainmentLift - assemblyDrag);
+  const band = continuityBand(continuityIndex);
+
+  const stewardNote =
+    band === 'broken' || band === 'gapped'
+      ? 'Gapped subject continuity — pause scale-wave assembly until sustainment and subject readiness align.'
+      : band === 'locked'
+        ? 'Locked continuity — still monitor onboarding velocity during corridor peaks.'
+        : 'Continuous subject band — pair with sustainment-retention coupling each round.';
+
+  return {
+    turn: state.turn,
+    continuityIndex,
+    band,
+    assemblyDrag,
+    summary: `Subject assembly continuity ${band} (index ${Math.round(continuityIndex)}); assembly drag ${Math.round(assemblyDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-continuity-index.ts ---
+  type NationalLaborDemographicsState,
+  type NationalOnboardingVelocityOutlook,
+  type NationalSubjectAssemblyContinuityBrief,
+  type NationalSustainmentRetentionCouplingBrief,
+  type NationalWorkforceContinuityIndex,
+  type WorkforceContinuityBand
+} from './types';
+
+function continuityBand(index: number): WorkforceContinuityBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'stable';
+  return 'durable';
+}
+
+export function computeNationalWorkforceContinuityIndex(
+  state: NationalLaborDemographicsState,
+  sustainmentCoupling: NationalSustainmentRetentionCouplingBrief | null | undefined,
+  onboardingVelocity: NationalOnboardingVelocityOutlook | null | undefined,
+  subjectContinuity: NationalSubjectAssemblyContinuityBrief | null | undefined
+): NationalWorkforceContinuityIndex {
+  if (!state.enabled || !sustainmentCoupling || !onboardingVelocity || !subjectContinuity) {
+    return {
+      turn: state.turn,
+      continuityIndex: 50,
+      band: 'thin',
+      assemblyDrag: 0,
+      summary: 'Workforce continuity idle — sustainment coupling, onboarding velocity, or subject continuity unavailable.',
+      stewardNote: 'Compute round-18 depth stack before continuity guidance.'
+    };
+  }
+
+  const assemblyDrag = v1014laborClamp(
+    subjectContinuity.assemblyDrag * 0.35 +
+      sustainmentCoupling.sustainmentDrag * 0.3 +
+      onboardingVelocity.pipelineDrag * 0.25 +
+      (subjectContinuity.band === 'broken' || sustainmentCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const couplingLift =
+    sustainmentCoupling.band === 'linked' || sustainmentCoupling.band === 'reinforced'
+      ? sustainmentCoupling.couplingIndex * 0.2
+      : sustainmentCoupling.couplingIndex * 0.1;
+  const onboardingLift =
+    onboardingVelocity.band === 'steady' || onboardingVelocity.band === 'surging'
+      ? onboardingVelocity.velocityIndex * 0.18
+      : onboardingVelocity.velocityIndex * 0.09;
+  const subjectLift =
+    subjectContinuity.band === 'continuous' || subjectContinuity.band === 'locked'
+      ? subjectContinuity.continuityIndex * 0.22
+      : subjectContinuity.continuityIndex * 0.11;
+
+  const continuityIndex = v1014laborClamp(18 + couplingLift + onboardingLift + subjectLift - assemblyDrag);
+  const band = continuityBand(continuityIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce continuity — sequence sustainment-retention, onboarding, and subject assembly before O10-167.'
+      : band === 'durable'
+        ? 'Durable continuity — avoid corridor overload that breaks subject assembly bands.'
+        : 'Stable continuity — refresh subject assembly checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    continuityIndex,
+    band,
+    assemblyDrag,
+    summary: `National workforce continuity ${band} (index ${Math.round(continuityIndex)}); assembly drag ${Math.round(assemblyDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -8297,6 +8681,26 @@ export function computeNationalLaborDemographics(
     state.upskillingVelocityOutlook,
     state.subjectWorkforceReadinessBrief
   );
+  state.sustainmentRetentionCouplingBrief = computeNationalSustainmentRetentionCouplingBrief(
+    state,
+    state.nationalWorkforceSustainmentIndex,
+    state.retentionReliabilityCouplingBrief
+  );
+  state.onboardingVelocityOutlook = computeNationalOnboardingVelocityOutlook(
+    state,
+    state.upskillingVelocityOutlook
+  );
+  state.subjectAssemblyContinuityBrief = computeNationalSubjectAssemblyContinuityBrief(
+    state,
+    state.subjectWorkforceReadinessBrief,
+    state.nationalWorkforceSustainmentIndex
+  );
+  state.nationalWorkforceContinuityIndex = computeNationalWorkforceContinuityIndex(
+    state,
+    state.sustainmentRetentionCouplingBrief,
+    state.onboardingVelocityOutlook,
+    state.subjectAssemblyContinuityBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -8559,6 +8963,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceSustainmentIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.sustainmentRetentionCouplingBrief?.band === 'decoupled' ||
+      state.sustainmentRetentionCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.sustainmentRetentionCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.onboardingVelocityOutlook?.band === 'stalled' ||
+      state.onboardingVelocityOutlook?.band === 'uneven') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.onboardingVelocityOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectAssemblyContinuityBrief?.band === 'broken' ||
+      state.subjectAssemblyContinuityBrief?.band === 'gapped') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectAssemblyContinuityBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceContinuityIndex?.band === 'fragile' ||
+      state.nationalWorkforceContinuityIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceContinuityIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -9582,6 +10014,67 @@ export function runV1014LaborDemographicsSelfTests(): {
     ).stewardNote.length > 8,
     'sustainment steward note'
   );
+
+  check('R1801', Boolean(r1.state.sustainmentRetentionCouplingBrief?.band), 'sustainment retention coupling on state');
+  check(
+    'R1802',
+    (r1.state.sustainmentRetentionCouplingBrief?.sustainmentDrag ?? 0) >= 0,
+    'sustainment retention drag'
+  );
+  check('R1803', Boolean(r1.state.onboardingVelocityOutlook?.band), 'onboarding velocity on state');
+  check('R1804', (r1.state.onboardingVelocityOutlook?.pipelineDrag ?? 0) >= 0, 'onboarding pipeline drag');
+  check('R1805', Boolean(r1.state.subjectAssemblyContinuityBrief?.band), 'subject assembly continuity on state');
+  check('R1806', Boolean(r1.state.nationalWorkforceContinuityIndex?.band), 'workforce continuity on state');
+  check(
+    'R1807',
+    detectLaborDemographicsQuery('sustainment retention coupling') === 'sustainment_retention_coupling',
+    'GI sustainment retention detect'
+  );
+  check(
+    'R1808',
+    detectLaborDemographicsQuery('onboarding velocity') === 'onboarding_velocity',
+    'GI onboarding velocity detect'
+  );
+  check(
+    'R1809',
+    detectLaborDemographicsQuery('subject assembly continuity') === 'subject_assembly_continuity',
+    'GI subject assembly detect'
+  );
+  check(
+    'R1810',
+    detectLaborDemographicsQuery('workforce continuity') === 'workforce_continuity',
+    'GI workforce continuity detect'
+  );
+  check(
+    'R1811',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_continuity').headline.length > 5,
+    'GI workforce continuity answer'
+  );
+  const sustainmentCouplingOnly = computeNationalSustainmentRetentionCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSustainmentIndex,
+    r1.state.retentionReliabilityCouplingBrief
+  );
+  check('R1812', sustainmentCouplingOnly.summary.length > 10, 'sustainment coupling standalone summary');
+  const onboardingOnly = computeNationalOnboardingVelocityOutlook(r1.state, r1.state.upskillingVelocityOutlook);
+  check('R1813', onboardingOnly.band.length > 3, 'onboarding velocity band string');
+  const subjectContinuityOnly = computeNationalSubjectAssemblyContinuityBrief(
+    r1.state,
+    r1.state.subjectWorkforceReadinessBrief,
+    r1.state.nationalWorkforceSustainmentIndex
+  );
+  check('R1814', subjectContinuityOnly.assemblyDrag >= 0, 'subject assembly drag');
+  check(
+    'R1815',
+    computeNationalWorkforceContinuityIndex(
+      rHhBad.state,
+      rHhBad.state.sustainmentRetentionCouplingBrief,
+      rHhBad.state.onboardingVelocityOutlook,
+      rHhBad.state.subjectAssemblyContinuityBrief
+    ).stewardNote.length > 8,
+    'continuity steward note'
+  );
+  check('R1816', onboardingEaseForRegion('NSW', 'technology') > 0, 'onboarding ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;
