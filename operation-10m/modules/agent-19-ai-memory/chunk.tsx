@@ -4246,6 +4246,293 @@ export function orbitRecoveryOrchestratorWithinCap(report: OrbitRecoveryOrchestr
 }
 
 
+// --- source: match-explainability-relay-bundle.ts ---
+  auditMatchExplainabilityRelayGate,
+  matchExplainabilityRelayAllowed,
+} from './match-explainability-relay-gate.ts';
+  buildMatchExplainabilityTransitBundle,
+  matchExplainabilityTransitReady,
+} from './match-explainability-transit-bundle.ts';
+  buildSessionTransitExportBundle,
+  sessionTransitExportShipped,
+} from './session-transit-export-bundle.ts';
+
+export const AGENT19_RELAY_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityRelayBundle {
+  relayReady: boolean;
+  relayAllowed: boolean;
+  transitReady: boolean;
+  transitExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type RelayParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Relay bundle: relay gate and transit export must both be green. */
+export function buildMatchExplainabilityRelayBundle(
+  packs: TurnExplainabilityPack[],
+  params: RelayParams,
+): MatchExplainabilityRelayBundle {
+  const relay = auditMatchExplainabilityRelayGate(packs, params);
+  const transit = buildMatchExplainabilityTransitBundle(packs, params);
+  const transitExport = buildSessionTransitExportBundle(packs, params);
+  const relayAllowed = matchExplainabilityRelayAllowed(relay);
+  const transitReady = matchExplainabilityTransitReady(transit);
+  const transitExportShipped = sessionTransitExportShipped(transitExport);
+  const relayReady = relayAllowed && transitReady && transitExportShipped;
+  const narrativeLines = [
+    `Match explainability relay: ${relayReady ? 'READY' : 'PENDING'} (gate ${relayAllowed ? 'ok' : 'fail'}, transit ${transitReady ? 'ok' : 'fail'}).`,
+    ...relay.narrativeLines.slice(0, 2),
+    ...transit.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_RELAY_NARRATIVE_CAP);
+  return {
+    relayReady,
+    relayAllowed,
+    transitReady,
+    transitExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityRelayReady(bundle: MatchExplainabilityRelayBundle): boolean {
+  return bundle.relayReady;
+}
+
+
+// --- source: session-relay-export-bundle.ts ---
+  buildSessionTransitExportBundle,
+  type SessionTransitExportBundle,
+} from './session-transit-export-bundle.ts';
+  buildMatchExplainabilityRelayBundle,
+  matchExplainabilityRelayReady,
+} from './match-explainability-relay-bundle.ts';
+
+export interface SessionRelayExportBundle extends SessionTransitExportBundle {
+  relayReady: boolean;
+  relaySchema: string;
+}
+
+/** Relay export wraps transit export when relay bundle is ready. */
+export function buildSessionRelayExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionRelayExportBundle {
+  const base = buildSessionTransitExportBundle(packs, params);
+  const relay = buildMatchExplainabilityRelayBundle(packs, params);
+  const relayReady = matchExplainabilityRelayReady(relay);
+  const exports = relayReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    relayReady,
+    relaySchema: 'agent19.relay.v1',
+    releaseReady: relayReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Relay export: ${relayReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionRelayExportShipped(bundle: SessionRelayExportBundle): boolean {
+  return (
+    bundle.relayReady &&
+    bundle.exports.length > 0 &&
+    bundle.relaySchema === 'agent19.relay.v1'
+  );
+}
+
+
+// --- source: relay-transit-bridge.ts ---
+  buildMatchExplainabilityRelayBundle,
+  matchExplainabilityRelayReady,
+} from './match-explainability-relay-bundle.ts';
+  buildMatchExplainabilityTransitBundle,
+  matchExplainabilityTransitReady,
+} from './match-explainability-transit-bundle.ts';
+
+export interface RelayTransitBridgeReport {
+  aligned: boolean;
+  relayReady: boolean;
+  transitReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Relay-ready should match transit-ready when transit export stack passes. */
+export function auditRelayTransitBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): RelayTransitBridgeReport {
+  const relay = buildMatchExplainabilityRelayBundle(packs, params);
+  const transit = buildMatchExplainabilityTransitBundle(packs, params);
+  const relayReady = matchExplainabilityRelayReady(relay);
+  const transitReady = matchExplainabilityTransitReady(transit);
+  const aligned = relayReady === transitReady;
+  const narrativeLines = [
+    `Relay/transit bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (relay ${relayReady ? 'ok' : 'fail'}, transit ${transitReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, relayReady, transitReady, narrativeLines };
+}
+
+export function relayTransitBridgeHealthy(report: RelayTransitBridgeReport): boolean {
+  return report.relayReady && report.transitReady && report.aligned;
+}
+
+
+// --- source: match-explainability-beacon-gate.ts ---
+  buildMatchExplainabilityRelayBundle,
+  matchExplainabilityRelayReady,
+} from './match-explainability-relay-bundle.ts';
+  buildSessionRelayExportBundle,
+  sessionRelayExportShipped,
+} from './session-relay-export-bundle.ts';
+
+export interface MatchExplainabilityBeaconGateReport {
+  beaconAllowed: boolean;
+  relayReady: boolean;
+  relayExportShipped: boolean;
+  relayTransitHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Beacon gate: relay bundle + relay export + relay/transit bridge. */
+export function auditMatchExplainabilityBeaconGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityBeaconGateReport {
+  const relay = buildMatchExplainabilityRelayBundle(packs, params);
+  const relayExport = buildSessionRelayExportBundle(packs, params);
+  const bridge = auditRelayTransitBridge(packs, params);
+  const relayReady = matchExplainabilityRelayReady(relay);
+  const relayExportShipped = sessionRelayExportShipped(relayExport);
+  const relayTransitHealthy = relayTransitBridgeHealthy(bridge);
+  const beaconAllowed = relayReady && relayExportShipped && relayTransitHealthy;
+  const narrativeLines = [
+    `Match explainability beacon: ${beaconAllowed ? 'ALLOWED' : 'DENIED'} (relay ${relayReady ? 'ok' : 'fail'}, export ${relayExportShipped ? 'ok' : 'fail'}).`,
+    ...relay.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    beaconAllowed,
+    relayReady,
+    relayExportShipped,
+    relayTransitHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityBeaconAllowed(report: MatchExplainabilityBeaconGateReport): boolean {
+  return report.beaconAllowed;
+}
+
+
+// --- source: relay-recovery-orchestrator.ts ---
+  auditMatchExplainabilityRelayGate,
+  matchExplainabilityRelayAllowed,
+} from './match-explainability-relay-gate.ts';
+
+export const AGENT19_RELAY_RECOVERY_CAP = 10;
+
+export interface RelayRecoveryOrchestratorReport {
+  relayBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when relay gate blocks beacon rollout. */
+export function buildRelayRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): RelayRecoveryOrchestratorReport {
+  const relay = auditMatchExplainabilityRelayGate(packs, params);
+  const relayBlocked = !matchExplainabilityRelayAllowed(relay);
+  const steps: string[] = [];
+  if (relayBlocked) {
+    if (!relay.transitReady) {
+      steps.push('Restore transit bundle: orbit and sustainment export must pass.');
+    }
+    if (!relay.transitExportShipped) {
+      steps.push('Emit session transit export before relay clearance.');
+    }
+    if (!relay.orbitTransitHealthy) {
+      steps.push('Reconcile orbit/transit bridge before relay.');
+    }
+    steps.push(...buildOrbitRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const transit = buildMatchExplainabilityTransitBundle(packs, params);
+    if (!transit.transitReady) {
+      steps.push('Re-run transit readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Relay gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_RELAY_RECOVERY_CAP);
+  return {
+    relayBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Relay recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function relayRecoveryOrchestratorWithinCap(report: RelayRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_RELAY_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -4526,6 +4813,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityRelayGate,
   matchExplainabilityRelayAllowed,
 } from '../match-explainability-relay-gate.ts';
+  buildMatchExplainabilityRelayBundle,
+  matchExplainabilityRelayReady,
+} from '../match-explainability-relay-bundle.ts';
+  buildSessionRelayExportBundle,
+  sessionRelayExportShipped,
+} from '../session-relay-export-bundle.ts';
+  buildRelayRecoveryOrchestrator,
+  relayRecoveryOrchestratorWithinCap,
+} from '../relay-recovery-orchestrator.ts';
+  auditMatchExplainabilityBeaconGate,
+  matchExplainabilityBeaconAllowed,
+} from '../match-explainability-beacon-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -7147,6 +7446,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityRelayAllowed(report) && !report.transitReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r18_relay_ready',
+        'Relay bundle ready when relay gate and transit export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityRelayBundle([pack], params);
+          return matchExplainabilityRelayReady(bundle) && bundle.relayAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r18_relay_held',
+        'Relay bundle pending when relay gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 11, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityRelayBundle([pack], {
+            memory: null,
+            currentTurn: 11,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityRelayReady(bundle) && !bundle.relayAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r18_relay_recovery',
+        'Relay recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 4, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 4, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildRelayRecoveryOrchestrator([pack], params);
+          return report.relayBlocked && relayRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r18_relay_transit_bridge',
+        'Relay transit bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditRelayTransitBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return relayTransitBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r18_relay_export',
+        'Relay export shipped when relay ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionRelayExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionRelayExportShipped(bundle) && bundle.relaySchema === 'agent19.relay.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r18_beacon_gate_ok',
+        'Beacon gate allowed on healthy relay stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityBeaconGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityBeaconAllowed(report) && report.relayExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r18_beacon_gate_block',
+        'Beacon gate denied when relay pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 12, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityBeaconGate([pack], {
+            memory: null,
+            currentTurn: 12,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityBeaconAllowed(report) && !report.relayReady || JSON.stringify(report);
         },
       ],
     ]),
