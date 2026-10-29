@@ -57,6 +57,7 @@ import { evaluateComputeTurnScaleWaveFullChunksHandoffClosureFinalizeSyncCommitC
 import { evaluateComputeTurnScaleWaveFullChunksHandoffClosureFinalizeSealLatchCoordination } from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-latch-coordinator.ts';
 import { evaluateComputeTurnScaleWaveFullChunksHandoffClosureFinalizeSealCommitCoordination } from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-commit-coordinator.ts';
 import { evaluateComputeTurnScaleWaveFullChunksHandoffClosureFinalizeSealSyncLatchCoordination } from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-sync-latch-coordinator.ts';
+import { evaluateComputeTurnScaleWaveFullChunksHandoffClosureFinalizeSealSyncCommitCoordination } from './compute-turn-scale-wave-full-chunks-handoff-closure-finalize-seal-sync-commit-coordinator.ts';
 import type {
   Op10mChainDescriptor,
   Op10mComputeTurnStage,
@@ -577,6 +578,16 @@ export function executeOp10mNarrativeComputeTurnHook(
   simulation = handoffClosureFinalizeSealSyncLatchPass.simulation;
   narrative = handoffClosureFinalizeSealSyncLatchPass.narrative;
   log.push(...handoffClosureFinalizeSealSyncLatchPass.log);
+
+  const handoffClosureFinalizeSealSyncCommitPass =
+    evaluateComputeTurnScaleWaveFullChunksHandoffClosureFinalizeSealSyncCommitCoordination(
+      simulation,
+      narrative,
+      params.day
+    );
+  simulation = handoffClosureFinalizeSealSyncCommitPass.simulation;
+  narrative = handoffClosureFinalizeSealSyncCommitPass.narrative;
+  log.push(...handoffClosureFinalizeSealSyncCommitPass.log);
 
   const postSettle = settleOp10mComputeTurnDriftAfterReconcile(simulation, narrative);
   simulation = postSettle.simulation;

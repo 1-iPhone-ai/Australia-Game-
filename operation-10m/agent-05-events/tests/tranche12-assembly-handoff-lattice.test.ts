@@ -18,12 +18,12 @@ describe('Tranche 12 assembly-handoff-lattice catalog', () => {
   it('adds 320 assembly-handoff-lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE12_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche12Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 15560);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 15880);
   });
 
   it('uses op10m_t12 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 15560);
+    assert.equal(ids.size, 15880);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE12) {
       assert.match(c.chainId, /^op10m_t12_/);
     }
