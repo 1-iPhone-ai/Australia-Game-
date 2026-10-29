@@ -24,6 +24,7 @@ import {
   O6K_AGENT24_WAVE42_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE43_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE44_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 export interface Agent24ReplayScaleWaveWave23IntegrationHandoffCheckpoint {
@@ -59,7 +60,10 @@ export function buildAgent24ReplayScaleWaveWave23IntegrationHandoffReport(
   const waveRound = input.replayScaleWaveFullChunksVerification.waveRound;
   const integrationBaselineSha = input.integrationBaselineSha ?? O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA;
   const baselineAligned =
-    waveRound >= 44
+    waveRound >= 45
+      ? input.replayScaleWaveFullChunksVerification.fullChunksBaselineSha ===
+        O6K_AGENT24_WAVE45_INTEGRATION_BASELINE_SHA
+      : waveRound >= 44
       ? input.replayScaleWaveFullChunksVerification.fullChunksBaselineSha ===
         O6K_AGENT24_WAVE44_INTEGRATION_BASELINE_SHA
       : waveRound >= 43
