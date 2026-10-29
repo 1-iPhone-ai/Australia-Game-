@@ -995,6 +995,28 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Forfeited heritage or forgotten remembrance yields legacyAccordBlocksHeritage.',
     severity: 'major',
   },
+  {
+    id: 'G17-142',
+    title: 'Patrimony index on planning depth',
+    category: 'telemetry',
+    acceptance: 'patrimonyIndex reports patrimonyScore 0–100 with vested/pending/escheated band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-143',
+    title: 'Inheritance accord transmissions complete',
+    category: 'telemetry',
+    acceptance: 'inheritanceAccord exposes ≥5 transmissions and inheritanceScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-144',
+    title: 'Escheated patrimony disclaims inheritance accord',
+    category: 'integration',
+    acceptance:
+      'Escheated patrimony or extinguished legacy yields inheritanceAccordBlocksPatrimony.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

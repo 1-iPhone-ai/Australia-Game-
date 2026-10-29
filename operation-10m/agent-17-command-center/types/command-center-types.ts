@@ -261,6 +261,8 @@ export interface Agent17PlanningDepthSnapshot {
   remembranceAccord: Agent17RemembranceAccordSnapshot;
   heritageIndex: Agent17HeritageIndexSnapshot;
   legacyAccord: Agent17LegacyAccordSnapshot;
+  patrimonyIndex: Agent17PatrimonyIndexSnapshot;
+  inheritanceAccord: Agent17InheritanceAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1579,6 +1581,40 @@ export interface Agent17LegacyAccordSnapshot {
   heritageBand: Agent17HeritageIndexSnapshot['band'];
   remembranceBand: Agent17RemembranceAccordSnapshot['band'];
   legacyEntailed: boolean;
+  headline: string;
+}
+
+export interface Agent17PatrimonyHolding {
+  id: string;
+  label: string;
+  vested: boolean;
+  weight: number;
+}
+
+export interface Agent17PatrimonyIndexSnapshot {
+  patrimonyScore: number;
+  band: 'vested' | 'pending' | 'escheated';
+  holdings: Agent17PatrimonyHolding[];
+  legacyBand: Agent17LegacyAccordSnapshot['band'];
+  heritageBand: Agent17HeritageIndexSnapshot['band'];
+  patrimonyVested: boolean;
+  headline: string;
+}
+
+export interface Agent17InheritanceTransmission {
+  id: string;
+  label: string;
+  transmitted: boolean;
+  weight: number;
+}
+
+export interface Agent17InheritanceAccordSnapshot {
+  inheritanceScore: number;
+  band: 'transmitted' | 'provisional' | 'disclaimed';
+  transmissions: Agent17InheritanceTransmission[];
+  patrimonyBand: Agent17PatrimonyIndexSnapshot['band'];
+  legacyBand: Agent17LegacyAccordSnapshot['band'];
+  inheritanceTransmitted: boolean;
   headline: string;
 }
 

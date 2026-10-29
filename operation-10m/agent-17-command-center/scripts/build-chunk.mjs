@@ -107,6 +107,8 @@ const FILES = [
   'planning/remembrance-accord.ts',
   'planning/heritage-index.ts',
   'planning/legacy-accord.ts',
+  'planning/patrimony-index.ts',
+  'planning/inheritance-accord.ts',
   'planning/planning-orchestrator.ts',
   'evaluation/operations-evaluator.ts',
   'rollback/rollback-controller.ts',

@@ -265,6 +265,8 @@ export interface Agent17PlanningDepthSnapshot {
   remembranceAccord: Agent17RemembranceAccordSnapshot;
   heritageIndex: Agent17HeritageIndexSnapshot;
   legacyAccord: Agent17LegacyAccordSnapshot;
+  patrimonyIndex: Agent17PatrimonyIndexSnapshot;
+  inheritanceAccord: Agent17InheritanceAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1583,6 +1585,40 @@ export interface Agent17LegacyAccordSnapshot {
   heritageBand: Agent17HeritageIndexSnapshot['band'];
   remembranceBand: Agent17RemembranceAccordSnapshot['band'];
   legacyEntailed: boolean;
+  headline: string;
+}
+
+export interface Agent17PatrimonyHolding {
+  id: string;
+  label: string;
+  vested: boolean;
+  weight: number;
+}
+
+export interface Agent17PatrimonyIndexSnapshot {
+  patrimonyScore: number;
+  band: 'vested' | 'pending' | 'escheated';
+  holdings: Agent17PatrimonyHolding[];
+  legacyBand: Agent17LegacyAccordSnapshot['band'];
+  heritageBand: Agent17HeritageIndexSnapshot['band'];
+  patrimonyVested: boolean;
+  headline: string;
+}
+
+export interface Agent17InheritanceTransmission {
+  id: string;
+  label: string;
+  transmitted: boolean;
+  weight: number;
+}
+
+export interface Agent17InheritanceAccordSnapshot {
+  inheritanceScore: number;
+  band: 'transmitted' | 'provisional' | 'disclaimed';
+  transmissions: Agent17InheritanceTransmission[];
+  patrimonyBand: Agent17PatrimonyIndexSnapshot['band'];
+  legacyBand: Agent17LegacyAccordSnapshot['band'];
+  inheritanceTransmitted: boolean;
   headline: string;
 }
 
@@ -11318,6 +11354,218 @@ export function legacyAccordBlocksHeritage(snapshot: Agent17LegacyAccordSnapshot
   return snapshot.band === 'extinguished' || !snapshot.legacyEntailed;
 }
 
+export function legacyAccordBlocksPatrimony(snapshot: Agent17LegacyAccordSnapshot): boolean {
+  return legacyAccordBlocksHeritage(snapshot);
+}
+
+
+// --- source: planning/patrimony-index.ts ---
+  Agent17HeritageIndexSnapshot,
+  Agent17LegacyAccordSnapshot,
+  Agent17PatrimonyIndexSnapshot,
+  Agent17RemembranceAccordSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17PatrimonyIndexInputs {
+  legacyAccord: Agent17LegacyAccordSnapshot;
+  heritageIndex: Agent17HeritageIndexSnapshot;
+  remembranceAccord: Agent17RemembranceAccordSnapshot;
+}
+
+export function buildAgent17PatrimonyIndex(
+  inputs: Agent17PatrimonyIndexInputs
+): Agent17PatrimonyIndexSnapshot {
+  const holdings: Agent17PatrimonyIndexSnapshot['holdings'] = [];
+
+  holdings.push({
+    id: 'legacy_entailed',
+    label: 'Legacy accord legacy-entailed',
+    vested:
+      inputs.legacyAccord.legacyEntailed &&
+      !legacyAccordBlocksPatrimony(inputs.legacyAccord),
+    weight: 30,
+  });
+
+  holdings.push({
+    id: 'legacy_band',
+    label: 'Legacy entailed or draft',
+    vested:
+      inputs.legacyAccord.band === 'entailed' || inputs.legacyAccord.band === 'draft',
+    weight: 25,
+  });
+
+  holdings.push({
+    id: 'heritage_bequeathed',
+    label: 'Heritage index heritage-bequeathed',
+    vested:
+      inputs.heritageIndex.heritageBequeathed &&
+      !heritageIndexBlocksLegacy(inputs.heritageIndex),
+    weight: 20,
+  });
+
+  holdings.push({
+    id: 'remembrance_clear',
+    label: 'Remembrance accord not blocking heritage',
+    vested: !remembranceAccordBlocksHeritage(inputs.remembranceAccord),
+    weight: 15,
+  });
+
+  holdings.push({
+    id: 'legacy_score',
+    label: 'Legacy score headroom',
+    vested: inputs.legacyAccord.legacyScore >= 8,
+    weight: 10,
+  });
+
+  const weighted = holdings.reduce(
+    (n, h) => n + (h.vested ? 100 : 1) * (h.weight / 100),
+    0
+  );
+  const totalWeight = holdings.reduce((n, h) => n + h.weight, 0);
+  const patrimonyScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const escheatedSignals =
+    legacyAccordBlocksPatrimony(inputs.legacyAccord) ||
+    heritageIndexBlocksLegacy(inputs.heritageIndex) ||
+    remembranceAccordBlocksHeritage(inputs.remembranceAccord);
+
+  const band: Agent17PatrimonyIndexSnapshot['band'] = escheatedSignals
+    ? 'escheated'
+    : patrimonyScore >= 46 &&
+        inputs.legacyAccord.band === 'entailed' &&
+        inputs.heritageIndex.band === 'bequeathed'
+      ? 'vested'
+      : 'pending';
+
+  const patrimonyVested =
+    band === 'vested' &&
+    inputs.legacyAccord.legacyEntailed &&
+    !legacyAccordBlocksPatrimony(inputs.legacyAccord);
+
+  return {
+    patrimonyScore,
+    band,
+    holdings,
+    legacyBand: inputs.legacyAccord.band,
+    heritageBand: inputs.heritageIndex.band,
+    patrimonyVested,
+    headline: `Patrimony ${band} (${patrimonyScore}/100) · ${holdings.filter(h => h.vested).length}/${holdings.length} holdings`,
+  };
+}
+
+export function patrimonyIndexBlocksInheritance(
+  snapshot: Agent17PatrimonyIndexSnapshot
+): boolean {
+  return snapshot.band === 'escheated' || !snapshot.patrimonyVested;
+}
+
+
+// --- source: planning/inheritance-accord.ts ---
+  Agent17HeritageIndexSnapshot,
+  Agent17InheritanceAccordSnapshot,
+  Agent17LegacyAccordSnapshot,
+  Agent17PatrimonyIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17InheritanceAccordInputs {
+  patrimonyIndex: Agent17PatrimonyIndexSnapshot;
+  legacyAccord: Agent17LegacyAccordSnapshot;
+  heritageIndex: Agent17HeritageIndexSnapshot;
+}
+
+export function buildAgent17InheritanceAccord(
+  inputs: Agent17InheritanceAccordInputs
+): Agent17InheritanceAccordSnapshot {
+  const transmissions: Agent17InheritanceAccordSnapshot['transmissions'] = [];
+
+  transmissions.push({
+    id: 'patrimony_vested',
+    label: 'Patrimony index patrimony-vested',
+    transmitted:
+      inputs.patrimonyIndex.patrimonyVested &&
+      !patrimonyIndexBlocksInheritance(inputs.patrimonyIndex),
+    weight: 30,
+  });
+
+  transmissions.push({
+    id: 'patrimony_band',
+    label: 'Patrimony vested or pending',
+    transmitted:
+      inputs.patrimonyIndex.band === 'vested' || inputs.patrimonyIndex.band === 'pending',
+    weight: 25,
+  });
+
+  transmissions.push({
+    id: 'legacy_entailed',
+    label: 'Legacy accord legacy-ready',
+    transmitted:
+      inputs.legacyAccord.legacyEntailed &&
+      !legacyAccordBlocksPatrimony(inputs.legacyAccord),
+    weight: 20,
+  });
+
+  transmissions.push({
+    id: 'heritage_clear',
+    label: 'Heritage index not blocking legacy',
+    transmitted: !heritageIndexBlocksLegacy(inputs.heritageIndex),
+    weight: 15,
+  });
+
+  transmissions.push({
+    id: 'patrimony_score',
+    label: 'Patrimony score headroom',
+    transmitted: inputs.patrimonyIndex.patrimonyScore >= 7,
+    weight: 10,
+  });
+
+  const weighted = transmissions.reduce(
+    (n, t) => n + (t.transmitted ? 100 : 1) * (t.weight / 100),
+    0
+  );
+  const totalWeight = transmissions.reduce((n, t) => n + t.weight, 0);
+  const inheritanceScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const disclaimedSignals =
+    patrimonyIndexBlocksInheritance(inputs.patrimonyIndex) ||
+    legacyAccordBlocksPatrimony(inputs.legacyAccord) ||
+    heritageIndexBlocksLegacy(inputs.heritageIndex);
+
+  const band: Agent17InheritanceAccordSnapshot['band'] = disclaimedSignals
+    ? 'disclaimed'
+    : inheritanceScore >= 43 &&
+        inputs.patrimonyIndex.band === 'vested' &&
+        inputs.legacyAccord.band === 'entailed'
+      ? 'transmitted'
+      : 'provisional';
+
+  const inheritanceTransmitted =
+    band === 'transmitted' &&
+    inputs.patrimonyIndex.patrimonyVested &&
+    !heritageIndexBlocksLegacy(inputs.heritageIndex);
+
+  return {
+    inheritanceScore,
+    band,
+    transmissions,
+    patrimonyBand: inputs.patrimonyIndex.band,
+    legacyBand: inputs.legacyAccord.band,
+    inheritanceTransmitted,
+    headline: `Inheritance ${band} (${inheritanceScore}/100) · ${transmissions.filter(t => t.transmitted).length}/${transmissions.length} transmissions`,
+  };
+}
+
+export function inheritanceAccordBlocksPatrimony(
+  snapshot: Agent17InheritanceAccordSnapshot
+): boolean {
+  return snapshot.band === 'disclaimed' || !snapshot.inheritanceTransmitted;
+}
+
 
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
@@ -11828,6 +12076,16 @@ export function buildAgent17PlanningDepthSnapshot(
     remembranceAccord,
     memorialIndex,
   });
+  const patrimonyIndex = buildAgent17PatrimonyIndex({
+    legacyAccord,
+    heritageIndex,
+    remembranceAccord,
+  });
+  const inheritanceAccord = buildAgent17InheritanceAccord({
+    patrimonyIndex,
+    legacyAccord,
+    heritageIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -11911,6 +12169,8 @@ export function buildAgent17PlanningDepthSnapshot(
     remembranceAccord,
     heritageIndex,
     legacyAccord,
+    patrimonyIndex,
+    inheritanceAccord,
   };
 }
 
@@ -13196,6 +13456,28 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Forfeited heritage or forgotten remembrance yields legacyAccordBlocksHeritage.',
     severity: 'major',
   },
+  {
+    id: 'G17-142',
+    title: 'Patrimony index on planning depth',
+    category: 'telemetry',
+    acceptance: 'patrimonyIndex reports patrimonyScore 0–100 with vested/pending/escheated band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-143',
+    title: 'Inheritance accord transmissions complete',
+    category: 'telemetry',
+    acceptance: 'inheritanceAccord exposes ≥5 transmissions and inheritanceScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-144',
+    title: 'Escheated patrimony disclaims inheritance accord',
+    category: 'integration',
+    acceptance:
+      'Escheated patrimony or extinguished legacy yields inheritanceAccordBlocksPatrimony.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -13446,6 +13728,12 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17LegacyAccord,
   legacyAccordBlocksHeritage,
 } from '../planning/legacy-accord.ts';
+  buildAgent17PatrimonyIndex,
+  patrimonyIndexBlocksInheritance,
+} from '../planning/patrimony-index.ts';
+  buildAgent17InheritanceAccord,
+  inheritanceAccordBlocksPatrimony,
+} from '../planning/inheritance-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -15602,6 +15890,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const patrimonyIndex = depthEval.snapshot.planningDepth?.patrimonyIndex;
+  goalResults.push(
+    result(
+      'G17-142',
+      !!patrimonyIndex &&
+        patrimonyIndex.holdings.length >= 5 &&
+        patrimonyIndex.patrimonyScore >= 0 &&
+        patrimonyIndex.patrimonyScore <= 100 &&
+        (patrimonyIndex.band === 'vested' ||
+          patrimonyIndex.band === 'pending' ||
+          patrimonyIndex.band === 'escheated'),
+      `holdings=${patrimonyIndex?.holdings.length} score=${patrimonyIndex?.patrimonyScore}`
+    )
+  );
+
+  const inheritanceAccord = depthEval.snapshot.planningDepth?.inheritanceAccord;
+  goalResults.push(
+    result(
+      'G17-143',
+      !!inheritanceAccord &&
+        inheritanceAccord.transmissions.length >= 5 &&
+        inheritanceAccord.inheritanceScore >= 0 &&
+        inheritanceAccord.inheritanceScore <= 100,
+      `transmissions=${inheritanceAccord?.transmissions.length} score=${inheritanceAccord?.inheritanceScore}`
+    )
+  );
+
+  const escheatedPatrimony = buildAgent17PatrimonyIndex({
+    legacyAccord: extinguishedLegacy,
+    heritageIndex: forfeitedHeritage,
+    remembranceAccord: forgottenRemembrance,
+  });
+  const disclaimedInheritance = buildAgent17InheritanceAccord({
+    patrimonyIndex: escheatedPatrimony,
+    legacyAccord: extinguishedLegacy,
+    heritageIndex: forfeitedHeritage,
+  });
+  goalResults.push(
+    result(
+      'G17-144',
+      legacyAccordBlocksHeritage(extinguishedLegacy) ||
+        patrimonyIndexBlocksInheritance(escheatedPatrimony) ||
+        inheritanceAccordBlocksPatrimony(disclaimedInheritance),
+      `${escheatedPatrimony.band}/${disclaimedInheritance.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -15773,6 +16108,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-139',
     'G17-140',
     'G17-141',
+    'G17-142',
+    'G17-143',
+    'G17-144',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

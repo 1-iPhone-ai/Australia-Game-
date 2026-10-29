@@ -101,3 +101,7 @@ export function buildAgent17LegacyAccord(
 export function legacyAccordBlocksHeritage(snapshot: Agent17LegacyAccordSnapshot): boolean {
   return snapshot.band === 'extinguished' || !snapshot.legacyEntailed;
 }
+
+export function legacyAccordBlocksPatrimony(snapshot: Agent17LegacyAccordSnapshot): boolean {
+  return legacyAccordBlocksHeritage(snapshot);
+}
