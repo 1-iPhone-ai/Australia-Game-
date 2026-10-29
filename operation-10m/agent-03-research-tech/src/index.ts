@@ -82,4 +82,7 @@ export * from './scale-wave-integration-continuity-outlook.ts';
 export * from './scale-wave-integration-continuity-band-log.ts';
 export * from './scale-wave-integration-continuity-snapshot.ts';
 export * from './scale-wave-continuity-handoff-outlook.ts';
+export * from './scale-wave-continuity-handoff-band-log.ts';
+export * from './scale-wave-continuity-handoff-snapshot.ts';
+export * from './scale-wave-handoff-integration-outlook.ts';
 export * from './compute.ts';

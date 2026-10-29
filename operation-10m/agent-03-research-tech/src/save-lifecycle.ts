@@ -31,6 +31,7 @@ import type {
   ResearchScaleWaveIntegrationSealBandEvent,
   ResearchScaleWavePostSealHandoffBandEvent,
   ResearchScaleWaveIntegrationContinuityBandEvent,
+  ResearchScaleWaveContinuityHandoffBandEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
@@ -81,6 +82,8 @@ import { mergePostSealHandoffSnapshots } from './scale-wave-post-seal-handoff-sn
 import { RESEARCH_POST_SEAL_HANDOFF_BAND_LOG_CAP } from './scale-wave-post-seal-handoff-band-log.ts';
 import { mergeIntegrationContinuitySnapshots } from './scale-wave-integration-continuity-snapshot.ts';
 import { RESEARCH_INTEGRATION_CONTINUITY_BAND_LOG_CAP } from './scale-wave-integration-continuity-band-log.ts';
+import { mergeContinuityHandoffSnapshots } from './scale-wave-continuity-handoff-snapshot.ts';
+import { RESEARCH_CONTINUITY_HANDOFF_BAND_LOG_CAP } from './scale-wave-continuity-handoff-band-log.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -372,6 +375,18 @@ function mergeIntegrationContinuityBandLogs(
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_INTEGRATION_CONTINUITY_BAND_LOG_CAP);
 }
 
+function mergeContinuityHandoffBandLogs(
+  local: ResearchScaleWaveContinuityHandoffBandEvent[] | undefined,
+  remote: ResearchScaleWaveContinuityHandoffBandEvent[] | undefined
+): ResearchScaleWaveContinuityHandoffBandEvent[] {
+  const byKey = new Map<string, ResearchScaleWaveContinuityHandoffBandEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.band}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_CONTINUITY_HANDOFF_BAND_LOG_CAP);
+}
+
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
   const { coreFingerprint, ...rest } = core;
   void coreFingerprint;
@@ -633,6 +648,15 @@ export function mergeResearchPersistedCores(
         local.integrationContinuitySnapshot ?? undefined,
         remote.integrationContinuitySnapshot ?? undefined
       ) ?? null,
+    continuityHandoffBandLog: mergeContinuityHandoffBandLogs(
+      local.continuityHandoffBandLog,
+      remote.continuityHandoffBandLog
+    ),
+    continuityHandoffSnapshot:
+      mergeContinuityHandoffSnapshots(
+        local.continuityHandoffSnapshot ?? undefined,
+        remote.continuityHandoffSnapshot ?? undefined
+      ) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -703,6 +727,8 @@ export function reconcileResearchProgressOnLoad(
         postSealHandoffSnapshot: persist.postSealHandoffSnapshot,
         integrationContinuityBandLog: persist.integrationContinuityBandLog,
         integrationContinuitySnapshot: persist.integrationContinuitySnapshot,
+        continuityHandoffBandLog: persist.continuityHandoffBandLog,
+        continuityHandoffSnapshot: persist.continuityHandoffSnapshot,
       },
       persist,
     };
@@ -765,6 +791,8 @@ export function reconcileResearchProgressOnLoad(
     postSealHandoffSnapshot: mergedCore.postSealHandoffSnapshot,
     integrationContinuityBandLog: mergedCore.integrationContinuityBandLog,
     integrationContinuitySnapshot: mergedCore.integrationContinuitySnapshot,
+    continuityHandoffBandLog: mergedCore.continuityHandoffBandLog,
+    continuityHandoffSnapshot: mergedCore.continuityHandoffSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -828,6 +856,8 @@ export function reconcileResearchProgressOnLoad(
       postSealHandoffSnapshot: persist.postSealHandoffSnapshot,
       integrationContinuityBandLog: persist.integrationContinuityBandLog,
       integrationContinuitySnapshot: persist.integrationContinuitySnapshot,
+      continuityHandoffBandLog: persist.continuityHandoffBandLog,
+      continuityHandoffSnapshot: persist.continuityHandoffSnapshot,
     },
     persist,
   };
