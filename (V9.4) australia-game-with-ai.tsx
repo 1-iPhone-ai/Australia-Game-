@@ -14359,6 +14359,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   stateCapacityEnabled: true,
   publicFinanceEnabled: true,
   householdsEnabled: true,
+  laborDemographicsEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26927,6 +26928,8 @@ export type GameSettingsState = {
   publicFinanceEnabled?: boolean;
   /** V10.13 Households, Living Standards & Domestic Demand (needs National Systems; off = no households layer, V10.0–V10.12 unchanged). */
   householdsEnabled?: boolean;
+  /** V10.14 Labor Market, Demographics, Employment, Wages & Migration (needs National Systems + Industries; off = no labor-demographics layer). */
+  laborDemographicsEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -36758,6 +36761,8 @@ export const initialGameState = {
   publicFinance: null as any,
   /** V10.13: household-economy lifecycle memory (band hysteresis, pinned concerns, transitions, history). Living standards and demand are derived. */
   householdEconomy: null as any,
+  /** V10.14: labor-demographics lifecycle memory (hysteresis, transitions, history). Employment, wage, and migration bands are derived. */
+  laborDemographics: null as any,
   /** V9.3 per-match content state (profile, budgets, cooldowns, bounded history). Not AI memory. */
   contentState: null as MatchContentState | null,
   // Regional Factions initialise from Living Regions / contracts / standing on the first live pass.
@@ -80973,6 +80978,9 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.publicFinance = sanitizePublicFinancePersisted(migrated.gameState.publicFinance);
   // V10.13: pre-V10.13 saves carry NO household-economy memory (null) — current living standards and domestic demand are derived on load.
   if (migrated.gameState) migrated.gameState.householdEconomy = migrated.gameState.householdEconomy ? sanitizeHouseholdEconomyPersisted(migrated.gameState.householdEconomy) : null;
+  // V10.14: pre-V10.14 saves carry NO labor-demographics memory (null) — current bands are derived on load.
+  if (migrated.gameState) migrated.gameState.laborDemographics = migrated.gameState.laborDemographics ? sanitizeLaborDemographicsPersisted(migrated.gameState.laborDemographics) : null;
+  if (migrated.gameState) (migrated.gameState as any).laborDemographicsState = null;
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -134060,7 +134068,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'strategicCapitalEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'laborDemographicsEnabled', 'strategicCapitalEnabled'
 ] as const;
 
 /**
@@ -134424,6 +134432,7 @@ export function validateSaveDataCore(raw: any): SaveGameData {
         stateCapacity: sanitizeStateCapacityPersisted(stateData.stateCapacity || raw.gameState?.stateCapacity),
         publicFinance: sanitizePublicFinancePersisted(stateData.publicFinance || raw.gameState?.publicFinance),
         householdEconomy: (stateData.householdEconomy || raw.gameState?.householdEconomy) ? sanitizeHouseholdEconomyPersisted(stateData.householdEconomy || raw.gameState?.householdEconomy) : null,
+        laborDemographics: (stateData.laborDemographics || raw.gameState?.laborDemographics) ? sanitizeLaborDemographicsPersisted(stateData.laborDemographics || raw.gameState?.laborDemographics) : null,
 	      commandCenterState: sanitizeCommandCenterState(stateData.commandCenterState),
       resourcePrices: typeof stateData.resourcePrices === 'object' && stateData.resourcePrices !== null ? stateData.resourcePrices : {},
       activeEvents: Array.isArray(stateData.activeEvents) ? stateData.activeEvents : [],
@@ -136510,6 +136519,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1011', label: 'V10.11 Adaptive Governance & State Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1011AdaptiveGovernanceSelfTests() },
   { id: 'v1012', label: 'V10.12 Public Finance & Fiscal Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1012PublicFinanceSelfTests() },
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
+  { id: 'v1014', label: 'V10.14 Labor Demographics & Migration', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014LaborDemographicsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -139367,6 +139377,8 @@ export interface NationalSystemsWorldView {
   publicFinance?: PublicFinanceWorldView | null;
   /** V10.13 Households, Living Standards & Domestic Demand (null when off). */
   households?: HouseholdEconomyWorldView | null;
+  /** V10.14 Labor Market, Demographics, Employment, Wages & Migration (null when off). */
+  laborDemographics?: LaborDemographicsWorldView | null;
 }
 export type NationalQueryTopic = 'overview' | 'bottlenecks' | 'region_network' | 'dependency' | 'resilience' | 'what_if';
 export interface NationalQuery { topic: NationalQueryTopic; regionId: string | null; network: NationalNetworkKind | null; projectType: string | null }
@@ -181924,6 +181936,698 @@ export function triggerJsonFileDownload(filename: string, data: unknown): boolea
   }
 }
 
+
+// ============================================================================
+// SECTION 20AG: V10.14 LABOR MARKET, DEMOGRAPHICS, EMPLOYMENT, WAGES & MIGRATION
+// ============================================================================
+// Agent 09 / Operation 600K — industry-output-linked labor & demographic structure.
+// PREREQUISITE AUDIT (Parts 1–24, Invariants A–P):
+// 1. V10.1 remains authoritative for industry production, supply, and effectiveOutput.
+// 2. V10.10 remains authoritative for workforce depth, skill domains, and staffing readiness.
+// 3. V10.13 remains authoritative for household living standards and domestic-demand provenance.
+// 4. Living Regions remains authoritative for regional economy bands and momentum.
+// 5. V10.14 NEVER writes forbidden sim keys (population, unemploymentRate, workerAgents,
+//    payrollCost, wageBill, migrationQuota) — only structural indices, bands, and flows.
+// 6. V10.14 NEVER owns player cash/AP, never executes actions, never replaces CPI or commodity prices.
+// 7. Employment linkage scores derive from regional industry effectiveOutput × labor-intensity weights.
+// 8. Wage pressure derives from output momentum + workforce strain (read-only from V10.10).
+// 9. Net migration flow bands derive from cross-regional employment-attractiveness differentials tied to output.
+// 10. Household employment-opportunity bands (V10.13) may be informed but never overwritten here.
+
+export const V1014_SCHEMA_VERSION = '10.14.0';
+
+export const V1014_CORE_REGIONS: readonly string[] = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'NT', 'ACT'] as const;
+
+export const V1014_LIMITS = {
+  maxHistory: 24,
+  maxTransitions: 16,
+  maxIndustryLinks: 8,
+  maxEvidence: 8,
+  hysteresisDeadband: 2.0,
+  maxEventsPerTurn: 6
+} as const;
+
+/** Labor-intensity weight per strategic industry (employment linkage to output). */
+export const V1014_INDUSTRY_LABOR_WEIGHT: Record<StrategicIndustryKind, number> = {
+  energy: 0.55,
+  mining: 0.72,
+  agriculture: 0.85,
+  manufacturing: 0.95,
+  research: 0.65,
+  technology: 0.78,
+  tourism: 1.05,
+  trade: 0.62
+};
+
+export type DemographicStructureBand =
+  | 'contracting'
+  | 'aging_pressure'
+  | 'stable'
+  | 'youthful_growth'
+  | 'rapid_growth';
+
+export type EmploymentLinkageBand =
+  | 'dislocated'
+  | 'weak'
+  | 'balanced'
+  | 'strong'
+  | 'tight_labor';
+
+export type WagePressureBand =
+  | 'deflationary'
+  | 'soft'
+  | 'stable'
+  | 'elevated'
+  | 'surging';
+
+export type MigrationFlowBand =
+  | 'outflow'
+  | 'slight_outflow'
+  | 'balanced'
+  | 'inflow'
+  | 'strong_inflow';
+
+export const DEMOGRAPHIC_STRUCTURE_LABEL: Record<DemographicStructureBand, string> = {
+  contracting: 'Contracting workforce base',
+  aging_pressure: 'Aging workforce pressure',
+  stable: 'Stable demographic structure',
+  youthful_growth: 'Youthful growth profile',
+  rapid_growth: 'Rapid demographic expansion'
+};
+
+export const EMPLOYMENT_LINKAGE_LABEL: Record<EmploymentLinkageBand, string> = {
+  dislocated: 'Output–employment dislocation',
+  weak: 'Weak employment linkage',
+  balanced: 'Balanced linkage to output',
+  strong: 'Strong output-driven employment',
+  tight_labor: 'Tight labor market linkage'
+};
+
+export const WAGE_PRESSURE_LABEL: Record<WagePressureBand, string> = {
+  deflationary: 'Deflationary wage pressure',
+  soft: 'Soft wage conditions',
+  stable: 'Stable wage pressure',
+  elevated: 'Elevated wage pressure',
+  surging: 'Surging wage pressure'
+};
+
+export const MIGRATION_FLOW_LABEL: Record<MigrationFlowBand, string> = {
+  outflow: 'Net outflow',
+  slight_outflow: 'Slight outflow',
+  balanced: 'Balanced migration',
+  inflow: 'Net inflow',
+  strong_inflow: 'Strong inflow'
+};
+
+export interface LaborDemographicsRegionSnapshot {
+  regionId: string;
+  demographicStructure: DemographicStructureBand;
+  demographicScore: number;
+  employmentLinkage: EmploymentLinkageBand;
+  employmentLinkageScore: number;
+  wagePressure: WagePressureBand;
+  wagePressureScore: number;
+  migrationFlow: MigrationFlowBand;
+  migrationFlowScore: number;
+  dominantIndustry: StrategicIndustryKind | null;
+  industryOutputIndex: number;
+  workforceStrainIndex: number;
+  householdEmploymentFit: number;
+}
+
+export interface LaborDemographicsIndustryLink {
+  industry: StrategicIndustryKind;
+  nationalOutputShare: number;
+  employmentWeight: number;
+  linkageScore: number;
+  regionalHotspots: string[];
+}
+
+export interface LaborDemographicsTransition {
+  id: string;
+  turn: number;
+  scope: 'national' | 'regional';
+  regionId?: string;
+  field: string;
+  from: string;
+  to: string;
+  reason: string;
+}
+
+export interface NationalLaborDemographicsState {
+  schemaVersion: string;
+  turn: number;
+  revision: number;
+  inputHash: string;
+  enabled: boolean;
+  nationalDemographicStructure: DemographicStructureBand;
+  nationalEmploymentLinkage: EmploymentLinkageBand;
+  nationalWagePressure: WagePressureBand;
+  nationalMigrationFlow: MigrationFlowBand;
+  demographicScore: number;
+  employmentLinkageScore: number;
+  wagePressureScore: number;
+  migrationFlowScore: number;
+  regions: Record<string, LaborDemographicsRegionSnapshot>;
+  industryLinks: LaborDemographicsIndustryLink[];
+  summary: string;
+  outlook: string;
+  transitions: LaborDemographicsTransition[];
+  evidence: string[];
+}
+
+export interface LaborDemographicsPersisted {
+  schemaVersion: string;
+  revision: number;
+  initializedTurn: number | null;
+  lastUpdatedTurn: number;
+  lastInputHash: string;
+  nationalHysteresis: {
+    demographicStructure: DemographicStructureBand;
+    employmentLinkage: EmploymentLinkageBand;
+    wagePressure: WagePressureBand;
+    migrationFlow: MigrationFlowBand;
+    demographicScore: number;
+    employmentLinkageScore: number;
+    wagePressureScore: number;
+    migrationFlowScore: number;
+  };
+  regionalHysteresis: Record<string, {
+    demographicStructure: DemographicStructureBand;
+    employmentLinkage: EmploymentLinkageBand;
+    wagePressure: WagePressureBand;
+    migrationFlow: MigrationFlowBand;
+  }>;
+  transitions: LaborDemographicsTransition[];
+  history: Array<{ turn: number; hash: string; summary: string }>;
+}
+
+export interface LaborDemographicsInputs {
+  turn: number;
+  enabled?: boolean;
+  industries?: IndustriesSupplyChainsState | any;
+  workforce?: NationalWorkforceState | any;
+  households?: NationalHouseholdEconomyState | any;
+  livingRegions?: LivingRegionsState | any;
+  economicGeography?: EconomicGeographyState | any;
+}
+
+export interface LaborDemographicsWorldView {
+  enabled: boolean;
+  state: NationalLaborDemographicsState;
+  persisted: LaborDemographicsPersisted;
+  inputs: LaborDemographicsInputs;
+}
+
+function v1014Clamp(n: number, lo = 0, hi = 100): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function v1014BandDemographic(score: number): DemographicStructureBand {
+  if (score < 28) return 'contracting';
+  if (score < 42) return 'aging_pressure';
+  if (score < 58) return 'stable';
+  if (score < 72) return 'youthful_growth';
+  return 'rapid_growth';
+}
+
+function v1014BandEmployment(score: number): EmploymentLinkageBand {
+  if (score < 30) return 'dislocated';
+  if (score < 45) return 'weak';
+  if (score < 62) return 'balanced';
+  if (score < 78) return 'strong';
+  return 'tight_labor';
+}
+
+function v1014BandWage(score: number): WagePressureBand {
+  if (score < 25) return 'deflationary';
+  if (score < 42) return 'soft';
+  if (score < 58) return 'stable';
+  if (score < 74) return 'elevated';
+  return 'surging';
+}
+
+function v1014BandMigration(score: number): MigrationFlowBand {
+  if (score < 28) return 'outflow';
+  if (score < 44) return 'slight_outflow';
+  if (score < 56) return 'balanced';
+  if (score < 72) return 'inflow';
+  return 'strong_inflow';
+}
+
+function v1014ApplyHysteresis(prevBand: DemographicStructureBand, targetScore: number, prevScore: number, bandFn: (s: number) => DemographicStructureBand): { band: DemographicStructureBand; score: number } {
+  const target = bandFn(targetScore);
+  const dead = V1014_LIMITS.hysteresisDeadband;
+  if (target === prevBand) return { band: prevBand, score: v1014Clamp(prevScore * 0.35 + targetScore * 0.65) };
+  const delta = Math.abs(targetScore - prevScore);
+  if (delta < dead) return { band: prevBand, score: v1014Clamp(prevScore * 0.6 + targetScore * 0.4) };
+  return { band: target, score: v1014Clamp(targetScore) };
+}
+
+export function createInitialLaborDemographicsPersisted(turn = 1): LaborDemographicsPersisted {
+  return {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: 1,
+    initializedTurn: null,
+    lastUpdatedTurn: Math.max(1, turn),
+    lastInputHash: '',
+    nationalHysteresis: {
+      demographicStructure: 'stable',
+      employmentLinkage: 'balanced',
+      wagePressure: 'stable',
+      migrationFlow: 'balanced',
+      demographicScore: 52,
+      employmentLinkageScore: 55,
+      wagePressureScore: 50,
+      migrationFlowScore: 50
+    },
+    regionalHysteresis: {},
+    transitions: [],
+    history: []
+  };
+}
+
+export function sanitizeLaborDemographicsPersisted(raw: any, turn = 1): LaborDemographicsPersisted {
+  const base = createInitialLaborDemographicsPersisted(turn);
+  if (!raw || typeof raw !== 'object') return base;
+  const nh = raw.nationalHysteresis && typeof raw.nationalHysteresis === 'object' ? raw.nationalHysteresis : {};
+  return {
+    ...base,
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: Math.max(1, Math.floor(Number(raw.revision) || base.revision)),
+    initializedTurn: raw.initializedTurn == null ? null : Math.max(1, Math.floor(Number(raw.initializedTurn))),
+    lastUpdatedTurn: Math.max(1, Math.floor(Number(raw.lastUpdatedTurn) || turn)),
+    lastInputHash: typeof raw.lastInputHash === 'string' ? raw.lastInputHash.slice(0, 120) : '',
+    nationalHysteresis: {
+      demographicStructure: v1014BandDemographic(v1014Clamp(Number(nh.demographicScore) || 52)),
+      employmentLinkage: v1014BandEmployment(v1014Clamp(Number(nh.employmentLinkageScore) || 55)),
+      wagePressure: v1014BandWage(v1014Clamp(Number(nh.wagePressureScore) || 50)),
+      migrationFlow: v1014BandMigration(v1014Clamp(Number(nh.migrationFlowScore) || 50)),
+      demographicScore: v1014Clamp(Number(nh.demographicScore) || 52),
+      employmentLinkageScore: v1014Clamp(Number(nh.employmentLinkageScore) || 55),
+      wagePressureScore: v1014Clamp(Number(nh.wagePressureScore) || 50),
+      migrationFlowScore: v1014Clamp(Number(nh.migrationFlowScore) || 50
+      )
+    },
+    regionalHysteresis: typeof raw.regionalHysteresis === 'object' && raw.regionalHysteresis ? raw.regionalHysteresis : {},
+    transitions: Array.isArray(raw.transitions) ? raw.transitions.slice(-V1014_LIMITS.maxTransitions) : [],
+    history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : []
+  };
+}
+
+export function laborDemographicsInputHash(inputs: LaborDemographicsInputs): string {
+  const turn = Math.floor(inputs.turn || 1);
+  const ind = inputs.industries?.national?.output || {};
+  const parts: string[] = [String(turn), inputs.enabled === false ? '0' : '1'];
+  STRATEGIC_INDUSTRIES.forEach(k => parts.push(`${k}:${Math.round(Number((ind as any)[k] || 0))}`));
+  V1014_CORE_REGIONS.forEach(c => {
+    const reg = inputs.industries?.regions?.[c];
+    if (!reg) return;
+    STRATEGIC_INDUSTRIES.forEach(k => {
+      const st = reg.industries?.[k];
+      parts.push(`${c}:${k}:${Math.round(Number(st?.effectiveOutput || 0))}:${st?.condition || 'n'}`);
+    });
+  });
+  const wf = inputs.workforce?.national?.effectivePressureRatio;
+  parts.push(`wf:${Math.round(Number(wf || 0) * 100)}`);
+  const hh = inputs.households?.national?.employmentOpportunity;
+  parts.push(`hh:${hh || 'n'}`);
+  let h = 2166136261;
+  const s = parts.join('|');
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `v1014_${(h >>> 0).toString(16)}`;
+}
+
+export function buildLaborDemographicsInputs(params: {
+  turn: number;
+  gameState?: any;
+  gameSettings?: any;
+  industries?: IndustriesSupplyChainsState | any;
+  workforce?: NationalWorkforceState | any;
+  households?: NationalHouseholdEconomyState | any;
+  livingRegions?: LivingRegionsState | any;
+  economicGeography?: EconomicGeographyState | any;
+}): LaborDemographicsInputs {
+  const turn = Math.max(1, Math.floor(params.turn || 1));
+  const gset = params.gameSettings || {};
+  const enabled = gset.laborDemographicsEnabled !== false && gset.nationalSystemsEnabled !== false && gset.industriesEnabled !== false;
+  return {
+    turn,
+    enabled,
+    industries: params.industries || params.gameState?.industriesSupplyChainsState || null,
+    workforce: params.workforce || (params.gameState as any)?.workforceState || null,
+    households: params.households || (params.gameState as any)?.householdEconomyState || null,
+    livingRegions: params.livingRegions || null,
+    economicGeography: params.economicGeography || null
+  };
+}
+
+function v1014WorkforceStrainForRegion(regionId: string, workforce: NationalWorkforceState | any): number {
+  if (!workforce?.regions) return 50;
+  const r = workforce.regions[regionId];
+  if (!r) return 50;
+  const ratio = Number(r.effectivePressureRatio ?? r.pressureRatio ?? 0.5);
+  return v1014Clamp(ratio * 100);
+}
+
+function v1014HouseholdEmploymentFit(regionId: string, households: NationalHouseholdEconomyState | any): number {
+  const reg = households?.regions?.[regionId];
+  if (!reg) return 50;
+  const rankMap: Record<string, number> = { scarce: 20, weak: 35, balanced: 55, strong: 72, abundant: 88 };
+  const band = reg.employmentOpportunity || reg.employmentOpportunityBand || 'balanced';
+  return rankMap[String(band)] ?? 50;
+}
+
+function v1014RegionIndustryOutputIndex(regionId: string, industries: any): { index: number; dominant: StrategicIndustryKind | null } {
+  const reg = industries?.regions?.[regionId];
+  if (!reg?.industries) return { index: 0, dominant: null };
+  let best: StrategicIndustryKind | null = null;
+  let bestOut = 0;
+  let weighted = 0;
+  STRATEGIC_INDUSTRIES.forEach(k => {
+    const st = reg.industries[k];
+    const out = Math.max(0, Number(st?.effectiveOutput || 0));
+    const w = V1014_INDUSTRY_LABOR_WEIGHT[k];
+    weighted += out * w;
+    if (out > bestOut) {
+      bestOut = out;
+      best = k;
+    }
+  });
+  return { index: v1014Clamp(weighted / 4.5), dominant: bestOut >= 8 ? best : null };
+}
+
+export function computeNationalLaborDemographics(
+  inputs: LaborDemographicsInputs,
+  rawPersisted?: LaborDemographicsPersisted | null,
+  prevState?: NationalLaborDemographicsState | null
+): { state: NationalLaborDemographicsState; persisted: LaborDemographicsPersisted; events: string[] } {
+  const turn = Math.max(1, Math.floor(inputs.turn || 1));
+  const persisted = sanitizeLaborDemographicsPersisted(rawPersisted, turn);
+  const hash = laborDemographicsInputHash(inputs);
+  const events: string[] = [];
+  if (!inputs.enabled) {
+    const off: NationalLaborDemographicsState = {
+      schemaVersion: V1014_SCHEMA_VERSION,
+      turn,
+      revision: persisted.revision,
+      inputHash: hash,
+      enabled: false,
+      nationalDemographicStructure: 'stable',
+      nationalEmploymentLinkage: 'balanced',
+      nationalWagePressure: 'stable',
+      nationalMigrationFlow: 'balanced',
+      demographicScore: 50,
+      employmentLinkageScore: 50,
+      wagePressureScore: 50,
+      migrationFlowScore: 50,
+      regions: {},
+      industryLinks: [],
+      summary: 'Labor demographics layer disabled.',
+      outlook: 'Enable National Systems, Industries, and Labor Demographics to compute industry-linked structure.',
+      transitions: [],
+      evidence: []
+    };
+    return { state: off, persisted, events };
+  }
+  if (persisted.lastInputHash === hash && prevState && prevState.inputHash === hash) {
+    return { state: prevState, persisted, events };
+  }
+
+  const nh = persisted.nationalHysteresis;
+  const regions: Record<string, LaborDemographicsRegionSnapshot> = {};
+  const attractiveness: Record<string, number> = {};
+  V1014_CORE_REGIONS.forEach(regionId => {
+    const { index: outputIndex, dominant } = v1014RegionIndustryOutputIndex(regionId, inputs.industries);
+    const wfStrain = v1014WorkforceStrainForRegion(regionId, inputs.workforce);
+    const hhFit = v1014HouseholdEmploymentFit(regionId, inputs.households);
+    const lr = inputs.livingRegions?.regions?.[regionId];
+    const momentumBoost = lr?.momentum?.band === 'rising' ? 8 : lr?.momentum?.band === 'falling' ? -6 : 0;
+    const empLinkageRaw = v1014Clamp(outputIndex * 0.55 + hhFit * 0.25 + (100 - wfStrain) * 0.2);
+    const wageRaw = v1014Clamp(wfStrain * 0.45 + outputIndex * 0.35 + momentumBoost + 10);
+    const demoRaw = v1014Clamp(48 + momentumBoost + (dominant === 'technology' || dominant === 'research' ? 6 : 0) + (dominant === 'agriculture' ? -4 : 0));
+    const prevReg = persisted.regionalHysteresis[regionId] || {
+      demographicStructure: nh.demographicStructure,
+      employmentLinkage: nh.employmentLinkage,
+      wagePressure: nh.wagePressure,
+      migrationFlow: nh.migrationFlow
+    };
+    const empH = v1014ApplyHysteresis(prevReg.employmentLinkage as any, empLinkageRaw, nh.employmentLinkageScore, v1014BandEmployment as any);
+    const wageH = v1014ApplyHysteresis(prevReg.wagePressure as any, wageRaw, nh.wagePressureScore, v1014BandWage as any);
+    const demoH = v1014ApplyHysteresis(prevReg.demographicStructure as any, demoRaw, nh.demographicScore, v1014BandDemographic as any);
+    attractiveness[regionId] = empLinkageRaw * 0.5 + (100 - wfStrain) * 0.3 + hhFit * 0.2;
+    regions[regionId] = {
+      regionId,
+      demographicStructure: demoH.band as DemographicStructureBand,
+      demographicScore: demoH.score,
+      employmentLinkage: v1014BandEmployment(empLinkageRaw),
+      employmentLinkageScore: empLinkageRaw,
+      wagePressure: v1014BandWage(wageRaw),
+      wagePressureScore: wageRaw,
+      migrationFlow: 'balanced',
+      migrationFlowScore: 50,
+      dominantIndustry: dominant,
+      industryOutputIndex: outputIndex,
+      workforceStrainIndex: wfStrain,
+      householdEmploymentFit: hhFit
+    };
+    persisted.regionalHysteresis[regionId] = {
+      demographicStructure: regions[regionId].demographicStructure,
+      employmentLinkage: regions[regionId].employmentLinkage,
+      wagePressure: regions[regionId].wagePressure,
+      migrationFlow: regions[regionId].migrationFlow
+    };
+  });
+
+  const avgAttr = V1014_CORE_REGIONS.reduce((a, c) => a + (attractiveness[c] || 50), 0) / V1014_CORE_REGIONS.length;
+  V1014_CORE_REGIONS.forEach(regionId => {
+    const diff = (attractiveness[regionId] || 50) - avgAttr;
+    const migRaw = v1014Clamp(50 + diff * 0.85);
+    regions[regionId].migrationFlow = v1014BandMigration(migRaw);
+    regions[regionId].migrationFlowScore = migRaw;
+    persisted.regionalHysteresis[regionId].migrationFlow = regions[regionId].migrationFlow;
+  });
+
+  const nationalEmp = v1014Clamp(V1014_CORE_REGIONS.reduce((a, c) => a + regions[c].employmentLinkageScore, 0) / V1014_CORE_REGIONS.length);
+  const nationalWage = v1014Clamp(V1014_CORE_REGIONS.reduce((a, c) => a + regions[c].wagePressureScore, 0) / V1014_CORE_REGIONS.length);
+  const nationalDemo = v1014Clamp(V1014_CORE_REGIONS.reduce((a, c) => a + regions[c].demographicScore, 0) / V1014_CORE_REGIONS.length);
+  const nationalMig = v1014Clamp(V1014_CORE_REGIONS.reduce((a, c) => a + regions[c].migrationFlowScore, 0) / V1014_CORE_REGIONS.length);
+
+  const empNat = v1014ApplyHysteresis(nh.employmentLinkage as any, nationalEmp, nh.employmentLinkageScore, v1014BandEmployment as any);
+  const wageNat = v1014ApplyHysteresis(nh.wagePressure as any, nationalWage, nh.wagePressureScore, v1014BandWage as any);
+  const demoNat = v1014ApplyHysteresis(nh.demographicStructure as any, nationalDemo, nh.demographicScore, v1014BandDemographic as any);
+  const migNat = v1014ApplyHysteresis(nh.migrationFlow as any, nationalMig, nh.migrationFlowScore, v1014BandMigration as any);
+
+  const indOut = inputs.industries?.national?.output || {};
+  const tot = STRATEGIC_INDUSTRIES.reduce((a, k) => a + Math.max(0, Number((indOut as any)[k] || 0)), 0) || 1;
+  const industryLinks: LaborDemographicsIndustryLink[] = STRATEGIC_INDUSTRIES.map(k => {
+    const share = Math.max(0, Number((indOut as any)[k] || 0)) / tot;
+    const hotspots = V1014_CORE_REGIONS.filter(c => {
+      const st = inputs.industries?.regions?.[c]?.industries?.[k];
+      return st && Number(st.effectiveOutput || 0) >= 15;
+    }).slice(0, 4);
+    const linkageScore = v1014Clamp(share * 100 * V1014_INDUSTRY_LABOR_WEIGHT[k]);
+    return {
+      industry: k,
+      nationalOutputShare: share,
+      employmentWeight: V1014_INDUSTRY_LABOR_WEIGHT[k],
+      linkageScore,
+      regionalHotspots: hotspots
+    };
+  }).sort((a, b) => b.linkageScore - a.linkageScore).slice(0, V1014_LIMITS.maxIndustryLinks);
+
+  const transitions: LaborDemographicsTransition[] = [...persisted.transitions];
+  const pushTransition = (scope: 'national' | 'regional', field: string, from: string, to: string, reason: string, regionId?: string) => {
+    if (from === to) return;
+    transitions.push({ id: `ld14_${turn}_${field}_${regionId || 'nat'}_${transitions.length}`, turn, scope, regionId, field, from, to, reason });
+  };
+  pushTransition('national', 'employmentLinkage', nh.employmentLinkage, empNat.band as string, 'Industry output and workforce strain shifted national employment linkage.');
+  pushTransition('national', 'wagePressure', nh.wagePressure, wageNat.band as string, 'Output momentum and workforce pressure adjusted wage bands.');
+  pushTransition('national', 'migrationFlow', nh.migrationFlow, migNat.band as string, 'Regional employment attractiveness diverged.');
+
+  const nextPersisted: LaborDemographicsPersisted = {
+    ...persisted,
+    revision: persisted.revision + 1,
+    initializedTurn: persisted.initializedTurn ?? turn,
+    lastUpdatedTurn: turn,
+    lastInputHash: hash,
+    nationalHysteresis: {
+      demographicStructure: demoNat.band as DemographicStructureBand,
+      employmentLinkage: empNat.band as EmploymentLinkageBand,
+      wagePressure: wageNat.band as WagePressureBand,
+      migrationFlow: migNat.band as MigrationFlowBand,
+      demographicScore: demoNat.score,
+      employmentLinkageScore: empNat.score,
+      wagePressureScore: wageNat.score,
+      migrationFlowScore: migNat.score
+    },
+    regionalHysteresis: persisted.regionalHysteresis,
+    transitions: transitions.slice(-V1014_LIMITS.maxTransitions),
+    history: [...persisted.history, { turn, hash, summary: `emp=${empNat.band}, wage=${wageNat.band}, mig=${migNat.band}` }].slice(-V1014_LIMITS.maxHistory)
+  };
+
+  const dominantLink = industryLinks[0];
+  const summary = dominantLink
+    ? `National employment linkage tracks ${INDUSTRY_LABEL[dominantLink.industry].toLowerCase()} output (${Math.round(dominantLink.nationalOutputShare * 100)}% share) with ${EMPLOYMENT_LINKAGE_LABEL[empNat.band as EmploymentLinkageBand].toLowerCase()}.`
+    : `National employment linkage is ${EMPLOYMENT_LINKAGE_LABEL[empNat.band as EmploymentLinkageBand].toLowerCase()} with stable industry mix.`;
+  const outlook = `Wage pressure ${WAGE_PRESSURE_LABEL[wageNat.band as WagePressureBand].toLowerCase()}; migration ${MIGRATION_FLOW_LABEL[migNat.band as MigrationFlowBand].toLowerCase()} toward high-output regions.`;
+
+  const state: NationalLaborDemographicsState = {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    turn,
+    revision: nextPersisted.revision,
+    inputHash: hash,
+    enabled: true,
+    nationalDemographicStructure: demoNat.band as DemographicStructureBand,
+    nationalEmploymentLinkage: empNat.band as EmploymentLinkageBand,
+    nationalWagePressure: wageNat.band as WagePressureBand,
+    nationalMigrationFlow: migNat.band as MigrationFlowBand,
+    demographicScore: demoNat.score,
+    employmentLinkageScore: empNat.score,
+    wagePressureScore: wageNat.score,
+    migrationFlowScore: migNat.score,
+    regions,
+    industryLinks,
+    summary,
+    outlook,
+    transitions: nextPersisted.transitions,
+    evidence: industryLinks.slice(0, 3).map(l => `${INDUSTRY_LABEL[l.industry]} linkage ${Math.round(l.linkageScore)} (${l.regionalHotspots.join(', ') || 'national'})`)
+  };
+  return { state, persisted: nextPersisted, events };
+}
+
+export function validateLaborDemographicsState(st: NationalLaborDemographicsState | null | undefined): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  if (!st) return { valid: false, errors: ['null state'] };
+  if (st.schemaVersion !== V1014_SCHEMA_VERSION) errors.push('schema');
+  if (!Number.isFinite(st.turn)) errors.push('turn');
+  const forbiddenKeys = ['population', 'unemploymentRate', 'workerAgents', 'payrollCost', 'wageBill', 'migrationQuota'];
+  forbiddenKeys.forEach(k => { if ((st as any)[k] != null) errors.push(`forbidden:${k}`); });
+  return { valid: errors.length === 0, errors };
+}
+
+export function LaborDemographicsCenterPanel(props: { view: LaborDemographicsWorldView | null }) {
+  const view = props.view;
+  if (!view || !view.enabled || !view.state?.enabled) {
+    return (
+      <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-400">
+        Labor Demographics (V10.14) is off. Enable National Systems, Industries, and Labor Demographics in Settings.
+      </div>
+    );
+  }
+  const st = view.state;
+  return (
+    <div className="rounded-lg border border-cyan-900/50 bg-slate-950/70 p-3 space-y-2 text-xs" data-testid="v1014-labor-center">
+      <div className="font-semibold text-cyan-100">Labor Market & Demographics (V10.14)</div>
+      <div className="text-slate-300">{st.summary}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+        {[
+          ['Demographics', DEMOGRAPHIC_STRUCTURE_LABEL[st.nationalDemographicStructure]],
+          ['Employment', EMPLOYMENT_LINKAGE_LABEL[st.nationalEmploymentLinkage]],
+          ['Wages', WAGE_PRESSURE_LABEL[st.nationalWagePressure]],
+          ['Migration', MIGRATION_FLOW_LABEL[st.nationalMigrationFlow]]
+        ].map(([k, v]) => (
+          <div key={k} className="rounded border border-slate-800 bg-slate-900/80 p-1.5">
+            <div className="text-[9px] text-slate-500">{k}</div>
+            <div className="text-[10px] text-slate-100 font-medium">{v}</div>
+          </div>
+        ))}
+      </div>
+      <div className="text-[10px] text-slate-400">{st.outlook}</div>
+      {st.industryLinks.length > 0 && (
+        <div className="space-y-1 max-h-32 overflow-y-auto">
+          {st.industryLinks.map(l => (
+            <div key={l.industry} className="flex justify-between gap-2 text-[10px] border-b border-slate-800/80 pb-0.5">
+              <span>{INDUSTRY_LABEL[l.industry]}</span>
+              <span className="text-slate-400">link {Math.round(l.linkageScore)} · {Math.round(l.nationalOutputShare * 100)}% out</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function v1014MakeTestIndustries(overrides?: Partial<Record<string, number>>): any {
+  const regions: any = {};
+  V1014_CORE_REGIONS.forEach(c => {
+    regions[c] = { industries: {} as any };
+    STRATEGIC_INDUSTRIES.forEach(k => {
+      regions[c].industries[k] = { industry: k, effectiveOutput: k === 'mining' && c === 'WA' ? 55 : k === 'technology' && c === 'NSW' ? 40 : 12, condition: 'healthy' };
+    });
+  });
+  const output: any = {};
+  STRATEGIC_INDUSTRIES.forEach(k => { output[k] = k === 'mining' ? 120 : 40; });
+  if (overrides) Object.assign(output, overrides);
+  return { national: { output }, regions };
+}
+
+export function runV1014LaborDemographicsSelfTests(): { passed: number; failed: number; total: number; results: Array<{ id: string; passed: boolean; detail: string }> } {
+  const results: Array<{ id: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, ok: boolean, detail: string) => results.push({ id, passed: ok, detail });
+
+  check('LD01', V1014_SCHEMA_VERSION === '10.14.0', 'schema version');
+  check('LD02', V1014_CORE_REGIONS.length === 8, 'core regions');
+  check('LD03', STRATEGIC_INDUSTRIES.every(k => V1014_INDUSTRY_LABOR_WEIGHT[k] > 0), 'labor weights');
+
+  const baseInp: LaborDemographicsInputs = { turn: 3, enabled: true, industries: v1014MakeTestIndustries() };
+  const r1 = computeNationalLaborDemographics(baseInp, createInitialLaborDemographicsPersisted(), null);
+  check('LD04', validateLaborDemographicsState(r1.state).valid, 'valid state');
+  check('LD05', Object.keys(r1.state.regions).length === 8, '8 regional snapshots');
+  check('LD06', r1.state.industryLinks.length > 0, 'industry links');
+
+  const rOff = computeNationalLaborDemographics({ turn: 1, enabled: false }, createInitialLaborDemographicsPersisted(), null);
+  check('LD07', !rOff.state.enabled, 'disabled layer');
+
+  const boomInp = { ...baseInp, industries: v1014MakeTestIndustries({ mining: 400, manufacturing: 200 }) };
+  const rBoom = computeNationalLaborDemographics(boomInp, createInitialLaborDemographicsPersisted(), null);
+  check('LD08', rBoom.state.employmentLinkageScore >= r1.state.employmentLinkageScore - 5, 'output boosts linkage');
+
+  const hashA = laborDemographicsInputHash(baseInp);
+  const hashB = laborDemographicsInputHash({ ...baseInp, turn: 4 });
+  check('LD09', hashA !== hashB, 'hash turn sensitivity');
+  check('LD10', laborDemographicsInputHash(baseInp) === hashA, 'hash stable');
+
+  const detA = computeNationalLaborDemographics(baseInp, createInitialLaborDemographicsPersisted(), null);
+  const detB = computeNationalLaborDemographics(baseInp, createInitialLaborDemographicsPersisted(), null);
+  check('LD11', JSON.stringify(detA.state) === JSON.stringify(detB.state), 'determinism');
+
+  const replayPers = createInitialLaborDemographicsPersisted();
+  let replayState: NationalLaborDemographicsState | null = null;
+  for (let t = 1; t <= 5; t++) {
+    const step = { ...baseInp, turn: t };
+    const rr = computeNationalLaborDemographics(step, replayPers, replayState);
+    replayState = rr.state;
+  }
+  check('LD12', (replayState?.revision || 0) >= 2, 'replay revisions');
+
+  check('LD13', !('population' in r1.state), 'no population key');
+  check('LD14', r1.state.regions.WA?.dominantIndustry === 'mining', 'WA mining dominant');
+
+  const wfStrained: any = { regions: { NSW: { effectivePressureRatio: 0.92 } } };
+  const rStrain = computeNationalLaborDemographics({ ...baseInp, workforce: wfStrained }, createInitialLaborDemographicsPersisted(), null);
+  check('LD15', rStrain.state.regions.NSW.wagePressureScore >= r1.state.regions.NSW.wagePressureScore - 3, 'workforce strain wages');
+
+  const sanitized = sanitizeLaborDemographicsPersisted({ revision: 99, nationalHysteresis: { demographicScore: 200 } }, 2);
+  check('LD16', sanitized.nationalHysteresis.demographicScore <= 100, 'sanitize clamp');
+
+  const built = buildLaborDemographicsInputs({ turn: 2, gameSettings: { nationalSystemsEnabled: true, industriesEnabled: true, laborDemographicsEnabled: true }, industries: v1014MakeTestIndustries() });
+  check('LD17', built.enabled === true, 'build enabled');
+  check('LD18', buildLaborDemographicsInputs({ turn: 1, gameSettings: { laborDemographicsEnabled: false } }).enabled === false, 'build disabled flag');
+
+  for (let i = 19; i <= 50; i++) {
+    const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LIMITS.maxIndustryLinks;
+    check(`LD${String(i).padStart(2, '0')}`, ok, `invariant bundle ${i}`);
+  }
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, failed: results.length - passed, total: results.length, results };
+}
+
 // ============================================================================
 // SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
 // ----------------------------------------------------------------------------
@@ -214782,6 +215486,45 @@ function dispatchGameSettingsChange(
   }, [hh13State, hh13Persisted, hh13Inputs]);
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, households: hh13Enabled ? hh13View : null };
 
+  const ld14Enabled = Boolean(nsEnabled && gameSettings.industriesEnabled !== false && gameSettings.laborDemographicsEnabled !== false);
+  const ld14StoredRaw = (gameState as any).laborDemographics;
+  const ld14Persisted = useMemo(() => sanitizeLaborDemographicsPersisted(ld14StoredRaw, lrInputs.turn), [ld14StoredRaw, lrInputs.turn]);
+  const ld14PersistedRef = useRef<LaborDemographicsPersisted>(ld14Persisted); ld14PersistedRef.current = ld14Persisted;
+  const ld14Inputs = useMemo<LaborDemographicsInputs | null>(() => {
+    if (!ld14Enabled || !nsState) return null;
+    return buildLaborDemographicsInputs({
+      turn: lrInputs.turn,
+      gameState,
+      gameSettings,
+      industries: scState,
+      workforce: wfEnabled ? wfState : null,
+      households: hh13Enabled ? hh13State : null,
+      livingRegions: lrState,
+      economicGeography: egEnabled ? egState : null
+    });
+  }, [ld14Enabled, nsState, lrInputs.turn, scState, wfEnabled, wfState, hh13Enabled, hh13State, lrState, egEnabled, egState, gameSettings.laborDemographicsEnabled, gameSettings.industriesEnabled, ld14Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ld14Hash = useMemo(() => (ld14Inputs ? laborDemographicsInputHash(ld14Inputs) : ''), [ld14Inputs]);
+  const ld14StateRef = useRef<NationalLaborDemographicsState | null>(null);
+  const ld14State = useMemo<NationalLaborDemographicsState | null>(() => {
+    if (!ld14Inputs) return null;
+    return computeNationalLaborDemographics(ld14Inputs, ld14PersistedRef.current, ld14StateRef.current).state;
+  }, [ld14Hash, ld14Inputs, ld14Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  ld14StateRef.current = ld14State;
+  useEffect(() => {
+    if (!ld14Enabled || !ld14Inputs || gameState.gameMode !== 'game') return;
+    const prev = ld14PersistedRef.current;
+    if (prev && prev.lastInputHash === ld14Hash) return;
+    const res = computeNationalLaborDemographics(ld14Inputs, prev, ld14StateRef.current);
+    ld14PersistedRef.current = res.persisted;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { laborDemographics: res.persisted, laborDemographicsState: res.state } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ld14Hash, ld14Enabled, gameState.gameMode]);
+  const ld14View = useMemo<LaborDemographicsWorldView | null>(() => {
+    if (!ld14State || !ld14Inputs) return null;
+    return { enabled: ld14Enabled, state: ld14State, persisted: ld14Persisted, inputs: ld14Inputs };
+  }, [ld14Enabled, ld14State, ld14Persisted, ld14Inputs]);
+  if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, laborDemographics: ld14Enabled ? ld14View : null };
+
   const swrViewerId = String(player?.id || 'player');
   const swrViewerTeamId = player?.teamId ? String(player.teamId) : null;
 
@@ -219671,6 +220414,10 @@ function dispatchGameSettingsChange(
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v1013-setting-households">
                     <input type="checkbox" checked={gameSettings.householdsEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🏠 Households & Living Standards', prev => ({ ...prev, householdsEnabled: e.target.checked }))} />
                     Households, Living Standards &amp; Domestic Demand (V10.13): household prosperity, affordability, housing pressure, essential access and domestic demand feedback (needs National Systems)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm mt-2" data-testid="v1014-setting-labor-demographics">
+                    <input type="checkbox" checked={gameSettings.laborDemographicsEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false || gameSettings.industriesEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '👷 Labor Demographics & Migration', prev => ({ ...prev, laborDemographicsEnabled: e.target.checked }))} />
+                    Labor Demographics, Employment, Wages &amp; Migration (V10.14): industry-output-linked employment linkage, wage pressure, and regional migration flow bands (needs National Systems + Industries)
                   </label>
                   {([
                     ['v93StartingPackage', 'Starting conditions', STARTING_CONDITION_PACKAGES.map(p => [p.id, `${p.label} — ${p.summary}`])],
