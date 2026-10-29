@@ -18,12 +18,12 @@ describe('Tranche 21 scale-wave-dry-run-gate lattice catalog', () => {
   it('adds 320 scale-wave-dry-run-gate lattice chains', () => {
     assert.equal(OP10M_AGENT05_CATALOG_TRANCHE21_STATS.chainCount, 320);
     assert.equal(OP10M_AGENT05_CATALOG_STATS.tranche21Chains, 320);
-    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 13000);
+    assert.equal(OP10M_AGENT05_CHAIN_CATALOG.length, 13320);
   });
 
   it('uses op10m_t21 ids without colliding', () => {
     const ids = new Set(OP10M_AGENT05_CHAIN_CATALOG.map((c) => c.chainId));
-    assert.equal(ids.size, 13000);
+    assert.equal(ids.size, 13320);
     for (const c of OP10M_AGENT05_CHAIN_CATALOG_TRANCHE21) {
       assert.match(c.chainId, /^op10m_t21_/);
     }
