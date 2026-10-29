@@ -7500,6 +7500,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityCharterGate,
   matchExplainabilityCharterAllowed,
 } from '../match-explainability-charter-gate.ts';
+  buildMatchExplainabilityCharterBundle,
+  matchExplainabilityCharterReady,
+} from '../match-explainability-charter-bundle.ts';
+  buildSessionCharterExportBundle,
+  sessionCharterExportShipped,
+} from '../session-charter-export-bundle.ts';
+  buildCharterRecoveryOrchestrator,
+  charterRecoveryOrchestratorWithinCap,
+} from '../charter-recovery-orchestrator.ts';
+  auditMatchExplainabilityPactGate,
+  matchExplainabilityPactAllowed,
+} from '../match-explainability-pact-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -11309,6 +11321,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityCharterAllowed(report) && !report.covenantReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r27_charter_ready',
+        'Charter bundle ready when charter gate and covenant export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityCharterBundle([pack], params);
+          return matchExplainabilityCharterReady(bundle) && bundle.charterAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r27_charter_held',
+        'Charter bundle pending when charter gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 29, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityCharterBundle([pack], {
+            memory: null,
+            currentTurn: 29,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityCharterReady(bundle) && !bundle.charterAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r27_charter_recovery',
+        'Charter recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 13, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 13, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildCharterRecoveryOrchestrator([pack], params);
+          return report.charterBlocked && charterRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r27_covenant_charter_bridge',
+        'Covenant charter bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditCovenantCharterBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return covenantCharterBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r27_charter_export',
+        'Charter export shipped when charter ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionCharterExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionCharterExportShipped(bundle) && bundle.charterSchema === 'agent19.charter.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r27_pact_gate_ok',
+        'Pact gate allowed on healthy charter stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityPactGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityPactAllowed(report) && report.charterExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r27_pact_gate_block',
+        'Pact gate denied when charter pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 30, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityPactGate([pack], {
+            memory: null,
+            currentTurn: 30,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityPactAllowed(report) && !report.charterReady || JSON.stringify(report);
         },
       ],
     ]),
