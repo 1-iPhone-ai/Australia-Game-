@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: dc56d2952453a2b9
+// content-sha256-prefix: 48cbe46c4d9bac8c
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -935,6 +935,10 @@ export interface DayAdvanceUiEvolutionResult {
   nextUnlockRecommendationDayCoachCopy: string | null;
   milestoneApproachingDayCoachCopy: string | null;
   accessibleChromeShellDayCoachCopy: string | null;
+  liveRegionQueueDayCoachCopy: string | null;
+  modalFocusRestoreDayCoachCopy: string | null;
+  layoutDensityMismatchDayCoachCopy: string | null;
+  newlyUnlockedBatchDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -1473,6 +1477,29 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const liveRegionQueueDayCoach = buildLiveRegionQueueDayCoach({
+    plan: liveRegionPlan,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const modalFocusRestoreDayCoach = buildModalFocusRestoreDayCoach({
+    openModalId: context.openModalId,
+    lastNavTarget: persistedAfterCalm.lastNavTarget ?? null,
+    accessibility,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const layoutDensityMismatchDayCoach = buildLayoutDensityMismatchDayCoach({
+    layoutPreset: context.layoutPreset,
+    activeDensity: densityForTouch.tier,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const newlyUnlockedBatchDayCoach = buildNewlyUnlockedBatchDayCoach({
+    newlyUnlockedPanelIds,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -1579,6 +1606,10 @@ export function tickEvolvingUiOnDayAdvance(
     nextUnlockRecommendationDayCoachCopy: nextUnlockRecommendationDayCoach.coachCopy,
     milestoneApproachingDayCoachCopy: milestoneApproachingDayCoach.coachCopy,
     accessibleChromeShellDayCoachCopy: accessibleChromeShellDayCoach.coachCopy,
+    liveRegionQueueDayCoachCopy: liveRegionQueueDayCoach.coachCopy,
+    modalFocusRestoreDayCoachCopy: modalFocusRestoreDayCoach.coachCopy,
+    layoutDensityMismatchDayCoachCopy: layoutDensityMismatchDayCoach.coachCopy,
+    newlyUnlockedBatchDayCoachCopy: newlyUnlockedBatchDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -6218,6 +6249,271 @@ export function buildAccessibleChromeShellDayCoach(input: {
     reducedMotion,
     coachCopy,
   };
+}
+
+// --- source: engine/live-region-queue-day-coach.ts ---
+export interface LiveRegionQueueDayCoach {
+  queuedMessageCount: number;
+  assertiveCount: number;
+  coachCopy: string | null;
+}
+
+export function buildLiveRegionQueueDayCoach(input: {
+  plan: CoachLiveRegionDeliveryPlan;
+  nextGameDay: number;
+}): LiveRegionQueueDayCoach {
+  const base = liveRegionQueueSummaryCopy(input.plan.messages);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return {
+    queuedMessageCount: input.plan.messages.length,
+    assertiveCount: input.plan.assertiveCount,
+    coachCopy,
+  };
+}
+
+// --- source: engine/modal-focus-restore-day-coach.ts ---
+export interface ModalFocusRestoreDayCoach {
+  restoreEnabled: boolean;
+  trapEnabled: boolean;
+  coachCopy: string | null;
+}
+
+export function buildModalFocusRestoreDayCoach(input: {
+  openModalId: string | null | undefined;
+  lastNavTarget: string | null | undefined;
+  accessibility: AccessibilitySettingsSnapshot;
+  nextGameDay: number;
+}): ModalFocusRestoreDayCoach {
+  if (!input.openModalId) {
+    return { restoreEnabled: false, trapEnabled: false, coachCopy: null };
+  }
+  const plan = resolveModalFocusRestorePlan({
+    modalId: input.openModalId,
+    lastNavTarget: input.lastNavTarget,
+    accessibility: input.accessibility,
+  });
+  const coachCopy = `Day ${input.nextGameDay}: ${modalFocusRestoreSkipLabel(plan)}`;
+  return {
+    restoreEnabled: plan.restoreEnabled,
+    trapEnabled: plan.trapEnabled,
+    coachCopy,
+  };
+}
+
+// --- source: engine/layout-density-mismatch-day-coach.ts ---
+export interface LayoutDensityMismatchDayCoach {
+  activeDensity: UiDensityTier;
+  coachCopy: string | null;
+}
+
+export function buildLayoutDensityMismatchDayCoach(input: {
+  layoutPreset: V94LayoutPreset | undefined;
+  activeDensity: UiDensityTier;
+  nextGameDay: number;
+}): LayoutDensityMismatchDayCoach {
+  const base = layoutDensityMismatchCopy(input.layoutPreset, input.activeDensity);
+  const coachCopy = base ? `Day ${input.nextGameDay}: ${base}` : null;
+  return {
+    activeDensity: input.activeDensity,
+    coachCopy,
+  };
+}
+
+// --- source: engine/newly-unlocked-batch-day-coach.ts ---
+export interface NewlyUnlockedBatchDayCoach {
+  unlockCount: number;
+  coachCopy: string | null;
+}
+
+export function buildNewlyUnlockedBatchDayCoach(input: {
+  newlyUnlockedPanelIds: string[];
+  nextGameDay: number;
+}): NewlyUnlockedBatchDayCoach {
+  const unlockCount = input.newlyUnlockedPanelIds.length;
+  if (unlockCount <= 1) {
+    return { unlockCount, coachCopy: null };
+  }
+  const labels = input.newlyUnlockedPanelIds
+    .slice(0, 3)
+    .map(id => EVOLVING_UI_PANEL_BY_ID[id]?.label ?? id)
+    .join(', ');
+  const coachCopy = `Day ${input.nextGameDay}: ${unlockCount} panels unlocked (${labels}${unlockCount > 3 ? '…' : ''}) — scan the nav rail.`;
+  return { unlockCount, coachCopy };
+}
+
+// --- source: engine/round30-self-tests.ts ---
+export function runAgent22Round30SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r30_live_region_queue',
+    'live region queue day coach with messages',
+    (() => {
+      const plan = buildCoachLiveRegionDeliveryPlan(['Unlock map', 'Unlock market'], DEFAULT_ACCESSIBILITY_SNAPSHOT);
+      const coach = buildLiveRegionQueueDayCoach({ plan, nextGameDay: 4 });
+      return coach.queuedMessageCount > 0 && Boolean(coach.coachCopy?.includes('Day 4'));
+    })()
+  );
+
+  check(
+    'r30_modal_restore',
+    'modal focus restore day coach when modal open',
+    (() => {
+      const coach = buildModalFocusRestoreDayCoach({
+        openModalId: 'market_modal',
+        lastNavTarget: 'market',
+        accessibility: DEFAULT_ACCESSIBILITY_SNAPSHOT,
+        nextGameDay: 5,
+      });
+      return coach.restoreEnabled && Boolean(coach.coachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r30_layout_mismatch',
+    'layout density mismatch day coach when preset conflicts',
+    (() => {
+      const coach = buildLayoutDensityMismatchDayCoach({
+        layoutPreset: 'Clean',
+        activeDensity: 'compact',
+        nextGameDay: 3,
+      });
+      return Boolean(coach.coachCopy?.includes('Day 3'));
+    })()
+  );
+
+  check(
+    'r30_unlock_batch',
+    'newly unlocked batch day coach for multi unlock',
+    (() => {
+      const coach = buildNewlyUnlockedBatchDayCoach({
+        newlyUnlockedPanelIds: ['nav_map', 'nav_market', 'nav_workshop'],
+        nextGameDay: 6,
+      });
+      return coach.unlockCount === 3 && Boolean(coach.coachCopy?.includes('Day 6'));
+    })()
+  );
+
+  check(
+    'r30_unlock_batch_single',
+    'newly unlocked batch day coach null for single unlock',
+    (() => {
+      const coach = buildNewlyUnlockedBatchDayCoach({
+        newlyUnlockedPanelIds: ['nav_map'],
+        nextGameDay: 2,
+      });
+      return coach.unlockCount === 1 && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r30_tick_live_region_field',
+    'day advance exposes live region queue day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 10, turnCount: 10, interfaceLevel: 'guided' },
+        { gameDay: 11, turnCount: 11, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.liveRegionQueueDayCoachCopy === 'string' || r.liveRegionQueueDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r30_tick_modal_restore_field',
+    'day advance exposes modal focus restore day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'simple' },
+        { gameDay: 5, turnCount: 5, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        { ...createDefaultEvolvingUiPersistedState(), lastNavTarget: 'map' },
+        { phase: 'human_turn', openModalId: 'map_modal' }
+      );
+      return Boolean(r.modalFocusRestoreDayCoachCopy?.includes('Day 5'));
+    })()
+  );
+
+  check(
+    'r30_tick_layout_mismatch_field',
+    'day advance exposes layout density mismatch day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn', layoutPreset: 'Clean' }
+      );
+      return typeof r.layoutDensityMismatchDayCoachCopy === 'string' || r.layoutDensityMismatchDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r30_tick_batch_field',
+    'day advance exposes newly unlocked batch day coach copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 0, turnCount: 0, interfaceLevel: 'simple' },
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { phase: 'human_turn' }
+      );
+      return typeof r.newlyUnlockedBatchDayCoachCopy === 'string' || r.newlyUnlockedBatchDayCoachCopy === null;
+    })()
+  );
+
+  check(
+    'r30_live_region_empty',
+    'live region queue day coach null when queue empty',
+    (() => {
+      const coach = buildLiveRegionQueueDayCoach({
+        plan: { messages: [], assertiveCount: 0, politeCount: 0 },
+        nextGameDay: 1,
+      });
+      return coach.queuedMessageCount === 0 && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r30_modal_restore_closed',
+    'modal focus restore day coach null without modal',
+    (() => {
+      const coach = buildModalFocusRestoreDayCoach({
+        openModalId: null,
+        lastNavTarget: 'map',
+        accessibility: DEFAULT_ACCESSIBILITY_SNAPSHOT,
+        nextGameDay: 7,
+      });
+      return !coach.restoreEnabled && coach.coachCopy === null;
+    })()
+  );
+
+  check(
+    'r30_layout_match',
+    'layout density mismatch null when aligned',
+    (() => {
+      const coach = buildLayoutDensityMismatchDayCoach({
+        layoutPreset: 'Clean',
+        activeDensity: 'spacious',
+        nextGameDay: 8,
+      });
+      return coach.coachCopy === null;
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
 }
 
 // --- source: engine/round29-self-tests.ts ---
@@ -11819,6 +12115,18 @@ export function SimulationUiEvolutionBridge({
       {result.accessibleChromeShellDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-chrome-shell-day">{result.accessibleChromeShellDayCoachCopy}</div>
       ) : null}
+      {result.liveRegionQueueDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-live-region-queue-day">{result.liveRegionQueueDayCoachCopy}</div>
+      ) : null}
+      {result.modalFocusRestoreDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-modal-restore-day">{result.modalFocusRestoreDayCoachCopy}</div>
+      ) : null}
+      {result.layoutDensityMismatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-layout-mismatch-day">{result.layoutDensityMismatchDayCoachCopy}</div>
+      ) : null}
+      {result.newlyUnlockedBatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-unlock-batch-day">{result.newlyUnlockedBatchDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets
@@ -13869,7 +14177,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.29.0';
+export const AGENT_22_MODULE_VERSION = '1.30.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -14020,6 +14328,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round30 = runAgent22Round30SelfTests();
+  for (const r of round30.results) {
+    check(`agent22_round30_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round29 = runAgent22Round29SelfTests();

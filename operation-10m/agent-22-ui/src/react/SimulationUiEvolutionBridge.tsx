@@ -228,6 +228,18 @@ export function SimulationUiEvolutionBridge({
       {result.accessibleChromeShellDayCoachCopy ? (
         <div data-testid="sim-ui-evolution-chrome-shell-day">{result.accessibleChromeShellDayCoachCopy}</div>
       ) : null}
+      {result.liveRegionQueueDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-live-region-queue-day">{result.liveRegionQueueDayCoachCopy}</div>
+      ) : null}
+      {result.modalFocusRestoreDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-modal-restore-day">{result.modalFocusRestoreDayCoachCopy}</div>
+      ) : null}
+      {result.layoutDensityMismatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-layout-mismatch-day">{result.layoutDensityMismatchDayCoachCopy}</div>
+      ) : null}
+      {result.newlyUnlockedBatchDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-unlock-batch-day">{result.newlyUnlockedBatchDayCoachCopy}</div>
+      ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
           Legacy nav patch coverage {result.legacyNavPatchCoverageCount} targets

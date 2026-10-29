@@ -97,6 +97,10 @@ import { buildContextualQuickActionDayCoach } from '../engine/contextual-quick-a
 import { buildNextUnlockRecommendationDayCoach } from '../engine/next-unlock-recommendation-day-coach.js';
 import { buildMilestoneApproachingDayCoach } from '../engine/milestone-approaching-day-coach.js';
 import { buildAccessibleChromeShellDayCoach } from '../engine/accessible-chrome-shell-day-coach.js';
+import { buildLiveRegionQueueDayCoach } from '../engine/live-region-queue-day-coach.js';
+import { buildModalFocusRestoreDayCoach } from '../engine/modal-focus-restore-day-coach.js';
+import { buildLayoutDensityMismatchDayCoach } from '../engine/layout-density-mismatch-day-coach.js';
+import { buildNewlyUnlockedBatchDayCoach } from '../engine/newly-unlocked-batch-day-coach.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94LayoutPreset } from '../engine/layout-preset-evolution.js';
 import type { SessionUiMemory } from './session-ui-memory.js';
@@ -202,6 +206,10 @@ export interface DayAdvanceUiEvolutionResult {
   nextUnlockRecommendationDayCoachCopy: string | null;
   milestoneApproachingDayCoachCopy: string | null;
   accessibleChromeShellDayCoachCopy: string | null;
+  liveRegionQueueDayCoachCopy: string | null;
+  modalFocusRestoreDayCoachCopy: string | null;
+  layoutDensityMismatchDayCoachCopy: string | null;
+  newlyUnlockedBatchDayCoachCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -740,6 +748,29 @@ export function tickEvolvingUiOnDayAdvance(
     nextGameDay: nextSignals.gameDay,
   });
 
+  const liveRegionQueueDayCoach = buildLiveRegionQueueDayCoach({
+    plan: liveRegionPlan,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const modalFocusRestoreDayCoach = buildModalFocusRestoreDayCoach({
+    openModalId: context.openModalId,
+    lastNavTarget: persistedAfterCalm.lastNavTarget ?? null,
+    accessibility,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const layoutDensityMismatchDayCoach = buildLayoutDensityMismatchDayCoach({
+    layoutPreset: context.layoutPreset,
+    activeDensity: densityForTouch.tier,
+    nextGameDay: nextSignals.gameDay,
+  });
+
+  const newlyUnlockedBatchDayCoach = buildNewlyUnlockedBatchDayCoach({
+    newlyUnlockedPanelIds,
+    nextGameDay: nextSignals.gameDay,
+  });
+
   let phaseShellAttentionCoachCopy: string | null = null;
   let phaseShellVisibilityDayCoachCopy: string | null = null;
   let phaseShellAttentionDayCoachCopy: string | null = null;
@@ -846,6 +877,10 @@ export function tickEvolvingUiOnDayAdvance(
     nextUnlockRecommendationDayCoachCopy: nextUnlockRecommendationDayCoach.coachCopy,
     milestoneApproachingDayCoachCopy: milestoneApproachingDayCoach.coachCopy,
     accessibleChromeShellDayCoachCopy: accessibleChromeShellDayCoach.coachCopy,
+    liveRegionQueueDayCoachCopy: liveRegionQueueDayCoach.coachCopy,
+    modalFocusRestoreDayCoachCopy: modalFocusRestoreDayCoach.coachCopy,
+    layoutDensityMismatchDayCoachCopy: layoutDensityMismatchDayCoach.coachCopy,
+    newlyUnlockedBatchDayCoachCopy: newlyUnlockedBatchDayCoach.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

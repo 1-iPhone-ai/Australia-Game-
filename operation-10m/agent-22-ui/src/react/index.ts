@@ -93,3 +93,7 @@ export { ContextualQuickActionDayCoachStrip } from './ContextualQuickActionDayCo
 export { NextUnlockRecommendationDayCoachStrip } from './NextUnlockRecommendationDayCoachStrip.js';
 export { MilestoneApproachingDayCoachStrip } from './MilestoneApproachingDayCoachStrip.js';
 export { AccessibleChromeShellDayCoachStrip } from './AccessibleChromeShellDayCoachStrip.js';
+export { LiveRegionQueueDayCoachStrip } from './LiveRegionQueueDayCoachStrip.js';
+export { ModalFocusRestoreDayCoachStrip } from './ModalFocusRestoreDayCoachStrip.js';
+export { LayoutDensityMismatchDayCoachStrip } from './LayoutDensityMismatchDayCoachStrip.js';
+export { NewlyUnlockedBatchDayCoachStrip } from './NewlyUnlockedBatchDayCoachStrip.js';
