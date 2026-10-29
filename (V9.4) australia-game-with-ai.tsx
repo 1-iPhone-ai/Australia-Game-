@@ -138485,6 +138485,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'o111_a61', label: 'O111 Visual Design (Agent 61)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111VisualDesignSelfTests() },
   { id: 'nav63', label: 'Intent Navigation (Agent 63)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runIntentNavigationSelfTests() },
   { id: 'v62', label: 'V9.4 Dynamic Evolutionary UI', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV62DynamicEvolutionaryUiSelfTests() },
+  { id: 'o111_a64', label: 'O111 Agent 64 Strategic Dashboard', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111Agent64StrategicDashboardSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
@@ -141568,6 +141569,190 @@ export const NationalConditionsStrip: React.FC<{ state: NationalSystemsState | n
     </section>
   );
 };
+
+
+// ============================================================================
+// SECTION 20G-A64: O111 AGENT 64 — STRATEGIC PLAY DASHBOARD (V10-P1 / V10-P3)
+// ============================================================================
+// One PLAY-facing orchestration panel: national constraints + alignment-backed "why" for the
+// top recommended action. Presentation only — ranking metadata never overrides legality.
+
+export interface StrategicPlayDashboardInputs {
+  nationalEnabled: boolean;
+  national: NationalSystemsState | null;
+  focusRegions: string[];
+  recommended: ContextualActionCandidate | null;
+  constraintLines?: string[];
+}
+
+export interface StrategicPlayDashboardView {
+  visible: boolean;
+  nationalHeadline: string | null;
+  nationalResilience: string | null;
+  topBottleneck: string | null;
+  nationalItems: ReturnType<typeof nationalPlayStrip>;
+  constraintLines: string[];
+  recommendedLabel: string | null;
+  alignmentSnippets: string[];
+}
+
+/** V10-P3: short "why" lines from ranking metadata (score breakdown), never legality claims. */
+export function extractContextualAlignmentSnippets(c: ContextualActionCandidate | null, limit = 3): string[] {
+  if (!c) return [];
+  const fromBreakdown = (c.scoreBreakdown || [])
+    .filter(f => f.points > 0 && !/^Co-Pilot strategic value$/i.test(f.factor))
+    .sort((a, b) => b.points - a.points)
+    .map(f => f.factor)
+    .slice(0, limit);
+  if (fromBreakdown.length) return fromBreakdown;
+  const fallback: string[] = [];
+  if (c.strategyAlignment?.reason) fallback.push(`Strategy: ${c.strategyAlignment.reason}`);
+  if (c.nationalPriorityAlignment?.reason) fallback.push(`National priority: ${c.nationalPriorityAlignment.reason}`);
+  if (c.householdAlignment?.reason) fallback.push(`Households: ${c.householdAlignment.reason}`);
+  if (c.publicFinanceAlignment?.reason) fallback.push(`Fiscal: ${c.publicFinanceAlignment.reason}`);
+  if (c.stateCapacityAlignment?.reason) fallback.push(`Delivery: ${c.stateCapacityAlignment.reason}`);
+  if (c.economicGeographyAlignment?.reason) fallback.push(`Location: ${c.economicGeographyAlignment.reason}`);
+  return fallback.slice(0, limit);
+}
+
+export function buildStrategicPlayDashboardView(input: StrategicPlayDashboardInputs): StrategicPlayDashboardView {
+  const nationalItems = input.nationalEnabled && input.national ? nationalPlayStrip(input.national, input.focusRegions) : [];
+  const topBn = input.national?.bottlenecks?.[0] || null;
+  const topBottleneck = topBn
+    ? `${REGIONS[topBn.regionId || '']?.name || topBn.regionId || 'National'} · ${NATIONAL_NETWORK_LABEL[topBn.network]} (${topBn.severity})`
+    : null;
+  const nationalResilience = input.national ? `${NATIONAL_RESILIENCE_LABEL[input.national.national.resilienceBand]} (${input.national.national.resilienceScore}/100)` : null;
+  const nationalHeadline = input.nationalEnabled && input.national
+    ? (topBottleneck ? `Top constraint: ${topBottleneck}` : `National networks ${nationalResilience || 'stable'}`)
+    : null;
+  const alignmentSnippets = extractContextualAlignmentSnippets(input.recommended);
+  const constraintLines = (input.constraintLines || []).filter(Boolean).slice(0, 4);
+  const visible = Boolean(
+    (input.nationalEnabled && (nationalHeadline || nationalItems.length || constraintLines.length)) ||
+    (input.recommended && alignmentSnippets.length)
+  );
+  return {
+    visible,
+    nationalHeadline,
+    nationalResilience,
+    topBottleneck,
+    nationalItems,
+    constraintLines,
+    recommendedLabel: input.recommended?.label || null,
+    alignmentSnippets
+  };
+}
+
+export interface StrategicPlayDashboardProps {
+  view: StrategicPlayDashboardView;
+  theme: any;
+  onAsk: (q: string) => void;
+  onMap: (n: NationalNetworkKind) => void;
+  onWhyAction: (candidateId: string) => void;
+  recommendedId: string | null;
+}
+
+/** Unified PLAY strategic dashboard (V10-P1 national status + V10-P3 alignment snippets). */
+export const StrategicPlayDashboard: React.FC<StrategicPlayDashboardProps> = ({ view, theme, onAsk, onMap, onWhyAction, recommendedId }) => {
+  if (!view.visible) return null;
+  const label = 'text-[11px] font-bold uppercase tracking-wider opacity-70';
+  return (
+    <section
+      aria-labelledby="o111-a64-dashboard-h"
+      className={`${theme.card} ${theme.border} border rounded-xl px-3 py-3 ${theme.shadow} space-y-2 text-sm`}
+      data-testid="strategic-play-dashboard"
+    >
+      <div className="flex flex-wrap items-center gap-2 justify-between">
+        <h2 id="o111-a64-dashboard-h" className="font-bold text-sm">📊 Strategic dashboard</h2>
+        {view.nationalResilience && <span className="text-[11px] opacity-80" data-testid="a64-national-resilience">Resilience: {view.nationalResilience}</span>}
+      </div>
+      {view.nationalHeadline && (
+        <p className="text-xs" data-testid="a64-national-headline">{view.nationalHeadline}</p>
+      )}
+      {view.nationalItems.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs" data-testid="a64-national-items">
+          {view.nationalItems.map(it => (
+            <button
+              key={it.text}
+              type="button"
+              onClick={() => onMap(it.network)}
+              className={`px-2 py-0.5 rounded border ${it.tone === 'critical' ? 'border-red-500' : it.tone === 'warning' ? 'border-amber-500' : 'border-emerald-500'}`}
+              title="Show on the map"
+            >
+              {NATIONAL_NETWORK_ICON[it.network]} {it.text}
+            </button>
+          ))}
+          <button type="button" className="underline opacity-80" onClick={() => onAsk('Where are the national bottlenecks?')}>Why?</button>
+        </div>
+      )}
+      {view.constraintLines.length > 0 && (
+        <ul className="text-xs space-y-0.5 opacity-90" data-testid="a64-constraints">
+          {view.constraintLines.map(line => <li key={line}>• {line}</li>)}
+        </ul>
+      )}
+      {view.recommendedLabel && view.alignmentSnippets.length > 0 && (
+        <div className="rounded-lg border border-sky-500/40 px-2 py-2 text-xs" data-testid="a64-recommendation-insights">
+          <div className={label}>Why {view.recommendedLabel} fits now</div>
+          <ul className="mt-1 space-y-0.5">
+            {view.alignmentSnippets.map(s => <li key={s}>✓ {s}</li>)}
+          </ul>
+          {recommendedId && (
+            <button type="button" className="underline mt-1 opacity-90" onClick={() => onWhyAction(recommendedId)}>Full explanation</button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+};
+
+export const StrategicPlayDashboardInspector: React.FC<{ view: StrategicPlayDashboardView; theme: any }> = ({ view, theme }) => (
+  <section aria-labelledby="a64-lab-h" className={`${theme.card} ${theme.border} border rounded-xl p-4 ${theme.shadow} mt-4 text-xs`} data-testid="a64-dashboard-inspector">
+    <h3 id="a64-lab-h" className="font-bold text-sm">📊 Strategic PLAY Dashboard (Agent 64)</h3>
+    <div className="opacity-80 mt-1">{view.visible ? 'Would render in PLAY' : 'Hidden (no national / alignment content)'}</div>
+    <pre className="mt-2 max-h-40 overflow-auto font-mono text-[10px]">{JSON.stringify(view, null, 2)}</pre>
+  </section>
+);
+
+export function runO111Agent64StrategicDashboardSelfTests(): V9SelfTestResult[] {
+  const J = (x: unknown) => JSON.stringify(x);
+  const check = (id: string, label: string, fn: () => boolean | string) => {
+    try {
+      const r = fn();
+      return { id, name: label, passed: r === true, detail: r === true ? 'ok' : String(r) };
+    } catch (e: any) {
+      return { id, name: label, passed: false, detail: String(e?.message || e) };
+    }
+  };
+  const mockCand: ContextualActionCandidate = {
+    id: 'x', actionType: 'buy', label: 'Buy Port', description: '', category: 'trade', icon: '🏗', navigation: null, execution: null,
+    legal: true, blockReason: null, relevance: 90, urgency: 'normal', benefit: null, risk: null, costEstimate: 1000, apCost: 1,
+    objectiveRelation: null, reasons: [], evidence: [], sourceSystem: 'test', confidence: 0.8, requiresConfirmation: false,
+    scoreBreakdown: [
+      { factor: 'Co-Pilot strategic value', points: 40 },
+      { factor: 'National priority: unlocks freight corridor', points: 12 },
+      { factor: 'Strategy fit (phase 2): advances export plan', points: 18 }
+    ]
+  };
+  return [
+    check('a64_align_snippets', 'Alignment snippets skip generic Co-Pilot factor', () => {
+      const s = extractContextualAlignmentSnippets(mockCand);
+      return s.length === 2 && !s.some(x => x.includes('Co-Pilot strategic')) || J(s);
+    }),
+    check('a64_view_national', 'Dashboard view surfaces national headline when bottleneck present', () => {
+      const ns = computeNationalSystems(createNationalSystemsFixtureInputs({ modifiers: { VIC: { energy: -40 } } }), null, { emit: false }).state;
+      const v = buildStrategicPlayDashboardView({ nationalEnabled: true, national: ns, focusRegions: ['QLD'], recommended: null });
+      return Boolean(v.visible && v.nationalHeadline && v.nationalItems.length) || J(v);
+    }),
+    check('a64_view_alignment', 'Dashboard shows alignment block when recommended action has metadata', () => {
+      const v = buildStrategicPlayDashboardView({ nationalEnabled: false, national: null, focusRegions: [], recommended: mockCand });
+      return v.visible && v.alignmentSnippets.length >= 2 && v.recommendedLabel === 'Buy Port' || J(v);
+    }),
+    check('a64_inert_off', 'Dashboard hidden when national off and no recommendation metadata', () => {
+      const v = buildStrategicPlayDashboardView({ nationalEnabled: false, national: null, focusRegions: [], recommended: null });
+      return v.visible === false || J(v);
+    })
+  ];
+}
 
 /** INTELLIGENCE: national summary, bottlenecks, dependencies, resilience and recent turning points. */
 export const NationalSystemsIntelPanel: React.FC<{ state: NationalSystemsState; theme: any; onAsk: (q: string) => void; onMap: (n: NationalNetworkKind) => void }> = ({ state, theme, onAsk, onMap }) => (
@@ -216893,6 +217078,22 @@ function dispatchGameSettingsChange(
   const v9Cohesion = useMemo(() => resolveV9GameplayCohesion(v9CohesionInputsRef.current), [v9CohesionSig]);
   const v9CohesionRef = useRef<V9Cohesion | null>(null);
   v9CohesionRef.current = v9Cohesion;
+  const a64PlayFocusRegions = useMemo(() => [String(player?.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])].filter(Boolean), [player?.currentRegion, lrFocusRegion]);
+  const a64ConstraintLines = useMemo(() => {
+    const lines: string[] = [];
+    const sr = srEnabled && srState ? systemicPlayLine(srState) : null;
+    if (sr?.text) lines.push(`${sr.title}: ${sr.text}`);
+    const mp = mpEnabled && mpPersisted && mpWorld ? megaprojectPlayLine(mpPersisted, mpWorld, String(player?.id || 'player')) : null;
+    if (mp?.text) lines.push(`Megaproject: ${mp.text}`);
+    return lines;
+  }, [srEnabled, srState, mpEnabled, mpPersisted, mpWorld, player?.id]);
+  const a64DashboardView = useMemo(() => buildStrategicPlayDashboardView({
+    nationalEnabled: nsEnabled,
+    national: nsState,
+    focusRegions: a64PlayFocusRegions,
+    recommended: v9ActionSetView?.recommended || null,
+    constraintLines: a64ConstraintLines
+  }), [nsEnabled, nsState, a64PlayFocusRegions, v9ActionSetView?.recommended, a64ConstraintLines]);
   // After-action feedback for MAJOR player actions: the player's own root event and what the world did next.
   const [v9AfterDismissed, setV9AfterDismissed] = useState<string[]>([]);
   const [v9PlayDetailsOpen, setV9PlayDetailsOpen] = useState(false);
@@ -233294,6 +233495,17 @@ function dispatchGameSettingsChange(
             ringRecommendation={playMomentDisplay.patch.ringRecommendation}
           />
 
+          {nsEnabled && (
+            <StrategicPlayDashboard
+              view={a64DashboardView}
+              theme={themeStyles}
+              onAsk={q => void submitIntelligenceQuery(q)}
+              onMap={nsShowOnMap}
+              onWhyAction={id => v9PlayHandlers.onWhyAction(id)}
+              recommendedId={v9ActionSetView?.recommended?.id || null}
+            />
+          )}
+
           {pf12Enabled && pf12View && <PublicFinancePlayChip view={pf12View} onClick={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
           {capEnabled && capState && <StrategicCapitalPlayCard state={capState} theme={themeStyles} onOpenCenter={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
           {hh13Enabled && hh13State && <HouseholdsPlaySignalBanner state={hh13State} onOpenIntel={() => updateUiState({ experienceLayer: 'intelligence' } as any)} />}
@@ -233305,7 +233517,7 @@ function dispatchGameSettingsChange(
           {mpEnabled && mpPersisted && <MegaprojectPlayLine line={megaprojectPlayLine(mpPersisted, mpWorld, mpViewerId)} theme={themeStyles} onOpen={() => updateUiState({ experienceLayer: 'intelligence' } as any)} onAsk={q => void submitIntelligenceQuery(q)} />}
           {inState && <InfraPlayLine state={inState} focus={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={inShowOnMap} />}
           {scState && <IndustryPlayStrip state={scState} focusRegions={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={scShowOnMap} />}
-          {nsState && <NationalConditionsStrip state={nsState} focusRegions={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={nsShowOnMap} />}
+          {nsState && !a64DashboardView.visible && <NationalConditionsStrip state={nsState} focusRegions={[String(player.currentRegion || ''), ...(lrFocusRegion ? [lrFocusRegion] : [])]} theme={themeStyles} onAsk={q => void submitIntelligenceQuery(q)} onMap={nsShowOnMap} />}
 
           {contentMoment && <ContentMomentCard theme={themeStyles} moment={contentMoment} money={Number(player.money || 0)} h={contentHandlers} canAct={v9HumanCanAct} />}
 
@@ -233700,6 +233912,7 @@ function dispatchGameSettingsChange(
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10 National Systems Inspector">
           <NationalSystemsInspector state={nsState} persisted={nsPersisted} inputs={nsInputs} theme={themeStyles} diag={nsDiagRef.current} enabled={nsEnabled} />
+          <StrategicPlayDashboardInspector view={a64DashboardView} theme={themeStyles} />
         </OptionalSurfaceBoundary>
         <OptionalSurfaceBoundary surface="V10.1 Industries & Supply Chains Inspector">
           <IndustriesInspector state={scState} persisted={scPersisted} theme={themeStyles} diag={scDiagRef.current} enabled={scEnabled} />
