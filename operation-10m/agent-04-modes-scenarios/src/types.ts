@@ -353,6 +353,8 @@ export interface O10mScenarioReplayRow {
 
 export type O10mCircuitPhase = 'warmup' | 'ascent' | 'summit';
 
+export type O10mExpeditionLeg = 'departure' | 'transit' | 'arrival';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -362,6 +364,17 @@ export interface O10mCircuitSession {
   active: boolean;
   momentumScore: number;
   phaseTag: O10mCircuitPhase;
+}
+
+/** Schema v9 — multi-leg expedition with supply accrual between waypoints. */
+export interface O10mExpeditionSession {
+  expeditionId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  supplyScore: number;
+  legTag: O10mExpeditionLeg;
 }
 
 /** Schema v7 — sequential relay with accumulated carry between legs. */
@@ -388,6 +401,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'expedition_step'
     | 'circuit_step'
     | 'relay_step'
     | 'gauntlet_step'
@@ -411,6 +425,10 @@ export interface O10mCampaignPlan {
   circuitCursor: number | null;
   circuitPhase: O10mCircuitPhase | null;
   circuitMomentum: number | null;
+  expeditionId: string | null;
+  expeditionCursor: number | null;
+  expeditionLeg: O10mExpeditionLeg | null;
+  expeditionSupply: number | null;
   reason: string;
 }
 
@@ -450,6 +468,8 @@ export interface O10mModesPersistedState {
   relaySession?: O10mRelaySession | null;
   /** Schema v8 — active summit circuit (mutually exclusive with marathon / gauntlet / relay). */
   circuitSession?: O10mCircuitSession | null;
+  /** Schema v9 — active expedition route (mutually exclusive with circuit / relay / gauntlet / marathon). */
+  expeditionSession?: O10mExpeditionSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

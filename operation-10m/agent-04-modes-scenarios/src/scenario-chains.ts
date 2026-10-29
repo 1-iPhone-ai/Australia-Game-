@@ -314,6 +314,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_expedition_arc',
+    title: 'Expedition Arc',
+    description:
+      'Three-leg expedition with supply accrual between waypoints — round-9 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_expedition_arc',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_expedition_departure_dock',
+        title: 'Departure Dock',
+        narrativeBridge: 'Stage supplies before the transit pass.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 190 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_expedition_transit_pass',
+        title: 'Transit Pass',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NT: 5, QLD: 5 },
+          forcedSettingsPatch: { o10mExpeditionMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_expedition_arrival_haven',
+        title: 'Arrival Haven',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainExpeditionArcComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

@@ -21,8 +21,13 @@ import {
   circuitSessionSummary,
   sanitizeCircuitSession,
 } from './save-format-circuit.js';
+import {
+  getExpeditionScenarioAtCursor,
+  expeditionSessionSummary,
+  sanitizeExpeditionSession,
+} from './save-format-expedition.js';
 import { objectiveProgressCompletionRatio } from './save-format-objective-sync.js';
-import type { O10mCampaignPlan, O10mCircuitPhase, O10mModesPersistedState } from './types.js';
+import type { O10mCampaignPlan, O10mCircuitPhase, O10mExpeditionLeg, O10mModesPersistedState } from './types.js';
 
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -37,9 +42,31 @@ const emptyQueuePlan = {
   circuitCursor: null as number | null,
   circuitPhase: null as O10mCircuitPhase | null,
   circuitMomentum: null as number | null,
+  expeditionId: null as string | null,
+  expeditionCursor: null as number | null,
+  expeditionLeg: null as O10mExpeditionLeg | null,
+  expeditionSupply: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const expedition = sanitizeExpeditionSession(state.expeditionSession);
+  const expeditionScenario = getExpeditionScenarioAtCursor(expedition);
+  if (expedition && expedition.active && expeditionScenario) {
+    return {
+      kind: 'expedition_step',
+      scenarioId: expeditionScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      expeditionId: expedition.expeditionId,
+      expeditionCursor: expedition.cursor,
+      expeditionLeg: expedition.legTag,
+      expeditionSupply: expedition.supplyScore,
+      reason: `Expedition "${expedition.label}" ${expedition.legTag} waypoint ${expedition.cursor + 1}/${expedition.scenarioIds.length} (supply ${expedition.supplyScore}).`,
+    };
+  }
+
   const circuit = sanitizeCircuitSession(state.circuitSession);
   const circuitScenario = getCircuitScenarioAtCursor(circuit);
   if (circuit && circuit.active && circuitScenario) {
@@ -181,6 +208,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   gauntletActive: boolean;
   relayActive: boolean;
   circuitActive: boolean;
+  expeditionActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -192,6 +220,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const gauntlet = gauntletSessionSummary(state);
   const relay = relaySessionSummary(state);
   const circuit = circuitSessionSummary(state);
+  const expedition = expeditionSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -201,6 +230,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     gauntletActive: gauntlet.active,
     relayActive: relay.active,
     circuitActive: circuit.active,
+    expeditionActive: expedition.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

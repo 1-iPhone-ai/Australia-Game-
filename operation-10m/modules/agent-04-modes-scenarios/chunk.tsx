@@ -357,6 +357,8 @@ export interface O10mScenarioReplayRow {
 
 export type O10mCircuitPhase = 'warmup' | 'ascent' | 'summit';
 
+export type O10mExpeditionLeg = 'departure' | 'transit' | 'arrival';
+
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
   circuitId: string;
@@ -366,6 +368,17 @@ export interface O10mCircuitSession {
   active: boolean;
   momentumScore: number;
   phaseTag: O10mCircuitPhase;
+}
+
+/** Schema v9 — multi-leg expedition with supply accrual between waypoints. */
+export interface O10mExpeditionSession {
+  expeditionId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  supplyScore: number;
+  legTag: O10mExpeditionLeg;
 }
 
 /** Schema v7 — sequential relay with accumulated carry between legs. */
@@ -392,6 +405,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'expedition_step'
     | 'circuit_step'
     | 'relay_step'
     | 'gauntlet_step'
@@ -415,6 +429,10 @@ export interface O10mCampaignPlan {
   circuitCursor: number | null;
   circuitPhase: O10mCircuitPhase | null;
   circuitMomentum: number | null;
+  expeditionId: string | null;
+  expeditionCursor: number | null;
+  expeditionLeg: O10mExpeditionLeg | null;
+  expeditionSupply: number | null;
   reason: string;
 }
 
@@ -454,6 +472,8 @@ export interface O10mModesPersistedState {
   relaySession?: O10mRelaySession | null;
   /** Schema v8 — active summit circuit (mutually exclusive with marathon / gauntlet / relay). */
   circuitSession?: O10mCircuitSession | null;
+  /** Schema v9 — active expedition route (mutually exclusive with circuit / relay / gauntlet / marathon). */
+  expeditionSession?: O10mExpeditionSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -1777,6 +1797,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Circuit finales', 'Momentum ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_expedition_departure_dock',
+    title: 'Expedition Departure Dock',
+    description: 'Open an expedition route with supply staging before the transit pass.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100429,
+    startingMoney: 2100,
+    startingRegions: ['SA', 'VIC'],
+    badgeId: 'badge_o10m_expedition_departure_dock',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100429),
+      o10mExpeditionDepartureDock: true,
+      totalDays: 7,
+    },
+    objectives: [
+      {
+        id: 'o10m_edd_obj_day',
+        label: 'Departure Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Expedition routes', 'Supply pacing', 'Leg departure'],
+  },
+  {
+    id: 'o10m_expedition_transit_pass',
+    title: 'Expedition Transit Pass',
+    description: 'Mid-route transit with accrued supply applied at scenario start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100430,
+    startingMoney: 2600,
+    startingRegions: ['NT', 'QLD'],
+    startingStanding: { NT: 42, QLD: 45 },
+    badgeId: 'badge_o10m_expedition_transit_pass',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100430),
+      regionalStandingEnabled: true,
+      o10mExpeditionTransitPass: true,
+      totalDays: 10,
+    },
+    objectives: [
+      {
+        id: 'o10m_etp_obj_avg',
+        label: 'Transit Threshold',
+        description: 'Average standing of 48',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 48,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Expedition transit', 'Supply carry', 'Leg transitions'],
+  },
+  {
+    id: 'o10m_expedition_arrival_haven',
+    title: 'Expedition Arrival Haven',
+    description: 'Finale expedition waypoint — net worth gate with full supply bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100431,
+    startingMoney: 3000,
+    startingRegions: ['WA', 'TAS'],
+    badgeId: 'badge_o10m_expedition_arrival_haven',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100431),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mExpeditionArrivalHaven: true,
+      totalDays: 13,
+    },
+    objectives: [
+      {
+        id: 'o10m_eah_obj_net',
+        label: 'Arrival Net Worth',
+        description: 'Reach $14,800 net worth',
+        targetType: 'netWorth',
+        targetValue: 14800,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Expedition finales', 'Supply ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -2528,6 +2645,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
         title: 'Summit Push',
         requiresPrimaryVictory: true,
         carryBonusOnComplete: { forcedSettingsPatch: { o10mChainSummitCircuitComplete: true } },
+      },
+    ],
+  },
+  {
+    id: 'o10m_chain_expedition_arc',
+    title: 'Expedition Arc',
+    description:
+      'Three-leg expedition with supply accrual between waypoints — round-9 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_expedition_arc',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_expedition_departure_dock',
+        title: 'Departure Dock',
+        narrativeBridge: 'Stage supplies before the transit pass.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 190 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_expedition_transit_pass',
+        title: 'Transit Pass',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NT: 5, QLD: 5 },
+          forcedSettingsPatch: { o10mExpeditionMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_expedition_arrival_haven',
+        title: 'Arrival Haven',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainExpeditionArcComplete: true } },
       },
     ],
   },
@@ -3357,7 +3508,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 8;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 9;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -3464,6 +3615,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     catalogUnlockTokens: [],
     relaySession: null,
     circuitSession: null,
+    expeditionSession: null,
   };
 }
 
@@ -3491,6 +3643,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       catalogUnlockTokens: merged.catalogUnlockTokens ?? [],
       relaySession: merged.relaySession ?? null,
       circuitSession: merged.circuitSession ?? null,
+      expeditionSession: merged.expeditionSession ?? null,
     };
     return upgraded;
   }
@@ -3542,6 +3695,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     catalogUnlockTokens: sanitizeCatalogUnlockTokens(o.catalogUnlockTokens),
     relaySession: sanitizeRelaySession(o.relaySession),
     circuitSession: sanitizeCircuitSession(o.circuitSession),
+    expeditionSession: sanitizeExpeditionSession(o.expeditionSession),
   };
 }
 
@@ -3604,6 +3758,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Circuit session failed sanitization; planner will ignore it.');
   } else if (circuit && circuit.cursor >= circuit.scenarioIds.length) {
     warnings.push('Circuit cursor out of range; clamp on next sanitize.');
+  }
+
+  const expedition = sanitizeExpeditionSession(state.expeditionSession);
+  if (state.expeditionSession && !expedition) {
+    warnings.push('Expedition session failed sanitization; planner will ignore it.');
+  } else if (expedition && expedition.cursor >= expedition.scenarioIds.length) {
+    warnings.push('Expedition cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -3716,6 +3877,8 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'gauntletSession',
   'catalogUnlockTokens',
   'relaySession',
+  'circuitSession',
+  'expeditionSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -4222,6 +4385,7 @@ export function attachMarathonQueueToState(
     gauntletSession: null,
     relaySession: null,
     circuitSession: null,
+    expeditionSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -4339,6 +4503,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceExpeditionSessionAfterRun(next, run);
   next = advanceCircuitSessionAfterRun(next, run);
   next = advanceRelaySessionAfterRun(next, run);
   next = advanceMarathonQueueAfterRun(next, run);
@@ -4471,6 +4636,7 @@ export function attachGauntletSessionToState(
     marathonQueue: null,
     relaySession: null,
     circuitSession: null,
+    expeditionSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -4701,6 +4867,7 @@ export function attachRelaySessionToState(
     marathonQueue: null,
     gauntletSession: null,
     circuitSession: null,
+    expeditionSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -4892,6 +5059,7 @@ export function attachCircuitSessionToState(
   return {
     ...state,
     circuitSession: sanitized,
+    expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
     relaySession: null,
@@ -4987,6 +5155,215 @@ export function circuitSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-expedition.ts ---
+export const O10M_EXPEDITION_SCENARIO_CAP = 6;
+export const O10M_EXPEDITION_SUPPLY_CAP = 720;
+export const O10M_EXPEDITION_SUPPLY_MONEY_CAP = 650;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_LEGS = new Set<O10mExpeditionLeg>(['departure', 'transit', 'arrival']);
+
+export function unlockTokenForExpeditionId(expeditionId: string): string | null {
+  if (!expeditionId.startsWith('o10m_expedition_')) return null;
+  return `o10m_unlock_${expeditionId.slice('o10m_expedition_'.length)}`;
+}
+
+export function expeditionLegForCursor(cursor: number, scenarioCount: number): O10mExpeditionLeg {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'arrival';
+  if (clamped >= Math.floor(total / 2)) return 'transit';
+  return 'departure';
+}
+
+export function expeditionSupplyFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  return Math.min(95, Math.max(12, Math.floor(run.playerNetWorth / 210)));
+}
+
+export function sanitizeExpeditionSession(raw: unknown): O10mExpeditionSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const expeditionId =
+    typeof o.expeditionId === 'string' && o.expeditionId.startsWith('o10m_expedition_')
+      ? o.expeditionId
+      : null;
+  if (!expeditionId) return null;
+  const label = typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : expeditionId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_EXPEDITION_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const supplyScore = Math.min(O10M_EXPEDITION_SUPPLY_CAP, Math.max(0, Math.floor(num(o.supplyScore, 0))));
+  const legRaw = o.legTag;
+  const legTag =
+    typeof legRaw === 'string' && VALID_LEGS.has(legRaw as O10mExpeditionLeg)
+      ? (legRaw as O10mExpeditionLeg)
+      : expeditionLegForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    expeditionId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    supplyScore,
+    legTag,
+  };
+}
+
+export function createExpeditionSession(params: {
+  expeditionId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mExpeditionSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.expeditionId.startsWith('o10m_expedition_')) {
+    return { session: null, warnings: ['Expedition ids must start with o10m_expedition_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_EXPEDITION_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return { session: null, warnings: [...warnings, 'Expedition requires at least one valid scenario.'] };
+  }
+  return {
+    session: {
+      expeditionId: params.expeditionId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      supplyScore: 0,
+      legTag: expeditionLegForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachExpeditionSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mExpeditionSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeExpeditionSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    expeditionSession: sanitized,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearExpeditionSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, expeditionSession: null };
+}
+
+export function getExpeditionScenarioAtCursor(session: O10mExpeditionSession | null | undefined): string | null {
+  const expedition = sanitizeExpeditionSession(session);
+  if (!expedition || !expedition.active) return null;
+  return expedition.scenarioIds[expedition.cursor] ?? null;
+}
+
+export function buildExpeditionScenarioStartOverrides(session: O10mExpeditionSession | null | undefined): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const expedition = sanitizeExpeditionSession(session);
+  if (!expedition) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_EXPEDITION_SUPPLY_MONEY_CAP,
+    Math.floor(expedition.supplyScore * 0.75),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveExpeditionId: expedition.expeditionId,
+      o10mActiveExpeditionStep: expedition.cursor,
+      o10mActiveExpeditionLeg: expedition.legTag,
+      o10mExpeditionSupply: expedition.supplyScore,
+    },
+  };
+}
+
+export function advanceExpeditionSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeExpeditionSession(state.expeditionSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const supplyScore = Math.min(
+    O10M_EXPEDITION_SUPPLY_CAP,
+    session.supplyScore + expeditionSupplyFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      expeditionSession: {
+        ...session,
+        cursor,
+        supplyScore,
+        legTag: expeditionLegForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForExpeditionId(session.expeditionId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    expeditionSession: { ...session, active: false, supplyScore, legTag: 'arrival' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function expeditionSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  supply: number;
+  leg: O10mExpeditionLeg | null;
+} {
+  const session = sanitizeExpeditionSession(state.expeditionSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    supply: session?.supplyScore ?? 0,
+    leg: session?.active ? session.legTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -5001,9 +5378,31 @@ const emptyQueuePlan = {
   circuitCursor: null as number | null,
   circuitPhase: null as O10mCircuitPhase | null,
   circuitMomentum: null as number | null,
+  expeditionId: null as string | null,
+  expeditionCursor: null as number | null,
+  expeditionLeg: null as O10mExpeditionLeg | null,
+  expeditionSupply: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const expedition = sanitizeExpeditionSession(state.expeditionSession);
+  const expeditionScenario = getExpeditionScenarioAtCursor(expedition);
+  if (expedition && expedition.active && expeditionScenario) {
+    return {
+      kind: 'expedition_step',
+      scenarioId: expeditionScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      expeditionId: expedition.expeditionId,
+      expeditionCursor: expedition.cursor,
+      expeditionLeg: expedition.legTag,
+      expeditionSupply: expedition.supplyScore,
+      reason: `Expedition "${expedition.label}" ${expedition.legTag} waypoint ${expedition.cursor + 1}/${expedition.scenarioIds.length} (supply ${expedition.supplyScore}).`,
+    };
+  }
+
   const circuit = sanitizeCircuitSession(state.circuitSession);
   const circuitScenario = getCircuitScenarioAtCursor(circuit);
   if (circuit && circuit.active && circuitScenario) {
@@ -5145,6 +5544,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   gauntletActive: boolean;
   relayActive: boolean;
   circuitActive: boolean;
+  expeditionActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -5156,6 +5556,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const gauntlet = gauntletSessionSummary(state);
   const relay = relaySessionSummary(state);
   const circuit = circuitSessionSummary(state);
+  const expedition = expeditionSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -5165,6 +5566,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     gauntletActive: gauntlet.active,
     relayActive: relay.active,
     circuitActive: circuit.active,
+    expeditionActive: expedition.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -5183,7 +5585,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 9, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 10, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -5243,16 +5645,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const circuitState = circuit ? attachCircuitSessionToState(createEmptyO10mModesPersistedState(), circuit) : null;
   push('agent04_chunk_16', circuitState !== null && planNextCampaignAction(circuitState!).kind === 'circuit_step');
 
+  const expedition = createExpeditionSession({
+    expeditionId: 'o10m_expedition_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_expedition_departure_dock'],
+  }).session;
+  const expeditionState = expedition ? attachExpeditionSessionToState(createEmptyO10mModesPersistedState(), expedition) : null;
+  push('agent04_chunk_17', expeditionState !== null && planNextCampaignAction(expeditionState!).kind === 'expedition_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v9',
+  schemaVersion: 'op10m-agent04-v10',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 8,
+  saveSchemaVersion: 9,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

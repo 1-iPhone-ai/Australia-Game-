@@ -1,5 +1,6 @@
 import { advanceGauntletSessionAfterRun } from './save-format-gauntlet.js';
 import { advanceCircuitSessionAfterRun } from './save-format-circuit.js';
+import { advanceExpeditionSessionAfterRun } from './save-format-expedition.js';
 import { advanceRelaySessionAfterRun } from './save-format-relay.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
 import type {
@@ -107,6 +108,7 @@ export function attachMarathonQueueToState(
     gauntletSession: null,
     relaySession: null,
     circuitSession: null,
+    expeditionSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -224,6 +226,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceExpeditionSessionAfterRun(next, run);
   next = advanceCircuitSessionAfterRun(next, run);
   next = advanceRelaySessionAfterRun(next, run);
   next = advanceMarathonQueueAfterRun(next, run);

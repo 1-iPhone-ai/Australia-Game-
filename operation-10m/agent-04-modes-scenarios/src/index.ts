@@ -19,4 +19,5 @@ export * from './save-format-marathon.js';
 export * from './save-format-gauntlet.js';
 export * from './save-format-relay.js';
 export * from './save-format-circuit.js';
+export * from './save-format-expedition.js';
 export * from './scenario-campaign-planner.js';

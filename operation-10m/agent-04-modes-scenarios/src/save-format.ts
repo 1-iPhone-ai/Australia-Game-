@@ -8,6 +8,7 @@ import { sanitizeMarathonQueue, sanitizeReplayLedger } from './save-format-marat
 import { sanitizeCatalogUnlockTokens, sanitizeGauntletSession } from './save-format-gauntlet.js';
 import { sanitizeRelaySession } from './save-format-relay.js';
 import { sanitizeCircuitSession } from './save-format-circuit.js';
+import { sanitizeExpeditionSession } from './save-format-expedition.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -26,7 +27,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 8;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 9;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -133,6 +134,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     catalogUnlockTokens: [],
     relaySession: null,
     circuitSession: null,
+    expeditionSession: null,
   };
 }
 
@@ -160,6 +162,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       catalogUnlockTokens: merged.catalogUnlockTokens ?? [],
       relaySession: merged.relaySession ?? null,
       circuitSession: merged.circuitSession ?? null,
+      expeditionSession: merged.expeditionSession ?? null,
     };
     return upgraded;
   }
@@ -211,6 +214,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     catalogUnlockTokens: sanitizeCatalogUnlockTokens(o.catalogUnlockTokens),
     relaySession: sanitizeRelaySession(o.relaySession),
     circuitSession: sanitizeCircuitSession(o.circuitSession),
+    expeditionSession: sanitizeExpeditionSession(o.expeditionSession),
   };
 }
 
@@ -273,6 +277,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Circuit session failed sanitization; planner will ignore it.');
   } else if (circuit && circuit.cursor >= circuit.scenarioIds.length) {
     warnings.push('Circuit cursor out of range; clamp on next sanitize.');
+  }
+
+  const expedition = sanitizeExpeditionSession(state.expeditionSession);
+  if (state.expeditionSession && !expedition) {
+    warnings.push('Expedition session failed sanitization; planner will ignore it.');
+  } else if (expedition && expedition.cursor >= expedition.scenarioIds.length) {
+    warnings.push('Expedition cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
