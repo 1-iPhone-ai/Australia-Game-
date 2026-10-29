@@ -52,6 +52,11 @@ import {
   sanitizeEscortSession,
 } from './save-format-escort.js';
 import {
+  getExtractionScenarioAtCursor,
+  extractionSessionSummary,
+  sanitizeExtractionSession,
+} from './save-format-extraction.js';
+import {
   getSiegeScenarioAtCursor,
   siegeSessionSummary,
   sanitizeSiegeSession,
@@ -71,6 +76,7 @@ import type {
   O10mPilgrimageStage,
   O10mConvoyStage,
   O10mEscortPhase,
+  O10mExtractionPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -121,9 +127,31 @@ const emptyQueuePlan = {
   escortCursor: null as number | null,
   escortPhase: null as O10mEscortPhase | null,
   escortTrust: null as number | null,
+  extractionId: null as string | null,
+  extractionCursor: null as number | null,
+  extractionPhase: null as O10mExtractionPhase | null,
+  extractionAssets: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const extraction = sanitizeExtractionSession(state.extractionSession);
+  const extractionScenario = getExtractionScenarioAtCursor(extraction);
+  if (extraction && extraction.active && extractionScenario) {
+    return {
+      kind: 'extraction_step',
+      scenarioId: extractionScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      extractionId: extraction.extractionId,
+      extractionCursor: extraction.cursor,
+      extractionPhase: extraction.phaseTag,
+      extractionAssets: extraction.assetScore,
+      reason: `Extraction "${extraction.label}" ${extraction.phaseTag} phase ${extraction.cursor + 1}/${extraction.scenarioIds.length} (assets ${extraction.assetScore}).`,
+    };
+  }
+
   const escort = sanitizeEscortSession(state.escortSession);
   const escortScenario = getEscortScenarioAtCursor(escort);
   if (escort && escort.active && escortScenario) {
@@ -417,6 +445,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   siegeActive: boolean;
   convoyActive: boolean;
   escortActive: boolean;
+  extractionActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -436,6 +465,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const siege = siegeSessionSummary(state);
   const convoy = convoySessionSummary(state);
   const escort = escortSessionSummary(state);
+  const extraction = extractionSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -453,6 +483,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     siegeActive: siege.active,
     convoyActive: convoy.active,
     escortActive: escort.active,
+    extractionActive: extraction.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

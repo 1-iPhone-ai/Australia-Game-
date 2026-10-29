@@ -41,6 +41,7 @@ const SOURCE_FILES = [
   'operation-10m/agent-04-modes-scenarios/src/save-format-siege.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-convoy.ts',
   'operation-10m/agent-04-modes-scenarios/src/save-format-escort.ts',
+  'operation-10m/agent-04-modes-scenarios/src/save-format-extraction.ts',
   'operation-10m/agent-04-modes-scenarios/src/scenario-campaign-planner.ts',
 ];
 
@@ -76,7 +77,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 17, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 18, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -200,16 +201,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const escortState = escort ? attachEscortSessionToState(createEmptyO10mModesPersistedState(), escort) : null;
   push('agent04_chunk_24', escortState !== null && planNextCampaignAction(escortState!).kind === 'escort_step');
 
+  const extraction = createExtractionSession({
+    extractionId: 'o10m_extraction_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_extraction_intel_brief'],
+  }).session;
+  const extractionState = extraction ? attachExtractionSessionToState(createEmptyO10mModesPersistedState(), extraction) : null;
+  push('agent04_chunk_25', extractionState !== null && planNextCampaignAction(extractionState!).kind === 'extraction_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: '${MODULE_ID}',
-  schemaVersion: 'op10m-agent04-v17',
+  schemaVersion: 'op10m-agent04-v18',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 16,
+  saveSchemaVersion: 17,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;
@@ -250,9 +259,9 @@ const manifest = {
   touchesSaveFormat: true,
   proposedGameStateFields: ['o10mModesProgress'],
   saveFormat: {
-    schemaVersion: 16,
+    schemaVersion: 17,
     gameStateKey: 'o10mModesProgress',
-    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind', 'objectiveProgress', 'campaignSlots', 'challengeStreak', 'marathonQueue', 'replayLedger', 'gauntletSession', 'catalogUnlockTokens', 'relaySession', 'circuitSession', 'expeditionSession', 'odysseySession', 'pilgrimageSession', 'caravanSession', 'voyageSession', 'siegeSession', 'convoySession', 'escortSession'],
+    nestedFields: ['chainProgress', 'milestones', 'challengeModeIds', 'sandboxProfileId', 'recentRuns', 'integrityFingerprint', 'saveKind', 'objectiveProgress', 'campaignSlots', 'challengeStreak', 'marathonQueue', 'replayLedger', 'gauntletSession', 'catalogUnlockTokens', 'relaySession', 'circuitSession', 'expeditionSession', 'odysseySession', 'pilgrimageSession', 'caravanSession', 'voyageSession', 'siegeSession', 'convoySession', 'escortSession', 'extractionSession'],
   },
   contentSha256: hash,
   chunkPath: 'operation-10m/modules/agent-04-modes-scenarios/chunk.tsx',

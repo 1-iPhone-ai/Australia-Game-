@@ -122,6 +122,7 @@ export function attachCaravanSessionToState(
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+  extractionSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,

@@ -142,6 +142,7 @@ export function attachRelaySessionToState(
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+  extractionSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };

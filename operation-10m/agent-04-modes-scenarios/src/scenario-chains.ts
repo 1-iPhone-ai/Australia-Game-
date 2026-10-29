@@ -586,6 +586,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_extraction_route',
+    title: 'Extraction Route',
+    description:
+      'Three-phase asset extraction with asset accrual between legs — round-17 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_extraction_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_extraction_intel_brief',
+        title: 'Intel Brief',
+        narrativeBridge: 'Secure assets before the rescue run.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 270 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_extraction_rescue_site',
+        title: 'Rescue Site',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mExtractionMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_extraction_exfil_finale',
+        title: 'Exfil Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainExtractionRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

@@ -372,6 +372,7 @@ export type O10mSiegePhase = 'mustering' | 'breach' | 'relief';
 export type O10mConvoyStage = 'staging' | 'transit' | 'delivery';
 
 export type O10mEscortPhase = 'briefing' | 'corridor' | 'handoff';
+export type O10mExtractionPhase = 'intel' | 'rescue' | 'exfil';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -472,6 +473,17 @@ export interface O10mEscortSession {
   phaseTag: O10mEscortPhase;
 }
 
+/** Schema v17 — asset extraction op with asset accrual between phases. */
+export interface O10mExtractionSession {
+  extractionId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  assetScore: number;
+  phaseTag: O10mExtractionPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -496,6 +508,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'extraction_step'
     | 'escort_step'
     | 'convoy_step'
     | 'siege_step'
@@ -559,6 +572,10 @@ export interface O10mCampaignPlan {
   escortCursor: number | null;
   escortPhase: O10mEscortPhase | null;
   escortTrust: number | null;
+  extractionId: string | null;
+  extractionCursor: number | null;
+  extractionPhase: O10mExtractionPhase | null;
+  extractionAssets: number | null;
   reason: string;
 }
 
@@ -614,6 +631,8 @@ export interface O10mModesPersistedState {
   convoySession?: O10mConvoySession | null;
   /** Schema v16 — active VIP escort (mutually exclusive with convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   escortSession?: O10mEscortSession | null;
+  /** Schema v17 — active extraction op (mutually exclusive with escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  extractionSession?: O10mExtractionSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -2713,6 +2732,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Escort finales', 'Trust ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_extraction_intel_brief',
+    title: 'Extraction Intel Brief',
+    description: 'Plan an asset extraction with low-pressure asset pacing before the rescue leg.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100460,
+    startingMoney: 2650,
+    startingRegions: ['ACT', 'NSW'],
+    badgeId: 'badge_o10m_extraction_intel_brief',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100460),
+      o10mExtractionIntelBrief: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_eib_obj_day',
+        label: 'Intel Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Extraction ops', 'Asset pacing', 'Intel phase'],
+  },
+  {
+    id: 'o10m_extraction_rescue_site',
+    title: 'Extraction Rescue Site',
+    description: 'Mid-extraction rescue with accrued asset bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100461,
+    startingMoney: 3200,
+    startingRegions: ['VIC', 'SA'],
+    startingStanding: { VIC: 50, SA: 48 },
+    badgeId: 'badge_o10m_extraction_rescue_site',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100461),
+      regionalStandingEnabled: true,
+      o10mExtractionRescueSite: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_ers_obj_avg',
+        label: 'Rescue Threshold',
+        description: 'Average standing of 56',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 56,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Rescue site', 'Asset carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_extraction_exfil_finale',
+    title: 'Extraction Exfil Finale',
+    description: 'Finale exfil stage — net worth gate with full asset bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100462,
+    startingMoney: 3650,
+    startingRegions: ['QLD', 'WA', 'NT'],
+    badgeId: 'badge_o10m_extraction_exfil_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100462),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mExtractionExfilFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_eef_obj_net',
+        label: 'Exfil Net Worth',
+        description: 'Reach $16,600 net worth',
+        targetType: 'netWorth',
+        targetValue: 16600,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Extraction finales', 'Asset ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -3739,6 +3855,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_extraction_route',
+    title: 'Extraction Route',
+    description:
+      'Three-phase asset extraction with asset accrual between legs — round-17 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_extraction_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_extraction_intel_brief',
+        title: 'Intel Brief',
+        narrativeBridge: 'Secure assets before the rescue run.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 270 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_extraction_rescue_site',
+        title: 'Rescue Site',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mExtractionMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_extraction_exfil_finale',
+        title: 'Exfil Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainExtractionRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -4565,7 +4715,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 16;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 17;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -4680,6 +4830,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+    extractionSession: null,
   };
 }
 
@@ -4715,6 +4866,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       siegeSession: merged.siegeSession ?? null,
       convoySession: merged.convoySession ?? null,
       escortSession: merged.escortSession ?? null,
+      extractionSession: merged.extractionSession ?? null,
     };
     return upgraded;
   }
@@ -4774,6 +4926,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     siegeSession: sanitizeSiegeSession(o.siegeSession),
     convoySession: sanitizeConvoySession(o.convoySession),
     escortSession: sanitizeEscortSession(o.escortSession),
+    extractionSession: sanitizeExtractionSession(o.extractionSession),
   };
 }
 
@@ -4892,6 +5045,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Escort session failed sanitization; planner will ignore it.');
   } else if (escort && escort.cursor >= escort.scenarioIds.length) {
     warnings.push('Escort cursor out of range; clamp on next sanitize.');
+  }
+
+  const extraction = sanitizeExtractionSession(state.extractionSession);
+  if (state.extractionSession && !extraction) {
+    warnings.push('Extraction session failed sanitization; planner will ignore it.');
+  } else if (extraction && extraction.cursor >= extraction.scenarioIds.length) {
+    warnings.push('Extraction cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
@@ -5013,6 +5173,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'siegeSession',
   'convoySession',
   'escortSession',
+  'extractionSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -5527,6 +5688,7 @@ export function attachMarathonQueueToState(
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+  extractionSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -5644,6 +5806,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceExtractionSessionAfterRun(next, run);
   next = advanceEscortSessionAfterRun(next, run);
   next = advanceConvoySessionAfterRun(next, run);
   next = advanceSiegeSessionAfterRun(next, run);
@@ -5792,6 +5955,7 @@ export function attachGauntletSessionToState(
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+  extractionSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -6030,6 +6194,7 @@ export function attachRelaySessionToState(
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+  extractionSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -6228,6 +6393,7 @@ export function attachCircuitSessionToState(
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+  extractionSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -6444,6 +6610,7 @@ export function attachExpeditionSessionToState(
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+  extractionSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -6658,6 +6825,7 @@ export function attachOdysseySessionToState(
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+  extractionSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -6871,6 +7039,7 @@ export function attachPilgrimageSessionToState(
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+  extractionSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -7085,6 +7254,7 @@ export function attachCaravanSessionToState(
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+  extractionSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -7293,6 +7463,7 @@ export function attachVoyageSessionToState(
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+  extractionSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -7501,6 +7672,7 @@ export function attachSiegeSessionToState(
     siegeSession: sanitized,
     convoySession: null,
     escortSession: null,
+  extractionSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -7709,6 +7881,7 @@ export function attachConvoySessionToState(
     ...state,
     convoySession: sanitized,
     escortSession: null,
+  extractionSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -7917,6 +8090,7 @@ export function attachEscortSessionToState(
   return {
     ...state,
     escortSession: sanitized,
+    extractionSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -8014,6 +8188,235 @@ export function escortSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-extraction.ts ---
+export const O10M_EXTRACTION_SCENARIO_CAP = 6;
+export const O10M_EXTRACTION_ASSET_CAP = 680;
+export const O10M_EXTRACTION_ASSET_MONEY_CAP = 760;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mExtractionPhase>(['intel', 'rescue', 'exfil']);
+
+export function unlockTokenForExtractionId(extractionId: string): string | null {
+  if (!extractionId.startsWith('o10m_extraction_')) return null;
+  return `o10m_unlock_${extractionId.slice('o10m_extraction_'.length)}`;
+}
+
+export function extractionPhaseForCursor(cursor: number, scenarioCount: number): O10mExtractionPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'exfil';
+  if (clamped >= Math.floor(total / 2)) return 'rescue';
+  return 'intel';
+}
+
+export function extractionAssetFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(17, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(96, Math.max(11, Math.floor(run.playerNetWorth / 195) + standingSlice));
+}
+
+export function sanitizeExtractionSession(raw: unknown): O10mExtractionSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const extractionId =
+    typeof o.extractionId === 'string' && o.extractionId.startsWith('o10m_extraction_')
+      ? o.extractionId
+      : null;
+  if (!extractionId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : extractionId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_EXTRACTION_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const assetScore = Math.min(
+    O10M_EXTRACTION_ASSET_CAP,
+    Math.max(0, Math.floor(num(o.assetScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mExtractionPhase)
+      ? (phaseRaw as O10mExtractionPhase)
+      : extractionPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    extractionId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    assetScore,
+    phaseTag,
+  };
+}
+
+export function createExtractionSession(params: {
+  extractionId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mExtractionSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.extractionId.startsWith('o10m_extraction_')) {
+    return { session: null, warnings: ['Extraction ids must start with o10m_extraction_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_EXTRACTION_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Extraction requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      extractionId: params.extractionId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      assetScore: 0,
+      phaseTag: extractionPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachExtractionSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mExtractionSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeExtractionSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    extractionSession: sanitized,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearExtractionSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, extractionSession: null };
+}
+
+export function getExtractionScenarioAtCursor(
+  session: O10mExtractionSession | null | undefined,
+): string | null {
+  const extraction = sanitizeExtractionSession(session);
+  if (!extraction || !extraction.active) return null;
+  return extraction.scenarioIds[extraction.cursor] ?? null;
+}
+
+export function buildExtractionScenarioStartOverrides(
+  session: O10mExtractionSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const extraction = sanitizeExtractionSession(session);
+  if (!extraction) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_EXTRACTION_ASSET_MONEY_CAP,
+    Math.floor(extraction.assetScore * 0.77),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveExtractionId: extraction.extractionId,
+      o10mActiveExtractionStep: extraction.cursor,
+      o10mActiveExtractionPhase: extraction.phaseTag,
+      o10mExtractionAssets: extraction.assetScore,
+    },
+  };
+}
+
+export function advanceExtractionSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeExtractionSession(state.extractionSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const assetScore = Math.min(
+    O10M_EXTRACTION_ASSET_CAP,
+    session.assetScore + extractionAssetFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      extractionSession: {
+        ...session,
+        cursor,
+        assetScore,
+        phaseTag: extractionPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForExtractionId(session.extractionId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    extractionSession: { ...session, active: false, assetScore, phaseTag: 'exfil' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function extractionSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  assets: number;
+  phase: O10mExtractionPhase | null;
+} {
+  const session = sanitizeExtractionSession(state.extractionSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    assets: session?.assetScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -8060,9 +8463,31 @@ const emptyQueuePlan = {
   escortCursor: null as number | null,
   escortPhase: null as O10mEscortPhase | null,
   escortTrust: null as number | null,
+  extractionId: null as string | null,
+  extractionCursor: null as number | null,
+  extractionPhase: null as O10mExtractionPhase | null,
+  extractionAssets: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const extraction = sanitizeExtractionSession(state.extractionSession);
+  const extractionScenario = getExtractionScenarioAtCursor(extraction);
+  if (extraction && extraction.active && extractionScenario) {
+    return {
+      kind: 'extraction_step',
+      scenarioId: extractionScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      extractionId: extraction.extractionId,
+      extractionCursor: extraction.cursor,
+      extractionPhase: extraction.phaseTag,
+      extractionAssets: extraction.assetScore,
+      reason: `Extraction "${extraction.label}" ${extraction.phaseTag} phase ${extraction.cursor + 1}/${extraction.scenarioIds.length} (assets ${extraction.assetScore}).`,
+    };
+  }
+
   const escort = sanitizeEscortSession(state.escortSession);
   const escortScenario = getEscortScenarioAtCursor(escort);
   if (escort && escort.active && escortScenario) {
@@ -8356,6 +8781,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   siegeActive: boolean;
   convoyActive: boolean;
   escortActive: boolean;
+  extractionActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -8375,6 +8801,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const siege = siegeSessionSummary(state);
   const convoy = convoySessionSummary(state);
   const escort = escortSessionSummary(state);
+  const extraction = extractionSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -8392,6 +8819,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     siegeActive: siege.active,
     convoyActive: convoy.active,
     escortActive: escort.active,
+    extractionActive: extraction.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -8410,7 +8838,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 17, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 18, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -8534,16 +8962,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const escortState = escort ? attachEscortSessionToState(createEmptyO10mModesPersistedState(), escort) : null;
   push('agent04_chunk_24', escortState !== null && planNextCampaignAction(escortState!).kind === 'escort_step');
 
+  const extraction = createExtractionSession({
+    extractionId: 'o10m_extraction_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_extraction_intel_brief'],
+  }).session;
+  const extractionState = extraction ? attachExtractionSessionToState(createEmptyO10mModesPersistedState(), extraction) : null;
+  push('agent04_chunk_25', extractionState !== null && planNextCampaignAction(extractionState!).kind === 'extraction_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v17',
+  schemaVersion: 'op10m-agent04-v18',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 16,
+  saveSchemaVersion: 17,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

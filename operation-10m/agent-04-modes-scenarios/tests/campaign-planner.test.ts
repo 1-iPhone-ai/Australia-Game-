@@ -11,6 +11,7 @@ import {
   attachSiegeSessionToState,
   attachConvoySessionToState,
   attachEscortSessionToState,
+  attachExtractionSessionToState,
   attachGauntletSessionToState,
   attachMarathonQueueToState,
   attachRelaySessionToState,
@@ -25,6 +26,7 @@ import {
   createSiegeSession,
   createConvoySession,
   createEscortSession,
+  createExtractionSession,
   createGauntletSession,
   createMarathonQueue,
   createRelaySession,
@@ -54,7 +56,12 @@ describe('scenario campaign planner round 4', () => {
     assert.equal(plan.chainId, 'o10m_chain_continuity_arc');
   });
 
-  it('prefers active escort over convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+  it('prefers active extraction over escort, convoy, siege, voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {
+    const { session: extraction } = createExtractionSession({
+      extractionId: 'o10m_extraction_priority',
+      label: 'Priority',
+      scenarioIds: ['o10m_extraction_intel_brief', 'o10m_extraction_rescue_site'],
+    });
     const { session: escort } = createEscortSession({
       escortId: 'o10m_escort_priority',
       label: 'Priority',
@@ -133,7 +140,8 @@ describe('scenario campaign planner round 4', () => {
     state = attachSiegeSessionToState(state, siege!);
     state = attachConvoySessionToState(state, convoy!);
     state = attachEscortSessionToState(state, escort!);
-    assert.equal(planNextCampaignAction(state).kind, 'escort_step');
+    state = attachExtractionSessionToState(state, extraction!);
+    assert.equal(planNextCampaignAction(state).kind, 'extraction_step');
   });
 
   it('prefers active siege over voyage, caravan, pilgrimage, odyssey, expedition, circuit, relay, gauntlet, marathon queue, and campaign slot', () => {

@@ -16,6 +16,7 @@ import { sanitizeVoyageSession } from './save-format-voyage.js';
 import { sanitizeSiegeSession } from './save-format-siege.js';
 import { sanitizeConvoySession } from './save-format-convoy.js';
 import { sanitizeEscortSession } from './save-format-escort.js';
+import { sanitizeExtractionSession } from './save-format-extraction.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -34,7 +35,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 16;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 17;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -149,6 +150,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     siegeSession: null,
     convoySession: null,
     escortSession: null,
+    extractionSession: null,
   };
 }
 
@@ -184,6 +186,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       siegeSession: merged.siegeSession ?? null,
       convoySession: merged.convoySession ?? null,
       escortSession: merged.escortSession ?? null,
+      extractionSession: merged.extractionSession ?? null,
     };
     return upgraded;
   }
@@ -243,6 +246,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     siegeSession: sanitizeSiegeSession(o.siegeSession),
     convoySession: sanitizeConvoySession(o.convoySession),
     escortSession: sanitizeEscortSession(o.escortSession),
+    extractionSession: sanitizeExtractionSession(o.extractionSession),
   };
 }
 
@@ -361,6 +365,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Escort session failed sanitization; planner will ignore it.');
   } else if (escort && escort.cursor >= escort.scenarioIds.length) {
     warnings.push('Escort cursor out of range; clamp on next sanitize.');
+  }
+
+  const extraction = sanitizeExtractionSession(state.extractionSession);
+  if (state.extractionSession && !extraction) {
+    warnings.push('Extraction session failed sanitization; planner will ignore it.');
+  } else if (extraction && extraction.cursor >= extraction.scenarioIds.length) {
+    warnings.push('Extraction cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };

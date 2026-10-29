@@ -119,6 +119,7 @@ export function attachConvoySessionToState(
     ...state,
     convoySession: sanitized,
     escortSession: null,
+  extractionSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,

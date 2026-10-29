@@ -368,6 +368,7 @@ export type O10mSiegePhase = 'mustering' | 'breach' | 'relief';
 export type O10mConvoyStage = 'staging' | 'transit' | 'delivery';
 
 export type O10mEscortPhase = 'briefing' | 'corridor' | 'handoff';
+export type O10mExtractionPhase = 'intel' | 'rescue' | 'exfil';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -468,6 +469,17 @@ export interface O10mEscortSession {
   phaseTag: O10mEscortPhase;
 }
 
+/** Schema v17 — asset extraction op with asset accrual between phases. */
+export interface O10mExtractionSession {
+  extractionId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  assetScore: number;
+  phaseTag: O10mExtractionPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -492,6 +504,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'extraction_step'
     | 'escort_step'
     | 'convoy_step'
     | 'siege_step'
@@ -555,6 +568,10 @@ export interface O10mCampaignPlan {
   escortCursor: number | null;
   escortPhase: O10mEscortPhase | null;
   escortTrust: number | null;
+  extractionId: string | null;
+  extractionCursor: number | null;
+  extractionPhase: O10mExtractionPhase | null;
+  extractionAssets: number | null;
   reason: string;
 }
 
@@ -610,6 +627,8 @@ export interface O10mModesPersistedState {
   convoySession?: O10mConvoySession | null;
   /** Schema v16 — active VIP escort (mutually exclusive with convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   escortSession?: O10mEscortSession | null;
+  /** Schema v17 — active extraction op (mutually exclusive with escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  extractionSession?: O10mExtractionSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
