@@ -83,6 +83,7 @@ export interface IntegrityReport {
   constructionOverLabor: string[];
   duplicateDispatchedEvents: string[];
   skippedDueEvents: string[];
+  staleArmedFollowUps: string[];
   messages: string[];
 }
 

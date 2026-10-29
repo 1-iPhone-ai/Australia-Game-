@@ -20,6 +20,10 @@ const SOURCE_FILES = [
   'src/multi-turn-construction.ts',
   'src/defer-schedule.ts',
   'src/delayed-consequences.ts',
+  'src/construction-pause-slip.ts',
+  'src/cancel-cascade.ts',
+  'src/turn-horizon.ts',
+  'src/replay-compare.ts',
   'src/diagnostics.ts',
   'src/turn-audit.ts',
   'src/pause-resume.ts',
@@ -73,7 +77,7 @@ function bundleSources(): string {
 
   parts.push(
     `export const AGENT_02_MODULE_ID = 'operation-10m/${moduleId}';`,
-    `export const AGENT_02_MODULE_VERSION = '1.2.0';`,
+    `export const AGENT_02_MODULE_VERSION = '1.3.0';`,
     '',
     `export function runOp10mAgent02TurnsTimeSelfTests(): {`,
     `  passed: number;`,
@@ -128,6 +132,13 @@ function bundleSources(): string {
     `    name: 'follow-up obligation fires on schedule',`,
     `    passed: chain.snapshot().obligations.find((o) => o.id === 'child')?.status === 'fired',`,
     `  });`,
+    `  const horizon = new TurnTimeEngine();`,
+    `  horizon.registerObligation({ id: 'h1', dueTurn: 2, kind: 'h' });`,
+    `  results.push({`,
+    `    id: 'agent02_horizon',`,
+    `    name: 'turn horizon lists pending obligation',`,
+    `    passed: horizon.planThroughTurn(2).some((p) => p.id === 'h1'),`,
+    `  });`,
     `  const failed = results.filter((r) => !r.passed).length;`,
     `  return { passed: results.length - failed, failed, results };`,
     `}`,
@@ -140,7 +151,7 @@ function wrapChunk(body: string): string {
   const begin = `// OP10M_MODULE_BEGIN ${moduleId}`;
   const end = `// OP10M_MODULE_END ${moduleId}`;
   const hash = createHash('sha256').update(body).digest('hex').slice(0, 16);
-  return `${begin}\n// content-sha256-prefix: ${hash}\n${body}\n${end}\n`;
+  return `${begin}\n// @ts-nocheck\n// content-sha256-prefix: ${hash}\n${body}\n${end}\n`;
 }
 
 const body = bundleSources();

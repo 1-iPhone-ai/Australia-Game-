@@ -3,6 +3,7 @@ import {
   IntegrityReport,
   ScheduledObligation,
   ScheduledEvent,
+  FollowUpRule,
   ConstructionProject,
   TurnClock,
   TurnPhase,
@@ -20,6 +21,7 @@ export function validateTurnTimeIntegrity(
   obligations: ScheduledObligation[],
   projects: ConstructionProject[],
   events: ScheduledEvent[] = [],
+  followUpRules: FollowUpRule[] = [],
 ): IntegrityReport {
   const duplicateFired: string[] = [];
   const seenFired = new Map<string, number>();
@@ -65,6 +67,29 @@ export function validateTurnTimeIntegrity(
     skippedDue.push(`event:${e.id}`);
   }
 
+  const staleArmedFollowUps: string[] = [];
+  for (const rule of followUpRules) {
+    if (rule.status !== 'armed') continue;
+    if (rule.trigger === 'obligation_fired') {
+      const parent = obligations.find((o) => o.id === rule.triggerRefId);
+      if (!parent || parent.status === 'cancelled') {
+        staleArmedFollowUps.push(rule.id);
+      } else if (parent.status === 'fired') {
+        staleArmedFollowUps.push(rule.id);
+      }
+    } else {
+      const parent = events.find((e) => e.id === rule.triggerRefId);
+      if (!parent || parent.status === 'cancelled') {
+        staleArmedFollowUps.push(rule.id);
+      } else if (parent.status === 'dispatched') {
+        staleArmedFollowUps.push(rule.id);
+      }
+    }
+  }
+  for (const id of staleArmedFollowUps) {
+    skippedDue.push(`follow_up:${id}`);
+  }
+
   const messages: string[] = [];
   if (duplicateFired.length) messages.push(`Duplicate fired obligations: ${duplicateFired.join(', ')}`);
   if (duplicateDispatchedEvents.length) {
@@ -74,13 +99,15 @@ export function validateTurnTimeIntegrity(
   if (skippedDueEvents.length) messages.push(`Skipped due events: ${skippedDueEvents.join(', ')}`);
   if (orphanPastPending.length) messages.push(`Past-due pending: ${orphanPastPending.join(', ')}`);
   if (constructionOverLabor.length) messages.push(`Construction over-labor: ${constructionOverLabor.join(', ')}`);
+  if (staleArmedFollowUps.length) messages.push(`Stale armed follow-ups: ${staleArmedFollowUps.join(', ')}`);
 
   const ok =
     duplicateFired.length === 0 &&
     duplicateDispatchedEvents.length === 0 &&
     skippedDue.length === 0 &&
     orphanPastPending.length === 0 &&
-    constructionOverLabor.length === 0;
+    constructionOverLabor.length === 0 &&
+    staleArmedFollowUps.length === 0;
 
   return {
     ok,
@@ -90,6 +117,7 @@ export function validateTurnTimeIntegrity(
     constructionOverLabor,
     duplicateDispatchedEvents,
     skippedDueEvents,
+    staleArmedFollowUps,
     messages,
   };
 }

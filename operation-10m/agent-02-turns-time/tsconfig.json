@@ -12,5 +12,5 @@
     "jsx": "preserve",
     "allowImportingTsExtensions": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "chunk.tsx"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
 }

@@ -37,6 +37,10 @@ import {
   type RegisterFollowUpInput,
 } from './delayed-consequences.js';
 import { buildTurnTimeAuditReport, snapshotDigest, type TurnTimeAuditReport } from './turn-audit.js';
+import { cancelArmedFollowUpsForTrigger, cancelArmedFollowUpsSpawnedAs } from './cancel-cascade.js';
+import { slipActiveConstructionCompletion } from './construction-pause-slip.js';
+import { planEffectsThroughTurn, type PlannedEffect } from './turn-horizon.js';
+import { compareTurnTimeSnapshots, type SnapshotCompareReport } from './replay-compare.js';
 import {
   createInitialPauseState,
   clonePauseState,
@@ -52,8 +56,6 @@ import type {
   ScheduledEvent,
   ScheduledObligation,
 } from './types.js';
-
-export type { RegisterFollowUpInput, TurnTimeAuditReport };
 
 export interface StepTurnResult {
   clockBefore: TurnClock;
@@ -108,6 +110,8 @@ export class TurnTimeEngine {
 
   cancelObligation(id: string): void {
     this.obligations = cancelObligation(this.obligations, id);
+    this.followUpRules = cancelArmedFollowUpsForTrigger(this.followUpRules, id);
+    this.followUpRules = cancelArmedFollowUpsSpawnedAs(this.followUpRules, id);
   }
 
   scheduleEvent(input: ScheduleEventInput): void {
@@ -116,6 +120,20 @@ export class TurnTimeEngine {
 
   cancelEvent(id: string): void {
     this.events = cancelScheduledEvent(this.events, id);
+    this.followUpRules = cancelArmedFollowUpsForTrigger(this.followUpRules, id);
+    this.followUpRules = cancelArmedFollowUpsSpawnedAs(this.followUpRules, id);
+  }
+
+  cancelFollowUpsFor(triggerRefId: string): void {
+    this.followUpRules = cancelArmedFollowUpsForTrigger(this.followUpRules, triggerRefId);
+  }
+
+  planThroughTurn(throughTurn: number): PlannedEffect[] {
+    return planEffectsThroughTurn(this.snapshot(), throughTurn);
+  }
+
+  compareToSnapshot(other: TurnTimeSnapshot): SnapshotCompareReport {
+    return compareTurnTimeSnapshots(this.snapshot(), other);
   }
 
   registerFollowUp(input: RegisterFollowUpInput): void {
@@ -165,7 +183,13 @@ export class TurnTimeEngine {
   }
 
   validate(): IntegrityReport {
-    return validateTurnTimeIntegrity(this.clock, this.obligations, this.projects, this.events);
+    return validateTurnTimeIntegrity(
+      this.clock,
+      this.obligations,
+      this.projects,
+      this.events,
+      this.followUpRules,
+    );
   }
 
   consumeTrace(): EffectTraceEntry[] {
@@ -185,6 +209,7 @@ export class TurnTimeEngine {
       const blocked = recordBlockedAdvance(this.pauseState, this.clock, seq);
       this.pauseState = blocked.pause;
       this.clock = { ...this.clock, effectSequence: seq };
+      this.projects = slipActiveConstructionCompletion(this.projects, 1);
       const blockedTrace = blocked.traceEntry;
       this.trace = appendTrace(this.trace, blockedTrace);
       return {

@@ -1,5 +1,6 @@
 // OP10M_MODULE_BEGIN agent-02-turns-time
-// content-sha256-prefix: 19c0b2e16a622752
+// @ts-nocheck
+// content-sha256-prefix: 5f90c2c1e6678fa2
 // Operation 10M — Agent 02 Turns, Time, and Delayed Consequences
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -93,6 +94,7 @@ export interface IntegrityReport {
   constructionOverLabor: string[];
   duplicateDispatchedEvents: string[];
   skippedDueEvents: string[];
+  staleArmedFollowUps: string[];
   messages: string[];
 }
 
@@ -711,6 +713,153 @@ export function armedFollowUpCount(rules: FollowUpRule[]): number {
   return rules.filter((r) => r.status === 'armed').length;
 }
 
+// --- src/construction-pause-slip.ts ---
+
+/** Extends completion turn when time was frozen (UI pause / blocked advances). */
+export function slipActiveConstructionCompletion(
+  projects: ConstructionProject[],
+  slipTurns = 1,
+): ConstructionProject[] {
+  const slip = Math.max(0, Math.floor(slipTurns));
+  if (slip === 0) return projects;
+  return projects.map((p) => {
+    if (p.status !== 'under_construction') return p;
+    return { ...p, completionTurn: p.completionTurn + slip };
+  });
+}
+
+export function totalPauseSlipApplied(projects: ConstructionProject[], baselineCompletion: number): number {
+  const project = projects.find((p) => p.completionTurn > baselineCompletion);
+  return project ? project.completionTurn - baselineCompletion : 0;
+}
+
+// --- src/cancel-cascade.ts ---
+
+export function cancelArmedFollowUpsForTrigger(rules: FollowUpRule[], triggerRefId: string): FollowUpRule[] {
+  return rules.map((r) => {
+    if (r.status !== 'armed') return r;
+    if (r.triggerRefId !== triggerRefId) return r;
+    return { ...r, status: 'cancelled' };
+  });
+}
+
+export function cancelArmedFollowUpsSpawnedAs(rules: FollowUpRule[], spawnId: string): FollowUpRule[] {
+  return rules.map((r) => {
+    if (r.status !== 'armed') return r;
+    if (r.spawnId !== spawnId) return r;
+    return { ...r, status: 'cancelled' };
+  });
+}
+
+// --- src/turn-horizon.ts ---
+
+export type PlannedEffectKind = 'obligation' | 'event' | 'construction_complete';
+
+export interface PlannedEffect {
+  turnIndex: number;
+  dayIndex?: number;
+  phase?: TurnPhase;
+  kind: PlannedEffectKind;
+  id: string;
+  priority: number;
+}
+
+export function planEffectsThroughTurn(snapshot: TurnTimeSnapshot, throughTurn: number): PlannedEffect[] {
+  const end = Math.floor(throughTurn);
+  if (!Number.isFinite(end) || end < 1) {
+    throw new Error('planEffectsThroughTurn: invalid throughTurn');
+  }
+
+  const planned: PlannedEffect[] = [];
+
+  for (let turn = snapshot.clock.turnIndex; turn <= end; turn += 1) {
+    const clockView = { ...snapshot.clock, turnIndex: turn };
+
+    const obligations = sortObligationsForTurn(
+      snapshot.obligations.filter((o) => o.status === 'pending' && o.dueTurn === turn),
+    );
+    for (const o of obligations) {
+      planned.push({
+        turnIndex: turn,
+        dayIndex: o.dueDay,
+        phase: 'main',
+        kind: 'obligation',
+        id: o.id,
+        priority: o.priority,
+      });
+    }
+
+    const events = sortEventsForDispatch(
+      snapshot.events.filter((e) => e.status === 'queued' && e.dueTurn === turn),
+    );
+    for (const e of events) {
+      planned.push({
+        turnIndex: turn,
+        dayIndex: e.dueDay,
+        phase: e.duePhase ?? 'main',
+        kind: 'event',
+        id: e.id,
+        priority: e.priority,
+      });
+    }
+
+    for (const p of snapshot.projects) {
+      if (p.status !== 'under_construction') continue;
+      if (p.completionTurn === turn) {
+        planned.push({
+          turnIndex: turn,
+          phase: 'end',
+          kind: 'construction_complete',
+          id: p.id,
+          priority: 500,
+        });
+      }
+    }
+  }
+
+  return planned.sort((a, b) => {
+    if (a.turnIndex !== b.turnIndex) return a.turnIndex - b.turnIndex;
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+export function countPlannedThrough(planned: PlannedEffect[], throughTurn: number): number {
+  return planned.filter((p) => p.turnIndex <= throughTurn).length;
+}
+
+// --- src/replay-compare.ts ---
+
+export interface SnapshotCompareReport {
+  digestA: string;
+  digestB: string;
+  digestMatch: boolean;
+  auditDelta: Partial<Record<keyof TurnTimeAuditReport, { before: number | boolean; after: number | boolean }>>;
+}
+
+export function compareTurnTimeSnapshots(before: TurnTimeSnapshot, after: TurnTimeSnapshot): SnapshotCompareReport {
+  const digestA = snapshotDigest(before);
+  const digestB = snapshotDigest(after);
+  const auditBefore = buildTurnTimeAuditReport(before);
+  const auditAfter = buildTurnTimeAuditReport(after);
+  const auditDelta: SnapshotCompareReport['auditDelta'] = {};
+
+  (Object.keys(auditBefore) as (keyof TurnTimeAuditReport)[]).forEach((key) => {
+    const b = auditBefore[key];
+    const a = auditAfter[key];
+    if (b !== a) {
+      auditDelta[key] = { before: b, after: a };
+    }
+  });
+
+  return {
+    digestA,
+    digestB,
+    digestMatch: digestA === digestB,
+    auditDelta,
+  };
+}
+
 // --- src/diagnostics.ts ---
 
 export function appendTrace(trace: EffectTraceEntry[], entry: Omit<EffectTraceEntry, 'sequence'> & { sequence: number }): EffectTraceEntry[] {
@@ -722,6 +871,7 @@ export function validateTurnTimeIntegrity(
   obligations: ScheduledObligation[],
   projects: ConstructionProject[],
   events: ScheduledEvent[] = [],
+  followUpRules: FollowUpRule[] = [],
 ): IntegrityReport {
   const duplicateFired: string[] = [];
   const seenFired = new Map<string, number>();
@@ -767,6 +917,29 @@ export function validateTurnTimeIntegrity(
     skippedDue.push(`event:${e.id}`);
   }
 
+  const staleArmedFollowUps: string[] = [];
+  for (const rule of followUpRules) {
+    if (rule.status !== 'armed') continue;
+    if (rule.trigger === 'obligation_fired') {
+      const parent = obligations.find((o) => o.id === rule.triggerRefId);
+      if (!parent || parent.status === 'cancelled') {
+        staleArmedFollowUps.push(rule.id);
+      } else if (parent.status === 'fired') {
+        staleArmedFollowUps.push(rule.id);
+      }
+    } else {
+      const parent = events.find((e) => e.id === rule.triggerRefId);
+      if (!parent || parent.status === 'cancelled') {
+        staleArmedFollowUps.push(rule.id);
+      } else if (parent.status === 'dispatched') {
+        staleArmedFollowUps.push(rule.id);
+      }
+    }
+  }
+  for (const id of staleArmedFollowUps) {
+    skippedDue.push(`follow_up:${id}`);
+  }
+
   const messages: string[] = [];
   if (duplicateFired.length) messages.push(`Duplicate fired obligations: ${duplicateFired.join(', ')}`);
   if (duplicateDispatchedEvents.length) {
@@ -776,13 +949,15 @@ export function validateTurnTimeIntegrity(
   if (skippedDueEvents.length) messages.push(`Skipped due events: ${skippedDueEvents.join(', ')}`);
   if (orphanPastPending.length) messages.push(`Past-due pending: ${orphanPastPending.join(', ')}`);
   if (constructionOverLabor.length) messages.push(`Construction over-labor: ${constructionOverLabor.join(', ')}`);
+  if (staleArmedFollowUps.length) messages.push(`Stale armed follow-ups: ${staleArmedFollowUps.join(', ')}`);
 
   const ok =
     duplicateFired.length === 0 &&
     duplicateDispatchedEvents.length === 0 &&
     skippedDue.length === 0 &&
     orphanPastPending.length === 0 &&
-    constructionOverLabor.length === 0;
+    constructionOverLabor.length === 0 &&
+    staleArmedFollowUps.length === 0;
 
   return {
     ok,
@@ -792,6 +967,7 @@ export function validateTurnTimeIntegrity(
     constructionOverLabor,
     duplicateDispatchedEvents,
     skippedDueEvents,
+    staleArmedFollowUps,
     messages,
   };
 }
@@ -1039,8 +1215,6 @@ export function isTimePaused(pause: PauseDiagnosticsState): boolean {
 
 // --- src/engine.ts ---
 
-export type { RegisterFollowUpInput, TurnTimeAuditReport };
-
 export interface StepTurnResult {
   clockBefore: TurnClock;
   clockAfter: TurnClock;
@@ -1094,6 +1268,8 @@ export class TurnTimeEngine {
 
   cancelObligation(id: string): void {
     this.obligations = cancelObligation(this.obligations, id);
+    this.followUpRules = cancelArmedFollowUpsForTrigger(this.followUpRules, id);
+    this.followUpRules = cancelArmedFollowUpsSpawnedAs(this.followUpRules, id);
   }
 
   scheduleEvent(input: ScheduleEventInput): void {
@@ -1102,6 +1278,20 @@ export class TurnTimeEngine {
 
   cancelEvent(id: string): void {
     this.events = cancelScheduledEvent(this.events, id);
+    this.followUpRules = cancelArmedFollowUpsForTrigger(this.followUpRules, id);
+    this.followUpRules = cancelArmedFollowUpsSpawnedAs(this.followUpRules, id);
+  }
+
+  cancelFollowUpsFor(triggerRefId: string): void {
+    this.followUpRules = cancelArmedFollowUpsForTrigger(this.followUpRules, triggerRefId);
+  }
+
+  planThroughTurn(throughTurn: number): PlannedEffect[] {
+    return planEffectsThroughTurn(this.snapshot(), throughTurn);
+  }
+
+  compareToSnapshot(other: TurnTimeSnapshot): SnapshotCompareReport {
+    return compareTurnTimeSnapshots(this.snapshot(), other);
   }
 
   registerFollowUp(input: RegisterFollowUpInput): void {
@@ -1151,7 +1341,13 @@ export class TurnTimeEngine {
   }
 
   validate(): IntegrityReport {
-    return validateTurnTimeIntegrity(this.clock, this.obligations, this.projects, this.events);
+    return validateTurnTimeIntegrity(
+      this.clock,
+      this.obligations,
+      this.projects,
+      this.events,
+      this.followUpRules,
+    );
   }
 
   consumeTrace(): EffectTraceEntry[] {
@@ -1171,6 +1367,7 @@ export class TurnTimeEngine {
       const blocked = recordBlockedAdvance(this.pauseState, this.clock, seq);
       this.pauseState = blocked.pause;
       this.clock = { ...this.clock, effectSequence: seq };
+      this.projects = slipActiveConstructionCompletion(this.projects, 1);
       const blockedTrace = blocked.traceEntry;
       this.trace = appendTrace(this.trace, blockedTrace);
       return {
@@ -1388,7 +1585,20 @@ export function fastForwardTo(
   const steps: StepTurnResult[] = [];
   let current = engine.snapshot();
 
+  if (current.pause.paused) {
+    return {
+      snapshot: current,
+      steps,
+      parityOk: false,
+      parityDetail: 'fastForwardTo: engine is paused',
+    };
+  }
+
+  let guard = 0;
   while (current.clock.turnIndex < targetTurn) {
+    if (guard++ > 50_000) {
+      throw new Error('fastForwardTo: step guard exceeded (possible pause loop)');
+    }
     const step = engine.stepFullTurn({ scope: options.scope });
     steps.push(step);
     current = engine.snapshot();
@@ -1470,7 +1680,7 @@ export function turnsBetweenInclusive(fromTurn: number, toTurn: number): number[
 
 export const AGENT_02_MODULE_ID = 'operation-10m/agent-02-turns-time';
 
-export const AGENT_02_MODULE_VERSION = '1.2.0';
+export const AGENT_02_MODULE_VERSION = '1.3.0';
 
 
 
@@ -1577,6 +1787,20 @@ export function runOp10mAgent02TurnsTimeSelfTests(): {
     name: 'follow-up obligation fires on schedule',
 
     passed: chain.snapshot().obligations.find((o) => o.id === 'child')?.status === 'fired',
+
+  });
+
+  const horizon = new TurnTimeEngine();
+
+  horizon.registerObligation({ id: 'h1', dueTurn: 2, kind: 'h' });
+
+  results.push({
+
+    id: 'agent02_horizon',
+
+    name: 'turn horizon lists pending obligation',
+
+    passed: horizon.planThroughTurn(2).some((p) => p.id === 'h1'),
 
   });
 

@@ -31,7 +31,20 @@ export function fastForwardTo(
   const steps: StepTurnResult[] = [];
   let current = engine.snapshot();
 
+  if (current.pause.paused) {
+    return {
+      snapshot: current,
+      steps,
+      parityOk: false,
+      parityDetail: 'fastForwardTo: engine is paused',
+    };
+  }
+
+  let guard = 0;
   while (current.clock.turnIndex < targetTurn) {
+    if (guard++ > 50_000) {
+      throw new Error('fastForwardTo: step guard exceeded (possible pause loop)');
+    }
     const step = engine.stepFullTurn({ scope: options.scope });
     steps.push(step);
     current = engine.snapshot();
