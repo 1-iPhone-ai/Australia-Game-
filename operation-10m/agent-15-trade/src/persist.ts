@@ -12,6 +12,8 @@ import { sanitizeForeignExchangeSmoothing } from './foreign-exchange-pressure.ts
 import { sanitizeRetaliationPressureSmoothing } from './trade-retaliation.ts';
 import { sanitizeDeescalationMomentumSmoothing } from './trade-deescalation.ts';
 import { sanitizeExportCapacitySmoothing } from './export-capacity-allocation.ts';
+import { sanitizeReconciliationProgressSmoothing } from './trade-reconciliation.ts';
+import { sanitizeMaritimeRiskSmoothing } from './maritime-risk-premium.ts';
 import { sanitizePartnerTrustScore } from './partner-trust.ts';
 import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
@@ -42,6 +44,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     retaliationPressureSmoothing: 0.22,
     deescalationMomentumSmoothing: 0.28,
     exportCapacitySmoothing: 0.62,
+    reconciliationProgressSmoothing: 0.24,
+    maritimeRiskSmoothing: 0.22,
   };
 }
 
@@ -202,5 +206,7 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.retaliationPressureSmoothing = sanitizeRetaliationPressureSmoothing(r.retaliationPressureSmoothing);
   base.deescalationMomentumSmoothing = sanitizeDeescalationMomentumSmoothing(r.deescalationMomentumSmoothing);
   base.exportCapacitySmoothing = sanitizeExportCapacitySmoothing(r.exportCapacitySmoothing);
+  base.reconciliationProgressSmoothing = sanitizeReconciliationProgressSmoothing(r.reconciliationProgressSmoothing);
+  base.maritimeRiskSmoothing = sanitizeMaritimeRiskSmoothing(r.maritimeRiskSmoothing);
   return base;
 }

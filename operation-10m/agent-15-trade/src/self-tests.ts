@@ -29,13 +29,24 @@ import {
 import { computeForeignExchangeSnapshot } from './foreign-exchange-pressure.ts';
 import {
   computeTradeRetaliationSnapshot,
+  createEmptyTradeRetaliationSnapshot,
   deriveRetaliationPartnerModifiers,
 } from './trade-retaliation.ts';
 import {
   computeTradeDeescalationSnapshot,
+  createEmptyTradeDeescalationSnapshot,
   deriveDeescalationPartnerModifiers,
 } from './trade-deescalation.ts';
-import { computeExportCapacitySnapshot, exportCapacityExportScale } from './export-capacity-allocation.ts';
+import {
+  computeExportCapacitySnapshot,
+  createEmptyExportCapacitySnapshot,
+  exportCapacityExportScale,
+} from './export-capacity-allocation.ts';
+import {
+  computeTradeReconciliationSnapshot,
+  deriveReconciliationPartnerModifiers,
+} from './trade-reconciliation.ts';
+import { computeMaritimeRiskSnapshot, maritimeRiskExportScale } from './maritime-risk-premium.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
   validateScenarioShockCatalog,
@@ -599,6 +610,79 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     });
     gtelAssert(step.snapshot.band === 'tight' || step.snapshot.band === 'saturated', 'expected tight capacity');
     gtelAssert(exportCapacityExportScale(step.snapshot) <= 0.99, 'expected throughput scale drag');
+  });
+
+  ok('trade reconciliation advances with de-escalation breakthrough', () => {
+    const deescalation = computeTradeDeescalationSnapshot({
+      openDisputeCount: 1,
+      engagement: {
+        tracks: { asia_pacific: { partnerId: 'asia_pacific', momentum: 0.8, band: 'breakthrough', lastEventTurn: 1, highlights: [] } },
+        summitPulse: 0.75,
+        summary: 'test',
+      },
+      tradeRetaliation: createEmptyTradeRetaliationSnapshot(),
+      complianceScore: 0.8,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const stalled = computeTradeReconciliationSnapshot({
+      openDisputeCount: 3,
+      complianceScore: 0.52,
+      tradeDeescalation: createEmptyTradeDeescalationSnapshot(),
+      engagement: { tracks: {}, summitPulse: 0.1, summary: 'test' },
+      persisted: createEmptyGTELPersisted(),
+    });
+    const advanced = computeTradeReconciliationSnapshot({
+      openDisputeCount: 2,
+      complianceScore: 0.82,
+      tradeDeescalation: deescalation,
+      engagement: {
+        tracks: { asia_pacific: { partnerId: 'asia_pacific', momentum: 0.8, band: 'breakthrough', lastEventTurn: 1, highlights: [] } },
+        summitPulse: 0.75,
+        summary: 'test',
+      },
+      persisted: createEmptyGTELPersisted(),
+    });
+    gtelAssert(advanced.snapshot.progress > stalled.snapshot.progress, 'expected reconciliation progress');
+    const mods = deriveReconciliationPartnerModifiers(advanced.snapshot);
+    gtelAssert(mods.domesticStressRelief >= 0, 'reconciliation relief non-negative');
+  });
+
+  ok('maritime risk premium tightens throughput when logistics congested', () => {
+    const calm = computeMaritimeRiskSnapshot({
+      logistics: {
+        band: 'fluid',
+        freightPressure: 0.2,
+        redundancyScore: 0.8,
+        effectiveExportThroughput: 90,
+        networkStrain: 0.15,
+        summary: 'test',
+      },
+      tradeRetaliation: createEmptyTradeRetaliationSnapshot(),
+      activeSanctionCount: 0,
+      exportCapacity: createEmptyExportCapacitySnapshot(),
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const stressed = computeMaritimeRiskSnapshot({
+      logistics: {
+        band: 'congested',
+        freightPressure: 0.88,
+        redundancyScore: 0.3,
+        effectiveExportThroughput: 150,
+        networkStrain: 0.82,
+        summary: 'test',
+      },
+      tradeRetaliation: computeTradeRetaliationSnapshot({
+        openDisputeCount: 2,
+        activeSanctionCount: 2,
+        engagement: { tracks: {}, summitPulse: 0.2, summary: 'test' },
+        persisted: createEmptyGTELPersisted(),
+      }).snapshot,
+      activeSanctionCount: 2,
+      exportCapacity: { ...createEmptyExportCapacitySnapshot(), band: 'saturated', utilization: 0.95 },
+      persisted: { ...createEmptyGTELPersisted(), maritimeRiskSmoothing: 0.62 },
+    }).snapshot;
+    gtelAssert(stressed.premiumIndex > calm.premiumIndex, 'expected higher maritime premium');
+    gtelAssert(maritimeRiskExportScale(stressed) <= maritimeRiskExportScale(calm) + 0.01, 'expected maritime scale drag');
   });
 
   return { passed, failed };

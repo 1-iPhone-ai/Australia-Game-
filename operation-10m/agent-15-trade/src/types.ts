@@ -134,6 +134,10 @@ export interface GTELPersisted {
   deescalationMomentumSmoothing?: number;
   /** Smoothed export capacity utilisation (0–1). */
   exportCapacitySmoothing?: number;
+  /** Smoothed dispute reconciliation progress (0–1). */
+  reconciliationProgressSmoothing?: number;
+  /** Smoothed maritime insurance / war-risk premium (0–1). */
+  maritimeRiskSmoothing?: number;
 }
 
 export interface GTELState {
@@ -163,6 +167,8 @@ export interface GTELState {
   tradeRetaliation: GTELTradeRetaliationSnapshot;
   tradeDeescalation: GTELTradeDeescalationSnapshot;
   exportCapacity: GTELExportCapacitySnapshot;
+  tradeReconciliation: GTELTradeReconciliationSnapshot;
+  maritimeRisk: GTELMaritimeRiskSnapshot;
   inputHash: string;
 }
 
@@ -447,6 +453,26 @@ export interface GTELExportCapacitySnapshot {
   band: GTELExportCapacityBand;
   allocationEfficiency: number;
   priorityCommodities: GTELCommodityId[];
+  summary: string;
+}
+
+export type GTELTradeReconciliationBand = 'stalled' | 'procedural' | 'substantive' | 'settled';
+
+export interface GTELTradeReconciliationSnapshot {
+  progress: number;
+  band: GTELTradeReconciliationBand;
+  disputeReliefCount: number;
+  reconciledPartnerIds: GTELPartnerId[];
+  summary: string;
+}
+
+export type GTELMaritimeRiskBand = 'calm' | 'elevated' | 'severe' | 'blocked';
+
+export interface GTELMaritimeRiskSnapshot {
+  premiumIndex: number;
+  band: GTELMaritimeRiskBand;
+  insuranceLoad: number;
+  laneReliability: number;
   summary: string;
 }
 
