@@ -160,6 +160,11 @@ import {
   V1014_RENEWABLE_CMI_TURN_SCENARIOS,
 } from '../modules/renewable-attribute-carbon-market-integrity-ledger.ts';
 import {
+  runAgent13FlexInterconnectionScaleSelfTests,
+  runAgent13FlexInterconnectionTurnScenario,
+  V1014_FLEX_INTERCONNECTION_TURN_SCENARIOS,
+} from '../modules/industrial-electrification-interconnection-orchestration-ledger.ts';
+import {
   runAgent13EnergyScenarioSimulation,
   runAgent13TurnSimulationDepthSelfTests,
   V1014_ENERGY_TURN_SCENARIOS,
@@ -459,6 +464,12 @@ export function runAgent13SupplementTests(): { passed: number; failed: number; t
 
   const rcTurn = runAgent13RenewableCmiTurnScenario(V1014_RENEWABLE_CMI_TURN_SCENARIOS[0]);
   ok(rcTurn.passed);
+
+  const flexInterconnection = runAgent13FlexInterconnectionScaleSelfTests();
+  ok(flexInterconnection.failed === 0 && flexInterconnection.passed >= 7);
+
+  const fiTurn = runAgent13FlexInterconnectionTurnScenario(V1014_FLEX_INTERCONNECTION_TURN_SCENARIOS[0]);
+  ok(fiTurn.passed);
 
   return { passed, failed, total: passed + failed };
 }

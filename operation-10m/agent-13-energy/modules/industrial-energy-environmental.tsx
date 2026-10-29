@@ -254,6 +254,13 @@ import {
   type V1014RegionalRenewableAttributeLedger,
 } from './renewable-attribute-carbon-market-integrity-ledger';
 import {
+  advanceRegionalInterregionalInterconnectionOrchestration,
+  computeRegionalIndustrialElectrificationFlexLedger,
+  scoreAgent13FlexInterconnectionGIAlignment,
+  type V1014RegionalIndustrialElectrificationFlexLedger,
+  type V1014RegionalInterregionalInterconnectionLedger,
+} from './industrial-electrification-interconnection-orchestration-ledger';
+import {
   buildHouseholdEnergyHints,
   mergeHouseholdEnergyHints,
   type V1014HouseholdEnergyHint,
@@ -25846,6 +25853,10 @@ export interface V1014RegionalEnergyProfile {
   renewableAttributeRelief: number;
   carbonMarketIntegrityBand: string;
   carbonMarketIntegrityRelief: number;
+  industrialElectrificationFlexBand: string;
+  industrialElectrificationFlexRelief: number;
+  interregionalInterconnectionBand: string;
+  interregionalInterconnectionRelief: number;
   activeClimateHazards: V1014ActiveClimateHazard[];
   activeRuleIds: string[];
   activeSiteIds: string[];
@@ -25950,6 +25961,8 @@ export interface IndustrialEnergyEnvironmentalState {
   regionalGreenProductPassportLedgers: Record<string, V1014RegionalGreenProductPassportLedger>;
   regionalRenewableAttributeLedgers: Record<string, V1014RegionalRenewableAttributeLedger>;
   regionalCarbonMarketIntegrityLedgers: Record<string, V1014RegionalCarbonMarketIntegrityLedger>;
+  regionalIndustrialElectrificationFlexLedgers: Record<string, V1014RegionalIndustrialElectrificationFlexLedger>;
+  regionalInterregionalInterconnectionLedgers: Record<string, V1014RegionalInterregionalInterconnectionLedger>;
   transitions: Array<{ id: string; turn: number; regionId: string | null; field: string; from: string; to: string; explanation: string }>;
   history: Array<{ id: string; turn: number; kind: string; summary: string }>;
 }
@@ -26025,6 +26038,8 @@ export interface IndustrialEnergyEnvironmentalPersisted {
   regionalGreenProductPassportMemory: Record<string, { passportIndex: number }>;
   regionalRenewableAttributeMemory: Record<string, { attributeBalance: number; attributeIndex: number }>;
   regionalCarbonMarketIntegrityMemory: Record<string, { integrityIndex: number }>;
+  regionalIndustrialElectrificationFlexMemory: Record<string, { electrificationBalance: number; flexIndex: number }>;
+  regionalInterregionalInterconnectionMemory: Record<string, { linkIndex: number }>;
   history: IndustrialEnergyEnvironmentalState['history'];
 }
 
@@ -26112,6 +26127,8 @@ export function createInitialIndustrialEnergyEnvironmentalPersisted(): Industria
     regionalGreenProductPassportMemory: {},
     regionalRenewableAttributeMemory: {},
     regionalCarbonMarketIntegrityMemory: {},
+    regionalIndustrialElectrificationFlexMemory: {},
+    regionalInterregionalInterconnectionMemory: {},
     history: [],
   };
 }
@@ -26309,6 +26326,14 @@ export function sanitizeIndustrialEnergyEnvironmentalPersisted(raw: any, turn = 
       typeof raw.regionalCarbonMarketIntegrityMemory === 'object' && raw.regionalCarbonMarketIntegrityMemory
         ? raw.regionalCarbonMarketIntegrityMemory
         : {},
+    regionalIndustrialElectrificationFlexMemory:
+      typeof raw.regionalIndustrialElectrificationFlexMemory === 'object' && raw.regionalIndustrialElectrificationFlexMemory
+        ? raw.regionalIndustrialElectrificationFlexMemory
+        : {},
+    regionalInterregionalInterconnectionMemory:
+      typeof raw.regionalInterregionalInterconnectionMemory === 'object' && raw.regionalInterregionalInterconnectionMemory
+        ? raw.regionalInterregionalInterconnectionMemory
+        : {},
     history: Array.isArray(raw.history) ? raw.history.slice(-V1014_LIMITS.maxHistory) : [],
   };
 }
@@ -26483,6 +26508,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       regionalGreenProductPassportLedgers: {},
       regionalRenewableAttributeLedgers: {},
       regionalCarbonMarketIntegrityLedgers: {},
+      regionalIndustrialElectrificationFlexLedgers: {},
+      regionalInterregionalInterconnectionLedgers: {},
       transitions: [],
       history: persisted.history,
     };
@@ -26561,6 +26588,8 @@ export function computeIndustrialEnergyEnvironmentalState(
   const greenProductPassportLedgers: Record<string, V1014RegionalGreenProductPassportLedger> = {};
   const renewableAttributeLedgers: Record<string, V1014RegionalRenewableAttributeLedger> = {};
   const carbonMarketIntegrityLedgers: Record<string, V1014RegionalCarbonMarketIntegrityLedger> = {};
+  const industrialElectrificationFlexLedgers: Record<string, V1014RegionalIndustrialElectrificationFlexLedger> = {};
+  const interregionalInterconnectionLedgers: Record<string, V1014RegionalInterregionalInterconnectionLedger> = {};
   const nextPermitMemory: Record<string, { utilized: number }> = { ...persisted.regionalPermitMemory };
   const nextCarbonMemory: Record<string, { creditBalance: number; netEmissionsIndex: number }> = {
     ...persisted.regionalCarbonMemory,
@@ -26719,6 +26748,12 @@ export function computeIndustrialEnergyEnvironmentalState(
   };
   const nextCarbonMarketIntegrityMemory: Record<string, { integrityIndex: number }> = {
     ...persisted.regionalCarbonMarketIntegrityMemory,
+  };
+  const nextIndustrialElectrificationFlexMemory: Record<string, { electrificationBalance: number; flexIndex: number }> = {
+    ...persisted.regionalIndustrialElectrificationFlexMemory,
+  };
+  const nextInterregionalInterconnectionMemory: Record<string, { linkIndex: number }> = {
+    ...persisted.regionalInterregionalInterconnectionMemory,
   };
   const transitions: IndustrialEnergyEnvironmentalState['transitions'] = [];
   const nextHyst = { ...persisted.regionalHysteresis };
@@ -27640,6 +27675,34 @@ export function computeIndustrialEnergyEnvironmentalState(
     nextCarbonMarketIntegrityMemory[regionId] = carbonMarketIntegrityStep.next;
     carbonMarketIntegrityLedgers[regionId] = carbonMarketIntegrityStep.ledger;
     pressure -= carbonMarketIntegrityStep.ledger.carbonMarketIntegrityRelief;
+
+    const industrialElectrificationFlexStep = computeRegionalIndustrialElectrificationFlexLedger({
+      regionId,
+      renewableAttributeRelief: renewableAttributeStep.ledger.renewableAttributeRelief,
+      carbonMarketIntegrityRelief: carbonMarketIntegrityStep.ledger.carbonMarketIntegrityRelief,
+      attributeBand: renewableAttributeStep.ledger.band,
+      integrityBand: carbonMarketIntegrityStep.ledger.band,
+      flexibleLoadRelief: flexLoadStep.ledger.flexibleLoadRelief,
+      transmissionCongestionRelief: transmissionCongestionStep.ledger.transmissionCongestionRelief,
+      renewableShareScore,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextIndustrialElectrificationFlexMemory[regionId] || null,
+    });
+    nextIndustrialElectrificationFlexMemory[regionId] = industrialElectrificationFlexStep.next;
+    industrialElectrificationFlexLedgers[regionId] = industrialElectrificationFlexStep.ledger;
+    pressure -= industrialElectrificationFlexStep.ledger.industrialElectrificationFlexRelief;
+
+    const interregionalInterconnectionStep = advanceRegionalInterregionalInterconnectionOrchestration({
+      regionId,
+      gridStressPoints: gridStress.stressPoints,
+      flexBand: industrialElectrificationFlexStep.ledger.band,
+      merchantStorageRelief: merchantStorageStep.ledger.merchantStorageRelief,
+      completedProjectTypes: inputs.completedProjectTypes || [],
+      prev: nextInterregionalInterconnectionMemory[regionId] || null,
+    });
+    nextInterregionalInterconnectionMemory[regionId] = interregionalInterconnectionStep.next;
+    interregionalInterconnectionLedgers[regionId] = interregionalInterconnectionStep.ledger;
+    pressure -= interregionalInterconnectionStep.ledger.interregionalInterconnectionRelief;
     pressure = v1014Clamp(pressure, 0, 100);
 
     nextHyst[regionId] = { extractionScore, renewableScore: renewableShareScore, pressure };
@@ -27720,6 +27783,8 @@ export function computeIndustrialEnergyEnvironmentalState(
       greenProductPassportStep.ledger.summary,
       renewableAttributeStep.ledger.summary,
       carbonMarketIntegrityStep.ledger.summary,
+      industrialElectrificationFlexStep.ledger.summary,
+      interregionalInterconnectionStep.ledger.summary,
       climateHazards.length ? `${climateHazards.length} active climate hazard signal(s)` : 'No climate hazards from crises',
       activeRules.length ? `${activeRules.length} environmental rule(s) active` : 'No environmental rules triggered',
     ];
@@ -27932,6 +27997,10 @@ export function computeIndustrialEnergyEnvironmentalState(
       renewableAttributeRelief: renewableAttributeStep.ledger.renewableAttributeRelief,
       carbonMarketIntegrityBand: carbonMarketIntegrityStep.ledger.band,
       carbonMarketIntegrityRelief: carbonMarketIntegrityStep.ledger.carbonMarketIntegrityRelief,
+      industrialElectrificationFlexBand: industrialElectrificationFlexStep.ledger.band,
+      industrialElectrificationFlexRelief: industrialElectrificationFlexStep.ledger.industrialElectrificationFlexRelief,
+      interregionalInterconnectionBand: interregionalInterconnectionStep.ledger.band,
+      interregionalInterconnectionRelief: interregionalInterconnectionStep.ledger.interregionalInterconnectionRelief,
       activeClimateHazards: climateHazards,
       activeRuleIds: activeRules.map(r => r.id),
       activeSiteIds: sites.slice(0, 6).map(s => s.id),
@@ -28065,6 +28134,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalGreenProductPassportLedgers: greenProductPassportLedgers,
     regionalRenewableAttributeLedgers: renewableAttributeLedgers,
     regionalCarbonMarketIntegrityLedgers: carbonMarketIntegrityLedgers,
+    regionalIndustrialElectrificationFlexLedgers: industrialElectrificationFlexLedgers,
+    regionalInterregionalInterconnectionLedgers: interregionalInterconnectionLedgers,
     transitions: transitions.slice(0, 24),
     history,
   };
@@ -28140,6 +28211,8 @@ export function computeIndustrialEnergyEnvironmentalState(
     regionalGreenProductPassportMemory: nextGreenProductPassportMemory,
     regionalRenewableAttributeMemory: nextRenewableAttributeMemory,
     regionalCarbonMarketIntegrityMemory: nextCarbonMarketIntegrityMemory,
+    regionalIndustrialElectrificationFlexMemory: nextIndustrialElectrificationFlexMemory,
+    regionalInterregionalInterconnectionMemory: nextInterregionalInterconnectionMemory,
     history,
   };
   return { state, persisted: nextPersisted };
@@ -29434,6 +29507,50 @@ export function runV1014IndustrialEnergyEnvironmentalSelfTests(): { passed: numb
     integrityBand: rr35.state.regions.QLD?.carbonMarketIntegrityBand,
   });
   check('RENEWABLE CMI GI alignment', giRenewableCmi.relevanceDelta > 0.5, giRenewableCmi.reason || '');
+
+  const flexInterconnectionInp: IndustrialEnergyEnvironmentalInputs = {
+    ...baseInp,
+    completedProjectTypes: [
+      'process_heat_electrification_hub',
+      'federation_industrial_electrification_tie',
+      'industrial_load_flex_corridor',
+      'hvdc_link_orchestration_hub',
+      'merchant_interconnection_stacking_layer',
+      'granular_renewable_certificate_hub',
+      'safeguard_credit_integrity_hub',
+      'industrial_demand_orchestration_hub',
+      'flow_gate_orchestration_hub',
+      'firming_merchant_orchestration_hub',
+      'renewable_grid',
+      'battery_grid',
+    ],
+  };
+  const rr36 = computeIndustrialEnergyEnvironmentalState(
+    flexInterconnectionInp,
+    createInitialIndustrialEnergyEnvironmentalPersisted(),
+    null,
+  );
+  check(
+    'INDUSTRIAL electrification flex tracked',
+    !!rr36.state.regionalIndustrialElectrificationFlexLedgers.NSW?.band,
+    rr36.state.regionalIndustrialElectrificationFlexLedgers.NSW?.band || '',
+  );
+  check(
+    'INTERREGIONAL interconnection relief',
+    (rr36.state.regions.NSW?.interregionalInterconnectionRelief || 0) > 0,
+    String(rr36.state.regions.NSW?.interregionalInterconnectionRelief),
+  );
+  check(
+    'IND FLEX memory persisted',
+    !!rr36.persisted.regionalIndustrialElectrificationFlexMemory.NSW,
+    String(rr36.persisted.regionalIndustrialElectrificationFlexMemory.NSW?.flexIndex),
+  );
+  const giFlexInterconnection = scoreAgent13FlexInterconnectionGIAlignment({
+    actionText: 'Process-heat electrification hub with HVDC link orchestration and industrial load-flex corridor',
+    flexBand: rr36.state.regions.NSW?.industrialElectrificationFlexBand,
+    interconnectionBand: rr36.state.regions.NSW?.interregionalInterconnectionBand,
+  });
+  check('FLEX INTERCONNECTION GI alignment', giFlexInterconnection.relevanceDelta > 0.5, giFlexInterconnection.reason || '');
 
   for (let i = 0; i < 40; i++) {
     check(`RULE ${i + 1} id unique`, !!V1014_ENVIRONMENTAL_RULES[i], V1014_ENVIRONMENTAL_RULES[i]?.id || 'missing');

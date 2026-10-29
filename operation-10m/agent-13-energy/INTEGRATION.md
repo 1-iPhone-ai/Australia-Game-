@@ -41,6 +41,7 @@ operation-10m/agent-13-energy/
   modules/scope3-supply-chain-hard-to-abate-orchestration-ledger.ts  # scale wave round 33 (O10-197)
   modules/climate-disclosure-green-product-passport-ledger.ts  # scale wave round 34 (O10-199)
   modules/renewable-attribute-carbon-market-integrity-ledger.ts  # scale wave round 35 (O10-201)
+  modules/industrial-electrification-interconnection-orchestration-ledger.ts  # scale wave round 36 (O10-203)
   modules/climate-hazards.ts
   modules/household-industry-links.ts
   modules/v94-type-stubs.ts                    # drop on merge
