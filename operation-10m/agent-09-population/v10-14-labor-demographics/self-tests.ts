@@ -194,6 +194,10 @@ import { computeNationalUnificationUpskillingCouplingBrief } from './unification
 import { computeNationalUpskillingSynthesisOutlook } from './upskilling-synthesis-outlook';
 import { computeNationalSubjectSynthesisReadinessBrief } from './subject-synthesis-readiness-brief';
 import { computeNationalWorkforceSynthesisIndex } from './national-workforce-synthesis-index';
+import { computeNationalSynthesisOnboardingCouplingBrief } from './synthesis-onboarding-coupling-brief';
+import { computeNationalOnboardingIntegrationOutlook } from './onboarding-integration-outlook';
+import { computeNationalSubjectIntegrationReadinessBrief } from './subject-integration-readiness-brief';
+import { computeNationalWorkforceIntegrationIndex } from './national-workforce-integration-index';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -2168,6 +2172,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'synthesis steward note'
   );
   check('R3516', upskillingUpliftForRegion('NSW', 'technology') > 0, 'upskilling uplift for region');
+
+  check('R3601', Boolean(r1.state.synthesisOnboardingCouplingBrief?.band), 'synthesis onboarding on state');
+  check(
+    'R3602',
+    (r1.state.synthesisOnboardingCouplingBrief?.synthesisDrag ?? 0) >= 0,
+    'synthesis onboarding drag'
+  );
+  check('R3603', Boolean(r1.state.onboardingIntegrationOutlook?.band), 'onboarding integration on state');
+  check(
+    'R3604',
+    (r1.state.onboardingIntegrationOutlook?.synthesisDrag ?? 0) >= 0,
+    'onboarding integration synthesis drag'
+  );
+  check('R3605', Boolean(r1.state.subjectIntegrationReadinessBrief?.band), 'subject integration on state');
+  check('R3606', Boolean(r1.state.nationalWorkforceIntegrationIndex?.band), 'workforce integration on state');
+  check(
+    'R3607',
+    detectLaborDemographicsQuery('synthesis onboarding coupling') === 'synthesis_onboarding_coupling',
+    'GI synthesis onboarding detect'
+  );
+  check(
+    'R3608',
+    detectLaborDemographicsQuery('onboarding integration') === 'onboarding_integration',
+    'GI onboarding integration detect'
+  );
+  check(
+    'R3609',
+    detectLaborDemographicsQuery('subject integration readiness') === 'subject_integration_readiness',
+    'GI subject integration detect'
+  );
+  check(
+    'R3610',
+    detectLaborDemographicsQuery('workforce integration') === 'workforce_integration',
+    'GI workforce integration detect'
+  );
+  check(
+    'R3611',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_integration').headline.length > 5,
+    'GI workforce integration answer'
+  );
+  const synthesisOnboardingOnly = computeNationalSynthesisOnboardingCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSynthesisIndex
+  );
+  check('R3612', synthesisOnboardingOnly.summary.length > 10, 'synthesis onboarding standalone summary');
+  const onboardingIntegrationOnly = computeNationalOnboardingIntegrationOutlook(
+    r1.state,
+    r1.state.upskillingSynthesisOutlook
+  );
+  check('R3613', onboardingIntegrationOnly.band.length > 3, 'onboarding integration band string');
+  const subjectIntegrationOnly = computeNationalSubjectIntegrationReadinessBrief(
+    r1.state,
+    r1.state.subjectSynthesisReadinessBrief,
+    r1.state.nationalWorkforceSynthesisIndex
+  );
+  check('R3614', subjectIntegrationOnly.integrationDrag >= 0, 'subject integration drag');
+  check(
+    'R3615',
+    computeNationalWorkforceIntegrationIndex(
+      rHhBad.state,
+      rHhBad.state.synthesisOnboardingCouplingBrief,
+      rHhBad.state.onboardingIntegrationOutlook,
+      rHhBad.state.subjectIntegrationReadinessBrief
+    ).stewardNote.length > 8,
+    'integration steward note'
+  );
+  check('R3616', onboardingEaseForRegion('NSW', 'technology') > 0, 'onboarding ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

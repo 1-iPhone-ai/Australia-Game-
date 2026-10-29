@@ -313,6 +313,10 @@ export interface NationalLaborDemographicsState {
   upskillingSynthesisOutlook?: NationalUpskillingSynthesisOutlook;
   subjectSynthesisReadinessBrief?: NationalSubjectSynthesisReadinessBrief;
   nationalWorkforceSynthesisIndex?: NationalWorkforceSynthesisIndex;
+  synthesisOnboardingCouplingBrief?: NationalSynthesisOnboardingCouplingBrief;
+  onboardingIntegrationOutlook?: NationalOnboardingIntegrationOutlook;
+  subjectIntegrationReadinessBrief?: NationalSubjectIntegrationReadinessBrief;
+  nationalWorkforceIntegrationIndex?: NationalWorkforceIntegrationIndex;
 }
 
 export type MigrationShockKind =
@@ -1705,6 +1709,54 @@ export interface NationalWorkforceSynthesisIndex {
   stewardNote: string;
 }
 
+export type SynthesisOnboardingCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalSynthesisOnboardingCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SynthesisOnboardingCouplingBand;
+  synthesisDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type OnboardingIntegrationBand = 'ebbing' | 'patchy' | 'rising' | 'integration';
+
+export interface NationalOnboardingIntegrationOutlook {
+  turn: number;
+  integrationIndex: number;
+  band: OnboardingIntegrationBand;
+  synthesisDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectIntegrationReadinessBand =
+  | 'below_integration'
+  | 'approaching'
+  | 'integration_ready'
+  | 'synthesis_locked';
+
+export interface NationalSubjectIntegrationReadinessBrief {
+  turn: number;
+  integrationIndex: number;
+  band: SubjectIntegrationReadinessBand;
+  integrationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceIntegrationBand = 'fragile' | 'thin' | 'elevated' | 'integration';
+
+export interface NationalWorkforceIntegrationIndex {
+  turn: number;
+  integrationIndex: number;
+  band: WorkforceIntegrationBand;
+  integrationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
 export interface LaborDemographicsPersisted {
   schemaVersion: string;
   revision: number;
@@ -2895,7 +2947,11 @@ export type LaborGiQueryTopic =
   | 'unification_upskilling_coupling'
   | 'upskilling_synthesis'
   | 'subject_synthesis_readiness'
-  | 'workforce_synthesis';
+  | 'workforce_synthesis'
+  | 'synthesis_onboarding_coupling'
+  | 'onboarding_integration'
+  | 'subject_integration_readiness'
+  | 'workforce_integration';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -3024,6 +3080,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(upskilling synthesis|upskilling pipeline synthesis)/.test(q)) return 'upskilling_synthesis';
   if (/\b(subject synthesis readiness|synthesis readiness subject)/.test(q)) return 'subject_synthesis_readiness';
   if (/\b(workforce synthesis|synthesis index labor)/.test(q)) return 'workforce_synthesis';
+  if (/\b(synthesis onboarding|synthesis-onboarding coupling)/.test(q)) return 'synthesis_onboarding_coupling';
+  if (/\b(onboarding integration|onboarding pipeline integration)/.test(q)) return 'onboarding_integration';
+  if (/\b(subject integration readiness|integration readiness subject)/.test(q)) {
+    return 'subject_integration_readiness';
+  }
+  if (/\b(workforce integration|integration index labor)/.test(q)) return 'workforce_integration';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -4035,6 +4097,38 @@ export function answerLaborDemographicsQuestion(
         inference: state.nationalWorkforceSynthesisIndex?.stewardNote || state.summary,
         projection: 'Workforce synthesis synthesizes upskilling coupling, upskilling synthesis, and subject synthesis.'
       };
+    case 'synthesis_onboarding_coupling':
+      return {
+        topic,
+        headline: state.synthesisOnboardingCouplingBrief?.summary || 'Synthesis-onboarding coupling unavailable.',
+        fact: `Coupling band ${state.synthesisOnboardingCouplingBrief?.band ?? 'unknown'}; synthesis drag ${Math.round(state.synthesisOnboardingCouplingBrief?.synthesisDrag ?? 0)}.`,
+        inference: state.synthesisOnboardingCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce synthesis with onboarding levers — wave 36 / O10-203 depth.'
+      };
+    case 'onboarding_integration':
+      return {
+        topic,
+        headline: state.onboardingIntegrationOutlook?.summary || 'Onboarding integration unavailable.',
+        fact: `Integration band ${state.onboardingIntegrationOutlook?.band ?? 'unknown'}; synthesis drag ${Math.round(state.onboardingIntegrationOutlook?.synthesisDrag ?? 0)}.`,
+        inference: state.onboardingIntegrationOutlook?.stewardNote || state.outlook,
+        projection: 'Integration blends onboarding levers with upskilling synthesis — bounded indices only.'
+      };
+    case 'subject_integration_readiness':
+      return {
+        topic,
+        headline: state.subjectIntegrationReadinessBrief?.summary || 'Subject integration readiness unavailable.',
+        fact: `Integration band ${state.subjectIntegrationReadinessBrief?.band ?? 'unknown'}; integration drag ${Math.round(state.subjectIntegrationReadinessBrief?.integrationDrag ?? 0)}.`,
+        inference: state.subjectIntegrationReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject integration readiness gates subject synthesis against workforce synthesis for O10-203 wave 36.'
+      };
+    case 'workforce_integration':
+      return {
+        topic,
+        headline: state.nationalWorkforceIntegrationIndex?.summary || 'Workforce integration unavailable.',
+        fact: `Integration band ${state.nationalWorkforceIntegrationIndex?.band ?? 'unknown'}; integration drag ${Math.round(state.nationalWorkforceIntegrationIndex?.integrationDrag ?? 0)}.`,
+        inference: state.nationalWorkforceIntegrationIndex?.stewardNote || state.summary,
+        projection: 'Workforce integration synthesizes onboarding coupling, onboarding integration, and subject integration.'
+      };
     default:
       return {
         topic: 'national_summary',
@@ -5023,6 +5117,30 @@ export function buildStewardLaborBrief(
     state.nationalWorkforceSynthesisIndex?.band === 'thin'
   ) {
     hints.push(state.nationalWorkforceSynthesisIndex.stewardNote);
+  }
+  if (
+    state.synthesisOnboardingCouplingBrief?.band === 'decoupled' ||
+    state.synthesisOnboardingCouplingBrief?.band === 'strained'
+  ) {
+    hints.push(state.synthesisOnboardingCouplingBrief.stewardNote);
+  }
+  if (
+    state.onboardingIntegrationOutlook?.band === 'ebbing' ||
+    state.onboardingIntegrationOutlook?.band === 'patchy'
+  ) {
+    hints.push(state.onboardingIntegrationOutlook.stewardNote);
+  }
+  if (
+    state.subjectIntegrationReadinessBrief?.band === 'below_integration' ||
+    state.subjectIntegrationReadinessBrief?.band === 'approaching'
+  ) {
+    hints.push(state.subjectIntegrationReadinessBrief.stewardNote);
+  }
+  if (
+    state.nationalWorkforceIntegrationIndex?.band === 'fragile' ||
+    state.nationalWorkforceIntegrationIndex?.band === 'thin'
+  ) {
+    hints.push(state.nationalWorkforceIntegrationIndex.stewardNote);
   }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
@@ -14532,6 +14650,278 @@ export function computeNationalWorkforceSynthesisIndex(
 }
 
 
+// --- source: synthesis-onboarding-coupling-brief.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalSynthesisOnboardingCouplingBrief,
+  type NationalWorkforceSynthesisIndex,
+  type SynthesisOnboardingCouplingBand
+} from './types';
+
+function couplingBand(index: number): SynthesisOnboardingCouplingBand {
+  if (index <= 34) return 'decoupled';
+  if (index <= 48) return 'strained';
+  if (index <= 62) return 'amplified';
+  return 'elevated';
+}
+
+/** Round-36 / wave-36 synthesis-onboarding coupling — synthesis × onboarding (O10-203). */
+export function computeNationalSynthesisOnboardingCouplingBrief(
+  state: NationalLaborDemographicsState,
+  synthesis: NationalWorkforceSynthesisIndex | null | undefined
+): NationalSynthesisOnboardingCouplingBrief {
+  if (!state.enabled || !synthesis) {
+    return {
+      turn: state.turn,
+      couplingIndex: 50,
+      band: 'strained',
+      synthesisDrag: 0,
+      summary: 'Synthesis-onboarding coupling idle — workforce synthesis unavailable.',
+      stewardNote: 'Compute workforce synthesis before onboarding coupling guidance.'
+    };
+  }
+
+  let onboardingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    onboardingLift += onboardingEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  onboardingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const synthesisDrag = v1014laborClamp(
+    synthesis.synthesisDrag * 0.48 + (synthesis.band === 'fragile' || synthesis.band === 'thin' ? 11 : 3)
+  );
+  const synthesisLift =
+    synthesis.band === 'elevated' || synthesis.band === 'synthesis'
+      ? synthesis.synthesisIndex * 0.24
+      : synthesis.synthesisIndex * 0.12;
+
+  const couplingIndex = v1014laborClamp(22 + onboardingLift * 21 + synthesisLift - synthesisDrag);
+  const band = couplingBand(couplingIndex);
+
+  const stewardNote =
+    band === 'decoupled' || band === 'strained'
+      ? 'Strained synthesis-onboarding link — deploy onboarding levers before wave-36 integration commits.'
+      : band === 'elevated'
+        ? 'Elevated coupling — guard onboarding integration spikes that drain synthesis buffers.'
+        : 'Amplified coupling — pair onboarding packs with subject integration readiness checks.';
+
+  return {
+    turn: state.turn,
+    couplingIndex,
+    band,
+    synthesisDrag,
+    summary: `Synthesis-onboarding coupling ${band} (index ${Math.round(couplingIndex)}); synthesis drag ${Math.round(synthesisDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: onboarding-integration-outlook.ts ---
+  V1014_LABOR_CORE_REGIONS,
+  type NationalLaborDemographicsState,
+  type NationalOnboardingIntegrationOutlook,
+  type NationalUpskillingSynthesisOutlook,
+  type OnboardingIntegrationBand
+} from './types';
+
+function integrationBand(index: number): OnboardingIntegrationBand {
+  if (index <= 34) return 'ebbing';
+  if (index <= 48) return 'patchy';
+  if (index <= 62) return 'rising';
+  return 'integration';
+}
+
+export function computeNationalOnboardingIntegrationOutlook(
+  state: NationalLaborDemographicsState,
+  upskillingSynthesis: NationalUpskillingSynthesisOutlook | null | undefined
+): NationalOnboardingIntegrationOutlook {
+  if (!state.enabled || !upskillingSynthesis) {
+    return {
+      turn: state.turn,
+      integrationIndex: 50,
+      band: 'patchy',
+      synthesisDrag: 0,
+      summary: 'Onboarding integration idle — upskilling synthesis unavailable.',
+      stewardNote: 'Compute upskilling synthesis before onboarding integration guidance.'
+    };
+  }
+
+  let onboardingLift = 0;
+  V1014_LABOR_CORE_REGIONS.forEach(regionId => {
+    onboardingLift += onboardingEaseForRegion(regionId, state.regions[regionId]?.dominantIndustry ?? null);
+  });
+  onboardingLift /= Math.max(1, V1014_LABOR_CORE_REGIONS.length);
+
+  const synthesisDrag = v1014laborClamp(
+    upskillingSynthesis.harmonyDrag * 0.46 +
+      (upskillingSynthesis.band === 'ebbing' || upskillingSynthesis.band === 'patchy' ? 10 : 3)
+  );
+  const synthesisLift =
+    upskillingSynthesis.band === 'rising' || upskillingSynthesis.band === 'synthesis'
+      ? upskillingSynthesis.synthesisIndex * 0.2
+      : upskillingSynthesis.synthesisIndex * 0.1;
+
+  const integrationIndex = v1014laborClamp(24 + onboardingLift * 22 + synthesisLift - synthesisDrag);
+  const band = integrationBand(integrationIndex);
+
+  const stewardNote =
+    band === 'ebbing' || band === 'patchy'
+      ? 'Patchy onboarding integration — deploy onboarding levers before subject integration assembly.'
+      : band === 'integration'
+        ? 'Integration band — verify synthesis-onboarding coupling before auto workforce pushes.'
+        : 'Rising integration — align with onboarding sustain outlook checks.';
+
+  return {
+    turn: state.turn,
+    integrationIndex,
+    band,
+    synthesisDrag,
+    summary: `National onboarding integration ${band} (index ${Math.round(integrationIndex)}); synthesis drag ${Math.round(synthesisDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: subject-integration-readiness-brief.ts ---
+  type NationalLaborDemographicsState,
+  type NationalSubjectIntegrationReadinessBrief,
+  type NationalSubjectSynthesisReadinessBrief,
+  type NationalWorkforceSynthesisIndex,
+  type SubjectIntegrationReadinessBand
+} from './types';
+
+function integrationBand(index: number): SubjectIntegrationReadinessBand {
+  if (index <= 34) return 'below_integration';
+  if (index <= 48) return 'approaching';
+  if (index <= 62) return 'integration_ready';
+  return 'synthesis_locked';
+}
+
+/** Round-36 / wave-36 subject integration readiness — synthesis × workforce synthesis (O10-203). */
+export function computeNationalSubjectIntegrationReadinessBrief(
+  state: NationalLaborDemographicsState,
+  subjectSynthesis: NationalSubjectSynthesisReadinessBrief | null | undefined,
+  workforceSynthesis: NationalWorkforceSynthesisIndex | null | undefined
+): NationalSubjectIntegrationReadinessBrief {
+  if (!state.enabled || !subjectSynthesis || !workforceSynthesis) {
+    return {
+      turn: state.turn,
+      integrationIndex: 50,
+      band: 'approaching',
+      integrationDrag: 0,
+      summary: 'Subject integration readiness idle — subject synthesis or workforce synthesis unavailable.',
+      stewardNote: 'Compute subject synthesis and workforce synthesis before integration guidance.'
+    };
+  }
+
+  const integrationDrag = v1014laborClamp(
+    subjectSynthesis.synthesisDrag * 0.38 +
+      workforceSynthesis.synthesisDrag * 0.38 +
+      (subjectSynthesis.band === 'below_synthesis' || workforceSynthesis.band === 'fragile' ? 12 : 3)
+  );
+  const subjectLift =
+    subjectSynthesis.band === 'synthesis_ready' || subjectSynthesis.band === 'unification_locked'
+      ? subjectSynthesis.synthesisIndex * 0.27
+      : subjectSynthesis.synthesisIndex * 0.14;
+  const workforceLift =
+    workforceSynthesis.band === 'elevated' || workforceSynthesis.band === 'synthesis'
+      ? workforceSynthesis.synthesisIndex * 0.25
+      : workforceSynthesis.synthesisIndex * 0.12;
+
+  const integrationIndex = v1014laborClamp(20 + subjectLift + workforceLift - integrationDrag);
+  const band = integrationBand(integrationIndex);
+
+  const stewardNote =
+    band === 'below_integration' || band === 'approaching'
+      ? 'Approaching integration — hold O10-203 wave-36 scale until synthesis-onboarding syncs.'
+      : band === 'synthesis_locked'
+        ? 'Synthesis-locked integration — still monitor onboarding integration during corridor peaks.'
+        : 'Integration-ready — pair with workforce integration index for Agent 25 merge tranche.';
+
+  return {
+    turn: state.turn,
+    integrationIndex,
+    band,
+    integrationDrag,
+    summary: `Subject integration readiness ${band} (index ${Math.round(integrationIndex)}); integration drag ${Math.round(integrationDrag)}.`,
+    stewardNote
+  };
+}
+
+
+// --- source: national-workforce-integration-index.ts ---
+  type NationalLaborDemographicsState,
+  type NationalOnboardingIntegrationOutlook,
+  type NationalSubjectIntegrationReadinessBrief,
+  type NationalSynthesisOnboardingCouplingBrief,
+  type NationalWorkforceIntegrationIndex,
+  type WorkforceIntegrationBand
+} from './types';
+
+function integrationBand(index: number): WorkforceIntegrationBand {
+  if (index <= 34) return 'fragile';
+  if (index <= 48) return 'thin';
+  if (index <= 62) return 'elevated';
+  return 'integration';
+}
+
+export function computeNationalWorkforceIntegrationIndex(
+  state: NationalLaborDemographicsState,
+  onboardingCoupling: NationalSynthesisOnboardingCouplingBrief | null | undefined,
+  onboardingIntegration: NationalOnboardingIntegrationOutlook | null | undefined,
+  subjectIntegration: NationalSubjectIntegrationReadinessBrief | null | undefined
+): NationalWorkforceIntegrationIndex {
+  if (!state.enabled || !onboardingCoupling || !onboardingIntegration || !subjectIntegration) {
+    return {
+      turn: state.turn,
+      integrationIndex: 50,
+      band: 'thin',
+      integrationDrag: 0,
+      summary: 'Workforce integration idle — onboarding coupling, onboarding integration, or subject integration unavailable.',
+      stewardNote: 'Compute O10-203 wave-36 depth stack before integration guidance.'
+    };
+  }
+
+  const integrationDrag = v1014laborClamp(
+    subjectIntegration.integrationDrag * 0.35 +
+      onboardingCoupling.synthesisDrag * 0.3 +
+      onboardingIntegration.synthesisDrag * 0.25 +
+      (subjectIntegration.band === 'below_integration' || onboardingCoupling.band === 'decoupled' ? 8 : 2)
+  );
+  const onboardingLift =
+    onboardingCoupling.band === 'amplified' || onboardingCoupling.band === 'elevated'
+      ? onboardingCoupling.couplingIndex * 0.2
+      : onboardingCoupling.couplingIndex * 0.1;
+  const outlookLift =
+    onboardingIntegration.band === 'rising' || onboardingIntegration.band === 'integration'
+      ? onboardingIntegration.integrationIndex * 0.18
+      : onboardingIntegration.integrationIndex * 0.09;
+  const subjectLift =
+    subjectIntegration.band === 'integration_ready' || subjectIntegration.band === 'synthesis_locked'
+      ? subjectIntegration.integrationIndex * 0.22
+      : subjectIntegration.integrationIndex * 0.11;
+
+  const integrationIndex = v1014laborClamp(18 + onboardingLift + outlookLift + subjectLift - integrationDrag);
+  const band = integrationBand(integrationIndex);
+
+  const stewardNote =
+    band === 'fragile' || band === 'thin'
+      ? 'Thin workforce integration — sequence synthesis-onboarding, onboarding integration, and subject integration before post-ea2bb03 tranche.'
+      : band === 'integration'
+        ? 'Integration band — avoid corridor overload that breaks subject integration bands.'
+        : 'Elevated integration — refresh subject integration checks each scale wave.';
+
+  return {
+    turn: state.turn,
+    integrationIndex,
+    band,
+    integrationDrag,
+    summary: `National workforce integration ${band} (index ${Math.round(integrationIndex)}); integration drag ${Math.round(integrationDrag)}.`,
+    stewardNote
+  };
+}
+
+
 // --- source: persistence.ts ---
   v1014laborBandDemographic,
   v1014laborBandEmployment,
@@ -15564,6 +15954,25 @@ export function computeNationalLaborDemographics(
     state.upskillingSynthesisOutlook,
     state.subjectSynthesisReadinessBrief
   );
+  state.synthesisOnboardingCouplingBrief = computeNationalSynthesisOnboardingCouplingBrief(
+    state,
+    state.nationalWorkforceSynthesisIndex
+  );
+  state.onboardingIntegrationOutlook = computeNationalOnboardingIntegrationOutlook(
+    state,
+    state.upskillingSynthesisOutlook
+  );
+  state.subjectIntegrationReadinessBrief = computeNationalSubjectIntegrationReadinessBrief(
+    state,
+    state.subjectSynthesisReadinessBrief,
+    state.nationalWorkforceSynthesisIndex
+  );
+  state.nationalWorkforceIntegrationIndex = computeNationalWorkforceIntegrationIndex(
+    state,
+    state.synthesisOnboardingCouplingBrief,
+    state.onboardingIntegrationOutlook,
+    state.subjectIntegrationReadinessBrief
+  );
   if (capacityBridge.summary) {
     state.evidence.push(capacityBridge.summary.slice(0, 120));
   }
@@ -16330,6 +16739,34 @@ export function computeNationalLaborDemographics(
     state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
   ) {
     state.evidence.push(state.nationalWorkforceSynthesisIndex.summary.slice(0, 120));
+  }
+  if (
+    (state.synthesisOnboardingCouplingBrief?.band === 'decoupled' ||
+      state.synthesisOnboardingCouplingBrief?.band === 'strained') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.synthesisOnboardingCouplingBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.onboardingIntegrationOutlook?.band === 'ebbing' ||
+      state.onboardingIntegrationOutlook?.band === 'patchy') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.onboardingIntegrationOutlook.summary.slice(0, 120));
+  }
+  if (
+    (state.subjectIntegrationReadinessBrief?.band === 'below_integration' ||
+      state.subjectIntegrationReadinessBrief?.band === 'approaching') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.subjectIntegrationReadinessBrief.summary.slice(0, 120));
+  }
+  if (
+    (state.nationalWorkforceIntegrationIndex?.band === 'fragile' ||
+      state.nationalWorkforceIntegrationIndex?.band === 'thin') &&
+    state.evidence.length < V1014_LABOR_LIMITS.maxEvidence
+  ) {
+    state.evidence.push(state.nationalWorkforceIntegrationIndex.summary.slice(0, 120));
   }
   if (corridorNotes.length) {
     state.evidence.push(corridorNotes[0]);
@@ -18373,6 +18810,73 @@ export function runV1014LaborDemographicsSelfTests(): {
     'synthesis steward note'
   );
   check('R3516', upskillingUpliftForRegion('NSW', 'technology') > 0, 'upskilling uplift for region');
+
+  check('R3601', Boolean(r1.state.synthesisOnboardingCouplingBrief?.band), 'synthesis onboarding on state');
+  check(
+    'R3602',
+    (r1.state.synthesisOnboardingCouplingBrief?.synthesisDrag ?? 0) >= 0,
+    'synthesis onboarding drag'
+  );
+  check('R3603', Boolean(r1.state.onboardingIntegrationOutlook?.band), 'onboarding integration on state');
+  check(
+    'R3604',
+    (r1.state.onboardingIntegrationOutlook?.synthesisDrag ?? 0) >= 0,
+    'onboarding integration synthesis drag'
+  );
+  check('R3605', Boolean(r1.state.subjectIntegrationReadinessBrief?.band), 'subject integration on state');
+  check('R3606', Boolean(r1.state.nationalWorkforceIntegrationIndex?.band), 'workforce integration on state');
+  check(
+    'R3607',
+    detectLaborDemographicsQuery('synthesis onboarding coupling') === 'synthesis_onboarding_coupling',
+    'GI synthesis onboarding detect'
+  );
+  check(
+    'R3608',
+    detectLaborDemographicsQuery('onboarding integration') === 'onboarding_integration',
+    'GI onboarding integration detect'
+  );
+  check(
+    'R3609',
+    detectLaborDemographicsQuery('subject integration readiness') === 'subject_integration_readiness',
+    'GI subject integration detect'
+  );
+  check(
+    'R3610',
+    detectLaborDemographicsQuery('workforce integration') === 'workforce_integration',
+    'GI workforce integration detect'
+  );
+  check(
+    'R3611',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_integration').headline.length > 5,
+    'GI workforce integration answer'
+  );
+  const synthesisOnboardingOnly = computeNationalSynthesisOnboardingCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceSynthesisIndex
+  );
+  check('R3612', synthesisOnboardingOnly.summary.length > 10, 'synthesis onboarding standalone summary');
+  const onboardingIntegrationOnly = computeNationalOnboardingIntegrationOutlook(
+    r1.state,
+    r1.state.upskillingSynthesisOutlook
+  );
+  check('R3613', onboardingIntegrationOnly.band.length > 3, 'onboarding integration band string');
+  const subjectIntegrationOnly = computeNationalSubjectIntegrationReadinessBrief(
+    r1.state,
+    r1.state.subjectSynthesisReadinessBrief,
+    r1.state.nationalWorkforceSynthesisIndex
+  );
+  check('R3614', subjectIntegrationOnly.integrationDrag >= 0, 'subject integration drag');
+  check(
+    'R3615',
+    computeNationalWorkforceIntegrationIndex(
+      rHhBad.state,
+      rHhBad.state.synthesisOnboardingCouplingBrief,
+      rHhBad.state.onboardingIntegrationOutlook,
+      rHhBad.state.subjectIntegrationReadinessBrief
+    ).stewardNote.length > 8,
+    'integration steward note'
+  );
+  check('R3616', onboardingEaseForRegion('NSW', 'technology') > 0, 'onboarding ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

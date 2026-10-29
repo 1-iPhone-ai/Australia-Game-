@@ -127,7 +127,11 @@ export type LaborGiQueryTopic =
   | 'unification_upskilling_coupling'
   | 'upskilling_synthesis'
   | 'subject_synthesis_readiness'
-  | 'workforce_synthesis';
+  | 'workforce_synthesis'
+  | 'synthesis_onboarding_coupling'
+  | 'onboarding_integration'
+  | 'subject_integration_readiness'
+  | 'workforce_integration';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -256,6 +260,12 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(upskilling synthesis|upskilling pipeline synthesis)/.test(q)) return 'upskilling_synthesis';
   if (/\b(subject synthesis readiness|synthesis readiness subject)/.test(q)) return 'subject_synthesis_readiness';
   if (/\b(workforce synthesis|synthesis index labor)/.test(q)) return 'workforce_synthesis';
+  if (/\b(synthesis onboarding|synthesis-onboarding coupling)/.test(q)) return 'synthesis_onboarding_coupling';
+  if (/\b(onboarding integration|onboarding pipeline integration)/.test(q)) return 'onboarding_integration';
+  if (/\b(subject integration readiness|integration readiness subject)/.test(q)) {
+    return 'subject_integration_readiness';
+  }
+  if (/\b(workforce integration|integration index labor)/.test(q)) return 'workforce_integration';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1266,6 +1276,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Synthesis band ${state.nationalWorkforceSynthesisIndex?.band ?? 'unknown'}; synthesis drag ${Math.round(state.nationalWorkforceSynthesisIndex?.synthesisDrag ?? 0)}.`,
         inference: state.nationalWorkforceSynthesisIndex?.stewardNote || state.summary,
         projection: 'Workforce synthesis synthesizes upskilling coupling, upskilling synthesis, and subject synthesis.'
+      };
+    case 'synthesis_onboarding_coupling':
+      return {
+        topic,
+        headline: state.synthesisOnboardingCouplingBrief?.summary || 'Synthesis-onboarding coupling unavailable.',
+        fact: `Coupling band ${state.synthesisOnboardingCouplingBrief?.band ?? 'unknown'}; synthesis drag ${Math.round(state.synthesisOnboardingCouplingBrief?.synthesisDrag ?? 0)}.`,
+        inference: state.synthesisOnboardingCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce synthesis with onboarding levers — wave 36 / O10-203 depth.'
+      };
+    case 'onboarding_integration':
+      return {
+        topic,
+        headline: state.onboardingIntegrationOutlook?.summary || 'Onboarding integration unavailable.',
+        fact: `Integration band ${state.onboardingIntegrationOutlook?.band ?? 'unknown'}; synthesis drag ${Math.round(state.onboardingIntegrationOutlook?.synthesisDrag ?? 0)}.`,
+        inference: state.onboardingIntegrationOutlook?.stewardNote || state.outlook,
+        projection: 'Integration blends onboarding levers with upskilling synthesis — bounded indices only.'
+      };
+    case 'subject_integration_readiness':
+      return {
+        topic,
+        headline: state.subjectIntegrationReadinessBrief?.summary || 'Subject integration readiness unavailable.',
+        fact: `Integration band ${state.subjectIntegrationReadinessBrief?.band ?? 'unknown'}; integration drag ${Math.round(state.subjectIntegrationReadinessBrief?.integrationDrag ?? 0)}.`,
+        inference: state.subjectIntegrationReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject integration readiness gates subject synthesis against workforce synthesis for O10-203 wave 36.'
+      };
+    case 'workforce_integration':
+      return {
+        topic,
+        headline: state.nationalWorkforceIntegrationIndex?.summary || 'Workforce integration unavailable.',
+        fact: `Integration band ${state.nationalWorkforceIntegrationIndex?.band ?? 'unknown'}; integration drag ${Math.round(state.nationalWorkforceIntegrationIndex?.integrationDrag ?? 0)}.`,
+        inference: state.nationalWorkforceIntegrationIndex?.stewardNote || state.summary,
+        projection: 'Workforce integration synthesizes onboarding coupling, onboarding integration, and subject integration.'
       };
     default:
       return {

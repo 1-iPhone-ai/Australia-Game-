@@ -309,6 +309,10 @@ export interface NationalLaborDemographicsState {
   upskillingSynthesisOutlook?: NationalUpskillingSynthesisOutlook;
   subjectSynthesisReadinessBrief?: NationalSubjectSynthesisReadinessBrief;
   nationalWorkforceSynthesisIndex?: NationalWorkforceSynthesisIndex;
+  synthesisOnboardingCouplingBrief?: NationalSynthesisOnboardingCouplingBrief;
+  onboardingIntegrationOutlook?: NationalOnboardingIntegrationOutlook;
+  subjectIntegrationReadinessBrief?: NationalSubjectIntegrationReadinessBrief;
+  nationalWorkforceIntegrationIndex?: NationalWorkforceIntegrationIndex;
 }
 
 export type MigrationShockKind =
@@ -1697,6 +1701,54 @@ export interface NationalWorkforceSynthesisIndex {
   synthesisIndex: number;
   band: WorkforceSynthesisBand;
   synthesisDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SynthesisOnboardingCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalSynthesisOnboardingCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: SynthesisOnboardingCouplingBand;
+  synthesisDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type OnboardingIntegrationBand = 'ebbing' | 'patchy' | 'rising' | 'integration';
+
+export interface NationalOnboardingIntegrationOutlook {
+  turn: number;
+  integrationIndex: number;
+  band: OnboardingIntegrationBand;
+  synthesisDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectIntegrationReadinessBand =
+  | 'below_integration'
+  | 'approaching'
+  | 'integration_ready'
+  | 'synthesis_locked';
+
+export interface NationalSubjectIntegrationReadinessBrief {
+  turn: number;
+  integrationIndex: number;
+  band: SubjectIntegrationReadinessBand;
+  integrationDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforceIntegrationBand = 'fragile' | 'thin' | 'elevated' | 'integration';
+
+export interface NationalWorkforceIntegrationIndex {
+  turn: number;
+  integrationIndex: number;
+  band: WorkforceIntegrationBand;
+  integrationDrag: number;
   summary: string;
   stewardNote: string;
 }
