@@ -35,7 +35,7 @@
       "moduleId": "agent-05-events",
       "path": "operation-10m/modules/agent-05-events/chunk.tsx",
       "slot": "pre-final-export",
-      "contentSha256": "2a56bd47254f7dad748ccf20412d46f4dc2877c58b9fe8ddc10091db4a430bf3"
+      "contentSha256": "5f066ced5c5c04d1e1163e20ce761f61f0056afd494f1c83a2accddbd4818148"
     },
     {
       "moduleId": "agent-06-macroeconomy",
@@ -125,14 +125,14 @@
       "moduleId": "agent-20-automation",
       "path": "operation-10m/modules/agent-20-automation/chunk.tsx",
       "slot": "append-only-self-tests",
-      "contentSha256": "7873366df2e1b501e37bc553000684dfecc3cce343bab05b8af0e5b2b017de8a",
+      "contentSha256": "31fcf7fb576925fb1b619ddd6dae7a221ecfad9cbd7d1dac8f754e7c4c3478f1",
       "touchesSaveFormat": true
     },
     {
       "moduleId": "agent-21-forecasting",
       "path": "operation-10m/modules/agent-21-forecasting/chunk.tsx",
       "slot": "O10M_AGENT21_INTEGRATION_ANCHOR",
-      "contentSha256": "f58ce86317ba61742625fd43bdddd98ccc3b3cc4b0a78ae0b26a4ab824fcaa5e"
+      "contentSha256": "ed102d4ead85abb9d2383bdf1d120a1cccb4b74f8e9bfe45d7f3b7571d76e235"
     },
     {
       "moduleId": "agent-22-ui",
@@ -144,7 +144,7 @@
       "moduleId": "agent-23-dashboards",
       "path": "operation-10m/modules/agent-23-dashboards/chunk.tsx",
       "slot": "post-living-regions-national-systems",
-      "contentSha256": "4a9c7b833bd6ec80527b58320f0b16916818e11dbf0e6b0d44a994284111736c"
+      "contentSha256": "73cf10ebbbaef698a0cf1905365630a2f5f418bf591dbe96cdeaa02d9054b408"
     },
     {
       "moduleId": "agent-24-history",
