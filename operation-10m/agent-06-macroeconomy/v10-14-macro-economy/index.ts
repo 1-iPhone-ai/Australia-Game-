@@ -188,6 +188,7 @@ export * from './scenario-wave46-integration-rank.ts';
 export * from './scenario-wave47-integration-rank.ts';
 export * from './scenario-wave48-integration-rank.ts';
 export * from './scenario-wave49-integration-rank.ts';
+export * from './scenario-wave50-integration-rank.ts';
 export * from './bridge-v1020-automation-idle-governance-wave-round36-export.ts';
 export * from './bridge-v1021-forecast-wave36-projection-sync.ts';
 export * from './macro-transmission-elasticity.ts';

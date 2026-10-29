@@ -92,6 +92,8 @@ import type { MacroReplayWave48ExportSpillover } from './bridge-v1024-replay-wav
 import type { MacroIntegrationHealthWave48ExportSpillover } from './bridge-v1025-integration-health-wave-round48-export.ts';
 import type { MacroReplayWave49ExportSpillover } from './bridge-v1024-replay-wave-round49-export.ts';
 import type { MacroIntegrationHealthWave49ExportSpillover } from './bridge-v1025-integration-health-wave-round49-export.ts';
+import type { MacroReplayWave50ExportSpillover } from './bridge-v1024-replay-wave-round50-export.ts';
+import type { MacroIntegrationHealthWave50ExportSpillover } from './bridge-v1025-integration-health-wave-round50-export.ts';
 import type { MacroTransmissionLayer, MacroTransmissionReport } from './types.ts';
 
 const ZERO_SPILLOVER = { cycleNudge: 0, investmentNudge: 0, productivityNudge: 0, summary: null as string | null };
@@ -192,6 +194,8 @@ export function buildMacroTransmissionReport(params: {
   integrationHealthWave48Export?: MacroIntegrationHealthWave48ExportSpillover;
   replayWave49Export?: MacroReplayWave49ExportSpillover;
   integrationHealthWave49Export?: MacroIntegrationHealthWave49ExportSpillover;
+  replayWave50Export?: MacroReplayWave50ExportSpillover;
+  integrationHealthWave50Export?: MacroIntegrationHealthWave50ExportSpillover;
 }): MacroTransmissionReport {
   const inflation = params.inflation ?? ZERO_SPILLOVER;
   const energy = params.energy ?? ZERO_SPILLOVER;
@@ -277,6 +281,8 @@ export function buildMacroTransmissionReport(params: {
   const integrationHealthWave48Export = params.integrationHealthWave48Export ?? ZERO_SPILLOVER;
   const replayWave49Export = params.replayWave49Export ?? ZERO_SPILLOVER;
   const integrationHealthWave49Export = params.integrationHealthWave49Export ?? ZERO_SPILLOVER;
+  const replayWave50Export = params.replayWave50Export ?? ZERO_SPILLOVER;
+  const integrationHealthWave50Export = params.integrationHealthWave50Export ?? ZERO_SPILLOVER;
   const layers: MacroTransmissionLayer[] = [
     layer(
       'v10.12_fiscal',
@@ -1001,6 +1007,22 @@ export function buildMacroTransmissionReport(params: {
       integrationHealthWave49Export.investmentNudge,
       integrationHealthWave49Export.productivityNudge,
       integrationHealthWave49Export.summary
+    ),
+    layer(
+      'v10.24_replay_wave50_export',
+      'History replay wave 50 export',
+      replayWave50Export.cycleNudge,
+      replayWave50Export.investmentNudge,
+      replayWave50Export.productivityNudge,
+      replayWave50Export.summary
+    ),
+    layer(
+      'v10.25_integration_health_wave50_export',
+      'Integration health wave 50 export',
+      integrationHealthWave50Export.cycleNudge,
+      integrationHealthWave50Export.investmentNudge,
+      integrationHealthWave50Export.productivityNudge,
+      integrationHealthWave50Export.summary
     )
   ];
   const netCycleNudge = layers.reduce((a, l) => a + l.cycleContribution, 0);
