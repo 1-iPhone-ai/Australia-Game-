@@ -23,6 +23,8 @@ import { buildFiscalStressScenariosReport } from '../fiscal-stress-scenarios/com
 import { buildPublicSectorBalanceSheetReport } from '../public-sector-balance-sheet/compute';
 import { buildTaxPolicySensitivityReport } from '../tax-policy-sensitivity/compute';
 import { buildAppropriationLapseRegisterReport } from '../appropriation-lapse-register/compute';
+import { buildContingencyDrawdownRegisterReport } from '../contingency-drawdown/compute';
+import { buildForwardEstimatesIntegrityReport } from '../forward-estimates-integrity/compute';
 import { runFiscalReconciliation } from '../reconciliation/reconcile';
 import { resolveDebtRollover, defaultMaturityLadder } from '../debt-rollover/compute';
 import { computeDebtOutcomeTrajectory } from '../fiscal-outcomes/debt-outcomes';
@@ -103,6 +105,19 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     envelopeContingencyPoints: contingencyFlex,
     forwardSpendingGrowth: 2
   });
+  const contingencyDrawdownRegister = buildContingencyDrawdownRegisterReport(
+    turn,
+    v1012,
+    contingencyFlex,
+    fiscalRules
+  );
+  const forwardEstimatesIntegrity = buildForwardEstimatesIntegrityReport(
+    turn,
+    v1012,
+    myefo,
+    supplementary,
+    outlook
+  );
   const issuance = executeIssuanceCalendar(turn, v1012);
   const programPerf = reviewProgramPerformance(turn, v1012);
   const infraSummary = summarizeInfrastructureFinancing(
@@ -427,12 +442,40 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `register=${appropriationLapseRegister.aggregateLapsePoints}, warrantRisk=${warrantLedger.aggregateLapseRisk}`
   });
 
+  checks.push({
+    id: 'CF41',
+    label: 'Contingency drawdown within cap',
+    passed: contingencyDrawdownRegister.withinDrawdownCap,
+    detail: `ratio=${contingencyDrawdownRegister.drawdownToOpeningRatio}, draw=${contingencyDrawdownRegister.aggregateDrawdownPoints}`
+  });
+
+  checks.push({
+    id: 'CF42',
+    label: 'Forward estimates integrity passes',
+    passed: forwardEstimatesIntegrity.allPassed || v1012.pressure === 'critical',
+    detail: `checks=${forwardEstimatesIntegrity.checks.filter(c => c.passed).length}/${forwardEstimatesIntegrity.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF43',
+    label: 'Contingency drawdown coherent with fiscal rules',
+    passed: contingencyDrawdownRegister.coherentWithFiscalRules || v1012.pressure === 'critical',
+    detail: `closing=${contingencyDrawdownRegister.closingFlexPoints}, breaches=${fiscalRules.breachCount}`
+  });
+
+  checks.push({
+    id: 'CF44',
+    label: 'Forward revision gap coherent with supplementary',
+    passed: forwardEstimatesIntegrity.coherentWithSupplementary,
+    detail: `gap=${forwardEstimatesIntegrity.aggregateRevisionGap}, suppNet=${supplementary.netRevisionPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 38
+    layerCount: 42
   };
 }

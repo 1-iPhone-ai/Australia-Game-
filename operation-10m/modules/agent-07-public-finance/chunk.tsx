@@ -4547,6 +4547,247 @@ export function buildAppropriationLapseRegisterReport(
 }
 
 
+// --- source: contingency-drawdown/types.ts ---
+export const CONTINGENCY_DRAWDOWN_REGISTER_SCHEMA = 'op10m-agent07-contingency-drawdown-v1';
+
+export type DrawdownReason = 'shock_response' | 'program_overrun' | 'disaster_relief' | 'policy_top_up';
+
+export interface ContingencyDrawdownEntry {
+  id: string;
+  reason: DrawdownReason;
+  label: string;
+  drawdownPoints: number;
+  remainingFlexPoints: number;
+  withinEntryCap: boolean;
+}
+
+export interface ContingencyDrawdownRegisterReport {
+  schemaVersion: string;
+  turn: number;
+  entries: ContingencyDrawdownEntry[];
+  openingFlexPoints: number;
+  aggregateDrawdownPoints: number;
+  closingFlexPoints: number;
+  drawdownToOpeningRatio: number;
+  withinDrawdownCap: boolean;
+  coherentWithFiscalRules: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: contingency-drawdown/compute.ts ---
+  ContingencyDrawdownEntry,
+  ContingencyDrawdownRegisterReport,
+  DrawdownReason
+} from './types';
+
+const DRAWDOWN_RATIO_CAP = 0.62;
+
+function entry(
+  id: string,
+  reason: DrawdownReason,
+  label: string,
+  draw: number,
+  opening: number
+): ContingencyDrawdownEntry {
+  const remainingFlexPoints = Math.round(Math.max(0, opening - draw) * 10) / 10;
+  return {
+    id,
+    reason,
+    label,
+    drawdownPoints: Math.round(draw * 10) / 10,
+    remainingFlexPoints,
+    withinEntryCap: draw <= opening * 0.28 + 0.5
+  };
+}
+
+export function buildContingencyDrawdownRegisterReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  openingFlexPoints: number,
+  fiscalRules?: FiscalRulesFrameworkReport
+): ContingencyDrawdownRegisterReport {
+  const shockScale =
+    v1012.pressure === 'critical' ? 1.45 : v1012.pressure === 'strained' ? 1.2 : v1012.pressure === 'tight' ? 1.05 : 1;
+  const openingFlex = Math.round(Math.max(2, openingFlexPoints) * 10) / 10;
+
+  const raw: Array<[string, DrawdownReason, string, number]> = [
+    ['cd_shock', 'shock_response', 'Macro shock response', openingFlex * 0.12 * shockScale],
+    ['cd_overrun', 'program_overrun', 'Program overrun top-up', openingFlex * 0.08 * (1 + v1012.maintenanceLoad * 0.02)],
+    ['cd_disaster', 'disaster_relief', 'Disaster relief advance', openingFlex * 0.06 * shockScale],
+    ['cd_policy', 'policy_top_up', 'Policy top-up (limited)', openingFlex * 0.05 * (v1012.revenuePolicy === 'expansionary' ? 1.25 : 1)]
+  ];
+
+  let entries: ContingencyDrawdownEntry[] = raw.map(([id, reason, label, draw]) =>
+    entry(id, reason, label, draw, openingFlex)
+  );
+
+  let aggregateDrawdownPoints = Math.round(entries.reduce((s, e) => s + e.drawdownPoints, 0) * 10) / 10;
+
+  if (v1012.pressure !== 'critical' && openingFlex > 0 && aggregateDrawdownPoints / openingFlex > DRAWDOWN_RATIO_CAP) {
+    const scale = (DRAWDOWN_RATIO_CAP * openingFlex) / Math.max(0.1, aggregateDrawdownPoints);
+    entries = entries.map(e => {
+      const draw = Math.round(e.drawdownPoints * scale * 10) / 10;
+      return entry(e.id, e.reason, e.label, draw, openingFlex);
+    });
+    aggregateDrawdownPoints = Math.round(entries.reduce((s, e) => s + e.drawdownPoints, 0) * 10) / 10;
+  }
+
+  const closingFlexPoints = Math.round(Math.max(0, openingFlex - aggregateDrawdownPoints) * 10) / 10;
+  const drawdownToOpeningRatio =
+    openingFlex <= 0 ? 0 : Math.round((aggregateDrawdownPoints / openingFlex) * 1000) / 1000;
+
+  const withinDrawdownCap =
+    drawdownToOpeningRatio <= DRAWDOWN_RATIO_CAP ||
+    v1012.pressure === 'critical' ||
+    (v1012.pressure === 'strained' && drawdownToOpeningRatio <= DRAWDOWN_RATIO_CAP * 1.08);
+
+  const breachCount = fiscalRules?.breachCount ?? 0;
+  const contingencyObserved =
+    fiscalRules?.assessments.find(a => a.ruleId === 'contingency_reserve_min')?.observed ?? closingFlexPoints;
+  const coherentWithFiscalRules =
+    breachCount <= 2 ||
+    closingFlexPoints >= Math.min(contingencyObserved, openingFlex) * 0.35 ||
+    v1012.pressure === 'critical';
+
+  const warnings: string[] = [];
+  if (!withinDrawdownCap) {
+    warnings.push(`Drawdown ratio ${drawdownToOpeningRatio} exceeds cap ${DRAWDOWN_RATIO_CAP}.`);
+  }
+  if (!coherentWithFiscalRules) {
+    warnings.push(`Closing flex ${closingFlexPoints} inconsistent with fiscal rules breaches ${breachCount}.`);
+  }
+
+  const narrative = withinDrawdownCap
+    ? `Contingency drawdown ${aggregateDrawdownPoints} from opening flex ${openingFlex}; closing ${closingFlexPoints}.`
+    : `Contingency alert: drawdown ratio ${drawdownToOpeningRatio}.`;
+
+  return {
+    schemaVersion: CONTINGENCY_DRAWDOWN_REGISTER_SCHEMA,
+    turn,
+    entries,
+    openingFlexPoints: openingFlex,
+    aggregateDrawdownPoints,
+    closingFlexPoints,
+    drawdownToOpeningRatio,
+    withinDrawdownCap,
+    coherentWithFiscalRules,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: forward-estimates-integrity/types.ts ---
+export const FORWARD_ESTIMATES_INTEGRITY_SCHEMA = 'op10m-agent07-forward-estimates-integrity-v1';
+
+export interface ForwardIntegrityCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ForwardEstimatesIntegrityReport {
+  schemaVersion: string;
+  turn: number;
+  checks: ForwardIntegrityCheck[];
+  allPassed: boolean;
+  aggregateRevisionGap: number;
+  bandDriftPoints: number;
+  coherentWithSupplementary: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: forward-estimates-integrity/compute.ts ---
+
+export function buildForwardEstimatesIntegrityReport(
+  turn: number,
+  v1012: V1012FiscalSnapshot,
+  myefo: MultiYearExpenditureFramework,
+  supplementary: SupplementaryEstimatesReport,
+  outlook: MediumTermFiscalOutlook
+): ForwardEstimatesIntegrityReport {
+  const checks: ForwardIntegrityCheck[] = [];
+
+  const bandDriftPoints =
+    Math.round(
+      myefo.forwardBands.reduce(
+        (s, b) => s + Math.max(0, b.recurringLoad + b.capitalPipeline - b.envelopeCapacity * 0.94),
+        0
+      ) * 10
+    ) / 10;
+
+  const aggregateRevisionGap =
+    Math.round(Math.abs(supplementary.netRevisionPoints - bandDriftPoints * 0.4) * 10) / 10;
+
+  checks.push({
+    id: 'FEI01',
+    label: 'Forward bands remain within ceiling under non-critical pressure',
+    passed: myefo.forwardBands.every(b => b.withinCeiling) || v1012.pressure === 'critical',
+    detail: `bands=${myefo.forwardBands.length}, binding=${myefo.aggregateCeilingBinding}`
+  });
+
+  checks.push({
+    id: 'FEI02',
+    label: 'Outlook worst pressure not below MYEFO baseline without override',
+    passed:
+      outlook.worstPressure !== 'critical' ||
+      v1012.pressure === 'critical' ||
+      myefo.forwardBands.some(b => !b.withinCeiling),
+    detail: `worst=${outlook.worstPressure}, now=${v1012.pressure}`
+  });
+
+  checks.push({
+    id: 'FEI03',
+    label: 'Supplementary revision gap bounded',
+    passed: aggregateRevisionGap <= 5.5 || supplementary.netRevisionPoints <= 0 || v1012.pressure === 'critical',
+    detail: `gap=${aggregateRevisionGap}, netRev=${supplementary.netRevisionPoints}`
+  });
+
+  checks.push({
+    id: 'FEI04',
+    label: 'Band drift points bounded',
+    passed: bandDriftPoints <= 8 || v1012.pressure === 'critical',
+    detail: `drift=${bandDriftPoints}`
+  });
+
+  const coherentWithSupplementary =
+    aggregateRevisionGap <= 4.2 ||
+    supplementary.withinRevisionTolerance ||
+    v1012.pressure === 'critical';
+
+  const allPassed = checks.every(c => c.passed) && coherentWithSupplementary;
+
+  const warnings: string[] = [];
+  if (!coherentWithSupplementary) {
+    warnings.push(`Revision gap ${aggregateRevisionGap} diverges from forward band drift ${bandDriftPoints}.`);
+  }
+  if (!allPassed) {
+    warnings.push('Forward estimates integrity check failures present.');
+  }
+
+  const narrative = allPassed
+    ? `Forward estimates integrity OK: drift ${bandDriftPoints}, revision gap ${aggregateRevisionGap}.`
+    : `Forward estimates integrity review required (gap ${aggregateRevisionGap}).`;
+
+  return {
+    schemaVersion: FORWARD_ESTIMATES_INTEGRITY_SCHEMA,
+    turn,
+    checks,
+    allPassed,
+    aggregateRevisionGap,
+    bandDriftPoints,
+    coherentWithSupplementary,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -6315,6 +6556,19 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     envelopeContingencyPoints: contingencyFlex,
     forwardSpendingGrowth: 2
   });
+  const contingencyDrawdownRegister = buildContingencyDrawdownRegisterReport(
+    turn,
+    v1012,
+    contingencyFlex,
+    fiscalRules
+  );
+  const forwardEstimatesIntegrity = buildForwardEstimatesIntegrityReport(
+    turn,
+    v1012,
+    myefo,
+    supplementary,
+    outlook
+  );
   const issuance = executeIssuanceCalendar(turn, v1012);
   const programPerf = reviewProgramPerformance(turn, v1012);
   const infraSummary = summarizeInfrastructureFinancing(
@@ -6639,13 +6893,41 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `register=${appropriationLapseRegister.aggregateLapsePoints}, warrantRisk=${warrantLedger.aggregateLapseRisk}`
   });
 
+  checks.push({
+    id: 'CF41',
+    label: 'Contingency drawdown within cap',
+    passed: contingencyDrawdownRegister.withinDrawdownCap,
+    detail: `ratio=${contingencyDrawdownRegister.drawdownToOpeningRatio}, draw=${contingencyDrawdownRegister.aggregateDrawdownPoints}`
+  });
+
+  checks.push({
+    id: 'CF42',
+    label: 'Forward estimates integrity passes',
+    passed: forwardEstimatesIntegrity.allPassed || v1012.pressure === 'critical',
+    detail: `checks=${forwardEstimatesIntegrity.checks.filter(c => c.passed).length}/${forwardEstimatesIntegrity.checks.length}`
+  });
+
+  checks.push({
+    id: 'CF43',
+    label: 'Contingency drawdown coherent with fiscal rules',
+    passed: contingencyDrawdownRegister.coherentWithFiscalRules || v1012.pressure === 'critical',
+    detail: `closing=${contingencyDrawdownRegister.closingFlexPoints}, breaches=${fiscalRules.breachCount}`
+  });
+
+  checks.push({
+    id: 'CF44',
+    label: 'Forward revision gap coherent with supplementary',
+    passed: forwardEstimatesIntegrity.coherentWithSupplementary,
+    detail: `gap=${forwardEstimatesIntegrity.aggregateRevisionGap}, suppNet=${supplementary.netRevisionPoints}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 38
+    layerCount: 42
   };
 }
 
@@ -8525,12 +8807,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Thirty-eight fiscal layers integrated', healthy.layerCount === 38, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Forty-two fiscal layers integrated', healthy.layerCount === 42, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 40,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 44,
     'ok'
   );
 
@@ -8542,9 +8824,9 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF40 ids present',
+    'CF01–CF44 ids present',
     healthy.checks.map(c => c.id).join(',') ===
-      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20,CF21,CF22,CF23,CF24,CF25,CF26,CF27,CF28,CF29,CF30,CF31,CF32,CF33,CF34,CF35,CF36,CF37,CF38,CF39,CF40',
+      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20,CF21,CF22,CF23,CF24,CF25,CF26,CF27,CF28,CF29,CF30,CF31,CF32,CF33,CF34,CF35,CF36,CF37,CF38,CF39,CF40,CF41,CF42,CF43,CF44',
     'ok'
   );
 
@@ -9795,6 +10077,155 @@ export function runAppropriationLapseRegisterSelfTests(): {
     'Lapse ratio bounded under healthy',
     healthy.lapseToRemainingRatio <= 0.53,
     `ratio=${healthy.lapseToRemainingRatio}`
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: contingency-drawdown/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 8,
+    revenueCapacity: partial.revenueCapacity ?? 67,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 7,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 22,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runContingencyDrawdownSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const persisted = createInitialFiscalOutcomesPersisted(8);
+  const { state } = computeFiscalOutcomesLayer({ turn: 8, v1012: v }, persisted);
+  const flex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 4;
+  const rules = assessFiscalRulesFramework({
+    turn: 8,
+    v1012: v,
+    envelopeContingencyPoints: flex,
+    forwardSpendingGrowth: 2
+  });
+
+  const healthy = buildContingencyDrawdownRegisterReport(8, v, flex, rules);
+  record('CDR01', 'Four contingency drawdown entries', healthy.entries.length === 4, 'ok');
+  record('CDR02', 'Healthy within drawdown cap', healthy.withinDrawdownCap, healthy.narrative);
+  record('CDR03', 'Coherent with fiscal rules under healthy', healthy.coherentWithFiscalRules, 'ok');
+
+  const strained = buildContingencyDrawdownRegisterReport(
+    8,
+    snap({ pressure: 'strained', maintenanceLoad: 16 }),
+    flex,
+    rules
+  );
+  record(
+    'CDR04',
+    'Strained pressure raises drawdown aggregate',
+    strained.aggregateDrawdownPoints >= healthy.aggregateDrawdownPoints,
+    `${strained.aggregateDrawdownPoints} vs ${healthy.aggregateDrawdownPoints}`
+  );
+
+  const critical = buildContingencyDrawdownRegisterReport(8, snap({ pressure: 'critical' }), flex, rules);
+  record('CDR05', 'Critical overrides drawdown cap', critical.withinDrawdownCap, 'ok');
+
+  record(
+    'CDR06',
+    'Closing flex non-negative',
+    healthy.closingFlexPoints >= 0 && healthy.closingFlexPoints <= healthy.openingFlexPoints,
+    `closing=${healthy.closingFlexPoints}`
+  );
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: forward-estimates-integrity/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 9,
+    revenueCapacity: partial.revenueCapacity ?? 69,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 6,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 24,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 7,
+    commitmentCount: partial.commitmentCount ?? 5,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runForwardEstimatesIntegritySelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const v = snap({});
+  const myefo = buildMultiYearExpenditureFramework(v, 3);
+  const supp = buildSupplementaryEstimatesReport(9, v);
+  const outlook = buildMediumTermFiscalOutlook(v, 3);
+  const healthy = buildForwardEstimatesIntegrityReport(9, v, myefo, supp, outlook);
+
+  record('FEI-T01', 'Four integrity sub-checks', healthy.checks.length === 4, 'ok');
+  record('FEI-T02', 'Healthy forward integrity passes', healthy.allPassed, healthy.narrative);
+  record('FEI-T03', 'Coherent with supplementary under healthy', healthy.coherentWithSupplementary, 'ok');
+
+  const strained = buildForwardEstimatesIntegrityReport(
+    9,
+    snap({ fiscalHeadroom: -5, pressure: 'strained' }),
+    buildMultiYearExpenditureFramework(snap({ fiscalHeadroom: -5, pressure: 'strained' }), 3),
+    buildSupplementaryEstimatesReport(9, snap({ fiscalHeadroom: -5, pressure: 'strained' })),
+    buildMediumTermFiscalOutlook(snap({ fiscalHeadroom: -5, pressure: 'strained' }), 3)
+  );
+  record(
+    'FEI-T04',
+    'Strained snapshot runs integrity suite',
+    strained.checks.length === 4,
+    `allPassed=${strained.allPassed}`
+  );
+
+  const critical = buildForwardEstimatesIntegrityReport(
+    9,
+    snap({ pressure: 'critical', fiscalHeadroom: -20 }),
+    myefo,
+    supp,
+    outlook
+  );
+  record('FEI-T05', 'Critical pressure override path', critical.allPassed || critical.coherentWithSupplementary, 'ok');
+
+  record(
+    'FEI-T06',
+    'Band drift non-negative',
+    healthy.bandDriftPoints >= 0,
+    `drift=${healthy.bandDriftPoints}`
   );
 
   const passed = results.filter(r => r.passed).length;

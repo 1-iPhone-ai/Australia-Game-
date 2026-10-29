@@ -31,6 +31,8 @@ import { runFiscalStressScenariosSelfTests } from './modules/fiscal-stress-scena
 import { runPublicSectorBalanceSheetSelfTests } from './modules/public-sector-balance-sheet/self-tests';
 import { runTaxPolicySensitivitySelfTests } from './modules/tax-policy-sensitivity/self-tests';
 import { runAppropriationLapseRegisterSelfTests } from './modules/appropriation-lapse-register/self-tests';
+import { runContingencyDrawdownSelfTests } from './modules/contingency-drawdown/self-tests';
+import { runForwardEstimatesIntegritySelfTests } from './modules/forward-estimates-integrity/self-tests';
 
 function runSuite(name: string, fn: () => { passed: number; total: number; allPassed: boolean }) {
   const res = fn();
@@ -71,6 +73,8 @@ ok = runSuite('Fiscal stress scenarios', runFiscalStressScenariosSelfTests) && o
 ok = runSuite('Public sector balance sheet', runPublicSectorBalanceSheetSelfTests) && ok;
 ok = runSuite('Tax policy sensitivity', runTaxPolicySensitivitySelfTests) && ok;
 ok = runSuite('Appropriation lapse register', runAppropriationLapseRegisterSelfTests) && ok;
+ok = runSuite('Contingency drawdown register', runContingencyDrawdownSelfTests) && ok;
+ok = runSuite('Forward estimates integrity', runForwardEstimatesIntegritySelfTests) && ok;
 ok = runSuite('Agent 07 reconciliation', runAgent07ReconciliationSelfTests) && ok;
 
 process.exit(ok ? 0 : 1);
