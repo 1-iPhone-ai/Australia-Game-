@@ -178,3 +178,7 @@ export * from './strategic-forecast-policy-lab';
 export * from './scale-wave-round50-gate-latch.ts';
 export * from './scale-wave-round51-gate-latch.ts';
 export * from './scale-wave-round52-gate-latch.ts';
+export * from './forecast-wave53-projection-sync';
+export * from './forecast-integration-wave53-origin-handoff';
+export * from './forecast-round53-console';
+export * from './scale-wave-round53-gate-latch.ts';
