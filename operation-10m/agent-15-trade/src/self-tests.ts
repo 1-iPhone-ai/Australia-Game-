@@ -8,6 +8,9 @@ import { advanceGlobalTradeEconomyTurn } from './trade-turn.ts';
 import { applyGlobalTradeHouseholdOverrides } from './household-bridge.ts';
 import { activateWorldTradeShock, scheduledShockIdForTurn } from './world-shocks.ts';
 import { advancePartnerSanctions, deriveSanctionModifiers } from './sanctions.ts';
+import { advancePartnerTrustScores, deriveTrustAccessModifiers } from './partner-trust.ts';
+import { autoTradePolicyAdjustments } from './trade-policy.ts';
+import { advanceTradeDisputes, openTradeDispute } from './trade-disputes.ts';
 import {
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
@@ -166,6 +169,54 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     persisted = triggerCommodityShockScenario(persisted, 'scenario_bulk_crash', 100).persisted;
     const second = triggerCommodityShockScenario(persisted, 'scenario_bulk_crash', 101);
     gtelAssert(second.activatedShockIds.length === 0, 'should not reactivate');
+  });
+
+  ok('partner trust responds to sanctions', () => {
+    let persisted = createEmptyGTELPersisted();
+    const before = advancePartnerTrustScores(persisted, { deals: [] }, 4, {}).partnerTrust?.asia_pacific?.score;
+    persisted.partnerSanctions = {
+      asia_pacific: {
+        partnerId: 'asia_pacific',
+        tier: 'sectoral',
+        escalatedTurn: 3,
+        cooldownUntilTurn: null,
+        violationStreak: 2,
+        complianceStreak: 0,
+        scopedCommodities: ['iron_ore'],
+        reason: 'test',
+      },
+    };
+    persisted = advancePartnerTrustScores(persisted, { deals: [] }, 4, { asia_pacific: 'sectoral' });
+    const after = persisted.partnerTrust?.asia_pacific?.score;
+    gtelAssert(typeof before === 'number' && typeof after === 'number' && after < before, 'trust should fall under sectoral sanctions');
+  });
+
+  ok('trade policy diversification activates under restriction', () => {
+    let persisted = createEmptyGTELPersisted();
+    persisted.partnerAccess = { asia_pacific: 'blocked', europe: 'restricted' };
+    persisted = autoTradePolicyAdjustments(persisted, 6);
+    gtelAssert(persisted.tradePolicies.some(p => p.kind === 'diversification_push'), 'missing diversification policy');
+  });
+
+  ok('trade dispute resolution steps down sanctions', () => {
+    let persisted = createEmptyGTELPersisted();
+    persisted.partnerSanctions = {
+      europe: {
+        partnerId: 'europe',
+        tier: 'sectoral',
+        escalatedTurn: 1,
+        cooldownUntilTurn: null,
+        violationStreak: 2,
+        complianceStreak: 0,
+        scopedCommodities: ['services'],
+        reason: 'test',
+      },
+    };
+    const opened = openTradeDispute(persisted, 'europe', 1, 'Test dispute');
+    persisted = opened.persisted;
+    persisted.tradeDisputes = (persisted.tradeDisputes || []).map(d => ({ ...d, openedTurn: 1, status: 'open' as const }));
+    const resolved = advanceTradeDisputes(persisted, 6, { europe: 'none' });
+    gtelAssert(resolved.persisted.partnerSanctions?.europe?.tier !== 'sectoral', 'sanctions should step down');
   });
 
   return { passed, failed };

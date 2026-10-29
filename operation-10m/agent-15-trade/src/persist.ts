@@ -2,6 +2,8 @@ import { GTEL_COMMODITIES, GTEL_LIMITS, GTEL_PARTNER_DEFS, GTEL_BASE_COMMODITY_I
 import type { GTELAccessBand, GTELCommodityId, GTELPartnerId, GTELPersisted, PartnerSanctionRegime, TradeAgreementRecord } from './types.ts';
 import { gtelClamp, gtelNum } from './util.ts';
 import { sanitizePartnerSanctionRegime } from './sanctions.ts';
+import { sanitizePartnerTrustScore } from './partner-trust.ts';
+import type { TradeDisputeCase, TradePolicyInstrument } from './types.ts';
 
 export function createEmptyGTELPersisted(): GTELPersisted {
   return {
@@ -16,6 +18,9 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     activeShocks: [],
     partnerSanctions: {},
     firedShockScenarios: [],
+    partnerTrust: {},
+    tradePolicies: [],
+    tradeDisputes: [],
   };
 }
 
@@ -110,6 +115,50 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   }
   if (Array.isArray(r.firedShockScenarios)) {
     base.firedShockScenarios = r.firedShockScenarios.map(String).slice(-16);
+  }
+  if (r.partnerTrust && typeof r.partnerTrust === 'object') {
+    Object.entries(r.partnerTrust as Record<string, unknown>).slice(0, 6).forEach(([k, v]) => {
+      if (!GTEL_PARTNER_DEFS.some(p => p.id === k)) return;
+      base.partnerTrust![k as GTELPartnerId] = sanitizePartnerTrustScore(v, k as GTELPartnerId, turn);
+    });
+  }
+  if (Array.isArray(r.tradePolicies)) {
+    base.tradePolicies = r.tradePolicies
+      .filter((p: unknown) => p && typeof p === 'object')
+      .slice(-8)
+      .map((p: any) => ({
+        id: String(p.id || '').slice(0, 60),
+        kind: ['export_quota_relief', 'tariff_surge', 'preferential_lane', 'diversification_push'].includes(p.kind)
+          ? p.kind
+          : 'diversification_push',
+        title: String(p.title || 'Policy').slice(0, 100),
+        partnerId: GTEL_PARTNER_DEFS.some(x => x.id === p.partnerId) ? p.partnerId : null,
+        commodity: GTEL_COMMODITIES.includes(p.commodity) ? p.commodity : null,
+        status: ['proposed', 'active', 'expired', 'suspended'].includes(p.status) ? p.status : 'active',
+        activatedTurn: Math.max(1, Math.floor(gtelNum(p.activatedTurn, turn))),
+        expiresTurn: p.expiresTurn == null ? null : Math.max(1, Math.floor(gtelNum(p.expiresTurn, turn))),
+        accessDelta: gtelClamp(gtelNum(p.accessDelta, 0), -0.3, 0.3),
+        commodityDelta: gtelClamp(gtelNum(p.commodityDelta, 0), -0.3, 0.3),
+        domesticStressDelta: gtelClamp(gtelNum(p.domesticStressDelta, 0), -0.1, 0.2),
+        summary: String(p.summary || '').slice(0, 200),
+      })) as TradePolicyInstrument[];
+  }
+  if (Array.isArray(r.tradeDisputes)) {
+    base.tradeDisputes = r.tradeDisputes
+      .filter((d: unknown) => d && typeof d === 'object')
+      .slice(-12)
+      .map((d: any) => ({
+        id: String(d.id || '').slice(0, 60),
+        partnerId: GTEL_PARTNER_DEFS.some(x => x.id === d.partnerId) ? d.partnerId : 'asia_pacific',
+        status: ['open', 'mediation', 'resolved', 'escalated'].includes(d.status) ? d.status : 'open',
+        openedTurn: Math.max(1, Math.floor(gtelNum(d.openedTurn, turn))),
+        resolvedTurn: d.resolvedTurn == null ? null : Math.max(1, Math.floor(gtelNum(d.resolvedTurn, turn))),
+        subject: String(d.subject || '').slice(0, 160),
+        requestedRelief: ['sanction_step_down', 'shock_containment', 'quota_restoration'].includes(d.requestedRelief)
+          ? d.requestedRelief
+          : 'sanction_step_down',
+        severity: gtelClamp(gtelNum(d.severity, 0.5), 0.1, 1),
+      })) as TradeDisputeCase[];
   }
   return base;
 }

@@ -104,6 +104,12 @@ export interface GTELPersisted {
   partnerSanctions: Partial<Record<GTELPartnerId, PartnerSanctionRegime>>;
   /** Scenario ids already fired (dedupe). */
   firedShockScenarios: string[];
+  /** Bilateral trust (0–1) per partner market. */
+  partnerTrust: Partial<Record<GTELPartnerId, PartnerTrustScore>>;
+  /** Active national trade policy instruments. */
+  tradePolicies: TradePolicyInstrument[];
+  /** Open / recently closed trade disputes. */
+  tradeDisputes: TradeDisputeCase[];
 }
 
 export interface GTELState {
@@ -117,6 +123,9 @@ export interface GTELState {
   diplomacyTradeDealsActive: number;
   violationsLastWindow: number;
   activeSanctionTiers: Partial<Record<GTELPartnerId, SanctionTier>>;
+  partnerTrust: Partial<Record<GTELPartnerId, PartnerTrustScore>>;
+  activeTradePolicies: TradePolicyInstrument[];
+  openDisputeCount: number;
   inputHash: string;
 }
 
@@ -218,6 +227,46 @@ export interface RegionalDomesticImpact {
   consumerPricePressure: number;
   stabilityDelta: number;
   narrative: string;
+}
+
+export type TradePolicyKind = 'export_quota_relief' | 'tariff_surge' | 'preferential_lane' | 'diversification_push';
+
+export type TradePolicyStatus = 'proposed' | 'active' | 'expired' | 'suspended';
+
+export interface TradePolicyInstrument {
+  id: string;
+  kind: TradePolicyKind;
+  title: string;
+  partnerId: GTELPartnerId | null;
+  commodity: GTELCommodityId | null;
+  status: TradePolicyStatus;
+  activatedTurn: number;
+  expiresTurn: number | null;
+  accessDelta: number;
+  commodityDelta: number;
+  domesticStressDelta: number;
+  summary: string;
+}
+
+export interface PartnerTrustScore {
+  partnerId: GTELPartnerId;
+  score: number;
+  band: 'critical' | 'fragile' | 'steady' | 'strong';
+  lastUpdatedTurn: number;
+  drivers: string[];
+}
+
+export type TradeDisputeStatus = 'open' | 'mediation' | 'resolved' | 'escalated';
+
+export interface TradeDisputeCase {
+  id: string;
+  partnerId: GTELPartnerId;
+  status: TradeDisputeStatus;
+  openedTurn: number;
+  resolvedTurn: number | null;
+  subject: string;
+  requestedRelief: 'sanction_step_down' | 'shock_containment' | 'quota_restoration';
+  severity: number;
 }
 
 export interface GlobalTradeEconomyPanelProps {

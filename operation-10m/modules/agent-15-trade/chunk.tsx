@@ -108,6 +108,12 @@ export interface GTELPersisted {
   partnerSanctions: Partial<Record<GTELPartnerId, PartnerSanctionRegime>>;
   /** Scenario ids already fired (dedupe). */
   firedShockScenarios: string[];
+  /** Bilateral trust (0–1) per partner market. */
+  partnerTrust: Partial<Record<GTELPartnerId, PartnerTrustScore>>;
+  /** Active national trade policy instruments. */
+  tradePolicies: TradePolicyInstrument[];
+  /** Open / recently closed trade disputes. */
+  tradeDisputes: TradeDisputeCase[];
 }
 
 export interface GTELState {
@@ -121,6 +127,9 @@ export interface GTELState {
   diplomacyTradeDealsActive: number;
   violationsLastWindow: number;
   activeSanctionTiers: Partial<Record<GTELPartnerId, SanctionTier>>;
+  partnerTrust: Partial<Record<GTELPartnerId, PartnerTrustScore>>;
+  activeTradePolicies: TradePolicyInstrument[];
+  openDisputeCount: number;
   inputHash: string;
 }
 
@@ -222,6 +231,46 @@ export interface RegionalDomesticImpact {
   consumerPricePressure: number;
   stabilityDelta: number;
   narrative: string;
+}
+
+export type TradePolicyKind = 'export_quota_relief' | 'tariff_surge' | 'preferential_lane' | 'diversification_push';
+
+export type TradePolicyStatus = 'proposed' | 'active' | 'expired' | 'suspended';
+
+export interface TradePolicyInstrument {
+  id: string;
+  kind: TradePolicyKind;
+  title: string;
+  partnerId: GTELPartnerId | null;
+  commodity: GTELCommodityId | null;
+  status: TradePolicyStatus;
+  activatedTurn: number;
+  expiresTurn: number | null;
+  accessDelta: number;
+  commodityDelta: number;
+  domesticStressDelta: number;
+  summary: string;
+}
+
+export interface PartnerTrustScore {
+  partnerId: GTELPartnerId;
+  score: number;
+  band: 'critical' | 'fragile' | 'steady' | 'strong';
+  lastUpdatedTurn: number;
+  drivers: string[];
+}
+
+export type TradeDisputeStatus = 'open' | 'mediation' | 'resolved' | 'escalated';
+
+export interface TradeDisputeCase {
+  id: string;
+  partnerId: GTELPartnerId;
+  status: TradeDisputeStatus;
+  openedTurn: number;
+  resolvedTurn: number | null;
+  subject: string;
+  requestedRelief: 'sanction_step_down' | 'shock_containment' | 'quota_restoration';
+  severity: number;
 }
 
 export interface GlobalTradeEconomyPanelProps {
@@ -371,6 +420,9 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     activeShocks: [],
     partnerSanctions: {},
     firedShockScenarios: [],
+    partnerTrust: {},
+    tradePolicies: [],
+    tradeDisputes: [],
   };
 }
 
@@ -465,6 +517,50 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   }
   if (Array.isArray(r.firedShockScenarios)) {
     base.firedShockScenarios = r.firedShockScenarios.map(String).slice(-16);
+  }
+  if (r.partnerTrust && typeof r.partnerTrust === 'object') {
+    Object.entries(r.partnerTrust as Record<string, unknown>).slice(0, 6).forEach(([k, v]) => {
+      if (!GTEL_PARTNER_DEFS.some(p => p.id === k)) return;
+      base.partnerTrust![k as GTELPartnerId] = sanitizePartnerTrustScore(v, k as GTELPartnerId, turn);
+    });
+  }
+  if (Array.isArray(r.tradePolicies)) {
+    base.tradePolicies = r.tradePolicies
+      .filter((p: unknown) => p && typeof p === 'object')
+      .slice(-8)
+      .map((p: any) => ({
+        id: String(p.id || '').slice(0, 60),
+        kind: ['export_quota_relief', 'tariff_surge', 'preferential_lane', 'diversification_push'].includes(p.kind)
+          ? p.kind
+          : 'diversification_push',
+        title: String(p.title || 'Policy').slice(0, 100),
+        partnerId: GTEL_PARTNER_DEFS.some(x => x.id === p.partnerId) ? p.partnerId : null,
+        commodity: GTEL_COMMODITIES.includes(p.commodity) ? p.commodity : null,
+        status: ['proposed', 'active', 'expired', 'suspended'].includes(p.status) ? p.status : 'active',
+        activatedTurn: Math.max(1, Math.floor(gtelNum(p.activatedTurn, turn))),
+        expiresTurn: p.expiresTurn == null ? null : Math.max(1, Math.floor(gtelNum(p.expiresTurn, turn))),
+        accessDelta: gtelClamp(gtelNum(p.accessDelta, 0), -0.3, 0.3),
+        commodityDelta: gtelClamp(gtelNum(p.commodityDelta, 0), -0.3, 0.3),
+        domesticStressDelta: gtelClamp(gtelNum(p.domesticStressDelta, 0), -0.1, 0.2),
+        summary: String(p.summary || '').slice(0, 200),
+      })) as TradePolicyInstrument[];
+  }
+  if (Array.isArray(r.tradeDisputes)) {
+    base.tradeDisputes = r.tradeDisputes
+      .filter((d: unknown) => d && typeof d === 'object')
+      .slice(-12)
+      .map((d: any) => ({
+        id: String(d.id || '').slice(0, 60),
+        partnerId: GTEL_PARTNER_DEFS.some(x => x.id === d.partnerId) ? d.partnerId : 'asia_pacific',
+        status: ['open', 'mediation', 'resolved', 'escalated'].includes(d.status) ? d.status : 'open',
+        openedTurn: Math.max(1, Math.floor(gtelNum(d.openedTurn, turn))),
+        resolvedTurn: d.resolvedTurn == null ? null : Math.max(1, Math.floor(gtelNum(d.resolvedTurn, turn))),
+        subject: String(d.subject || '').slice(0, 160),
+        requestedRelief: ['sanction_step_down', 'shock_containment', 'quota_restoration'].includes(d.requestedRelief)
+          ? d.requestedRelief
+          : 'sanction_step_down',
+        severity: gtelClamp(gtelNum(d.severity, 0.5), 0.1, 1),
+      })) as TradeDisputeCase[];
   }
   return base;
 }
@@ -1296,6 +1392,395 @@ export function deriveSanctionModifiers(persisted: GTELPersisted): {
 }
 
 
+// --- source: partner-trust.ts ---
+  GTELDiplomacyState,
+  GTELPartnerId,
+  GTELPersisted,
+  PartnerTrustScore,
+  SanctionTier,
+} from './types.ts';
+
+function trustBand(score: number): PartnerTrustScore['band'] {
+  if (score < 0.35) return 'critical';
+  if (score < 0.55) return 'fragile';
+  if (score < 0.75) return 'steady';
+  return 'strong';
+}
+
+function emptyTrust(partnerId: GTELPartnerId, turn: number): PartnerTrustScore {
+  const def = GTEL_PARTNER_DEFS.find(p => p.id === partnerId);
+  const base = def?.baseOpenness ?? 0.7;
+  return {
+    partnerId,
+    score: gtelClamp(base * 0.65 + 0.2, 0.25, 0.85),
+    band: 'steady',
+    lastUpdatedTurn: turn,
+    drivers: ['Baseline partner openness.'],
+  };
+}
+
+export function sanitizePartnerTrustScore(raw: unknown, partnerId: GTELPartnerId, turn: number): PartnerTrustScore {
+  const base = emptyTrust(partnerId, turn);
+  if (!raw || typeof raw !== 'object') return base;
+  const r = raw as Record<string, unknown>;
+  const score = gtelClamp(gtelNum(r.score, base.score), 0.05, 0.99);
+  return {
+    partnerId,
+    score,
+    band: trustBand(score),
+    lastUpdatedTurn: Math.max(1, Math.floor(gtelNum(r.lastUpdatedTurn, turn))),
+    drivers: (Array.isArray(r.drivers) ? r.drivers : base.drivers).map(String).slice(0, 6),
+  };
+}
+
+export function advancePartnerTrustScores(
+  persisted: GTELPersisted,
+  diplomacy: GTELDiplomacyState | null,
+  turn: number,
+  sanctionTiers: Partial<Record<GTELPartnerId, SanctionTier>>,
+): GTELPersisted {
+  const partnerTrust: Partial<Record<GTELPartnerId, PartnerTrustScore>> = { ...persisted.partnerTrust };
+  const violations = gtelRecentViolations(diplomacy, turn);
+  const ratified = persisted.agreements.filter(a => a.status === 'ratified').length;
+
+  GTEL_PARTNER_DEFS.forEach(def => {
+    if (def.id === 'domestic_premium') return;
+    const prev = partnerTrust[def.id] || emptyTrust(def.id, turn);
+    let score = prev.score;
+    const drivers: string[] = [];
+
+    const tier = sanctionTiers[def.id] || 'none';
+    if (tier === 'comprehensive') {
+      score -= 0.08;
+      drivers.push('Comprehensive sanctions erode trust.');
+    } else if (tier === 'sectoral') {
+      score -= 0.04;
+      drivers.push('Sectoral sanctions weigh on confidence.');
+    } else if (tier === 'watchlist') {
+      score -= 0.02;
+      drivers.push('Watchlist status adds friction.');
+    }
+
+    const partnerAgreements = persisted.agreements.filter(a => a.partnerId === def.id && a.status === 'ratified').length;
+    if (partnerAgreements > 0) {
+      score += 0.03 * Math.min(3, partnerAgreements);
+      drivers.push(`${partnerAgreements} ratified agreement(s) support trust.`);
+    }
+
+    if (violations > 0 && def.id !== 'domestic_premium') {
+      score -= 0.015 * violations;
+      drivers.push('Recent diplomatic violations reduce trust.');
+    }
+
+    if (ratified >= 2) {
+      score += 0.02;
+      drivers.push('Broad agreement portfolio signals reliability.');
+    }
+
+    score = gtelClamp(score, 0.08, 0.96);
+    partnerTrust[def.id] = {
+      partnerId: def.id,
+      score: Math.round(score * 1000) / 1000,
+      band: trustBand(score),
+      lastUpdatedTurn: turn,
+      drivers: drivers.length ? drivers.slice(0, 5) : prev.drivers,
+    };
+  });
+
+  return { ...persisted, partnerTrust };
+}
+
+export function deriveTrustAccessModifiers(persisted: GTELPersisted): {
+  partnerDeltas: Partial<Record<GTELPartnerId, number>>;
+  notes: string[];
+} {
+  const partnerDeltas: Partial<Record<GTELPartnerId, number>> = {};
+  const notes: string[] = [];
+  Object.values(persisted.partnerTrust || {}).forEach(t => {
+    if (!t) return;
+    const delta = gtelClamp((t.score - 0.55) * 0.12, -0.08, 0.1);
+    if (Math.abs(delta) < 0.005) return;
+    partnerDeltas[t.partnerId] = (partnerDeltas[t.partnerId] || 0) + delta;
+    notes.push(`${GTEL_PARTNER_DEFS.find(p => p.id === t.partnerId)?.label || t.partnerId} trust ${t.band} (${Math.round(t.score * 100)}%).`);
+  });
+  return { partnerDeltas, notes };
+}
+
+export function summarizePartnerTrust(persisted: GTELPersisted): PartnerTrustScore[] {
+  return GTEL_PARTNER_DEFS.filter(p => p.id !== 'domestic_premium')
+    .map(p => persisted.partnerTrust?.[p.id] || emptyTrust(p.id, 1))
+    .sort((a, b) => b.score - a.score);
+}
+
+
+// --- source: trade-policy.ts ---
+  GTELCommodityId,
+  GTELPartnerId,
+  GTELPersisted,
+  TradePolicyInstrument,
+  TradePolicyKind,
+} from './types.ts';
+
+export const TRADE_POLICY_CATALOG: Array<Omit<TradePolicyInstrument, 'id' | 'status' | 'activatedTurn'>> = [
+  {
+    kind: 'export_quota_relief',
+    title: 'Export quota relief lane',
+    partnerId: 'asia_pacific',
+    commodity: 'iron_ore',
+    expiresTurn: null,
+    accessDelta: 0.06,
+    commodityDelta: 0.04,
+    domesticStressDelta: -0.02,
+    summary: 'Temporary quota headroom for bulk exports to Asia–Pacific.',
+  },
+  {
+    kind: 'tariff_surge',
+    title: 'Defensive tariff surge',
+    partnerId: 'europe',
+    commodity: 'manufacturing',
+    expiresTurn: null,
+    accessDelta: -0.05,
+    commodityDelta: -0.03,
+    domesticStressDelta: 0.04,
+    summary: 'Retaliatory tariff posture after partner market restrictions.',
+  },
+  {
+    kind: 'preferential_lane',
+    title: 'Preferential services lane',
+    partnerId: 'north_america',
+    commodity: 'services',
+    expiresTurn: null,
+    accessDelta: 0.05,
+    commodityDelta: 0.03,
+    domesticStressDelta: 0,
+    summary: 'Fast-track professional services export clearance.',
+  },
+  {
+    kind: 'diversification_push',
+    title: 'Market diversification push',
+    partnerId: null,
+    commodity: null,
+    expiresTurn: null,
+    accessDelta: 0.03,
+    commodityDelta: 0.01,
+    domesticStressDelta: -0.01,
+    summary: 'Incentives to spread export dependence across partner markets.',
+  },
+];
+
+export function createTradePolicyInstrument(
+  kind: TradePolicyKind,
+  turn: number,
+  durationTurns = 8,
+  overrides: Partial<Pick<TradePolicyInstrument, 'partnerId' | 'commodity' | 'title'>> = {},
+): TradePolicyInstrument | null {
+  const tpl = TRADE_POLICY_CATALOG.find(p => p.kind === kind);
+  if (!tpl) return null;
+  return {
+    id: `tp_${kind}_${turn}`,
+    kind,
+    title: overrides.title || tpl.title,
+    partnerId: overrides.partnerId ?? tpl.partnerId,
+    commodity: overrides.commodity ?? tpl.commodity,
+    status: 'active',
+    activatedTurn: turn,
+    expiresTurn: turn + durationTurns,
+    accessDelta: tpl.accessDelta,
+    commodityDelta: tpl.commodityDelta,
+    domesticStressDelta: tpl.domesticStressDelta,
+    summary: tpl.summary,
+  };
+}
+
+export function expireTradePolicies(persisted: GTELPersisted, turn: number): TradePolicyInstrument[] {
+  return (persisted.tradePolicies || []).map(p => {
+    if (p.status === 'active' && p.expiresTurn != null && turn > p.expiresTurn) {
+      return { ...p, status: 'expired' as const };
+    }
+    return p;
+  });
+}
+
+/** Auto-activate diversification push when multiple partners are restricted. */
+export function autoTradePolicyAdjustments(persisted: GTELPersisted, turn: number): GTELPersisted {
+  let policies = expireTradePolicies(persisted, turn);
+  const restricted = GTEL_PARTNER_DEFS.filter(
+    p => p.id !== 'domestic_premium' && (persisted.partnerAccess[p.id] === 'blocked' || persisted.partnerAccess[p.id] === 'restricted'),
+  ).length;
+  const hasDiversification = policies.some(p => p.kind === 'diversification_push' && p.status === 'active');
+  if (restricted >= 2 && !hasDiversification) {
+    const inst = createTradePolicyInstrument('diversification_push', turn, 10);
+    if (inst) policies = [...policies, inst].slice(-8);
+  }
+  return { ...persisted, tradePolicies: policies };
+}
+
+export function deriveTradePolicyModifiers(persisted: GTELPersisted): {
+  partnerDeltas: Partial<Record<GTELPartnerId, number>>;
+  commodityDeltas: Partial<Record<GTELCommodityId, number>>;
+  domesticStress: number;
+  notes: string[];
+} {
+  const partnerDeltas: Partial<Record<GTELPartnerId, number>> = {};
+  const commodityDeltas: Partial<Record<GTELCommodityId, number>> = {};
+  let domesticStress = 0;
+  const notes: string[] = [];
+
+  (persisted.tradePolicies || [])
+    .filter(p => p.status === 'active')
+    .forEach(p => {
+      if (p.kind === 'diversification_push') {
+        GTEL_PARTNER_DEFS.filter(x => x.id !== 'domestic_premium').forEach(x => {
+          partnerDeltas[x.id] = (partnerDeltas[x.id] || 0) + p.accessDelta / 4;
+        });
+      } else if (p.partnerId) {
+        partnerDeltas[p.partnerId] = (partnerDeltas[p.partnerId] || 0) + p.accessDelta;
+      }
+      if (p.commodity && GTEL_COMMODITIES.includes(p.commodity)) {
+        commodityDeltas[p.commodity] = (commodityDeltas[p.commodity] || 0) + p.commodityDelta;
+      }
+      domesticStress += gtelNum(p.domesticStressDelta, 0);
+      notes.push(`Policy active: ${p.title}.`);
+    });
+
+  return {
+    partnerDeltas,
+    commodityDeltas,
+    domesticStress: gtelClamp(domesticStress, -0.05, 0.15),
+    notes,
+  };
+}
+
+export function listActiveTradePolicies(persisted: GTELPersisted): TradePolicyInstrument[] {
+  return (persisted.tradePolicies || []).filter(p => p.status === 'active');
+}
+
+
+// --- source: trade-disputes.ts ---
+
+export function openTradeDispute(
+  persisted: GTELPersisted,
+  partnerId: GTELPartnerId,
+  turn: number,
+  subject: string,
+  requestedRelief: TradeDisputeCase['requestedRelief'] = 'sanction_step_down',
+  severity = 0.5,
+): { persisted: GTELPersisted; dispute: TradeDisputeCase | null } {
+  if (!GTEL_PARTNER_DEFS.some(p => p.id === partnerId)) return { persisted, dispute: null };
+  const open = (persisted.tradeDisputes || []).filter(d => d.status === 'open' || d.status === 'mediation');
+  if (open.some(d => d.partnerId === partnerId)) return { persisted, dispute: null };
+  const dispute: TradeDisputeCase = {
+    id: `td_${partnerId}_${turn}`,
+    partnerId,
+    status: 'open',
+    openedTurn: turn,
+    resolvedTurn: null,
+    subject: subject.slice(0, 160),
+    requestedRelief,
+    severity: gtelClamp(severity, 0.1, 1),
+  };
+  return {
+    persisted: { ...persisted, tradeDisputes: [...(persisted.tradeDisputes || []), dispute].slice(-12) },
+    dispute,
+  };
+}
+
+export function advanceTradeDisputes(
+  persisted: GTELPersisted,
+  turn: number,
+  sanctionTiers: Partial<Record<GTELPartnerId, SanctionTier>>,
+): {
+  persisted: GTELPersisted;
+  events: Array<{ id: string; turn: number; kind: 'trade'; title: string; summary: string; regionIds: string[] }>;
+} {
+  const events: Array<{ id: string; turn: number; kind: 'trade'; title: string; summary: string; regionIds: string[] }> = [];
+  const tradeDisputes = (persisted.tradeDisputes || []).map(d => {
+    if (d.status !== 'open' && d.status !== 'mediation') return d;
+    const age = turn - d.openedTurn;
+    const tier = sanctionTiers[d.partnerId] || 'none';
+    let status: TradeDisputeStatus = d.status;
+    if (age >= 2 && tier !== 'none') status = 'mediation';
+    if (age >= 6 && tier === 'comprehensive') status = 'escalated';
+    if (age >= 5 && tier === 'none') status = 'resolved';
+    if (status === 'resolved' && d.status !== 'resolved') {
+      events.push({
+        id: `gtel_dispute_res_${d.id}`,
+        turn,
+        kind: 'trade',
+        title: 'Trade dispute closed',
+        summary: `${d.subject} — partners returned to normal compliance window.`,
+        regionIds: ['NSW', 'VIC'],
+      });
+    }
+    if (status === 'escalated' && d.status !== 'escalated') {
+      events.push({
+        id: `gtel_dispute_esc_${d.id}`,
+        turn,
+        kind: 'trade',
+        title: 'Trade dispute escalated',
+        summary: `${d.subject} — mediation failed; market access remains constrained.`,
+        regionIds: ['WA', 'QLD', 'NSW'],
+      });
+    }
+    return {
+      ...d,
+      status,
+      resolvedTurn: status === 'resolved' ? turn : d.resolvedTurn,
+    };
+  });
+
+  let next = { ...persisted, tradeDisputes };
+  tradeDisputes.forEach(d => {
+    if (d.status !== 'resolved' || d.resolvedTurn !== turn) return;
+    if (d.requestedRelief !== 'sanction_step_down') return;
+    const regime = next.partnerSanctions?.[d.partnerId];
+    if (!regime || regime.tier === 'none') return;
+    const down: SanctionTier =
+      regime.tier === 'comprehensive' ? 'sectoral' : regime.tier === 'sectoral' ? 'watchlist' : 'none';
+    next = {
+      ...next,
+      partnerSanctions: {
+        ...next.partnerSanctions,
+        [d.partnerId]: {
+          ...regime,
+          tier: down,
+          reason: `Dispute ${d.id} resolution stepped sanctions down to ${down}.`,
+          complianceStreak: regime.complianceStreak + 1,
+        },
+      },
+    };
+  });
+
+  return { persisted: next, events: events.slice(0, 4) };
+}
+
+export function countOpenTradeDisputes(persisted: GTELPersisted): number {
+  return (persisted.tradeDisputes || []).filter(d => d.status === 'open' || d.status === 'mediation').length;
+}
+
+export function autoOpenDisputesFromSanctions(
+  persisted: GTELPersisted,
+  turn: number,
+  sanctionTiers: Partial<Record<GTELPartnerId, SanctionTier>>,
+): GTELPersisted {
+  let next = persisted;
+  Object.entries(sanctionTiers).forEach(([pid, tier]) => {
+    if (tier !== 'sectoral' && tier !== 'comprehensive') return;
+    const partnerId = pid as GTELPartnerId;
+    const r = openTradeDispute(
+      next,
+      partnerId,
+      turn,
+      `Automatic dispute: ${tier} sanctions on ${GTEL_PARTNER_DEFS.find(p => p.id === partnerId)?.label || partnerId}`,
+      'sanction_step_down',
+      tier === 'comprehensive' ? 0.85 : 0.55,
+    );
+    next = r.persisted;
+  });
+  return next;
+}
+
+
 // --- source: domestic-consequences.ts ---
   GTELCommodityQuote,
   GTELDomesticCoupling,
@@ -1424,6 +1909,10 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   gtelNetworkModifier,
   gtelRecentViolations,
 } from './diplomacy-linkage.ts';
+  advanceTradeDisputes,
+  autoOpenDisputesFromSanctions,
+  countOpenTradeDisputes,
+} from './trade-disputes.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -1449,22 +1938,37 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const sanctionStep = advancePartnerSanctions(persisted, input.diplomacyState, turn);
   persisted = sanctionStep.persisted;
 
+  const preSanctions = deriveSanctionModifiers(persisted);
+  persisted = autoOpenDisputesFromSanctions(persisted, turn, preSanctions.activeTiers);
+  persisted = advancePartnerTrustScores(persisted, input.diplomacyState, turn, preSanctions.activeTiers);
+  persisted = autoTradePolicyAdjustments(persisted, turn);
+  const disputeStep = advanceTradeDisputes(persisted, turn, preSanctions.activeTiers);
+  persisted = disputeStep.persisted;
+
   const names = input.actorNames || {};
   const dip = deriveDiplomaticTradeModifiers(input.diplomacyState, turn, names);
   const agr = deriveTradeAgreementModifiers(persisted, turn);
   const shock = deriveShockModifiers(persisted);
   const sanctions = deriveSanctionModifiers(persisted);
+  const trust = deriveTrustAccessModifiers(persisted);
+  const policy = deriveTradePolicyModifiers(persisted);
 
   const partnerDeltas = mergePartnerDeltas(
-    mergePartnerDeltas(mergePartnerDeltas(dip.partnerDeltas, agr.partnerDeltas), shock.partnerDeltas),
-    sanctions.partnerDeltas,
+    mergePartnerDeltas(
+      mergePartnerDeltas(mergePartnerDeltas(dip.partnerDeltas, agr.partnerDeltas), shock.partnerDeltas),
+      sanctions.partnerDeltas,
+    ),
+    mergePartnerDeltas(trust.partnerDeltas, policy.partnerDeltas),
   );
   const commodityDeltas = mergeCommodityDeltas(
-    mergeCommodityDeltas(mergeCommodityDeltas(dip.commodityDeltas, agr.commodityDeltas), shock.commodityDeltas),
-    sanctions.commodityDeltas,
+    mergeCommodityDeltas(
+      mergeCommodityDeltas(mergeCommodityDeltas(dip.commodityDeltas, agr.commodityDeltas), shock.commodityDeltas),
+      sanctions.commodityDeltas,
+    ),
+    policy.commodityDeltas,
   );
 
-  const notes = [...dip.notes, ...agr.notes, ...shock.notes, ...sanctions.notes];
+  const notes = [...dip.notes, ...agr.notes, ...shock.notes, ...sanctions.notes, ...trust.notes, ...policy.notes];
   const net = gtelNetworkModifier(input.nationalSystems);
   const worldEvents: GTELTurnResult['worldEvents'] = [];
 
@@ -1486,6 +1990,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     }
   });
   worldEvents.push(...sanctionStep.events);
+  worldEvents.push(...disputeStep.events);
 
   const partners: GTELPartnerMarket[] = GTEL_PARTNER_DEFS.map(def => {
     const prevBand = persisted.partnerAccess[def.id] || 'normal';
@@ -1561,7 +2066,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   );
   const avgCommodity = commodities.reduce((a, c) => a + c.effectiveIndex, 0) / commodities.length;
   const householdOffset = gtelClamp(
-    (avgCommodity - 95) / -80 - (shock.domesticStress + sanctions.domesticStress) * 0.15,
+    (avgCommodity - 95) / -80 - (shock.domesticStress + sanctions.domesticStress + policy.domesticStress) * 0.15,
     -0.25,
     0.35,
   );
@@ -1594,7 +2099,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     partners,
     domestic,
     nationalSystems: input.nationalSystems,
-    shockStress: shock.domesticStress + sanctions.domesticStress,
+    shockStress: shock.domesticStress + sanctions.domesticStress + Math.max(0, policy.domesticStress),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -1608,6 +2113,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     partners.map(p => p.access),
     persisted.activeShocks.map(s => s.shockId),
     persisted.partnerSanctions,
+    persisted.partnerTrust,
+    persisted.tradePolicies?.length,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -1650,6 +2157,9 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     diplomacyTradeDealsActive: gtelActiveDeals(input.diplomacyState).filter(d => d.type === 'resource_trade').length,
     violationsLastWindow: gtelRecentViolations(input.diplomacyState, turn),
     activeSanctionTiers: sanctions.activeTiers,
+    partnerTrust: persisted.partnerTrust || {},
+    activeTradePolicies: listActiveTradePolicies(persisted),
+    openDisputeCount: countOpenTradeDisputes(persisted),
     inputHash,
   };
 
@@ -1841,6 +2351,54 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     persisted = triggerCommodityShockScenario(persisted, 'scenario_bulk_crash', 100).persisted;
     const second = triggerCommodityShockScenario(persisted, 'scenario_bulk_crash', 101);
     gtelAssert(second.activatedShockIds.length === 0, 'should not reactivate');
+  });
+
+  ok('partner trust responds to sanctions', () => {
+    let persisted = createEmptyGTELPersisted();
+    const before = advancePartnerTrustScores(persisted, { deals: [] }, 4, {}).partnerTrust?.asia_pacific?.score;
+    persisted.partnerSanctions = {
+      asia_pacific: {
+        partnerId: 'asia_pacific',
+        tier: 'sectoral',
+        escalatedTurn: 3,
+        cooldownUntilTurn: null,
+        violationStreak: 2,
+        complianceStreak: 0,
+        scopedCommodities: ['iron_ore'],
+        reason: 'test',
+      },
+    };
+    persisted = advancePartnerTrustScores(persisted, { deals: [] }, 4, { asia_pacific: 'sectoral' });
+    const after = persisted.partnerTrust?.asia_pacific?.score;
+    gtelAssert(typeof before === 'number' && typeof after === 'number' && after < before, 'trust should fall under sectoral sanctions');
+  });
+
+  ok('trade policy diversification activates under restriction', () => {
+    let persisted = createEmptyGTELPersisted();
+    persisted.partnerAccess = { asia_pacific: 'blocked', europe: 'restricted' };
+    persisted = autoTradePolicyAdjustments(persisted, 6);
+    gtelAssert(persisted.tradePolicies.some(p => p.kind === 'diversification_push'), 'missing diversification policy');
+  });
+
+  ok('trade dispute resolution steps down sanctions', () => {
+    let persisted = createEmptyGTELPersisted();
+    persisted.partnerSanctions = {
+      europe: {
+        partnerId: 'europe',
+        tier: 'sectoral',
+        escalatedTurn: 1,
+        cooldownUntilTurn: null,
+        violationStreak: 2,
+        complianceStreak: 0,
+        scopedCommodities: ['services'],
+        reason: 'test',
+      },
+    };
+    const opened = openTradeDispute(persisted, 'europe', 1, 'Test dispute');
+    persisted = opened.persisted;
+    persisted.tradeDisputes = (persisted.tradeDisputes || []).map(d => ({ ...d, openedTurn: 1, status: 'open' as const }));
+    const resolved = advanceTradeDisputes(persisted, 6, { europe: 'none' });
+    gtelAssert(resolved.persisted.partnerSanctions?.europe?.tier !== 'sectoral', 'sanctions should step down');
   });
 
   return { passed, failed };
