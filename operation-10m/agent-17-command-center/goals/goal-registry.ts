@@ -128,6 +128,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'buildAgent17DelegationAnalytics returns five delegate kinds.',
     severity: 'minor',
   },
+  {
+    id: 'G17-019',
+    title: 'Delegation ladder on planning depth',
+    category: 'planning',
+    acceptance: 'planningDepth.delegationLadder has five rungs and headline.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-020',
+    title: 'Plan ledger summarizes ops history',
+    category: 'telemetry',
+    acceptance: 'planLedger lists delegate entries when projects exist.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-021',
+    title: 'Delegation depth score bounded',
+    category: 'validation',
+    acceptance: 'computeAgent17DelegationDepthScore returns 0–100.',
+    severity: 'minor',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

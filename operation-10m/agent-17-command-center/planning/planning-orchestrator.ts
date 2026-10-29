@@ -17,6 +17,9 @@ import {
   summarizeAgent17CatalogDepth,
 } from './template-selector.ts';
 import { detectAgent17RecoverySignals, pickAgent17RecoveryTemplateId } from './recovery-paths.ts';
+import { buildAgent17DelegationLadder } from './delegation-ladder.ts';
+import { summarizeAgent17PlanLedger } from './plan-ledger.ts';
+import { refineAgent17DelegationSuggestion } from './delegation-depth.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -80,11 +83,25 @@ export function buildAgent17PlanningDepthSnapshot(
   const planHealth = assessAgent17PlanHealth(ops.activePlan, state, actorId);
   const templateRouting = rankAgent17TemplateCandidates(state, settings, actorId);
   const delegationAnalytics = buildAgent17DelegationAnalytics(ops, settings);
-  const suggestion = buildAgent17PlanningSuggestion(
+  const delegationLadder = buildAgent17DelegationLadder(
+    delegationAnalytics,
+    settings,
+    recommendedDelegateKind
+  );
+  const planLedger = summarizeAgent17PlanLedger(ops, state);
+  let suggestion = buildAgent17PlanningSuggestion(
     ops,
     state,
     settings,
     actorId,
+    recommendedDelegateKind
+  );
+  suggestion = refineAgent17DelegationSuggestion(
+    ops,
+    state,
+    settings,
+    actorId,
+    suggestion,
     recommendedDelegateKind
   );
   return {
@@ -94,6 +111,8 @@ export function buildAgent17PlanningDepthSnapshot(
     suggestion,
     templateRouting,
     delegationAnalytics,
+    delegationLadder,
+    planLedger,
     catalogDepth: summarizeAgent17CatalogDepth(),
   };
 }

@@ -182,7 +182,42 @@ export interface Agent17PlanningDepthSnapshot {
   suggestion: Agent17PlanningSuggestion;
   templateRouting: { matchedCategory: string; candidateTemplateIds: string[] };
   delegationAnalytics: Agent17DelegationAnalyticsRow[];
+  delegationLadder: Agent17DelegationLadderSnapshot;
+  planLedger: Agent17PlanLedgerSummary;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
+}
+
+export interface Agent17DelegationLadderRung {
+  delegateKind: Acc17DelegateTargetKind;
+  loadScore: number;
+  maxConcurrent: number;
+  slotsRemaining: number;
+  preferredAuthority: Acc17DelegatedProject['authorityCeiling'];
+  escalationTarget?: Acc17DelegateTargetKind;
+}
+
+export interface Agent17DelegationLadderSnapshot {
+  rungs: Agent17DelegationLadderRung[];
+  recommendedKind: Acc17DelegateTargetKind;
+  totalActiveLoad: number;
+  imbalanceFlag: boolean;
+  headline: string;
+}
+
+export interface Agent17PlanLedgerEntry {
+  id: string;
+  turn: number;
+  day: number;
+  kind: 'verify' | 'replan' | 'delegate' | 'block';
+  summary: string;
+}
+
+export interface Agent17PlanLedgerSummary {
+  entries: Agent17PlanLedgerEntry[];
+  verifiedEvents: number;
+  replanEvents: number;
+  blockedStepEvents: number;
+  lastFingerprint: string;
 }
 
 export interface Acc17ProjectTemplate {
@@ -1639,6 +1674,277 @@ export function countAgent17ActiveDelegations(projects: Acc17DelegatedProject[])
 }
 
 
+// --- source: planning/delegation-ladder.ts ---
+  Acc17DelegateTargetKind,
+  Acc17DelegatedProject,
+  Agent17DelegationAnalyticsRow,
+  Agent17DelegationLadderRung,
+  Agent17DelegationLadderSnapshot,
+  Agent17SettingsSlice,
+} from '../types/command-center-types.ts';
+
+const MAX_CONCURRENT_BY_KIND: Record<Acc17DelegateTargetKind, number> = {
+  copilot: 2,
+  team_os: 2,
+  teammate: 3,
+  strategy_planner: 2,
+  manual: 1,
+};
+
+const PREFERRED_AUTHORITY_BY_KIND: Record<
+  Acc17DelegateTargetKind,
+  Acc17DelegatedProject['authorityCeiling']
+> = {
+  copilot: 'assisted',
+  team_os: 'delegated',
+  teammate: 'assisted',
+  strategy_planner: 'advisory',
+  manual: 'advisory',
+};
+
+const ESCALATION_CHAIN: Partial<Record<Acc17DelegateTargetKind, Acc17DelegateTargetKind>> = {
+  strategy_planner: 'copilot',
+  copilot: 'team_os',
+  teammate: 'copilot',
+  manual: 'copilot',
+};
+
+export function buildAgent17DelegationLadder(
+  analytics: Agent17DelegationAnalyticsRow[],
+  settings: Agent17SettingsSlice,
+  recommendedKind: Acc17DelegateTargetKind
+): Agent17DelegationLadderSnapshot {
+  const autonomy = settings.aiCommunicationAutonomyLevel ?? 'assisted';
+  const rungs: Agent17DelegationLadderRung[] = analytics.map(row => {
+    const maxConcurrent = MAX_CONCURRENT_BY_KIND[row.delegateKind];
+    const loadScore = row.activeProjects * 10 + row.blockedProjects * 25;
+    let preferredAuthority = PREFERRED_AUTHORITY_BY_KIND[row.delegateKind];
+    if (autonomy === 'advisory' && preferredAuthority === 'delegated') {
+      preferredAuthority = 'assisted';
+    }
+    if (autonomy === 'delegated' && row.delegateKind === 'team_os') {
+      preferredAuthority = 'delegated';
+    }
+    return {
+      delegateKind: row.delegateKind,
+      loadScore,
+      maxConcurrent,
+      slotsRemaining: Math.max(0, maxConcurrent - row.activeProjects),
+      preferredAuthority,
+      escalationTarget: ESCALATION_CHAIN[row.delegateKind],
+    };
+  });
+
+  const totalActiveLoad = analytics.reduce((sum, r) => sum + r.activeProjects, 0);
+  const recommendedRung =
+    rungs.find(r => r.delegateKind === recommendedKind) ??
+    rungs.find(r => r.slotsRemaining > 0) ??
+    rungs[0];
+  let recommendedKindResolved = recommendedKind;
+  if (recommendedRung && recommendedRung.slotsRemaining === 0 && recommendedRung.escalationTarget) {
+    const esc = rungs.find(r => r.delegateKind === recommendedRung.escalationTarget);
+    if (esc && esc.slotsRemaining > 0) recommendedKindResolved = esc.delegateKind;
+  }
+
+  const loads = rungs.map(r => r.loadScore);
+  const maxLoad = Math.max(...loads, 0);
+  const minLoad = Math.min(...loads, 0);
+  const imbalanceFlag = maxLoad - minLoad >= 40 && totalActiveLoad >= 2;
+
+  const headline = imbalanceFlag
+    ? `Delegation imbalance — favor ${recommendedKindResolved} (${recommendedRung?.slotsRemaining ?? 0} slots)`
+    : `Delegation ladder balanced — next ${recommendedKindResolved}`;
+
+  return {
+    rungs,
+    recommendedKind: recommendedKindResolved,
+    totalActiveLoad,
+    imbalanceFlag,
+    headline,
+  };
+}
+
+export function pickAuthorityCeilingForDelegateKind(
+  kind: Acc17DelegateTargetKind,
+  settings: Agent17SettingsSlice
+): Acc17DelegatedProject['authorityCeiling'] {
+  const ladder = buildAgent17DelegationLadder(
+    kind === 'copilot'
+      ? [{ delegateKind: 'copilot', activeProjects: 0, completedProjects: 0, blockedProjects: 0, authorityMix: {} }]
+      : [{ delegateKind: kind, activeProjects: 0, completedProjects: 0, blockedProjects: 0, authorityMix: {} }],
+    settings,
+    kind
+  );
+  return ladder.rungs[0]?.preferredAuthority ?? 'assisted';
+}
+
+export function delegationLadderHasCapacity(
+  ladder: Agent17DelegationLadderSnapshot,
+  kind: Acc17DelegateTargetKind
+): boolean {
+  const rung = ladder.rungs.find(r => r.delegateKind === kind);
+  return (rung?.slotsRemaining ?? 0) > 0;
+}
+
+
+// --- source: planning/plan-ledger.ts ---
+  Acc17CommandCenterOpsState,
+  Agent17GameStateSlice,
+  Agent17PlanLedgerEntry,
+  Agent17PlanLedgerSummary,
+} from '../types/command-center-types.ts';
+
+const LEDGER_CAP = 24;
+
+export function summarizeAgent17PlanLedger(
+  ops: Acc17CommandCenterOpsState,
+  state: Agent17GameStateSlice
+): Agent17PlanLedgerSummary {
+  const turn = state.turnCounter || state.day || 1;
+  const day = state.day || turn;
+  const entries: Agent17PlanLedgerEntry[] = [];
+
+  for (const log of ops.verificationLog.slice(-LEDGER_CAP)) {
+    entries.push({
+      id: log.id,
+      turn: log.turn,
+      day: log.day,
+      kind: 'verify',
+      summary: log.verified
+        ? `Verified step ${log.stepId}: ${log.reason}`
+        : `Unverified step ${log.stepId}`,
+    });
+  }
+
+  const plan = ops.activePlan;
+  if (plan && plan.replanCount > 0) {
+    entries.push({
+      id: `ledger_replan_${plan.id}`,
+      turn,
+      day,
+      kind: 'replan',
+      summary: `Replan count ${plan.replanCount} on ${plan.title}`,
+    });
+  }
+
+  for (const proj of ops.delegatedProjects.slice(-8)) {
+    entries.push({
+      id: `ledger_delegate_${proj.id}`,
+      turn: proj.assignedTurn,
+      day: proj.assignedDay,
+      kind: 'delegate',
+      summary: `${proj.delegateKind}:${proj.delegateTargetId} · ${proj.status}`,
+    });
+  }
+
+  if (plan) {
+    for (const step of plan.steps.filter(s => s.status === 'blocked' || s.status === 'failed')) {
+      entries.push({
+        id: `ledger_block_${step.id}`,
+        turn,
+        day,
+        kind: 'block',
+        summary: `${step.title} — ${step.blockerReason || step.status}`,
+      });
+    }
+  }
+
+  entries.sort((a, b) => b.turn - a.turn || b.day - a.day);
+  const trimmed = entries.slice(0, LEDGER_CAP);
+  return {
+    entries: trimmed,
+    verifiedEvents: trimmed.filter(e => e.kind === 'verify').length,
+    replanEvents: plan?.replanCount ?? 0,
+    blockedStepEvents: trimmed.filter(e => e.kind === 'block').length,
+    lastFingerprint: ops.lastContextFingerprint || '',
+  };
+}
+
+export function planLedgerIndicatesInstability(ledger: Agent17PlanLedgerSummary): boolean {
+  return ledger.blockedStepEvents >= 2 || ledger.replanEvents >= 2;
+}
+
+
+// --- source: planning/delegation-depth.ts ---
+  Acc17CommandCenterOpsState,
+  Acc17DelegateTargetKind,
+  Agent17GameStateSlice,
+  Agent17PlanningSuggestion,
+  Agent17SettingsSlice,
+} from '../types/command-center-types.ts';
+  buildAgent17DelegationLadder,
+  delegationLadderHasCapacity,
+} from './delegation-ladder.ts';
+
+export function refineAgent17DelegationSuggestion(
+  ops: Acc17CommandCenterOpsState,
+  state: Agent17GameStateSlice,
+  settings: Agent17SettingsSlice,
+  actorId: string,
+  baseSuggestion: Agent17PlanningSuggestion,
+  recommendedDelegateKind: Acc17DelegateTargetKind
+): Agent17PlanningSuggestion {
+  if (baseSuggestion.kind !== 'delegate' && baseSuggestion.kind !== 'hold') {
+    return baseSuggestion;
+  }
+  const analytics = buildAgent17DelegationAnalytics(ops, settings);
+  const ladder = buildAgent17DelegationLadder(analytics, settings, recommendedDelegateKind);
+  const ledger = summarizeAgent17PlanLedger(ops, state);
+  const health = assessAgent17PlanHealth(ops.activePlan, state, actorId);
+
+  if (planLedgerIndicatesInstability(ledger) && ladder.recommendedKind !== recommendedDelegateKind) {
+    return {
+      kind: 'delegate',
+      delegateKind: ladder.recommendedKind,
+      headline: `Ladder reroute → ${ladder.recommendedKind}`,
+      rationale: `${ladder.headline}; ledger instability detected.`,
+      confidence: 0.78,
+    };
+  }
+
+  const targetKind = baseSuggestion.delegateKind ?? recommendedDelegateKind;
+  if (!delegationLadderHasCapacity(ladder, targetKind)) {
+    const alt = ladder.rungs.find(r => r.slotsRemaining > 0);
+    if (alt) {
+      return {
+        kind: 'delegate',
+        delegateKind: alt.delegateKind,
+        headline: `Capacity reroute → ${alt.delegateKind}`,
+        rationale: `${targetKind} at capacity; ${alt.slotsRemaining} slot(s) on ${alt.delegateKind}.`,
+        confidence: 0.71,
+      };
+    }
+  }
+
+  if (health.band === 'at_risk' && baseSuggestion.kind === 'hold') {
+    return {
+      kind: 'delegate',
+      delegateKind: ladder.recommendedKind,
+      headline: `Proactive delegate ${ladder.recommendedKind}`,
+      rationale: 'Plan health at risk; ladder recommends early delegation.',
+      confidence: 0.66,
+    };
+  }
+
+  return baseSuggestion;
+}
+
+export function computeAgent17DelegationDepthScore(
+  ops: Acc17CommandCenterOpsState,
+  settings: Agent17SettingsSlice,
+  recommendedDelegateKind: Acc17DelegateTargetKind
+): number {
+  const analytics = buildAgent17DelegationAnalytics(ops, settings);
+  const ladder = buildAgent17DelegationLadder(analytics, settings, recommendedDelegateKind);
+  let score = 50;
+  score += ladder.rungs.filter(r => r.slotsRemaining > 0).length * 5;
+  score -= ladder.totalActiveLoad * 4;
+  if (ladder.imbalanceFlag) score -= 15;
+  else score += 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -1717,11 +2023,25 @@ export function buildAgent17PlanningDepthSnapshot(
   const planHealth = assessAgent17PlanHealth(ops.activePlan, state, actorId);
   const templateRouting = rankAgent17TemplateCandidates(state, settings, actorId);
   const delegationAnalytics = buildAgent17DelegationAnalytics(ops, settings);
-  const suggestion = buildAgent17PlanningSuggestion(
+  const delegationLadder = buildAgent17DelegationLadder(
+    delegationAnalytics,
+    settings,
+    recommendedDelegateKind
+  );
+  const planLedger = summarizeAgent17PlanLedger(ops, state);
+  let suggestion = buildAgent17PlanningSuggestion(
     ops,
     state,
     settings,
     actorId,
+    recommendedDelegateKind
+  );
+  suggestion = refineAgent17DelegationSuggestion(
+    ops,
+    state,
+    settings,
+    actorId,
+    suggestion,
     recommendedDelegateKind
   );
   return {
@@ -1731,6 +2051,8 @@ export function buildAgent17PlanningDepthSnapshot(
     suggestion,
     templateRouting,
     delegationAnalytics,
+    delegationLadder,
+    planLedger,
     catalogDepth: summarizeAgent17CatalogDepth(),
   };
 }
@@ -2150,6 +2472,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'buildAgent17DelegationAnalytics returns five delegate kinds.',
     severity: 'minor',
   },
+  {
+    id: 'G17-019',
+    title: 'Delegation ladder on planning depth',
+    category: 'planning',
+    acceptance: 'planningDepth.delegationLadder has five rungs and headline.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-020',
+    title: 'Plan ledger summarizes ops history',
+    category: 'telemetry',
+    acceptance: 'planLedger lists delegate entries when projects exist.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-021',
+    title: 'Delegation depth score bounded',
+    category: 'validation',
+    acceptance: 'computeAgent17DelegationDepthScore returns 0–100.',
+    severity: 'minor',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -2441,6 +2784,29 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     result('G17-018', delegationRows.length === 5, String(delegationRows.length))
   );
 
+  const ladder = buildAgent17DelegationLadder(delegationRows, settings, 'copilot');
+  goalResults.push(
+    result(
+      'G17-019',
+      ladder.rungs.length === 5 && ladder.headline.length > 0,
+      String(ladder.rungs.length)
+    )
+  );
+
+  const ledger = summarizeAgent17PlanLedger(depthEval.ops, baseState);
+  goalResults.push(
+    result(
+      'G17-020',
+      ledger.entries.length >= 0 && typeof ledger.lastFingerprint === 'string',
+      `entries=${ledger.entries.length}`
+    )
+  );
+
+  const depthScore = computeAgent17DelegationDepthScore(depthEval.ops, settings, 'copilot');
+  goalResults.push(
+    result('G17-021', depthScore >= 0 && depthScore <= 100, String(depthScore))
+  );
+
   const passedCount = goalResults.filter(r => r.passed).length;
   const failedCount = goalResults.length - passedCount;
   return {
@@ -2481,6 +2847,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-016',
     'G17-017',
     'G17-018',
+    'G17-019',
+    'G17-020',
+    'G17-021',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
@@ -2908,16 +3277,161 @@ export function runAgent17PlanningDepthTests(): Agent17DevTestReport {
 }
 
 
+// --- source: harness/run-delegation-depth-tests.ts ---
+  acc17DelegateProject,
+  createDefaultAcc17CommandCenterOpsState,
+} from '../planning/ops-state.ts';
+  buildAgent17DelegationLadder,
+  delegationLadderHasCapacity,
+} from '../planning/delegation-ladder.ts';
+
+export function runAgent17DelegationDepthTests(): Agent17DevTestReport {
+  const start = Date.now();
+  const testResults: Agent17DevTestReport['testResults'] = [];
+  const push = (id: string, name: string, ok: boolean, detail?: string) => {
+    testResults.push({
+      id,
+      name,
+      status: ok ? 'passed' : 'failed',
+      durationMs: 0,
+      errorMessage: ok ? undefined : detail,
+    });
+  };
+
+  try {
+    const settings = {
+      commandCenterSettings: { enabled: true },
+      aiCommunicationAutonomyLevel: 'delegated' as const,
+    };
+    const state: Agent17GameStateSlice = {
+      turnCounter: 12,
+      day: 12,
+      player: { id: 'player', money: 8000, netWorth: 12000, currentRegion: 'NSW' },
+      actorsById: { player: { id: 'player', money: 8000, netWorth: 12000, currentRegion: 'NSW' } },
+      playerTrackedObjective: { title: 'Team treasury coordination', sourceType: 'team' },
+      lastExecutedAction: { type: 'invest' },
+    };
+
+    const plan = acc17InstantiatePlanFromTemplate('agent17_tpl_team_synergy', state, 'player');
+    let ops = createDefaultAcc17CommandCenterOpsState();
+    ops = {
+      ...ops,
+      activePlan: plan,
+      delegatedProjects: [
+        acc17DelegateProject(ops, plan!, 'copilot', 'c1', 'assisted'),
+        acc17DelegateProject(ops, plan!, 'copilot', 'c2', 'assisted'),
+      ],
+    };
+
+    const analytics = buildAgent17DelegationAnalytics(ops, settings);
+    const ladder = buildAgent17DelegationLadder(analytics, settings, 'copilot');
+    push(
+      'delegation_ladder_rungs',
+      'Delegation ladder exposes five rungs',
+      ladder.rungs.length === 5,
+      String(ladder.rungs.length)
+    );
+    push(
+      'delegation_capacity',
+      'Copilot at capacity triggers reroute candidate',
+      !delegationLadderHasCapacity(ladder, 'copilot'),
+      String(ladder.rungs.find(r => r.delegateKind === 'copilot')?.slotsRemaining)
+    );
+
+    const ledger = summarizeAgent17PlanLedger(ops, state);
+    push(
+      'plan_ledger_delegate',
+      'Plan ledger records delegate events',
+      ledger.entries.some(e => e.kind === 'delegate'),
+      String(ledger.entries.length)
+    );
+
+    const score = computeAgent17DelegationDepthScore(ops, settings, 'copilot');
+    push('delegation_depth_score', 'Delegation depth score bounded 0-100', score >= 0 && score <= 100, String(score));
+
+    const evalRes = evaluateAcc17CommandCenterOperations(state, settings, 'player', ops);
+    const depth = evalRes.snapshot.planningDepth;
+    push(
+      'depth_ladder_attached',
+      'Snapshot includes delegation ladder headline',
+      !!depth?.delegationLadder.headline,
+      depth?.delegationLadder.headline
+    );
+    push(
+      'depth_ledger_attached',
+      'Snapshot includes plan ledger fingerprint',
+      depth?.planLedger.lastFingerprint !== undefined,
+      depth?.planLedger.lastFingerprint
+    );
+
+    ops = {
+      ...ops,
+      activePlan: plan
+        ? { ...plan, replanCount: 2, steps: plan.steps.map((s, i) => (i === 1 ? { ...s, status: 'blocked' as const, blockerReason: 'x' } : s)) }
+        : null,
+    };
+    const unstableLedger = summarizeAgent17PlanLedger(ops, state);
+    push(
+      'ledger_instability',
+      'Ledger flags instability on replans and blocks',
+      planLedgerIndicatesInstability(unstableLedger),
+      `replan=${unstableLedger.replanEvents} blocks=${unstableLedger.blockedStepEvents}`
+    );
+
+    const refined = refineAgent17DelegationSuggestion(
+      ops,
+      state,
+      settings,
+      'player',
+      { kind: 'hold', headline: 'hold', rationale: 'hold', confidence: 0.5 },
+      'copilot'
+    );
+    push(
+      'delegation_refine_risk',
+      'Refiner upgrades hold under at-risk health',
+      refined.kind === 'delegate',
+      refined.delegateKind
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    push('delegation_throw', 'Delegation depth harness did not throw', false, msg);
+  }
+
+  const passedCount = testResults.filter(t => t.status === 'passed').length;
+  const failedCount = testResults.filter(t => t.status === 'failed').length;
+  const overallStatus: 'passed' | 'failed' = failedCount === 0 ? 'passed' : 'failed';
+  return {
+    timestamp: Date.now(),
+    totalTests: testResults.length,
+    passedCount,
+    failedCount,
+    executionTimeMs: Date.now() - start,
+    overallStatus,
+    success: overallStatus === 'passed',
+    testResults,
+    summary: `Agent 17 Delegation Depth Tests: ${passedCount}/${testResults.length} Passed`,
+  };
+}
+
+
 export function runAgent17Op10mModuleSelfTests(): {
   acc17: ReturnType<typeof runAgent17Acc17DevTests>;
   recovery: ReturnType<typeof runAgent17RecoveryPathTests>;
   depth: ReturnType<typeof runAgent17PlanningDepthTests>;
+  delegation: ReturnType<typeof runAgent17DelegationDepthTests>;
   success: boolean;
 } {
   const acc17 = runAgent17Acc17DevTests();
   const recovery = runAgent17RecoveryPathTests();
   const depth = runAgent17PlanningDepthTests();
-  return { acc17, recovery, depth, success: acc17.success && recovery.success && depth.success };
+  const delegation = runAgent17DelegationDepthTests();
+  return {
+    acc17,
+    recovery,
+    depth,
+    delegation,
+    success: acc17.success && recovery.success && depth.success && delegation.success,
+  };
 }
 
 // OP10M_MODULE_END agent-17-command-center

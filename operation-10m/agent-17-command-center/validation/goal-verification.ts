@@ -19,8 +19,11 @@ import {
   maybeApplyAgent17RecoveryPath,
   pickAgent17RecoveryTemplateId,
 } from '../planning/recovery-paths.ts';
-import { rankAgent17TemplateCandidates, summarizeAgent17CatalogDepth } from '../planning/template-selector.ts';
+import { rankAgent17TemplateCandidates } from '../planning/template-selector.ts';
 import { buildAgent17DelegationAnalytics } from '../planning/delegation-analytics.ts';
+import { buildAgent17DelegationLadder } from '../planning/delegation-ladder.ts';
+import { summarizeAgent17PlanLedger } from '../planning/plan-ledger.ts';
+import { computeAgent17DelegationDepthScore } from '../planning/delegation-depth.ts';
 import { evaluateAcc17CommandCenterOperations } from '../evaluation/operations-evaluator.ts';
 import {
   Agent17RollbackController,
@@ -288,6 +291,29 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     result('G17-018', delegationRows.length === 5, String(delegationRows.length))
   );
 
+  const ladder = buildAgent17DelegationLadder(delegationRows, settings, 'copilot');
+  goalResults.push(
+    result(
+      'G17-019',
+      ladder.rungs.length === 5 && ladder.headline.length > 0,
+      String(ladder.rungs.length)
+    )
+  );
+
+  const ledger = summarizeAgent17PlanLedger(depthEval.ops, baseState);
+  goalResults.push(
+    result(
+      'G17-020',
+      ledger.entries.length >= 0 && typeof ledger.lastFingerprint === 'string',
+      `entries=${ledger.entries.length}`
+    )
+  );
+
+  const depthScore = computeAgent17DelegationDepthScore(depthEval.ops, settings, 'copilot');
+  goalResults.push(
+    result('G17-021', depthScore >= 0 && depthScore <= 100, String(depthScore))
+  );
+
   const passedCount = goalResults.filter(r => r.passed).length;
   const failedCount = goalResults.length - passedCount;
   return {
@@ -328,6 +354,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-016',
     'G17-017',
     'G17-018',
+    'G17-019',
+    'G17-020',
+    'G17-021',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

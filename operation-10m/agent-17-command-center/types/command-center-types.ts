@@ -178,7 +178,42 @@ export interface Agent17PlanningDepthSnapshot {
   suggestion: Agent17PlanningSuggestion;
   templateRouting: { matchedCategory: string; candidateTemplateIds: string[] };
   delegationAnalytics: Agent17DelegationAnalyticsRow[];
+  delegationLadder: Agent17DelegationLadderSnapshot;
+  planLedger: Agent17PlanLedgerSummary;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
+}
+
+export interface Agent17DelegationLadderRung {
+  delegateKind: Acc17DelegateTargetKind;
+  loadScore: number;
+  maxConcurrent: number;
+  slotsRemaining: number;
+  preferredAuthority: Acc17DelegatedProject['authorityCeiling'];
+  escalationTarget?: Acc17DelegateTargetKind;
+}
+
+export interface Agent17DelegationLadderSnapshot {
+  rungs: Agent17DelegationLadderRung[];
+  recommendedKind: Acc17DelegateTargetKind;
+  totalActiveLoad: number;
+  imbalanceFlag: boolean;
+  headline: string;
+}
+
+export interface Agent17PlanLedgerEntry {
+  id: string;
+  turn: number;
+  day: number;
+  kind: 'verify' | 'replan' | 'delegate' | 'block';
+  summary: string;
+}
+
+export interface Agent17PlanLedgerSummary {
+  entries: Agent17PlanLedgerEntry[];
+  verifiedEvents: number;
+  replanEvents: number;
+  blockedStepEvents: number;
+  lastFingerprint: string;
 }
 
 export interface Acc17ProjectTemplate {
