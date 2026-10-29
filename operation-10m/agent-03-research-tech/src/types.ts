@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v20' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v21' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v20'
   | 'op10m-agent03-v19'
   | 'op10m-agent03-v18'
   | 'op10m-agent03-v17'
@@ -798,6 +799,41 @@ export interface ResearchScaleWaveIntegrationGateOutlook {
   ticketHint: string | null;
 }
 
+export type ResearchScaleWaveIntegrationGateBand = 58 | 72 | 86 | 96;
+
+export interface ResearchScaleWaveIntegrationGateBandEvent {
+  seq: number;
+  turn: number;
+  band: ResearchScaleWaveIntegrationGateBand;
+  integrationGateScore: number;
+  horizonTurns: number;
+  waveOrdinal: number;
+  phase: 'escalation' | 'de-escalation';
+}
+
+export interface ResearchScaleWaveIntegrationGateSnapshot {
+  capturedAtTurn: number;
+  integrationGateScore: number;
+  horizonTurns: number;
+  waveOrdinal: number;
+  gateMomentum: number;
+  dryRunEligible: boolean;
+  peakBand: ResearchScaleWaveIntegrationGateBand | 0;
+  digest: string;
+}
+
+export interface ResearchTrancheDryRunHandoffOutlook {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  waveOrdinal: number;
+  handoffReadinessScore: number;
+  handoffMomentum: number;
+  integrationBaselineShaHint: string;
+  dryRunEligible: boolean;
+  ticketHint: string | null;
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -829,6 +865,7 @@ export interface ResearchProgressState {
   scaleWaveProjectionOutlook?: ResearchScaleWaveProjectionOutlook | null;
   trancheProjectionReadinessOutlook?: ResearchTrancheProjectionReadinessOutlook | null;
   scaleWaveIntegrationGateOutlook?: ResearchScaleWaveIntegrationGateOutlook | null;
+  trancheDryRunHandoffOutlook?: ResearchTrancheDryRunHandoffOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -870,6 +907,8 @@ export interface ResearchProgressState {
   scaleWaveProjectionSnapshot?: ResearchScaleWaveProjectionSnapshot | null;
   trancheProjectionBandLog?: ResearchTrancheProjectionBandEvent[];
   trancheProjectionSnapshot?: ResearchTrancheProjectionSnapshot | null;
+  integrationGateBandLog?: ResearchScaleWaveIntegrationGateBandEvent[];
+  integrationGateSnapshot?: ResearchScaleWaveIntegrationGateSnapshot | null;
 }
 
 export interface StrategyHookDefinition {

@@ -61,4 +61,7 @@ export * from './tranche-projection-readiness-outlook.ts';
 export * from './tranche-projection-band-log.ts';
 export * from './tranche-projection-snapshot.ts';
 export * from './scale-wave-integration-gate-outlook.ts';
+export * from './scale-wave-integration-gate-band-log.ts';
+export * from './scale-wave-integration-gate-snapshot.ts';
+export * from './tranche-dry-run-handoff-outlook.ts';
 export * from './compute.ts';

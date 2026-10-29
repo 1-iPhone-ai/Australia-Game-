@@ -1380,7 +1380,7 @@ tests.push(
       scaleWaveMaturitySnapshot: null,
     };
     const core = migrateResearchProgressSave(v17);
-    assert(core?.schemaVersion === 'op10m-agent03-v20');
+    assert(core?.schemaVersion === 'op10m-agent03-v21');
     assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v17'));
     assert(Array.isArray(core?.nationalIntegrationBandLog));
     assert(core?.nationalIntegrationSnapshot === null);
@@ -1449,7 +1449,7 @@ tests.push(
       nationalIntegrationSnapshot: null,
     };
     const core = migrateResearchProgressSave(v18);
-    assert(core?.schemaVersion === 'op10m-agent03-v20');
+    assert(core?.schemaVersion === 'op10m-agent03-v21');
     assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v18'));
     assert(Array.isArray(core?.scaleWaveProjectionBandLog));
     assert(core?.scaleWaveProjectionSnapshot === null);
@@ -1520,13 +1520,86 @@ tests.push(
       scaleWaveProjectionSnapshot: null,
     };
     const core = migrateResearchProgressSave(v19);
-    assert(core?.schemaVersion === 'op10m-agent03-v20');
+    assert(core?.schemaVersion === 'op10m-agent03-v21');
     assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v19'));
     assert(Array.isArray(core?.trancheProjectionBandLog));
     assert(core?.trancheProjectionSnapshot === null);
     const state = computeResearchProgress(baseInputs({ turn: 37 }), core);
     assert(typeof state.trancheProjectionSnapshot?.digest === 'string');
     assert(Array.isArray(state.trancheProjectionBandLog));
+  })
+);
+
+tests.push(
+  test('tranche_dry_run_handoff_outlook_derived', () => {
+    const inputs = baseInputs({ turn: 42 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.trancheDryRunHandoffOutlook;
+    assert(outlook != null);
+    assert(outlook?.waveOrdinal === 21);
+    assert(outlook?.integrationBaselineShaHint === '99f2e72b');
+    assert(detectForeignSaveFields({ trancheDryRunHandoffOutlook: outlook }).includes('trancheDryRunHandoffOutlook'));
+  })
+);
+
+tests.push(
+  test('save_v20_migrates_to_v21_with_integration_gate_fields', () => {
+    const v20 = {
+      schemaVersion: 'op10m-agent03-v20',
+      turn: 38,
+      revision: 3,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v19', toVersion: 'op10m-agent03-v20', turn: 37 }],
+      saveKind: 'manual',
+      updatedAtTurn: 38,
+      sessionId: 'v20',
+      persistRevision: 20,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 38,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 38, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      synergyThresholdLog: [],
+      synergySnapshot: null,
+      commercializationMilestoneLog: [],
+      commercializationSnapshot: null,
+      diffusionIntegrationLog: [],
+      diffusionIntegrationSnapshot: null,
+      portfolioBalanceLog: [],
+      portfolioBalanceSnapshot: null,
+      diffusionForecastBandLog: [],
+      diffusionForecastSnapshot: null,
+      horizonConvergenceBandLog: [],
+      horizonConvergenceSnapshot: null,
+      researchExecutionBandLog: [],
+      researchExecutionSnapshot: null,
+      strategicDeliveryBandLog: [],
+      strategicDeliverySnapshot: null,
+      scaleWaveMaturityBandLog: [],
+      scaleWaveMaturitySnapshot: null,
+      nationalIntegrationBandLog: [],
+      nationalIntegrationSnapshot: null,
+      scaleWaveProjectionBandLog: [],
+      scaleWaveProjectionSnapshot: null,
+      trancheProjectionBandLog: [],
+      trancheProjectionSnapshot: null,
+    };
+    const core = migrateResearchProgressSave(v20);
+    assert(core?.schemaVersion === 'op10m-agent03-v21');
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v20'));
+    assert(Array.isArray(core?.integrationGateBandLog));
+    assert(core?.integrationGateSnapshot === null);
+    const state = computeResearchProgress(baseInputs({ turn: 39 }), core);
+    assert(typeof state.integrationGateSnapshot?.digest === 'string');
+    assert(Array.isArray(state.integrationGateBandLog));
   })
 );
 

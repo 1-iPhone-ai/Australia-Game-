@@ -31,6 +31,7 @@ import { computeResearchNationalIntegrationOutlook } from './national-integratio
 import { computeResearchScaleWaveProjectionOutlook } from './scale-wave-projection-outlook.ts';
 import { computeResearchTrancheProjectionReadinessOutlook } from './tranche-projection-readiness-outlook.ts';
 import { computeResearchScaleWaveIntegrationGateOutlook } from './scale-wave-integration-gate-outlook.ts';
+import { computeResearchTrancheDryRunHandoffOutlook } from './tranche-dry-run-handoff-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -368,6 +369,13 @@ export function computeResearchProgress(
     scaleWaveProjectionSnapshot: coreBase.scaleWaveProjectionSnapshot ?? null,
   });
 
+  const trancheDryRunHandoffOutlook = computeResearchTrancheDryRunHandoffOutlook(inputs, {
+    scaleWaveIntegrationGateOutlook,
+    trancheProjectionReadinessOutlook,
+    integrationGateSnapshot: coreBase.integrationGateSnapshot ?? null,
+    trancheProjectionSnapshot: coreBase.trancheProjectionSnapshot ?? null,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -399,6 +407,7 @@ export function computeResearchProgress(
     scaleWaveProjectionOutlook,
     trancheProjectionReadinessOutlook,
     scaleWaveIntegrationGateOutlook,
+    trancheDryRunHandoffOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };
