@@ -31,6 +31,12 @@ import {
   nrDashHottestBorderRegion,
   nrDashTopBorderStress,
 } from '../core/border-stress.ts';
+import { nrDashBuildBottleneckConcentration } from '../core/bottleneck-concentration.ts';
+import { nrDashBuildDependencyAsymmetry, nrDashTopDependencyAsymmetry } from '../core/dependency-asymmetry.ts';
+import { nrDashBuildOwnedMomentumSkew } from '../core/owned-momentum-skew.ts';
+import { nrDashBuildUtilAlignmentDrift } from '../core/util-alignment-drift.ts';
+import { nrDashBuildTrendAcceleration } from '../core/trend-acceleration.ts';
+import { nrDashBuildHubCorridorLoad } from '../core/hub-corridor-load.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -379,6 +385,40 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
       nrDashBuildBorderStressRows(ns).length >= 8 &&
       nrDashHottestBorderRegion(ns) === 'NSW'
     );
+  });
+
+  check('a23_bottleneck_conc', 'Bottleneck concentration peaks on NSW fixture', () => {
+    const conc = nrDashBuildBottleneckConcentration(createAgent23NsFixture())!;
+    return conc.activeCount === 1 && conc.topRegionId === 'NSW' && conc.concentrationIndex === 1;
+  });
+
+  check('a23_dep_asymmetry', 'Dependency asymmetry ranks net consumers', () => {
+    const ns = createAgent23NsFixture();
+    const summary = nrDashBuildDependencyAsymmetry(ns)!;
+    const top = nrDashTopDependencyAsymmetry(ns, 2);
+    return summary.rows.length === 8 && top.length === 2 && top.some(r => r.netImportWeight > 0);
+  });
+
+  check('a23_owned_mom_skew', 'Owned momentum skew compares player portfolio', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'you', VIC: 'you' })!;
+    const skew = nrDashBuildOwnedMomentumSkew(snap)!;
+    return skew.ownedRegionCount === 2 && skew.rankSkew === 0;
+  });
+
+  check('a23_util_drift', 'Util alignment drift spans five networks', () => {
+    const drift = nrDashBuildUtilAlignmentDrift(createAgent23NsFixture())!;
+    return drift.rows.length === 5 && drift.meanDrift >= 0;
+  });
+
+  check('a23_trend_accel', 'Trend acceleration uses three-point history', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const acc = nrDashBuildTrendAcceleration(snap)!;
+    return acc.sampleSize === 8 && acc.coherenceScore >= 0 && acc.coherenceScore <= 1;
+  });
+
+  check('a23_hub_load', 'Hub corridor load aggregates touching link stress', () => {
+    const load = nrDashBuildHubCorridorLoad(createAgent23NsFixture())!;
+    return load.hubRegionId != null && load.touchingLinkCount >= 1 && load.peakLinkStress >= 0;
   });
 
   return results;

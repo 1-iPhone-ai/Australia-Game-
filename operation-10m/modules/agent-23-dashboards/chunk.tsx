@@ -1674,6 +1674,256 @@ export function nrDashHottestBorderRegion(ns: NationalSystemsState | null): stri
   return top?.maxCorridorStress ? top.regionId : null;
 }
 
+// --- bundled from core/bottleneck-concentration.ts ---
+export interface NrDashBottleneckConcentration {
+  activeCount: number;
+  topRegionId: string | null;
+  /** Herfindahl-style share² sum across regions (1 = all bottlenecks in one region). */
+  concentrationIndex: number;
+  topRegionShare: number;
+}
+
+/** How clustered active NS bottlenecks are by region (authoritative list only). */
+export function nrDashBuildBottleneckConcentration(ns: NationalSystemsState | null): NrDashBottleneckConcentration | null {
+  if (!ns?.bottlenecks?.length) return null;
+  const counts = new Map<string, number>();
+  ns.bottlenecks.forEach(b => {
+    const id = b.regionId ?? 'unknown';
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  });
+  const activeCount = ns.bottlenecks.length;
+  let topRegionId: string | null = null;
+  let topCount = 0;
+  counts.forEach((n, id) => {
+    if (n > topCount) {
+      topCount = n;
+      topRegionId = id === 'unknown' ? null : id;
+    }
+  });
+  let concentrationIndex = 0;
+  counts.forEach(n => {
+    const share = n / activeCount;
+    concentrationIndex += share * share;
+  });
+  return {
+    activeCount,
+    topRegionId,
+    concentrationIndex: Math.round(concentrationIndex * 1000) / 1000,
+    topRegionShare: Math.round((topCount / activeCount) * 1000) / 1000,
+  };
+}
+
+// --- bundled from core/dependency-asymmetry.ts ---
+const IMPORTANCE_WEIGHT: Record<string, number> = {
+  moderate: 1,
+  high: 1.25,
+  critical: 1.5,
+};
+
+export interface NrDashDependencyAsymmetryRow {
+  regionId: string;
+  inboundWeight: number;
+  outboundWeight: number;
+  /** Positive = net consumer of interregional flows. */
+  netImportWeight: number;
+}
+
+export interface NrDashDependencyAsymmetrySummary {
+  rows: NrDashDependencyAsymmetryRow[];
+  maxAbsNet: number;
+}
+
+/** Net dependency pull/push per region from NS dependency edges (no forecasting). */
+export function nrDashBuildDependencyAsymmetry(ns: NationalSystemsState | null): NrDashDependencyAsymmetrySummary | null {
+  if (!ns?.dependencies?.length) return null;
+  const inbound = new Map<string, number>();
+  const outbound = new Map<string, number>();
+  COMM_REGION_CODES.forEach(code => {
+    inbound.set(code, 0);
+    outbound.set(code, 0);
+  });
+  ns.dependencies.forEach(dep => {
+    const w = IMPORTANCE_WEIGHT[dep.importance] ?? 1;
+    inbound.set(dep.consumerRegionId, (inbound.get(dep.consumerRegionId) ?? 0) + w);
+    outbound.set(dep.providerRegionId, (outbound.get(dep.providerRegionId) ?? 0) + w);
+  });
+  const rows: NrDashDependencyAsymmetryRow[] = COMM_REGION_CODES.map(regionId => {
+    const inboundWeight = Math.round((inbound.get(regionId) ?? 0) * 1000) / 1000;
+    const outboundWeight = Math.round((outbound.get(regionId) ?? 0) * 1000) / 1000;
+    return {
+      regionId,
+      inboundWeight,
+      outboundWeight,
+      netImportWeight: Math.round((inboundWeight - outboundWeight) * 1000) / 1000,
+    };
+  });
+  rows.sort(
+    (a, b) => Math.abs(b.netImportWeight) - Math.abs(a.netImportWeight) || a.regionId.localeCompare(b.regionId)
+  );
+  const maxAbsNet = Math.max(...rows.map(r => Math.abs(r.netImportWeight)), 0);
+  return { rows, maxAbsNet };
+}
+
+export function nrDashTopDependencyAsymmetry(ns: NationalSystemsState | null, limit = 3): NrDashDependencyAsymmetryRow[] {
+  return nrDashBuildDependencyAsymmetry(ns)?.rows.slice(0, limit) ?? [];
+}
+
+// --- bundled from core/owned-momentum-skew.ts ---
+export interface NrDashOwnedMomentumSkew {
+  ownedRegionCount: number;
+  nationalMeanRank: number;
+  ownedMeanRank: number;
+  /** Owned minus national mean momentum rank (positive = hotter portfolio). */
+  rankSkew: number;
+}
+
+function momentumRank(band: string): number {
+  return NR_DASH_MOM_RANK[band as LRMomentumBand] ?? 2;
+}
+
+/** Player-owned momentum band ranks vs national LR snapshot average. */
+export function nrDashBuildOwnedMomentumSkew(snap: NrDashAuthSnapshot | null): NrDashOwnedMomentumSkew | null {
+  if (!snap?.regions.length) return null;
+  const owned = snap.regions.filter(r => r.owner === 'you');
+  if (!owned.length) return null;
+  const nationalMeanRank =
+    snap.regions.reduce((s, r) => s + momentumRank(r.momentumBand), 0) / snap.regions.length;
+  const ownedMeanRank = owned.reduce((s, r) => s + momentumRank(r.momentumBand), 0) / owned.length;
+  const rankSkew = Math.round((ownedMeanRank - nationalMeanRank) * 100) / 100;
+  return {
+    ownedRegionCount: owned.length,
+    nationalMeanRank: Math.round(nationalMeanRank * 100) / 100,
+    ownedMeanRank: Math.round(ownedMeanRank * 100) / 100,
+    rankSkew,
+  };
+}
+
+// --- bundled from core/util-alignment-drift.ts ---
+export interface NrDashUtilAlignmentRow {
+  network: NationalNetworkKind;
+  label: string;
+  nationalUtilization: number;
+  regionalMeanUtilization: number;
+  /** Absolute gap between national bar and regional mean cell util. */
+  drift: number;
+}
+
+export interface NrDashUtilAlignmentDrift {
+  rows: NrDashUtilAlignmentRow[];
+  meanDrift: number;
+  worstNetwork: NationalNetworkKind | null;
+}
+
+/** Mean absolute mismatch between national network bars and regional NS cells. */
+export function nrDashBuildUtilAlignmentDrift(ns: NationalSystemsState | null): NrDashUtilAlignmentDrift | null {
+  if (!ns?.national || !ns.regions) return null;
+  const regionList = Object.values(ns.regions);
+  if (!regionList.length) return null;
+  const rows: NrDashUtilAlignmentRow[] = NATIONAL_NETWORKS.map(network => {
+    const nationalUtilization = ns.national[network]?.utilization ?? 0;
+    const regionalMeanUtilization =
+      regionList.reduce((s, reg) => s + (reg.networks[network]?.utilization ?? 0), 0) / regionList.length;
+    const drift = Math.abs(nationalUtilization - regionalMeanUtilization);
+    return {
+      network,
+      label: NATIONAL_NETWORK_LABEL[network],
+      nationalUtilization: Math.round(nationalUtilization * 1000) / 1000,
+      regionalMeanUtilization: Math.round(regionalMeanUtilization * 1000) / 1000,
+      drift: Math.round(drift * 1000) / 1000,
+    };
+  });
+  rows.sort((a, b) => b.drift - a.drift || a.network.localeCompare(b.network));
+  const meanDrift = rows.reduce((s, r) => s + r.drift, 0) / rows.length;
+  return {
+    rows,
+    meanDrift: Math.round(meanDrift * 1000) / 1000,
+    worstNetwork: rows[0]?.drift > 0 ? rows[0].network : null,
+  };
+}
+
+// --- bundled from core/trend-acceleration.ts ---
+export interface NrDashTrendAcceleration {
+  sampleSize: number;
+  meanAcceleration: number;
+  stdDev: number;
+  /** 1 − normalized σ (1 = all regions accelerating similarly). */
+  coherenceScore: number;
+  outlierRegionId: string | null;
+}
+
+function accelerationFromHistory(history: number[]): number | null {
+  const pts = history.filter(v => Number.isFinite(v));
+  if (pts.length < 3) return null;
+  const mid = pts[Math.floor(pts.length / 2)];
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  return Math.round((last - mid - (mid - first)) * 1000) / 1000;
+}
+
+/** Second-order momentum history curvature across regions (no forecasting). */
+export function nrDashBuildTrendAcceleration(snap: NrDashAuthSnapshot | null): NrDashTrendAcceleration | null {
+  if (!snap?.regions.length) return null;
+  const entries = snap.regions
+    .map(r => ({ regionId: r.regionId, acc: accelerationFromHistory(r.momentumHistory) }))
+    .filter(e => e.acc != null) as { regionId: string; acc: number }[];
+  if (!entries.length) return null;
+  const values = entries.map(e => e.acc);
+  const meanAcceleration = values.reduce((s, v) => s + v, 0) / values.length;
+  const variance =
+    values.reduce((s, v) => s + (v - meanAcceleration) ** 2, 0) / Math.max(values.length, 1);
+  const stdDev = Math.round(Math.sqrt(variance) * 1000) / 1000;
+  const maxStd = Math.max(...values.map(v => Math.abs(v)), 0.001);
+  const coherenceScore = Math.round(Math.max(0, 1 - stdDev / maxStd) * 1000) / 1000;
+  const outlier = [...entries].sort((a, b) => Math.abs(b.acc) - Math.abs(a.acc))[0];
+  return {
+    sampleSize: entries.length,
+    meanAcceleration: Math.round(meanAcceleration * 1000) / 1000,
+    stdDev,
+    coherenceScore,
+    outlierRegionId: outlier?.regionId ?? null,
+  };
+}
+
+// --- bundled from core/hub-corridor-load.ts ---
+export interface NrDashHubCorridorLoad {
+  hubRegionId: string | null;
+  touchingLinkCount: number;
+  meanLinkStress: number;
+  peakLinkStress: number;
+  peakLinkLabel: string | null;
+}
+
+/** Aggregate map link stress touching the primary connectivity hub. */
+export function nrDashBuildHubCorridorLoad(ns: NationalSystemsState | null): NrDashHubCorridorLoad | null {
+  const hubRegionId = nrDashPrimaryMapHub(ns);
+  if (!hubRegionId || !ns) return null;
+  const merged = nrDashMergeMapLinks(
+    nrDashBuildAdjacencyLinks(AGENT23_REGION_MAP_LAYOUT),
+    nrDashBuildDependencyLinks(ns, AGENT23_REGION_MAP_LAYOUT)
+  );
+  const stressed = nrDashEnrichMapLinkStress(merged, ns);
+  const touching = stressed.filter(l => l.fromId === hubRegionId || l.toId === hubRegionId);
+  if (!touching.length) {
+    return {
+      hubRegionId,
+      touchingLinkCount: 0,
+      meanLinkStress: 0,
+      peakLinkStress: 0,
+      peakLinkLabel: null,
+    };
+  }
+  const levels = touching.map(l => l.stressLevel ?? 0);
+  const meanLinkStress = levels.reduce((s, v) => s + v, 0) / levels.length;
+  const peak = touching.reduce((best, l) => ((l.stressLevel ?? 0) > (best.stressLevel ?? 0) ? l : best));
+  return {
+    hubRegionId,
+    touchingLinkCount: touching.length,
+    meanLinkStress: Math.round(meanLinkStress * 1000) / 1000,
+    peakLinkStress: Math.round((peak.stressLevel ?? 0) * 1000) / 1000,
+    peakLinkLabel: peak.label,
+  };
+}
+
 // --- bundled from tests/fixtures.ts ---
 function emptyNetworks(): Record<NationalNetworkKind, NationalRegionSystemsState['networks']['freight']> {
   const base = { utilization: 0.4, condition: 'healthy' as const };
@@ -2185,6 +2435,53 @@ export const NrDashBorderStressStrip: React.FC<{ rows: NrDashBorderStressRow[] }
   );
 };
 
+// --- bundled from ui/owned-momentum-skew-card.tsx ---
+export const NrDashOwnedMomentumSkewCard: React.FC<{ skew: NrDashOwnedMomentumSkew | null }> = ({ skew }) => {
+  if (!skew) return null;
+  return (
+    <div className="rounded border border-slate-600/50 p-2 text-xs" data-testid="nr-dash-owned-momentum-skew">
+      <div className="font-semibold mb-1">Your portfolio momentum skew</div>
+      <div>
+        {skew.ownedRegionCount} owned · rank μ {skew.ownedMeanRank} vs {skew.nationalMeanRank} national (Δ{' '}
+        {skew.rankSkew >= 0 ? '+' : ''}
+        {skew.rankSkew})
+      </div>
+    </div>
+  );
+};
+
+// --- bundled from ui/dependency-asymmetry-strip.tsx ---
+export const NrDashDependencyAsymmetryStrip: React.FC<{ rows: NrDashDependencyAsymmetryRow[] }> = ({ rows }) => {
+  if (!rows.length) return null;
+  return (
+    <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-dependency-asymmetry">
+      <div className="font-semibold mb-1">Dependency flow asymmetry</div>
+      <ul className="list-disc list-inside opacity-90">
+        {rows.map(r => (
+          <li key={r.regionId}>
+            {r.regionId}: net {r.netImportWeight >= 0 ? 'import' : 'export'} {Math.abs(r.netImportWeight)} (in {r.inboundWeight} / out{' '}
+            {r.outboundWeight})
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+// --- bundled from ui/util-alignment-strip.tsx ---
+export const NrDashUtilAlignmentStrip: React.FC<{ drift: NrDashUtilAlignmentDrift | null }> = ({ drift }) => {
+  if (!drift) return null;
+  return (
+    <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-util-alignment">
+      <div className="font-semibold mb-1">National vs regional util drift</div>
+      <div>
+        mean drift {drift.meanDrift}
+        {drift.worstNetwork ? ` · widest gap ${drift.worstNetwork}` : ''}
+      </div>
+    </div>
+  );
+};
+
 // --- bundled from ui/region-position-map.tsx ---
 export interface RegionPositionMapProps {
   nodes: RegionMapNode[];
@@ -2311,6 +2608,7 @@ export const NrDashOverviewTab: React.FC<{
     <NrDashNeedsImbalanceCard imbalance={nrDashBuildNeedsImbalance(snap)} />
     <NrDashRiskExposureCard exposure={nrDashBuildRiskExposure(snap)} />
     <NrDashOwnerStressGapCard gap={nrDashBuildOwnerStressGap(snap)} />
+    <NrDashOwnedMomentumSkewCard skew={nrDashBuildOwnedMomentumSkew(snap)} />
     <div className="grid md:grid-cols-3 gap-3 text-sm">
       <div className="rounded-lg border border-slate-600/50 p-3">
         <div className="text-xs opacity-70">National resilience</div>
@@ -2363,6 +2661,7 @@ export const NrDashRegionsTab: React.FC<{
       outliers={nrDashTopParityOutliers(snap, 3)}
     />
     <NrDashPeripheralIsolationStrip rows={nrDashTopPeripheralRegions(nsState, 3)} />
+    <NrDashDependencyAsymmetryStrip rows={nrDashTopDependencyAsymmetry(nsState, 3)} />
     {nrDashTopTensionOutliers(snap, 3).length > 0 && (
       <div className="text-xs rounded border border-slate-600/50 p-2 mb-2" data-testid="nr-dash-tension-outliers">
         <div className="font-semibold mb-1">Momentum ↔ resilience tension</div>
@@ -2442,14 +2741,23 @@ export const NrDashNetworksTab: React.FC<{
     nrDashBuildAuthSnapshot(ns.turn ?? 0, null, ns, null)
   );
   const strainDiv = nrDashBuildStrainDiversity(ns);
+  const bottleneckConc = nrDashBuildBottleneckConcentration(ns);
+  const utilDrift = nrDashBuildUtilAlignmentDrift(ns);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-networks">
+      <NrDashUtilAlignmentStrip drift={utilDrift} />
       <NrDashUtilizationSkewStrip skew={snapSkew} />
       <NrDashCapacityHeadroomStrip headroom={headroom} />
       {strainDiv && (
         <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-strain-diversity">
           Strain diversity index {strainDiv.diversityIndex} · dominant {strainDiv.dominantCondition ?? '—'} · μ weight{' '}
           {strainDiv.meanWeight}
+        </div>
+      )}
+      {bottleneckConc && (
+        <div className="text-xs rounded border border-slate-600/50 p-2" data-testid="nr-dash-bottleneck-concentration">
+          Bottleneck concentration {bottleneckConc.concentrationIndex} · top {bottleneckConc.topRegionId ?? '—'} (
+          {Math.round(bottleneckConc.topRegionShare * 100)}% of {bottleneckConc.activeCount})
         </div>
       )}
       {coupling && (
@@ -2505,6 +2813,7 @@ export const NrDashNetworksTab: React.FC<{
 export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }) => {
   const movers = nrDashTopTrendMovers(snap.regions, 5);
   const coherence = nrDashBuildTrendCoherence(snap);
+  const acceleration = nrDashBuildTrendAcceleration(snap);
   return (
     <div data-testid="nr-dash-tab-trends">
       <NrDashProvenanceStrip items={snap.provenance} />
@@ -2514,6 +2823,15 @@ export const NrDashTrendsTab: React.FC<{ snap: NrDashAuthSnapshot }> = ({ snap }
           <div>
             score {coherence.coherenceScore} · σ {coherence.stdDev}
             {coherence.divergentRegionId ? ` · outlier ${coherence.divergentRegionId}` : ''}
+          </div>
+        </div>
+      )}
+      {acceleration && (
+        <div className="text-xs mb-3 rounded border border-slate-600/50 p-2" data-testid="nr-dash-trend-acceleration">
+          <div className="font-semibold mb-1">Momentum acceleration coherence</div>
+          <div>
+            score {acceleration.coherenceScore} · μ acc {acceleration.meanAcceleration}
+            {acceleration.outlierRegionId ? ` · outlier ${acceleration.outlierRegionId}` : ''}
           </div>
         </div>
       )}
@@ -2570,6 +2888,7 @@ export const NrDashMapTab: React.FC<{
   const hottestLink = useMemo(() => nrDashHottestMapLinkStress(stressedLinks), [stressedLinks]);
   const hubRows = useMemo(() => nrDashTopMapHubs(nsState, 3), [nsState]);
   const primaryHub = useMemo(() => nrDashPrimaryMapHub(nsState), [nsState]);
+  const hubLoad = useMemo(() => nrDashBuildHubCorridorLoad(nsState), [nsState]);
   return (
     <div className="space-y-3" data-testid="nr-dash-tab-map">
       <NrDashProvenanceStrip items={snap.provenance} />
@@ -2577,6 +2896,12 @@ export const NrDashMapTab: React.FC<{
       <NrDashCorridorStressStrip corridors={nrDashTopCorridorStress(nsState, 4)} />
       <NrDashBorderStressStrip rows={nrDashTopBorderStress(nsState, 3)} />
       <NrDashMapHubStrip hubs={hubRows} primaryHubId={primaryHub} />
+      {hubLoad && hubLoad.touchingLinkCount > 0 && (
+        <p className="text-[10px] opacity-75" data-testid="nr-dash-map-hub-load">
+          Hub {hubLoad.hubRegionId} corridor load: μ stress {Math.round(hubLoad.meanLinkStress * 100)}% · peak{' '}
+          {hubLoad.peakLinkLabel} ({Math.round(hubLoad.peakLinkStress * 100)}%)
+        </p>
+      )}
       {hottestLink && (
         <p className="text-[10px] opacity-75" data-testid="nr-dash-map-link-stress-hot">
           Hottest link stress: {hottestLink.label} ({Math.round((hottestLink.stressLevel ?? 0) * 100)}%)
@@ -3044,6 +3369,40 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
       nrDashBuildBorderStressRows(ns).length >= 8 &&
       nrDashHottestBorderRegion(ns) === 'NSW'
     );
+  });
+
+  check('a23_bottleneck_conc', 'Bottleneck concentration peaks on NSW fixture', () => {
+    const conc = nrDashBuildBottleneckConcentration(createAgent23NsFixture())!;
+    return conc.activeCount === 1 && conc.topRegionId === 'NSW' && conc.concentrationIndex === 1;
+  });
+
+  check('a23_dep_asymmetry', 'Dependency asymmetry ranks net consumers', () => {
+    const ns = createAgent23NsFixture();
+    const summary = nrDashBuildDependencyAsymmetry(ns)!;
+    const top = nrDashTopDependencyAsymmetry(ns, 2);
+    return summary.rows.length === 8 && top.length === 2 && top.some(r => r.netImportWeight > 0);
+  });
+
+  check('a23_owned_mom_skew', 'Owned momentum skew compares player portfolio', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, { NSW: 'you', VIC: 'you' })!;
+    const skew = nrDashBuildOwnedMomentumSkew(snap)!;
+    return skew.ownedRegionCount === 2 && skew.rankSkew === 0;
+  });
+
+  check('a23_util_drift', 'Util alignment drift spans five networks', () => {
+    const drift = nrDashBuildUtilAlignmentDrift(createAgent23NsFixture())!;
+    return drift.rows.length === 5 && drift.meanDrift >= 0;
+  });
+
+  check('a23_trend_accel', 'Trend acceleration uses three-point history', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), null, null)!;
+    const acc = nrDashBuildTrendAcceleration(snap)!;
+    return acc.sampleSize === 8 && acc.coherenceScore >= 0 && acc.coherenceScore <= 1;
+  });
+
+  check('a23_hub_load', 'Hub corridor load aggregates touching link stress', () => {
+    const load = nrDashBuildHubCorridorLoad(createAgent23NsFixture())!;
+    return load.hubRegionId != null && load.touchingLinkCount >= 1 && load.peakLinkStress >= 0;
   });
 
   return results;
