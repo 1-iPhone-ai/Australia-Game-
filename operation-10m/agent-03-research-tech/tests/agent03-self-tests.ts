@@ -1920,6 +1920,90 @@ tests.push(
 );
 
 tests.push(
+  test('save_v25_migrates_to_v26_with_post_seal_handoff_fields', () => {
+    const v25 = {
+      schemaVersion: 'op10m-agent03-v25',
+      turn: 49,
+      revision: 3,
+      unlockedNodes: [],
+      institutionUpgrades: [],
+      unlockSeq: 0,
+      branchEmphasis: [],
+      emphasisRevision: 1,
+      migrationLog: [{ fromVersion: 'op10m-agent03-v24', toVersion: 'op10m-agent03-v25', turn: 48 }],
+      saveKind: 'manual',
+      updatedAtTurn: 49,
+      sessionId: 'v25',
+      persistRevision: 25,
+      unlockEventLog: [],
+      lastReconciledAtTurn: 49,
+      emphasisChangeLog: [],
+      institutionTierSnapshot: { capturedAtTurn: 49, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
+      integrationRiskLog: [],
+      integrationRiskSnapshot: null,
+      scaleWaveSnapshot: null,
+      synergyThresholdLog: [],
+      synergySnapshot: null,
+      commercializationMilestoneLog: [],
+      commercializationSnapshot: null,
+      diffusionIntegrationLog: [],
+      diffusionIntegrationSnapshot: null,
+      portfolioBalanceLog: [],
+      portfolioBalanceSnapshot: null,
+      diffusionForecastBandLog: [],
+      diffusionForecastSnapshot: null,
+      horizonConvergenceBandLog: [],
+      horizonConvergenceSnapshot: null,
+      researchExecutionBandLog: [],
+      researchExecutionSnapshot: null,
+      strategicDeliveryBandLog: [],
+      strategicDeliverySnapshot: null,
+      scaleWaveMaturityBandLog: [],
+      scaleWaveMaturitySnapshot: null,
+      nationalIntegrationBandLog: [],
+      nationalIntegrationSnapshot: null,
+      scaleWaveProjectionBandLog: [],
+      scaleWaveProjectionSnapshot: null,
+      trancheProjectionBandLog: [],
+      trancheProjectionSnapshot: null,
+      integrationGateBandLog: [],
+      integrationGateSnapshot: null,
+      dryRunHandoffBandLog: [],
+      dryRunHandoffSnapshot: null,
+      mergedIntegrationBaselineBandLog: [],
+      mergedIntegrationBaselineSnapshot: null,
+      postIntegrationDryRunBandLog: [],
+      postIntegrationDryRunSnapshot: null,
+      integrationSealBandLog: [],
+      integrationSealSnapshot: null,
+    };
+    const core = migrateResearchProgressSave(v25);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v25'));
+    assert(Array.isArray(core?.postSealHandoffBandLog));
+    assert(core?.postSealHandoffSnapshot === null);
+    const state = computeResearchProgress(baseInputs({ turn: 50 }), core);
+    assert(typeof state.postSealHandoffSnapshot?.digest === 'string');
+    assert(Array.isArray(state.postSealHandoffBandLog));
+  })
+);
+
+tests.push(
+  test('scale_wave_integration_continuity_outlook_derived_wave26', () => {
+    const inputs = baseInputs({ turn: 26 });
+    const state = computeResearchProgress(inputs, null);
+    const outlook = state.scaleWaveIntegrationContinuityOutlook;
+    assert(outlook != null);
+    assert(outlook?.waveOrdinal === 26);
+    assert(outlook?.integrationBaselineShaHint === 'de3079f9');
+    assert(outlook?.projectedFunctionalHint === 1_563_481);
+    assert(detectForeignSaveFields({ scaleWaveIntegrationContinuityOutlook: outlook }).includes('scaleWaveIntegrationContinuityOutlook'));
+  })
+);
+
+tests.push(
   test('agent25_chunk_markers_and_hash', () => {
     const moduleId = 'agent-03-research-tech';
     const chunkPath = resolve(process.cwd(), 'operation-10m/modules/agent-03-research-tech/chunk.tsx');

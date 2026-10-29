@@ -76,4 +76,7 @@ export * from './scale-wave-integration-seal-outlook.ts';
 export * from './scale-wave-integration-seal-band-log.ts';
 export * from './scale-wave-integration-seal-snapshot.ts';
 export * from './scale-wave-post-seal-handoff-outlook.ts';
+export * from './scale-wave-post-seal-handoff-band-log.ts';
+export * from './scale-wave-post-seal-handoff-snapshot.ts';
+export * from './scale-wave-integration-continuity-outlook.ts';
 export * from './compute.ts';
