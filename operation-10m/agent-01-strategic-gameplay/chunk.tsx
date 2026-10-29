@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-01-strategic-gameplay
-// content-sha256-prefix: a005f6ceb6ebf2bd
+// content-sha256-prefix: b949acc75e5688c7
 // Operation 10M — Agent 01 Strategic Gameplay
 
 // Bundled for Agent 25 assembly (no external imports).
@@ -265,6 +265,8 @@ export interface TurnStrategicBriefing {
   integratedCoalitionMaturityStreakDays: number;
   sustainedIntegratedCoalitionStewardship: boolean;
   coalitionStewardshipStreakDays: number;
+  anchoredCoalitionGovernance: boolean;
+  coalitionAnchoredGovernanceStreakDays: number;
   mandateDriftRisk: 'low' | 'elevated' | 'critical';
   topRecommendationActionId?: string;
   topRecommendationTitle?: string;
@@ -343,6 +345,8 @@ export interface StrategicActionDefinition {
   minIntegratedCoalitionMaturityStreakDays?: number;
   /** Action requires sustained integrated-maturity stewardship streak. */
   minCoalitionStewardshipStreakDays?: number;
+  /** Action requires anchored governance streak after sustained stewardship. */
+  minCoalitionAnchoredGovernanceStreakDays?: number;
 }
 
 export interface MultiStageChoiceOption {
@@ -390,7 +394,8 @@ export type StrategicValidationRequirement =
   | { kind: 'max_coalition_volatility_events'; maxEvents: number }
   | { kind: 'min_cross_module_sync_streak'; minDays: number }
   | { kind: 'min_integrated_coalition_maturity_streak'; minDays: number }
-  | { kind: 'min_coalition_stewardship_streak'; minDays: number };
+  | { kind: 'min_coalition_stewardship_streak'; minDays: number }
+  | { kind: 'min_coalition_anchored_governance_streak'; minDays: number };
 
 export interface StrategicValidationIssue {
   code: string;
@@ -448,6 +453,8 @@ export interface StrategicGameplayState {
   integratedCoalitionMaturityStreakDays?: number;
   /** Days integrated maturity remained active with volatility cleared. */
   coalitionStewardshipStreakDays?: number;
+  /** Days sustained stewardship held governance anchor eligibility. */
+  coalitionAnchoredGovernanceStreakDays?: number;
   activeChoice: {
     choiceId: string;
     stageId: string;
@@ -1004,6 +1011,16 @@ export function stewardshipRankingBonus(
   if (action.minCoalitionStewardshipStreakDays === undefined) return 0;
   const streak = state.coalitionStewardshipStreakDays ?? 0;
   if (streak >= action.minCoalitionStewardshipStreakDays) return 5;
+  return 2;
+}
+
+export function anchoredGovernanceRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionAnchoredGovernanceStreakDays === undefined) return 0;
+  const streak = state.coalitionAnchoredGovernanceStreakDays ?? 0;
+  if (streak >= action.minCoalitionAnchoredGovernanceStreakDays) return 6;
   return 2;
 }
 
@@ -1574,6 +1591,8 @@ export interface ExternalCoalitionTurnSignals {
   integratedCoalitionMaturityStreakDays: number;
   sustainedIntegratedCoalitionStewardship: boolean;
   coalitionStewardshipStreakDays: number;
+  anchoredCoalitionGovernance: boolean;
+  coalitionAnchoredGovernanceStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -1592,6 +1611,8 @@ export function buildExternalCoalitionTurnSignals(
     integratedCoalitionMaturityStreakDays: state.integratedCoalitionMaturityStreakDays ?? 0,
     sustainedIntegratedCoalitionStewardship: isSustainedIntegratedCoalitionStewardship(state),
     coalitionStewardshipStreakDays: state.coalitionStewardshipStreakDays ?? 0,
+    anchoredCoalitionGovernance: isAnchoredCoalitionGovernance(state),
+    coalitionAnchoredGovernanceStreakDays: state.coalitionAnchoredGovernanceStreakDays ?? 0,
   };
 }
 
@@ -1610,6 +1631,8 @@ export function normalizeExternalCoalitionTurnSignals(
     integratedCoalitionMaturityStreakDays: raw?.integratedCoalitionMaturityStreakDays ?? 0,
     sustainedIntegratedCoalitionStewardship: raw?.sustainedIntegratedCoalitionStewardship ?? false,
     coalitionStewardshipStreakDays: raw?.coalitionStewardshipStreakDays ?? 0,
+    anchoredCoalitionGovernance: raw?.anchoredCoalitionGovernance ?? false,
+    coalitionAnchoredGovernanceStreakDays: raw?.coalitionAnchoredGovernanceStreakDays ?? 0,
   };
 }
 
@@ -1805,6 +1828,107 @@ export function coalitionStewardshipStreakIssues(
   ];
 }
 
+// --- src/engine/coalition-anchored-governance.ts ---
+
+export const ANCHORED_COALITION_GOVERNANCE_THRESHOLD = 4;
+const ANCHORED_MANDATE_BONUS_PER_DAY = 1;
+
+function boostTrack(track: PriorityMandateTrack, pointsGained: number): PriorityMandateTrack {
+  const points = track.points + pointsGained;
+  const milestonesUnlocked = track.milestonesUnlocked.filter((id) => {
+    if (id === 'mandate_priority_leadership') return points >= 75;
+    if (id === 'mandate_priority_momentum') return points >= 50;
+    if (id === 'mandate_priority_engaged') return points >= 25;
+    return true;
+  });
+  for (const step of [
+    { id: 'mandate_priority_engaged' as const, min: 25 },
+    { id: 'mandate_priority_momentum' as const, min: 50 },
+    { id: 'mandate_priority_leadership' as const, min: 75 },
+  ]) {
+    if (points >= step.min && !milestonesUnlocked.includes(step.id)) {
+      milestonesUnlocked.push(step.id);
+    }
+  }
+  return { ...track, points, milestonesUnlocked };
+}
+
+export function isAnchoredCoalitionGovernance(state: StrategicGameplayState): boolean {
+  return (state.coalitionAnchoredGovernanceStreakDays ?? 0) >= ANCHORED_COALITION_GOVERNANCE_THRESHOLD;
+}
+
+function anchoredGovernanceEligible(state: StrategicGameplayState): boolean {
+  if (classifyCoalitionCrisisLevel(state) !== 'stable') return false;
+  if ((state.coalitionVolatilityEvents ?? 0) > 0) return false;
+  const stewardship = state.coalitionStewardshipStreakDays ?? 0;
+  return (
+    isSustainedIntegratedCoalitionStewardship(state) ||
+    stewardship >= SUSTAINED_INTEGRATED_STEWARDSHIP_THRESHOLD
+  );
+}
+
+/** Governance anchor streak after integrated stewardship is sustained. */
+export function advanceCoalitionAnchoredGovernanceStreak(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0) return state;
+  if (!anchoredGovernanceEligible(state)) {
+    if ((state.coalitionAnchoredGovernanceStreakDays ?? 0) === 0) return state;
+    return { ...state, coalitionAnchoredGovernanceStreakDays: 0 };
+  }
+  return {
+    ...state,
+    coalitionAnchoredGovernanceStreakDays:
+      (state.coalitionAnchoredGovernanceStreakDays ?? 0) + daysAdvanced,
+  };
+}
+
+export function resetCoalitionAnchoredGovernanceStreak(
+  state: StrategicGameplayState,
+): StrategicGameplayState {
+  return { ...state, coalitionAnchoredGovernanceStreakDays: 0 };
+}
+
+export function applyAnchoredGovernanceMandateBonus(
+  state: StrategicGameplayState,
+  daysAdvanced: number,
+): StrategicGameplayState {
+  if (daysAdvanced <= 0 || !isAnchoredCoalitionGovernance(state)) return state;
+
+  const bonusTotal = daysAdvanced * ANCHORED_MANDATE_BONUS_PER_DAY;
+  const progress: MandateProgress = { ...(state.mandateProgress ?? {}) };
+  for (const [priorityId, track] of Object.entries(progress)) {
+    if (!track) continue;
+    progress[priorityId as keyof MandateProgress] = boostTrack(track, bonusTotal);
+  }
+
+  return { ...state, mandateProgress: progress };
+}
+
+// --- src/engine/coalition-anchored-governance-gates.ts ---
+
+export function coalitionAnchoredGovernanceStreakIssues(
+  action: StrategicActionDefinition,
+  state: StrategicGameplayState,
+): StrategicValidationIssue[] {
+  if (action.minCoalitionAnchoredGovernanceStreakDays === undefined) return [];
+
+  const streak = state.coalitionAnchoredGovernanceStreakDays ?? 0;
+  if (streak >= action.minCoalitionAnchoredGovernanceStreakDays) return [];
+
+  return [
+    {
+      code: 'COALITION_ANCHORED_GOVERNANCE_STREAK_TOO_SHORT',
+      message: `Anchored governance streak ${streak} below required ${action.minCoalitionAnchoredGovernanceStreakDays} day(s).`,
+      requirement: {
+        kind: 'min_coalition_anchored_governance_streak',
+        minDays: action.minCoalitionAnchoredGovernanceStreakDays,
+      },
+    },
+  ];
+}
+
 // --- src/engine/coalition-gates.ts ---
 
 export function coalitionBalanceIssues(
@@ -1946,6 +2070,11 @@ export interface StrategicGameplaySaveV10 extends Omit<StrategicGameplaySaveV9, 
   coalitionStewardshipStreakDays: number;
 }
 
+export interface StrategicGameplaySaveV11 extends Omit<StrategicGameplaySaveV10, 'version'> {
+  version: 11;
+  coalitionAnchoredGovernanceStreakDays: number;
+}
+
 export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV1
   | StrategicGameplaySaveV2
@@ -1956,13 +2085,14 @@ export type StrategicGameplaySaveBlob =
   | StrategicGameplaySaveV7
   | StrategicGameplaySaveV8
   | StrategicGameplaySaveV9
-  | StrategicGameplaySaveV10;
+  | StrategicGameplaySaveV10
+  | StrategicGameplaySaveV11;
 
 export function serializeStrategicGameplayState(
   state: StrategicGameplayState,
-): StrategicGameplaySaveV10 {
+): StrategicGameplaySaveV11 {
   return {
-    version: 10,
+    version: 11,
     day: state.day,
     completedActionIds: [...state.completedActionIds],
     pendingDelayed: state.pendingDelayed.map((p) => ({ ...p, effects: { ...p.effects } })),
@@ -1983,6 +2113,7 @@ export function serializeStrategicGameplayState(
     crossModuleSyncStreakDays: state.crossModuleSyncStreakDays ?? 0,
     integratedCoalitionMaturityStreakDays: state.integratedCoalitionMaturityStreakDays ?? 0,
     coalitionStewardshipStreakDays: state.coalitionStewardshipStreakDays ?? 0,
+    coalitionAnchoredGovernanceStreakDays: state.coalitionAnchoredGovernanceStreakDays ?? 0,
   };
 }
 
@@ -2009,6 +2140,7 @@ export function deserializeStrategicGameplayState(
       crossModuleSyncStreakDays: 0,
       integratedCoalitionMaturityStreakDays: 0,
       coalitionStewardshipStreakDays: 0,
+      coalitionAnchoredGovernanceStreakDays: 0,
     };
   }
   if (save.version === 2) {
@@ -2031,6 +2163,7 @@ export function deserializeStrategicGameplayState(
       crossModuleSyncStreakDays: 0,
       integratedCoalitionMaturityStreakDays: 0,
       coalitionStewardshipStreakDays: 0,
+      coalitionAnchoredGovernanceStreakDays: 0,
     };
   }
   if (save.version === 3) {
@@ -2053,6 +2186,7 @@ export function deserializeStrategicGameplayState(
       crossModuleSyncStreakDays: 0,
       integratedCoalitionMaturityStreakDays: 0,
       coalitionStewardshipStreakDays: 0,
+      coalitionAnchoredGovernanceStreakDays: 0,
     };
   }
   if (save.version === 4) {
@@ -2075,6 +2209,7 @@ export function deserializeStrategicGameplayState(
       crossModuleSyncStreakDays: 0,
       integratedCoalitionMaturityStreakDays: 0,
       coalitionStewardshipStreakDays: 0,
+      coalitionAnchoredGovernanceStreakDays: 0,
     };
   }
   if (save.version === 5) {
@@ -2097,6 +2232,7 @@ export function deserializeStrategicGameplayState(
       crossModuleSyncStreakDays: 0,
       integratedCoalitionMaturityStreakDays: 0,
       coalitionStewardshipStreakDays: 0,
+      coalitionAnchoredGovernanceStreakDays: 0,
     };
   }
   if (save.version === 6) {
@@ -2119,6 +2255,7 @@ export function deserializeStrategicGameplayState(
       crossModuleSyncStreakDays: 0,
       integratedCoalitionMaturityStreakDays: 0,
       coalitionStewardshipStreakDays: 0,
+      coalitionAnchoredGovernanceStreakDays: 0,
     };
   }
   if (save.version === 7) {
@@ -2141,6 +2278,7 @@ export function deserializeStrategicGameplayState(
       crossModuleSyncStreakDays: 0,
       integratedCoalitionMaturityStreakDays: 0,
       coalitionStewardshipStreakDays: 0,
+      coalitionAnchoredGovernanceStreakDays: 0,
     };
   }
   if (save.version === 8) {
@@ -2163,6 +2301,7 @@ export function deserializeStrategicGameplayState(
       crossModuleSyncStreakDays: save.crossModuleSyncStreakDays,
       integratedCoalitionMaturityStreakDays: 0,
       coalitionStewardshipStreakDays: 0,
+      coalitionAnchoredGovernanceStreakDays: 0,
     };
   }
   if (save.version === 9) {
@@ -2185,9 +2324,33 @@ export function deserializeStrategicGameplayState(
       crossModuleSyncStreakDays: save.crossModuleSyncStreakDays,
       integratedCoalitionMaturityStreakDays: save.integratedCoalitionMaturityStreakDays,
       coalitionStewardshipStreakDays: 0,
+      coalitionAnchoredGovernanceStreakDays: 0,
     };
   }
-  if (save.version !== 10) {
+  if (save.version === 10) {
+    return {
+      day: save.day,
+      completedActionIds: [...save.completedActionIds],
+      pendingDelayed: save.pendingDelayed.slice(),
+      journal: save.journal.slice(),
+      priorityMomentum: { ...save.priorityMomentum },
+      actionCooldowns: { ...save.actionCooldowns },
+      activeChoice: save.activeChoice ? { ...save.activeChoice } : null,
+      mandateProgress: { ...save.mandateProgress },
+      stakeholderSentiment: { ...save.stakeholderSentiment },
+      lastAlignedActionDay: save.lastAlignedActionDay,
+      coalitionCrisisStreakDays: save.coalitionCrisisStreakDays,
+      coalitionRecoveryStreakDays: save.coalitionRecoveryStreakDays,
+      coalitionVolatilityEvents: save.coalitionVolatilityEvents,
+      coalitionStabilizationStreakDays: save.coalitionStabilizationStreakDays,
+      coalitionLockInStreakDays: save.coalitionLockInStreakDays,
+      crossModuleSyncStreakDays: save.crossModuleSyncStreakDays,
+      integratedCoalitionMaturityStreakDays: save.integratedCoalitionMaturityStreakDays,
+      coalitionStewardshipStreakDays: save.coalitionStewardshipStreakDays,
+      coalitionAnchoredGovernanceStreakDays: 0,
+    };
+  }
+  if (save.version !== 11) {
     throw new Error(`Unsupported strategic save version: ${(save as { version: number }).version}`);
   }
   return {
@@ -2209,6 +2372,7 @@ export function deserializeStrategicGameplayState(
     crossModuleSyncStreakDays: save.crossModuleSyncStreakDays,
     integratedCoalitionMaturityStreakDays: save.integratedCoalitionMaturityStreakDays,
     coalitionStewardshipStreakDays: save.coalitionStewardshipStreakDays,
+    coalitionAnchoredGovernanceStreakDays: save.coalitionAnchoredGovernanceStreakDays,
   };
 }
 
@@ -2558,6 +2722,7 @@ export function validateAction(
     issues.push(...crossModuleSyncStreakIssues(action, state));
     issues.push(...integratedCoalitionMaturityStreakIssues(action, state));
     issues.push(...coalitionStewardshipStreakIssues(action, state));
+    issues.push(...coalitionAnchoredGovernanceStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({
@@ -2673,7 +2838,8 @@ export function rankStrategicActions(
         lockInRankingBonus(state, action) +
         crossModuleSyncRankingBonus(state, action) +
         integratedMaturityRankingBonus(state, action) +
-        stewardshipRankingBonus(state, action),
+        stewardshipRankingBonus(state, action) +
+        anchoredGovernanceRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
@@ -2724,6 +2890,8 @@ export function buildTurnStrategicBriefing(
     integratedCoalitionMaturityStreakDays: state.integratedCoalitionMaturityStreakDays ?? 0,
     sustainedIntegratedCoalitionStewardship: isSustainedIntegratedCoalitionStewardship(state),
     coalitionStewardshipStreakDays: state.coalitionStewardshipStreakDays ?? 0,
+    anchoredCoalitionGovernance: isAnchoredCoalitionGovernance(state),
+    coalitionAnchoredGovernanceStreakDays: state.coalitionAnchoredGovernanceStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,
@@ -2878,6 +3046,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyIntegratedCoalitionMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStewardshipStreak(next, daysAdvanced);
   next = applyStewardshipStakeholderCalm(next, daysAdvanced);
+  next = advanceCoalitionAnchoredGovernanceStreak(next, daysAdvanced);
+  next = applyAnchoredGovernanceMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 
@@ -2905,6 +3075,7 @@ export function createInitialStrategicState(day = 1): StrategicGameplayState {
     crossModuleSyncStreakDays: 0,
     integratedCoalitionMaturityStreakDays: 0,
     coalitionStewardshipStreakDays: 0,
+    coalitionAnchoredGovernanceStreakDays: 0,
     activeChoice: null,
   };
 }
@@ -3083,6 +3254,12 @@ export function executeStrategicAction(
   }
   if (action.id === 'sga_coalition_anchored_trust_dividend') {
     nextState = resetCoalitionStewardshipStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_anchored_governance_compact') {
+    nextState = resetCoalitionAnchoredGovernanceStreak(nextState);
+  }
+  if (action.id === 'sga_coalition_legacy_trust_endowment') {
+    nextState = resetCoalitionAnchoredGovernanceStreak(nextState);
   }
 
   contracts.ui.pushToast({
@@ -3862,6 +4039,51 @@ export const STRATEGIC_ACTION_CATALOG: Record<string, StrategicActionDefinition>
     },
     delayedTradeOffs: [],
   },
+  'sga_coalition_anchored_governance_compact': {
+    id: 'sga_coalition_anchored_governance_compact',
+    title: 'Anchored Coalition Governance Compact',
+    category: 'governance',
+    apCost: 2,
+    cashCost: 18_000,
+    treasuryCost: 64_000,
+    minApproval: 55,
+    alignedPriorities: ['economic_diversification', 'technology_competitiveness'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'anchored_governance', 'compact'],
+    repeatable: false,
+    minCoalitionBalanceIndex: 76,
+    maxCoalitionVolatilityEvents: 0,
+    minCoalitionStewardshipStreakDays: 3,
+    minCoalitionAnchoredGovernanceStreakDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -18_000, treasuryDelta: -64_000, netWorthMultiplier: 1.006 },
+      government: { approvalDelta: 6, directiveSlotsDelta: 1, regulatoryBurdenDelta: -2 },
+      population: { publicStabilityDelta: 5, migrationDelta: 2 },
+    },
+    delayedTradeOffs: [],
+  },
+  'sga_coalition_legacy_trust_endowment': {
+    id: 'sga_coalition_legacy_trust_endowment',
+    title: 'Coalition Legacy Trust Endowment',
+    category: 'investment',
+    apCost: 1,
+    cashCost: 14_000,
+    treasuryCost: 50_000,
+    minApproval: 52,
+    alignedPriorities: ['water_security', 'supply_chain_security'],
+    conflictingPriorities: [],
+    tags: ['coalition', 'legacy', 'endowment'],
+    repeatable: true,
+    maxCoalitionVolatilityEvents: 0,
+    minCoalitionAnchoredGovernanceStreakDays: 2,
+    cooldownDays: 4,
+    immediateEffects: {
+      economy: { cashDelta: -14_000, treasuryDelta: -50_000 },
+      government: { approvalDelta: 3 },
+      population: { publicStabilityDelta: 4, essentialAccessDelta: 2 },
+    },
+    delayedTradeOffs: [],
+  },
 };
 
 export const MULTI_STAGE_CHOICE_CATALOG: Record<string, MultiStageChoiceDefinition> = {
@@ -4398,7 +4620,7 @@ export function createMemoryStrategicContracts(
 
 export const AGENT_01_MODULE_ID = 'operation-10m/agent-01-strategic-gameplay';
 
-export const AGENT_01_MODULE_VERSION = '2.2.0';
+export const AGENT_01_MODULE_VERSION = '2.3.0';
 
 
 
@@ -4420,7 +4642,7 @@ export function runOp10mAgent01StrategicGameplaySelfTests(): {
 
     name: 'strategic action catalog non-empty',
 
-    passed: listStrategicActions().length >= 26,
+    passed: listStrategicActions().length >= 28,
 
   });
 

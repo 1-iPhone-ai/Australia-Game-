@@ -119,7 +119,7 @@ describe('scale wave round 10 — lock-in and cross-module hooks', () => {
       crossModuleSyncStreakDays: 4,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(10);
+    expect(save.version).toBe(11);
     expect(save.coalitionLockInStreakDays).toBe(3);
     expect(save.crossModuleSyncStreakDays).toBe(4);
   });

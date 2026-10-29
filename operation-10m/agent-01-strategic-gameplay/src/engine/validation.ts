@@ -32,6 +32,7 @@ import { coalitionLockInStreakIssues, coalitionVolatilityCapIssues } from './coa
 import { crossModuleSyncStreakIssues } from './cross-module-sync-gates.ts';
 import { integratedCoalitionMaturityStreakIssues } from './coalition-integrated-maturity-gates.ts';
 import { coalitionStewardshipStreakIssues } from './coalition-stewardship-gates.ts';
+import { coalitionAnchoredGovernanceStreakIssues } from './coalition-anchored-governance-gates.ts';
 
 export function evaluateRequirements(
   requirements: StrategicValidationRequirement[] | undefined,
@@ -287,6 +288,7 @@ export function validateAction(
     issues.push(...crossModuleSyncStreakIssues(action, state));
     issues.push(...integratedCoalitionMaturityStreakIssues(action, state));
     issues.push(...coalitionStewardshipStreakIssues(action, state));
+    issues.push(...coalitionAnchoredGovernanceStreakIssues(action, state));
     issues.push(...validatePrerequisites(state, action));
     if (!canExecuteAfterCooldown(state, action.id)) {
       issues.push({

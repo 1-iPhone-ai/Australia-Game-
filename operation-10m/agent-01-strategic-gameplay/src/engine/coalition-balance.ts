@@ -98,3 +98,13 @@ export function stewardshipRankingBonus(
   if (streak >= action.minCoalitionStewardshipStreakDays) return 5;
   return 2;
 }
+
+export function anchoredGovernanceRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionAnchoredGovernanceStreakDays === undefined) return 0;
+  const streak = state.coalitionAnchoredGovernanceStreakDays ?? 0;
+  if (streak >= action.minCoalitionAnchoredGovernanceStreakDays) return 6;
+  return 2;
+}

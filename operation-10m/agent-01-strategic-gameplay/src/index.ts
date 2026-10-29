@@ -100,6 +100,7 @@ export {
   crossModuleSyncRankingBonus,
   integratedMaturityRankingBonus,
   stewardshipRankingBonus,
+  anchoredGovernanceRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -215,6 +216,16 @@ export {
   applyStewardshipStakeholderCalm,
 } from './engine/coalition-stewardship.ts';
 
+export { coalitionAnchoredGovernanceStreakIssues } from './engine/coalition-anchored-governance-gates.ts';
+
+export {
+  ANCHORED_COALITION_GOVERNANCE_THRESHOLD,
+  advanceCoalitionAnchoredGovernanceStreak,
+  resetCoalitionAnchoredGovernanceStreak,
+  isAnchoredCoalitionGovernance,
+  applyAnchoredGovernanceMandateBonus,
+} from './engine/coalition-anchored-governance.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '2.2.0';
+export const AGENT_01_MODULE_VERSION = '2.3.0';
