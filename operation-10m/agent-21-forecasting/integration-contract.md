@@ -8,7 +8,7 @@
 ## Module identity
 
 - `O10M_AGENT21_MODULE_ID` = `forecasting_policy_lab`
-- `O10M_AGENT21_MODULE_VERSION` = `2.6.0`
+- `O10M_AGENT21_MODULE_VERSION` = `2.7.0`
 
 ## Assembly chunk
 
@@ -79,6 +79,10 @@
 | `rollupAg21ArchiveAuditSummary` | Round 14 audit rollup headline |
 | `runAg21LabGovernanceCheckpoint` | Round 14 governance checkpoint |
 | `Ag21ForecastRound14Console` | Round 14 UI (`data-testid="ag21-round14-console"`) |
+| `buildAg21GovernanceRemediationPlan` | Round 15 governance remediation plan |
+| `attestAg21OriginGateReadiness` | Round 15 origin gate attestation |
+| `resolveAg21LabContinuityVerdict` | Round 15 lab continuity verdict |
+| `Ag21ForecastRound15Console` | Round 15 UI (`data-testid="ag21-round15-console"`) |
 
 ## Upstream dependencies (canonical only)
 

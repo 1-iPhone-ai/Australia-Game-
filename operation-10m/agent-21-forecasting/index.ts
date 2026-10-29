@@ -57,4 +57,8 @@ export * from './forecast-retention-compliance';
 export * from './forecast-archive-audit-rollup';
 export * from './forecast-lab-governance-checkpoint';
 export * from './forecast-round14-console';
+export * from './forecast-governance-remediation-plan';
+export * from './forecast-origin-gate-attestation';
+export * from './forecast-lab-continuity-verdict';
+export * from './forecast-round15-console';
 export * from './strategic-forecast-policy-lab';

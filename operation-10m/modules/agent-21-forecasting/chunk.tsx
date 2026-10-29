@@ -102,7 +102,7 @@ export function ag21Provenance(
   };
 }
 
-export const O10M_AGENT21_MODULE_VERSION = '2.6.0';
+export const O10M_AGENT21_MODULE_VERSION = '2.7.0';
 export const O10M_AGENT21_MODULE_ID = 'forecasting_policy_lab';
 
 // --- bundled from counterfactual-experiments.ts ---
@@ -5343,6 +5343,285 @@ export const Ag21ForecastRound14Console: React.FC<{ seed?: number }> = ({ seed =
   );
 };
 
+// --- bundled from forecast-governance-remediation-plan.ts ---
+/**
+ * Agent 21 — remediation plan from governance checkpoint (read-only round 15).
+ */
+
+
+export type Ag21RemediationPlanStatus = 'clear' | 'planned' | 'blocked';
+
+export interface Ag21GovernanceRemediationPlan {
+  planId: string;
+  status: Ag21RemediationPlanStatus;
+  checkpointVerdict: ReturnType<typeof runAg21LabGovernanceCheckpoint>['verdict'];
+  stepCount: number;
+  steps: string[];
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Build operator remediation steps from governance checkpoint action items (round 15). */
+export function buildAg21GovernanceRemediationPlan(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21GovernanceRemediationPlan {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.62),
+      actorDebt: baseCtx.actorDebt + 315
+    } satisfies Ag21ForecastContext);
+
+  const checkpoint = runAg21LabGovernanceCheckpoint(baseCtx, candidate);
+  const steps = checkpoint.actionItems.length
+    ? checkpoint.actionItems.map((item, i) => `${i + 1}. ${item}`)
+    : ['no remediation — governance checkpoint pass'];
+
+  let status: Ag21RemediationPlanStatus = 'clear';
+  if (checkpoint.verdict === 'fail') status = 'blocked';
+  else if (checkpoint.actionItems.length > 0) status = 'planned';
+
+  const planId = `ag21_remed_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+
+  return {
+    planId,
+    status,
+    checkpointVerdict: checkpoint.verdict,
+    stepCount: steps.length,
+    steps,
+    disclaimer: '(Non-authoritative forecast.) Remediation plan for scale-wave origin review only.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'clear' ? 'low' : status === 'planned' ? 'moderate' : 'high',
+      [`plan=${planId}`, `steps=${steps.length}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21GovernanceRemediationPlanSelfChecks(): {
+  id: string;
+  passed: boolean;
+  detail: string;
+}[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 31, seed: 15, actorCash: 1420, actorDebt: 52, regionsControlled: 4 };
+  const plan = buildAg21GovernanceRemediationPlan(ctx);
+
+  push('remed_id', plan.planId.startsWith('ag21_remed_'), plan.planId);
+  push('remed_status', ['clear', 'planned', 'blocked'].includes(plan.status), plan.status);
+  push('remed_steps', plan.stepCount >= 1, String(plan.stepCount));
+  push('remed_non_auth', plan.authoritative === false, plan.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-origin-gate-attestation.ts ---
+/**
+ * Agent 21 — origin gate attestation for Operation 10M scale wave (read-only round 15).
+ */
+
+
+export type Ag21OriginGateAttestationStatus = 'ready' | 'conditional' | 'held';
+
+export interface Ag21OriginGateAttestation {
+  attestationId: string;
+  moduleVersion: string;
+  status: Ag21OriginGateAttestationStatus;
+  governanceVerdict: ReturnType<typeof runAg21LabGovernanceCheckpoint>['verdict'];
+  remediationStatus: ReturnType<typeof buildAg21GovernanceRemediationPlan>['status'];
+  originGateCopy: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Attest forecast lab readiness for origin gate push (round 15 / O10-158). */
+export function attestAg21OriginGateReadiness(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21OriginGateAttestation {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.61),
+      actorDebt: baseCtx.actorDebt + 325
+    } satisfies Ag21ForecastContext);
+
+  const governance = runAg21LabGovernanceCheckpoint(baseCtx, candidate);
+  const remediation = buildAg21GovernanceRemediationPlan(baseCtx, candidate);
+
+  let status: Ag21OriginGateAttestationStatus = 'ready';
+  if (governance.verdict === 'fail' || remediation.status === 'blocked') status = 'held';
+  else if (governance.verdict === 'conditional' || remediation.status === 'planned') {
+    status = 'conditional';
+  }
+
+  const attestationId = `ag21_origin_${baseCtx.turn}_${baseCtx.seed}_${status}`;
+  const originGateCopy =
+    status === 'ready'
+      ? 'origin gate clear — module chunk may publish'
+      : status === 'conditional'
+        ? 'origin gate conditional — review remediation before push'
+        : 'origin gate held — governance or remediation blocked';
+
+  return {
+    attestationId,
+    moduleVersion: O10M_AGENT21_MODULE_VERSION,
+    status,
+    governanceVerdict: governance.verdict,
+    remediationStatus: remediation.status,
+    originGateCopy,
+    disclaimer: '(Non-authoritative forecast.) Origin gate attestation does not authorize canonical edits.',
+    overallUncertainty: ag21LabelUncertainty(
+      status === 'ready' ? 'low' : status === 'conditional' ? 'moderate' : 'high',
+      [`attest=${attestationId}`, `gate=${status}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21OriginGateAttestationSelfChecks(): {
+  id: string;
+  passed: boolean;
+  detail: string;
+}[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 33, seed: 7, actorCash: 1680, actorDebt: 41, regionsControlled: 5 };
+  const attestation = attestAg21OriginGateReadiness(ctx);
+
+  push('origin_id', attestation.attestationId.startsWith('ag21_origin_'), attestation.attestationId);
+  push('origin_status', ['ready', 'conditional', 'held'].includes(attestation.status), attestation.status);
+  push('origin_version', attestation.moduleVersion === O10M_AGENT21_MODULE_VERSION, attestation.moduleVersion);
+  push('origin_non_auth', attestation.authoritative === false, attestation.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-lab-continuity-verdict.ts ---
+/**
+ * Agent 21 — lab continuity verdict across remediation + origin gate (read-only round 15).
+ */
+
+
+export type Ag21LabContinuityVerdict = 'continuous' | 'watch' | 'broken';
+
+export interface Ag21LabContinuityReport {
+  reportId: string;
+  verdict: Ag21LabContinuityVerdict;
+  rollupId: string;
+  originGateStatus: ReturnType<typeof attestAg21OriginGateReadiness>['status'];
+  remediationStatus: ReturnType<typeof buildAg21GovernanceRemediationPlan>['status'];
+  summary: string;
+  disclaimer: string;
+  overallUncertainty: Ag21UncertaintyLabel;
+  authoritative: false;
+}
+
+/** Resolve forecast lab continuity for wave-15 origin gate (round 15). */
+export function resolveAg21LabContinuityVerdict(
+  baseCtx: Ag21ForecastContext,
+  stressedCtx?: Ag21ForecastContext
+): Ag21LabContinuityReport {
+  const candidate =
+    stressedCtx ??
+    ({
+      ...baseCtx,
+      actorCash: Math.round(baseCtx.actorCash * 0.6),
+      actorDebt: baseCtx.actorDebt + 335
+    } satisfies Ag21ForecastContext);
+
+  const rollup = rollupAg21ArchiveAuditSummary(baseCtx, candidate);
+  const remediation = buildAg21GovernanceRemediationPlan(baseCtx, candidate);
+  const origin = attestAg21OriginGateReadiness(baseCtx, candidate);
+
+  let verdict: Ag21LabContinuityVerdict = 'continuous';
+  if (origin.status === 'held' || remediation.status === 'blocked' || rollup.sealStatus === 'void') {
+    verdict = 'broken';
+  } else if (origin.status === 'conditional' || remediation.status === 'planned') {
+    verdict = 'watch';
+  }
+
+  const reportId = `ag21_cont_${baseCtx.turn}_${baseCtx.seed}_${verdict}`;
+  const summary = `continuity ${verdict} · rollup ${rollup.complianceStatus} · gate ${origin.status}`;
+
+  return {
+    reportId,
+    verdict,
+    rollupId: rollup.rollupId,
+    originGateStatus: origin.status,
+    remediationStatus: remediation.status,
+    summary,
+    disclaimer: '(Non-authoritative forecast.) Continuity verdict for operator dashboards only.',
+    overallUncertainty: ag21LabelUncertainty(
+      verdict === 'continuous' ? 'low' : verdict === 'watch' ? 'moderate' : 'high',
+      [`continuity=${verdict}`, `rollup=${rollup.rollupId}`]
+    ),
+    authoritative: false
+  };
+}
+
+export function runAg21LabContinuityVerdictSelfChecks(): {
+  id: string;
+  passed: boolean;
+  detail: string;
+}[] {
+  const out: { id: string; passed: boolean; detail: string }[] = [];
+  const push = (id: string, passed: boolean, detail: string) => out.push({ id, passed, detail });
+
+  const ctx: Ag21ForecastContext = { turn: 35, seed: 22, actorCash: 990, actorDebt: 88, regionsControlled: 3 };
+  const report = resolveAg21LabContinuityVerdict(ctx);
+
+  push('cont_id', report.reportId.startsWith('ag21_cont_'), report.reportId);
+  push('cont_verdict', ['continuous', 'watch', 'broken'].includes(report.verdict), report.verdict);
+  push('cont_summary', report.summary.includes('gate'), report.summary.slice(0, 40));
+  push('cont_non_auth', report.authoritative === false, report.disclaimer.slice(0, 28));
+
+  return out;
+}
+
+// --- bundled from forecast-round15-console.tsx ---
+/**
+ * Agent 21 — scale wave round 15 console (remediation + origin gate + continuity).
+ */
+
+
+export const Ag21ForecastRound15Console: React.FC<{ seed?: number }> = ({ seed = 97 }) => {
+  const base = useMemo(() => createDefaultAg21ForecastContext({ seed, turn: 28 }), [seed]);
+  const stressed = useMemo(
+    () => ({ ...base, actorCash: Math.round(base.actorCash * 0.57), actorDebt: base.actorDebt + 410 }),
+    [base]
+  );
+
+  const remediation = useMemo(() => buildAg21GovernanceRemediationPlan(base, stressed), [base, stressed]);
+  const origin = useMemo(() => attestAg21OriginGateReadiness(base, stressed), [base, stressed]);
+  const continuity = useMemo(() => resolveAg21LabContinuityVerdict(base, stressed), [base, stressed]);
+
+  return (
+    <div className="border border-violet-500/30 rounded-lg p-3 bg-slate-950/85 text-xs space-y-2" data-testid="ag21-round15-console">
+      <div className="font-bold text-violet-200">
+        🔬 Forecast Lab Round 15 <span className="text-[10px] font-normal opacity-70">(non-authoritative)</span>
+      </div>
+      <div data-testid="ag21-round15-remediation">
+        Remediation · {remediation.status} · steps {remediation.stepCount}
+      </div>
+      <div data-testid="ag21-round15-origin">
+        Origin gate · {origin.status} · {origin.originGateCopy}
+      </div>
+      <div data-testid="ag21-round15-continuity">
+        Continuity · {continuity.verdict} · {continuity.summary}
+      </div>
+    </div>
+  );
+};
+
 
 
 /** Agent 25 — modular self-tests (subset of npm run test:ag21). */
@@ -5476,6 +5755,15 @@ export function runAgent21ForecastingChunkSelfTests(): {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   for (const row of runAg21LabGovernanceCheckpointSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21GovernanceRemediationPlanSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21OriginGateAttestationSelfChecks()) {
+    results.push({ id: row.id, passed: row.passed, detail: row.detail });
+  }
+  for (const row of runAg21LabContinuityVerdictSelfChecks()) {
     results.push({ id: row.id, passed: row.passed, detail: row.detail });
   }
   results.push({
