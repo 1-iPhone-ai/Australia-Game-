@@ -115,6 +115,7 @@ function processAgent(agent) {
   }
   sh(`git fetch origin ${agent.branch}:${agent.branch}`);
   sh(`git checkout -B w70-agent-${agent.n} origin/${agent.branch}`);
+  spawnSync('npm', ['install'], { cwd: ROOT, stdio: 'inherit' });
   try {
     sh(`git merge-base --is-ancestor ${BASE} HEAD`);
     console.log('merge baseline already present');
