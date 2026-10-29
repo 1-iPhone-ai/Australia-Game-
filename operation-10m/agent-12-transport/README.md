@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 51
+
+- Schema **`agent12/52`**: superconducting HVDC export throughput, remote neonatal ICU supply staging readiness, port methanol dual-fuel bunkering logistics share (`superconductingHvdcExportPolicy`, `remoteNeonatalIcuSupplyStagingPolicy`, `portMethanolDualFuelBunkeringLogisticsPolicy`)
+- Catalog: **703** assets, **167** corridors, **273** scenarios
+- Systems: `network/superconducting-hvdc-export-index.ts`, `operations/remote-neonatal-icu-supply-staging-index.ts`, `productivity/port-methanol-dual-fuel-bunkering-logistics-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 50
 
 - Schema **`agent12/51`**: quantum cryogenic export throughput, remote ECMO supply staging readiness, port ammonia bunkering logistics share (`quantumCryogenicExportPolicy`, `remoteEcmoSupplyStagingPolicy`, `portAmmoniaBunkeringLogisticsPolicy`)

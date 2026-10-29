@@ -37,13 +37,13 @@ describe('Agent 12 round 49 catalog', () => {
 });
 
 describe('Agent 12 round 49 systems', () => {
-  it('returns agent12/51 with semiconductor, burn unit, wind berthing', () => {
+  it('returns agent12/52 with semiconductor, burn unit, wind berthing', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(730), {
       advancedSemiconductorPackagingExportPolicy: 'accelerate',
       remoteBurnUnitSupplyStagingPolicy: 'surge',
       portWindAssistedShipBerthingLogisticsPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/51');
+    assert.equal(state.schemaVersion, 'agent12/52');
     assert.ok(state.nationalAdvancedSemiconductorPackagingExportIndex >= 5);
     assert.ok(state.nationalRemoteBurnUnitSupplyStagingIndex >= 6);
     assert.ok(state.portWindAssistedShipBerthingLogisticsShare >= 0.03);

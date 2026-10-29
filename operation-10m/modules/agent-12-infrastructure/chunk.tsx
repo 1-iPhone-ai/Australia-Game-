@@ -457,6 +457,12 @@ export type RemoteEcmoSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortAmmoniaBunkeringLogisticsPolicy = 'baseline' | 'expand';
 
+export type SuperconductingHvdcExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteNeonatalIcuSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortMethanolDualFuelBunkeringLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
   schemaVersion: 'agent12/50';
   turn: number;
@@ -832,6 +838,14 @@ export interface TransportInfrastructureState {
   portAmmoniaBunkeringLogisticsShare: number;
   nationalPortAmmoniaBunkeringLogisticsThroughputIndex: number;
   portAmmoniaBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalSuperconductingHvdcExportIndex: number;
+  superconductingHvdcExportByRegion: Record<AuRegionCode, number>;
+  remoteNeonatalIcuSupplyStagingShare: number;
+  nationalRemoteNeonatalIcuSupplyStagingIndex: number;
+  remoteNeonatalIcuSupplyStagingByRegion: Record<AuRegionCode, number>;
+  portMethanolDualFuelBunkeringLogisticsShare: number;
+  nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex: number;
+  portMethanolDualFuelBunkeringLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -975,6 +989,9 @@ export interface TransportInfrastructureOptions {
   quantumCryogenicExportPolicy?: QuantumCryogenicExportPolicy;
   remoteEcmoSupplyStagingPolicy?: RemoteEcmoSupplyStagingPolicy;
   portAmmoniaBunkeringLogisticsPolicy?: PortAmmoniaBunkeringLogisticsPolicy;
+  superconductingHvdcExportPolicy?: SuperconductingHvdcExportPolicy;
+  remoteNeonatalIcuSupplyStagingPolicy?: RemoteNeonatalIcuSupplyStagingPolicy;
+  portMethanolDualFuelBunkeringLogisticsPolicy?: PortMethanolDualFuelBunkeringLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -3134,6 +3151,48 @@ export const TRANSPORT_CORRIDORS_ROUND50: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round51.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND51: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_nsw_vic_superconducting_hvdc',
+    name: 'NSW–VIC Superconducting HVDC',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['superconducting_hvdc_export', 'hvdc_superconducting_logistics', 'superconducting_freight_corridor'],
+      VIC: ['superconducting_hvdc_export', 'hvdc_superconducting_logistics', 'superconducting_freight_corridor'],
+    },
+    productivitySynergyPoints: 7.3,
+    logisticsRelief: 0.044,
+  },
+  {
+    id: 'corr_nt_sa_nicu_remote',
+    name: 'NT–SA Remote NICU',
+    networkKind: 'mobility',
+    regionSequence: ['NT', 'SA'],
+    requiredTagsByRegion: {
+      NT: ['remote_neonatal_icu_supply', 'nicu_care_staging', 'neonatal_critical_care_logistics'],
+      SA: ['remote_neonatal_icu_supply', 'nicu_care_staging', 'neonatal_critical_care_logistics'],
+    },
+    productivitySynergyPoints: 7.1,
+    logisticsRelief: 0.038,
+  },
+  {
+    id: 'corr_wa_qld_methanol_dual_fuel_bunkering',
+    name: 'WA–QLD Methanol Dual-Fuel Bunkering',
+    networkKind: 'freight',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['port_methanol_dual_fuel_bunkering', 'green_methanol_mooring', 'dual_fuel_bunkering'],
+      QLD: ['port_methanol_dual_fuel_bunkering', 'green_methanol_mooring', 'dual_fuel_bunkering'],
+    },
+    productivitySynergyPoints: 7.0,
+    logisticsRelief: 0.041,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -3331,6 +3390,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND48,
   ...TRANSPORT_CORRIDORS_ROUND49,
   ...TRANSPORT_CORRIDORS_ROUND50,
+  ...TRANSPORT_CORRIDORS_ROUND51,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -6163,6 +6223,62 @@ export const TRANSPORT_SCENARIOS_ROUND50: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round51.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND51: TransportStressScenario[] = [
+  {
+    id: 'scn_nsw_superconducting_hvdc_export_surge',
+    label: 'NSW Superconducting HVDC Export Surge',
+    description: 'Packaging restart overloads Botany hvdc berths.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.29,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_vic_superconducting_feed_delay',
+    label: 'VIC Chiplet Feed Delay',
+    description: 'Heat slows Dandenong hvdc feed.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail', 'road'],
+  },
+  {
+    id: 'scn_nt_burn_unit_resupply',
+    label: 'NT NICU Resupply',
+    description: 'Trauma surge strains Darwin burn hub.',
+    targetRegions: ['NT', 'SA'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.32,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics'],
+  },
+  {
+    id: 'scn_wa_wind_berthing_peak',
+    label: 'WA Methanol Dual-Fuel Bunkering Peak',
+    description: 'Cyclone season loads Fremantle green-methanol terminal.',
+    targetRegions: ['WA', 'QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_qld_wind_bunkering_backlog',
+    label: 'QLD Methanol Bunkering Backlog',
+    description: 'Calm weather hold delays Gladstone bunkering depot.',
+    targetRegions: ['QLD', 'WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -6374,6 +6490,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND48,
   ...TRANSPORT_SCENARIOS_ROUND49,
   ...TRANSPORT_SCENARIOS_ROUND50,
+  ...TRANSPORT_SCENARIOS_ROUND51,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -18630,6 +18747,265 @@ export const SCALE_WAVE_ROUND50_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round51-assets.ts ---
+
+export const ROUND51_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_nsw_sydney_superconducting_hvdc_haul',
+    category: 'road',
+    name: 'Sydney Superconducting HVDC Haul',
+    description: 'NSW superconducting export staging road.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['superconducting_hvdc_export', 'hvdc_superconducting_logistics', 'superconducting_freight_corridor'],
+    laneKilometres: 29,
+    designSpeedKmh: 88,
+    freightShare: 0.33,
+    urbanShare: 0.13,
+    tollRoad: false,
+  },
+  {
+    id: 'road_vic_dandenong_superconducting_hvdc_feed',
+    category: 'road',
+    name: 'Dandenong Superconducting HVDC Feed',
+    description: 'VIC hvdc freight connector.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade'],
+    tags: ['superconducting_hvdc_export', 'hvdc_superconducting_logistics', 'superconducting_freight_corridor'],
+    laneKilometres: 27,
+    designSpeedKmh: 86,
+    freightShare: 0.31,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nt_alice_neonatalIcu_access',
+    category: 'road',
+    name: 'Alice NICU Access',
+    description: 'NT critical care logistics staging road.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_neonatal_icu_supply', 'nicu_care_staging', 'neonatal_critical_care_logistics'],
+    laneKilometres: 22,
+    designSpeedKmh: 78,
+    freightShare: 0.09,
+    urbanShare: 0.16,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_port_augusta_neonatalIcu_staging',
+    category: 'road',
+    name: 'Port Augusta NICU Staging',
+    description: 'SA NICU-care logistics connector.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['remote_neonatal_icu_supply', 'nicu_care_staging', 'neonatal_critical_care_logistics'],
+    laneKilometres: 20,
+    designSpeedKmh: 76,
+    freightShare: 0.08,
+    urbanShare: 0.15,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_fremantle_methanol_dual_fuel_bunkering_feed',
+    category: 'road',
+    name: 'Fremantle Methanol Dual-Fuel Bunkering Feed',
+    description: 'WA green-methanol logistics road.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_methanol_dual_fuel_bunkering', 'green_methanol_mooring', 'dual_fuel_bunkering'],
+    laneKilometres: 24,
+    designSpeedKmh: 84,
+    freightShare: 0.28,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_gladstone_methanol_dual_fuel_bunkering_staging',
+    category: 'road',
+    name: 'Gladstone Methanol Bunkering Staging',
+    description: 'QLD emission-free bunkering connector.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade'],
+    tags: ['port_methanol_dual_fuel_bunkering', 'green_methanol_mooring', 'dual_fuel_bunkering'],
+    laneKilometres: 21,
+    designSpeedKmh: 80,
+    freightShare: 0.26,
+    urbanShare: 0.11,
+    tollRoad: false,
+  },
+];
+
+export const ROUND51_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_nsw_sydney_superconducting_hvdc_rail',
+    category: 'rail',
+    name: 'Sydney Superconducting HVDC Rail',
+    description: 'NSW superconducting export feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 6.2,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['superconducting_hvdc_export', 'hvdc_superconducting_logistics', 'superconducting_freight_corridor'],
+    trackKilometres: 41,
+    dualTrackShare: 0.51,
+    electrifiedShare: 0.49,
+    designFreightTonnesPerYear: 2_100_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nt_ghan_neonatalIcu_rail',
+    category: 'rail',
+    name: 'Ghan NICU Rail',
+    description: 'NT critical care staging express feed.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['mobility', 'freight'],
+    tags: ['remote_neonatal_icu_supply', 'nicu_care_staging', 'neonatal_critical_care_logistics'],
+    trackKilometres: 35,
+    dualTrackShare: 0.38,
+    electrifiedShare: 0.22,
+    designFreightTonnesPerYear: 980_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_wa_pilbara_methanol_dual_fuel_bunkering_rail',
+    category: 'rail',
+    name: 'Pilbara Methanol Dual-Fuel Bunkering Rail',
+    description: 'WA green-methanol port feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 6.0,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_methanol_dual_fuel_bunkering', 'green_methanol_mooring', 'dual_fuel_bunkering'],
+    trackKilometres: 37,
+    dualTrackShare: 0.46,
+    electrifiedShare: 0.44,
+    designFreightTonnesPerYear: 2_700_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND51_PORTS: PortAsset[] = [
+  {
+    id: 'port_nsw_botany_superconducting_hvdc_export',
+    category: 'port',
+    name: 'Botany Superconducting HVDC Export',
+    description: 'NSW advanced packaging export port.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 6.5,
+    strategicNetworks: ['trade'],
+    tags: ['superconducting_hvdc_export', 'hvdc_superconducting_logistics', 'superconducting_freight_corridor'],
+    berthCount: 3,
+    maxDraftMetres: 12.9,
+    teuCapacityPerYear: 92_000,
+    automationLevel: 3,
+    bulkShare: 0.06,
+  },
+  {
+    id: 'port_nt_darwin_neonatalIcu_hub',
+    category: 'port',
+    name: 'Darwin NICU Hub',
+    description: 'NT remote NICU-care logistics port.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'SA'],
+    baseProductivityPoints: 5.8,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['remote_neonatal_icu_supply', 'nicu_care_staging', 'neonatal_critical_care_logistics'],
+    berthCount: 2,
+    maxDraftMetres: 11.4,
+    teuCapacityPerYear: 86_000,
+    automationLevel: 1,
+    bulkShare: 0.1,
+  },
+  {
+    id: 'port_wa_fremantle_methanol_dual_fuel_bunkering_terminal',
+    category: 'port',
+    name: 'Fremantle Methanol Dual-Fuel Bunkering Terminal',
+    description: 'WA wind-assisted ship bunkering staging.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 6.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_methanol_dual_fuel_bunkering', 'green_methanol_mooring', 'dual_fuel_bunkering'],
+    berthCount: 4,
+    maxDraftMetres: 13.2,
+    teuCapacityPerYear: 198_000,
+    automationLevel: 2,
+    bulkShare: 0.05,
+  },
+];
+
+export const ROUND51_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_vic_dandenong_superconducting_hvdc_stores',
+    category: 'logistics',
+    name: 'Dandenong Superconducting HVDC Stores',
+    description: 'VIC superconducting consolidation yard.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.7,
+    strategicNetworks: ['trade'],
+    tags: ['superconducting_hvdc_export', 'hvdc_superconducting_logistics', 'superconducting_freight_corridor'],
+    warehouseSqm: 52_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port', 'rail'],
+    lastMileCoveragePct: 45,
+  },
+  {
+    id: 'log_sa_port_augusta_neonatalIcu_stores',
+    category: 'logistics',
+    name: 'Port Augusta NICU Stores',
+    description: 'SA critical care supply consolidation yard.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NT'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['mobility'],
+    tags: ['remote_neonatal_icu_supply', 'nicu_care_staging', 'neonatal_critical_care_logistics'],
+    warehouseSqm: 29_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 47,
+  },
+  {
+    id: 'log_qld_gladstone_methanol_dual_fuel_bunkering_depot',
+    category: 'logistics',
+    name: 'Gladstone Methanol Bunkering Depot',
+    description: 'QLD green-methanol logistics depot.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['port_methanol_dual_fuel_bunkering', 'green_methanol_mooring', 'dual_fuel_bunkering'],
+    warehouseSqm: 39_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 53,
+  },
+];
+
+export const SCALE_WAVE_ROUND51_ASSETS = [
+  ...ROUND51_ROADS,
+  ...ROUND51_RAIL,
+  ...ROUND51_PORTS,
+  ...ROUND51_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -18688,6 +19064,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND48_ASSETS,
     ...SCALE_WAVE_ROUND49_ASSETS,
     ...SCALE_WAVE_ROUND50_ASSETS,
+    ...SCALE_WAVE_ROUND51_ASSETS,
   ];
 }
 
@@ -21561,6 +21938,65 @@ export function nationalQuantumCryogenicExportIndex(byRegion: Record<AuRegionCod
 export function quantumCryogenicExportProductivityMultiplier(
   index: number,
   policy: QuantumCryogenicExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.03 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.033 + policyBoost, 0.93, 1.09);
+}
+
+
+// --- source: network/superconducting-hvdc-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type SuperconductingHvdcExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 superconducting HVDC export throughput by region. */
+export function computeSuperconductingHvdcExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) =>
+        t === 'superconducting_hvdc_export' ||
+        t === 'hvdc_superconducting_logistics' ||
+        t === 'superconducting_freight_corridor',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.86 + asset.maxDraftMetres * 0.32;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 60_500 + asset.intermodalLinks.length * 0.57;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 415;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 7_850_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalSuperconductingHvdcExportIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.45 + max * 0.55, 5, 72) * 10) / 10;
+}
+
+export function superconductingHvdcExportProductivityMultiplier(
+  index: number,
+  policy: SuperconductingHvdcExportPolicy = 'baseline',
 ): number {
   const policyBoost = policy === 'accelerate' ? 0.03 : 0;
   const normalized = (index - 5) / 100;
@@ -25421,6 +25857,92 @@ export function computeRemoteEcmoSupplyStagingShare(
 export function remoteEcmoSupplyStagingProductivityMultiplier(
   share: number,
   policy: RemoteEcmoSupplyStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.01 : 1;
+  return (1 + (share - 0.04) * 0.016) * bias;
+}
+
+
+// --- source: operations/remote-neonatal-icu-supply-staging-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RemoteNeonatalIcuSupplyStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 remote NICU supply staging readiness by region. */
+export function computeRemoteNeonatalIcuSupplyStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'remote_neonatal_icu_supply' || t === 'nicu_care_staging' || t === 'neonatal_critical_care_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 52_500 + (asset.coldChainCapable ? 1.35 : 0.73);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 385;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.82;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 224;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.022 - stress * 0.016), 5, 74) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRemoteNeonatalIcuSupplyStagingIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 72) * 10) / 10;
+}
+
+export function computeRemoteNeonatalIcuSupplyStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: RemoteNeonatalIcuSupplyStagingPolicy = 'baseline',
+): number {
+  let neonatalIcuUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('remote_neonatal_icu_supply') || asset.tags.includes('neonatal_critical_care_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 48_500;
+        neonatalIcuUnits += (asset.warehouseSqm / 48_500) * 0.54;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 348;
+        neonatalIcuUnits += (asset.laneKilometres / 348) * 0.46;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.03;
+  const policyBoost = policy === 'surge' ? 0.018 : 0;
+  return Math.round(clamp(neonatalIcuUnits / totalUnits + policyBoost, 0.028, 0.18) * 1000) / 1000;
+}
+
+export function remoteNeonatalIcuSupplyStagingProductivityMultiplier(
+  share: number,
+  policy: RemoteNeonatalIcuSupplyStagingPolicy,
 ): number {
   const bias = policy === 'surge' ? 1.01 : 1;
   return (1 + (share - 0.04) * 0.016) * bias;
@@ -29579,6 +30101,102 @@ export function nationalPortAmmoniaBunkeringLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/port-methanol-dual-fuel-bunkering-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PortMethanolDualFuelBunkeringLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of port logistics supporting methanol dual-fuel bunkering. */
+export function computePortMethanolDualFuelBunkeringLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: PortMethanolDualFuelBunkeringLogisticsPolicy = 'baseline',
+): number {
+  let ammoniaUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) =>
+          t === 'port_methanol_dual_fuel_bunkering' ||
+          t === 'green_methanol_mooring' ||
+          t === 'dual_fuel_bunkering',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 0.91 + asset.teuCapacityPerYear / 420_000;
+        ammoniaUnits += asset.berthCount * 0.91 * 0.5;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 45_500;
+        ammoniaUnits += (asset.warehouseSqm / 45_500) * 0.47;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 322;
+        ammoniaUnits += (asset.laneKilometres / 322) * 0.39;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.032;
+  const policyBoost = policy === 'expand' ? 0.02 : 0;
+  return Math.round(clamp(ammoniaUnits / totalUnits + policyBoost, 0.031, 0.19) * 1000) / 1000;
+}
+
+export function portMethanolDualFuelBunkeringLogisticsProductivityMultiplier(
+  share: number,
+  policy: PortMethanolDualFuelBunkeringLogisticsPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.012 : 1;
+  return (1 + (share - 0.05) * 0.016) * bias;
+}
+
+export function computePortMethanolDualFuelBunkeringLogisticsThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'port_methanol_dual_fuel_bunkering' ||
+          t === 'green_methanol_mooring' ||
+          t === 'dual_fuel_bunkering',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 41_500 + asset.lastMileCoveragePct / 90;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 328;
+    }
+    if (asset.category === 'rail' && 'trackKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 198;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.43 + max * 0.57, 2, 68) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -30404,6 +31022,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalPortAmmoniaBunkeringLogisticsThroughputIndex,
   portAmmoniaBunkeringLogisticsProductivityMultiplier,
 } from './port-ammonia-bunkering-logistics-index.ts';
+  computeSuperconductingHvdcExportByRegion,
+  nationalSuperconductingHvdcExportIndex,
+  superconductingHvdcExportProductivityMultiplier,
+} from '../network/superconducting-hvdc-export-index.ts';
+  computeRemoteNeonatalIcuSupplyStagingByRegion,
+  computeRemoteNeonatalIcuSupplyStagingShare,
+  nationalRemoteNeonatalIcuSupplyStagingIndex,
+  remoteNeonatalIcuSupplyStagingProductivityMultiplier,
+} from '../operations/remote-neonatal-icu-supply-staging-index.ts';
+  computePortMethanolDualFuelBunkeringLogisticsShare,
+  computePortMethanolDualFuelBunkeringLogisticsThroughputByRegion,
+  nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex,
+  portMethanolDualFuelBunkeringLogisticsProductivityMultiplier,
+} from './port-methanol-dual-fuel-bunkering-logistics-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -32041,6 +32673,35 @@ export function computeTransportInfrastructureState(
     portAmmoniaBunkeringLogisticsShare,
     options?.portAmmoniaBunkeringLogisticsPolicy ?? 'baseline',
   );
+  const superconductingHvdcExportByRegion = computeSuperconductingHvdcExportByRegion(ops);
+  const nationalSuperconductingHvdc = nationalSuperconductingHvdcExportIndex(superconductingHvdcExportByRegion);
+  const superconductingHvdcMult = superconductingHvdcExportProductivityMultiplier(
+    nationalSuperconductingHvdc,
+    options?.superconductingHvdcExportPolicy ?? 'baseline',
+  );
+  const remoteNeonatalIcuSupplyStagingByRegion = computeRemoteNeonatalIcuSupplyStagingByRegion(ops, networkStress);
+  const nationalNeonatalIcu = nationalRemoteNeonatalIcuSupplyStagingIndex(remoteNeonatalIcuSupplyStagingByRegion);
+  const remoteNeonatalIcuSupplyStagingShare = computeRemoteNeonatalIcuSupplyStagingShare(
+    ops,
+    options?.remoteNeonatalIcuSupplyStagingPolicy ?? 'baseline',
+  );
+  const neonatalIcuMult = remoteNeonatalIcuSupplyStagingProductivityMultiplier(
+    remoteNeonatalIcuSupplyStagingShare,
+    options?.remoteNeonatalIcuSupplyStagingPolicy ?? 'baseline',
+  );
+  const portMethanolDualFuelBunkeringLogisticsThroughputByRegion =
+    computePortMethanolDualFuelBunkeringLogisticsThroughputByRegion(ops);
+  const nationalMethanolDualFuelBunkering = nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex(
+    portMethanolDualFuelBunkeringLogisticsThroughputByRegion,
+  );
+  const portMethanolDualFuelBunkeringLogisticsShare = computePortMethanolDualFuelBunkeringLogisticsShare(
+    ops,
+    options?.portMethanolDualFuelBunkeringLogisticsPolicy ?? 'baseline',
+  );
+  const methanolBunkeringMult = portMethanolDualFuelBunkeringLogisticsProductivityMultiplier(
+    portMethanolDualFuelBunkeringLogisticsShare,
+    options?.portMethanolDualFuelBunkeringLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -32148,6 +32809,9 @@ export function computeTransportInfrastructureState(
     const quantumCryogenicBoost = (quantumCryogenicExportByRegion[code] - 5) * 0.0018;
     const ecmoBoost = (remoteEcmoSupplyStagingByRegion[code] - 6) * 0.0014;
     const ammoniaBunkeringBoost = (portAmmoniaBunkeringLogisticsThroughputByRegion[code] - 2) * 0.001;
+    const superconductingHvdcBoost = (superconductingHvdcExportByRegion[code] - 5) * 0.0017;
+    const neonatalIcuBoost = (remoteNeonatalIcuSupplyStagingByRegion[code] - 6) * 0.0013;
+    const methanolBunkeringBoost = (portMethanolDualFuelBunkeringLogisticsThroughputByRegion[code] - 2) * 0.0009;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -32254,7 +32918,10 @@ export function computeTransportInfrastructureState(
         windBerthingBoost +
         quantumCryogenicBoost +
         ecmoBoost +
-        ammoniaBunkeringBoost) *
+        ammoniaBunkeringBoost +
+        superconductingHvdcBoost +
+        neonatalIcuBoost +
+        methanolBunkeringBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -32359,7 +33026,10 @@ export function computeTransportInfrastructureState(
       windBerthingMult *
       quantumCryogenicMult *
       ecmoMult *
-      ammoniaBunkeringMult;
+      ammoniaBunkeringMult *
+      superconductingHvdcMult *
+      neonatalIcuMult *
+      methanolBunkeringMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -32499,7 +33169,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/51',
+    schemaVersion: 'agent12/52',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -32873,6 +33543,14 @@ export function computeTransportInfrastructureState(
     portAmmoniaBunkeringLogisticsShare,
     nationalPortAmmoniaBunkeringLogisticsThroughputIndex: nationalAmmoniaBunkering,
     portAmmoniaBunkeringLogisticsThroughputByRegion,
+    nationalSuperconductingHvdcExportIndex: nationalSuperconductingHvdc,
+    superconductingHvdcExportByRegion,
+    remoteNeonatalIcuSupplyStagingShare,
+    nationalRemoteNeonatalIcuSupplyStagingIndex: nationalNeonatalIcu,
+    remoteNeonatalIcuSupplyStagingByRegion,
+    portMethanolDualFuelBunkeringLogisticsShare,
+    nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex: nationalMethanolDualFuelBunkering,
+    portMethanolDualFuelBunkeringLogisticsThroughputByRegion,
     computeMs,
   };
 }
@@ -32955,7 +33633,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/51' &&
+      infra.schemaVersion === 'agent12/52' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -33132,8 +33810,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalQuantumCryogenicExportIndex >= 5 &&
       infra.nationalRemoteEcmoSupplyStagingIndex >= 6 &&
       infra.portAmmoniaBunkeringLogisticsShare >= 0.03 &&
-      infra.nationalPortAmmoniaBunkeringLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)} semi=${infra.nationalAdvancedSemiconductorPackagingExportIndex.toFixed(1)} cryo=${infra.nationalQuantumCryogenicExportIndex.toFixed(1)}`,
+      infra.nationalPortAmmoniaBunkeringLogisticsThroughputIndex >= 2 &&
+      infra.nationalSuperconductingHvdcExportIndex >= 5 &&
+      infra.nationalRemoteNeonatalIcuSupplyStagingIndex >= 6 &&
+      infra.portMethanolDualFuelBunkeringLogisticsShare >= 0.03 &&
+      infra.nationalPortMethanolDualFuelBunkeringLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)} semi=${infra.nationalAdvancedSemiconductorPackagingExportIndex.toFixed(1)} hvdc=${infra.nationalSuperconductingHvdcExportIndex.toFixed(1)}`,
   });
 
   return results;
