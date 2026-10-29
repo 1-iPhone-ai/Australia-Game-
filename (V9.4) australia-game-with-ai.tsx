@@ -14359,6 +14359,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   stateCapacityEnabled: true,
   publicFinanceEnabled: true,
   householdsEnabled: true,
+  inflationDynamicsEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26927,6 +26928,8 @@ export type GameSettingsState = {
   publicFinanceEnabled?: boolean;
   /** V10.13 Households, Living Standards & Domestic Demand (needs National Systems; off = no households layer, V10.0–V10.12 unchanged). */
   householdsEnabled?: boolean;
+  /** V10.14 National Inflation & Price Dynamics (needs National Systems; off = pre-V10.14 inflation behaviour). */
+  inflationDynamicsEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -134060,7 +134063,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'strategicCapitalEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'inflationDynamicsEnabled', 'strategicCapitalEnabled'
 ] as const;
 
 /**
@@ -136510,6 +136513,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1011', label: 'V10.11 Adaptive Governance & State Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1011AdaptiveGovernanceSelfTests() },
   { id: 'v1012', label: 'V10.12 Public Finance & Fiscal Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1012PublicFinanceSelfTests() },
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
+  { id: 'v1014', label: 'V10.14 Inflation & Price Dynamics', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014InflationPriceDynamicsSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -139367,6 +139371,8 @@ export interface NationalSystemsWorldView {
   publicFinance?: PublicFinanceWorldView | null;
   /** V10.13 Households, Living Standards & Domestic Demand (null when off). */
   households?: HouseholdEconomyWorldView | null;
+  /** V10.14 National Inflation & Price Dynamics (null when off). */
+  inflation?: NationalInflationWorldView | null;
 }
 export type NationalQueryTopic = 'overview' | 'bottlenecks' | 'region_network' | 'dependency' | 'resilience' | 'what_if';
 export interface NationalQuery { topic: NationalQueryTopic; regionId: string | null; network: NationalNetworkKind | null; projectType: string | null }
@@ -176742,6 +176748,8 @@ export interface HouseholdEconomyInputs {
   systemicRiskPressure?: number;
   commodityPrices?: Record<string, number>;
   baseCommodityPrices?: Record<string, number>;
+  /** V10.14 canonical inflation & CPI boundary signals (when enabled). */
+  nationalInflation?: NationalInflationState | null;
   completedProjects?: Array<{ id: string; title: string; regionId: string | null; projectType: string; status: string }>;
   crises?: Array<{ id: string; name?: string; title?: string; category?: string; kind?: string; severity?: string; status?: string; regionIds: string[] }>;
   existingIndustryDemandSources?: string[];
@@ -177014,7 +177022,9 @@ export function buildHouseholdEconomyInputs(params: any): HouseholdEconomyInputs
   const gset = params?.gameSettings || gs.gameSettings || {};
   const turn = Math.max(1, Math.floor(Number(params?.turn ?? gs.turn ?? gs.turnCounter ?? 1) || 1));
   const scenarioId = String(gset.selectedScenarioId || gs.selectedScenarioId || '').toLowerCase();
+  const infl14 = params?.nationalInflation as NationalInflationState | null | undefined;
   const highInflationScenario =
+    Boolean(infl14?.highInflationScenarioActive) ||
     Boolean(params?.highInflationScenario || params?.highInflationScenarioActive) ||
     scenarioId.includes('inflation') ||
     Boolean(gs.scenarioModifiers?.highInflation) ||
@@ -181899,6 +181909,696 @@ export function runV1013HouseholdsLivingStandardsSelfTests(): {
     total: results.length,
     results
   };
+}
+
+
+// ============================================================================
+// SECTION 20AG: V10.14 NATIONAL INFLATION & PRICE DYNAMICS (Agent 25 / Operation 111)
+// ============================================================================
+// PREREQUISITE AUDIT & ARCHITECTURAL BOUNDARY DOCUMENTATION (Parts 1–17, Invariants A–G):
+// 1. Audited V10.0–V10.13, Resource Market (`computeDailyMarketUpdate`), item pricing (`calculateItemPrices`),
+//    High Inflation scenario presets, Auto Mode `price_inflation`, and V10.13 household cost-pressure paths.
+// 2. Ownership Boundaries (Invariants A–G):
+//    - Resource Market remains authoritative for tradable commodity prices; V10.14 interprets CPI-eligible drift only.
+//    - Commodity export prices (Iron Ore, Gold, Uranium, Government Grants, etc.) are NEVER averaged into household CPI
+//      (Part 17 — shared with V10.13 `V1013_NON_CPI_COMMODITIES`).
+//    - V10.12 remains authoritative for fiscal capacity; V10.14 reads fiscal pressure as an inflation input only.
+//    - V10.13 remains authoritative for household living standards; V10.14 supplies canonical inflation signals.
+//    - Actor wallets, team treasuries, and sale prices are NEVER rewritten here — bounded multipliers only.
+//    - Off (`inflationDynamicsEnabled === false`) = exact pre-V10.14 inflation behaviour (scenario flags only).
+
+export const V1014_SCHEMA_VERSION = '10.14.0';
+
+export const V1014_LIMITS = {
+  maxHistory: 16,
+  maxEvidence: 10,
+  headlineHysteresisDeadband: 2.5
+} as const;
+
+export type HeadlineInflationBand =
+  | 'subdued'
+  | 'stable'
+  | 'elevated'
+  | 'high'
+  | 'critical';
+
+export const HEADLINE_INFLATION_LABEL: Record<HeadlineInflationBand, string> = {
+  subdued: 'SUBDUED',
+  stable: 'STABLE',
+  elevated: 'ELEVATED',
+  high: 'HIGH',
+  critical: 'CRITICAL'
+};
+
+export const HEADLINE_INFLATION_RANK: Record<HeadlineInflationBand, number> = {
+  subdued: 0,
+  stable: 1,
+  elevated: 2,
+  high: 3,
+  critical: 4
+};
+
+export type InflationPriceCategory =
+  | 'essentials'
+  | 'services'
+  | 'housing'
+  | 'energy'
+  | 'transport'
+  | 'food';
+
+export interface InflationEvidence {
+  id: string;
+  sourceSystem: string;
+  factor: string;
+  contribution: number;
+  turn: number;
+}
+
+export interface InflationCategoryPressure {
+  category: InflationPriceCategory;
+  pressureScore: number;
+  band: HouseholdCostPressureBand;
+}
+
+export interface NationalInflationState {
+  schemaVersion: string;
+  revision: number;
+  lastUpdatedTurn: number;
+  inputHash: string;
+  headlineIndex: number;
+  headlineBand: HeadlineInflationBand;
+  /** Display-oriented annualized pressure proxy (not accounting-grade CPI). */
+  headlineYoYProxyPct: number;
+  highInflationScenarioActive: boolean;
+  commoditySpikeActive: boolean;
+  nonCpiBoundaryIntact: boolean;
+  cpiBasketSampleCount: number;
+  categoryPressures: InflationCategoryPressure[];
+  itemPriceDriftMultiplier: number;
+  resourceMarketPressureMultiplier: number;
+  evidence: InflationEvidence[];
+}
+
+export interface NationalInflationInputs {
+  turn: number;
+  enabled: boolean;
+  scenarioId?: string;
+  inflationMultiplier?: number;
+  highInflationScenarioFlag?: boolean;
+  resourcePrices?: Record<string, number> | null;
+  baseResourcePrices?: Record<string, number> | null;
+  marketTrend?: string | null;
+  publicFinance?: NationalPublicFinanceState | null;
+  energySupplyHealth?: number;
+  agricultureSupplyHealth?: number;
+  transportNetworkHealth?: number;
+  systemicRiskPressure?: number;
+  turnCounter?: number;
+  crises?: Array<{ id?: string; category?: string; severity?: string; name?: string }>;
+}
+
+export interface NationalInflationWorldView {
+  enabled: boolean;
+  state: NationalInflationState;
+  inputs: NationalInflationInputs;
+}
+
+export function v1014NormalizeCommodityKey(key: string): string {
+  return String(key || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+}
+
+/** Part 17 boundary — commodities that must never enter household CPI averaging. */
+export function isNonCpiCommodity(resourceKey: string): boolean {
+  const norm = v1014NormalizeCommodityKey(resourceKey);
+  return V1013_NON_CPI_COMMODITIES.some((c) => v1014NormalizeCommodityKey(c) === norm);
+}
+
+export function v1014Clamp(n: number, min = 0, max = 100): number {
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+function scoreToHeadlineBand(score: number): HeadlineInflationBand {
+  if (score >= 82) return 'critical';
+  if (score >= 68) return 'high';
+  if (score >= 52) return 'elevated';
+  if (score >= 36) return 'stable';
+  return 'subdued';
+}
+
+export function buildCpiBasketMetrics(
+  current: Record<string, number> | null | undefined,
+  base: Record<string, number> | null | undefined
+): {
+  averageRatio: number;
+  sampleCount: number;
+  excludedSpikeCount: number;
+  nonCpiBoundaryIntact: boolean;
+} {
+  const cur = current || {};
+  const bas = base || {};
+  let sum = 0;
+  let count = 0;
+  let excludedSpikeCount = 0;
+  let boundaryViolations = 0;
+
+  const keys = new Set([...Object.keys(cur), ...Object.keys(bas)]);
+  for (const key of keys) {
+    if (isNonCpiCommodity(key)) {
+      const b = bas[key];
+      const c = cur[key];
+      if (typeof b === 'number' && typeof c === 'number' && b > 0 && c / b > 1.35) {
+        excludedSpikeCount += 1;
+      }
+      continue;
+    }
+    const basePrice = bas[key];
+    const currPrice = cur[key];
+    if (typeof basePrice !== 'number' || typeof currPrice !== 'number' || !Number.isFinite(basePrice) || basePrice <= 0) {
+      continue;
+    }
+    if (isNonCpiCommodity(key)) {
+      boundaryViolations += 1;
+      continue;
+    }
+    sum += currPrice / basePrice;
+    count += 1;
+  }
+
+  const averageRatio = count > 0 ? sum / count : 1;
+  return {
+    averageRatio,
+    sampleCount: count,
+    excludedSpikeCount,
+    nonCpiBoundaryIntact: boundaryViolations === 0
+  };
+}
+
+export function nationalInflationInputHash(inputs: NationalInflationInputs): string {
+  const crisisDigest = (inputs.crises || [])
+    .map((c) => `${c.id || ''}:${c.category || ''}:${c.severity || ''}`)
+    .sort()
+    .join(',');
+  const priceDigest = Object.entries(inputs.resourcePrices || {})
+    .filter(([k]) => !isNonCpiCommodity(k))
+    .slice(0, 24)
+    .map(([k, v]) => `${k}:${Math.round(Number(v) || 0)}`)
+    .sort()
+    .join(',');
+  const pf = inputs.publicFinance;
+  const pfDigest = pf ? `${pf.fiscalPosition?.pressure || ''}:${pf.fiscalPosition?.fiscalHeadroom ?? ''}` : '';
+  const raw = [
+    `t${inputs.turn}`,
+    `en${inputs.enabled}`,
+    `sc${inputs.scenarioId || ''}`,
+    `im${inputs.inflationMultiplier ?? 1}`,
+    `hi${inputs.highInflationScenarioFlag ? 1 : 0}`,
+    `mt${inputs.marketTrend || ''}`,
+    `tc${inputs.turnCounter ?? 0}`,
+    `e${inputs.energySupplyHealth ?? ''}`,
+    `a${inputs.agricultureSupplyHealth ?? ''}`,
+    `tr${inputs.transportNetworkHealth ?? ''}`,
+    `sr${inputs.systemicRiskPressure ?? ''}`,
+    `pf${pfDigest}`,
+    `pr${priceDigest}`,
+    `cr${crisisDigest}`
+  ].join('||');
+  let h = 2166136261;
+  for (let i = 0; i < raw.length; i++) {
+    h ^= raw.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return `hi1014_${(h >>> 0).toString(36)}`;
+}
+
+export function buildNationalInflationInputs(params: any): NationalInflationInputs {
+  const gs = params?.gameState || params || {};
+  const gset = params?.gameSettings || gs.gameSettings || {};
+  const turn = Math.max(1, Math.floor(Number(params?.turn ?? gs.turn ?? gs.turnCounter ?? 1) || 1));
+  const scenarioId = String(gset.selectedScenarioId || gs.selectedScenarioId || '').toLowerCase();
+  const inflationMultiplier = Number(gset.inflationMultiplier ?? gs.inflationMultiplier ?? 1);
+  const highInflationScenarioFlag =
+    scenarioId.includes('inflation') ||
+    Boolean(gs.scenarioModifiers?.highInflation) ||
+    inflationMultiplier > 1.15;
+
+  const basePrices: Record<string, number> = {};
+  const resources = BASE_MARKET_RESOURCES || [];
+  for (const r of resources) {
+    basePrices[r] = getResourceMarketPrice(r);
+  }
+
+  return {
+    turn,
+    enabled: gset.nationalSystemsEnabled !== false && gset.inflationDynamicsEnabled !== false,
+    scenarioId,
+    inflationMultiplier,
+    highInflationScenarioFlag,
+    resourcePrices: gs.resourcePrices || params?.resourcePrices || null,
+    baseResourcePrices: params?.baseResourcePrices || basePrices,
+    marketTrend: gs.marketTrend || gs.resourceMarketTrend || null,
+    publicFinance: params?.publicFinance || gs.publicFinanceState || null,
+    energySupplyHealth: params?.energySupplyHealth,
+    agricultureSupplyHealth: params?.agricultureSupplyHealth,
+    transportNetworkHealth: params?.transportNetworkHealth,
+    systemicRiskPressure: params?.systemicRiskPressure,
+    turnCounter: gs.turnCounter ?? gs.day ?? turn,
+    crises: gs.crisisChainState?.activeCrisisChains || gs.crises || params?.crises || []
+  };
+}
+
+export function computeNationalInflation(
+  inputs: NationalInflationInputs,
+  previous: NationalInflationState | null
+): NationalInflationState | null {
+  if (!inputs.enabled) return null;
+
+  const turn = inputs.turn;
+  const evidence: InflationEvidence[] = [];
+  const pushEv = (sourceSystem: string, factor: string, contribution: number) => {
+    if (evidence.length >= V1014_LIMITS.maxEvidence) return;
+    evidence.push({
+      id: `ev_${sourceSystem}_${factor}_${turn}_${evidence.length}`,
+      sourceSystem,
+      factor,
+      contribution,
+      turn
+    });
+  };
+
+  let headline = 42;
+  const basket = buildCpiBasketMetrics(inputs.resourcePrices, inputs.baseResourcePrices);
+  if (basket.sampleCount > 0) {
+    const ratioPressure = (basket.averageRatio - 1) * 120;
+    headline += ratioPressure;
+    pushEv('resource_market', 'cpi_basket_ratio', Math.round(ratioPressure));
+  }
+  if (basket.excludedSpikeCount > 0) {
+    pushEv('resource_market', 'non_cpi_spike_excluded', 0);
+  }
+
+  const trend = String(inputs.marketTrend || 'stable').toLowerCase();
+  if (trend === 'rising') {
+    headline += 6;
+    pushEv('resource_market', 'market_trend_rising', 6);
+  } else if (trend === 'volatile') {
+    headline += 8;
+    pushEv('resource_market', 'market_trend_volatile', 8);
+  } else if (trend === 'falling') {
+    headline -= 4;
+    pushEv('resource_market', 'market_trend_falling', -4);
+  }
+
+  const tc = Math.max(0, Number(inputs.turnCounter ?? turn) || 0);
+  const drift = Math.min(12, tc * 0.35);
+  headline += drift;
+  pushEv('item_pricing', 'turn_drift_proxy', Math.round(drift));
+
+  const energy = inputs.energySupplyHealth ?? 70;
+  const ag = inputs.agricultureSupplyHealth ?? 70;
+  const transport = inputs.transportNetworkHealth ?? 70;
+  if (energy < 55) {
+    const d = Math.round((55 - energy) * 0.45);
+    headline += d;
+    pushEv('supply', 'energy_strain', d);
+  }
+  if (ag < 55) {
+    const d = Math.round((55 - ag) * 0.42);
+    headline += d;
+    pushEv('supply', 'agriculture_strain', d);
+  }
+  if (transport < 55) {
+    const d = Math.round((55 - transport) * 0.38);
+    headline += d;
+    pushEv('supply', 'transport_strain', d);
+  }
+
+  const pfPressure = inputs.publicFinance?.fiscalPosition?.pressure;
+  if (pfPressure === 'strained' || pfPressure === 'critical') {
+    headline += pfPressure === 'critical' ? 10 : 6;
+    pushEv('public_finance', `fiscal_${pfPressure}`, pfPressure === 'critical' ? 10 : 6);
+  } else if (pfPressure === 'tight') {
+    headline += 3;
+    pushEv('public_finance', 'fiscal_tight', 3);
+  }
+
+  const sr = inputs.systemicRiskPressure ?? 0;
+  if (sr >= 45) {
+    const d = Math.round((sr - 40) * 0.2);
+    headline += d;
+    pushEv('systemic_risk', 'risk_pressure', d);
+  }
+
+  const scenarioInfl =
+    Boolean(inputs.highInflationScenarioFlag) || Number(inputs.inflationMultiplier || 1) > 1.15;
+  if (scenarioInfl) {
+    headline += 14;
+    pushEv('scenario', 'high_inflation_preset', 14);
+  }
+
+  const commoditySpikeActive = basket.excludedSpikeCount > 0;
+
+  headline = v1014Clamp(headline);
+
+  let headlineBand = scoreToHeadlineBand(headline);
+  if (previous && previous.headlineBand) {
+    const prevRank = HEADLINE_INFLATION_RANK[previous.headlineBand];
+    const nextRank = HEADLINE_INFLATION_RANK[headlineBand];
+    const delta = headline - (previous.headlineIndex ?? headline);
+    const bandLadder: HeadlineInflationBand[] = ['subdued', 'stable', 'elevated', 'high', 'critical'];
+    if (Math.abs(delta) < V1014_LIMITS.headlineHysteresisDeadband) {
+      if (nextRank > prevRank + 1) headlineBand = bandLadder[prevRank + 1];
+      if (nextRank < prevRank - 1) headlineBand = bandLadder[prevRank - 1];
+    }
+  }
+
+  const highInflationScenarioActive =
+    scenarioInfl || headlineBand === 'high' || headlineBand === 'critical' || headline >= 68;
+
+  const categoryBase = {
+    essentials: headline * 0.92,
+    services: headline * 0.88,
+    housing: headline * 0.95,
+    energy: headline * 0.9 + Math.max(0, 55 - energy) * 0.35,
+    transport: headline * 0.86 + Math.max(0, 55 - transport) * 0.3,
+    food: headline * 0.84 + Math.max(0, 55 - ag) * 0.32
+  };
+
+  if (highInflationScenarioActive) {
+    categoryBase.essentials += 8;
+    categoryBase.services += 10;
+  }
+
+  const categoryPressures: InflationCategoryPressure[] = (Object.keys(categoryBase) as InflationPriceCategory[]).map(
+    (category) => {
+      const pressureScore = v1014Clamp(categoryBase[category]);
+      return { category, pressureScore, band: scoreToCostPressureBand(pressureScore) };
+    }
+  );
+
+  const itemPriceDriftMultiplier = Math.max(0.85, Math.min(1.45, 1 + (headline - 42) / 200 + tc * 0.003));
+  const resourceMarketPressureMultiplier = Math.max(
+    0.9,
+    Math.min(1.25, 1 + (basket.sampleCount > 0 ? (basket.averageRatio - 1) * 0.35 : 0))
+  );
+
+  const headlineYoYProxyPct = Math.max(-2, Math.min(18, Math.round((headline - 42) * 0.22 + (scenarioInfl ? 4 : 0))));
+
+  const inputHash = nationalInflationInputHash(inputs);
+
+  return {
+    schemaVersion: V1014_SCHEMA_VERSION,
+    revision: (previous?.revision ?? 0) + 1,
+    lastUpdatedTurn: turn,
+    inputHash,
+    headlineIndex: headline,
+    headlineBand,
+    headlineYoYProxyPct,
+    highInflationScenarioActive,
+    commoditySpikeActive,
+    nonCpiBoundaryIntact: basket.nonCpiBoundaryIntact,
+    cpiBasketSampleCount: basket.sampleCount,
+    categoryPressures,
+    itemPriceDriftMultiplier,
+    resourceMarketPressureMultiplier,
+    evidence
+  };
+}
+
+export function validateNationalInflationState(state: NationalInflationState | null | undefined): {
+  valid: boolean;
+  issues: string[];
+} {
+  if (!state) return { valid: true, issues: [] };
+  const issues: string[] = [];
+  if (state.schemaVersion !== V1014_SCHEMA_VERSION) issues.push('schemaVersion mismatch');
+  if (!Number.isFinite(state.headlineIndex) || state.headlineIndex < 0 || state.headlineIndex > 100) {
+    issues.push('headlineIndex out of bounds');
+  }
+  if (!HEADLINE_INFLATION_LABEL[state.headlineBand]) issues.push('invalid headlineBand');
+  if (state.categoryPressures.length !== 6) issues.push('categoryPressures incomplete');
+  if (state.commoditySpikeActive && !state.nonCpiBoundaryIntact) {
+    /* spike allowed when boundary intact */
+  }
+  return { valid: issues.length === 0, issues };
+}
+
+export function runV1014InflationPriceDynamicsSelfTests(): {
+  passed: number;
+  failed: number;
+  total: number;
+  results: Array<{ name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ name: string; passed: boolean; detail: string }> = [];
+  const check = (name: string, condition: boolean, detail: string) => {
+    results.push({ name, passed: Boolean(condition), detail });
+  };
+
+  check(
+    'TEST 1 — NON-CPI BOUNDARY',
+    isNonCpiCommodity('Iron Ore') && isNonCpiCommodity('gold') && !isNonCpiCommodity('Wheat'),
+    'Iron Ore/gold excluded; Wheat eligible'
+  );
+
+  {
+    const metrics = buildCpiBasketMetrics(
+      { Wheat: 100, 'Iron Ore': 500 },
+      { Wheat: 100, 'Iron Ore': 100 }
+    );
+    check(
+      'TEST 2 — COMMODITY SPIKE EXCLUDED FROM CPI',
+      metrics.sampleCount === 1 && metrics.excludedSpikeCount === 1 && metrics.averageRatio === 1,
+      `sample=${metrics.sampleCount}, spikes=${metrics.excludedSpikeCount}, ratio=${metrics.averageRatio}`
+    );
+  }
+
+  {
+    const base: NationalInflationInputs = {
+      turn: 5,
+      enabled: true,
+      resourcePrices: { Wheat: 110 },
+      baseResourcePrices: { Wheat: 100 },
+      energySupplyHealth: 70,
+      agricultureSupplyHealth: 70,
+      transportNetworkHealth: 70
+    };
+    const s = computeNationalInflation(base, null);
+    check('TEST 3 — BASELINE COMPUTE', Boolean(s && s.headlineIndex >= 38 && s.headlineIndex <= 62), `index=${s?.headlineIndex}`);
+  }
+
+  {
+    const s = computeNationalInflation(
+      {
+        turn: 6,
+        enabled: true,
+        highInflationScenarioFlag: true,
+        inflationMultiplier: 1.25,
+        resourcePrices: {},
+        baseResourcePrices: {}
+      },
+      null
+    );
+    check(
+      'TEST 4 — HIGH INFLATION SCENARIO',
+      Boolean(s?.highInflationScenarioActive && s.headlineBand !== 'subdued'),
+      `active=${s?.highInflationScenarioActive}, band=${s?.headlineBand}`
+    );
+  }
+
+  {
+    const s = computeNationalInflation({ turn: 1, enabled: false, resourcePrices: {} }, null);
+    check('TEST 5 — DISABLED RETURNS NULL', s === null, `state=${s}`);
+  }
+
+  {
+    const a = computeNationalInflation(
+      { turn: 3, enabled: true, energySupplyHealth: 30, agricultureSupplyHealth: 28, transportNetworkHealth: 32 },
+      null
+    );
+    const b = computeNationalInflation(
+      { turn: 3, enabled: true, energySupplyHealth: 85, agricultureSupplyHealth: 88, transportNetworkHealth: 90 },
+      null
+    );
+    check(
+      'TEST 6 — SUPPLY SHOCKS RAISE PRESSURE',
+      Boolean(a && b && a.headlineIndex > b.headlineIndex + 8),
+      `strained=${a?.headlineIndex}, healthy=${b?.headlineIndex}`
+    );
+  }
+
+  {
+    const pf: Partial<NationalPublicFinanceState> = {
+      fiscalPosition: { pressure: 'critical', fiscalHeadroom: 10 } as any
+    };
+    const s = computeNationalInflation(
+      { turn: 4, enabled: true, publicFinance: pf as NationalPublicFinanceState },
+      null
+    );
+    check('TEST 7 — FISCAL STRAIN FEED', Boolean(s && s.headlineIndex >= 48), `index=${s?.headlineIndex}`);
+  }
+
+  {
+    const inp: NationalInflationInputs = { turn: 7, enabled: true, marketTrend: 'volatile' };
+    const h1 = nationalInflationInputHash(inp);
+    const h2 = nationalInflationInputHash({ ...inp, marketTrend: 'stable' });
+    check('TEST 8 — INPUT HASH SENSITIVITY', h1 !== h2 && h1.startsWith('hi1014_'), `h1=${h1.slice(0, 12)}`);
+  }
+
+  {
+    const s1 = computeNationalInflation({ turn: 8, enabled: true, turnCounter: 12 }, null);
+    const s2 = computeNationalInflation({ turn: 8, enabled: true, turnCounter: 12 }, null);
+    check('TEST 9 — DETERMINISM', JSON.stringify(s1) === JSON.stringify(s2), 'identical outputs');
+  }
+
+  {
+    const s = computeNationalInflation({ turn: 2, enabled: true }, null);
+    const v = validateNationalInflationState(s);
+    check('TEST 10 — VALIDATION', v.valid, v.issues.join(';') || 'ok');
+  }
+
+  {
+    const prev = computeNationalInflation({ turn: 9, enabled: true, turnCounter: 1 }, null);
+    const next = computeNationalInflation({ turn: 10, enabled: true, turnCounter: 2 }, prev);
+    check('TEST 11 — REVISION INCREMENTS', Boolean(next && prev && next.revision === prev.revision + 1), `rev=${next?.revision}`);
+  }
+
+  {
+    const s = computeNationalInflation(
+      {
+        turn: 11,
+        enabled: true,
+        resourcePrices: { Wheat: 140, Timber: 130 },
+        baseResourcePrices: { Wheat: 100, Timber: 100 }
+      },
+      null
+    );
+    check(
+      'TEST 12 — CPI BASKET RESPONDS',
+      Boolean(s && s.headlineIndex >= 50 && s.cpiBasketSampleCount >= 1),
+      `index=${s?.headlineIndex}, samples=${s?.cpiBasketSampleCount}`
+    );
+  }
+
+  {
+    const s = computeNationalInflation({ turn: 12, enabled: true, systemicRiskPressure: 62 }, null);
+    check('TEST 13 — SYSTEMIC RISK', Boolean(s && s.headlineIndex >= 46), `index=${s?.headlineIndex}`);
+  }
+
+  {
+    const built = buildNationalInflationInputs({
+      gameSettings: { nationalSystemsEnabled: true, inflationDynamicsEnabled: true, selectedScenarioId: 'high_inflation' },
+      gameState: { turn: 4, resourcePrices: {} }
+    });
+    check('TEST 14 — BUILD INPUTS SCENARIO', built.enabled && built.highInflationScenarioFlag === true, `enabled=${built.enabled}`);
+  }
+
+  {
+    const built = buildNationalInflationInputs({
+      gameSettings: { inflationDynamicsEnabled: false, nationalSystemsEnabled: true },
+      gameState: { turn: 1 }
+    });
+    check('TEST 15 — BUILD INPUTS OFF', built.enabled === false, `enabled=${built.enabled}`);
+  }
+
+  {
+    const s = computeNationalInflation({ turn: 13, enabled: true }, null);
+    check('TEST 16 — SIX CATEGORY PRESSURES', s?.categoryPressures.length === 6, `count=${s?.categoryPressures.length}`);
+  }
+
+  {
+    const s = computeNationalInflation(
+      { turn: 14, enabled: true, resourcePrices: { 'Iron Ore': 900 }, baseResourcePrices: { 'Iron Ore': 100 } },
+      null
+    );
+    check(
+      'TEST 17 — COMMODITY SPIKE FLAG WITHOUT CPI MOVE',
+      Boolean(s?.commoditySpikeActive && s.cpiBasketSampleCount === 0),
+      `spike=${s?.commoditySpikeActive}, samples=${s?.cpiBasketSampleCount}`
+    );
+  }
+
+  {
+    const s = computeNationalInflation({ turn: 15, enabled: true, marketTrend: 'falling' }, null);
+    const r = computeNationalInflation({ turn: 15, enabled: true, marketTrend: 'rising' }, null);
+    check('TEST 18 — MARKET TREND ORDERING', Boolean(s && r && r.headlineIndex > s.headlineIndex), `fall=${s?.headlineIndex}, rise=${r?.headlineIndex}`);
+  }
+
+  {
+    const s = computeNationalInflation({ turn: 16, enabled: true, highInflationScenarioFlag: true }, null);
+    check(
+      'TEST 19 — MULTIPLIERS BOUNDED',
+      s!.itemPriceDriftMultiplier >= 0.85 &&
+        s!.itemPriceDriftMultiplier <= 1.45 &&
+        s!.resourceMarketPressureMultiplier <= 1.25,
+      `item=${s?.itemPriceDriftMultiplier}, mkt=${s?.resourceMarketPressureMultiplier}`
+    );
+  }
+
+  {
+    const s = computeNationalInflation({ turn: 17, enabled: true }, null);
+    check('TEST 20 — EVIDENCE CAP', (s?.evidence.length || 0) <= V1014_LIMITS.maxEvidence, `ev=${s?.evidence.length}`);
+  }
+
+  const passed = results.filter((r) => r.passed).length;
+  return { passed, failed: results.length - passed, total: results.length, results };
+}
+
+export function InflationDynamicsInspector({
+  state,
+  inputs
+}: {
+  state: NationalInflationState | null | undefined;
+  inputs?: NationalInflationInputs | null;
+}) {
+  const [testResult, setTestResult] = useState<{
+    passed: number;
+    failed: number;
+    total: number;
+    results: Array<{ name: string; passed: boolean; detail: string }>;
+  } | null>(null);
+
+  if (!state) {
+    return <div style={{ padding: '10px', color: '#94a3b8' }}>V10.14 Inspector: No inflation state (module off or waiting).</div>;
+  }
+
+  return (
+    <div style={{ padding: '12px', background: '#0f172a', color: '#e2e8f0', borderRadius: '8px', fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <strong style={{ color: '#fbbf24', fontSize: '13px' }}>LAB INSPECTOR — V10.14 INFLATION & PRICE DYNAMICS</strong>
+        <button
+          type="button"
+          onClick={() => setTestResult(runV1014InflationPriceDynamicsSelfTests())}
+          style={{ padding: '4px 10px', borderRadius: '6px', background: '#d97706', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}
+        >
+          Run V10.14 Self-Tests (20)
+        </button>
+      </div>
+      {testResult && (
+        <div style={{ padding: '6px', borderRadius: '6px', background: testResult.failed === 0 ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)' }}>
+          Self-Tests: {testResult.passed}/{testResult.total} passed
+        </div>
+      )}
+      <div>
+        Headline: <code>{HEADLINE_INFLATION_LABEL[state.headlineBand]}</code> ({state.headlineIndex}/100) · YoY proxy{' '}
+        <code>{state.headlineYoYProxyPct}%</code>
+      </div>
+      <div>
+        High inflation scenario: <code>{String(state.highInflationScenarioActive)}</code> · Commodity spike (non-CPI):{' '}
+        <code>{String(state.commoditySpikeActive)}</code>
+      </div>
+      <div>
+        CPI basket samples: <code>{state.cpiBasketSampleCount}</code> · Input hash: <code>{state.inputHash}</code>
+      </div>
+      {inputs && (
+        <div style={{ opacity: 0.85 }}>
+          Enabled: <code>{String(inputs.enabled)}</code> · Scenario: <code>{inputs.scenarioId || '—'}</code>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -214719,6 +215419,38 @@ function dispatchGameSettingsChange(
   }, [pf12Enabled, pf12State, pf12Persisted, pf12SetRevenuePolicy, pf12SetReservePolicy, pf12SetFinancingApproach, pf12WhatIf, pf12RunWhatIf, pf12ClearWhatIf]);
   if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, publicFinance: pf12Enabled ? pf12View : null };
 
+  const infl14Enabled = Boolean(nsEnabled && gameSettings.inflationDynamicsEnabled !== false);
+  const infl14Inputs = useMemo<NationalInflationInputs | null>(() => {
+    if (!infl14Enabled || !nsState) return null;
+    return buildNationalInflationInputs({
+      turn: lrInputs.turn,
+      gameState,
+      gameSettings,
+      publicFinance: pf12Enabled ? pf12State : null,
+      resourcePrices: gameState.resourcePrices,
+      systemicRiskPressure: srEnabled ? (srState as any)?.national?.overallPressureScore : undefined
+    });
+  }, [infl14Enabled, nsState, lrInputs.turn, gameState.resourcePrices, gameState.marketTrend, gameState.resourceMarketTrend, gameState.turnCounter, gameState.day, gameSettings.selectedScenarioId, gameSettings.inflationMultiplier, pf12Enabled, pf12State, srEnabled, srState]); // eslint-disable-line react-hooks/exhaustive-deps
+  const infl14Hash = useMemo(() => (infl14Inputs ? nationalInflationInputHash(infl14Inputs) : ''), [infl14Inputs]);
+  const infl14StateRef = useRef<NationalInflationState | null>(null);
+  const infl14State = useMemo<NationalInflationState | null>(() => {
+    if (!infl14Inputs) return null;
+    return computeNationalInflation(infl14Inputs, infl14StateRef.current);
+  }, [infl14Hash, infl14Inputs]); // eslint-disable-line react-hooks/exhaustive-deps
+  infl14StateRef.current = infl14State;
+  useEffect(() => {
+    if (!infl14Enabled || !infl14Inputs || gameState.gameMode !== 'game') return;
+    const prevHash = (gameState as any).nationalInflationState?.inputHash;
+    if (prevHash === infl14Hash && infl14State) return;
+    dispatchGameState({ type: 'LOAD_STATE', payload: { nationalInflationState: infl14State } as any });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infl14Hash, infl14Enabled, gameState.gameMode]);
+  const infl14View = useMemo<NationalInflationWorldView | null>(() => {
+    if (!infl14State || !infl14Inputs) return null;
+    return { enabled: infl14Enabled, state: infl14State, inputs: infl14Inputs };
+  }, [infl14Enabled, infl14State, infl14Inputs]);
+  if (nsViewRef.current) nsViewRef.current = { ...nsViewRef.current, inflation: infl14Enabled ? infl14View : null };
+
   const hh13Enabled = Boolean(nsEnabled && gameSettings.householdsEnabled !== false);
   const hh13StoredRaw = (gameState as any).householdEconomy;
   const hh13Persisted = useMemo(() => sanitizeHouseholdEconomyPersisted(hh13StoredRaw, lrInputs.turn), [hh13StoredRaw, lrInputs.turn]);
@@ -214741,9 +215473,11 @@ function dispatchGameSettingsChange(
       economicGeography: egEnabled ? egState : null,
       workforce: wfEnabled ? wfState : null,
       stateCapacity: sc11Enabled ? sc11State : null,
-      publicFinance: pf12Enabled ? pf12State : null
+      publicFinance: pf12Enabled ? pf12State : null,
+      nationalInflation: infl14Enabled ? infl14State : null,
+      commodityPrices: gameState.resourcePrices
     });
-  }, [hh13Enabled, nsState, lrInputs.turn, gameState.infrastructureProjects, gameState.crisisChainState, gameState.publicStabilityState, gameSettings.selectedScenarioId, lrState, scState, inState, mpEnabled, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, egEnabled, egState, wfEnabled, wfState, sc11Enabled, sc11State, pf12Enabled, pf12State, hh13Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hh13Enabled, nsState, lrInputs.turn, gameState.infrastructureProjects, gameState.crisisChainState, gameState.publicStabilityState, gameSettings.selectedScenarioId, lrState, scState, inState, mpEnabled, mpPersisted, ndEnabled, ndProfile, icEnabled, icState, srEnabled, srState, npEnabled, npState, egEnabled, egState, wfEnabled, wfState, sc11Enabled, sc11State, pf12Enabled, pf12State, infl14Enabled, infl14State, gameState.resourcePrices, hh13Persisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
   const hh13Hash = useMemo(() => (hh13Inputs ? householdEconomyInputHash(hh13Inputs) : ''), [hh13Inputs]);
   const hh13StateRef = useRef<NationalHouseholdEconomyState | null>(null);
   const hh13State = useMemo<NationalHouseholdEconomyState | null>(() => {
@@ -219671,6 +220405,10 @@ function dispatchGameSettingsChange(
                   <label className="flex items-center gap-2 text-sm mt-2" data-testid="v1013-setting-households">
                     <input type="checkbox" checked={gameSettings.householdsEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '🏠 Households & Living Standards', prev => ({ ...prev, householdsEnabled: e.target.checked }))} />
                     Households, Living Standards &amp; Domestic Demand (V10.13): household prosperity, affordability, housing pressure, essential access and domestic demand feedback (needs National Systems)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm mt-2" data-testid="v1014-setting-inflation">
+                    <input type="checkbox" checked={gameSettings.inflationDynamicsEnabled !== false} disabled={gameSettings.nationalSystemsEnabled === false} onChange={e => trackedSetGameSettings('direct_player_change', '💸 Inflation & Price Dynamics', prev => ({ ...prev, inflationDynamicsEnabled: e.target.checked }))} />
+                    National Inflation &amp; Price Dynamics (V10.14): canonical CPI vs commodity boundary, headline inflation bands, category pressures feeding households (needs National Systems)
                   </label>
                   {([
                     ['v93StartingPackage', 'Starting conditions', STARTING_CONDITION_PACKAGES.map(p => [p.id, `${p.label} — ${p.summary}`])],
