@@ -133963,6 +133963,131 @@ export function runV94GameFeelPolishSelfTests(): V9SelfTestResult[] {
 }
 
 
+
+// ============================================================================
+// SECTION 20P-A80: OPERATION 111 — PLAYER EXPERIENCE INTEGRATION CONTRACTS (DIVISION H / AGENT 80)
+// Pure helpers + self-tests: match lifecycle, experience layers, smart onboarding profiles, cohesion shape.
+// Presentation contracts only — no new persisted keys.
+// ============================================================================
+
+export type PlayerExperienceMatchPhase = 'pre_match' | 'opening' | 'mid_game' | 'late_game' | 'closing' | 'post_match';
+
+/** Maps calendar progress to a coarse lifecycle phase for PLAY orchestration (Agents 71–79, 62, 76). */
+export function derivePlayerExperienceMatchPhase(input: { day: number; totalDays: number; gameOver?: boolean; isNewMatch?: boolean }): PlayerExperienceMatchPhase {
+  if (input.gameOver) return 'post_match';
+  if (input.isNewMatch || input.day <= 0) return 'pre_match';
+  const total = Math.max(1, input.totalDays || 1);
+  const progress = Math.min(1, Math.max(0, input.day / total));
+  if (progress <= 0.2) return 'opening';
+  if (progress <= 0.65) return 'mid_game';
+  if (progress <= 0.9) return 'late_game';
+  return 'closing';
+}
+
+export interface PlayerExperienceSurfaceContract {
+  layer: ExperienceLayer;
+  controlMode: PlayerControlMode;
+  matchPhase: PlayerExperienceMatchPhase;
+  smartPresetId: string;
+  cohesionHasFocus: boolean;
+  cohesionHasAttention: boolean;
+}
+
+/** Snapshot of cross-cutting player-facing contracts (no React, no I/O). */
+export function buildPlayerExperienceSurfaceContract(input: {
+  experienceLayer: unknown;
+  controlMode: PlayerControlMode;
+  matchSetup: any;
+  cohesion: V9Cohesion | null;
+  day: number;
+  totalDays: number;
+  gameOver?: boolean;
+  isNewMatch?: boolean;
+}): PlayerExperienceSurfaceContract {
+  const rec = recommendSmartSettingsProfile(input.matchSetup || {});
+  return {
+    layer: sanitizeExperienceLayer(input.experienceLayer),
+    controlMode: input.controlMode,
+    matchPhase: derivePlayerExperienceMatchPhase({ day: input.day, totalDays: input.totalDays, gameOver: input.gameOver, isNewMatch: input.isNewMatch }),
+    smartPresetId: rec.presetId || 'balanced_default',
+    cohesionHasFocus: Boolean(input.cohesion?.focus?.title),
+    cohesionHasAttention: Array.isArray(input.cohesion?.attention) && input.cohesion!.attention.length > 0
+  };
+}
+
+export function runO111PlayerExperienceContractSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try {
+      const out = fn();
+      results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') });
+    } catch (e) {
+      results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+
+  check('px80_layers_meta', 'Every experience layer has nav metadata (PLAY · Intelligence · LAB)', () => {
+    return EXPERIENCE_LAYERS.every(l => EXPERIENCE_LAYER_META[l]?.label && EXPERIENCE_LAYER_META[l].description) || J(EXPERIENCE_LAYERS);
+  });
+  check('px80_control_authority', 'Player control modes have strictly increasing authority ranks', () => {
+    const ranks = PLAYER_CONTROL_MODES.map(m => PLAYER_CONTROL_MODE_META[m].authorityRank);
+    for (let i = 1; i < ranks.length; i++) {
+      if (ranks[i] <= ranks[i - 1]) return J(ranks);
+    }
+    return ranks[0] === 0 && ranks[ranks.length - 1] >= 4;
+  });
+  check('px80_smart_beginner', 'Beginner / new-player match setup recommends New Player Guided preset', () => {
+    const r = recommendSmartSettingsProfile({ isNewPlayer: true, playerExperienceLevel: 'beginner' });
+    return r.presetId === 'new_player_guided' && Boolean(r.recommendedProfile) || J(r);
+  });
+  check('px80_smart_team', 'Co-op match setup recommends Team Tactician preset', () => {
+    const r = recommendSmartSettingsProfile({ gameMode: 'coop', difficulty: 'normal' });
+    return r.presetId === 'team_tactician' || J(r);
+  });
+  check('px80_sanitize_layer', 'Unknown experience layer values sanitize to PLAY', () => {
+    return sanitizeExperienceLayer('lab') === 'lab' && sanitizeExperienceLayer('bogus') === 'play' && sanitizeExperienceLayer(null) === 'play';
+  });
+  check('px80_match_phases', 'Match lifecycle phases track day progress and game-over', () => {
+    const phases = [
+      derivePlayerExperienceMatchPhase({ day: 0, totalDays: 30, isNewMatch: true }),
+      derivePlayerExperienceMatchPhase({ day: 3, totalDays: 30 }),
+      derivePlayerExperienceMatchPhase({ day: 12, totalDays: 30 }),
+      derivePlayerExperienceMatchPhase({ day: 24, totalDays: 30 }),
+      derivePlayerExperienceMatchPhase({ day: 29, totalDays: 30 }),
+      derivePlayerExperienceMatchPhase({ day: 30, totalDays: 30, gameOver: true })
+    ];
+    return J(phases) === J(['pre_match', 'opening', 'mid_game', 'late_game', 'closing', 'post_match']) || J(phases);
+  });
+  check('px80_cohesion_shape', 'V9 cohesion resolver always exposes a Current Focus title for PLAY', () => {
+    const c = resolveV9GameplayCohesion(createV9CohesionFixture());
+    return Boolean(c.focus?.title) || J(c.focus);
+  });
+  check('px80_surface_contract', 'Surface contract merges layer, control mode, smart preset, and cohesion flags', () => {
+    const c = resolveV9GameplayCohesion(createV9CohesionFixture());
+    const snap = buildPlayerExperienceSurfaceContract({
+      experienceLayer: 'play',
+      controlMode: 'advisor',
+      matchSetup: { playerExperienceLevel: 'beginner' },
+      cohesion: c,
+      day: 5,
+      totalDays: 30
+    });
+    return snap.layer === 'play' && snap.controlMode === 'advisor' && snap.matchPhase === 'opening' && snap.smartPresetId === 'new_player_guided' && snap.cohesionHasFocus || J(snap);
+  });
+  check('px80_intent_parse', 'Natural-language experience intent parses guidance and automation dimensions', () => {
+    const p = parseExperienceIntentText('Use teaching mode with tutorials and keep all gameplay manual.');
+    return p.detectedGuidance === 'teaching' && p.detectedAutomation === 'manual' || J({ guidance: p.detectedGuidance, automation: p.detectedAutomation });
+  });
+  check('px80_feel_not_saved', 'V9.4 feel / feedback queue is not part of default persisted settings or initial state', () => {
+    const settingsKeys = Object.keys(DEFAULT_GAME_SETTINGS).filter(k => /v94|uiFeedback|motionDebug/i.test(k));
+    const stateKeys = Object.keys(initialGameState).filter(k => /v94|uiFeedback/i.test(k));
+    return settingsKeys.length === 0 && stateKeys.length === 0 || J({ settingsKeys, stateKeys });
+  });
+  return results;
+}
+
+
 // ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
@@ -136513,6 +136638,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'px80', label: 'O111 Player Experience', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111PlayerExperienceContractSelfTests() },
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
