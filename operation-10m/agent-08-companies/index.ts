@@ -795,6 +795,23 @@ export type {
   TransitionLegacyBand,
 } from './production-transition-legacy';
 
+export {
+  AGENT08_TRANSITION_REMEMBRANCE_SCHEMA_VERSION,
+  buildFirmProductionTransitionRemembrance,
+  classifyNationalRemembranceBand,
+  computeNationalRemembrancePressure,
+  computeNationalProductionTransitionRemembrance,
+  summarizeRegionalTransitionRemembrance,
+  runAgent08TransitionRemembranceSelfTests,
+} from './production-transition-remembrance';
+
+export type {
+  FirmProductionTransitionRemembrance,
+  NationalProductionTransitionRemembrance,
+  RegionalTransitionRemembranceSummary,
+  TransitionRemembranceBand,
+} from './production-transition-remembrance';
+
 import { runV1014_PRIVATE_PrivateSectorSelfTests } from './v1014-private-sector-core';
 import { runAgent08TaxLaborSelfTests } from './tax-labor-capacity-linkage';
 import { runAgent08SupplyChainSelfTests } from './supply-chain-firm-depth';
@@ -842,6 +859,7 @@ import { runAgent08TransitionResolutionSelfTests } from './production-transition
 import { runAgent08TransitionSettlementSelfTests } from './production-transition-settlement';
 import { runAgent08TransitionRetirementSelfTests } from './production-transition-retirement';
 import { runAgent08TransitionLegacySelfTests } from './production-transition-legacy';
+import { runAgent08TransitionRemembranceSelfTests } from './production-transition-remembrance';
 
 /** Combined self-test entrypoint for CI and Agent 25 merge verification. */
 export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; passed: boolean; detail: string }> {
@@ -1081,6 +1099,11 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     passed: t.passed,
     detail: t.detail,
   }));
+  const transitionRemembrance = runAgent08TransitionRemembranceSelfTests().map(t => ({
+    id: t.id,
+    passed: t.passed,
+    detail: t.detail,
+  }));
   return [
     ...core.slice(0, 5),
     ...taxLabor,
@@ -1129,5 +1152,6 @@ export function runAgent08ModuleSelfTests(): Array<{ id: string; name?: string; 
     ...transitionSettlement,
     ...transitionRetirement,
     ...transitionLegacy,
+    ...transitionRemembrance,
   ];
 }
