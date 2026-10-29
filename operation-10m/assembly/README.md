@@ -9,6 +9,7 @@ Deterministic merge of worker modules into `(V9.4) australia-game-with-ai.tsx`.
 | `audit-duplication.mjs` | Export / block duplication baseline |
 | `audit-save-migrations.mjs` | Save migrator surface checks |
 | `benchmark-scale.mjs` | Read/hash/scan timings |
+| `tests/cross-system-smoke.mjs` | Dry-run export presence for XS-01…05 (no canonical) |
 
 Run full baseline gate:
 

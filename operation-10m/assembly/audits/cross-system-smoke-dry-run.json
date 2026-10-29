@@ -1,0 +1,51 @@
+{
+  "smokeId": "cross-system-smoke-dry-run",
+  "ranAt": "2026-10-29T06:20:34.779Z",
+  "mode": "dry-run-export-presence",
+  "artifact": "/workspace/build/tranche-full-chunks-projection.tsx",
+  "canonicalModified": false,
+  "overallVerdict": "PASS",
+  "scenarios": [
+    {
+      "id": "XS-01",
+      "agents": "02,25",
+      "exportName": "runOp10mAgent02TurnsTimeSelfTests",
+      "description": "Turn / time pipeline hooks",
+      "passed": true,
+      "verdict": "PASS"
+    },
+    {
+      "id": "XS-02",
+      "agents": "05,02",
+      "exportName": "runOp10mAgent05EventsAssemblySelfTests",
+      "description": "Events assembly / chain hooks",
+      "passed": true,
+      "verdict": "PASS"
+    },
+    {
+      "id": "XS-03",
+      "agents": "06,02",
+      "exportName": "runAgent06AllSelfTests",
+      "description": "Macro economy depth + reconciliation",
+      "passed": true,
+      "verdict": "PASS"
+    },
+    {
+      "id": "XS-04",
+      "agents": "16,06,02",
+      "exportName": "runAgent16GuardianCoPilotSelfTests",
+      "description": "Guardian co-pilot advisory cycle",
+      "passed": true,
+      "verdict": "PASS"
+    },
+    {
+      "id": "XS-05",
+      "agents": "25",
+      "exportName": "runOp10mAssemblyRegistrySelfTests",
+      "description": "Operation 10M assembly registry",
+      "passed": true,
+      "verdict": "PASS"
+    }
+  ],
+  "note": "Static scan only; post-promote execution tracked in docs/cross-system-test-plan.md"
+}
