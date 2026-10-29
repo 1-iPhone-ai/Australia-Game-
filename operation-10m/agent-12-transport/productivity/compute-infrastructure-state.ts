@@ -363,6 +363,23 @@ import {
   nationalSmartBorderPreclearanceThroughputIndex,
   smartBorderPreclearanceProductivityMultiplier,
 } from './smart-border-preclearance-index.ts';
+import {
+  computeSustainableAviationFuelSupplyByRegion,
+  nationalSustainableAviationFuelSupplyIndex,
+  sustainableAviationFuelSupplyProductivityMultiplier,
+} from '../network/sustainable-aviation-fuel-supply-index.ts';
+import {
+  computeOutbackDieselSecurityByRegion,
+  computeOutbackDieselSecurityShare,
+  nationalOutbackDieselSecurityIndex,
+  outbackDieselSecurityProductivityMultiplier,
+} from '../operations/outback-diesel-security-logistics-index.ts';
+import {
+  computeRailDoubleStackContainerShare,
+  computeRailDoubleStackContainerThroughputByRegion,
+  nationalRailDoubleStackContainerThroughputIndex,
+  railDoubleStackContainerProductivityMultiplier,
+} from './rail-double-stack-container-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1234,6 +1251,34 @@ export function computeTransportInfrastructureState(
     smartBorderPreclearanceShare,
     options?.smartBorderPreclearancePolicy ?? 'baseline',
   );
+  const sustainableAviationFuelSupplyByRegion = computeSustainableAviationFuelSupplyByRegion(ops);
+  const nationalSafSupply = nationalSustainableAviationFuelSupplyIndex(sustainableAviationFuelSupplyByRegion);
+  const safMult = sustainableAviationFuelSupplyProductivityMultiplier(
+    nationalSafSupply,
+    options?.sustainableAviationFuelSupplyPolicy ?? 'baseline',
+  );
+  const outbackDieselSecurityByRegion = computeOutbackDieselSecurityByRegion(ops, networkStress);
+  const nationalOutbackDiesel = nationalOutbackDieselSecurityIndex(outbackDieselSecurityByRegion);
+  const outbackDieselSecurityShare = computeOutbackDieselSecurityShare(
+    ops,
+    options?.outbackDieselSecurityPolicy ?? 'baseline',
+  );
+  const outbackDieselMult = outbackDieselSecurityProductivityMultiplier(
+    outbackDieselSecurityShare,
+    options?.outbackDieselSecurityPolicy ?? 'baseline',
+  );
+  const railDoubleStackContainerThroughputByRegion = computeRailDoubleStackContainerThroughputByRegion(ops);
+  const nationalRailDoubleStack = nationalRailDoubleStackContainerThroughputIndex(
+    railDoubleStackContainerThroughputByRegion,
+  );
+  const railDoubleStackContainerShare = computeRailDoubleStackContainerShare(
+    ops,
+    options?.railDoubleStackContainerPolicy ?? 'baseline',
+  );
+  const doubleStackMult = railDoubleStackContainerProductivityMultiplier(
+    railDoubleStackContainerShare,
+    options?.railDoubleStackContainerPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1263,6 +1308,9 @@ export function computeTransportInfrastructureState(
     const methanolBoost = (methanolBunkeringExportByRegion[code] - 5) * 0.0041;
     const antarcticBoost = (antarcticResupplyLogisticsByRegion[code] - 6) * 0.0037;
     const smartBorderBoost = (smartBorderPreclearanceThroughputByRegion[code] - 2) * 0.0036;
+    const safBoost = (sustainableAviationFuelSupplyByRegion[code] - 4) * 0.004;
+    const outbackDieselBoost = (outbackDieselSecurityByRegion[code] - 5) * 0.0038;
+    const doubleStackBoost = (railDoubleStackContainerThroughputByRegion[code] - 1.8) * 0.0035;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1291,7 +1339,10 @@ export function computeTransportInfrastructureState(
         nightFreightBoost +
         methanolBoost +
         antarcticBoost +
-        smartBorderBoost) *
+        smartBorderBoost +
+        safBoost +
+        outbackDieselBoost +
+        doubleStackBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1318,7 +1369,10 @@ export function computeTransportInfrastructureState(
       nightFreightMult *
       methanolMult *
       antarcticMult *
-      smartBorderMult;
+      smartBorderMult *
+      safMult *
+      outbackDieselMult *
+      doubleStackMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1368,7 +1422,10 @@ export function computeTransportInfrastructureState(
     nationalNightUrbanFreight * 0.006 +
     nationalMethanolBunkering * 0.006 +
     nationalAntarcticResupply * 0.005 +
-    nationalSmartBorderPreclearance * 0.005;
+    nationalSmartBorderPreclearance * 0.005 +
+    nationalSafSupply * 0.005 +
+    nationalOutbackDiesel * 0.005 +
+    nationalRailDoubleStack * 0.004;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1383,7 +1440,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/25',
+    schemaVersion: 'agent12/26',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1549,6 +1606,14 @@ export function computeTransportInfrastructureState(
     smartBorderPreclearanceShare,
     nationalSmartBorderPreclearanceThroughputIndex: nationalSmartBorderPreclearance,
     smartBorderPreclearanceThroughputByRegion,
+    nationalSustainableAviationFuelSupplyIndex: nationalSafSupply,
+    sustainableAviationFuelSupplyByRegion,
+    outbackDieselSecurityShare,
+    nationalOutbackDieselSecurityIndex: nationalOutbackDiesel,
+    outbackDieselSecurityByRegion,
+    railDoubleStackContainerShare,
+    nationalRailDoubleStackContainerThroughputIndex: nationalRailDoubleStack,
+    railDoubleStackContainerThroughputByRegion,
     computeMs,
   };
 }

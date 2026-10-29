@@ -297,8 +297,14 @@ export type AntarcticResupplyLogisticsPolicy = 'baseline' | 'surge';
 
 export type SmartBorderPreclearancePolicy = 'baseline' | 'deploy';
 
+export type SustainableAviationFuelSupplyPolicy = 'baseline' | 'expand';
+
+export type OutbackDieselSecurityPolicy = 'baseline' | 'harden';
+
+export type RailDoubleStackContainerPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/25';
+  schemaVersion: 'agent12/26';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -464,6 +470,14 @@ export interface TransportInfrastructureState {
   smartBorderPreclearanceShare: number;
   nationalSmartBorderPreclearanceThroughputIndex: number;
   smartBorderPreclearanceThroughputByRegion: Record<AuRegionCode, number>;
+  nationalSustainableAviationFuelSupplyIndex: number;
+  sustainableAviationFuelSupplyByRegion: Record<AuRegionCode, number>;
+  outbackDieselSecurityShare: number;
+  nationalOutbackDieselSecurityIndex: number;
+  outbackDieselSecurityByRegion: Record<AuRegionCode, number>;
+  railDoubleStackContainerShare: number;
+  nationalRailDoubleStackContainerThroughputIndex: number;
+  railDoubleStackContainerThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -529,6 +543,9 @@ export interface TransportInfrastructureOptions {
   methanolBunkeringExportPolicy?: MethanolBunkeringExportPolicy;
   antarcticResupplyLogisticsPolicy?: AntarcticResupplyLogisticsPolicy;
   smartBorderPreclearancePolicy?: SmartBorderPreclearancePolicy;
+  sustainableAviationFuelSupplyPolicy?: SustainableAviationFuelSupplyPolicy;
+  outbackDieselSecurityPolicy?: OutbackDieselSecurityPolicy;
+  railDoubleStackContainerPolicy?: RailDoubleStackContainerPolicy;
 }
 
 export interface V94ProjectSnapshot {

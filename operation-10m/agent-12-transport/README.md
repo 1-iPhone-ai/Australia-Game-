@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 25
+
+- Schema **`agent12/26`**: sustainable aviation fuel supply throughput, outback diesel security readiness, rail double-stack container share (`sustainableAviationFuelSupplyPolicy`, `outbackDieselSecurityPolicy`, `railDoubleStackContainerPolicy`)
+- Catalog: **354** assets, **89** corridors, **143** scenarios
+- Systems: `network/sustainable-aviation-fuel-supply-index.ts`, `operations/outback-diesel-security-logistics-index.ts`, `productivity/rail-double-stack-container-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 24
 
 - Schema **`agent12/25`**: methanol bunkering export throughput, Antarctic resupply logistics readiness, smart border preclearance share (`methanolBunkeringExportPolicy`, `antarcticResupplyLogisticsPolicy`, `smartBorderPreclearancePolicy`)

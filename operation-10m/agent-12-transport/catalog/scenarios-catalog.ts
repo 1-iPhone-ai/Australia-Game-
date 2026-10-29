@@ -22,6 +22,7 @@ import { TRANSPORT_SCENARIOS_ROUND21 } from './scenarios-round21.ts';
 import { TRANSPORT_SCENARIOS_ROUND22 } from './scenarios-round22.ts';
 import { TRANSPORT_SCENARIOS_ROUND23 } from './scenarios-round23.ts';
 import { TRANSPORT_SCENARIOS_ROUND24 } from './scenarios-round24.ts';
+import { TRANSPORT_SCENARIOS_ROUND25 } from './scenarios-round25.ts';
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
 export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
@@ -206,6 +207,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND22,
   ...TRANSPORT_SCENARIOS_ROUND23,
   ...TRANSPORT_SCENARIOS_ROUND24,
+  ...TRANSPORT_SCENARIOS_ROUND25,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {

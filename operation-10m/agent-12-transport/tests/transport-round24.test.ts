@@ -37,13 +37,13 @@ describe('Agent 12 round 24 catalog', () => {
 });
 
 describe('Agent 12 round 24 systems', () => {
-  it('returns agent12/25 with methanol bunkering, Antarctic resupply, smart border', () => {
+  it('returns agent12/26 with methanol bunkering, Antarctic resupply, smart border', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(210), {
       methanolBunkeringExportPolicy: 'accelerate',
       antarcticResupplyLogisticsPolicy: 'surge',
       smartBorderPreclearancePolicy: 'deploy',
     });
-    assert.equal(state.schemaVersion, 'agent12/25');
+    assert.equal(state.schemaVersion, 'agent12/26');
     assert.ok(state.nationalMethanolBunkeringExportIndex >= 5);
     assert.ok(state.nationalAntarcticResupplyLogisticsIndex >= 6);
     assert.ok(state.smartBorderPreclearanceShare >= 0.03);

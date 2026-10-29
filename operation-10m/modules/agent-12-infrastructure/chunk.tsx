@@ -301,8 +301,14 @@ export type AntarcticResupplyLogisticsPolicy = 'baseline' | 'surge';
 
 export type SmartBorderPreclearancePolicy = 'baseline' | 'deploy';
 
+export type SustainableAviationFuelSupplyPolicy = 'baseline' | 'expand';
+
+export type OutbackDieselSecurityPolicy = 'baseline' | 'harden';
+
+export type RailDoubleStackContainerPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/25';
+  schemaVersion: 'agent12/26';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -468,6 +474,14 @@ export interface TransportInfrastructureState {
   smartBorderPreclearanceShare: number;
   nationalSmartBorderPreclearanceThroughputIndex: number;
   smartBorderPreclearanceThroughputByRegion: Record<AuRegionCode, number>;
+  nationalSustainableAviationFuelSupplyIndex: number;
+  sustainableAviationFuelSupplyByRegion: Record<AuRegionCode, number>;
+  outbackDieselSecurityShare: number;
+  nationalOutbackDieselSecurityIndex: number;
+  outbackDieselSecurityByRegion: Record<AuRegionCode, number>;
+  railDoubleStackContainerShare: number;
+  nationalRailDoubleStackContainerThroughputIndex: number;
+  railDoubleStackContainerThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -533,6 +547,9 @@ export interface TransportInfrastructureOptions {
   methanolBunkeringExportPolicy?: MethanolBunkeringExportPolicy;
   antarcticResupplyLogisticsPolicy?: AntarcticResupplyLogisticsPolicy;
   smartBorderPreclearancePolicy?: SmartBorderPreclearancePolicy;
+  sustainableAviationFuelSupplyPolicy?: SustainableAviationFuelSupplyPolicy;
+  outbackDieselSecurityPolicy?: OutbackDieselSecurityPolicy;
+  railDoubleStackContainerPolicy?: RailDoubleStackContainerPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1600,6 +1617,48 @@ export const TRANSPORT_CORRIDORS_ROUND24: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round25.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND25: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_qld_nsw_saf_blending',
+    name: 'QLD–NSW SAF Blending',
+    networkKind: 'mobility',
+    regionSequence: ['QLD', 'NSW'],
+    requiredTagsByRegion: {
+      QLD: ['saf_blending', 'sustainable_aviation_fuel', 'airport_fuel_hub'],
+      NSW: ['saf_blending', 'sustainable_aviation_fuel', 'airport_fuel_hub'],
+    },
+    productivitySynergyPoints: 5.9,
+    logisticsRelief: 0.033,
+  },
+  {
+    id: 'corr_nt_wa_outback_diesel',
+    name: 'NT–WA Outback Diesel',
+    networkKind: 'freight',
+    regionSequence: ['NT', 'WA'],
+    requiredTagsByRegion: {
+      NT: ['outback_diesel', 'remote_fuel_security', 'haul_road_supply'],
+      WA: ['outback_diesel', 'remote_fuel_security', 'haul_road_supply'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.035,
+  },
+  {
+    id: 'corr_nsw_vic_double_stack_rail',
+    name: 'NSW–VIC Double-Stack Rail',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['double_stack', 'container_rail_duplication', 'clearance_gauge'],
+      VIC: ['double_stack', 'container_rail_duplication', 'clearance_gauge'],
+    },
+    productivitySynergyPoints: 6.0,
+    logisticsRelief: 0.034,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1771,6 +1830,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND22,
   ...TRANSPORT_CORRIDORS_ROUND23,
   ...TRANSPORT_CORRIDORS_ROUND24,
+  ...TRANSPORT_CORRIDORS_ROUND25,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -3147,6 +3207,62 @@ export const TRANSPORT_SCENARIOS_ROUND24: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round25.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND25: TransportStressScenario[] = [
+  {
+    id: 'scn_qld_saf_blending_rush',
+    label: 'Queensland SAF Blending Rush',
+    description: 'Mandated SAF uptake overloads Brisbane blending terminals.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_saf_airport_surge',
+    label: 'NSW SAF Airport Surge',
+    description: 'Holiday peak strains Mascot fuel hub road feeds.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'mobility',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_nt_outback_diesel_convoy',
+    label: 'NT Outback Diesel Convoy',
+    description: 'Fuel convoy surge on Tanami haul-road supply chain.',
+    targetRegions: ['NT', 'WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.25,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_wa_haul_road_fuel_shortage',
+    label: 'WA Haul Road Fuel Shortage',
+    description: 'Pilbara heatwave cuts Great Northern diesel staging.',
+    targetRegions: ['WA', 'NT'],
+    networkKind: 'freight',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road', 'port'],
+  },
+  {
+    id: 'scn_vic_double_stack_clearance_hold',
+    label: 'Victoria Double-Stack Clearance Hold',
+    description: 'Gauge inspection holds Albury double-stack slots.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['rail', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -3332,6 +3448,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND22,
   ...TRANSPORT_SCENARIOS_ROUND23,
   ...TRANSPORT_SCENARIOS_ROUND24,
+  ...TRANSPORT_SCENARIOS_ROUND25,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -9536,6 +9653,233 @@ export const SCALE_WAVE_ROUND24_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round25-assets.ts ---
+
+export const ROUND25_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_qld_brisbane_saf_feed',
+    category: 'road',
+    name: 'Brisbane SAF Blending Feed',
+    description: 'Airport sustainable aviation fuel road distribution.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['mobility', 'trade'],
+    tags: ['saf_blending', 'sustainable_aviation_fuel', 'airport_fuel_hub'],
+    laneKilometres: 26,
+    designSpeedKmh: 88,
+    freightShare: 0.29,
+    urbanShare: 0.38,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_mascot_saf_spine',
+    category: 'road',
+    name: 'Mascot SAF Spine',
+    description: 'Sydney airport fuel hub preclear road link.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['mobility'],
+    tags: ['saf_blending', 'sustainable_aviation_fuel', 'airport_fuel_hub'],
+    laneKilometres: 18,
+    designSpeedKmh: 82,
+    freightShare: 0.31,
+    urbanShare: 0.46,
+    tollRoad: true,
+  },
+  {
+    id: 'road_nt_tanami_diesel_haul',
+    category: 'road',
+    name: 'Tanami Diesel Haul Road',
+    description: 'Remote fuel security on NT outback supply chain.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight'],
+    tags: ['outback_diesel', 'remote_fuel_security', 'haul_road_supply'],
+    laneKilometres: 88,
+    designSpeedKmh: 95,
+    freightShare: 0.52,
+    urbanShare: 0.01,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_great_northern_fuel',
+    category: 'road',
+    name: 'Great Northern Fuel Haul',
+    description: 'WA haul-road diesel resupply to remote corridors.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NT'],
+    baseProductivityPoints: 4.3,
+    strategicNetworks: ['freight'],
+    tags: ['outback_diesel', 'remote_fuel_security', 'haul_road_supply'],
+    laneKilometres: 76,
+    designSpeedKmh: 92,
+    freightShare: 0.48,
+    urbanShare: 0.02,
+    tollRoad: false,
+  },
+];
+
+export const ROUND25_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_nsw_sydney_double_stack',
+    category: 'rail',
+    name: 'Sydney Double-Stack Container Rail',
+    description: 'Clearance-gauge container rail duplication.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['double_stack', 'container_rail_duplication', 'clearance_gauge'],
+    trackKilometres: 58,
+    dualTrackShare: 0.62,
+    electrifiedShare: 0.71,
+    designFreightTonnesPerYear: 5_600_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_vic_albury_double_stack',
+    category: 'rail',
+    name: 'Albury Double-Stack Link',
+    description: 'Melbourne–Sydney double-stack intermodal spine.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['freight'],
+    tags: ['double_stack', 'container_rail_duplication', 'clearance_gauge'],
+    trackKilometres: 44,
+    dualTrackShare: 0.55,
+    electrifiedShare: 0.68,
+    designFreightTonnesPerYear: 4_900_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nt_alice_diesel_supply',
+    category: 'rail',
+    name: 'Alice Diesel Supply Rail',
+    description: 'Outback diesel tank train staging to haul roads.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['freight'],
+    tags: ['outback_diesel', 'remote_fuel_security', 'haul_road_supply'],
+    trackKilometres: 36,
+    dualTrackShare: 0.28,
+    electrifiedShare: 0.05,
+    designFreightTonnesPerYear: 2_200_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND25_PORTS: PortAsset[] = [
+  {
+    id: 'port_qld_brisbane_saf_terminal',
+    category: 'port',
+    name: 'Brisbane SAF Blending Terminal',
+    description: 'Queensland airport sustainable aviation fuel hub.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['trade', 'mobility'],
+    tags: ['saf_blending', 'sustainable_aviation_fuel', 'airport_fuel_hub'],
+    berthCount: 2,
+    maxDraftMetres: 11.5,
+    teuCapacityPerYear: 240_000,
+    automationLevel: 1,
+    bulkShare: 0.28,
+  },
+  {
+    id: 'port_nsw_botany_saf_hub',
+    category: 'port',
+    name: 'Botany SAF Hub',
+    description: 'NSW sustainable aviation fuel import and blending.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['trade'],
+    tags: ['saf_blending', 'sustainable_aviation_fuel', 'airport_fuel_hub'],
+    berthCount: 2,
+    maxDraftMetres: 12.8,
+    teuCapacityPerYear: 280_000,
+    automationLevel: 2,
+    bulkShare: 0.22,
+  },
+  {
+    id: 'port_wa_dampier_diesel_staging',
+    category: 'port',
+    name: 'Dampier Diesel Staging',
+    description: 'Bulk diesel staging for Pilbara haul-road security.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'NT'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['freight'],
+    tags: ['outback_diesel', 'remote_fuel_security', 'haul_road_supply', 'bulk'],
+    berthCount: 2,
+    maxDraftMetres: 13.2,
+    teuCapacityPerYear: 90_000,
+    automationLevel: 1,
+    bulkShare: 0.62,
+  },
+];
+
+export const ROUND25_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_nsw_enfield_double_stack_yard',
+    category: 'logistics',
+    name: 'Enfield Double-Stack Yard',
+    description: 'NSW container rail duplication intermodal yard.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['freight'],
+    tags: ['double_stack', 'container_rail_duplication', 'clearance_gauge'],
+    warehouseSqm: 74_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 58,
+  },
+  {
+    id: 'log_vic_somerton_double_stack',
+    category: 'logistics',
+    name: 'Somerton Double-Stack DC',
+    description: 'Melbourne clearance-gauge container staging.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['freight'],
+    tags: ['double_stack', 'container_rail_duplication', 'clearance_gauge'],
+    warehouseSqm: 66_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 63,
+  },
+  {
+    id: 'log_nt_alice_diesel_depot',
+    category: 'logistics',
+    name: 'Alice Diesel Security Depot',
+    description: 'Central outback diesel buffer and haul-road resupply.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'WA'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight'],
+    tags: ['outback_diesel', 'remote_fuel_security', 'haul_road_supply'],
+    warehouseSqm: 48_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 34,
+  },
+];
+
+export const SCALE_WAVE_ROUND25_ASSETS = [
+  ...ROUND25_ROADS,
+  ...ROUND25_RAIL,
+  ...ROUND25_PORTS,
+  ...ROUND25_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -9568,6 +9912,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND22_ASSETS,
     ...SCALE_WAVE_ROUND23_ASSETS,
     ...SCALE_WAVE_ROUND24_ASSETS,
+    ...SCALE_WAVE_ROUND25_ASSETS,
   ];
 }
 
@@ -10905,6 +11250,64 @@ export function methanolBunkeringExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.042 : 0;
   const normalized = (index - 6) / 100;
   return clamp(1 + normalized * 0.048 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/sustainable-aviation-fuel-supply-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type SustainableAviationFuelSupplyPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 SAF blending and airport fuel hub throughput by region. */
+export function computeSustainableAviationFuelSupplyByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'saf_blending' || t === 'sustainable_aviation_fuel' || t === 'airport_fuel_hub',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.4 + asset.teuCapacityPerYear / 420_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 85_000 + asset.intermodalLinks.length * 0.75;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 520;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 12_000_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalSustainableAviationFuelSupplyIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.47 + max * 0.53, 5, 74) * 10) / 10;
+}
+
+export function sustainableAviationFuelSupplyProductivityMultiplier(
+  index: number,
+  policy: SustainableAviationFuelSupplyPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'expand' ? 0.041 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.047 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -12473,6 +12876,91 @@ export function antarcticResupplyLogisticsProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.023 : 1;
   return (1 + (share - 0.046) * 0.032) * bias;
+}
+
+
+// --- source: operations/outback-diesel-security-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type OutbackDieselSecurityPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 outback diesel security and remote haul-road supply readiness by region. */
+export function computeOutbackDieselSecurityByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 4])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'outback_diesel' || t === 'remote_fuel_security' || t === 'haul_road_supply',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 82_000 + (asset.coldChainCapable ? 0.6 : 1.2);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 480;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 14_500_000;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.1 + asset.bulkShare * 3.2;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.04 - stress * 0.031), 4, 80) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalOutbackDieselSecurityIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 5, 78) * 10) / 10;
+}
+
+export function computeOutbackDieselSecurityShare(
+  operationalAssets: TransportAsset[],
+  policy: OutbackDieselSecurityPolicy = 'baseline',
+): number {
+  let securedUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('remote_fuel_security') || asset.tags.includes('outback_diesel')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 75_000;
+        securedUnits += asset.warehouseSqm / 75_000 * 0.64;
+      }
+      if (asset.category === 'road') {
+        totalUnits += asset.laneKilometres / 400;
+        securedUnits += asset.laneKilometres / 400 * 0.55;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.032;
+  const policyBoost = policy === 'harden' ? 0.031 : 0;
+  return Math.round(clamp(securedUnits / totalUnits + policyBoost, 0.031, 0.29) * 1000) / 1000;
+}
+
+export function outbackDieselSecurityProductivityMultiplier(
+  share: number,
+  policy: OutbackDieselSecurityPolicy,
+): number {
+  const bias = policy === 'harden' ? 1.021 : 1;
+  return (1 + (share - 0.048) * 0.03) * bias;
 }
 
 
@@ -14278,6 +14766,92 @@ export function nationalSmartBorderPreclearanceThroughputIndex(
 }
 
 
+// --- source: productivity/rail-double-stack-container-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RailDoubleStackContainerPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of container rail using double-stack clearance gauge. */
+export function computeRailDoubleStackContainerShare(
+  operationalAssets: TransportAsset[],
+  policy: RailDoubleStackContainerPolicy = 'baseline',
+): number {
+  let stackUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'double_stack' || t === 'container_rail_duplication' || t === 'clearance_gauge',
+      )
+    ) {
+      if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+        totalUnits += asset.designFreightTonnesPerYear / 8_500_000;
+        stackUnits += (asset.designFreightTonnesPerYear / 8_500_000) * 0.61;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 58_000;
+        stackUnits += (asset.warehouseSqm / 58_000) * 0.58;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.034;
+  const policyBoost = policy === 'deploy' ? 0.032 : 0;
+  return Math.round(clamp(stackUnits / totalUnits + policyBoost, 0.033, 0.32) * 1000) / 1000;
+}
+
+export function railDoubleStackContainerProductivityMultiplier(
+  share: number,
+  policy: RailDoubleStackContainerPolicy,
+): number {
+  const bias = policy === 'deploy' ? 1.023 : 1;
+  return (1 + (share - 0.052) * 0.032) * bias;
+}
+
+export function computeRailDoubleStackContainerThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'double_stack' || t === 'container_rail_duplication' || t === 'clearance_gauge',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 9_200_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 70_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 450;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRailDoubleStackContainerThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.49 + max * 0.51, 1.8, 52) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -14739,6 +15313,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalSmartBorderPreclearanceThroughputIndex,
   smartBorderPreclearanceProductivityMultiplier,
 } from './smart-border-preclearance-index.ts';
+  computeSustainableAviationFuelSupplyByRegion,
+  nationalSustainableAviationFuelSupplyIndex,
+  sustainableAviationFuelSupplyProductivityMultiplier,
+} from '../network/sustainable-aviation-fuel-supply-index.ts';
+  computeOutbackDieselSecurityByRegion,
+  computeOutbackDieselSecurityShare,
+  nationalOutbackDieselSecurityIndex,
+  outbackDieselSecurityProductivityMultiplier,
+} from '../operations/outback-diesel-security-logistics-index.ts';
+  computeRailDoubleStackContainerShare,
+  computeRailDoubleStackContainerThroughputByRegion,
+  nationalRailDoubleStackContainerThroughputIndex,
+  railDoubleStackContainerProductivityMultiplier,
+} from './rail-double-stack-container-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -15609,6 +16197,34 @@ export function computeTransportInfrastructureState(
     smartBorderPreclearanceShare,
     options?.smartBorderPreclearancePolicy ?? 'baseline',
   );
+  const sustainableAviationFuelSupplyByRegion = computeSustainableAviationFuelSupplyByRegion(ops);
+  const nationalSafSupply = nationalSustainableAviationFuelSupplyIndex(sustainableAviationFuelSupplyByRegion);
+  const safMult = sustainableAviationFuelSupplyProductivityMultiplier(
+    nationalSafSupply,
+    options?.sustainableAviationFuelSupplyPolicy ?? 'baseline',
+  );
+  const outbackDieselSecurityByRegion = computeOutbackDieselSecurityByRegion(ops, networkStress);
+  const nationalOutbackDiesel = nationalOutbackDieselSecurityIndex(outbackDieselSecurityByRegion);
+  const outbackDieselSecurityShare = computeOutbackDieselSecurityShare(
+    ops,
+    options?.outbackDieselSecurityPolicy ?? 'baseline',
+  );
+  const outbackDieselMult = outbackDieselSecurityProductivityMultiplier(
+    outbackDieselSecurityShare,
+    options?.outbackDieselSecurityPolicy ?? 'baseline',
+  );
+  const railDoubleStackContainerThroughputByRegion = computeRailDoubleStackContainerThroughputByRegion(ops);
+  const nationalRailDoubleStack = nationalRailDoubleStackContainerThroughputIndex(
+    railDoubleStackContainerThroughputByRegion,
+  );
+  const railDoubleStackContainerShare = computeRailDoubleStackContainerShare(
+    ops,
+    options?.railDoubleStackContainerPolicy ?? 'baseline',
+  );
+  const doubleStackMult = railDoubleStackContainerProductivityMultiplier(
+    railDoubleStackContainerShare,
+    options?.railDoubleStackContainerPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -15638,6 +16254,9 @@ export function computeTransportInfrastructureState(
     const methanolBoost = (methanolBunkeringExportByRegion[code] - 5) * 0.0041;
     const antarcticBoost = (antarcticResupplyLogisticsByRegion[code] - 6) * 0.0037;
     const smartBorderBoost = (smartBorderPreclearanceThroughputByRegion[code] - 2) * 0.0036;
+    const safBoost = (sustainableAviationFuelSupplyByRegion[code] - 4) * 0.004;
+    const outbackDieselBoost = (outbackDieselSecurityByRegion[code] - 5) * 0.0038;
+    const doubleStackBoost = (railDoubleStackContainerThroughputByRegion[code] - 1.8) * 0.0035;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -15666,7 +16285,10 @@ export function computeTransportInfrastructureState(
         nightFreightBoost +
         methanolBoost +
         antarcticBoost +
-        smartBorderBoost) *
+        smartBorderBoost +
+        safBoost +
+        outbackDieselBoost +
+        doubleStackBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -15693,7 +16315,10 @@ export function computeTransportInfrastructureState(
       nightFreightMult *
       methanolMult *
       antarcticMult *
-      smartBorderMult;
+      smartBorderMult *
+      safMult *
+      outbackDieselMult *
+      doubleStackMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -15743,7 +16368,10 @@ export function computeTransportInfrastructureState(
     nationalNightUrbanFreight * 0.006 +
     nationalMethanolBunkering * 0.006 +
     nationalAntarcticResupply * 0.005 +
-    nationalSmartBorderPreclearance * 0.005;
+    nationalSmartBorderPreclearance * 0.005 +
+    nationalSafSupply * 0.005 +
+    nationalOutbackDiesel * 0.005 +
+    nationalRailDoubleStack * 0.004;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -15758,7 +16386,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/25',
+    schemaVersion: 'agent12/26',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -15924,6 +16552,14 @@ export function computeTransportInfrastructureState(
     smartBorderPreclearanceShare,
     nationalSmartBorderPreclearanceThroughputIndex: nationalSmartBorderPreclearance,
     smartBorderPreclearanceThroughputByRegion,
+    nationalSustainableAviationFuelSupplyIndex: nationalSafSupply,
+    sustainableAviationFuelSupplyByRegion,
+    outbackDieselSecurityShare,
+    nationalOutbackDieselSecurityIndex: nationalOutbackDiesel,
+    outbackDieselSecurityByRegion,
+    railDoubleStackContainerShare,
+    nationalRailDoubleStackContainerThroughputIndex: nationalRailDoubleStack,
+    railDoubleStackContainerThroughputByRegion,
     computeMs,
   };
 }
@@ -16006,7 +16642,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/25' &&
+      infra.schemaVersion === 'agent12/26' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -16088,8 +16724,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalMethanolBunkeringExportIndex >= 5 &&
       infra.nationalAntarcticResupplyLogisticsIndex >= 6 &&
       infra.smartBorderPreclearanceShare >= 0.03 &&
-      infra.nationalSmartBorderPreclearanceThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} methanol=${infra.nationalMethanolBunkeringExportIndex.toFixed(1)} antarctic=${infra.nationalAntarcticResupplyLogisticsIndex.toFixed(1)} preclear=${infra.nationalSmartBorderPreclearanceThroughputIndex.toFixed(1)}`,
+      infra.nationalSmartBorderPreclearanceThroughputIndex >= 2 &&
+      infra.nationalSustainableAviationFuelSupplyIndex >= 5 &&
+      infra.nationalOutbackDieselSecurityIndex >= 5 &&
+      infra.railDoubleStackContainerShare >= 0.03 &&
+      infra.nationalRailDoubleStackContainerThroughputIndex >= 1.8,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} saf=${infra.nationalSustainableAviationFuelSupplyIndex.toFixed(1)} diesel=${infra.nationalOutbackDieselSecurityIndex.toFixed(1)} stack=${infra.nationalRailDoubleStackContainerThroughputIndex.toFixed(1)}`,
   });
 
   return results;
