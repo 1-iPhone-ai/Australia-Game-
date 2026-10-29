@@ -351,3 +351,42 @@ test('round 7: stressed FX index below healthy baseline', () => {
   });
   assert.ok(stressed.state.foreignExchange.pressureIndex <= supportive.state.foreignExchange.pressureIndex + 0.02);
 });
+
+test('round 8: trade de-escalation and export capacity on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.deescalationMomentumSmoothing = 0.62;
+  persisted.exportCapacitySmoothing = 0.88;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 33,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 140 } } },
+    persisted,
+  });
+  assert.ok(r.state.tradeDeescalation);
+  assert.ok(['stalled', 'thawing', 'warming', 'breakthrough'].includes(r.state.tradeDeescalation.band));
+  assert.ok(r.state.exportCapacity);
+  assert.ok(['slack', 'balanced', 'tight', 'saturated'].includes(r.state.exportCapacity.band));
+  assert.ok(r.persisted.deescalationMomentumSmoothing != null);
+  assert.ok(r.persisted.exportCapacitySmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Trade de-escalation/i.test(n)));
+  assert.ok(notes.some(n => /Export capacity/i.test(n)));
+});
+
+test('round 8: saturated capacity reduces export throughput vs slack baseline', () => {
+  const slack = advanceGlobalTradeEconomyTurn({
+    turn: 34,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 60 } } },
+    persisted: createEmptyGTELPersisted(),
+  });
+  let persisted = createEmptyGTELPersisted();
+  persisted.exportCapacitySmoothing = 0.96;
+  const tight = advanceGlobalTradeEconomyTurn({
+    turn: 34,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 200 } } },
+    persisted,
+  });
+  assert.ok(tight.state.exportCapacity.utilization >= slack.state.exportCapacity.utilization - 0.02);
+});

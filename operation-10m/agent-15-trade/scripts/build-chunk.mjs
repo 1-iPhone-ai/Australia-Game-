@@ -37,6 +37,8 @@ const FILES = [
   'supply-chain-resilience.ts',
   'foreign-exchange-pressure.ts',
   'trade-retaliation.ts',
+  'trade-deescalation.ts',
+  'export-capacity-allocation.ts',
   'domestic-consequences.ts',
   'household-bridge.ts',
   'trade-turn.ts',

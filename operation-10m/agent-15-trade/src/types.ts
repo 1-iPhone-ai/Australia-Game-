@@ -130,6 +130,10 @@ export interface GTELPersisted {
   foreignExchangeSmoothing?: number;
   /** Smoothed retaliation intensity (0–1). */
   retaliationPressureSmoothing?: number;
+  /** Smoothed diplomatic de-escalation momentum (0–1). */
+  deescalationMomentumSmoothing?: number;
+  /** Smoothed export capacity utilisation (0–1). */
+  exportCapacitySmoothing?: number;
 }
 
 export interface GTELState {
@@ -157,6 +161,8 @@ export interface GTELState {
   supplyChainResilience: GTELSupplyChainResilienceSnapshot;
   foreignExchange: GTELForeignExchangeSnapshot;
   tradeRetaliation: GTELTradeRetaliationSnapshot;
+  tradeDeescalation: GTELTradeDeescalationSnapshot;
+  exportCapacity: GTELExportCapacitySnapshot;
   inputHash: string;
 }
 
@@ -421,6 +427,26 @@ export interface GTELTradeRetaliationSnapshot {
   band: GTELTradeRetaliationBand;
   activeMeasureCount: number;
   targetedPartnerIds: GTELPartnerId[];
+  summary: string;
+}
+
+export type GTELTradeDeescalationBand = 'stalled' | 'thawing' | 'warming' | 'breakthrough';
+
+export interface GTELTradeDeescalationSnapshot {
+  momentum: number;
+  band: GTELTradeDeescalationBand;
+  coolingPartnerIds: GTELPartnerId[];
+  retaliationAttenuation: number;
+  summary: string;
+}
+
+export type GTELExportCapacityBand = 'slack' | 'balanced' | 'tight' | 'saturated';
+
+export interface GTELExportCapacitySnapshot {
+  utilization: number;
+  band: GTELExportCapacityBand;
+  allocationEfficiency: number;
+  priorityCommodities: GTELCommodityId[];
   summary: string;
 }
 

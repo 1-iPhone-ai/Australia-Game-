@@ -31,6 +31,11 @@ import {
   computeTradeRetaliationSnapshot,
   deriveRetaliationPartnerModifiers,
 } from './trade-retaliation.ts';
+import {
+  computeTradeDeescalationSnapshot,
+  deriveDeescalationPartnerModifiers,
+} from './trade-deescalation.ts';
+import { computeExportCapacitySnapshot, exportCapacityExportScale } from './export-capacity-allocation.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
   validateScenarioShockCatalog,
@@ -523,6 +528,77 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     );
     const mods = deriveRetaliationPartnerModifiers(step.snapshot);
     gtelAssert(mods.domesticStress > 0, 'expected retaliation domestic stress');
+  });
+
+  ok('trade de-escalation warms with summit pulse and compliance', () => {
+    const retaliation = computeTradeRetaliationSnapshot({
+      openDisputeCount: 1,
+      activeSanctionCount: 0,
+      engagement: { tracks: {}, summitPulse: 0.2, summary: 'test' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const cold = computeTradeDeescalationSnapshot({
+      openDisputeCount: 2,
+      engagement: { tracks: {}, summitPulse: 0.15, summary: 'test' },
+      tradeRetaliation: retaliation,
+      complianceScore: 0.5,
+      persisted: createEmptyGTELPersisted(),
+    });
+    const warm = computeTradeDeescalationSnapshot({
+      openDisputeCount: 0,
+      engagement: {
+        tracks: { asia_pacific: { partnerId: 'asia_pacific', momentum: 0.78, band: 'breakthrough', lastEventTurn: 1, highlights: [] } },
+        summitPulse: 0.82,
+        summary: 'test',
+      },
+      tradeRetaliation: retaliation,
+      complianceScore: 0.82,
+      persisted: createEmptyGTELPersisted(),
+    });
+    gtelAssert(warm.snapshot.momentum > cold.snapshot.momentum, 'expected warmer de-escalation');
+    const mods = deriveDeescalationPartnerModifiers(warm.snapshot);
+    gtelAssert(mods.domesticStressRelief >= 0, 'relief non-negative');
+  });
+
+  ok('export capacity tightens throughput scale when saturated', () => {
+    const commodities = GTEL_COMMODITIES.map(commodity => ({
+      commodity,
+      baseIndex: 100,
+      partnerModifier: 0,
+      diplomacyModifier: 0,
+      networkModifier: 0,
+      shockModifier: 0,
+      agreementModifier: 0,
+      effectiveIndex: 112,
+      trend: 'rising' as const,
+      evidence: ['test'],
+    }));
+    const partners = GTEL_PARTNER_DEFS.map(p => ({ ...p, access: 'preferred' as const, accessScore: 0.82 }));
+    const logistics = {
+      band: 'congested' as const,
+      freightPressure: 0.82,
+      redundancyScore: 0.35,
+      effectiveExportThroughput: 150,
+      networkStrain: 0.78,
+      summary: 'test',
+    };
+    const step = computeExportCapacitySnapshot({
+      commodities,
+      partners,
+      logistics,
+      termsOfTrade: { index: 0.94, band: 'unfavorable', exportBasketIndex: 96, importBasketIndex: 104, summary: 'test' },
+      marketDiversification: {
+        concentrationIndex: 0.72,
+        band: 'concentrated',
+        dominantPartnerId: 'asia_pacific',
+        effectivePartnerCount: 2.1,
+        summary: 'test',
+      },
+      exportThroughput: 150,
+      persisted: { ...createEmptyGTELPersisted(), exportCapacitySmoothing: 0.92 },
+    });
+    gtelAssert(step.snapshot.band === 'tight' || step.snapshot.band === 'saturated', 'expected tight capacity');
+    gtelAssert(exportCapacityExportScale(step.snapshot) <= 0.99, 'expected throughput scale drag');
   });
 
   return { passed, failed };

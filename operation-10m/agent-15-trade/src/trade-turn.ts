@@ -82,6 +82,20 @@ import {
   tradeRetaliationWorldEvent,
 } from './trade-retaliation.ts';
 import {
+  computeTradeDeescalationSnapshot,
+  deriveDeescalationPartnerModifiers,
+  tradeDeescalationGiNotes,
+  tradeDeescalationWorldEvent,
+} from './trade-deescalation.ts';
+import {
+  applyExportCapacityToCommodityQuotes,
+  computeExportCapacitySnapshot,
+  exportCapacityDomesticStress,
+  exportCapacityExportScale,
+  exportCapacityGiNotes,
+  exportCapacityWorldEvent,
+} from './export-capacity-allocation.ts';
+import {
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -132,6 +146,17 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const retaliationMods = deriveRetaliationPartnerModifiers(retaliationStep.snapshot);
   const tradeRetaliation = retaliationStep.snapshot;
 
+  const deescalationStep = computeTradeDeescalationSnapshot({
+    openDisputeCount: openDisputesEarly,
+    engagement: engagementStep.state,
+    tradeRetaliation,
+    complianceScore: gtelNum(persisted.tradeCompliance?.score, 0.62),
+    persisted,
+  });
+  persisted = deescalationStep.persisted;
+  const deescalationMods = deriveDeescalationPartnerModifiers(deescalationStep.snapshot);
+  const tradeDeescalation = deescalationStep.snapshot;
+
   const names = input.actorNames || {};
   const dip = deriveDiplomaticTradeModifiers(input.diplomacyState, turn, names);
   const agr = deriveTradeAgreementModifiers(persisted, turn);
@@ -149,7 +174,10 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     ),
     mergePartnerDeltas(
       mergePartnerDeltas(trust.partnerDeltas, policy.partnerDeltas),
-      mergePartnerDeltas(engagement.partnerDeltas, retaliationMods.partnerDeltas),
+      mergePartnerDeltas(
+        mergePartnerDeltas(engagement.partnerDeltas, retaliationMods.partnerDeltas),
+        deescalationMods.partnerDeltas,
+      ),
     ),
   );
   const commodityDeltas = mergeCommodityDeltas(
@@ -195,6 +223,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   worldEvents.push(...engagementStep.events);
   const retaliationEvent = tradeRetaliationWorldEvent(tradeRetaliation, turn);
   if (retaliationEvent) worldEvents.push(retaliationEvent);
+  const deescalationEvent = tradeDeescalationWorldEvent(tradeDeescalation, turn);
+  if (deescalationEvent) worldEvents.push(deescalationEvent);
 
   const partners: GTELPartnerMarket[] = GTEL_PARTNER_DEFS.map(def => {
     const prevBand = persisted.partnerAccess[def.id] || 'normal';
@@ -338,12 +368,34 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const fxEvent = foreignExchangeWorldEvent(foreignExchange, turn);
   if (fxEvent) worldEvents.push(fxEvent);
 
+  const capacityStep = computeExportCapacitySnapshot({
+    commodities,
+    partners,
+    logistics,
+    termsOfTrade,
+    marketDiversification,
+    exportThroughput: logistics.effectiveExportThroughput,
+    persisted,
+  });
+  persisted = capacityStep.persisted;
+  const exportCapacity = capacityStep.snapshot;
+  commodities = applyExportCapacityToCommodityQuotes(commodities, exportCapacity);
+  const capacityEvent = exportCapacityWorldEvent(exportCapacity, turn);
+  if (capacityEvent) worldEvents.push(capacityEvent);
+  const tradeBalanceAdjusted = computeTradeBalanceSnapshot({
+    commodities,
+    partners,
+    logistics,
+    exportThroughput: net.throughput,
+  });
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
         tradeFinanceExportScale(tradeFinance) *
         supplyChainResilienceExportScale(supplyChainResilience) *
         foreignExchangeExportScale(foreignExchange) *
+        exportCapacityExportScale(exportCapacity) *
         10,
     ) / 10;
 
@@ -399,7 +451,9 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       tradeFinanceDomesticStress(tradeFinance) +
       supplyChainResilienceDomesticStress(supplyChainResilience) +
       foreignExchangeDomesticStress(foreignExchange) +
-      retaliationMods.domesticStress,
+      retaliationMods.domesticStress -
+      deescalationMods.domesticStressRelief +
+      exportCapacityDomesticStress(exportCapacity),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -424,6 +478,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.supplyChainResilienceSmoothing,
     persisted.foreignExchangeSmoothing,
     persisted.retaliationPressureSmoothing,
+    persisted.deescalationMomentumSmoothing,
+    persisted.exportCapacitySmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -470,7 +526,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     activeTradePolicies: listActiveTradePolicies(persisted),
     openDisputeCount: openDisputes,
     logistics,
-    tradeBalance,
+    tradeBalance: tradeBalanceAdjusted,
     tradeCompliance: persisted.tradeCompliance,
     importDependency,
     diplomaticEngagement: engagementStep.state,
@@ -480,6 +536,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     supplyChainResilience,
     foreignExchange,
     tradeRetaliation,
+    tradeDeescalation,
+    exportCapacity,
     inputHash,
   };
 
@@ -515,6 +573,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...supplyChainResilienceGiNotes(state.supplyChainResilience));
   lines.push(...foreignExchangeGiNotes(state.foreignExchange));
   lines.push(...tradeRetaliationGiNotes(state.tradeRetaliation));
+  lines.push(...tradeDeescalationGiNotes(state.tradeDeescalation));
+  lines.push(...exportCapacityGiNotes(state.exportCapacity));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
