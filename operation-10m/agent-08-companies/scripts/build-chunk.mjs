@@ -19,6 +19,7 @@ const FILES = [
   'tax-labor-capacity-linkage.ts',
   'sector-production-depth.ts',
   'production-capacity-cascade.ts',
+  'integrated-production-synthesis.ts',
   'chunk-exports.ts',
 ];
 

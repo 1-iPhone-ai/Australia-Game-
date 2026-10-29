@@ -1,4 +1,4 @@
-import { runAgent08ModuleSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
+import { runAgent08ModuleSelfTests, runAgent08IntegratedSelfTests, runAgent08CascadeSelfTests, runAgent08SectorDepthSelfTests, runAgent08SupplyChainSelfTests, runAgent08TaxLaborSelfTests } from '../index.ts';
 
 function main() {
   const tax = runAgent08TaxLaborSelfTests();
@@ -32,6 +32,14 @@ function main() {
     process.exit(1);
   }
   console.log(`Agent 08 production cascade: ${cascade.length} passed`);
+
+  const integrated = runAgent08IntegratedSelfTests();
+  const failedIntegrated = integrated.filter(t => !t.passed);
+  if (failedIntegrated.length) {
+    console.error('Agent 08 integrated tests failed:', failedIntegrated);
+    process.exit(1);
+  }
+  console.log(`Agent 08 integrated synthesis: ${integrated.length} passed`);
 
   const moduleTests = runAgent08ModuleSelfTests();
   const failed = moduleTests.filter(t => !t.passed);
