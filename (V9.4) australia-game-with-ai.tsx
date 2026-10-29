@@ -135251,6 +135251,159 @@ export function runO111ResponsiveUiSelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
+// SECTION 20P-A66: O111 AGENT 66 — DATA VISUALIZATION (presentation-only chart primitives)
+// ============================================================================
+// Pure layout helpers + small SVG/bar views. No gameplay rules, no persistence, no external chart libs.
+
+export type O111SparklineBar = { key: string; value: number; heightPct: number; label?: string; title?: string };
+export type O111SvgLinePoint = { x: number; y: number; value: number; label?: string; title?: string };
+
+export function o111Clamp(n: number, lo: number, hi: number): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.min(hi, Math.max(lo, n));
+}
+
+/** Normalizes numeric samples into bar heights (0–100%). */
+export function buildO111BarSparkline(
+  samples: Array<{ key: string; value: number; label?: string; title?: string }>,
+  opts: { min?: number; max?: number; minBarPct?: number } = {}
+): O111SparklineBar[] {
+  const minBarPct = opts.minBarPct ?? 8;
+  if (!samples.length) return [];
+  const vals = samples.map(s => s.value).filter(Number.isFinite);
+  const lo = opts.min ?? Math.min(...vals, 0);
+  const hi = opts.max ?? Math.max(...vals, lo + 1);
+  const span = Math.max(1e-6, hi - lo);
+  return samples.map(s => {
+    const t = o111Clamp((s.value - lo) / span, 0, 1);
+    return { ...s, heightPct: o111Clamp(minBarPct + t * (100 - minBarPct), minBarPct, 100) };
+  });
+}
+
+export function buildO111SvgLineSeries(
+  values: number[],
+  opts: { width?: number; height?: number; padX?: number; padY?: number; maxPoints?: number; labels?: Array<string | number> } = {}
+): O111SvgLinePoint[] {
+  const width = opts.width ?? 100;
+  const height = opts.height ?? 40;
+  const padX = opts.padX ?? 0;
+  const padY = opts.padY ?? 4;
+  const maxPoints = opts.maxPoints ?? values.length;
+  const slice = values.slice(-Math.max(1, maxPoints));
+  const labels = opts.labels?.slice(-slice.length) ?? slice.map((_, i) => i);
+  const maxVal = Math.max(1, ...slice.filter(Number.isFinite));
+  if (slice.length === 1) {
+    const v = slice[0] || 0;
+    const y = height - padY - (v / maxVal) * (height - padY * 2);
+    return [{ x: width / 2, y: o111Clamp(y, padY, height - padY), value: v, label: String(labels[0] ?? 0) }];
+  }
+  return slice.map((v, index) => {
+    const x = padX + (index / Math.max(1, slice.length - 1)) * (width - padX * 2);
+    const y = height - padY - ((v || 0) / maxVal) * (height - padY * 2);
+    return { x, y: o111Clamp(y, padY, height - padY), value: v || 0, label: String(labels[index] ?? index) };
+  });
+}
+
+export function buildO111DualSvgLineSeries(
+  primary: number[],
+  secondary: number[] | null | undefined,
+  opts: Parameters<typeof buildO111SvgLineSeries>[1] & { secondaryLabels?: Array<string | number> } = {}
+): { primary: O111SvgLinePoint[]; secondary: O111SvgLinePoint[]; maxValue: number } {
+  const maxPoints = opts.maxPoints ?? Math.max(primary.length, secondary?.length || 0);
+  const p = primary.slice(-maxPoints);
+  const s = (secondary || []).slice(-maxPoints);
+  const maxValue = Math.max(1, ...p, ...s.filter(Number.isFinite));
+  const base = { ...opts, maxPoints };
+  return {
+    primary: buildO111SvgLineSeries(p, { ...base, labels: opts.labels?.slice(-p.length) }),
+    secondary: s.length ? buildO111SvgLineSeries(s, { ...base, labels: opts.secondaryLabels?.slice(-s.length) ?? opts.labels?.slice(-s.length) }) : [],
+    maxValue
+  };
+}
+
+export function buildO111NetWorthChartModel(
+  history: Array<{ day?: number; playerWorth?: number; aiWorth?: number }>,
+  competitive: boolean,
+  opts: { maxPoints?: number } = {}
+): {
+  primary: O111SvgLinePoint[];
+  secondary: O111SvgLinePoint[];
+  meta: Array<{ day: number; playerWorth: number; aiWorth: number; x: number }>;
+} {
+  const recent = history.slice(-(opts.maxPoints ?? 15));
+  const playerVals = recent.map(e => e.playerWorth || 0);
+  const aiVals = recent.map(e => e.aiWorth || 0);
+  const { primary, secondary } = buildO111DualSvgLineSeries(playerVals, competitive ? aiVals : null, { width: 100, height: 40, padY: 4, maxPoints: recent.length });
+  const meta = recent.map((entry, index) => ({
+    day: entry.day ?? index,
+    playerWorth: entry.playerWorth || 0,
+    aiWorth: entry.aiWorth || 0,
+    x: primary[index]?.x ?? 50
+  }));
+  primary.forEach((pt, i) => {
+    pt.title = `Day ${meta[i]?.day ?? i}: $${(meta[i]?.playerWorth ?? 0).toLocaleString()}`;
+  });
+  secondary.forEach((pt, i) => {
+    pt.title = `Day ${meta[i]?.day ?? i}: $${(meta[i]?.aiWorth ?? 0).toLocaleString()}`;
+  });
+  return { primary, secondary, meta };
+}
+
+export const O111BarSparkline: React.FC<{ points: O111SparklineBar[]; emphasizeKeys?: Set<string>; emptyLabel?: string; className?: string }> = ({ points, emphasizeKeys, emptyLabel = 'No data yet.', className = '' }) => {
+  if (!points.length) return <div className="text-xs opacity-60">{emptyLabel}</div>;
+  return (
+    <div className={`flex items-end gap-1 h-12 ${className}`} data-testid="o111-bar-sparkline">
+      {points.map(pt => (
+        <div
+          key={pt.key}
+          className={`flex-1 rounded-t ${emphasizeKeys?.has(pt.key) ? 'bg-rose-400' : 'bg-sky-500'}`}
+          style={{ height: `${pt.heightPct}%` }}
+          title={pt.title || pt.label || String(pt.value)}
+        />
+      ))}
+    </div>
+  );
+};
+
+export const O111SvgDualLineChart: React.FC<{
+  primary: O111SvgLinePoint[];
+  secondary?: O111SvgLinePoint[];
+  primaryStroke?: string;
+  secondaryStroke?: string;
+  viewHeight?: number;
+  className?: string;
+}> = ({ primary, secondary = [], primaryStroke = '#22c55e', secondaryStroke = '#ec4899', viewHeight = 40, className = '' }) => {
+  if (!primary.length) return null;
+  const baseline = viewHeight - 4;
+  return (
+    <svg viewBox={`0 0 100 ${viewHeight}`} className={`w-full h-full overflow-visible ${className}`} data-testid="o111-dual-line-chart" aria-hidden={false} role="img">
+      <line x1="0" y1={baseline} x2="100" y2={baseline} stroke="rgba(255,255,255,0.18)" strokeWidth="0.6" />
+      {primary.length === 1 && (
+        <>
+          <circle cx={primary[0].x} cy={primary[0].y} r="1.8" fill={primaryStroke}><title>{primary[0].title}</title></circle>
+          {secondary[0] && <circle cx={secondary[0].x} cy={secondary[0].y} r="1.8" fill={secondaryStroke}><title>{secondary[0].title}</title></circle>}
+        </>
+      )}
+      {primary.length > 1 && (
+        <>
+          <polyline fill="none" stroke={primaryStroke} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" points={primary.map(p => `${p.x},${p.y}`).join(' ')} />
+          {secondary.length > 1 && (
+            <polyline fill="none" stroke={secondaryStroke} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" points={secondary.map(p => `${p.x},${p.y}`).join(' ')} />
+          )}
+          {primary.map((p, i) => (
+            <g key={`o111-pt-${p.label ?? i}`}>
+              <circle cx={p.x} cy={p.y} r="1.2" fill={primaryStroke}><title>{p.title}</title></circle>
+              {secondary[i] && <circle cx={secondary[i].x} cy={secondary[i].y} r="1.2" fill={secondaryStroke}><title>{secondary[i].title}</title></circle>}
+            </g>
+          ))}
+        </>
+      )}
+    </svg>
+  );
+};
+
+
+// ============================================================================
 // SECTION 20Q: V9.5 STABILITY, PERFORMANCE & RELEASE READINESS — HARDEN • STRESS • LOSE NOTHING
 // ============================================================================
 // Local-only diagnostics. No network, workers, telemetry or storage writes happen in this section; every
@@ -137800,6 +137953,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
+  { id: 'o111a66', label: 'O111 Agent 66 Data Viz', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111Agent66DataVizSelfTests() },
   { id: 'o111_a69', label: 'O111 Responsive UI (Agent 69)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111ResponsiveUiSelfTests() },
   { id: 'o111_a61', label: 'O111 Visual Design (Agent 61)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runO111VisualDesignSelfTests() },
   { id: 'nav63', label: 'Intent Navigation (Agent 63)', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runIntentNavigationSelfTests() },
