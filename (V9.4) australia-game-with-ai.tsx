@@ -139219,6 +139219,9 @@ export function sanitizeNationalSystemsPersisted(raw: unknown): NationalSystemsP
     kind: ['bottleneck_formed', 'bottleneck_resolved', 'dependency_changed', 'capacity_expanded', 'resilience_changed'].includes(h.kind) ? h.kind : 'resilience_changed',
     subjectId: String(h.subjectId || '').slice(0, 60), summary: h.summary.slice(0, 200), sourceEventIds: (Array.isArray(h.sourceEventIds) ? h.sourceEventIds : []).filter((x: any) => typeof x === 'string').slice(0, 4)
   }));
+  out.appliedDomesticDemandProvenance = (Array.isArray(r.appliedDomesticDemandProvenance) ? r.appliedDomesticDemandProvenance : [])
+    .filter((x: any) => typeof x === 'string')
+    .slice(0, 8);
   out.inputHash = typeof r.inputHash === 'string' ? r.inputHash.slice(0, 20) : '';
   return out;
 }
@@ -140047,6 +140050,8 @@ export interface IndustriesPersisted {
   schemaVersion: '10.1'; revision: number; initializedTurn: number | null; lastUpdatedTurn: number;
   industryBands: Record<string, IndustryCondition>; supplyBands: Record<string, SupplyCondition>; criticalDeps: string[]; nationalOutput: Record<string, number>;
   cooldowns: Record<string, number>; history: IndustryHistoryEntry[]; inputHash: string;
+  /** Provenance tags for domestic demand already folded into V10.1 this match (feeds V10.13 dedupe). */
+  appliedDomesticDemandProvenance?: string[];
 }
 export interface IndustriesSupplyChainsState {
   schemaVersion: '10.1'; revision: number; regions: Record<string, RegionalIndustryState>; supplies: Record<string, RegionalSupplyState[]>;
@@ -140060,6 +140065,8 @@ export interface IndustriesInputs {
   /** V10.0 snapshot — the ONLY transport layer. Null ⇒ no interregional delivery (V10.1 never invents routes). */
   national: NationalSystemsState | null;
   modifiers?: Record<string, Partial<Record<StrategicIndustryKind, number>>>;
+  /** V10.13 bounded domestic-demand modifiers (Invariant H); provenance dedupe applied before compute. */
+  domesticDemandModifiers?: V1013IndustryDemandModifier[];
 }
 
 const scR = (x: number, d = 1) => { const f = Math.pow(10, d); return Math.round((Number.isFinite(x) ? x : 0) * f) / f; };
@@ -140084,8 +140091,12 @@ export function nationalTransportRoutes(ns: NationalSystemsState, network: Natio
 export function industriesInputHash(i: IndustriesInputs): string {
   const ns = i.national;
   const nsDigest = ns ? [ns.inputHash, Object.values(ns.regions).map(r => NATIONAL_NETWORKS.map(n => r.networks[n].condition[0]).join('')).join(','), Object.values(ns.links).map(l => Math.round(Math.max(0, l.effectiveCapacity - l.used))).join(',')].join('|') : 'none';
+  const ddDigest = (i.domesticDemandModifiers || [])
+    .map(m => `${m.sector}:${m.boundedDelta}:${m.skippedDuplicate ? 'skip' : 'on'}`)
+    .sort()
+    .join(',');
   const raw = JSON.stringify([i.turn, i.regions.map(r => [r.code, Math.round(r.devScore), Math.round(r.momentum * 20), r.stability === null ? null : Math.round(r.stability / 5), Object.keys(r.sectors).sort().map(k => `${k}${Math.round((r.sectors as any)[k] / 2)}`)]),
-    i.projects.map(p => `${p.id}:${p.regionId}:${p.projectType}:${p.status}`).sort(), i.modifiers || null, nsDigest]);
+    i.projects.map(p => `${p.id}:${p.regionId}:${p.projectType}:${p.status}`).sort(), i.modifiers || null, ddDigest || null, nsDigest]);
   let h = 2166136261;
   for (let k = 0; k < raw.length; k++) { h ^= raw.charCodeAt(k); h = Math.imul(h, 16777619); }
   return (h >>> 0).toString(36);
@@ -140127,6 +140138,35 @@ function scSupplyConditionFor(demand: number, supplied: number, leftover: number
  * transformation → advanced/services. Each stage allocates local supply first, then deliverable imports over
  * V10.0 routes (headroom-limited, stable tie-breaks, ≤ V101_LIMITS.maxPasses passes).
  */
+
+/** Maps V10.13 household demand sectors → V10.1 strategic industries (Invariant H). */
+export const V1013_HOUSEHOLD_SECTOR_TO_INDUSTRY: Partial<Record<HouseholdDemandSector, StrategicIndustryKind[]>> = {
+  manufacturing: ['manufacturing'],
+  tourism_services: ['tourism'],
+  agriculture_food: ['agriculture'],
+  technology_digital: ['technology', 'research'],
+  infrastructure_housing: ['manufacturing', 'energy']
+};
+
+/** Strength points from bounded domestic demand delta ([-1,+1] → up to ±8 nationally, split across mapped industries). */
+export const V1013_DOMESTIC_DEMAND_INDUSTRY_POINTS = 8;
+
+export function nationalDomesticDemandIndustryPoints(
+  modifiers: V1013IndustryDemandModifier[] | null | undefined
+): Partial<Record<StrategicIndustryKind, number>> {
+  const out: Partial<Record<StrategicIndustryKind, number>> = {};
+  if (!modifiers?.length) return out;
+  for (const m of modifiers) {
+    if (m.skippedDuplicate || m.boundedDelta === 0) continue;
+    const pts = scR(m.boundedDelta * V1013_DOMESTIC_DEMAND_INDUSTRY_POINTS);
+    const targets = V1013_HOUSEHOLD_SECTOR_TO_INDUSTRY[m.sector];
+    if (!targets?.length) continue;
+    const share = pts / targets.length;
+    for (const ind of targets) out[ind] = scR((out[ind] || 0) + share);
+  }
+  return out;
+}
+
 export function computeIndustriesSupplyChains(i: IndustriesInputs, prevIn?: IndustriesPersisted | null, opts: { emit?: boolean } = {}): { state: IndustriesSupplyChainsState; persisted: IndustriesPersisted; derived: IndustryDerivedEvent[] } {
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
   const prev = prevIn || null;
@@ -140134,6 +140174,7 @@ export function computeIndustriesSupplyChains(i: IndustriesInputs, prevIn?: Indu
   const regionsIn = i.regions.filter(r => REGIONS[r.code]).sort((a, b) => a.code.localeCompare(b.code));
   const codes = regionsIn.map(r => r.code);
   const ns = i.national;
+  const natDomesticIndustryPts = nationalDomesticDemandIndustryPoints(i.domesticDemandModifiers);
   // ---- 1) Industry strength & potential (derived from actual regional state; nothing hardcoded per region) ----
   type Work = { def: StrategicIndustryDefinition; strength: number; potential: number; factors: IndustryEvidence[]; access: number; accessWorst: { network: NationalNetworkKind; factor: number } | null; inputs: IndustryInputStatus[]; effective: number };
   const work: Record<string, Partial<Record<StrategicIndustryKind, Work>>> = {};
@@ -140161,6 +140202,8 @@ export function computeIndustriesSupplyChains(i: IndustriesInputs, prevIn?: Indu
       if (k === 'energy') add('Base regional generation', 8 + dev * 0.1, 'baseline');
       const mod = Number(i.modifiers?.[r.code]?.[k]) || 0;
       if (mod) add('Scenario setting', mod, 'scenario');
+      const domesticPt = natDomesticIndustryPts[k];
+      if (domesticPt) add('Domestic household demand', domesticPt, V1013_DOMESTIC_DEMAND_PROVENANCE);
       const strength = scR(scClamp(factors.reduce((a, x) => a + x.value, 0), 0, 100));
       if (strength < 5) return;
       const potential = scR(scClamp(strength * (0.85 + dev / 400), 0, 120));
@@ -140427,9 +140470,12 @@ export function computeIndustriesSupplyChains(i: IndustriesInputs, prevIn?: Indu
   const boundedHistory = history.slice(-V101_LIMITS.history);
   const boundedCooldowns = Object.fromEntries(Object.entries(cooldowns).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, V101_LIMITS.cooldowns));
   const inputHash = industriesInputHash(i);
+  const appliedDomesticDemandProvenance =
+    i.domesticDemandModifiers?.some(m => !m.skippedDuplicate && m.boundedDelta !== 0) ? [V1013_DOMESTIC_DEMAND_PROVENANCE] : [];
   const persisted: IndustriesPersisted = {
     schemaVersion: '10.1', revision: (prev?.revision || 0) + (derived.length || !prev || prev.inputHash !== inputHash ? 1 : 0), initializedTurn: prev?.initializedTurn ?? turn, lastUpdatedTurn: turn,
-    industryBands, supplyBands, criticalDeps: critical.map(d => d.id), nationalOutput, cooldowns: boundedCooldowns, history: boundedHistory, inputHash
+    industryBands, supplyBands, criticalDeps: critical.map(d => d.id), nationalOutput, cooldowns: boundedCooldowns, history: boundedHistory, inputHash,
+    appliedDomesticDemandProvenance
   };
   codes.forEach(c => { regions[c].revision = persisted.revision; });
   const state: IndustriesSupplyChainsState = {
@@ -140440,14 +140486,14 @@ export function computeIndustriesSupplyChains(i: IndustriesInputs, prevIn?: Indu
 }
 
 /** Inputs from canonical systems (read-only): Living Regions + infrastructure + the V10.0 snapshot. */
-export function buildIndustriesInputs(src: { turn: number; lr: LivingRegionsState | null; projects: Record<string, any> | any[] | null | undefined; national: NationalSystemsState | null; modifiers?: IndustriesInputs['modifiers'] }): IndustriesInputs {
+export function buildIndustriesInputs(src: { turn: number; lr: LivingRegionsState | null; projects: Record<string, any> | any[] | null | undefined; national: NationalSystemsState | null; modifiers?: IndustriesInputs['modifiers']; domesticDemandModifiers?: IndustriesInputs['domesticDemandModifiers'] }): IndustriesInputs {
   const codes = Object.keys(REGIONS).filter(c => (REGIONAL_RESOURCES[c] || []).length && ['QLD', 'NSW', 'VIC', 'TAS', 'SA', 'WA', 'NT', 'ACT'].includes(c)).sort();
   const projectsRaw = Array.isArray(src.projects) ? src.projects : Object.values(src.projects || {});
   return {
     turn: Number(src.turn) || 0,
     regions: codes.map(code => { const reg = src.lr?.regions?.[code]; return { code, name: REGIONS[code]?.name || code, devScore: Number(reg?.development.score) || 0, momentum: Number(reg?.momentum.value) || 0, stability: reg && typeof reg.stability.value === 'number' ? reg.stability.value : null, sectors: { ...(reg?.sectors || {}) } }; }),
     projects: projectsRaw.filter((p: any) => p && typeof p.id === 'string').map((p: any) => ({ id: p.id, title: String(p.title || p.id), regionId: p.regionId || p.stateCode || null, projectType: String(p.projectType || ''), status: String(p.status || 'locked') })),
-    national: src.national, modifiers: src.modifiers
+    national: src.national, modifiers: src.modifiers, domesticDemandModifiers: src.domesticDemandModifiers
   };
 }
 
@@ -141149,6 +141195,14 @@ export function runV101IndustriesSupplyChainsSelfTests(): V9SelfTestResult[] {
     return ((DEFAULT_GAME_SETTINGS as any).industriesEnabled === true && (V95_MATCH_SCOPED_SETTING_KEYS as readonly string[]).includes('industriesEnabled') && industryRegionOutlook(null, 'VIC').factor === 0
       && industryPlayStrip(null).length === 0 && industryContentTags(null, 'VIC').length === 0 && detectIndustryQuery('why is victoria manufacturing constrained', { national: { industries: null } } as any) === null
       && JSON.stringify({ ...nsA, computeMs: 0 }) === JSON.stringify({ ...nsB, computeMs: 0 })) || 'leak';
+  });
+  check('sc33_v1013_domestic_demand', 'Strong V10.13 domestic demand adds bounded national strength to mapped V10.1 industries', () => {
+    const w = healthy();
+    const hhOut = computeNationalHouseholdEconomy(makeDefaultV1013TestInputs({}, { NSW: { economyBand: 'strong', developmentBand: 'advanced', employmentSupportScore: 86 }, VIC: { economyBand: 'strong', developmentBand: 'advanced', employmentSupportScore: 84 } }), createInitialHouseholdEconomyPersisted(), null);
+    const mods = buildHouseholdIndustryDemandModifiers(hhOut.state, []);
+    const base = run({ ...w.ii, domesticDemandModifiers: undefined }).state.regions.NSW.industries.tourism?.strength ?? 0;
+    const boosted = run({ ...w.ii, domesticDemandModifiers: mods }).state.regions.NSW.industries.tourism?.strength ?? 0;
+    return boosted >= base && mods.some(m => m.boundedDelta > 0) || `${base} -> ${boosted}`;
   });
   check('sc32_circular', 'Research ↔ technology loop: staged, bounded, terminates with finite output', () => {
     const s = run(W({ sectors: { VIC: { technology: 90, research: 90 }, ACT: { research: 90, technology: 90 } } }).ii).state;
@@ -179101,7 +179155,6 @@ export function buildHouseholdIndustryDemandModifiers(
     };
   });
 }
-
 export interface V1013SystemicRiskContext {
   householdShockSensitivity: 'low' | 'moderate' | 'high' | 'critical';
   shockAmplificationMultiplier: number; // 0.85 to 1.35
@@ -213989,8 +214042,15 @@ function dispatchGameSettingsChange(
     return sc && sc.industries && typeof sc.industries === 'object' ? sc.industries as IndustriesInputs['modifiers'] : undefined;
   }, [gameSettings.selectedScenarioId, gameState.customScenarioBuilder?.savedScenarios]);
   const scModifiersLive = useMemo(() => mergeCapabilityModifiers(scScenarioModifiers, icModifiers.industries), [scScenarioModifiers, icModifiers]);
-  const scInputs = useMemo<IndustriesInputs>(() => buildIndustriesInputs({ turn: lrInputs.turn, lr: lrState, projects: gameState.infrastructureProjects as any, national: nsState, modifiers: scModifiersLive }),
-    [lrInputs.turn, lrState, gameState.infrastructureProjects, nsState, scModifiersLive]);
+  const householdsForDemandOn = Boolean(nsEnabled && gameSettings.householdsEnabled !== false);
+  const scDomesticDemandMods = useMemo(() => {
+    if (!scEnabled || !householdsForDemandOn) return undefined;
+    const hhState = (gameState as any).householdEconomyState as NationalHouseholdEconomyState | undefined;
+    if (!hhState?.domesticDemand?.sectorSignals?.length) return undefined;
+    return buildHouseholdIndustryDemandModifiers(hhState, scPersisted?.appliedDomesticDemandProvenance || []);
+  }, [scEnabled, householdsForDemandOn, (gameState as any).householdEconomyState, scPersisted?.appliedDomesticDemandProvenance]);
+  const scInputs = useMemo<IndustriesInputs>(() => buildIndustriesInputs({ turn: lrInputs.turn, lr: lrState, projects: gameState.infrastructureProjects as any, national: nsState, modifiers: scModifiersLive, domesticDemandModifiers: scDomesticDemandMods }),
+    [lrInputs.turn, lrState, gameState.infrastructureProjects, nsState, scModifiersLive, scDomesticDemandMods]);
   const scHash = useMemo(() => industriesInputHash(scInputs), [scInputs]);
   const scState = useMemo<IndustriesSupplyChainsState | null>(() => (scEnabled && nsState ? computeIndustriesSupplyChains(scInputs, scPersistedRef.current, { emit: false }).state : null),
     [scEnabled, scHash, scPersisted?.revision]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -214732,6 +214792,7 @@ function dispatchGameSettingsChange(
       livingRegions: lrState,
       nationalSystems: nsState,
       industries: scState,
+      existingIndustryDemandSources: scPersistedRef.current?.appliedDomesticDemandProvenance || [],
       infraNetworks: inState,
       megaprojects: mpEnabled ? mpPersisted : null,
       nationalDevelopment: ndEnabled ? ndProfile : null,
