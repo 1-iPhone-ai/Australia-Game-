@@ -1,0 +1,10 @@
+{
+  "moduleId": "agent-21-forecasting",
+  "slot": "O10M_AGENT21_INTEGRATION_ANCHOR",
+  "touchesSaveFormat": false,
+  "authoritative": false,
+  "contentSha256": "b88098d42778410ee5b0a8a51ec15c94f0b0a0131f45f008992c5e81a552505d",
+  "chunkPath": "operation-10m/modules/agent-21-forecasting/chunk.tsx",
+  "sourceRoot": "operation-10m/agent-21-forecasting",
+  "regenerate": "npm run bundle:agent-21-chunk"
+}
