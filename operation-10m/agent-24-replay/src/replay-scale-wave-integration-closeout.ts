@@ -9,6 +9,9 @@ export const O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA = '7bd7b1f3';
 /** O10-169 integration baseline anchor (wave 20 roster). */
 export const O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA = '680b9954';
 
+/** O10-171 integration baseline anchor (wave 21 roster). */
+export const O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA = '99f2e72b';
+
 export interface Agent24ReplayScaleWaveIntegrationCloseoutCheckpoint {
   checkpointId: string;
   label: string;
@@ -43,7 +46,11 @@ export function buildAgent24ReplayScaleWaveIntegrationCloseoutReport(
   const waveRound = input.replayScaleWaveAttestationVerification.waveRound;
   const integrationBaselineSha =
     input.integrationBaselineSha ??
-    (waveRound >= 20 ? O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA : O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA);
+    (waveRound >= 21
+      ? O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA
+      : waveRound >= 20
+        ? O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA
+        : O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA);
 
   const checkpoints: Agent24ReplayScaleWaveIntegrationCloseoutCheckpoint[] = [
     {
@@ -121,7 +128,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   const closeout = {
     reportId: 'co',
     matchId: 'self',
-    waveRound: 20,
+    waveRound: 21,
     closeoutComplete: true,
     checkpointCount: 3,
     satisfiedCheckpointCount: 3,
@@ -132,7 +139,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   const attestationVerification = {
     reportId: 'av',
     matchId: 'self',
-    waveRound: 20,
+    waveRound: 21,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -143,7 +150,7 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   const handoffGate = {
     reportId: 'hg',
     matchId: 'self',
-    waveRound: 20,
+    waveRound: 21,
     handoffAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -161,9 +168,9 @@ export function runAgent24ReplayScaleWaveIntegrationCloseoutSelfTests(): Array<{
   return [
     {
       name: 'integration_closeout_complete_when_wave_stack_ready',
-      passed: report.closeoutComplete && report.integrationBaselineSha === O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA,
+      passed: report.closeoutComplete && report.integrationBaselineSha === O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 20 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 21 },
     {
       name: 'deterministic_fingerprint',
       passed:

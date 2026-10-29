@@ -1,9 +1,13 @@
 import { o6kAgent24Fingerprint } from './fingerprint.ts';
 import type { Agent24ArchiveScaleWaveExportGateReport } from './archive-scale-wave-export-gate.ts';
 import type { Agent24ReplayScaleWaveIntegrationVerificationReport } from './replay-scale-wave-integration-verification.ts';
+import {
+  O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA,
+} from './replay-scale-wave-integration-closeout.ts';
 
-/** O10-169 integration baseline anchor (wave 20 roster / O10-171 dry-run). */
-export const O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA = '680b9954';
+export { O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA } from './replay-scale-wave-integration-closeout.ts';
 
 export interface Agent24ReplayScaleWaveProjectionHandoffLink {
   linkId: string;
@@ -36,7 +40,13 @@ export function buildAgent24ReplayScaleWaveProjectionHandoffSeal(
   input: Agent24ReplayScaleWaveProjectionHandoffSealInput,
 ): Agent24ReplayScaleWaveProjectionHandoffSeal {
   const waveRound = input.replayScaleWaveIntegrationVerification.waveRound;
-  const projectionBaselineSha = input.projectionBaselineSha ?? O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA;
+  const projectionBaselineSha =
+    input.projectionBaselineSha ??
+    (waveRound >= 21
+      ? O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA
+      : waveRound >= 20
+        ? O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA
+        : O6K_AGENT24_WAVE19_INTEGRATION_BASELINE_SHA);
   const baselineMatches =
     input.replayScaleWaveIntegrationVerification.integrationBaselineSha === projectionBaselineSha;
 
@@ -107,8 +117,8 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
   const integrationVerification = {
     reportId: 'iv',
     matchId: 'self',
-    waveRound: 20,
-    integrationBaselineSha: O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA,
+    waveRound: 21,
+    integrationBaselineSha: O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -119,7 +129,7 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
   const exportGate = {
     reportId: 'eg',
     matchId: 'self',
-    waveRound: 20,
+    waveRound: 21,
     exportAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -138,9 +148,9 @@ export function runAgent24ReplayScaleWaveProjectionHandoffSealSelfTests(): Array
       name: 'handoff_ready_at_projection_baseline',
       passed:
         seal.handoffReady &&
-        seal.projectionBaselineSha === O6K_AGENT24_WAVE20_INTEGRATION_BASELINE_SHA,
+        seal.projectionBaselineSha === O6K_AGENT24_WAVE21_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: seal.waveRound === 20 },
+    { name: 'wave_round_pinned', passed: seal.waveRound === 21 },
     {
       name: 'deterministic_fingerprint',
       passed:
