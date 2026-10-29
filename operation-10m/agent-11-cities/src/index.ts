@@ -121,5 +121,8 @@ export * from './settlement-existential-absolute-nullity-permanence.ts';
 export * from './regional-collapse-omni-singularity-amalgamation.ts';
 export * from './interregional-void-total-erosion-atomization.ts';
 export * from './settlement-existential-absolute-nullity-inevitability.ts';
+export * from './regional-collapse-omni-singularity-symbiosis.ts';
+export * from './interregional-void-total-erosion-pulverization.ts';
+export * from './settlement-existential-absolute-nullity-determinism.ts';
 export * from './integration/regional-regression-harness.ts';
 export * from './self-tests.ts';

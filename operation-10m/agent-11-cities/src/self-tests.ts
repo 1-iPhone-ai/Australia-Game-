@@ -159,6 +159,9 @@ import { op10mA11ComputeSettlementExistentialAbsoluteNullityPermanence } from '.
 import { op10mA11ComputeRegionalCollapseOmniSingularityAmalgamation } from './regional-collapse-omni-singularity-amalgamation.ts';
 import { op10mA11ComputeInterregionalVoidTotalErosionAtomization } from './interregional-void-total-erosion-atomization.ts';
 import { op10mA11ComputeSettlementExistentialAbsoluteNullityInevitability } from './settlement-existential-absolute-nullity-inevitability.ts';
+import { op10mA11ComputeRegionalCollapseOmniSingularitySymbiosis } from './regional-collapse-omni-singularity-symbiosis.ts';
+import { op10mA11ComputeInterregionalVoidTotalErosionPulverization } from './interregional-void-total-erosion-pulverization.ts';
+import { op10mA11ComputeSettlementExistentialAbsoluteNullityDeterminism } from './settlement-existential-absolute-nullity-determinism.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -485,7 +488,7 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
   push(
     out,
     'a11_26',
-    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.38',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.39',
     composite.state.schemaVersion,
   );
 
@@ -675,7 +678,10 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
       composite.persisted.lastExistentialAbsoluteNullityPermanenceIndex === composite.state.nationalExistentialAbsoluteNullityPermanenceIndex &&
       composite.persisted.lastCollapseOmniSingularityAmalgamationIndex === composite.state.nationalCollapseOmniSingularityAmalgamationIndex &&
       composite.persisted.lastVoidTotalErosionAtomizationIndex === composite.state.nationalVoidTotalErosionAtomizationIndex &&
-      composite.persisted.lastExistentialAbsoluteNullityInevitabilityIndex === composite.state.nationalExistentialAbsoluteNullityInevitabilityIndex,
+      composite.persisted.lastExistentialAbsoluteNullityInevitabilityIndex === composite.state.nationalExistentialAbsoluteNullityInevitabilityIndex &&
+      composite.persisted.lastCollapseOmniSingularitySymbiosisIndex === composite.state.nationalCollapseOmniSingularitySymbiosisIndex &&
+      composite.persisted.lastVoidTotalErosionPulverizationIndex === composite.state.nationalVoidTotalErosionPulverizationIndex &&
+      composite.persisted.lastExistentialAbsoluteNullityDeterminismIndex === composite.state.nationalExistentialAbsoluteNullityDeterminismIndex,
     `persisted cohesion ${composite.persisted.lastCohesionIndex} equity ${composite.persisted.lastServiceEquityIndex}`,
   );
 
@@ -3501,6 +3507,62 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     composite.state.existentialAbsoluteNullityPermanence.every((p) => p.narrative.includes('existential absolute nullity permanence')),
     composite.state.existentialAbsoluteNullityPermanence[0]?.band ?? 'none',
   );
+
+  const collapseOmniSingularityAmalgamation = op10mA11ComputeRegionalCollapseOmniSingularityAmalgamation({
+    collapseOmniSingularityCoalescence: composite.state.collapseOmniSingularityCoalescence,
+    voidTotalErosionSublimation: composite.state.voidTotalErosionSublimation,
+    existentialAbsoluteNullityPermanence: composite.state.existentialAbsoluteNullityPermanence,
+  });
+  push(out, 'a11_339', composite.state.collapseOmniSingularityAmalgamation.length === 8 && composite.state.nationalCollapseOmniSingularityAmalgamationIndex === collapseOmniSingularityAmalgamation.nationalIndex, `omni amalgamation ${composite.state.nationalCollapseOmniSingularityAmalgamationIndex}`);
+
+  const voidTotalErosionAtomization = op10mA11ComputeInterregionalVoidTotalErosionAtomization({
+    voidTotalErosionSublimation: composite.state.voidTotalErosionSublimation,
+    collapseOmniSingularityCoalescence: composite.state.collapseOmniSingularityCoalescence,
+    voidExistenceAnnihilationFront: composite.state.voidExistenceAnnihilationFront,
+  });
+  push(out, 'a11_340', composite.state.voidTotalErosionAtomization.length === 8 && composite.state.nationalVoidTotalErosionAtomizationIndex === voidTotalErosionAtomization.nationalIndex, `erosion atomization ${composite.state.nationalVoidTotalErosionAtomizationIndex}`);
+
+  const existentialAbsoluteNullityInevitability = op10mA11ComputeSettlementExistentialAbsoluteNullityInevitability({
+    existentialAbsoluteNullityPermanence: composite.state.existentialAbsoluteNullityPermanence,
+    collapseOmniSingularityCoalescence: composite.state.collapseOmniSingularityCoalescence,
+    existentialFinalNullitySentence: composite.state.existentialFinalNullitySentence,
+  });
+  push(out, 'a11_341', composite.state.existentialAbsoluteNullityInevitability.length === 8 && composite.state.nationalExistentialAbsoluteNullityInevitabilityIndex === existentialAbsoluteNullityInevitability.nationalIndex, `nullity inevitability ${composite.state.nationalExistentialAbsoluteNullityInevitabilityIndex}`);
+
+  push(out, 'a11_342', composite.state.collapseOmniSingularityAmalgamation.every((a) => a.narrative.includes('collapse omni singularity amalgamation')), composite.state.collapseOmniSingularityAmalgamation[0]?.band ?? 'none');
+  push(out, 'a11_343', composite.derived.some((d) => d.kind === 'collapse_omni_singularity_amalgamation') || composite.state.collapseOmniSingularityAmalgamation.some((a) => a.band === 'total' || a.band === 'amalgamation'), composite.derived.map((d) => d.kind).join(', '));
+  push(out, 'a11_344', composite.derived.some((d) => d.kind === 'void_total_erosion_atomization') || composite.state.voidTotalErosionAtomization.some((a) => a.band === 'total' || a.band === 'complete_atomization'), composite.state.voidTotalErosionAtomization[0]?.band ?? 'none');
+  push(out, 'a11_345', composite.persisted.lastVoidTotalErosionAtomizationIndex === composite.state.nationalVoidTotalErosionAtomizationIndex, `persisted atomization ${composite.persisted.lastVoidTotalErosionAtomizationIndex}`);
+  push(out, 'a11_346', composite.derived.some((d) => d.kind === 'existential_absolute_nullity_inevitability') || composite.state.existentialAbsoluteNullityInevitability.some((i) => i.band === 'absolute' || i.band === 'total_inevitability'), composite.state.existentialAbsoluteNullityInevitability[0]?.band ?? 'none');
+  push(out, 'a11_347', composite.state.existentialAbsoluteNullityInevitability.every((i) => i.narrative.includes('existential absolute nullity inevitability')), composite.state.existentialAbsoluteNullityInevitability[0]?.band ?? 'none');
+
+  const collapseOmniSingularitySymbiosis = op10mA11ComputeRegionalCollapseOmniSingularitySymbiosis({
+    collapseOmniSingularityAmalgamation: composite.state.collapseOmniSingularityAmalgamation,
+    voidTotalErosionAtomization: composite.state.voidTotalErosionAtomization,
+    existentialAbsoluteNullityInevitability: composite.state.existentialAbsoluteNullityInevitability,
+  });
+  push(out, 'a11_348', composite.state.collapseOmniSingularitySymbiosis.length === 8 && composite.state.nationalCollapseOmniSingularitySymbiosisIndex === collapseOmniSingularitySymbiosis.nationalIndex, `omni symbiosis ${composite.state.nationalCollapseOmniSingularitySymbiosisIndex}`);
+
+  const voidTotalErosionPulverization = op10mA11ComputeInterregionalVoidTotalErosionPulverization({
+    voidTotalErosionAtomization: composite.state.voidTotalErosionAtomization,
+    collapseOmniSingularityAmalgamation: composite.state.collapseOmniSingularityAmalgamation,
+    voidExistenceAnnihilationFront: composite.state.voidExistenceAnnihilationFront,
+  });
+  push(out, 'a11_349', composite.state.voidTotalErosionPulverization.length === 8 && composite.state.nationalVoidTotalErosionPulverizationIndex === voidTotalErosionPulverization.nationalIndex, `erosion pulverization ${composite.state.nationalVoidTotalErosionPulverizationIndex}`);
+
+  const existentialAbsoluteNullityDeterminism = op10mA11ComputeSettlementExistentialAbsoluteNullityDeterminism({
+    existentialAbsoluteNullityInevitability: composite.state.existentialAbsoluteNullityInevitability,
+    collapseOmniSingularityAmalgamation: composite.state.collapseOmniSingularityAmalgamation,
+    existentialFinalNullitySentence: composite.state.existentialFinalNullitySentence,
+  });
+  push(out, 'a11_350', composite.state.existentialAbsoluteNullityDeterminism.length === 8 && composite.state.nationalExistentialAbsoluteNullityDeterminismIndex === existentialAbsoluteNullityDeterminism.nationalIndex, `nullity determinism ${composite.state.nationalExistentialAbsoluteNullityDeterminismIndex}`);
+
+  push(out, 'a11_351', composite.state.collapseOmniSingularitySymbiosis.every((s) => s.narrative.includes('collapse omni singularity symbiosis')), composite.state.collapseOmniSingularitySymbiosis[0]?.band ?? 'none');
+  push(out, 'a11_352', composite.derived.some((d) => d.kind === 'collapse_omni_singularity_symbiosis') || composite.state.collapseOmniSingularitySymbiosis.some((s) => s.band === 'total' || s.band === 'symbiosis'), composite.derived.map((d) => d.kind).join(', '));
+  push(out, 'a11_353', composite.derived.some((d) => d.kind === 'void_total_erosion_pulverization') || composite.state.voidTotalErosionPulverization.some((p) => p.band === 'total' || p.band === 'complete_pulverization'), composite.state.voidTotalErosionPulverization[0]?.band ?? 'none');
+  push(out, 'a11_354', composite.persisted.lastVoidTotalErosionPulverizationIndex === composite.state.nationalVoidTotalErosionPulverizationIndex, `persisted pulverization ${composite.persisted.lastVoidTotalErosionPulverizationIndex}`);
+  push(out, 'a11_355', composite.derived.some((d) => d.kind === 'existential_absolute_nullity_determinism') || composite.state.existentialAbsoluteNullityDeterminism.some((d) => d.band === 'absolute' || d.band === 'total_determinism'), composite.state.existentialAbsoluteNullityDeterminism[0]?.band ?? 'none');
+  push(out, 'a11_356', composite.state.existentialAbsoluteNullityDeterminism.every((d) => d.narrative.includes('existential absolute nullity determinism')), composite.state.existentialAbsoluteNullityDeterminism[0]?.band ?? 'none');
 
   return out;
 }
