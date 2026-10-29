@@ -47,6 +47,9 @@ import { detectHandoffOrphans } from './handoff-orphan-detector.ts';
 import { detectWorkstreamDeadlocks } from './workstream-deadlock-detector.ts';
 import { computeLeaseContentionIndex } from './lease-contention-index.ts';
 import { measureCoordinationSaturation } from './coordination-saturation-gauge.ts';
+import { computeMutexLeaseDivergenceIndex } from './mutex-lease-divergence-index.ts';
+import { analyzeHandoffCascadeRisk } from './handoff-cascade-analyzer.ts';
+import { computeSuppressionBacklogIndex } from './suppression-backlog-index.ts';
 import {
   assertTasksTeamScoped,
   filterCrossTeamDirectives,
@@ -251,6 +254,24 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.coordinationSaturationIndex === 'number'
           ? metaRaw.coordinationSaturationIndex
           : undefined,
+      mutexLeaseDivergenceIndex:
+        typeof metaRaw.mutexLeaseDivergenceIndex === 'number'
+          ? metaRaw.mutexLeaseDivergenceIndex
+          : undefined,
+      mutexLeaseDivergentRegionIds: Array.isArray(metaRaw.mutexLeaseDivergentRegionIds)
+        ? metaRaw.mutexLeaseDivergentRegionIds.map(String).slice(0, 8)
+        : undefined,
+      handoffCascadeRiskIndex:
+        typeof metaRaw.handoffCascadeRiskIndex === 'number'
+          ? metaRaw.handoffCascadeRiskIndex
+          : undefined,
+      handoffCascadeChainActorIds: Array.isArray(metaRaw.handoffCascadeChainActorIds)
+        ? metaRaw.handoffCascadeChainActorIds.map(String).slice(0, 8)
+        : undefined,
+      suppressionBacklogIndex:
+        typeof metaRaw.suppressionBacklogIndex === 'number'
+          ? metaRaw.suppressionBacklogIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -401,6 +422,25 @@ export function evaluateTeamMultiAgentLayer(
     suppressedDirectiveCount: directiveResult.suppressed.length + quota.dropped.length,
   });
   coordinationSaturation.notes.forEach(n => diagnostics.push(n));
+  const mutexLeaseDivergence = computeMutexLeaseDivergenceIndex(
+    coordination.mutexRegions,
+    coordination.leases,
+  );
+  mutexLeaseDivergence.notes.forEach(n => diagnostics.push(n));
+  const handoffCascade = analyzeHandoffCascadeRisk(coordination.handoffs);
+  handoffCascade.notes.forEach(n => diagnostics.push(n));
+  const suppressedIds = [
+    ...quota.dropped.map(d => d.proposal.id),
+    ...directiveResult.suppressed.map(s => s.proposal.id),
+  ];
+  const suppressionBacklog = computeSuppressionBacklogIndex({
+    suppressedDirectiveIds: suppressedIds,
+    droppedDirectiveCount: quota.dropped.length,
+    quotaExhaustedActorIds: Object.entries(quota.remainingByActor)
+      .filter(([, remaining]) => remaining === 0)
+      .map(([actorId]) => actorId),
+  });
+  suppressionBacklog.notes.forEach(n => diagnostics.push(n));
 
   const roleChurn = computeRoleChurnIndex(previous?.roles ?? null, roles);
   roleChurn.notes.forEach(n => diagnostics.push(n));
@@ -466,6 +506,11 @@ export function evaluateTeamMultiAgentLayer(
       leaseContentionIndex: leaseContention.contentionIndex,
       contendedRegionIds: leaseContention.contendedRegionIds,
       coordinationSaturationIndex: coordinationSaturation.saturationIndex,
+      mutexLeaseDivergenceIndex: mutexLeaseDivergence.divergenceIndex,
+      mutexLeaseDivergentRegionIds: mutexLeaseDivergence.divergentRegionIds,
+      handoffCascadeRiskIndex: handoffCascade.cascadeRiskIndex,
+      handoffCascadeChainActorIds: handoffCascade.cascadeChainActorIds,
+      suppressionBacklogIndex: suppressionBacklog.backlogIndex,
     },
   };
 

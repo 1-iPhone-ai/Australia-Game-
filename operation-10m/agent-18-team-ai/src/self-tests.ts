@@ -55,6 +55,9 @@ import { detectHandoffOrphans } from './handoff-orphan-detector.ts';
 import { detectWorkstreamDeadlocks } from './workstream-deadlock-detector.ts';
 import { computeLeaseContentionIndex } from './lease-contention-index.ts';
 import { measureCoordinationSaturation } from './coordination-saturation-gauge.ts';
+import { computeMutexLeaseDivergenceIndex } from './mutex-lease-divergence-index.ts';
+import { analyzeHandoffCascadeRisk } from './handoff-cascade-analyzer.ts';
+import { computeSuppressionBacklogIndex } from './suppression-backlog-index.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -1610,6 +1613,149 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.workstreamDeadlockCombined === 'number' &&
       typeof dual.leaseContentionCombined === 'number' &&
       typeof dual.coordinationSaturationCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_mutex_lease_divergence_detect', 'Mutex/lease divergence: holder mismatch flagged', () => {
+    const report = computeMutexLeaseDivergenceIndex(
+      { NSW: 'player' },
+      [
+        {
+          id: 'lease_nsw',
+          kind: 'region_mutex',
+          holderActorId: 'mate',
+          regionId: 'NSW',
+          taskId: 't1',
+          sinceTurn: 1,
+          expiresTurn: 5,
+          reason: 'test',
+        },
+      ],
+    );
+    return report.divergenceIndex > 0 && report.divergentRegionIds.includes('NSW');
+  });
+
+  check(results, 'a18_mutex_lease_divergence_aligned', 'Mutex/lease divergence: aligned holders score zero', () => {
+    const report = computeMutexLeaseDivergenceIndex(
+      { NSW: 'player' },
+      [
+        {
+          id: 'lease_nsw',
+          kind: 'region_mutex',
+          holderActorId: 'player',
+          regionId: 'NSW',
+          taskId: 't1',
+          sinceTurn: 1,
+          expiresTurn: 5,
+          reason: 'test',
+        },
+      ],
+    );
+    return report.divergenceIndex === 0;
+  });
+
+  check(results, 'a18_handoff_cascade_chain', 'Handoff cascade: long pending chain raises risk', () => {
+    const report = analyzeHandoffCascadeRisk([
+      {
+        id: 'h1',
+        fromActorId: 'a',
+        toActorId: 'b',
+        regionId: 'NSW',
+        taskId: 't1',
+        status: 'pending',
+        requestedTurn: 1,
+        reason: 'test',
+      },
+      {
+        id: 'h2',
+        fromActorId: 'b',
+        toActorId: 'c',
+        regionId: 'VIC',
+        taskId: 't2',
+        status: 'pending',
+        requestedTurn: 1,
+        reason: 'test',
+      },
+      {
+        id: 'h3',
+        fromActorId: 'c',
+        toActorId: 'd',
+        regionId: 'QLD',
+        taskId: 't3',
+        status: 'pending',
+        requestedTurn: 1,
+        reason: 'test',
+      },
+    ]);
+    return report.cascadeRiskIndex >= 55 && report.cascadeChainActorIds.length >= 3;
+  });
+
+  check(results, 'a18_handoff_cascade_none', 'Handoff cascade: single hop stays low risk', () => {
+    const report = analyzeHandoffCascadeRisk([
+      {
+        id: 'h1',
+        fromActorId: 'a',
+        toActorId: 'b',
+        regionId: 'NSW',
+        taskId: 't1',
+        status: 'pending',
+        requestedTurn: 1,
+        reason: 'test',
+      },
+    ]);
+    return report.cascadeRiskIndex < 30;
+  });
+
+  check(results, 'a18_suppression_backlog_high', 'Suppression backlog: near-cap load scores high', () => {
+    const report = computeSuppressionBacklogIndex({
+      suppressedDirectiveIds: Array.from({ length: 20 }, (_, i) => `d_${i}`),
+      droppedDirectiveCount: 4,
+      quotaExhaustedActorIds: ['a', 'b', 'c'],
+    });
+    return report.backlogIndex >= 70;
+  });
+
+  check(results, 'a18_suppression_backlog_low', 'Suppression backlog: light load stays low', () => {
+    const report = computeSuppressionBacklogIndex({
+      suppressedDirectiveIds: ['d1'],
+      droppedDirectiveCount: 0,
+      quotaExhaustedActorIds: [],
+    });
+    return report.backlogIndex < 40;
+  });
+
+  check(results, 'a18_eval_round10_meta', 'Layer: round-10 meta exposes divergence, cascade, backlog signals', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.mutexLeaseDivergenceIndex === 'number' &&
+      typeof m.handoffCascadeRiskIndex === 'number' &&
+      typeof m.suppressionBacklogIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_suppression_backlog', 'Audit: high suppression backlog surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, suppressionBacklogIndex: 85 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /suppression backlog/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round10_combined', 'Dual team: round-10 combined divergence, cascade, backlog exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.mutexLeaseDivergenceCombined === 'number' &&
+      typeof dual.handoffCascadeRiskCombined === 'number' &&
+      typeof dual.suppressionBacklogCombined === 'number'
     );
   });
 

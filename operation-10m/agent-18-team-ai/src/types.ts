@@ -268,6 +268,11 @@ export interface TeamMultiAgentCoordinationMeta {
   leaseContentionIndex?: number;
   contendedRegionIds?: string[];
   coordinationSaturationIndex?: number;
+  mutexLeaseDivergenceIndex?: number;
+  mutexLeaseDivergentRegionIds?: string[];
+  handoffCascadeRiskIndex?: number;
+  handoffCascadeChainActorIds?: string[];
+  suppressionBacklogIndex?: number;
 }
 
 export const AGENT18_LIMITS = {

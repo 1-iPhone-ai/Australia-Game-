@@ -272,6 +272,11 @@ export interface TeamMultiAgentCoordinationMeta {
   leaseContentionIndex?: number;
   contendedRegionIds?: string[];
   coordinationSaturationIndex?: number;
+  mutexLeaseDivergenceIndex?: number;
+  mutexLeaseDivergentRegionIds?: string[];
+  handoffCascadeRiskIndex?: number;
+  handoffCascadeChainActorIds?: string[];
+  suppressionBacklogIndex?: number;
 }
 
 export const AGENT18_LIMITS = {
@@ -2789,6 +2794,164 @@ export function combineDualTeamCoordinationSaturation(friendly: number, enemy: n
 }
 
 
+// --- source: mutex-lease-divergence-index.ts ---
+
+export interface MutexLeaseDivergenceReport {
+  divergenceIndex: number;
+  divergentRegionIds: string[];
+  notes: string[];
+}
+
+/**
+ * Flag regions where mutex holder and active lease holder disagree.
+ */
+export function computeMutexLeaseDivergenceIndex(
+  mutexRegions: Record<string, string>,
+  leases: CoordinationLease[],
+): MutexLeaseDivergenceReport {
+  const notes: string[] = [];
+  const divergentRegionIds: string[] = [];
+  const scoped = leases.slice(0, AGENT18_LIMITS.maxLeases);
+
+  Object.entries(mutexRegions).forEach(([regionId, mutexHolder]) => {
+    const lease = scoped.find(l => l.regionId === regionId);
+    if (!lease) return;
+    if (lease.holderActorId !== mutexHolder) {
+      divergentRegionIds.push(regionId);
+      notes.push(
+        `Region ${regionId}: mutex ${mutexHolder} vs lease ${lease.holderActorId} (${lease.id})`,
+      );
+    }
+  });
+
+  const tracked = Object.keys(mutexRegions).length;
+  const ratio = tracked === 0 ? 0 : divergentRegionIds.length / tracked;
+  const divergenceIndex = Math.round(Math.min(100, ratio * 100 + divergentRegionIds.length * 12));
+
+  return {
+    divergenceIndex,
+    divergentRegionIds: divergentRegionIds.slice(0, 8),
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamMutexLeaseDivergence(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: handoff-cascade-analyzer.ts ---
+
+export interface HandoffCascadeReport {
+  cascadeRiskIndex: number;
+  cascadeChainActorIds: string[];
+  notes: string[];
+}
+
+/**
+ * Score risk from long pending handoff chains (sequential actor delegation).
+ */
+export function analyzeHandoffCascadeRisk(handoffs: HandoffRequest[]): HandoffCascadeReport {
+  const pending = handoffs
+    .filter(h => h.status === 'pending')
+    .slice(0, AGENT18_LIMITS.maxHandoffs);
+  const notes: string[] = [];
+  const nextByFrom = new Map<string, string>();
+
+  pending.forEach(h => {
+    if (!nextByFrom.has(h.fromActorId)) nextByFrom.set(h.fromActorId, h.toActorId);
+  });
+
+  let maxChain = 0;
+  let worstChain: string[] = [];
+  const starts = new Set(pending.map(h => h.fromActorId));
+
+  starts.forEach(start => {
+    const chain: string[] = [start];
+    const seen = new Set<string>([start]);
+    let cursor: string | undefined = start;
+    while (cursor && nextByFrom.has(cursor)) {
+      const next = nextByFrom.get(cursor) as string;
+      if (seen.has(next)) {
+        notes.push(`Handoff cascade cycle includes ${next}`);
+        break;
+      }
+      chain.push(next);
+      seen.add(next);
+      cursor = next;
+      if (chain.length > maxChain) {
+        maxChain = chain.length;
+        worstChain = [...chain];
+      }
+    }
+  });
+
+  const cascadeRiskIndex = Math.round(
+    Math.min(100, Math.max(0, (maxChain - 1) * 28 + (maxChain >= 4 ? 20 : 0))),
+  );
+  if (maxChain >= 3) {
+    notes.push(`Handoff cascade length ${maxChain}: ${worstChain.join(' → ')}`);
+  }
+
+  return {
+    cascadeRiskIndex,
+    cascadeChainActorIds: worstChain.slice(0, 8),
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamHandoffCascadeRisk(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
+// --- source: suppression-backlog-index.ts ---
+
+export interface SuppressionBacklogInputs {
+  suppressedDirectiveIds: string[];
+  droppedDirectiveCount: number;
+  quotaExhaustedActorIds: string[];
+}
+
+export interface SuppressionBacklogReport {
+  backlogIndex: number;
+  notes: string[];
+}
+
+/**
+ * Measure pressure from suppressed and quota-dropped directives versus team caps.
+ */
+export function computeSuppressionBacklogIndex(
+  inputs: SuppressionBacklogInputs,
+): SuppressionBacklogReport {
+  const notes: string[] = [];
+  const uniqueSuppressed = new Set(inputs.suppressedDirectiveIds);
+  const suppressedLoad = uniqueSuppressed.size + inputs.droppedDirectiveCount;
+  const capRatio = suppressedLoad / Math.max(1, AGENT18_LIMITS.maxSuppressedDirectives);
+  const actorPressure = inputs.quotaExhaustedActorIds.length / Math.max(1, AGENT18_LIMITS.maxDirectivesPerActorPerTurn);
+  const backlogIndex = Math.round(Math.min(100, capRatio * 65 + actorPressure * 35));
+
+  if (capRatio >= 0.75) {
+    notes.push(`Suppressed directive backlog at ${Math.round(capRatio * 100)}% of cap`);
+  }
+  if (inputs.quotaExhaustedActorIds.length > 0) {
+    notes.push(`Quota exhausted for: ${inputs.quotaExhaustedActorIds.join(', ')}`);
+  }
+
+  return {
+    backlogIndex,
+    notes: notes.slice(0, 6),
+  };
+}
+
+export function combineDualTeamSuppressionBacklog(friendly: number, enemy: number | null): number {
+  if (enemy === null) return friendly;
+  return Math.max(friendly, enemy);
+}
+
+
 // --- source: coordination-audit.ts ---
   AGENT18_LIMITS,
   CoordinationAuditFinding,
@@ -3105,6 +3268,39 @@ export function auditTeamMultiAgentLayer(
     push({
       severity: 'warning',
       message: `Coordination saturation elevated (${state.meta.coordinationSaturationIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.mutexLeaseDivergenceIndex === 'number' &&
+    state.meta.mutexLeaseDivergenceIndex >= 40
+  ) {
+    push({
+      severity: 'warning',
+      message: `Mutex/lease divergence index (${state.meta.mutexLeaseDivergenceIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.handoffCascadeRiskIndex === 'number' &&
+    state.meta.handoffCascadeRiskIndex >= 55
+  ) {
+    push({
+      severity: 'warning',
+      message: `Handoff cascade risk (${state.meta.handoffCascadeRiskIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.suppressionBacklogIndex === 'number' && state.meta.suppressionBacklogIndex >= 70) {
+    push({
+      severity: 'warning',
+      message: `Directive suppression backlog (${state.meta.suppressionBacklogIndex})`,
       actorIds: [],
       regionId: null,
     });
@@ -3504,6 +3700,24 @@ export function sanitizeTeamMultiAgentCoordinationState(
         typeof metaRaw.coordinationSaturationIndex === 'number'
           ? metaRaw.coordinationSaturationIndex
           : undefined,
+      mutexLeaseDivergenceIndex:
+        typeof metaRaw.mutexLeaseDivergenceIndex === 'number'
+          ? metaRaw.mutexLeaseDivergenceIndex
+          : undefined,
+      mutexLeaseDivergentRegionIds: Array.isArray(metaRaw.mutexLeaseDivergentRegionIds)
+        ? metaRaw.mutexLeaseDivergentRegionIds.map(String).slice(0, 8)
+        : undefined,
+      handoffCascadeRiskIndex:
+        typeof metaRaw.handoffCascadeRiskIndex === 'number'
+          ? metaRaw.handoffCascadeRiskIndex
+          : undefined,
+      handoffCascadeChainActorIds: Array.isArray(metaRaw.handoffCascadeChainActorIds)
+        ? metaRaw.handoffCascadeChainActorIds.map(String).slice(0, 8)
+        : undefined,
+      suppressionBacklogIndex:
+        typeof metaRaw.suppressionBacklogIndex === 'number'
+          ? metaRaw.suppressionBacklogIndex
+          : undefined,
     },
     auditFindings: Array.isArray(r.auditFindings)
       ? (r.auditFindings as TeamMultiAgentLayerState['auditFindings']).slice(0, AGENT18_LIMITS.maxAuditFindings)
@@ -3654,6 +3868,25 @@ export function evaluateTeamMultiAgentLayer(
     suppressedDirectiveCount: directiveResult.suppressed.length + quota.dropped.length,
   });
   coordinationSaturation.notes.forEach(n => diagnostics.push(n));
+  const mutexLeaseDivergence = computeMutexLeaseDivergenceIndex(
+    coordination.mutexRegions,
+    coordination.leases,
+  );
+  mutexLeaseDivergence.notes.forEach(n => diagnostics.push(n));
+  const handoffCascade = analyzeHandoffCascadeRisk(coordination.handoffs);
+  handoffCascade.notes.forEach(n => diagnostics.push(n));
+  const suppressedIds = [
+    ...quota.dropped.map(d => d.proposal.id),
+    ...directiveResult.suppressed.map(s => s.proposal.id),
+  ];
+  const suppressionBacklog = computeSuppressionBacklogIndex({
+    suppressedDirectiveIds: suppressedIds,
+    droppedDirectiveCount: quota.dropped.length,
+    quotaExhaustedActorIds: Object.entries(quota.remainingByActor)
+      .filter(([, remaining]) => remaining === 0)
+      .map(([actorId]) => actorId),
+  });
+  suppressionBacklog.notes.forEach(n => diagnostics.push(n));
 
   const roleChurn = computeRoleChurnIndex(previous?.roles ?? null, roles);
   roleChurn.notes.forEach(n => diagnostics.push(n));
@@ -3719,6 +3952,11 @@ export function evaluateTeamMultiAgentLayer(
       leaseContentionIndex: leaseContention.contentionIndex,
       contendedRegionIds: leaseContention.contendedRegionIds,
       coordinationSaturationIndex: coordinationSaturation.saturationIndex,
+      mutexLeaseDivergenceIndex: mutexLeaseDivergence.divergenceIndex,
+      mutexLeaseDivergentRegionIds: mutexLeaseDivergence.divergentRegionIds,
+      handoffCascadeRiskIndex: handoffCascade.cascadeRiskIndex,
+      handoffCascadeChainActorIds: handoffCascade.cascadeChainActorIds,
+      suppressionBacklogIndex: suppressionBacklog.backlogIndex,
     },
   };
 
@@ -3808,6 +4046,9 @@ export interface DualTeamMultiAgentResult {
   workstreamDeadlockCombined: number;
   leaseContentionCombined: number;
   coordinationSaturationCombined: number;
+  mutexLeaseDivergenceCombined: number;
+  handoffCascadeRiskCombined: number;
+  suppressionBacklogCombined: number;
 }
 
 /**
@@ -3855,6 +4096,9 @@ export function evaluateDualTeamMultiAgentLayers(
       workstreamDeadlockCombined: friendly.state.meta.workstreamDeadlockCount ?? 0,
       leaseContentionCombined: friendly.state.meta.leaseContentionIndex ?? 0,
       coordinationSaturationCombined: friendly.state.meta.coordinationSaturationIndex ?? 0,
+      mutexLeaseDivergenceCombined: friendly.state.meta.mutexLeaseDivergenceIndex ?? 0,
+      handoffCascadeRiskCombined: friendly.state.meta.handoffCascadeRiskIndex ?? 0,
+      suppressionBacklogCombined: friendly.state.meta.suppressionBacklogIndex ?? 0,
     };
   }
 
@@ -3994,6 +4238,18 @@ export function evaluateDualTeamMultiAgentLayers(
     coordinationSaturationCombined: combineDualTeamCoordinationSaturation(
       friendly.state.meta.coordinationSaturationIndex ?? 0,
       enemy.state.meta.coordinationSaturationIndex ?? 0,
+    ),
+    mutexLeaseDivergenceCombined: combineDualTeamMutexLeaseDivergence(
+      friendly.state.meta.mutexLeaseDivergenceIndex ?? 0,
+      enemy.state.meta.mutexLeaseDivergenceIndex ?? 0,
+    ),
+    handoffCascadeRiskCombined: combineDualTeamHandoffCascadeRisk(
+      friendly.state.meta.handoffCascadeRiskIndex ?? 0,
+      enemy.state.meta.handoffCascadeRiskIndex ?? 0,
+    ),
+    suppressionBacklogCombined: combineDualTeamSuppressionBacklog(
+      friendly.state.meta.suppressionBacklogIndex ?? 0,
+      enemy.state.meta.suppressionBacklogIndex ?? 0,
     ),
   };
 }
@@ -5582,6 +5838,149 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
       typeof dual.workstreamDeadlockCombined === 'number' &&
       typeof dual.leaseContentionCombined === 'number' &&
       typeof dual.coordinationSaturationCombined === 'number'
+    );
+  });
+
+  check(results, 'a18_mutex_lease_divergence_detect', 'Mutex/lease divergence: holder mismatch flagged', () => {
+    const report = computeMutexLeaseDivergenceIndex(
+      { NSW: 'player' },
+      [
+        {
+          id: 'lease_nsw',
+          kind: 'region_mutex',
+          holderActorId: 'mate',
+          regionId: 'NSW',
+          taskId: 't1',
+          sinceTurn: 1,
+          expiresTurn: 5,
+          reason: 'test',
+        },
+      ],
+    );
+    return report.divergenceIndex > 0 && report.divergentRegionIds.includes('NSW');
+  });
+
+  check(results, 'a18_mutex_lease_divergence_aligned', 'Mutex/lease divergence: aligned holders score zero', () => {
+    const report = computeMutexLeaseDivergenceIndex(
+      { NSW: 'player' },
+      [
+        {
+          id: 'lease_nsw',
+          kind: 'region_mutex',
+          holderActorId: 'player',
+          regionId: 'NSW',
+          taskId: 't1',
+          sinceTurn: 1,
+          expiresTurn: 5,
+          reason: 'test',
+        },
+      ],
+    );
+    return report.divergenceIndex === 0;
+  });
+
+  check(results, 'a18_handoff_cascade_chain', 'Handoff cascade: long pending chain raises risk', () => {
+    const report = analyzeHandoffCascadeRisk([
+      {
+        id: 'h1',
+        fromActorId: 'a',
+        toActorId: 'b',
+        regionId: 'NSW',
+        taskId: 't1',
+        status: 'pending',
+        requestedTurn: 1,
+        reason: 'test',
+      },
+      {
+        id: 'h2',
+        fromActorId: 'b',
+        toActorId: 'c',
+        regionId: 'VIC',
+        taskId: 't2',
+        status: 'pending',
+        requestedTurn: 1,
+        reason: 'test',
+      },
+      {
+        id: 'h3',
+        fromActorId: 'c',
+        toActorId: 'd',
+        regionId: 'QLD',
+        taskId: 't3',
+        status: 'pending',
+        requestedTurn: 1,
+        reason: 'test',
+      },
+    ]);
+    return report.cascadeRiskIndex >= 55 && report.cascadeChainActorIds.length >= 3;
+  });
+
+  check(results, 'a18_handoff_cascade_none', 'Handoff cascade: single hop stays low risk', () => {
+    const report = analyzeHandoffCascadeRisk([
+      {
+        id: 'h1',
+        fromActorId: 'a',
+        toActorId: 'b',
+        regionId: 'NSW',
+        taskId: 't1',
+        status: 'pending',
+        requestedTurn: 1,
+        reason: 'test',
+      },
+    ]);
+    return report.cascadeRiskIndex < 30;
+  });
+
+  check(results, 'a18_suppression_backlog_high', 'Suppression backlog: near-cap load scores high', () => {
+    const report = computeSuppressionBacklogIndex({
+      suppressedDirectiveIds: Array.from({ length: 20 }, (_, i) => `d_${i}`),
+      droppedDirectiveCount: 4,
+      quotaExhaustedActorIds: ['a', 'b', 'c'],
+    });
+    return report.backlogIndex >= 70;
+  });
+
+  check(results, 'a18_suppression_backlog_low', 'Suppression backlog: light load stays low', () => {
+    const report = computeSuppressionBacklogIndex({
+      suppressedDirectiveIds: ['d1'],
+      droppedDirectiveCount: 0,
+      quotaExhaustedActorIds: [],
+    });
+    return report.backlogIndex < 40;
+  });
+
+  check(results, 'a18_eval_round10_meta', 'Layer: round-10 meta exposes divergence, cascade, backlog signals', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const m = ev.state.meta;
+    return (
+      typeof m.mutexLeaseDivergenceIndex === 'number' &&
+      typeof m.handoffCascadeRiskIndex === 'number' &&
+      typeof m.suppressionBacklogIndex === 'number'
+    );
+  });
+
+  check(results, 'a18_audit_suppression_backlog', 'Audit: high suppression backlog surfaces warning', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const state = { ...ev.state, meta: { ...ev.state.meta, suppressionBacklogIndex: 85 } };
+    const findings = auditTeamMultiAgentLayer(state, baseInputs());
+    return findings.some(f => f.severity === 'warning' && /suppression backlog/.test(f.message));
+  });
+
+  check(results, 'a18_dual_round10_combined', 'Dual team: round-10 combined divergence, cascade, backlog exposed', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      typeof dual.mutexLeaseDivergenceCombined === 'number' &&
+      typeof dual.handoffCascadeRiskCombined === 'number' &&
+      typeof dual.suppressionBacklogCombined === 'number'
     );
   });
 

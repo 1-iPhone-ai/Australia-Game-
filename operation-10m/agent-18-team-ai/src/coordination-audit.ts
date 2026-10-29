@@ -321,6 +321,39 @@ export function auditTeamMultiAgentLayer(
     });
   }
 
+  if (
+    typeof state.meta.mutexLeaseDivergenceIndex === 'number' &&
+    state.meta.mutexLeaseDivergenceIndex >= 40
+  ) {
+    push({
+      severity: 'warning',
+      message: `Mutex/lease divergence index (${state.meta.mutexLeaseDivergenceIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (
+    typeof state.meta.handoffCascadeRiskIndex === 'number' &&
+    state.meta.handoffCascadeRiskIndex >= 55
+  ) {
+    push({
+      severity: 'warning',
+      message: `Handoff cascade risk (${state.meta.handoffCascadeRiskIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
+  if (typeof state.meta.suppressionBacklogIndex === 'number' && state.meta.suppressionBacklogIndex >= 70) {
+    push({
+      severity: 'warning',
+      message: `Directive suppression backlog (${state.meta.suppressionBacklogIndex})`,
+      actorIds: [],
+      regionId: null,
+    });
+  }
+
   state.coordination.leases.forEach(lease => {
     if (lease.expiresTurn !== null && lease.expiresTurn < state.turn) {
       push({

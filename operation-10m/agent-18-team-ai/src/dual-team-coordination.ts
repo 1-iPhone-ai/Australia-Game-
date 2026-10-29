@@ -14,6 +14,9 @@ import { combineDualTeamHandoffOrphans } from './handoff-orphan-detector.ts';
 import { combineDualTeamWorkstreamDeadlocks } from './workstream-deadlock-detector.ts';
 import { combineDualTeamLeaseContention } from './lease-contention-index.ts';
 import { combineDualTeamCoordinationSaturation } from './coordination-saturation-gauge.ts';
+import { combineDualTeamMutexLeaseDivergence } from './mutex-lease-divergence-index.ts';
+import { combineDualTeamHandoffCascadeRisk } from './handoff-cascade-analyzer.ts';
+import { combineDualTeamSuppressionBacklog } from './suppression-backlog-index.ts';
 import { evaluateTeamMultiAgentLayer } from './multi-agent-state.ts';
 import {
   auditCrossTeamMutexIsolation,
@@ -45,6 +48,9 @@ export interface DualTeamMultiAgentResult {
   workstreamDeadlockCombined: number;
   leaseContentionCombined: number;
   coordinationSaturationCombined: number;
+  mutexLeaseDivergenceCombined: number;
+  handoffCascadeRiskCombined: number;
+  suppressionBacklogCombined: number;
 }
 
 /**
@@ -92,6 +98,9 @@ export function evaluateDualTeamMultiAgentLayers(
       workstreamDeadlockCombined: friendly.state.meta.workstreamDeadlockCount ?? 0,
       leaseContentionCombined: friendly.state.meta.leaseContentionIndex ?? 0,
       coordinationSaturationCombined: friendly.state.meta.coordinationSaturationIndex ?? 0,
+      mutexLeaseDivergenceCombined: friendly.state.meta.mutexLeaseDivergenceIndex ?? 0,
+      handoffCascadeRiskCombined: friendly.state.meta.handoffCascadeRiskIndex ?? 0,
+      suppressionBacklogCombined: friendly.state.meta.suppressionBacklogIndex ?? 0,
     };
   }
 
@@ -231,6 +240,18 @@ export function evaluateDualTeamMultiAgentLayers(
     coordinationSaturationCombined: combineDualTeamCoordinationSaturation(
       friendly.state.meta.coordinationSaturationIndex ?? 0,
       enemy.state.meta.coordinationSaturationIndex ?? 0,
+    ),
+    mutexLeaseDivergenceCombined: combineDualTeamMutexLeaseDivergence(
+      friendly.state.meta.mutexLeaseDivergenceIndex ?? 0,
+      enemy.state.meta.mutexLeaseDivergenceIndex ?? 0,
+    ),
+    handoffCascadeRiskCombined: combineDualTeamHandoffCascadeRisk(
+      friendly.state.meta.handoffCascadeRiskIndex ?? 0,
+      enemy.state.meta.handoffCascadeRiskIndex ?? 0,
+    ),
+    suppressionBacklogCombined: combineDualTeamSuppressionBacklog(
+      friendly.state.meta.suppressionBacklogIndex ?? 0,
+      enemy.state.meta.suppressionBacklogIndex ?? 0,
     ),
   };
 }
