@@ -1,10 +1,10 @@
 {
-  "scannedAt": "2026-10-29T08:55:07.136Z",
+  "scannedAt": "2026-10-29T09:00:34.573Z",
   "canonicalBase": "origin/australia-game-upgrade",
   "baselineCommit": "bc1adf3",
-  "originOp10mHeadCount": 32,
-  "branchHeadCount": 31,
-  "branchCount": 31,
+  "originOp10mHeadCount": 33,
+  "branchHeadCount": 32,
+  "branchCount": 32,
   "assemblyReadyCount": 24,
   "pendingAgent14": false,
   "rows": [
@@ -55,7 +55,7 @@
       "chunkPath": "operation-10m/agent-05-events/chunk.tsx",
       "markerModuleId": "agent-05-events",
       "assemblyReady": true,
-      "contentSha256": "c8c579d226a0bbc1ca68c335efb768dab7d18a235ca2df652e1a871d8e8219f2",
+      "contentSha256": "30ab20a769d15bacf4a71305aee3e31b35a0ae058a818fa415e82aa02c151771",
       "defaultSlot": "pre-final-export"
     },
     {
@@ -315,6 +315,18 @@
       "assemblyReady": true,
       "contentSha256": "5839158d7dcc904a00bfcdda6a648cf3867b2b0b24e815befd75293986c064b6",
       "defaultSlot": "pre-final-export"
+    },
+    {
+      "branch": "origin/op10m/agent-24-history-replay",
+      "branchSlug": "agent-24-history-replay",
+      "moduleId": "agent-24-history",
+      "chunkPath": "operation-10m/modules/agent-24-history/chunk.tsx",
+      "markerModuleId": "agent-24-history",
+      "assemblyReady": false,
+      "contentSha256": "6db14ad14d1a8192cb0c883941052748c0b0747cbbb807707620191cf19e93d2",
+      "defaultSlot": "pre-final-export",
+      "duplicateModuleIdOf": "origin/op10m/agent-24-history",
+      "skipReason": "duplicate moduleId (branch not primary)"
     },
     {
       "branch": "origin/op10m/agent-24-replay",

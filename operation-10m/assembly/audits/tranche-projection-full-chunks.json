@@ -1,14 +1,14 @@
 {
   "projectionId": "tranche-projection-full-chunks",
-  "dryRunAt": "2026-10-29T08:55:18.142Z",
+  "dryRunAt": "2026-10-29T09:00:45.389Z",
   "canonicalBaseCommit": "bc1adf3",
   "baselineAuditedFunctional": 389566,
-  "projectedAuditedFunctional": 1721932,
-  "deltaAuditedFunctional": 1332366,
+  "projectedAuditedFunctional": 1760131,
+  "deltaAuditedFunctional": 1370565,
   "baselinePhysicalLines": 419353,
-  "projectedPhysicalLines": 1793879,
-  "branchHeadCount": 32,
-  "branchesScannedExcludingIntegration": 31,
+  "projectedPhysicalLines": 1833067,
+  "branchHeadCount": 33,
+  "branchesScannedExcludingIntegration": 32,
   "assemblyReadyRemote": 24,
   "modulesInManifest": 25,
   "integrationOrder": [
@@ -70,6 +70,11 @@
       "skipReason": "duplicate moduleId (branch not primary)"
     },
     {
+      "branchSlug": "agent-24-history-replay",
+      "moduleId": "agent-24-history",
+      "skipReason": "duplicate moduleId (branch not primary)"
+    },
+    {
       "branchSlug": "agent-24-replay",
       "moduleId": "agent-24-history",
       "skipReason": "duplicate moduleId (branch not primary)"
@@ -99,7 +104,7 @@
     {
       "moduleId": "agent-05-events",
       "slot": "pre-final-export",
-      "contentSha256": "c8c579d226a0bbc1ca68c335efb768dab7d18a235ca2df652e1a871d8e8219f2"
+      "contentSha256": "30ab20a769d15bacf4a71305aee3e31b35a0ae058a818fa415e82aa02c151771"
     },
     {
       "moduleId": "agent-06-macroeconomy",
