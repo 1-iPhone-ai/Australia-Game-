@@ -11,14 +11,15 @@
     "typecheck:game": "node scripts/typecheck-game-baseline.mjs",
     "typecheck:game:raw": "tsc -p tsconfig.game.json",
     "verify:standalone": "node scripts/verify-standalone-module.mjs",
+    "test": "vitest run",
     "test:watch": "vitest",
     "test:architecture": "node tests/source-architecture.mjs",
-    "verify": "npm run verify:standalone && npm run typecheck && npm run test && npm run build",
     "test:nav": "node src/intent-navigation/validate-contract.mjs",
-    "test": "vitest run",
     "test:integration": "node scripts/run-o111-integration-tests.mjs",
     "test:integration:gate-b2": "node scripts/run-o111-integration-gate.mjs b2",
-    "test:integration:gate-final": "node scripts/run-o111-integration-gate.mjs final"
+    "test:integration:gate-final": "node scripts/run-o111-integration-gate.mjs final",
+    "test:state-invariants": "npx --yes tsx scripts/run-agent-81-invariant-tests.ts",
+    "verify": "npm run verify:standalone && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
     "react": "19.3.1",
@@ -29,6 +30,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "5.2.0",
+    "tsx": "4.20.6",
     "typescript": "5.9.3",
     "vite": "7.3.7",
     "vitest": "3.2.4"
