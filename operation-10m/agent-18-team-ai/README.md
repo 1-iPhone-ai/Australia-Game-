@@ -22,9 +22,17 @@ npx --yes tsx operation-10m/agent-18-team-ai/run-self-tests.mts
 | `src/types.ts` | Shared types and limits |
 | `src/role-assignment-engine.ts` | Role slots + assignment |
 | `src/coordination-orchestrator.ts` | Leases, mutexes, handoffs |
+| `src/priority-arbitration.ts` | Mission-tier mutex arbitration |
 | `src/duplicate-action-guard.ts` | Fingerprint store + commit gate |
 | `src/multi-agent-state.ts` | Layer evaluator + sanitize |
 | `src/self-tests.ts` | Deterministic test suite |
 | `run-self-tests.mts` | CLI runner |
+| `scripts/build-chunk.mjs` | Regenerate assembly chunk |
+
+## Assembly chunk (Agent 25)
+
+- Path: `operation-10m/modules/agent-18-team-ai/chunk.tsx`
+- Markers: `OP10M_MODULE_BEGIN` / `OP10M_MODULE_END agent-18-team-ai`
+- Regenerate: `npm run build:agent18-chunk`
 
 See `../INTEGRATION.md` for assembly hooks.

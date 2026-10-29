@@ -35,11 +35,21 @@ Hook points:
 1. **After** `assignTeamRoles` inside `evaluateTeamOperatingSystem`: pass roles + task graph through `evaluateTeamMultiAgentLayer` to attach coordination leases and duplicate-action reservations.
 2. **Before** Strategic Command generates directives: call `syncMultiAgentCoordinationForDirectives(teamId, live)` (wrapper in assembly) so AI teammates never receive conflicting goals for the same exclusive slot.
 3. **Action commit path**: consult `DuplicateActionGuard.tryCommit(fingerprint)` with the same `executionGeneration` the canonical executor uses; map `blocked` → `duplicate_action_token`.
+4. **Region mutex**: use `buildMutexMapWithPriorityArbitration` / `coordination.arbitrationLog` so defend-vs-take and explicit/locked edge cases match Team OS tier rules before Strategic Command sync.
 
 ### Test gate
 
 ```bash
-node --import tsx operation-10m/agent-18-team-ai/run-self-tests.mts
+npx --yes tsx operation-10m/agent-18-team-ai/run-self-tests.mts
+npm run build:agent18-chunk
 ```
 
-Expected: all tests pass, exit code 0.
+Expected: all tests pass, exit code 0; chunk has no top-level `import` lines.
+
+### Assembly chunk
+
+| Field | Value |
+|--------|--------|
+| Path | `operation-10m/modules/agent-18-team-ai/chunk.tsx` |
+| Markers | `OP10M_MODULE_BEGIN agent-18-team-ai` … `OP10M_MODULE_END agent-18-team-ai` |
+| Regenerate | `npm run build:agent18-chunk` |
