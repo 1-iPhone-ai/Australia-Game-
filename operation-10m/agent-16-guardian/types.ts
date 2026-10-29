@@ -159,6 +159,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   exemptionStrainIndex: number;
   exemptionIntegrityScore: number;
   governanceStaminaScore: number;
+  remissionStrainIndex: number;
+  remissionIntegrityScore: number;
+  governanceMettleScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
