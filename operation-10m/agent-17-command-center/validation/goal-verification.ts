@@ -118,6 +118,14 @@ import {
   executionSummonsBlocksField,
 } from '../planning/execution-summons.ts';
 import {
+  buildAgent17FieldIndex,
+  fieldIndexBlocksCommitment,
+} from '../planning/field-index.ts';
+import {
+  buildAgent17TheaterCommitment,
+  theaterCommitmentBlocksTheater,
+} from '../planning/theater-commitment.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -1099,6 +1107,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const fieldIndex = depthEval.snapshot.planningDepth?.fieldIndex;
+  goalResults.push(
+    result(
+      'G17-067',
+      !!fieldIndex &&
+        fieldIndex.vectors.length >= 5 &&
+        fieldIndex.fieldScore >= 0 &&
+        fieldIndex.fieldScore <= 100 &&
+        (fieldIndex.band === 'engaged' ||
+          fieldIndex.band === 'staging' ||
+          fieldIndex.band === 'contested'),
+      `vectors=${fieldIndex?.vectors.length} score=${fieldIndex?.fieldScore}`
+    )
+  );
+
+  const theaterCommitment = depthEval.snapshot.planningDepth?.theaterCommitment;
+  goalResults.push(
+    result(
+      'G17-068',
+      !!theaterCommitment &&
+        theaterCommitment.pledges.length >= 5 &&
+        theaterCommitment.commitmentScore >= 0 &&
+        theaterCommitment.commitmentScore <= 100,
+      `pledges=${theaterCommitment?.pledges.length} score=${theaterCommitment?.commitmentScore}`
+    )
+  );
+
+  const contestedField = buildAgent17FieldIndex({
+    executionSummons: revokedSummons,
+    coordinationBrief: depthEval.snapshot.planningDepth!.coordinationBrief,
+    executionClosure: depthEval.snapshot.planningDepth!.executionClosure,
+  });
+  const withdrawnTheater = buildAgent17TheaterCommitment({
+    fieldIndex: contestedField,
+    executionSummons: revokedSummons,
+    readinessGate: depthEval.snapshot.planningDepth!.readinessGate,
+  });
+  goalResults.push(
+    result(
+      'G17-069',
+      executionSummonsBlocksField(revokedSummons) ||
+        fieldIndexBlocksCommitment(contestedField) ||
+        theaterCommitmentBlocksTheater(withdrawnTheater),
+      `${contestedField.band}/${withdrawnTheater.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -1195,6 +1250,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-064',
     'G17-065',
     'G17-066',
+    'G17-067',
+    'G17-068',
+    'G17-069',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
