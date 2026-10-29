@@ -1520,15 +1520,15 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const nextWavePrimingEvent = bilateralNextWavePrimingGateWorldEvent(bilateralNextWavePrimingGate, turn);
   if (nextWavePrimingEvent) worldEvents.push(nextWavePrimingEvent);
 
-  const primingContinuityStep = computeNextWavePrimingContinuitySnapshot({
+  const nextWavePrimingContinuityStep = computeNextWavePrimingContinuitySnapshot({
     bilateralNextWavePrimingGate,
     scaleWaveReentryContinuity,
     persisted,
   });
-  persisted = primingContinuityStep.persisted;
-  const nextWavePrimingContinuity = primingContinuityStep.snapshot;
-  const primingContinuityEvent = nextWavePrimingContinuityWorldEvent(nextWavePrimingContinuity, turn);
-  if (primingContinuityEvent) worldEvents.push(primingContinuityEvent);
+  persisted = nextWavePrimingContinuityStep.persisted;
+  const nextWavePrimingContinuity = nextWavePrimingContinuityStep.snapshot;
+  const nextWavePrimingContinuityEvent = nextWavePrimingContinuityWorldEvent(nextWavePrimingContinuity, turn);
+  if (nextWavePrimingContinuityEvent) worldEvents.push(nextWavePrimingContinuityEvent);
 
   const waveLaunchStep = computeBilateralPrimedWaveLaunchGateSnapshot({
     nextWavePrimingContinuity,
