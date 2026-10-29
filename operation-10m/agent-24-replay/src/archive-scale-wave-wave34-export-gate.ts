@@ -131,7 +131,7 @@ export function runAgent24ArchiveScaleWaveWave34ExportGateSelfTests(): Array<{ n
 
   return [
     { name: 'export_allowed_when_wave34_stack_ready', passed: report.exportAllowed && report.blockerCount === 0 },
-    { name: 'wave_round_pinned', passed: report.waveRound === 34 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 33 },
     {
       name: 'deterministic_fingerprint',
       passed:

@@ -1430,7 +1430,7 @@ describe('Agent 24 replay scale wave acceptance', () => {
     assert.equal(bundle.replayScaleWaveAcceptance.waveRound, 34);
     const direct = buildAgent24ReplayScaleWaveAcceptanceReport({
       matchId: 'm',
-      waveRound: 33,
+      waveRound: 34,
       archiveContinuityVerification: bundle.archiveContinuityVerification,
       exportReadiness: bundle.exportReadiness,
       analyticsDepth: bundle.analyticsDepth,
