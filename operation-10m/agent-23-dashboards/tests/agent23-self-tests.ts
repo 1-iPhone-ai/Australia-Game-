@@ -266,6 +266,12 @@ import { nrDashBuildRimChokepointBorderLinkSaturationShare } from '../core/rim-c
 import { nrDashBuildCombinedDerivedCriticalSnippetSourceGap } from '../core/combined-derived-critical-snippet-source-gap.ts';
 import { nrDashBuildMergedAdjacencyDependencyHubBorderPulseAsymmetry } from '../core/merged-adjacency-dependency-hub-border-pulse-asymmetry.ts';
 import { nrDashBuildMeaningfulDerivedCriticalHistoryOverlapGap } from '../core/meaningful-derived-critical-history-overlap-gap.ts';
+import { nrDashBuildRegionalOpenNeedsTierConcentration } from '../core/regional-open-needs-tier-concentration.ts';
+import { nrDashBuildRivalOpenNeedsPeakSeveritySpread } from '../core/rival-open-needs-peak-severity-spread.ts';
+import { nrDashBuildHubChokepointBorderLinkSaturationShare } from '../core/hub-chokepoint-border-link-saturation-share.ts';
+import { nrDashBuildLrDerivedCriticalSnippetSourceGap } from '../core/lr-derived-critical-snippet-source-gap.ts';
+import { nrDashBuildPeripheralAdjacencyDependencyHubBorderPulseAsymmetry } from '../core/peripheral-adjacency-dependency-hub-border-pulse-asymmetry.ts';
+import { nrDashBuildCriticalDerivedCriticalHistoryOverlapGap } from '../core/critical-derived-critical-history-overlap-gap.ts';
 import { nrDashBuildResilienceSpread } from '../core/resilience-spread.ts';
 import { nrDashBuildAuthSnapshot } from '../core/auth-snapshot.ts';
 import { nrDashBuildBottleneckRollup } from '../core/bottleneck-rollup.ts';
@@ -2150,6 +2156,55 @@ export function runAgent23SelfTests(): Agent23TestResult[] {
     lr.state.derived.push({ turn: 5, text: 'Echo', significance: 'meaningful' });
     const gap = nrDashBuildMeaningfulDerivedCriticalHistoryOverlapGap(lr, createAgent23NsFixture())!;
     return gap.meaningfulDerivedCriticalCount === 1 && gap.sharedTurnCount === 1 && gap.overlapGap === 1;
+  });
+
+  check('a23_regional_open_needs_tier_concentration', 'Regional open-needs tier concentration splits mixed severities', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs[0]!.severity = 'critical';
+    lr.state.regions.VIC!.needs.push({ category: 'health', status: 'open', severity: 'low' });
+    const snap = nrDashBuildAuthSnapshot(5, lr, null, null)!;
+    const conc = nrDashBuildRegionalOpenNeedsTierConcentration(lr, snap)!;
+    return conc.tierBucketCount >= 2 && conc.concentrationIndex > 0.4;
+  });
+
+  check('a23_rival_open_needs_peak_severity_spread', 'Rival open-needs peak severity spread splits two rival regions', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs[0]!.severity = 'critical';
+    const snap = nrDashBuildAuthSnapshot(5, lr, null, { NSW: 'rival', VIC: 'rival' })!;
+    const spread = nrDashBuildRivalOpenNeedsPeakSeveritySpread(lr, snap)!;
+    return spread.rivalRegionCount === 2 && spread.peakSeveritySpread === 2;
+  });
+
+  check('a23_hub_chokepoint_border_link_saturation_share', 'Hub chokepoint border link saturation share is below one on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const sat = nrDashBuildHubChokepointBorderLinkSaturationShare(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return sat.hubChokepointLinkCount > 0 && sat.saturationShare > 0 && sat.saturationShare <= 1;
+  });
+
+  check('a23_lr_derived_critical_snippet_source_gap', 'LR derived critical snippet source gap counts critical bottleneck lane', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.derived.push({ turn: 6, text: 'Lane', significance: 'meaningful' });
+    const ns = createAgent23NsFixture();
+    ns.bottlenecks.push({ id: 'bn2', regionId: 'NSW', network: 'energy', severity: 'critical' });
+    const snap = nrDashBuildAuthSnapshot(5, lr, ns, null)!;
+    const gap = nrDashBuildLrDerivedCriticalSnippetSourceGap(lr, ns, snap)!;
+    return gap.lrDerivedCriticalSourceCount === 2 && gap.matchedSnippetCount === 1 && gap.sourceGap === 1;
+  });
+
+  check('a23_peripheral_adjacency_dependency_hub_border_pulse_asymmetry', 'Peripheral adjacency dependency hub border pulse asymmetry is positive on fixture', () => {
+    const snap = nrDashBuildAuthSnapshot(5, createAgent23LrFixture(), createAgent23NsFixture(), null)!;
+    const asym = nrDashBuildPeripheralAdjacencyDependencyHubBorderPulseAsymmetry(createAgent23NsFixture(), nrDashBuildRegionMapNodes(snap))!;
+    return asym.peripheralAdjacencyDependencyHubBorderLinkCount > 0 && asym.maxEndpointDelta > 0.01;
+  });
+
+  check('a23_critical_derived_critical_history_overlap_gap', 'Critical derived critical history overlap gap counts shared derived turn', () => {
+    const lr = createAgent23LrFixture();
+    lr.state.regions.NSW!.needs[0]!.severity = 'critical';
+    lr.state.derived.push({ turn: 5, text: 'Echo', significance: 'meaningful' });
+    const ns = createAgent23NsFixture();
+    ns.bottlenecks.push({ id: 'bn2', regionId: 'NSW', network: 'energy', severity: 'critical' });
+    const gap = nrDashBuildCriticalDerivedCriticalHistoryOverlapGap(lr, ns)!;
+    return gap.criticalDerivedCriticalCount === 2 && gap.sharedTurnCount === 1 && gap.overlapGap === 1;
   });
 
   return results;
