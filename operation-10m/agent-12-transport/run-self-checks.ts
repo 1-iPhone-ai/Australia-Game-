@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/24' &&
+      infra.schemaVersion === 'agent12/25' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -146,8 +146,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalAutonomousHeavyHaulIndex >= 6 &&
       infra.nationalGbrBiosecurityLogisticsIndex >= 8 &&
       infra.nightUrbanFreightWindowShare >= 0.03 &&
-      infra.nationalNightUrbanFreightWindowThroughputIndex >= 1.5,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} haul=${infra.nationalAutonomousHeavyHaulIndex.toFixed(1)} gbr=${infra.nationalGbrBiosecurityLogisticsIndex.toFixed(1)} night=${infra.nationalNightUrbanFreightWindowThroughputIndex.toFixed(1)}`,
+      infra.nationalNightUrbanFreightWindowThroughputIndex >= 1.5 &&
+      infra.nationalMethanolBunkeringExportIndex >= 5 &&
+      infra.nationalAntarcticResupplyLogisticsIndex >= 6 &&
+      infra.smartBorderPreclearanceShare >= 0.03 &&
+      infra.nationalSmartBorderPreclearanceThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} methanol=${infra.nationalMethanolBunkeringExportIndex.toFixed(1)} antarctic=${infra.nationalAntarcticResupplyLogisticsIndex.toFixed(1)} preclear=${infra.nationalSmartBorderPreclearanceThroughputIndex.toFixed(1)}`,
   });
 
   return results;

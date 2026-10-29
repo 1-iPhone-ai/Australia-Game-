@@ -291,8 +291,14 @@ export type GbrBiosecurityLogisticsPolicy = 'baseline' | 'harden';
 
 export type NightUrbanFreightWindowPolicy = 'baseline' | 'expand';
 
+export type MethanolBunkeringExportPolicy = 'baseline' | 'accelerate';
+
+export type AntarcticResupplyLogisticsPolicy = 'baseline' | 'surge';
+
+export type SmartBorderPreclearancePolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/24';
+  schemaVersion: 'agent12/25';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -450,6 +456,14 @@ export interface TransportInfrastructureState {
   nightUrbanFreightWindowShare: number;
   nationalNightUrbanFreightWindowThroughputIndex: number;
   nightUrbanFreightWindowThroughputByRegion: Record<AuRegionCode, number>;
+  nationalMethanolBunkeringExportIndex: number;
+  methanolBunkeringExportByRegion: Record<AuRegionCode, number>;
+  antarcticResupplyLogisticsShare: number;
+  nationalAntarcticResupplyLogisticsIndex: number;
+  antarcticResupplyLogisticsByRegion: Record<AuRegionCode, number>;
+  smartBorderPreclearanceShare: number;
+  nationalSmartBorderPreclearanceThroughputIndex: number;
+  smartBorderPreclearanceThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -512,6 +526,9 @@ export interface TransportInfrastructureOptions {
   autonomousHeavyHaulPolicy?: AutonomousHeavyHaulPolicy;
   gbrBiosecurityLogisticsPolicy?: GbrBiosecurityLogisticsPolicy;
   nightUrbanFreightWindowPolicy?: NightUrbanFreightWindowPolicy;
+  methanolBunkeringExportPolicy?: MethanolBunkeringExportPolicy;
+  antarcticResupplyLogisticsPolicy?: AntarcticResupplyLogisticsPolicy;
+  smartBorderPreclearancePolicy?: SmartBorderPreclearancePolicy;
 }
 
 export interface V94ProjectSnapshot {

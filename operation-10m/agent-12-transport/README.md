@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 24
+
+- Schema **`agent12/25`**: methanol bunkering export throughput, Antarctic resupply logistics readiness, smart border preclearance share (`methanolBunkeringExportPolicy`, `antarcticResupplyLogisticsPolicy`, `smartBorderPreclearancePolicy`)
+- Catalog: **341** assets, **86** corridors, **138** scenarios
+- Systems: `network/methanol-bunkering-export-index.ts`, `operations/antarctic-resupply-logistics-index.ts`, `productivity/smart-border-preclearance-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 23
 
 - Schema **`agent12/24`**: autonomous heavy haul throughput, GBR biosecurity logistics readiness, night urban freight window share (`autonomousHeavyHaulPolicy`, `gbrBiosecurityLogisticsPolicy`, `nightUrbanFreightWindowPolicy`)

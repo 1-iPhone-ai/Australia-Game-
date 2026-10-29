@@ -346,6 +346,23 @@ import {
   nationalNightUrbanFreightWindowThroughputIndex,
   nightUrbanFreightWindowProductivityMultiplier,
 } from './night-urban-freight-window-index.ts';
+import {
+  computeMethanolBunkeringExportByRegion,
+  methanolBunkeringExportProductivityMultiplier,
+  nationalMethanolBunkeringExportIndex,
+} from '../network/methanol-bunkering-export-index.ts';
+import {
+  antarcticResupplyLogisticsProductivityMultiplier,
+  computeAntarcticResupplyLogisticsByRegion,
+  computeAntarcticResupplyLogisticsShare,
+  nationalAntarcticResupplyLogisticsIndex,
+} from '../operations/antarctic-resupply-logistics-index.ts';
+import {
+  computeSmartBorderPreclearanceShare,
+  computeSmartBorderPreclearanceThroughputByRegion,
+  nationalSmartBorderPreclearanceThroughputIndex,
+  smartBorderPreclearanceProductivityMultiplier,
+} from './smart-border-preclearance-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1189,6 +1206,34 @@ export function computeTransportInfrastructureState(
     nightUrbanFreightWindowShare,
     options?.nightUrbanFreightWindowPolicy ?? 'baseline',
   );
+  const methanolBunkeringExportByRegion = computeMethanolBunkeringExportByRegion(ops);
+  const nationalMethanolBunkering = nationalMethanolBunkeringExportIndex(methanolBunkeringExportByRegion);
+  const methanolMult = methanolBunkeringExportProductivityMultiplier(
+    nationalMethanolBunkering,
+    options?.methanolBunkeringExportPolicy ?? 'baseline',
+  );
+  const antarcticResupplyLogisticsByRegion = computeAntarcticResupplyLogisticsByRegion(ops, networkStress);
+  const nationalAntarcticResupply = nationalAntarcticResupplyLogisticsIndex(antarcticResupplyLogisticsByRegion);
+  const antarcticResupplyLogisticsShare = computeAntarcticResupplyLogisticsShare(
+    ops,
+    options?.antarcticResupplyLogisticsPolicy ?? 'baseline',
+  );
+  const antarcticMult = antarcticResupplyLogisticsProductivityMultiplier(
+    antarcticResupplyLogisticsShare,
+    options?.antarcticResupplyLogisticsPolicy ?? 'baseline',
+  );
+  const smartBorderPreclearanceThroughputByRegion = computeSmartBorderPreclearanceThroughputByRegion(ops);
+  const nationalSmartBorderPreclearance = nationalSmartBorderPreclearanceThroughputIndex(
+    smartBorderPreclearanceThroughputByRegion,
+  );
+  const smartBorderPreclearanceShare = computeSmartBorderPreclearanceShare(
+    ops,
+    options?.smartBorderPreclearancePolicy ?? 'baseline',
+  );
+  const smartBorderMult = smartBorderPreclearanceProductivityMultiplier(
+    smartBorderPreclearanceShare,
+    options?.smartBorderPreclearancePolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1215,6 +1260,9 @@ export function computeTransportInfrastructureState(
     const heavyHaulBoost = (autonomousHeavyHaulByRegion[code] - 6) * 0.0043;
     const gbrBoost = (gbrBiosecurityLogisticsByRegion[code] - 8) * 0.0039;
     const nightFreightBoost = (nightUrbanFreightWindowThroughputByRegion[code] - 1.5) * 0.0038;
+    const methanolBoost = (methanolBunkeringExportByRegion[code] - 5) * 0.0041;
+    const antarcticBoost = (antarcticResupplyLogisticsByRegion[code] - 6) * 0.0037;
+    const smartBorderBoost = (smartBorderPreclearanceThroughputByRegion[code] - 2) * 0.0036;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1240,7 +1288,10 @@ export function computeTransportInfrastructureState(
         portTractorBoost +
         heavyHaulBoost +
         gbrBoost +
-        nightFreightBoost) *
+        nightFreightBoost +
+        methanolBoost +
+        antarcticBoost +
+        smartBorderBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1264,7 +1315,10 @@ export function computeTransportInfrastructureState(
       portTractorMult *
       heavyHaulMult *
       gbrMult *
-      nightFreightMult;
+      nightFreightMult *
+      methanolMult *
+      antarcticMult *
+      smartBorderMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1311,7 +1365,10 @@ export function computeTransportInfrastructureState(
     nationalAutonomousPortTractor * 0.007 +
     nationalAutonomousHeavyHaul * 0.007 +
     nationalGbrBiosecurity * 0.006 +
-    nationalNightUrbanFreight * 0.006;
+    nationalNightUrbanFreight * 0.006 +
+    nationalMethanolBunkering * 0.006 +
+    nationalAntarcticResupply * 0.005 +
+    nationalSmartBorderPreclearance * 0.005;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1326,7 +1383,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/24',
+    schemaVersion: 'agent12/25',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1484,6 +1541,14 @@ export function computeTransportInfrastructureState(
     nightUrbanFreightWindowShare,
     nationalNightUrbanFreightWindowThroughputIndex: nationalNightUrbanFreight,
     nightUrbanFreightWindowThroughputByRegion,
+    nationalMethanolBunkeringExportIndex: nationalMethanolBunkering,
+    methanolBunkeringExportByRegion,
+    antarcticResupplyLogisticsShare,
+    nationalAntarcticResupplyLogisticsIndex: nationalAntarcticResupply,
+    antarcticResupplyLogisticsByRegion,
+    smartBorderPreclearanceShare,
+    nationalSmartBorderPreclearanceThroughputIndex: nationalSmartBorderPreclearance,
+    smartBorderPreclearanceThroughputByRegion,
     computeMs,
   };
 }

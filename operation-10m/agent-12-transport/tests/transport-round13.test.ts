@@ -35,13 +35,13 @@ describe('Agent 12 round 13 catalog', () => {
 });
 
 describe('Agent 12 round 13 systems', () => {
-  it('returns agent12/24 with gauge interoperability, disaster staging, circular freight', () => {
+  it('returns agent12/25 with gauge interoperability, disaster staging, circular freight', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(100), {
       gaugeInteroperabilityPolicy: 'harmonize',
       disasterRecoveryStagingPolicy: 'surge',
       circularFreightPolicy: 'expand',
     });
-    assert.equal(state.schemaVersion, 'agent12/24');
+    assert.equal(state.schemaVersion, 'agent12/25');
     assert.ok(state.nationalGaugeInteroperabilityIndex >= 12);
     assert.ok(state.nationalDisasterRecoveryStagingIndex >= 37);
     assert.ok(state.circularFreightShare >= 0.06);

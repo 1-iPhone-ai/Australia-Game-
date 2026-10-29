@@ -295,8 +295,14 @@ export type GbrBiosecurityLogisticsPolicy = 'baseline' | 'harden';
 
 export type NightUrbanFreightWindowPolicy = 'baseline' | 'expand';
 
+export type MethanolBunkeringExportPolicy = 'baseline' | 'accelerate';
+
+export type AntarcticResupplyLogisticsPolicy = 'baseline' | 'surge';
+
+export type SmartBorderPreclearancePolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/24';
+  schemaVersion: 'agent12/25';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -454,6 +460,14 @@ export interface TransportInfrastructureState {
   nightUrbanFreightWindowShare: number;
   nationalNightUrbanFreightWindowThroughputIndex: number;
   nightUrbanFreightWindowThroughputByRegion: Record<AuRegionCode, number>;
+  nationalMethanolBunkeringExportIndex: number;
+  methanolBunkeringExportByRegion: Record<AuRegionCode, number>;
+  antarcticResupplyLogisticsShare: number;
+  nationalAntarcticResupplyLogisticsIndex: number;
+  antarcticResupplyLogisticsByRegion: Record<AuRegionCode, number>;
+  smartBorderPreclearanceShare: number;
+  nationalSmartBorderPreclearanceThroughputIndex: number;
+  smartBorderPreclearanceThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -516,6 +530,9 @@ export interface TransportInfrastructureOptions {
   autonomousHeavyHaulPolicy?: AutonomousHeavyHaulPolicy;
   gbrBiosecurityLogisticsPolicy?: GbrBiosecurityLogisticsPolicy;
   nightUrbanFreightWindowPolicy?: NightUrbanFreightWindowPolicy;
+  methanolBunkeringExportPolicy?: MethanolBunkeringExportPolicy;
+  antarcticResupplyLogisticsPolicy?: AntarcticResupplyLogisticsPolicy;
+  smartBorderPreclearancePolicy?: SmartBorderPreclearancePolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1541,6 +1558,48 @@ export const TRANSPORT_CORRIDORS_ROUND23: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round24.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND24: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_qld_methanol_bunkering',
+    name: 'WA–QLD Methanol Bunkering',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['methanol_bunkering', 'green_methanol', 'bunker_export'],
+      QLD: ['methanol_bunkering', 'green_methanol', 'bunker_export'],
+    },
+    productivitySynergyPoints: 6.1,
+    logisticsRelief: 0.036,
+  },
+  {
+    id: 'corr_tas_sa_antarctic_resupply',
+    name: 'TAS–SA Antarctic Resupply',
+    networkKind: 'trade',
+    regionSequence: ['TAS', 'SA'],
+    requiredTagsByRegion: {
+      TAS: ['antarctic_resupply', 'polar_logistics', 'icebreaker_staging'],
+      SA: ['antarctic_resupply', 'polar_logistics', 'icebreaker_staging'],
+    },
+    productivitySynergyPoints: 5.9,
+    logisticsRelief: 0.034,
+  },
+  {
+    id: 'corr_nsw_vic_smart_border_preclear',
+    name: 'NSW–VIC Smart Border Preclear',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['smart_border', 'preclear_freight', 'digital_customs_gate'],
+      VIC: ['smart_border', 'preclear_freight', 'digital_customs_gate'],
+    },
+    productivitySynergyPoints: 5.6,
+    logisticsRelief: 0.03,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1711,6 +1770,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND21,
   ...TRANSPORT_CORRIDORS_ROUND22,
   ...TRANSPORT_CORRIDORS_ROUND23,
+  ...TRANSPORT_CORRIDORS_ROUND24,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -3031,6 +3091,62 @@ export const TRANSPORT_SCENARIOS_ROUND23: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round24.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND24: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_methanol_bunker_surge',
+    label: 'WA Methanol Bunker Surge',
+    description: 'Green methanol export rush overloads Henderson bunkering berths.',
+    targetRegions: ['WA', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_tas_polar_resupply_window',
+    label: 'Tasmania Polar Resupply Window',
+    description: 'Icebreaker departure compresses Hobart polar staging slots.',
+    targetRegions: ['TAS', 'SA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_preclear_backlog',
+    label: 'NSW Preclear Backlog',
+    description: 'Digital customs gate surge delays Hume preclear freight.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_vic_customs_gate_outage',
+    label: 'Victoria Customs Gate Outage',
+    description: 'Smart border outage forces manual Melbourne preclear checks.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.19,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['road'],
+  },
+  {
+    id: 'scn_sa_icebreaker_delay',
+    label: 'SA Icebreaker Delay',
+    description: 'Resupply delay backs up Adelaide polar staging yards.',
+    targetRegions: ['SA', 'TAS'],
+    networkKind: 'trade',
+    utilizationAdd: 0.18,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['rail', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -3215,6 +3331,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND21,
   ...TRANSPORT_SCENARIOS_ROUND22,
   ...TRANSPORT_SCENARIOS_ROUND23,
+  ...TRANSPORT_SCENARIOS_ROUND24,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -9192,6 +9309,233 @@ export const SCALE_WAVE_ROUND23_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round24-assets.ts ---
+
+export const ROUND24_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_dampier_methanol_feed',
+    category: 'road',
+    name: 'Dampier Green Methanol Feed',
+    description: 'Road link to Pilbara methanol bunkering export.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['methanol_bunkering', 'green_methanol', 'bunker_export'],
+    laneKilometres: 48,
+    designSpeedKmh: 90,
+    freightShare: 0.38,
+    urbanShare: 0.04,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_bowen_methanol_access',
+    category: 'road',
+    name: 'Bowen Methanol Bunker Access',
+    description: 'East coast green methanol bunkering road feed.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['trade'],
+    tags: ['methanol_bunkering', 'green_methanol', 'bunker_export'],
+    laneKilometres: 32,
+    designSpeedKmh: 88,
+    freightShare: 0.33,
+    urbanShare: 0.08,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_hume_preclear_gate',
+    category: 'road',
+    name: 'Hume Smart Preclear Gate',
+    description: 'Digital customs preclearance on NSW–VIC freight spine.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['smart_border', 'preclear_freight', 'digital_customs_gate'],
+    laneKilometres: 28,
+    designSpeedKmh: 92,
+    freightShare: 0.41,
+    urbanShare: 0.18,
+    tollRoad: true,
+  },
+  {
+    id: 'road_vic_monash_preclear_spine',
+    category: 'road',
+    name: 'Monash Preclear Freight Spine',
+    description: 'Melbourne smart border preclearance motorway link.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 3.9,
+    strategicNetworks: ['freight'],
+    tags: ['smart_border', 'preclear_freight', 'digital_customs_gate'],
+    laneKilometres: 19,
+    designSpeedKmh: 86,
+    freightShare: 0.36,
+    urbanShare: 0.44,
+    tollRoad: true,
+  },
+];
+
+export const ROUND24_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_northwest_methanol_link',
+    category: 'rail',
+    name: 'Northwest Methanol Export Link',
+    description: 'Rail feed to green methanol bunkering berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['methanol_bunkering', 'green_methanol', 'bunker_export'],
+    trackKilometres: 96,
+    dualTrackShare: 0.42,
+    electrifiedShare: 0.18,
+    designFreightTonnesPerYear: 6_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_central_methanol_corridor',
+    category: 'rail',
+    name: 'Central QLD Methanol Corridor',
+    description: 'Gladstone methanol bunkering export rail.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['trade'],
+    tags: ['methanol_bunkering', 'green_methanol', 'bunker_export'],
+    trackKilometres: 72,
+    dualTrackShare: 0.38,
+    electrifiedShare: 0.22,
+    designFreightTonnesPerYear: 4_400_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_sa_edinburgh_polar_staging',
+    category: 'rail',
+    name: 'Edinburgh Polar Staging Rail',
+    description: 'Adelaide icebreaker resupply rail staging.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'TAS'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['antarctic_resupply', 'polar_logistics', 'icebreaker_staging'],
+    trackKilometres: 24,
+    dualTrackShare: 0.51,
+    electrifiedShare: 0.65,
+    designFreightTonnesPerYear: 2_800_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND24_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_henderson_methanol_bunker',
+    category: 'port',
+    name: 'Henderson Green Methanol Bunker',
+    description: 'Pilbara-facing green methanol bunkering export terminal.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade'],
+    tags: ['methanol_bunkering', 'green_methanol', 'bunker_export', 'bulk'],
+    berthCount: 3,
+    maxDraftMetres: 14.5,
+    teuCapacityPerYear: 120_000,
+    automationLevel: 2,
+    bulkShare: 0.48,
+  },
+  {
+    id: 'port_qld_gladstone_methanol_export',
+    category: 'port',
+    name: 'Gladstone Methanol Bunker Export',
+    description: 'East coast methanol bunkering handoff to trans-Pacific lanes.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.2,
+    strategicNetworks: ['trade'],
+    tags: ['methanol_bunkering', 'green_methanol', 'bunker_export'],
+    berthCount: 2,
+    maxDraftMetres: 13.8,
+    teuCapacityPerYear: 180_000,
+    automationLevel: 1,
+    bulkShare: 0.35,
+  },
+  {
+    id: 'port_tas_hobart_antarctic',
+    category: 'port',
+    name: 'Hobart Antarctic Resupply',
+    description: 'Polar logistics and icebreaker staging for Southern Ocean resupply.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'SA'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['trade'],
+    tags: ['antarctic_resupply', 'polar_logistics', 'icebreaker_staging'],
+    berthCount: 2,
+    maxDraftMetres: 12.5,
+    teuCapacityPerYear: 95_000,
+    automationLevel: 1,
+    bulkShare: 0.22,
+  },
+];
+
+export const ROUND24_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_sa_adelaide_antarctic_yard',
+    category: 'logistics',
+    name: 'Adelaide Antarctic Resupply Yard',
+    description: 'SA polar staging for icebreaker resupply chain.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'TAS'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['antarctic_resupply', 'polar_logistics', 'icebreaker_staging'],
+    warehouseSqm: 68_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 52,
+  },
+  {
+    id: 'log_nsw_villawood_preclear_dc',
+    category: 'logistics',
+    name: 'Villawood Preclear Freight DC',
+    description: 'NSW smart border preclearance consolidation.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['smart_border', 'preclear_freight', 'digital_customs_gate'],
+    warehouseSqm: 61_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 68,
+  },
+  {
+    id: 'log_vic_truganina_preclear_hub',
+    category: 'logistics',
+    name: 'Truganina Smart Border Hub',
+    description: 'Melbourne digital customs preclear freight hub.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['freight'],
+    tags: ['smart_border', 'preclear_freight', 'digital_customs_gate'],
+    warehouseSqm: 55_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 71,
+  },
+];
+
+export const SCALE_WAVE_ROUND24_ASSETS = [
+  ...ROUND24_ROADS,
+  ...ROUND24_RAIL,
+  ...ROUND24_PORTS,
+  ...ROUND24_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -9223,6 +9567,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND21_ASSETS,
     ...SCALE_WAVE_ROUND22_ASSETS,
     ...SCALE_WAVE_ROUND23_ASSETS,
+    ...SCALE_WAVE_ROUND24_ASSETS,
   ];
 }
 
@@ -10502,6 +10847,62 @@ export function autonomousHeavyHaulProductivityMultiplier(
   policy: AutonomousHeavyHaulPolicy = 'baseline',
 ): number {
   const policyBoost = policy === 'deploy' ? 0.042 : 0;
+  const normalized = (index - 6) / 100;
+  return clamp(1 + normalized * 0.048 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/methanol-bunkering-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type MethanolBunkeringExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 green methanol bunkering export throughput by region. */
+export function computeMethanolBunkeringExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'methanol_bunkering' || t === 'green_methanol' || t === 'bunker_export',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.1 + asset.bulkShare * 4.9;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 90_000 + asset.intermodalLinks.length * 0.8;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 600;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 11_500_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalMethanolBunkeringExportIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.46 + max * 0.54, 5, 77) * 10) / 10;
+}
+
+export function methanolBunkeringExportProductivityMultiplier(
+  index: number,
+  policy: MethanolBunkeringExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.042 : 0;
   const normalized = (index - 6) / 100;
   return clamp(1 + normalized * 0.048 + policyBoost, 0.93, 1.11);
 }
@@ -11985,6 +12386,93 @@ export function gbrBiosecurityLogisticsProductivityMultiplier(
 ): number {
   const bias = policy === 'harden' ? 1.023 : 1;
   return (1 + (share - 0.045) * 0.032) * bias;
+}
+
+
+// --- source: operations/antarctic-resupply-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AntarcticResupplyLogisticsPolicy,
+  type AuRegionCode,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 Antarctic resupply and polar logistics readiness by region. */
+export function computeAntarcticResupplyLogisticsByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'antarctic_resupply' || t === 'polar_logistics' || t === 'icebreaker_staging',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.3 + asset.teuCapacityPerYear / 250_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 78_000 + (asset.coldChainCapable ? 1.8 : 0.5);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 550;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 13_500_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.035 - stress * 0.029), 4, 85) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAntarcticResupplyLogisticsIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.49 + max * 0.51, 6, 82) * 10) / 10;
+}
+
+export function computeAntarcticResupplyLogisticsShare(
+  operationalAssets: TransportAsset[],
+  policy: AntarcticResupplyLogisticsPolicy = 'baseline',
+): number {
+  let polarUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('polar_logistics') || asset.tags.includes('antarctic_resupply')) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.7;
+        polarUnits += asset.berthCount * 1.2;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 70_000;
+        polarUnits += asset.warehouseSqm / 70_000 * 0.69;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.031;
+  const policyBoost = policy === 'surge' ? 0.032 : 0;
+  return Math.round(clamp(polarUnits / totalUnits + policyBoost, 0.03, 0.31) * 1000) / 1000;
+}
+
+export function antarcticResupplyLogisticsProductivityMultiplier(
+  share: number,
+  policy: AntarcticResupplyLogisticsPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.023 : 1;
+  return (1 + (share - 0.046) * 0.032) * bias;
 }
 
 
@@ -13700,6 +14188,96 @@ export function nationalNightUrbanFreightWindowThroughputIndex(
 }
 
 
+// --- source: productivity/smart-border-preclearance-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type SmartBorderPreclearancePolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of cross-border freight using smart preclearance gates. */
+export function computeSmartBorderPreclearanceShare(
+  operationalAssets: TransportAsset[],
+  policy: SmartBorderPreclearancePolicy = 'baseline',
+): number {
+  let preclearUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'smart_border' || t === 'preclear_freight' || t === 'digital_customs_gate',
+      )
+    ) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 62_000 + asset.intermodalLinks.length * 0.9;
+        preclearUnits += (asset.warehouseSqm / 62_000) * 0.67 + asset.intermodalLinks.length * 0.62;
+      }
+      if (asset.category === 'road' && asset.tags.includes('digital_customs_gate')) {
+        totalUnits += asset.laneKilometres / 350;
+        preclearUnits += asset.laneKilometres / 350 * 0.58;
+      }
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.3;
+        preclearUnits += asset.berthCount * 0.92;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.033;
+  const policyBoost = policy === 'deploy' ? 0.033 : 0;
+  return Math.round(clamp(preclearUnits / totalUnits + policyBoost, 0.032, 0.33) * 1000) / 1000;
+}
+
+export function smartBorderPreclearanceProductivityMultiplier(
+  share: number,
+  policy: SmartBorderPreclearancePolicy,
+): number {
+  const bias = policy === 'deploy' ? 1.022 : 1;
+  return (1 + (share - 0.055) * 0.031) * bias;
+}
+
+export function computeSmartBorderPreclearanceThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'smart_border' || t === 'preclear_freight' || t === 'digital_customs_gate',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 75_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 400;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 14_000_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalSmartBorderPreclearanceThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 2, 54) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -14147,6 +14725,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalNightUrbanFreightWindowThroughputIndex,
   nightUrbanFreightWindowProductivityMultiplier,
 } from './night-urban-freight-window-index.ts';
+  computeMethanolBunkeringExportByRegion,
+  methanolBunkeringExportProductivityMultiplier,
+  nationalMethanolBunkeringExportIndex,
+} from '../network/methanol-bunkering-export-index.ts';
+  antarcticResupplyLogisticsProductivityMultiplier,
+  computeAntarcticResupplyLogisticsByRegion,
+  computeAntarcticResupplyLogisticsShare,
+  nationalAntarcticResupplyLogisticsIndex,
+} from '../operations/antarctic-resupply-logistics-index.ts';
+  computeSmartBorderPreclearanceShare,
+  computeSmartBorderPreclearanceThroughputByRegion,
+  nationalSmartBorderPreclearanceThroughputIndex,
+  smartBorderPreclearanceProductivityMultiplier,
+} from './smart-border-preclearance-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -14989,6 +15581,34 @@ export function computeTransportInfrastructureState(
     nightUrbanFreightWindowShare,
     options?.nightUrbanFreightWindowPolicy ?? 'baseline',
   );
+  const methanolBunkeringExportByRegion = computeMethanolBunkeringExportByRegion(ops);
+  const nationalMethanolBunkering = nationalMethanolBunkeringExportIndex(methanolBunkeringExportByRegion);
+  const methanolMult = methanolBunkeringExportProductivityMultiplier(
+    nationalMethanolBunkering,
+    options?.methanolBunkeringExportPolicy ?? 'baseline',
+  );
+  const antarcticResupplyLogisticsByRegion = computeAntarcticResupplyLogisticsByRegion(ops, networkStress);
+  const nationalAntarcticResupply = nationalAntarcticResupplyLogisticsIndex(antarcticResupplyLogisticsByRegion);
+  const antarcticResupplyLogisticsShare = computeAntarcticResupplyLogisticsShare(
+    ops,
+    options?.antarcticResupplyLogisticsPolicy ?? 'baseline',
+  );
+  const antarcticMult = antarcticResupplyLogisticsProductivityMultiplier(
+    antarcticResupplyLogisticsShare,
+    options?.antarcticResupplyLogisticsPolicy ?? 'baseline',
+  );
+  const smartBorderPreclearanceThroughputByRegion = computeSmartBorderPreclearanceThroughputByRegion(ops);
+  const nationalSmartBorderPreclearance = nationalSmartBorderPreclearanceThroughputIndex(
+    smartBorderPreclearanceThroughputByRegion,
+  );
+  const smartBorderPreclearanceShare = computeSmartBorderPreclearanceShare(
+    ops,
+    options?.smartBorderPreclearancePolicy ?? 'baseline',
+  );
+  const smartBorderMult = smartBorderPreclearanceProductivityMultiplier(
+    smartBorderPreclearanceShare,
+    options?.smartBorderPreclearancePolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -15015,6 +15635,9 @@ export function computeTransportInfrastructureState(
     const heavyHaulBoost = (autonomousHeavyHaulByRegion[code] - 6) * 0.0043;
     const gbrBoost = (gbrBiosecurityLogisticsByRegion[code] - 8) * 0.0039;
     const nightFreightBoost = (nightUrbanFreightWindowThroughputByRegion[code] - 1.5) * 0.0038;
+    const methanolBoost = (methanolBunkeringExportByRegion[code] - 5) * 0.0041;
+    const antarcticBoost = (antarcticResupplyLogisticsByRegion[code] - 6) * 0.0037;
+    const smartBorderBoost = (smartBorderPreclearanceThroughputByRegion[code] - 2) * 0.0036;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -15040,7 +15663,10 @@ export function computeTransportInfrastructureState(
         portTractorBoost +
         heavyHaulBoost +
         gbrBoost +
-        nightFreightBoost) *
+        nightFreightBoost +
+        methanolBoost +
+        antarcticBoost +
+        smartBorderBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -15064,7 +15690,10 @@ export function computeTransportInfrastructureState(
       portTractorMult *
       heavyHaulMult *
       gbrMult *
-      nightFreightMult;
+      nightFreightMult *
+      methanolMult *
+      antarcticMult *
+      smartBorderMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -15111,7 +15740,10 @@ export function computeTransportInfrastructureState(
     nationalAutonomousPortTractor * 0.007 +
     nationalAutonomousHeavyHaul * 0.007 +
     nationalGbrBiosecurity * 0.006 +
-    nationalNightUrbanFreight * 0.006;
+    nationalNightUrbanFreight * 0.006 +
+    nationalMethanolBunkering * 0.006 +
+    nationalAntarcticResupply * 0.005 +
+    nationalSmartBorderPreclearance * 0.005;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -15126,7 +15758,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/24',
+    schemaVersion: 'agent12/25',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -15284,6 +15916,14 @@ export function computeTransportInfrastructureState(
     nightUrbanFreightWindowShare,
     nationalNightUrbanFreightWindowThroughputIndex: nationalNightUrbanFreight,
     nightUrbanFreightWindowThroughputByRegion,
+    nationalMethanolBunkeringExportIndex: nationalMethanolBunkering,
+    methanolBunkeringExportByRegion,
+    antarcticResupplyLogisticsShare,
+    nationalAntarcticResupplyLogisticsIndex: nationalAntarcticResupply,
+    antarcticResupplyLogisticsByRegion,
+    smartBorderPreclearanceShare,
+    nationalSmartBorderPreclearanceThroughputIndex: nationalSmartBorderPreclearance,
+    smartBorderPreclearanceThroughputByRegion,
     computeMs,
   };
 }
@@ -15366,7 +16006,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/24' &&
+      infra.schemaVersion === 'agent12/25' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -15444,8 +16084,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalAutonomousHeavyHaulIndex >= 6 &&
       infra.nationalGbrBiosecurityLogisticsIndex >= 8 &&
       infra.nightUrbanFreightWindowShare >= 0.03 &&
-      infra.nationalNightUrbanFreightWindowThroughputIndex >= 1.5,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} haul=${infra.nationalAutonomousHeavyHaulIndex.toFixed(1)} gbr=${infra.nationalGbrBiosecurityLogisticsIndex.toFixed(1)} night=${infra.nationalNightUrbanFreightWindowThroughputIndex.toFixed(1)}`,
+      infra.nationalNightUrbanFreightWindowThroughputIndex >= 1.5 &&
+      infra.nationalMethanolBunkeringExportIndex >= 5 &&
+      infra.nationalAntarcticResupplyLogisticsIndex >= 6 &&
+      infra.smartBorderPreclearanceShare >= 0.03 &&
+      infra.nationalSmartBorderPreclearanceThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} methanol=${infra.nationalMethanolBunkeringExportIndex.toFixed(1)} antarctic=${infra.nationalAntarcticResupplyLogisticsIndex.toFixed(1)} preclear=${infra.nationalSmartBorderPreclearanceThroughputIndex.toFixed(1)}`,
   });
 
   return results;
