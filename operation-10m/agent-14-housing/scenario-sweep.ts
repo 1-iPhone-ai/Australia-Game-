@@ -116,7 +116,9 @@ export type Agent14HousingScenarioId =
   | 'wave52_gate_trajectory_arc'
   | 'wave52_integration_stress'
   | 'wave53_gate_trajectory_arc'
-  | 'wave53_integration_stress';
+  | 'wave53_integration_stress'
+  | 'wave54_gate_trajectory_arc'
+  | 'wave54_integration_stress';
 
 export interface Agent14HousingScenarioDefinition {
   id: Agent14HousingScenarioId;
@@ -1304,6 +1306,29 @@ export const AGENT14_HOUSING_SCENARIOS: readonly Agent14HousingScenarioDefinitio
     launchProgramIds: [
       'ps_xp_WA_o10m235_gate',
       'ps_xp_WA_o10m233_gate',
+      'ps_he_VIC_hospital_backlog',
+      'ps_ed_NSW_skills',
+      'ps_h_ACT_density',
+    ],
+  },
+  {
+    id: 'wave54_gate_trajectory_arc',
+    label: 'Wave 54 gate trajectory arc',
+    baseInputs: { fiscalHeadroom: 88, stateCapacityLoad: 7, workforceReadiness: 'strong' },
+    launchProgramIds: [
+      'ps_xp_QLD_wave54_projection',
+      'ps_xp_QLD_wave53_projection',
+      'ps_xp_QLD_wave52_projection',
+      'ps_h_NSW_social_accel',
+    ],
+  },
+  {
+    id: 'wave54_integration_stress',
+    label: 'Wave 54 integration stress',
+    baseInputs: { fiscalHeadroom: 0, stateCapacityLoad: 99, workforceReadiness: 'blocking', workforceSpecialistGap: 100 },
+    launchProgramIds: [
+      'ps_xp_WA_o10m238_gate',
+      'ps_xp_WA_o10m235_gate',
       'ps_he_VIC_hospital_backlog',
       'ps_ed_NSW_skills',
       'ps_h_ACT_density',

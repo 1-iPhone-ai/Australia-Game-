@@ -149,6 +149,9 @@ import type {
   Wave53GateTrajectorySnapshot,
   Wave53IntegrationMonitor,
   Agent25Wave53ProjectionHandoffBrief,
+  Wave54GateTrajectorySnapshot,
+  Wave54IntegrationMonitor,
+  Agent25Wave54ProjectionHandoffBrief,
   WellbeingTurnForecastPoint,
 } from './types.ts';
 
@@ -304,6 +307,9 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   wave53GateTrajectory?: Wave53GateTrajectorySnapshot;
   wave53IntegrationMonitor?: Wave53IntegrationMonitor;
   agent25Wave53ProjectionHandoffBrief?: Agent25Wave53ProjectionHandoffBrief;
+  wave54GateTrajectory?: Wave54GateTrajectorySnapshot;
+  wave54IntegrationMonitor?: Wave54IntegrationMonitor;
+  agent25Wave54ProjectionHandoffBrief?: Agent25Wave54ProjectionHandoffBrief;
 }): Agent14WellbeingExecutiveBrief {
   const giNotes: string[] = [];
   const topWarning = args.warnings.warnings.sort((a, b) => {
@@ -867,6 +873,17 @@ export function composeAgent14WellbeingExecutiveBrief(args: {
   }
   if (args.agent25Wave53ProjectionHandoffBrief?.shouldProjectWave53) {
     giNotes.push(args.agent25Wave53ProjectionHandoffBrief.summary);
+  }
+  if (args.wave54GateTrajectory?.band === 'blocked') {
+    giNotes.push(
+      `Wave 54 gate ${args.wave54GateTrajectory.band} (EMA ${args.wave54GateTrajectory.wave54GateEma})`
+    );
+  }
+  if (args.wave54IntegrationMonitor && !args.wave54IntegrationMonitor.shouldRunO10m240DryRun) {
+    giNotes.push(args.wave54IntegrationMonitor.summary);
+  }
+  if (args.agent25Wave54ProjectionHandoffBrief?.shouldProjectWave54) {
+    giNotes.push(args.agent25Wave54ProjectionHandoffBrief.summary);
   }
 
   const headlineParts: string[] = [];
