@@ -27,6 +27,7 @@ import { isAbsoluteCoalitionSanctity } from './coalition-absolute-sanctity.ts';
 import { isUniversalCoalitionImmortality } from './coalition-universal-immortality.ts';
 import { isCosmicCoalitionPerpetuity } from './coalition-cosmic-perpetuity.ts';
 import { isGalacticCoalitionInfinity } from './coalition-galactic-infinity.ts';
+import { isStellarCoalitionTranscendence } from './coalition-stellar-transcendence.ts';
 import { listStakeholderWarnings } from './stakeholder-coalition.ts';
 import { rankStrategicActions } from './strategic-recommendations.ts';
 import { listStrategicActions } from '../catalog/strategic-action-catalog.ts';
@@ -94,6 +95,8 @@ export function buildTurnStrategicBriefing(
     coalitionCosmicPerpetuityStreakDays: state.coalitionCosmicPerpetuityStreakDays ?? 0,
     galacticCoalitionInfinity: isGalacticCoalitionInfinity(state),
     coalitionGalacticInfinityStreakDays: state.coalitionGalacticInfinityStreakDays ?? 0,
+    stellarCoalitionTranscendence: isStellarCoalitionTranscendence(state),
+    coalitionStellarTranscendenceStreakDays: state.coalitionStellarTranscendenceStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,

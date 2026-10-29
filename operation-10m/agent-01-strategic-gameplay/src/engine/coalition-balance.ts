@@ -228,3 +228,13 @@ export function galacticInfinityRankingBonus(
   if (streak >= action.minCoalitionGalacticInfinityStreakDays) return 18;
   return 2;
 }
+
+export function stellarTranscendenceRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionStellarTranscendenceStreakDays === undefined) return 0;
+  const streak = state.coalitionStellarTranscendenceStreakDays ?? 0;
+  if (streak >= action.minCoalitionStellarTranscendenceStreakDays) return 19;
+  return 2;
+}

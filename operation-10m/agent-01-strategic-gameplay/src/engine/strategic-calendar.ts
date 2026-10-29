@@ -70,6 +70,10 @@ import {
   advanceCoalitionGalacticInfinityStreak,
   applyGalacticInfinityMandateBonus,
 } from './coalition-galactic-infinity.ts';
+import {
+  advanceCoalitionStellarTranscendenceStreak,
+  applyStellarTranscendenceMandateBonus,
+} from './coalition-stellar-transcendence.ts';
 import { advanceCoalitionRecoveryStreak } from './coalition-recovery.ts';
 import { createDefaultStakeholderSentiment } from './stakeholder-coalition.ts';
 import type { StakeholderGroupId, StakeholderSentiment } from '../types/coalition-mandate.ts';
@@ -159,6 +163,8 @@ export function advanceStrategicGameplayCalendar(
   next = applyCosmicPerpetuityMandateBonus(next, daysAdvanced);
   next = advanceCoalitionGalacticInfinityStreak(next, daysAdvanced);
   next = applyGalacticInfinityMandateBonus(next, daysAdvanced);
+  next = advanceCoalitionStellarTranscendenceStreak(next, daysAdvanced);
+  next = applyStellarTranscendenceMandateBonus(next, daysAdvanced);
   next = advanceCoalitionStabilizationStreak(next, daysAdvanced);
   next = applyPassiveStakeholderReversion(next, daysAdvanced);
 

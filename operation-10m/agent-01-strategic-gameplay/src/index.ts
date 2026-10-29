@@ -113,6 +113,7 @@ export {
   universalImmortalityRankingBonus,
   cosmicPerpetuityRankingBonus,
   galacticInfinityRankingBonus,
+  stellarTranscendenceRankingBonus,
 } from './engine/coalition-balance.ts';
 
 export {
@@ -358,6 +359,16 @@ export {
   applyGalacticInfinityMandateBonus,
 } from './engine/coalition-galactic-infinity.ts';
 
+export { coalitionStellarTranscendenceStreakIssues } from './engine/coalition-stellar-transcendence-gates.ts';
+
+export {
+  STELLAR_COALITION_TRANSCENDENCE_THRESHOLD,
+  advanceCoalitionStellarTranscendenceStreak,
+  resetCoalitionStellarTranscendenceStreak,
+  isStellarCoalitionTranscendence,
+  applyStellarTranscendenceMandateBonus,
+} from './engine/coalition-stellar-transcendence.ts';
+
 export { coalitionBalanceIssues } from './engine/coalition-gates.ts';
 
-export const AGENT_01_MODULE_VERSION = '3.5.0';
+export const AGENT_01_MODULE_VERSION = '3.6.0';
