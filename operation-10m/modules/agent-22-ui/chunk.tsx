@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 4f53569a37a4f01b
+// content-sha256-prefix: 94f0af9f61a9b7f4
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -16023,7 +16023,7 @@ export function ContextualWidgetDayCoachStrip({
 }
 
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.35.0';
+export const AGENT_22_MODULE_VERSION = '1.36.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -16174,6 +16174,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round22 = runAgent22Round22SelfTests();
   for (const r of round22.results) {
     check(`agent22_round22_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round36 = runAgent22Round36SelfTests();
+  for (const r of round36.results) {
+    check(`agent22_round36_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const round35 = runAgent22Round35SelfTests();
