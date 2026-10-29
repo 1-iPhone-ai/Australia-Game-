@@ -164,7 +164,7 @@ describe('scale wave round 44 — exarch coalition ascendancy', () => {
       coalitionExarchAscendancyStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(46);
+    expect(save.version).toBe(47);
     expect(save.coalitionExarchAscendancyStreakDays).toBe(5);
   });
 });

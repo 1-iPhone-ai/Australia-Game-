@@ -50,6 +50,7 @@ import { isPrimarchCoalitionPerpetuity } from './coalition-primarch-perpetuity.t
 import { isPatriarchCoalitionEternity } from './coalition-patriarch-eternity.ts';
 import { isMatriarchCoalitionAscendancy } from './coalition-matriarch-ascendancy.ts';
 import { isMatriarchCoalitionPerpetuity } from './coalition-matriarch-perpetuity.ts';
+import { isMatriarchCoalitionEternity } from './coalition-matriarch-eternity.ts';
 import { listStakeholderWarnings } from './stakeholder-coalition.ts';
 import { rankStrategicActions } from './strategic-recommendations.ts';
 import { listStrategicActions } from '../catalog/strategic-action-catalog.ts';
@@ -164,6 +165,8 @@ export function buildTurnStrategicBriefing(
     coalitionMatriarchAscendancyStreakDays: state.coalitionMatriarchAscendancyStreakDays ?? 0,
     matriarchCoalitionPerpetuity: isMatriarchCoalitionPerpetuity(state),
     coalitionMatriarchPerpetuityStreakDays: state.coalitionMatriarchPerpetuityStreakDays ?? 0,
+    matriarchCoalitionEternity: isMatriarchCoalitionEternity(state),
+    coalitionMatriarchEternityStreakDays: state.coalitionMatriarchEternityStreakDays ?? 0,
     mandateDriftRisk: classifyMandateDriftRisk(state),
     completedActionCount: state.completedActionIds.length,
     activeChoiceId: state.activeChoice?.choiceId ?? null,

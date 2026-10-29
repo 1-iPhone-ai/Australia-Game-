@@ -174,7 +174,7 @@ describe('scale wave round 47 — matriarch coalition ascendancy', () => {
       coalitionMatriarchAscendancyStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(46);
+    expect(save.version).toBe(47);
     expect(save.coalitionMatriarchAscendancyStreakDays).toBe(5);
   });
 });
