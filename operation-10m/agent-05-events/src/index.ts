@@ -33,6 +33,7 @@ export * from './compute-turn-scale-wave-tranche-ready-commit-coordinator.ts';
 export * from './compute-turn-scale-wave-full-chunks-latch-coordinator.ts';
 export * from './compute-turn-scale-wave-full-chunks-commit-coordinator.ts';
 export * from './compute-turn-scale-wave-full-chunks-sync-latch-coordinator.ts';
+export * from './compute-turn-scale-wave-full-chunks-sync-commit-coordinator.ts';
 export * from './compute-turn-hooks.ts';
 export * from './chain-catalog-aggregate.ts';
 export {
