@@ -14,7 +14,7 @@ const outDir = path.join(repoRoot, 'operation-10m/modules/agent-20-automation');
 const outFile = path.join(outDir, 'chunk.tsx');
 const manifestFile = path.join(outDir, 'module.manifest.json');
 
-const MODULE_VERSION = '10m.1.4.0-agent20';
+const MODULE_VERSION = '10m.1.5.0-agent20';
 
 const FILES = [
   'types.ts',
@@ -34,6 +34,9 @@ const FILES = [
   'automation-soak-projection.ts',
   'automation-replay-tape.ts',
   'intent-schedule-coordinator.ts',
+  'automation-idle-escalation.ts',
+  'automation-soak-replay-attestation.ts',
+  'automation-intent-backpressure.ts',
   'index.ts',
 ];
 

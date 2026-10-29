@@ -11,7 +11,9 @@ National steward planning logic mirrors canonical **SECTION 20AN** (`V1014_*`) f
 
 **Round 4** adds soak projection (`projectO10IdleAutomationSoak`), scenario replay tapes (`buildAutomationReplayTapeFromScenario`), and intent schedule coordination (`coordinateAutomationIntentSchedule`).
 
-Module version: `10m.1.4.0-agent20`.
+**Round 5** adds idle escalation tiers (`evaluateIdleAutomationEscalation`), soak↔replay attestation (`buildSoakReplayAttestationFromInput`), and intent backpressure (`scheduleWithIdleBackpressure`).
+
+Module version: `10m.1.5.0-agent20`.
 
 Run tests:
 

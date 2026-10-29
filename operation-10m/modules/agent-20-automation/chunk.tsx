@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 1db2d5a4c950d7540b94fe4b45f8390a1469b316428a9951f7873cb8c2da271a
-// OP10M_MODULE_VERSION: 10m.1.4.0-agent20
+// OP10M_MANIFEST_SHA256: 764e2689593f13821d03e9973e5feb0beea4f3fa3e215771fda1ee489a5c9a7a
+// OP10M_MODULE_VERSION: 10m.1.5.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -3124,6 +3124,425 @@ export function runO10Agent20IntentScheduleSelfTests(): O10SelfTestResult[] {
 }
 
 
+// --- source: automation-idle-escalation.ts ---
+
+export type O10IdleEscalationTier = 0 | 1 | 2 | 3;
+
+export interface O10IdleEscalationInput {
+  idleMs: number;
+  consecutiveIdleTurns: number;
+  stewardEnabled?: boolean;
+  playerPaused?: boolean;
+  queuedIntentCount?: number;
+  blockedEndTurnStreak?: number;
+}
+
+export interface O10IdleEscalationResult {
+  band: IdleAutomationBand;
+  tier: O10IdleEscalationTier;
+  throttleHumanAutomation: boolean;
+  stewardOnly: boolean;
+  blockNewIntents: boolean;
+  reason: string;
+}
+
+const TIER_REASON: Record<O10IdleEscalationTier, string> = {
+  0: 'nominal',
+  1: 'idle_watch',
+  2: 'deep_idle_pressure',
+  3: 'steward_or_queue_saturation',
+};
+
+/** Map idle telemetry + queue pressure to a discrete escalation tier for automation policy. */
+export function evaluateIdleAutomationEscalation(input: O10IdleEscalationInput): O10IdleEscalationResult {
+  const band = classifyIdleAutomationBand({
+    idleMs: input.idleMs,
+    consecutiveIdleTurns: input.consecutiveIdleTurns,
+    stewardEnabled: input.stewardEnabled ?? true,
+    playerPaused: input.playerPaused ?? false,
+  });
+
+  const queued = Math.max(0, input.queuedIntentCount ?? 0);
+  const blockedStreak = Math.max(0, input.blockedEndTurnStreak ?? 0);
+
+  let tier: O10IdleEscalationTier = 0;
+  if (band === 'steward_tick' || queued >= 6 || blockedStreak >= 3) tier = 3;
+  else if (band === 'deep_idle' || queued >= 4 || blockedStreak >= 2) tier = 2;
+  else if (band === 'idle' || band === 'drifting' || queued >= 2) tier = 1;
+
+  return {
+    band,
+    tier,
+    throttleHumanAutomation: tier >= 2,
+    stewardOnly: tier >= 3 && band === 'steward_tick',
+    blockNewIntents: tier >= 3 && queued >= 4,
+    reason: TIER_REASON[tier],
+  };
+}
+
+export function mergeIdleEscalationTier(a: O10IdleEscalationTier, b: O10IdleEscalationTier): O10IdleEscalationTier {
+  return (Math.max(a, b) as O10IdleEscalationTier);
+}
+
+export function formatIdleEscalationSummary(result: O10IdleEscalationResult): string {
+  return `escalation t${result.tier} band=${result.band} ${result.reason}`;
+}
+
+export function runO10Agent20IdleEscalationSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const nominal = evaluateIdleAutomationEscalation({
+    idleMs: 1000,
+    consecutiveIdleTurns: 0,
+  });
+  push('esc_nominal', 'active band stays tier 0', nominal.tier === 0 && !nominal.throttleHumanAutomation);
+
+  const deep = evaluateIdleAutomationEscalation({
+    idleMs: 600_000,
+    consecutiveIdleTurns: 6,
+  });
+  push('esc_deep', 'deep idle reaches tier 2+', deep.tier >= 2 && deep.throttleHumanAutomation);
+
+  const steward = evaluateIdleAutomationEscalation({
+    idleMs: 900_000,
+    consecutiveIdleTurns: 12,
+    queuedIntentCount: 2,
+  });
+  push(
+    'esc_steward',
+    'steward tick tier 3 steward-only',
+    steward.tier === 3 && steward.stewardOnly && steward.band === 'steward_tick'
+  );
+
+  push(
+    'esc_merge',
+    'merge picks higher tier',
+    mergeIdleEscalationTier(1, 3) === 3 && mergeIdleEscalationTier(0, 2) === 2
+  );
+
+  return results;
+}
+
+
+// --- source: automation-soak-replay-attestation.ts ---
+  buildAutomationReplayTapeFromScenario,
+  type O10AutomationReplayTape,
+} from './automation-replay-tape.js';
+
+export interface O10SoakReplayAttestation {
+  schema: '10m.agent20.soak-replay-attestation.v1';
+  soakTurnCount: number;
+  replayFrameCount: number;
+  digestChainMatch: boolean;
+  violationAligned: boolean;
+  ok: boolean;
+  notes: string[];
+}
+
+function fnv1aHex(text: string): string {
+  let chain = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    chain ^= text.charCodeAt(i);
+    chain = Math.imul(chain, 16777619);
+  }
+  return `o10soak_${(chain >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+/** Compare soak projection metrics against a scenario replay tape built from the same turn count. */
+export function attestSoakAgainstReplayTape(
+  soak: O10SoakProjectionResult,
+  tape: O10AutomationReplayTape
+): O10SoakReplayAttestation {
+  const notes: string[] = [];
+  const digestChainMatch = tape.frameCount > 0 && soak.turnCount === tape.frameCount;
+  if (!digestChainMatch) {
+    notes.push(`turn_mismatch:${soak.turnCount}!=${tape.frameCount}`);
+  }
+
+  const replayChain = fnv1aHex(tape.frames.map(f => f.digest).join('|'));
+  if (replayChain !== soak.digestChain) {
+    notes.push('digest_chain_mismatch');
+  }
+
+  const violationAligned = soak.blockedEndTurns >= 0 && tape.violationCount >= 0;
+  if (tape.violationCount > soak.blockedEndTurns + soak.blockedAdvanceDays + 2) {
+    notes.push('violation_skew');
+  }
+
+  const ok = digestChainMatch && replayChain === soak.digestChain && violationAligned && notes.length === 0;
+
+  return {
+    schema: '10m.agent20.soak-replay-attestation.v1',
+    soakTurnCount: soak.turnCount,
+    replayFrameCount: tape.frameCount,
+    digestChainMatch: replayChain === soak.digestChain,
+    violationAligned,
+    ok,
+    notes,
+  };
+}
+
+export function buildSoakReplayAttestationFromInput(
+  baseInput: O10TurnComputeInput,
+  turnCount: number,
+  soakOptions?: Omit<Parameters<typeof projectO10IdleAutomationSoak>[1], 'turnCount'>,
+  scenarioOptions?: O10ScenarioOptions
+): O10SoakReplayAttestation {
+  const soak = projectO10IdleAutomationSoak(baseInput, {
+    turnCount,
+    ...soakOptions,
+  });
+  const steps: O10ScenarioTurnSpec[] = [];
+  for (let i = 1; i <= turnCount; i++) {
+    const idleMs = (soakOptions?.idleMsStart ?? 30_000) + (soakOptions?.idleMsStep ?? 25_000) * (i - 1);
+    const humanEvery = soakOptions?.humanCommittedEvery ?? 0;
+    steps.push({
+      label: `s${i}`,
+      patch: {
+        turn: i,
+        day: baseInput.day + Math.floor((i - 1) / 8),
+        humanCommittedThisTurn: humanEvery > 0 && i % humanEvery === 0,
+        msSinceLastHumanInput: idleMs,
+        msSinceLastCommittedAction: idleMs,
+      },
+    });
+  }
+  const tape = buildAutomationReplayTapeFromScenario(baseInput, steps, scenarioOptions);
+  return attestSoakAgainstReplayTape(soak, tape);
+}
+
+export function runO10Agent20SoakReplayAttestationSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const base: O10TurnComputeInput = {
+    turn: 0,
+    day: 1,
+    actorId: 'player',
+    gameMode: 'game',
+    humanCommittedThisTurn: false,
+    msSinceLastHumanInput: 5000,
+    msSinceLastCommittedAction: 5000,
+    playerInTransit: false,
+    humanAutomationEnabled: true,
+    humanAutomationExecuting: false,
+    pendingHumanAutomationApprovals: 0,
+    pendingGenericApprovals: 0,
+    copilotTakeoverActive: false,
+    copilotStepInFlight: false,
+    autoModeReplayRecording: false,
+    dialogBlockingTime: false,
+    gameState: { turnCounter: 1 },
+    settings: { playerControlMode: 'manual' },
+    automationRules: [],
+    conditionalCtx: {
+      actor: { money: 500, inventory: [], currentRegion: 'NSW' },
+      currentDay: 1,
+      currentTurn: 1,
+      isNewDayForActor: false,
+      extendedTriggersEnabled: true,
+      settingsFlags: {},
+    },
+  };
+
+  const att = buildSoakReplayAttestationFromInput(base, 5, {
+    idleMsStart: 20_000,
+    idleMsStep: 15_000,
+  });
+  push('att_ok', 'soak and replay chains align', att.ok && att.schema.endsWith('.v1'));
+  push('att_frames', 'frame counts match soak turns', att.soakTurnCount === 5 && att.replayFrameCount === 5);
+
+  const soakOnly = projectO10IdleAutomationSoak(base, { turnCount: 3, idleMsStart: 10_000, idleMsStep: 0 });
+  const badTape = buildAutomationReplayTapeFromScenario(base, [{ label: 'x', patch: { turn: 1 } }]);
+  const fail = attestSoakAgainstReplayTape(soakOnly, badTape);
+  push('att_fail_mismatch', 'detects frame count mismatch', !fail.ok && fail.notes.length > 0);
+
+  return results;
+}
+
+
+// --- source: automation-intent-backpressure.ts ---
+  evaluateIdleAutomationEscalation,
+  type O10IdleEscalationResult,
+  type O10IdleEscalationTier,
+} from './automation-idle-escalation.js';
+  coordinateAutomationIntentSchedule,
+  scheduleAutomationIntentFromRule,
+  type O10IntentScheduleResult,
+} from './intent-schedule-coordinator.js';
+  createEmptyAutomationIntentQueue,
+} from './automation-intent-queue.js';
+
+export interface O10IntentBackpressurePolicy {
+  tier: O10IdleEscalationTier;
+  effectiveMaxDepth: number;
+  deferLowPriorityBelow: number;
+}
+
+export function resolveIntentBackpressurePolicy(
+  escalation: O10IdleEscalationResult,
+  baseMaxDepth: number
+): O10IntentBackpressurePolicy {
+  const shrink = escalation.tier >= 3 ? 3 : escalation.tier >= 2 ? 2 : escalation.tier >= 1 ? 1 : 0;
+  const effectiveMaxDepth = Math.max(1, baseMaxDepth - shrink);
+  const deferLowPriorityBelow = escalation.tier >= 2 ? 4 : escalation.tier >= 1 ? 2 : 0;
+  return { tier: escalation.tier, effectiveMaxDepth, deferLowPriorityBelow };
+}
+
+export function applyQueueDepthBackpressure(
+  queue: O10AutomationIntentQueue,
+  policy: O10IntentBackpressurePolicy
+): O10AutomationIntentQueue {
+  const active = queue.items.filter(i => i.status === 'queued' || i.status === 'running');
+  if (active.length <= policy.effectiveMaxDepth) return queue;
+  const overflow = active.length - policy.effectiveMaxDepth;
+  let dropped = 0;
+  const items = [...queue.items].reverse().map((item) => {
+    if (dropped >= overflow) return item;
+    if (item.status !== 'queued' || item.priority >= 8) return item;
+    dropped += 1;
+    return { ...item, status: 'cancelled' as const, reason: 'backpressure_drop' };
+  });
+  return { ...queue, maxDepth: policy.effectiveMaxDepth, items: items.reverse() };
+}
+
+/** Schedule or coordinate intents under idle escalation backpressure. */
+export function scheduleWithIdleBackpressure(
+  queue: O10AutomationIntentQueue,
+  rule: PortableHumanAutomationRule,
+  turn: number,
+  day: number,
+  escalationInput: Parameters<typeof evaluateIdleAutomationEscalation>[0],
+  label = 'bp'
+): { queue: O10AutomationIntentQueue; schedule: O10IntentScheduleResult; policy: O10IntentBackpressurePolicy } {
+  const escalation = evaluateIdleAutomationEscalation(escalationInput);
+  const policy = resolveIntentBackpressurePolicy(escalation, queue.maxDepth);
+  let q = applyQueueDepthBackpressure({ ...queue, maxDepth: policy.effectiveMaxDepth }, policy);
+
+  if (escalation.blockNewIntents) {
+    return {
+      queue: q,
+      policy,
+      schedule: { queue: q, decision: { action: 'defer', reason: 'Idle escalation blocks new intents.' } },
+    };
+  }
+
+  if (policy.deferLowPriorityBelow > 0 && rule.priority < policy.deferLowPriorityBelow) {
+    return {
+      queue: q,
+      policy,
+      schedule: { queue: q, decision: { action: 'defer', reason: 'Low priority deferred under backpressure.' } },
+    };
+  }
+
+  const schedule = scheduleAutomationIntentFromRule(q, rule, turn, day, label);
+  q = schedule.queue;
+  return { queue: q, schedule, policy };
+}
+
+export function coordinateWithIdleBackpressure(
+  queue: O10AutomationIntentQueue,
+  rule: PortableHumanAutomationRule,
+  turn: number,
+  day: number,
+  escalationInput: Parameters<typeof evaluateIdleAutomationEscalation>[0]
+): { queue: O10AutomationIntentQueue; schedule: O10IntentScheduleResult; policy: O10IntentBackpressurePolicy } {
+  const escalation = evaluateIdleAutomationEscalation(escalationInput);
+  const policy = resolveIntentBackpressurePolicy(escalation, queue.maxDepth);
+  let q = applyQueueDepthBackpressure({ ...queue, maxDepth: policy.effectiveMaxDepth }, policy);
+  if (escalation.throttleHumanAutomation && rule.priority < 5) {
+    return {
+      queue: q,
+      policy,
+      schedule: { queue: q, decision: { action: 'defer', reason: 'Throttled under idle escalation.' } },
+    };
+  }
+  const schedule = coordinateAutomationIntentSchedule(q, rule, turn, day);
+  return { queue: schedule.queue, schedule, policy };
+}
+
+function sampleRule(overrides: Partial<PortableHumanAutomationRule> = {}): PortableHumanAutomationRule {
+  return {
+    id: 'bp1',
+    name: 'Backpressure sample',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 3,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 5, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+    ...overrides,
+  };
+}
+
+export function runO10Agent20IntentBackpressureSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean, detail?: string) =>
+    results.push({ id, name, passed, detail });
+
+  const rule = sampleRule({ priority: 6, stats: { ...sampleRule().stats } });
+  const nominal = scheduleWithIdleBackpressure(
+    createEmptyAutomationIntentQueue(8),
+    rule,
+    2,
+    1,
+    { idleMs: 500, consecutiveIdleTurns: 0 }
+  );
+  push('bp_schedule_nominal', 'nominal tier schedules intent', nominal.schedule.decision.action === 'execute_now');
+
+  const lowPri = scheduleWithIdleBackpressure(
+    createEmptyAutomationIntentQueue(8),
+    sampleRule({ priority: 1 }),
+    3,
+    1,
+    { idleMs: 400_000, consecutiveIdleTurns: 4, queuedIntentCount: 2 }
+  );
+  push('bp_defer_low', 'tier 2 defers low priority enqueue', lowPri.schedule.decision.action === 'defer');
+
+  const saturated = scheduleWithIdleBackpressure(
+    createEmptyAutomationIntentQueue(8),
+    sampleRule({ priority: 9 }),
+    4,
+    1,
+    { idleMs: 900_000, consecutiveIdleTurns: 10, queuedIntentCount: 6 }
+  );
+  push(
+    'bp_block_saturated',
+    'tier 3 saturation blocks new intents',
+    saturated.schedule.decision.action === 'defer' && saturated.policy.effectiveMaxDepth <= 5
+  );
+
+  const policy = resolveIntentBackpressurePolicy(
+    evaluateIdleAutomationEscalation({ idleMs: 600_000, consecutiveIdleTurns: 6 }),
+    8
+  );
+  push('bp_policy_shrink', 'steward band shrinks effective depth', policy.effectiveMaxDepth === 5 && policy.tier === 3);
+
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -3171,6 +3590,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20SoakProjectionSelfTests());
   results.push(...runO10Agent20ReplayTapeSelfTests());
   results.push(...runO10Agent20IntentScheduleSelfTests());
+  results.push(...runO10Agent20IdleEscalationSelfTests());
+  results.push(...runO10Agent20SoakReplayAttestationSelfTests());
+  results.push(...runO10Agent20IntentBackpressureSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
