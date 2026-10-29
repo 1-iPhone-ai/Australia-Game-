@@ -96,6 +96,9 @@ export interface GuardianCoPilotMonitorSnapshot {
   fiduciaryBurdenIndex: number;
   trustAssuranceScore: number;
   governanceDurabilityScore: number;
+  covenantStrainIndex: number;
+  mandateIntegrityScore: number;
+  governanceTenacityScore: number;
 }
 
 export interface GuardianCoPilotAdvisoryCycleResult {
