@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 22
+
+- Schema **`agent12/23`**: grid BESS logistics throughput, Pacific humanitarian sealift readiness, autonomous port tractor share (`gridBatteryLogisticsPolicy`, `pacificHumanitarianSealiftPolicy`, `autonomousPortTractorPolicy`)
+- Catalog: **313** assets, **80** corridors, **128** scenarios
+- Systems: `network/grid-battery-logistics-index.ts`, `operations/pacific-humanitarian-sealift-index.ts`, `productivity/autonomous-port-tractor-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 21
 
 - Schema **`agent12/22`**: floating offshore wind staging throughput, critical medicine airlift readiness, regional freight drone share (`floatingOffshoreWindStagingPolicy`, `criticalMedicineAirliftPolicy`, `regionalFreightDronePolicy`)

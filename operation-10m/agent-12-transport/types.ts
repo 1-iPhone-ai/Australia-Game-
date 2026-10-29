@@ -279,8 +279,14 @@ export type CriticalMedicineAirliftPolicy = 'baseline' | 'surge';
 
 export type RegionalFreightDronePolicy = 'baseline' | 'expand';
 
+export type GridBatteryLogisticsPolicy = 'baseline' | 'accelerate';
+
+export type PacificHumanitarianSealiftPolicy = 'baseline' | 'surge';
+
+export type AutonomousPortTractorPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/22';
+  schemaVersion: 'agent12/23';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -422,6 +428,14 @@ export interface TransportInfrastructureState {
   regionalFreightDroneShare: number;
   nationalRegionalFreightDroneThroughputIndex: number;
   regionalFreightDroneThroughputByRegion: Record<AuRegionCode, number>;
+  nationalGridBatteryLogisticsIndex: number;
+  gridBatteryLogisticsByRegion: Record<AuRegionCode, number>;
+  pacificHumanitarianSealiftShare: number;
+  nationalPacificHumanitarianSealiftIndex: number;
+  pacificHumanitarianSealiftByRegion: Record<AuRegionCode, number>;
+  autonomousPortTractorShare: number;
+  nationalAutonomousPortTractorThroughputIndex: number;
+  autonomousPortTractorThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -478,6 +492,9 @@ export interface TransportInfrastructureOptions {
   floatingOffshoreWindStagingPolicy?: FloatingOffshoreWindStagingPolicy;
   criticalMedicineAirliftPolicy?: CriticalMedicineAirliftPolicy;
   regionalFreightDronePolicy?: RegionalFreightDronePolicy;
+  gridBatteryLogisticsPolicy?: GridBatteryLogisticsPolicy;
+  pacificHumanitarianSealiftPolicy?: PacificHumanitarianSealiftPolicy;
+  autonomousPortTractorPolicy?: AutonomousPortTractorPolicy;
 }
 
 export interface V94ProjectSnapshot {

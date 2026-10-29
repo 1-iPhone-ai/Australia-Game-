@@ -35,13 +35,13 @@ describe('Agent 12 round 11 catalog', () => {
 });
 
 describe('Agent 12 round 11 systems', () => {
-  it('returns agent12/22 with defence readiness, weather routing, and digital freight', () => {
+  it('returns agent12/23 with defence readiness, weather routing, and digital freight', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(80), {
       defenceMobilityPolicy: 'mobilize',
       weatherResiliencePolicy: 'harden',
       digitalFreightPolicy: 'integrate',
     });
-    assert.equal(state.schemaVersion, 'agent12/22');
+    assert.equal(state.schemaVersion, 'agent12/23');
     assert.ok(state.nationalDefenceLogisticsReadinessIndex >= 8);
     assert.ok(state.nationalWeatherResilienceRoutingIndex >= 38);
     assert.ok(state.digitalFreightVisibilityShare >= 0.07);

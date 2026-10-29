@@ -32,11 +32,11 @@ describe('Agent 12 round 6 catalog', () => {
 });
 
 describe('Agent 12 round 6 systems', () => {
-  it('returns agent12/22 with throughput, cold chain, and green freight', () => {
+  it('returns agent12/23 with throughput, cold chain, and green freight', () => {
     const state = computeTransportInfrastructureState(defaultInfrastructureInputs(30), {
       greenFreightPolicy: 'accelerate',
     });
-    assert.equal(state.schemaVersion, 'agent12/22');
+    assert.equal(state.schemaVersion, 'agent12/23');
     assert.ok(state.nationalContainerThroughputIndex >= 18);
     assert.ok(state.coldChainReliabilityIndex >= 0.4);
     assert.ok(state.greenFreightShare > 0.12);

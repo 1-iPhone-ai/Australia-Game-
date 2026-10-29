@@ -283,8 +283,14 @@ export type CriticalMedicineAirliftPolicy = 'baseline' | 'surge';
 
 export type RegionalFreightDronePolicy = 'baseline' | 'expand';
 
+export type GridBatteryLogisticsPolicy = 'baseline' | 'accelerate';
+
+export type PacificHumanitarianSealiftPolicy = 'baseline' | 'surge';
+
+export type AutonomousPortTractorPolicy = 'baseline' | 'deploy';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/22';
+  schemaVersion: 'agent12/23';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -426,6 +432,14 @@ export interface TransportInfrastructureState {
   regionalFreightDroneShare: number;
   nationalRegionalFreightDroneThroughputIndex: number;
   regionalFreightDroneThroughputByRegion: Record<AuRegionCode, number>;
+  nationalGridBatteryLogisticsIndex: number;
+  gridBatteryLogisticsByRegion: Record<AuRegionCode, number>;
+  pacificHumanitarianSealiftShare: number;
+  nationalPacificHumanitarianSealiftIndex: number;
+  pacificHumanitarianSealiftByRegion: Record<AuRegionCode, number>;
+  autonomousPortTractorShare: number;
+  nationalAutonomousPortTractorThroughputIndex: number;
+  autonomousPortTractorThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -482,6 +496,9 @@ export interface TransportInfrastructureOptions {
   floatingOffshoreWindStagingPolicy?: FloatingOffshoreWindStagingPolicy;
   criticalMedicineAirliftPolicy?: CriticalMedicineAirliftPolicy;
   regionalFreightDronePolicy?: RegionalFreightDronePolicy;
+  gridBatteryLogisticsPolicy?: GridBatteryLogisticsPolicy;
+  pacificHumanitarianSealiftPolicy?: PacificHumanitarianSealiftPolicy;
+  autonomousPortTractorPolicy?: AutonomousPortTractorPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1423,6 +1440,48 @@ export const TRANSPORT_CORRIDORS_ROUND21: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round22.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND22: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_sa_wa_grid_battery_chain',
+    name: 'SA–WA Grid Battery Chain',
+    networkKind: 'freight',
+    regionSequence: ['SA', 'WA'],
+    requiredTagsByRegion: {
+      SA: ['grid_battery', 'bess_logistics', 'storage_export'],
+      WA: ['grid_battery', 'bess_logistics', 'storage_export'],
+    },
+    productivitySynergyPoints: 6.2,
+    logisticsRelief: 0.036,
+  },
+  {
+    id: 'corr_qld_nt_pacific_sealift',
+    name: 'QLD–NT Pacific Sealift',
+    networkKind: 'trade',
+    regionSequence: ['QLD', 'NT'],
+    requiredTagsByRegion: {
+      QLD: ['pacific_humanitarian', 'sealift_relief', 'disaster_supply'],
+      NT: ['pacific_humanitarian', 'sealift_relief', 'disaster_supply'],
+    },
+    productivitySynergyPoints: 5.9,
+    logisticsRelief: 0.033,
+  },
+  {
+    id: 'corr_nsw_vic_autonomous_port_tractor',
+    name: 'NSW–VIC Autonomous Port Tractor',
+    networkKind: 'trade',
+    regionSequence: ['NSW', 'VIC'],
+    requiredTagsByRegion: {
+      NSW: ['autonomous_tractor', 'port_yard_robot', 'terminal_automation'],
+      VIC: ['autonomous_tractor', 'port_yard_robot', 'terminal_automation'],
+    },
+    productivitySynergyPoints: 6.0,
+    logisticsRelief: 0.034,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1591,6 +1650,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND19,
   ...TRANSPORT_CORRIDORS_ROUND20,
   ...TRANSPORT_CORRIDORS_ROUND21,
+  ...TRANSPORT_CORRIDORS_ROUND22,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -2799,6 +2859,62 @@ export const TRANSPORT_SCENARIOS_ROUND21: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round22.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND22: TransportStressScenario[] = [
+  {
+    id: 'scn_sa_bess_export_surge',
+    label: 'SA BESS Export Surge',
+    description: 'Grid battery export rush overloads Spencer Gulf berths.',
+    targetRegions: ['SA', 'WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_qld_pacific_sealift_activation',
+    label: 'Queensland Pacific Sealift Activation',
+    description: 'Disaster relief activation strains Townsville sealift terminal.',
+    targetRegions: ['QLD', 'NT'],
+    networkKind: 'trade',
+    utilizationAdd: 0.28,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_nsw_port_tractor_peak',
+    label: 'NSW Port Tractor Peak',
+    description: 'Container peak overloads Botany autonomous yard tractors.',
+    targetRegions: ['NSW', 'VIC'],
+    networkKind: 'trade',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_wa_bess_rail_possession',
+    label: 'WA BESS Rail Possession',
+    description: 'Track possession delays Kwinana battery module delivery.',
+    targetRegions: ['WA', 'SA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.19,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+  {
+    id: 'scn_nt_sealift_weather_hold',
+    label: 'NT Sealift Weather Hold',
+    description: 'Cyclone hold backs up Darwin humanitarian stores.',
+    targetRegions: ['NT', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'road'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -2981,6 +3097,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND19,
   ...TRANSPORT_SCENARIOS_ROUND20,
   ...TRANSPORT_SCENARIOS_ROUND21,
+  ...TRANSPORT_SCENARIOS_ROUND22,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -8474,6 +8591,233 @@ export const SCALE_WAVE_ROUND21_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round22-assets.ts ---
+
+export const ROUND22_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_sa_port_augusta_bess',
+    category: 'road',
+    name: 'Port Augusta BESS Logistics Road',
+    description: 'Grid battery module road to Spencer Gulf export.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight'],
+    tags: ['grid_battery', 'bess_logistics', 'storage_export', 'transcontinental'],
+    laneKilometres: 40,
+    designSpeedKmh: 92,
+    freightShare: 0.37,
+    urbanShare: 0.1,
+    tollRoad: false,
+  },
+  {
+    id: 'road_wa_kalgoorlie_bess_haul',
+    category: 'road',
+    name: 'Kalgoorlie BESS Haul',
+    description: 'Battery storage container road to Fremantle handoff.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['freight'],
+    tags: ['grid_battery', 'bess_logistics', 'storage_export'],
+    laneKilometres: 48,
+    designSpeedKmh: 90,
+    freightShare: 0.39,
+    urbanShare: 0.06,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_cairns_sealift_feed',
+    category: 'road',
+    name: 'Cairns Sealift Relief Feed',
+    description: 'Pacific humanitarian sealift road staging.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 3.8,
+    strategicNetworks: ['trade'],
+    tags: ['pacific_humanitarian', 'sealift_relief', 'disaster_supply'],
+    laneKilometres: 32,
+    designSpeedKmh: 85,
+    freightShare: 0.28,
+    urbanShare: 0.16,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_botany_tractor_feed',
+    category: 'road',
+    name: 'Botany Autonomous Tractor Feed',
+    description: 'Port Botany yard robot interface road.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['trade'],
+    tags: ['autonomous_tractor', 'port_yard_robot', 'terminal_automation', 'port_access'],
+    laneKilometres: 8,
+    designSpeedKmh: 60,
+    freightShare: 0.24,
+    urbanShare: 0.55,
+    tollRoad: false,
+  },
+];
+
+export const ROUND22_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_sa_whyalla_bess_rail',
+    category: 'rail',
+    name: 'Whyalla BESS Export Rail',
+    description: 'Grid battery module rail to Spencer Gulf.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 4.9,
+    strategicNetworks: ['freight'],
+    tags: ['grid_battery', 'bess_logistics', 'storage_export'],
+    trackKilometres: 120,
+    dualTrackShare: 0.46,
+    electrifiedShare: 0.38,
+    designFreightTonnesPerYear: 6_800_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_qld_townsville_sealift_rail',
+    category: 'rail',
+    name: 'Townsville Sealift Rail',
+    description: 'Humanitarian relief rail to Pacific sealift port.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade'],
+    tags: ['pacific_humanitarian', 'sealift_relief', 'disaster_supply'],
+    trackKilometres: 88,
+    dualTrackShare: 0.41,
+    electrifiedShare: 0.2,
+    designFreightTonnesPerYear: 5_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_vic_melbourne_port_tractor',
+    category: 'rail',
+    name: 'Melbourne Port Tractor Rail',
+    description: 'Autonomous yard tractor module rail feed.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade'],
+    tags: ['autonomous_tractor', 'port_yard_robot', 'terminal_automation', 'intermodal'],
+    trackKilometres: 22,
+    dualTrackShare: 0.62,
+    electrifiedShare: 0.78,
+    designFreightTonnesPerYear: 3_400_000,
+    passengerCapable: false,
+  },
+];
+
+export const ROUND22_PORTS: PortAsset[] = [
+  {
+    id: 'port_sa_spencer_bess_export',
+    category: 'port',
+    name: 'Spencer Gulf BESS Export',
+    description: 'Grid-scale battery storage export berths.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'WA'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade'],
+    tags: ['grid_battery', 'bess_logistics', 'storage_export', 'bulk'],
+    berthCount: 3,
+    maxDraftMetres: 13.0,
+    teuCapacityPerYear: 160_000,
+    automationLevel: 1,
+    bulkShare: 0.48,
+  },
+  {
+    id: 'port_qld_townsville_sealift',
+    category: 'port',
+    name: 'Townsville Humanitarian Sealift',
+    description: 'Pacific disaster relief and sealift staging.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NT'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['trade'],
+    tags: ['pacific_humanitarian', 'sealift_relief', 'disaster_supply'],
+    berthCount: 3,
+    maxDraftMetres: 12.5,
+    teuCapacityPerYear: 175_000,
+    automationLevel: 1,
+    bulkShare: 0.2,
+  },
+  {
+    id: 'port_nsw_botany_auto_yard',
+    category: 'port',
+    name: 'Port Botany Autonomous Yard',
+    description: 'Terminal automation and autonomous tractor berths.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 5.6,
+    strategicNetworks: ['trade'],
+    tags: ['autonomous_tractor', 'port_yard_robot', 'terminal_automation', 'container'],
+    berthCount: 4,
+    maxDraftMetres: 14.0,
+    teuCapacityPerYear: 420_000,
+    automationLevel: 3,
+    bulkShare: 0.08,
+  },
+];
+
+export const ROUND22_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_wa_kwinana_bess_yard',
+    category: 'logistics',
+    name: 'Kwinana BESS Module Yard',
+    description: 'Grid battery container consolidation.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'SA'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['grid_battery', 'bess_logistics', 'storage_export'],
+    warehouseSqm: 116_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 50,
+  },
+  {
+    id: 'log_nt_darwin_sealift_stores',
+    category: 'logistics',
+    name: 'Darwin Sealift Stores',
+    description: 'Pacific humanitarian relief warehousing.',
+    hostRegion: 'NT',
+    servedRegions: ['NT', 'QLD'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['trade'],
+    tags: ['pacific_humanitarian', 'sealift_relief', 'disaster_supply', 'gateway'],
+    warehouseSqm: 88_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 41,
+  },
+  {
+    id: 'log_vic_webb_dock_tractor_hub',
+    category: 'logistics',
+    name: 'Webb Dock Tractor Hub',
+    description: 'Autonomous port tractor stores and maintenance.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['trade'],
+    tags: ['autonomous_tractor', 'port_yard_robot', 'terminal_automation'],
+    warehouseSqm: 58_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 65,
+  },
+];
+
+export const SCALE_WAVE_ROUND22_ASSETS = [
+  ...ROUND22_ROADS,
+  ...ROUND22_RAIL,
+  ...ROUND22_PORTS,
+  ...ROUND22_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -8503,6 +8847,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND19_ASSETS,
     ...SCALE_WAVE_ROUND20_ASSETS,
     ...SCALE_WAVE_ROUND21_ASSETS,
+    ...SCALE_WAVE_ROUND22_ASSETS,
   ];
 }
 
@@ -9670,6 +10015,62 @@ export function floatingOffshoreWindStagingProductivityMultiplier(
   policy: FloatingOffshoreWindStagingPolicy = 'baseline',
 ): number {
   const policyBoost = policy === 'deploy' ? 0.042 : 0;
+  const normalized = (index - 6) / 100;
+  return clamp(1 + normalized * 0.048 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/grid-battery-logistics-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type GridBatteryLogisticsPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 grid-scale battery (BESS) logistics throughput by region. */
+export function computeGridBatteryLogisticsByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'grid_battery' || t === 'bess_logistics' || t === 'storage_export',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 88_000 + asset.intermodalLinks.length * 0.82;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 610 + asset.freightShare * 3.4;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 11_000_000;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.6 + asset.teuCapacityPerYear / 320_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalGridBatteryLogisticsIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.45 + max * 0.55, 5, 78) * 10) / 10;
+}
+
+export function gridBatteryLogisticsProductivityMultiplier(
+  index: number,
+  policy: GridBatteryLogisticsPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.043 : 0;
   const normalized = (index - 6) / 100;
   return clamp(1 + normalized * 0.048 + policyBoost, 0.93, 1.11);
 }
@@ -10979,6 +11380,93 @@ export function criticalMedicineAirliftProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.025 : 1;
   return (1 + (share - 0.05) * 0.034) * bias;
+}
+
+
+// --- source: operations/pacific-humanitarian-sealift-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PacificHumanitarianSealiftPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 Pacific humanitarian sealift readiness by region. */
+export function computePacificHumanitarianSealiftByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 6])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'pacific_humanitarian' || t === 'sealift_relief' || t === 'disaster_supply',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.4 + asset.teuCapacityPerYear / 240_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 74_000 + asset.intermodalLinks.length * 0.75;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 580;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 13_000_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.036 - stress * 0.028), 4, 86) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPacificHumanitarianSealiftIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.47 + max * 0.53, 6, 83) * 10) / 10;
+}
+
+export function computePacificHumanitarianSealiftShare(
+  operationalAssets: TransportAsset[],
+  policy: PacificHumanitarianSealiftPolicy = 'baseline',
+): number {
+  let sealiftUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('sealift_relief') || asset.tags.includes('pacific_humanitarian')) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.6;
+        sealiftUnits += asset.berthCount * 1.18;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 78_000;
+        sealiftUnits += asset.warehouseSqm / 78_000 * 0.7;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.032;
+  const policyBoost = policy === 'surge' ? 0.033 : 0;
+  return Math.round(clamp(sealiftUnits / totalUnits + policyBoost, 0.03, 0.32) * 1000) / 1000;
+}
+
+export function pacificHumanitarianSealiftProductivityMultiplier(
+  share: number,
+  policy: PacificHumanitarianSealiftPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.024 : 1;
+  return (1 + (share - 0.048) * 0.033) * bias;
 }
 
 
@@ -12526,6 +13014,92 @@ export function nationalRegionalFreightDroneThroughputIndex(
 }
 
 
+// --- source: productivity/autonomous-port-tractor-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type AutonomousPortTractorPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of port yard moves using autonomous tractors. */
+export function computeAutonomousPortTractorShare(
+  operationalAssets: TransportAsset[],
+  policy: AutonomousPortTractorPolicy = 'baseline',
+): number {
+  let autoUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'autonomous_tractor' || t === 'port_yard_robot' || t === 'terminal_automation',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 2.2 + asset.automationLevel * 1.4;
+        autoUnits += (asset.berthCount * 2.2 + asset.automationLevel * 1.4) * (0.55 + asset.automationLevel * 0.08);
+      }
+      if (asset.category === 'logistics' && asset.intermodalLinks.includes('port')) {
+        totalUnits += asset.warehouseSqm / 85_000;
+        autoUnits += asset.warehouseSqm / 85_000 * 0.58;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.034;
+  const policyBoost = policy === 'deploy' ? 0.034 : 0;
+  return Math.round(clamp(autoUnits / totalUnits + policyBoost, 0.033, 0.36) * 1000) / 1000;
+}
+
+export function autonomousPortTractorProductivityMultiplier(
+  share: number,
+  policy: AutonomousPortTractorPolicy,
+): number {
+  const bias = policy === 'deploy' ? 1.023 : 1;
+  return (1 + (share - 0.06) * 0.032) * bias;
+}
+
+export function computeAutonomousPortTractorThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'autonomous_tractor' || t === 'port_yard_robot' || t === 'terminal_automation',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.5 + asset.teuCapacityPerYear / 270_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 80_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 480;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalAutonomousPortTractorThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 2, 55) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -12945,6 +13519,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalRegionalFreightDroneThroughputIndex,
   regionalFreightDroneProductivityMultiplier,
 } from './regional-freight-drone-index.ts';
+  computeGridBatteryLogisticsByRegion,
+  gridBatteryLogisticsProductivityMultiplier,
+  nationalGridBatteryLogisticsIndex,
+} from '../network/grid-battery-logistics-index.ts';
+  computePacificHumanitarianSealiftByRegion,
+  computePacificHumanitarianSealiftShare,
+  nationalPacificHumanitarianSealiftIndex,
+  pacificHumanitarianSealiftProductivityMultiplier,
+} from '../operations/pacific-humanitarian-sealift-index.ts';
+  autonomousPortTractorProductivityMultiplier,
+  computeAutonomousPortTractorShare,
+  computeAutonomousPortTractorThroughputByRegion,
+  nationalAutonomousPortTractorThroughputIndex,
+} from './autonomous-port-tractor-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -13731,6 +14319,34 @@ export function computeTransportInfrastructureState(
     regionalFreightDroneShare,
     options?.regionalFreightDronePolicy ?? 'baseline',
   );
+  const gridBatteryLogisticsByRegion = computeGridBatteryLogisticsByRegion(ops);
+  const nationalGridBattery = nationalGridBatteryLogisticsIndex(gridBatteryLogisticsByRegion);
+  const gridBatteryMult = gridBatteryLogisticsProductivityMultiplier(
+    nationalGridBattery,
+    options?.gridBatteryLogisticsPolicy ?? 'baseline',
+  );
+  const pacificHumanitarianSealiftByRegion = computePacificHumanitarianSealiftByRegion(ops, networkStress);
+  const nationalPacificSealift = nationalPacificHumanitarianSealiftIndex(pacificHumanitarianSealiftByRegion);
+  const pacificHumanitarianSealiftShare = computePacificHumanitarianSealiftShare(
+    ops,
+    options?.pacificHumanitarianSealiftPolicy ?? 'baseline',
+  );
+  const sealiftMult = pacificHumanitarianSealiftProductivityMultiplier(
+    pacificHumanitarianSealiftShare,
+    options?.pacificHumanitarianSealiftPolicy ?? 'baseline',
+  );
+  const autonomousPortTractorThroughputByRegion = computeAutonomousPortTractorThroughputByRegion(ops);
+  const nationalAutonomousPortTractor = nationalAutonomousPortTractorThroughputIndex(
+    autonomousPortTractorThroughputByRegion,
+  );
+  const autonomousPortTractorShare = computeAutonomousPortTractorShare(
+    ops,
+    options?.autonomousPortTractorPolicy ?? 'baseline',
+  );
+  const portTractorMult = autonomousPortTractorProductivityMultiplier(
+    autonomousPortTractorShare,
+    options?.autonomousPortTractorPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -13751,6 +14367,9 @@ export function computeTransportInfrastructureState(
     const floatingWindBoost = (floatingOffshoreWindStagingByRegion[code] - 5) * 0.0045;
     const medicineAirliftBoost = (criticalMedicineAirliftByRegion[code] - 8) * 0.0041;
     const freightDroneBoost = (regionalFreightDroneThroughputByRegion[code] - 1.5) * 0.004;
+    const gridBatteryBoost = (gridBatteryLogisticsByRegion[code] - 5) * 0.0044;
+    const sealiftBoost = (pacificHumanitarianSealiftByRegion[code] - 8) * 0.004;
+    const portTractorBoost = (autonomousPortTractorThroughputByRegion[code] - 2) * 0.0039;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -13770,7 +14389,10 @@ export function computeTransportInfrastructureState(
         microfreightBoost +
         floatingWindBoost +
         medicineAirliftBoost +
-        freightDroneBoost) *
+        freightDroneBoost +
+        gridBatteryBoost +
+        sealiftBoost +
+        portTractorBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -13788,7 +14410,10 @@ export function computeTransportInfrastructureState(
       microfreightMult *
       floatingWindMult *
       medicineAirliftMult *
-      freightDroneMult;
+      freightDroneMult *
+      gridBatteryMult *
+      sealiftMult *
+      portTractorMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -13829,7 +14454,10 @@ export function computeTransportInfrastructureState(
     nationalUrbanMicrofreight * 0.009 +
     nationalFloatingWindStaging * 0.008 +
     nationalCriticalMedicineAirlift * 0.008 +
-    nationalRegionalFreightDrone * 0.008;
+    nationalRegionalFreightDrone * 0.008 +
+    nationalGridBattery * 0.007 +
+    nationalPacificSealift * 0.007 +
+    nationalAutonomousPortTractor * 0.007;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -13844,7 +14472,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/22',
+    schemaVersion: 'agent12/23',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -13986,6 +14614,14 @@ export function computeTransportInfrastructureState(
     regionalFreightDroneShare,
     nationalRegionalFreightDroneThroughputIndex: nationalRegionalFreightDrone,
     regionalFreightDroneThroughputByRegion,
+    nationalGridBatteryLogisticsIndex: nationalGridBattery,
+    gridBatteryLogisticsByRegion,
+    pacificHumanitarianSealiftShare,
+    nationalPacificHumanitarianSealiftIndex: nationalPacificSealift,
+    pacificHumanitarianSealiftByRegion,
+    autonomousPortTractorShare,
+    nationalAutonomousPortTractorThroughputIndex: nationalAutonomousPortTractor,
+    autonomousPortTractorThroughputByRegion,
     computeMs,
   };
 }
@@ -14068,7 +14704,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/22' &&
+      infra.schemaVersion === 'agent12/23' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -14138,8 +14774,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalFloatingOffshoreWindStagingIndex >= 6 &&
       infra.nationalCriticalMedicineAirliftIndex >= 8 &&
       infra.regionalFreightDroneShare >= 0.03 &&
-      infra.nationalRegionalFreightDroneThroughputIndex >= 1.5,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} floatWind=${infra.nationalFloatingOffshoreWindStagingIndex.toFixed(1)} medAirlift=${infra.nationalCriticalMedicineAirliftIndex.toFixed(1)} drone=${infra.nationalRegionalFreightDroneThroughputIndex.toFixed(1)}`,
+      infra.nationalRegionalFreightDroneThroughputIndex >= 1.5 &&
+      infra.nationalGridBatteryLogisticsIndex >= 6 &&
+      infra.nationalPacificHumanitarianSealiftIndex >= 8 &&
+      infra.autonomousPortTractorShare >= 0.033 &&
+      infra.nationalAutonomousPortTractorThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} bess=${infra.nationalGridBatteryLogisticsIndex.toFixed(1)} sealift=${infra.nationalPacificHumanitarianSealiftIndex.toFixed(1)} tractor=${infra.nationalAutonomousPortTractorThroughputIndex.toFixed(1)}`,
   });
 
   return results;

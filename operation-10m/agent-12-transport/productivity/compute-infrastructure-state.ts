@@ -312,6 +312,23 @@ import {
   nationalRegionalFreightDroneThroughputIndex,
   regionalFreightDroneProductivityMultiplier,
 } from './regional-freight-drone-index.ts';
+import {
+  computeGridBatteryLogisticsByRegion,
+  gridBatteryLogisticsProductivityMultiplier,
+  nationalGridBatteryLogisticsIndex,
+} from '../network/grid-battery-logistics-index.ts';
+import {
+  computePacificHumanitarianSealiftByRegion,
+  computePacificHumanitarianSealiftShare,
+  nationalPacificHumanitarianSealiftIndex,
+  pacificHumanitarianSealiftProductivityMultiplier,
+} from '../operations/pacific-humanitarian-sealift-index.ts';
+import {
+  autonomousPortTractorProductivityMultiplier,
+  computeAutonomousPortTractorShare,
+  computeAutonomousPortTractorThroughputByRegion,
+  nationalAutonomousPortTractorThroughputIndex,
+} from './autonomous-port-tractor-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1099,6 +1116,34 @@ export function computeTransportInfrastructureState(
     regionalFreightDroneShare,
     options?.regionalFreightDronePolicy ?? 'baseline',
   );
+  const gridBatteryLogisticsByRegion = computeGridBatteryLogisticsByRegion(ops);
+  const nationalGridBattery = nationalGridBatteryLogisticsIndex(gridBatteryLogisticsByRegion);
+  const gridBatteryMult = gridBatteryLogisticsProductivityMultiplier(
+    nationalGridBattery,
+    options?.gridBatteryLogisticsPolicy ?? 'baseline',
+  );
+  const pacificHumanitarianSealiftByRegion = computePacificHumanitarianSealiftByRegion(ops, networkStress);
+  const nationalPacificSealift = nationalPacificHumanitarianSealiftIndex(pacificHumanitarianSealiftByRegion);
+  const pacificHumanitarianSealiftShare = computePacificHumanitarianSealiftShare(
+    ops,
+    options?.pacificHumanitarianSealiftPolicy ?? 'baseline',
+  );
+  const sealiftMult = pacificHumanitarianSealiftProductivityMultiplier(
+    pacificHumanitarianSealiftShare,
+    options?.pacificHumanitarianSealiftPolicy ?? 'baseline',
+  );
+  const autonomousPortTractorThroughputByRegion = computeAutonomousPortTractorThroughputByRegion(ops);
+  const nationalAutonomousPortTractor = nationalAutonomousPortTractorThroughputIndex(
+    autonomousPortTractorThroughputByRegion,
+  );
+  const autonomousPortTractorShare = computeAutonomousPortTractorShare(
+    ops,
+    options?.autonomousPortTractorPolicy ?? 'baseline',
+  );
+  const portTractorMult = autonomousPortTractorProductivityMultiplier(
+    autonomousPortTractorShare,
+    options?.autonomousPortTractorPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1119,6 +1164,9 @@ export function computeTransportInfrastructureState(
     const floatingWindBoost = (floatingOffshoreWindStagingByRegion[code] - 5) * 0.0045;
     const medicineAirliftBoost = (criticalMedicineAirliftByRegion[code] - 8) * 0.0041;
     const freightDroneBoost = (regionalFreightDroneThroughputByRegion[code] - 1.5) * 0.004;
+    const gridBatteryBoost = (gridBatteryLogisticsByRegion[code] - 5) * 0.0044;
+    const sealiftBoost = (pacificHumanitarianSealiftByRegion[code] - 8) * 0.004;
+    const portTractorBoost = (autonomousPortTractorThroughputByRegion[code] - 2) * 0.0039;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1138,7 +1186,10 @@ export function computeTransportInfrastructureState(
         microfreightBoost +
         floatingWindBoost +
         medicineAirliftBoost +
-        freightDroneBoost) *
+        freightDroneBoost +
+        gridBatteryBoost +
+        sealiftBoost +
+        portTractorBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1156,7 +1207,10 @@ export function computeTransportInfrastructureState(
       microfreightMult *
       floatingWindMult *
       medicineAirliftMult *
-      freightDroneMult;
+      freightDroneMult *
+      gridBatteryMult *
+      sealiftMult *
+      portTractorMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1197,7 +1251,10 @@ export function computeTransportInfrastructureState(
     nationalUrbanMicrofreight * 0.009 +
     nationalFloatingWindStaging * 0.008 +
     nationalCriticalMedicineAirlift * 0.008 +
-    nationalRegionalFreightDrone * 0.008;
+    nationalRegionalFreightDrone * 0.008 +
+    nationalGridBattery * 0.007 +
+    nationalPacificSealift * 0.007 +
+    nationalAutonomousPortTractor * 0.007;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1212,7 +1269,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/22',
+    schemaVersion: 'agent12/23',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1354,6 +1411,14 @@ export function computeTransportInfrastructureState(
     regionalFreightDroneShare,
     nationalRegionalFreightDroneThroughputIndex: nationalRegionalFreightDrone,
     regionalFreightDroneThroughputByRegion,
+    nationalGridBatteryLogisticsIndex: nationalGridBattery,
+    gridBatteryLogisticsByRegion,
+    pacificHumanitarianSealiftShare,
+    nationalPacificHumanitarianSealiftIndex: nationalPacificSealift,
+    pacificHumanitarianSealiftByRegion,
+    autonomousPortTractorShare,
+    nationalAutonomousPortTractorThroughputIndex: nationalAutonomousPortTractor,
+    autonomousPortTractorThroughputByRegion,
     computeMs,
   };
 }
