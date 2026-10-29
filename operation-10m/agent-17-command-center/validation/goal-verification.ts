@@ -234,7 +234,16 @@ import {
 import {
   buildAgent17AttestationAccord,
   attestationAccordBlocksAudit,
+  attestationAccordBlocksRegistry,
 } from '../planning/attestation-accord.ts';
+import {
+  buildAgent17RegistryIndex,
+  registryIndexBlocksCredential,
+} from '../planning/registry-index.ts';
+import {
+  buildAgent17CredentialAccord,
+  credentialAccordBlocksRegistry,
+} from '../planning/credential-accord.ts';
 import {
   Agent17RollbackController,
   createAgent17RollbackController,
@@ -1875,6 +1884,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const registryIndex = depthEval.snapshot.planningDepth?.registryIndex;
+  goalResults.push(
+    result(
+      'G17-109',
+      !!registryIndex &&
+        registryIndex.entries.length >= 5 &&
+        registryIndex.registryScore >= 0 &&
+        registryIndex.registryScore <= 100 &&
+        (registryIndex.band === 'canonical' ||
+          registryIndex.band === 'provisional' ||
+          registryIndex.band === 'corrupt'),
+      `entries=${registryIndex?.entries.length} score=${registryIndex?.registryScore}`
+    )
+  );
+
+  const credentialAccord = depthEval.snapshot.planningDepth?.credentialAccord;
+  goalResults.push(
+    result(
+      'G17-110',
+      !!credentialAccord &&
+        credentialAccord.marks.length >= 5 &&
+        credentialAccord.credentialScore >= 0 &&
+        credentialAccord.credentialScore <= 100,
+      `marks=${credentialAccord?.marks.length} score=${credentialAccord?.credentialScore}`
+    )
+  );
+
+  const corruptRegistry = buildAgent17RegistryIndex({
+    attestationAccord: revokedAttestation,
+    auditIndex: failedAudit,
+    complianceAccord: breachedCompliance,
+  });
+  const voidCredential = buildAgent17CredentialAccord({
+    registryIndex: corruptRegistry,
+    attestationAccord: revokedAttestation,
+    auditIndex: failedAudit,
+  });
+  goalResults.push(
+    result(
+      'G17-111',
+      attestationAccordBlocksRegistry(revokedAttestation) ||
+        registryIndexBlocksCredential(corruptRegistry) ||
+        credentialAccordBlocksRegistry(voidCredential),
+      `${corruptRegistry.band}/${voidCredential.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -2013,6 +2069,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-106',
     'G17-107',
     'G17-108',
+    'G17-109',
+    'G17-110',
+    'G17-111',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

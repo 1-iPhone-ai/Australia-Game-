@@ -79,6 +79,8 @@ import { buildAgent17StatuteIndex } from './statute-index.ts';
 import { buildAgent17ComplianceAccord } from './compliance-accord.ts';
 import { buildAgent17AuditIndex } from './audit-index.ts';
 import { buildAgent17AttestationAccord } from './attestation-accord.ts';
+import { buildAgent17RegistryIndex } from './registry-index.ts';
+import { buildAgent17CredentialAccord } from './credential-accord.ts';
 
 export function buildAgent17PlanningSuggestion(
   ops: Acc17CommandCenterOpsState,
@@ -463,6 +465,16 @@ export function buildAgent17PlanningDepthSnapshot(
     complianceAccord,
     statuteIndex,
   });
+  const registryIndex = buildAgent17RegistryIndex({
+    attestationAccord,
+    auditIndex,
+    complianceAccord,
+  });
+  const credentialAccord = buildAgent17CredentialAccord({
+    registryIndex,
+    attestationAccord,
+    auditIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -524,6 +536,8 @@ export function buildAgent17PlanningDepthSnapshot(
     complianceAccord,
     auditIndex,
     attestationAccord,
+    registryIndex,
+    credentialAccord,
   };
 }
 

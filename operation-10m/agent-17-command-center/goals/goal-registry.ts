@@ -758,6 +758,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Failed audit or breached compliance yields attestationAccordBlocksAudit.',
     severity: 'major',
   },
+  {
+    id: 'G17-109',
+    title: 'Registry index on planning depth',
+    category: 'telemetry',
+    acceptance: 'registryIndex reports registryScore 0–100 with canonical/provisional/corrupt band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-110',
+    title: 'Credential accord marks complete',
+    category: 'telemetry',
+    acceptance: 'credentialAccord exposes ≥5 marks and credentialScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-111',
+    title: 'Corrupt registry voids credential accord',
+    category: 'integration',
+    acceptance: 'Corrupt registry or revoked attestation yields credentialAccordBlocksRegistry.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {

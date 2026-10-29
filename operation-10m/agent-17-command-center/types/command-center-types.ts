@@ -239,6 +239,8 @@ export interface Agent17PlanningDepthSnapshot {
   complianceAccord: Agent17ComplianceAccordSnapshot;
   auditIndex: Agent17AuditIndexSnapshot;
   attestationAccord: Agent17AttestationAccordSnapshot;
+  registryIndex: Agent17RegistryIndexSnapshot;
+  credentialAccord: Agent17CredentialAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1183,6 +1185,40 @@ export interface Agent17AttestationAccordSnapshot {
   auditBand: Agent17AuditIndexSnapshot['band'];
   complianceBand: Agent17ComplianceAccordSnapshot['band'];
   attestationSealed: boolean;
+  headline: string;
+}
+
+export interface Agent17RegistryEntry {
+  id: string;
+  label: string;
+  indexed: boolean;
+  weight: number;
+}
+
+export interface Agent17RegistryIndexSnapshot {
+  registryScore: number;
+  band: 'canonical' | 'provisional' | 'corrupt';
+  entries: Agent17RegistryEntry[];
+  attestationBand: Agent17AttestationAccordSnapshot['band'];
+  auditBand: Agent17AuditIndexSnapshot['band'];
+  registryCanonical: boolean;
+  headline: string;
+}
+
+export interface Agent17CredentialMark {
+  id: string;
+  label: string;
+  issued: boolean;
+  weight: number;
+}
+
+export interface Agent17CredentialAccordSnapshot {
+  credentialScore: number;
+  band: 'issued' | 'pending' | 'void';
+  marks: Agent17CredentialMark[];
+  registryBand: Agent17RegistryIndexSnapshot['band'];
+  attestationBand: Agent17AttestationAccordSnapshot['band'];
+  credentialIssued: boolean;
   headline: string;
 }
 

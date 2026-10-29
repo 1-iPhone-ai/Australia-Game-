@@ -100,3 +100,7 @@ export function buildAgent17AttestationAccord(
 export function attestationAccordBlocksAudit(snapshot: Agent17AttestationAccordSnapshot): boolean {
   return snapshot.band === 'revoked' || !snapshot.attestationSealed;
 }
+
+export function attestationAccordBlocksRegistry(snapshot: Agent17AttestationAccordSnapshot): boolean {
+  return snapshot.band === 'revoked' || !snapshot.attestationSealed;
+}

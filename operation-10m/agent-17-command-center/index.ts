@@ -69,6 +69,8 @@ export * from './planning/statute-index.ts';
 export * from './planning/compliance-accord.ts';
 export * from './planning/audit-index.ts';
 export * from './planning/attestation-accord.ts';
+export * from './planning/registry-index.ts';
+export * from './planning/credential-accord.ts';
 export * from './planning/planning-orchestrator.ts';
 export * from './planning/ops-state.ts';
 export * from './evaluation/operations-evaluator.ts';
@@ -107,6 +109,7 @@ export * from './harness/run-canon-depth-tests.ts';
 export * from './harness/run-charter-depth-tests.ts';
 export * from './harness/run-statute-depth-tests.ts';
 export * from './harness/run-audit-depth-tests.ts';
+export * from './harness/run-registry-depth-tests.ts';
 
 export const AGENT17_MODULE_ROOT = 'operation-10m/agent-17-command-center';
 export const AGENT17_ASSEMBLY_ANCHOR = '// SECTION 15: AI COMMAND CENTER';

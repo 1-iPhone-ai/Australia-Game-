@@ -243,6 +243,8 @@ export interface Agent17PlanningDepthSnapshot {
   complianceAccord: Agent17ComplianceAccordSnapshot;
   auditIndex: Agent17AuditIndexSnapshot;
   attestationAccord: Agent17AttestationAccordSnapshot;
+  registryIndex: Agent17RegistryIndexSnapshot;
+  credentialAccord: Agent17CredentialAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1187,6 +1189,40 @@ export interface Agent17AttestationAccordSnapshot {
   auditBand: Agent17AuditIndexSnapshot['band'];
   complianceBand: Agent17ComplianceAccordSnapshot['band'];
   attestationSealed: boolean;
+  headline: string;
+}
+
+export interface Agent17RegistryEntry {
+  id: string;
+  label: string;
+  indexed: boolean;
+  weight: number;
+}
+
+export interface Agent17RegistryIndexSnapshot {
+  registryScore: number;
+  band: 'canonical' | 'provisional' | 'corrupt';
+  entries: Agent17RegistryEntry[];
+  attestationBand: Agent17AttestationAccordSnapshot['band'];
+  auditBand: Agent17AuditIndexSnapshot['band'];
+  registryCanonical: boolean;
+  headline: string;
+}
+
+export interface Agent17CredentialMark {
+  id: string;
+  label: string;
+  issued: boolean;
+  weight: number;
+}
+
+export interface Agent17CredentialAccordSnapshot {
+  credentialScore: number;
+  band: 'issued' | 'pending' | 'void';
+  marks: Agent17CredentialMark[];
+  registryBand: Agent17RegistryIndexSnapshot['band'];
+  attestationBand: Agent17AttestationAccordSnapshot['band'];
+  credentialIssued: boolean;
   headline: string;
 }
 
@@ -8625,6 +8661,215 @@ export function attestationAccordBlocksAudit(snapshot: Agent17AttestationAccordS
   return snapshot.band === 'revoked' || !snapshot.attestationSealed;
 }
 
+export function attestationAccordBlocksRegistry(snapshot: Agent17AttestationAccordSnapshot): boolean {
+  return snapshot.band === 'revoked' || !snapshot.attestationSealed;
+}
+
+
+// --- source: planning/registry-index.ts ---
+  Agent17AttestationAccordSnapshot,
+  Agent17AuditIndexSnapshot,
+  Agent17ComplianceAccordSnapshot,
+  Agent17RegistryIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17RegistryIndexInputs {
+  attestationAccord: Agent17AttestationAccordSnapshot;
+  auditIndex: Agent17AuditIndexSnapshot;
+  complianceAccord: Agent17ComplianceAccordSnapshot;
+}
+
+export function buildAgent17RegistryIndex(
+  inputs: Agent17RegistryIndexInputs
+): Agent17RegistryIndexSnapshot {
+  const entries: Agent17RegistryIndexSnapshot['entries'] = [];
+
+  entries.push({
+    id: 'attestation_sealed',
+    label: 'Attestation accord sealed',
+    indexed:
+      inputs.attestationAccord.attestationSealed &&
+      !attestationAccordBlocksRegistry(inputs.attestationAccord),
+    weight: 30,
+  });
+
+  entries.push({
+    id: 'attestation_band',
+    label: 'Attestation sealed or provisional',
+    indexed:
+      inputs.attestationAccord.band === 'sealed' ||
+      inputs.attestationAccord.band === 'provisional',
+    weight: 25,
+  });
+
+  entries.push({
+    id: 'audit_passed',
+    label: 'Audit index audit-passed',
+    indexed:
+      inputs.auditIndex.auditPassed && !auditIndexBlocksAttestation(inputs.auditIndex),
+    weight: 20,
+  });
+
+  entries.push({
+    id: 'compliance_clear',
+    label: 'Compliance accord not blocking audit',
+    indexed: !complianceAccordBlocksAudit(inputs.complianceAccord),
+    weight: 15,
+  });
+
+  entries.push({
+    id: 'attestation_score',
+    label: 'Attestation score headroom',
+    indexed: inputs.attestationAccord.attestationScore >= 30,
+    weight: 10,
+  });
+
+  const weighted = entries.reduce(
+    (n, e) => n + (e.indexed ? 100 : 6) * (e.weight / 100),
+    0
+  );
+  const totalWeight = entries.reduce((n, e) => n + e.weight, 0);
+  const registryScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const corruptSignals =
+    attestationAccordBlocksRegistry(inputs.attestationAccord) ||
+    auditIndexBlocksAttestation(inputs.auditIndex) ||
+    complianceAccordBlocksAudit(inputs.complianceAccord);
+
+  const band: Agent17RegistryIndexSnapshot['band'] = corruptSignals
+    ? 'corrupt'
+    : registryScore >= 57 &&
+        inputs.attestationAccord.band === 'sealed' &&
+        inputs.auditIndex.band === 'passed'
+      ? 'canonical'
+      : 'provisional';
+
+  const registryCanonical =
+    band === 'canonical' &&
+    inputs.attestationAccord.attestationSealed &&
+    !attestationAccordBlocksRegistry(inputs.attestationAccord);
+
+  return {
+    registryScore,
+    band,
+    entries,
+    attestationBand: inputs.attestationAccord.band,
+    auditBand: inputs.auditIndex.band,
+    registryCanonical,
+    headline: `Registry ${band} (${registryScore}/100) · ${entries.filter(e => e.indexed).length}/${entries.length} entries`,
+  };
+}
+
+export function registryIndexBlocksCredential(snapshot: Agent17RegistryIndexSnapshot): boolean {
+  return snapshot.band === 'corrupt' || !snapshot.registryCanonical;
+}
+
+
+// --- source: planning/credential-accord.ts ---
+  Agent17AttestationAccordSnapshot,
+  Agent17AuditIndexSnapshot,
+  Agent17CredentialAccordSnapshot,
+  Agent17RegistryIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17CredentialAccordInputs {
+  registryIndex: Agent17RegistryIndexSnapshot;
+  attestationAccord: Agent17AttestationAccordSnapshot;
+  auditIndex: Agent17AuditIndexSnapshot;
+}
+
+export function buildAgent17CredentialAccord(
+  inputs: Agent17CredentialAccordInputs
+): Agent17CredentialAccordSnapshot {
+  const marks: Agent17CredentialAccordSnapshot['marks'] = [];
+
+  marks.push({
+    id: 'registry_canonical',
+    label: 'Registry index registry-canonical',
+    issued:
+      inputs.registryIndex.registryCanonical &&
+      !registryIndexBlocksCredential(inputs.registryIndex),
+    weight: 30,
+  });
+
+  marks.push({
+    id: 'registry_band',
+    label: 'Registry canonical or provisional',
+    issued:
+      inputs.registryIndex.band === 'canonical' ||
+      inputs.registryIndex.band === 'provisional',
+    weight: 25,
+  });
+
+  marks.push({
+    id: 'attestation_sealed',
+    label: 'Attestation accord sealed-ready',
+    issued:
+      inputs.attestationAccord.attestationSealed &&
+      !attestationAccordBlocksRegistry(inputs.attestationAccord),
+    weight: 20,
+  });
+
+  marks.push({
+    id: 'audit_clear',
+    label: 'Audit index not blocking attestation',
+    issued: !auditIndexBlocksAttestation(inputs.auditIndex),
+    weight: 15,
+  });
+
+  marks.push({
+    id: 'registry_score',
+    label: 'Registry score headroom',
+    issued: inputs.registryIndex.registryScore >= 29,
+    weight: 10,
+  });
+
+  const weighted = marks.reduce(
+    (n, m) => n + (m.issued ? 100 : 5) * (m.weight / 100),
+    0
+  );
+  const totalWeight = marks.reduce((n, m) => n + m.weight, 0);
+  const credentialScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const voidSignals =
+    registryIndexBlocksCredential(inputs.registryIndex) ||
+    attestationAccordBlocksRegistry(inputs.attestationAccord) ||
+    auditIndexBlocksAttestation(inputs.auditIndex);
+
+  const band: Agent17CredentialAccordSnapshot['band'] = voidSignals
+    ? 'void'
+    : credentialScore >= 54 &&
+        inputs.registryIndex.band === 'canonical' &&
+        inputs.attestationAccord.band === 'sealed'
+      ? 'issued'
+      : 'pending';
+
+  const credentialIssued =
+    band === 'issued' &&
+    inputs.registryIndex.registryCanonical &&
+    !auditIndexBlocksAttestation(inputs.auditIndex);
+
+  return {
+    credentialScore,
+    band,
+    marks,
+    registryBand: inputs.registryIndex.band,
+    attestationBand: inputs.attestationAccord.band,
+    credentialIssued,
+    headline: `Credential ${band} (${credentialScore}/100) · ${marks.filter(m => m.issued).length}/${marks.length} marks`,
+  };
+}
+
+export function credentialAccordBlocksRegistry(snapshot: Agent17CredentialAccordSnapshot): boolean {
+  return snapshot.band === 'void' || !snapshot.credentialIssued;
+}
+
 
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
@@ -9025,6 +9270,16 @@ export function buildAgent17PlanningDepthSnapshot(
     complianceAccord,
     statuteIndex,
   });
+  const registryIndex = buildAgent17RegistryIndex({
+    attestationAccord,
+    auditIndex,
+    complianceAccord,
+  });
+  const credentialAccord = buildAgent17CredentialAccord({
+    registryIndex,
+    attestationAccord,
+    auditIndex,
+  });
   return {
     ...core,
     intentQueue,
@@ -9086,6 +9341,8 @@ export function buildAgent17PlanningDepthSnapshot(
     complianceAccord,
     auditIndex,
     attestationAccord,
+    registryIndex,
+    credentialAccord,
   };
 }
 
@@ -10134,6 +10391,27 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     acceptance: 'Failed audit or breached compliance yields attestationAccordBlocksAudit.',
     severity: 'major',
   },
+  {
+    id: 'G17-109',
+    title: 'Registry index on planning depth',
+    category: 'telemetry',
+    acceptance: 'registryIndex reports registryScore 0–100 with canonical/provisional/corrupt band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-110',
+    title: 'Credential accord marks complete',
+    category: 'telemetry',
+    acceptance: 'credentialAccord exposes ≥5 marks and credentialScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-111',
+    title: 'Corrupt registry voids credential accord',
+    category: 'integration',
+    acceptance: 'Corrupt registry or revoked attestation yields credentialAccordBlocksRegistry.',
+    severity: 'major',
+  },
 ];
 
 export function getAgent17GoalById(id: string): Agent17GoalDefinition | undefined {
@@ -10312,7 +10590,14 @@ export function listAgent17GoalIds(): string[] {
 } from '../planning/audit-index.ts';
   buildAgent17AttestationAccord,
   attestationAccordBlocksAudit,
+  attestationAccordBlocksRegistry,
 } from '../planning/attestation-accord.ts';
+  buildAgent17RegistryIndex,
+  registryIndexBlocksCredential,
+} from '../planning/registry-index.ts';
+  buildAgent17CredentialAccord,
+  credentialAccordBlocksRegistry,
+} from '../planning/credential-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -11952,6 +12237,53 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const registryIndex = depthEval.snapshot.planningDepth?.registryIndex;
+  goalResults.push(
+    result(
+      'G17-109',
+      !!registryIndex &&
+        registryIndex.entries.length >= 5 &&
+        registryIndex.registryScore >= 0 &&
+        registryIndex.registryScore <= 100 &&
+        (registryIndex.band === 'canonical' ||
+          registryIndex.band === 'provisional' ||
+          registryIndex.band === 'corrupt'),
+      `entries=${registryIndex?.entries.length} score=${registryIndex?.registryScore}`
+    )
+  );
+
+  const credentialAccord = depthEval.snapshot.planningDepth?.credentialAccord;
+  goalResults.push(
+    result(
+      'G17-110',
+      !!credentialAccord &&
+        credentialAccord.marks.length >= 5 &&
+        credentialAccord.credentialScore >= 0 &&
+        credentialAccord.credentialScore <= 100,
+      `marks=${credentialAccord?.marks.length} score=${credentialAccord?.credentialScore}`
+    )
+  );
+
+  const corruptRegistry = buildAgent17RegistryIndex({
+    attestationAccord: revokedAttestation,
+    auditIndex: failedAudit,
+    complianceAccord: breachedCompliance,
+  });
+  const voidCredential = buildAgent17CredentialAccord({
+    registryIndex: corruptRegistry,
+    attestationAccord: revokedAttestation,
+    auditIndex: failedAudit,
+  });
+  goalResults.push(
+    result(
+      'G17-111',
+      attestationAccordBlocksRegistry(revokedAttestation) ||
+        registryIndexBlocksCredential(corruptRegistry) ||
+        credentialAccordBlocksRegistry(voidCredential),
+      `${corruptRegistry.band}/${voidCredential.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -12090,6 +12422,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-106',
     'G17-107',
     'G17-108',
+    'G17-109',
+    'G17-110',
+    'G17-111',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };
