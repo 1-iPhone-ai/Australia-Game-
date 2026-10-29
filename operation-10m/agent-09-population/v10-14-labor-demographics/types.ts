@@ -209,6 +209,9 @@ export interface NationalLaborDemographicsState {
   youthEntryPipelineOutlook?: NationalYouthEntryPipelineOutlook;
   laborMarketTightnessBrief?: NationalLaborMarketTightnessBrief;
   hybridParticipationFrictionOutlook?: NationalHybridParticipationFrictionOutlook;
+  seniorWorkforceRetentionOutlook?: NationalSeniorWorkforceRetentionOutlook;
+  regionalLaborAbsorptionBrief?: NationalRegionalLaborAbsorptionBrief;
+  participationEquityGapBrief?: NationalParticipationEquityGapBrief;
 }
 
 export type MigrationShockKind =
@@ -485,6 +488,39 @@ export interface NationalHybridParticipationFrictionOutlook {
   frictionIndex: number;
   band: HybridParticipationFrictionBand;
   careReliefLift: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SeniorRetentionBand = 'fragile' | 'strained' | 'stable' | 'anchored';
+
+export interface NationalSeniorWorkforceRetentionOutlook {
+  turn: number;
+  retentionIndex: number;
+  band: SeniorRetentionBand;
+  agedPressureDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type RegionalAbsorptionBand = 'saturated' | 'constrained' | 'absorbing' | 'headroom';
+
+export interface NationalRegionalLaborAbsorptionBrief {
+  turn: number;
+  absorptionIndex: number;
+  band: RegionalAbsorptionBand;
+  migrationLoadDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type ParticipationEquityBand = 'wide_gap' | 'uneven' | 'narrowing' | 'inclusive';
+
+export interface NationalParticipationEquityGapBrief {
+  turn: number;
+  equityIndex: number;
+  band: ParticipationEquityBand;
+  inclusionEaseLift: number;
   summary: string;
   stewardNote: string;
 }

@@ -27,7 +27,10 @@ export type LaborGiQueryTopic =
   | 'transition_friction'
   | 'youth_pipeline'
   | 'labor_tightness'
-  | 'hybrid_participation';
+  | 'hybrid_participation'
+  | 'senior_retention'
+  | 'labor_absorption'
+  | 'participation_equity';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -40,6 +43,9 @@ export interface LaborGiAnswer {
 export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | null {
   const q = raw.toLowerCase();
   if (/\b(youth pipeline|youth entry|apprentice pipeline)/.test(q)) return 'youth_pipeline';
+  if (/\b(senior retention|aged workforce retention|elder workforce)/.test(q)) return 'senior_retention';
+  if (/\b(labor absorption|regional absorption|absorption headroom)/.test(q)) return 'labor_absorption';
+  if (/\b(participation equity|equity gap|inclusion equity)/.test(q)) return 'participation_equity';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -245,6 +251,30 @@ export function answerLaborDemographicsQuestion(
         fact: `Hybrid band ${state.hybridParticipationFrictionOutlook?.band ?? 'unknown'}; care relief ${Math.round((state.hybridParticipationFrictionOutlook?.careReliefLift ?? 0) * 100)}%.`,
         inference: state.hybridParticipationFrictionOutlook?.stewardNote || state.outlook,
         projection: 'Hybrid friction blends transition, mobility, and care levers — not literal remote-work counts.'
+      };
+    case 'senior_retention':
+      return {
+        topic,
+        headline: state.seniorWorkforceRetentionOutlook?.summary || 'Senior retention outlook unavailable.',
+        fact: `Retention band ${state.seniorWorkforceRetentionOutlook?.band ?? 'unknown'}; aged drag ${Math.round(state.seniorWorkforceRetentionOutlook?.agedPressureDrag ?? 0)}.`,
+        inference: state.seniorWorkforceRetentionOutlook?.stewardNote || state.summary,
+        projection: 'Senior retention blends dependency, participation, and retention levers — bounded indices only.'
+      };
+    case 'labor_absorption':
+      return {
+        topic,
+        headline: state.regionalLaborAbsorptionBrief?.summary || 'Regional labor absorption unavailable.',
+        fact: `Absorption band ${state.regionalLaborAbsorptionBrief?.band ?? 'unknown'}; migration load drag ${Math.round(state.regionalLaborAbsorptionBrief?.migrationLoadDrag ?? 0)}.`,
+        inference: state.regionalLaborAbsorptionBrief?.stewardNote || state.outlook,
+        projection: 'Absorption blends migration load, capacity headroom, and tightness — not literal housing counts.'
+      };
+    case 'participation_equity':
+      return {
+        topic,
+        headline: state.participationEquityGapBrief?.summary || 'Participation equity gap unavailable.',
+        fact: `Equity band ${state.participationEquityGapBrief?.band ?? 'unknown'}; inclusion ease ${Math.round((state.participationEquityGapBrief?.inclusionEaseLift ?? 0) * 100)}%.`,
+        inference: state.participationEquityGapBrief?.stewardNote || state.outlook,
+        projection: 'Equity blends inclusion, flexibility, and underemployment slack — not literal demographic gaps.'
       };
     default:
       return {

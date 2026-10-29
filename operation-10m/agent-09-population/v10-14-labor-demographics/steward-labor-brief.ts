@@ -80,6 +80,24 @@ export function buildStewardLaborBrief(
   ) {
     hints.push(state.hybridParticipationFrictionOutlook.stewardNote);
   }
+  if (
+    state.seniorWorkforceRetentionOutlook?.band === 'fragile' ||
+    state.seniorWorkforceRetentionOutlook?.band === 'strained'
+  ) {
+    hints.push(state.seniorWorkforceRetentionOutlook.stewardNote);
+  }
+  if (
+    state.regionalLaborAbsorptionBrief?.band === 'saturated' ||
+    state.regionalLaborAbsorptionBrief?.band === 'constrained'
+  ) {
+    hints.push(state.regionalLaborAbsorptionBrief.stewardNote);
+  }
+  if (
+    state.participationEquityGapBrief?.band === 'wide_gap' ||
+    state.participationEquityGapBrief?.band === 'uneven'
+  ) {
+    hints.push(state.participationEquityGapBrief.stewardNote);
+  }
   if (state.nationalWagePressure === 'surging' || state.nationalWagePressure === 'elevated') {
     hints.push('Elevated wage pressure — review high-output regions before automation expansions.');
   }

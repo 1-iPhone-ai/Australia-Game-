@@ -46,6 +46,15 @@ import {
 import { computeNationalYouthEntryPipelineOutlook } from './youth-entry-pipeline-outlook';
 import { computeNationalLaborMarketTightnessBrief } from './labor-market-tightness-brief';
 import { computeNationalHybridParticipationFrictionOutlook } from './hybrid-participation-friction-outlook';
+import {
+  WORKFORCE_FLEXIBILITY_LEVERS,
+  flexibilityEaseForRegion,
+  flexibilityLeversForIndustry,
+  lookupWorkforceFlexibilityLever
+} from './catalog/workforce-flexibility-levers';
+import { computeNationalSeniorWorkforceRetentionOutlook } from './senior-workforce-retention-outlook';
+import { computeNationalRegionalLaborAbsorptionBrief } from './regional-labor-absorption-brief';
+import { computeNationalParticipationEquityGapBrief } from './participation-equity-gap-brief';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -514,6 +523,39 @@ export function runV1014LaborDemographicsSelfTests(): {
       rHhBad.state.underemploymentPressureBrief
     ).stewardNote.length > 8,
     'tightness steward note'
+  );
+
+  check('R901', WORKFORCE_FLEXIBILITY_LEVERS.length >= 8, 'flexibility lever catalog');
+  check('R902', Boolean(lookupWorkforceFlexibilityLever('flex_tech_nsw_vic')?.narrative), 'flexibility lever lookup');
+  check('R903', flexibilityLeversForIndustry('technology').length >= 1, 'technology flexibility levers');
+  check('R904', flexibilityEaseForRegion('NSW', 'technology') > 0, 'regional flexibility ease');
+  check('R905', Boolean(r1.state.seniorWorkforceRetentionOutlook?.band), 'senior retention on state');
+  check('R906', (r1.state.seniorWorkforceRetentionOutlook?.agedPressureDrag ?? 0) >= 0, 'aged pressure drag');
+  check('R907', Boolean(r1.state.regionalLaborAbsorptionBrief?.band), 'labor absorption on state');
+  check('R908', Boolean(r1.state.participationEquityGapBrief?.band), 'participation equity on state');
+  check('R909', detectLaborDemographicsQuery('senior retention outlook') === 'senior_retention', 'GI senior detect');
+  check('R910', detectLaborDemographicsQuery('regional labor absorption') === 'labor_absorption', 'GI absorption detect');
+  check('R911', detectLaborDemographicsQuery('participation equity gap') === 'participation_equity', 'GI equity detect');
+  check('R912', answerLaborDemographicsQuestion(r1.state, 'senior_retention').headline.length > 5, 'GI senior answer');
+  const seniorOnly = computeNationalSeniorWorkforceRetentionOutlook(
+    r1.state,
+    r1.state.dependencyRatioSnapshot,
+    r1.state.participationPressureBrief
+  );
+  check('R913', seniorOnly.summary.length > 10, 'senior retention standalone summary');
+  const absorptionOnly = computeNationalRegionalLaborAbsorptionBrief(
+    r1.state,
+    r1.state.workforceCapacityBridge,
+    r1.state.laborMarketTightnessBrief
+  );
+  check('R914', absorptionOnly.band.length > 3, 'absorption band string');
+  const equityOnly = computeNationalParticipationEquityGapBrief(r1.state, r1.state.underemploymentPressureBrief);
+  check('R915', equityOnly.inclusionEaseLift >= 0, 'equity inclusion ease lift');
+  check(
+    'R916',
+    computeNationalParticipationEquityGapBrief(rHhBad.state, rHhBad.state.underemploymentPressureBrief).stewardNote.length >
+      8,
+    'equity steward note'
   );
 
   for (let i = 19; i <= 50; i++) {
