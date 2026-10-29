@@ -375,8 +375,14 @@ export type WildfireAirtankerStagingPolicy = 'baseline' | 'surge';
 
 export type SuburbanMicroFulfillmentLogisticsPolicy = 'baseline' | 'expand';
 
+export type DeepGeothermalExportPolicy = 'baseline' | 'accelerate';
+
+export type CoastalFloodEvacStagingPolicy = 'baseline' | 'surge';
+
+export type WarehouseRobotSortationLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/38';
+  schemaVersion: 'agent12/39';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -646,6 +652,14 @@ export interface TransportInfrastructureState {
   suburbanMicroFulfillmentLogisticsShare: number;
   nationalSuburbanMicroFulfillmentLogisticsThroughputIndex: number;
   suburbanMicroFulfillmentLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalDeepGeothermalExportIndex: number;
+  deepGeothermalExportByRegion: Record<AuRegionCode, number>;
+  coastalFloodEvacStagingShare: number;
+  nationalCoastalFloodEvacStagingIndex: number;
+  coastalFloodEvacStagingByRegion: Record<AuRegionCode, number>;
+  warehouseRobotSortationLogisticsShare: number;
+  nationalWarehouseRobotSortationLogisticsThroughputIndex: number;
+  warehouseRobotSortationLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -750,6 +764,9 @@ export interface TransportInfrastructureOptions {
   pumpedHydroRenewableExportPolicy?: PumpedHydroRenewableExportPolicy;
   wildfireAirtankerStagingPolicy?: WildfireAirtankerStagingPolicy;
   suburbanMicroFulfillmentLogisticsPolicy?: SuburbanMicroFulfillmentLogisticsPolicy;
+  deepGeothermalExportPolicy?: DeepGeothermalExportPolicy;
+  coastalFloodEvacStagingPolicy?: CoastalFloodEvacStagingPolicy;
+  warehouseRobotSortationLogisticsPolicy?: WarehouseRobotSortationLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
