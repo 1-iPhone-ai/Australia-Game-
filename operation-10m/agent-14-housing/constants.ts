@@ -1,0 +1,72 @@
+import type { PublicServicePillar } from './types.ts';
+
+export const AGENT14_CORE_REGIONS = [
+  'NSW',
+  'VIC',
+  'QLD',
+  'WA',
+  'SA',
+  'TAS',
+  'NT',
+  'ACT',
+] as const;
+
+export type Agent14CoreRegion = (typeof AGENT14_CORE_REGIONS)[number];
+
+export const AGENT14_LIMITS = {
+  maxActiveCommitments: 24,
+  maxHistory: 32,
+  defaultNationalSlots: 8,
+  minFiscalAbsorption: 18,
+  maxFiscalAbsorption: 72,
+  maxSimulationTurns: 48,
+} as const;
+
+export const AGENT14_DEFAULT_PROGRAM_TIMING = {
+  effectLagTurns: 2,
+  rampTurns: 3,
+} as const;
+
+export const AGENT14_PILLARS: readonly PublicServicePillar[] = [
+  'housing',
+  'healthcare',
+  'education',
+];
+
+/** Baseline housing delivery context per core region (modular slice; not Living Regions state). */
+export const AGENT14_HOUSING_REGION_BASELINE: Record<
+  Agent14CoreRegion,
+  {
+    remoteShare: number;
+    planningBacklogMonths: number;
+    baselinePipelineDwellings: number;
+    affordabilityBaseline: number;
+  }
+> = {
+  NSW: { remoteShare: 0.08, planningBacklogMonths: 9, baselinePipelineDwellings: 4200, affordabilityBaseline: 58 },
+  VIC: { remoteShare: 0.06, planningBacklogMonths: 9, baselinePipelineDwellings: 3800, affordabilityBaseline: 56 },
+  QLD: { remoteShare: 0.22, planningBacklogMonths: 12, baselinePipelineDwellings: 3100, affordabilityBaseline: 52 },
+  WA: { remoteShare: 0.28, planningBacklogMonths: 13, baselinePipelineDwellings: 2400, affordabilityBaseline: 50 },
+  SA: { remoteShare: 0.12, planningBacklogMonths: 10, baselinePipelineDwellings: 1100, affordabilityBaseline: 54 },
+  TAS: { remoteShare: 0.35, planningBacklogMonths: 15, baselinePipelineDwellings: 480, affordabilityBaseline: 48 },
+  NT: { remoteShare: 0.55, planningBacklogMonths: 18, baselinePipelineDwellings: 320, affordabilityBaseline: 42 },
+  ACT: { remoteShare: 0.04, planningBacklogMonths: 8, baselinePipelineDwellings: 620, affordabilityBaseline: 60 },
+};
+
+export const AGENT14_HOUSING_PROGRAM_STUBS: readonly {
+  id: string;
+  regionId: Agent14CoreRegion;
+  fiscalLoadPoints: number;
+  durationTurns: number;
+  baseImpact: number;
+  effectLagTurns: number;
+}[] = [
+  { id: 'ps_h_NSW_social_accel', regionId: 'NSW', fiscalLoadPoints: 22, durationTurns: 6, baseImpact: 9, effectLagTurns: 2 },
+  { id: 'ps_h_VIC_planning_reform', regionId: 'VIC', fiscalLoadPoints: 18, durationTurns: 5, baseImpact: 8, effectLagTurns: 3 },
+  { id: 'ps_h_QLD_regional_release', regionId: 'QLD', fiscalLoadPoints: 20, durationTurns: 7, baseImpact: 10, effectLagTurns: 2 },
+  { id: 'ps_h_WA_remote_housing', regionId: 'WA', fiscalLoadPoints: 24, durationTurns: 8, baseImpact: 11, effectLagTurns: 3 },
+  { id: 'ps_h_NT_remote_housing', regionId: 'NT', fiscalLoadPoints: 26, durationTurns: 8, baseImpact: 12, effectLagTurns: 4 },
+  { id: 'ps_h_TAS_affordable', regionId: 'TAS', fiscalLoadPoints: 16, durationTurns: 5, baseImpact: 7, effectLagTurns: 2 },
+  { id: 'ps_h_SA_modular', regionId: 'SA', fiscalLoadPoints: 14, durationTurns: 4, baseImpact: 6, effectLagTurns: 1 },
+  { id: 'ps_h_ACT_density', regionId: 'ACT', fiscalLoadPoints: 12, durationTurns: 4, baseImpact: 5, effectLagTurns: 1 },
+];
