@@ -23,6 +23,13 @@ import {
   validateOP10M_A11_InfraState,
 } from './recompute-intercity-infra.ts';
 import { op10mA11CorridorStressIndex } from './intercity-dependencies.ts';
+import {
+  buildOP10M_A11_CompositeInputsFromFixtures,
+  recomputeOP10M_A11_CitiesRegionsComposite,
+  validateOP10M_A11_CompositeState,
+} from './composite-recompute.ts';
+import { op10mA11NationalPrimateIndex, op10mA11ComputeUrbanHierarchy } from './urban-hierarchy.ts';
+import { op10mA11BuildRegionalLinkageMatrix } from './regional-linkage-matrix.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -270,6 +277,53 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_16',
     infra1.state.dependencies.every((d) => d.dependentRegions.length === 2),
     'dependency region pairs',
+  );
+
+  const hierarchy = op10mA11ComputeUrbanHierarchy(sampleCities);
+  push(
+    out,
+    'a11_17',
+    hierarchy.length === 8 && hierarchy.some((h) => h.regionId === 'NSW' && h.gatewayShare > 50),
+    `NSW gateway share ${hierarchy.find((h) => h.regionId === 'NSW')?.gatewayShare}`,
+  );
+
+  const nationalPrimate = op10mA11NationalPrimateIndex(hierarchy);
+  push(out, 'a11_18', nationalPrimate > 0, `national primate ${nationalPrimate}`);
+
+  const linkMatrix = op10mA11BuildRegionalLinkageMatrix(infraLinks);
+  push(out, 'a11_19', linkMatrix.length >= 1 && linkMatrix[0].viaLinks >= 1, `link edges ${linkMatrix.length}`);
+
+  const compositeIn = buildOP10M_A11_CompositeInputsFromFixtures({
+    turn: 7,
+    urban: inputs,
+    infra: infraInputs,
+  });
+  const composite = recomputeOP10M_A11_CitiesRegionsComposite(compositeIn, null);
+  push(
+    out,
+    'a11_20',
+    validateOP10M_A11_CompositeState(composite.state).length === 0 &&
+      composite.state.reliefPlaybook.length > 0,
+    composite.state.summary.slice(0, 120),
+  );
+
+  push(
+    out,
+    'a11_21',
+    composite.derived.some((d) => d.kind === 'integrated_relief_priority') ||
+      composite.derived.some((d) => d.kind === 'primate_concentration_risk'),
+    composite.derived.map((d) => d.kind).join(', ') || 'none',
+  );
+
+  const composite2 = recomputeOP10M_A11_CitiesRegionsComposite(
+    buildOP10M_A11_CompositeInputsFromFixtures({ turn: 8, urban: inputs, infra: infraInputs }),
+    composite.persisted,
+  );
+  push(
+    out,
+    'a11_22',
+    composite2.state.revision === composite.state.revision + 1,
+    `revision ${composite.state.revision}→${composite2.state.revision}`,
   );
 
   return out;

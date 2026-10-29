@@ -23,6 +23,10 @@ const FILES = [
   'intercity-dependencies.ts',
   'recompute.ts',
   'recompute-intercity-infra.ts',
+  'urban-hierarchy.ts',
+  'regional-linkage-matrix.ts',
+  'relief-playbook.ts',
+  'composite-recompute.ts',
   'self-tests.ts',
 ];
 

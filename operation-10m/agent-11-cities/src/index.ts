@@ -7,4 +7,8 @@ export * from './recompute.ts';
 export * from './infrastructure-bottlenecks.ts';
 export * from './intercity-dependencies.ts';
 export * from './recompute-intercity-infra.ts';
+export * from './urban-hierarchy.ts';
+export * from './regional-linkage-matrix.ts';
+export * from './relief-playbook.ts';
+export * from './composite-recompute.ts';
 export * from './self-tests.ts';

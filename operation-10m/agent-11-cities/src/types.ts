@@ -213,3 +213,78 @@ export interface OP10M_A11_InfraPersisted {
   stressedLinkIds: string[];
   inputHash: string;
 }
+
+/** Composite cities/regions depth slice (scale wave). */
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.1' as const;
+
+export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
+
+export type OP10M_A11_LinkageBand = 'weak' | 'moderate' | 'strong' | 'structural';
+
+export type OP10M_A11_CompositeDerivedKind =
+  | 'primate_concentration_risk'
+  | 'regional_linkage_fragility'
+  | 'integrated_relief_priority';
+
+export interface OP10M_A11_UrbanHierarchyRow {
+  regionId: OP10M_A11_RegionId;
+  primateIndex: number;
+  primateBand: OP10M_A11_PrimateBand;
+  gatewayShare: number;
+  secondaryMomentum: number;
+  narrative: string;
+}
+
+export interface OP10M_A11_RegionalLinkageEdge {
+  fromRegion: OP10M_A11_RegionId;
+  toRegion: OP10M_A11_RegionId;
+  strength: number;
+  band: OP10M_A11_LinkageBand;
+  viaLinks: number;
+}
+
+export interface OP10M_A11_ReliefPlaybookItem {
+  regionId: OP10M_A11_RegionId;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  actions: string[];
+  rationale: string;
+}
+
+export interface OP10M_A11_CompositeDerivedEvent {
+  id: string;
+  turn: number;
+  kind: OP10M_A11_CompositeDerivedKind;
+  regionIds: OP10M_A11_RegionId[];
+  text: string;
+  significance: 'minor' | 'meaningful' | 'major';
+}
+
+export interface OP10M_A11_CompositeInputs {
+  urban: OP10M_A11_Inputs;
+  infra: OP10M_A11_InfraInputs;
+}
+
+export interface OP10M_A11_CompositeState {
+  schemaVersion: typeof OP10M_A11_COMPOSITE_SCHEMA_VERSION;
+  revision: number;
+  turn: number;
+  urban: OP10M_A11_State;
+  infra: OP10M_A11_InfraState;
+  hierarchy: OP10M_A11_UrbanHierarchyRow[];
+  linkages: OP10M_A11_RegionalLinkageEdge[];
+  reliefPlaybook: OP10M_A11_ReliefPlaybookItem[];
+  fragilityIndex: number;
+  nationalPrimateIndex: number;
+  summary: string;
+  inputHash: string;
+}
+
+export interface OP10M_A11_CompositePersisted {
+  schemaVersion: typeof OP10M_A11_COMPOSITE_SCHEMA_VERSION;
+  revision: number;
+  initializedTurn: number | null;
+  urban: OP10M_A11_Persisted;
+  infra: OP10M_A11_InfraPersisted;
+  lastFragilityIndex: number;
+  inputHash: string;
+}

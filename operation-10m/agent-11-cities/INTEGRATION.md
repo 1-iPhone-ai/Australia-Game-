@@ -20,6 +20,7 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 |--------|------|
 | `recomputeOP10M_A11_RegionalUrbanLayer` | Turn tick: inequality indices, spillovers, derived events |
 | `recomputeOP10M_A11_IntercityInfraLayer` | Turn tick: regional bottlenecks + intercity dependency/choke analysis |
+| `recomputeOP10M_A11_CitiesRegionsComposite` | Full depth tick: urban + infra + hierarchy + linkage matrix + relief playbook |
 | `validateOP10M_A11_State` | Save/load guard |
 | `validateOP10M_A11_InfraState` | Infra slice save/load guard |
 | `runOP10M_A11_SelfTests` | Regression gate |
