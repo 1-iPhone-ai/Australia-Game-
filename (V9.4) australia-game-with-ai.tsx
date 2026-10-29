@@ -10923,6 +10923,7 @@ export function canonicalStateFromLiveRuntime(
     stateCapacity: sanitizeStateCapacityPersisted((liveState as any).stateCapacity || (gameState as any)?.stateCapacity),
     publicFinance: sanitizePublicFinancePersisted((liveState as any).publicFinance || (gameState as any)?.publicFinance),
     householdEconomy: ((liveState as any).householdEconomy || (gameState as any)?.householdEconomy) ? sanitizeHouseholdEconomyPersisted((liveState as any).householdEconomy || (gameState as any)?.householdEconomy) : null,
+    corporateSectorEconomy: ((liveState as any).corporateSectorEconomy || (gameState as any)?.corporateSectorEconomy) ? sanitizeCorporateSectorPersisted((liveState as any).corporateSectorEconomy || (gameState as any)?.corporateSectorEconomy) : null,
     contentState: sanitizeMatchContentState((liveState as any).contentState || (gameState as any)?.contentState),
     lastMigrationResult: liveState.lastMigrationResult || null,
     determinismReports: liveState.determinismReports || null,
@@ -14359,6 +14360,7 @@ export const DEFAULT_GAME_SETTINGS: GameSettingsState = {
   stateCapacityEnabled: true,
   publicFinanceEnabled: true,
   householdsEnabled: true,
+  corporateEconomicsEnabled: true,
   v93StartingPackage: 'standard',
   v93RegionalOpening: 'auto',
   v93ContentThemes: [] as string[],
@@ -26927,6 +26929,8 @@ export type GameSettingsState = {
   publicFinanceEnabled?: boolean;
   /** V10.13 Households, Living Standards & Domestic Demand (needs National Systems; off = no households layer, V10.0–V10.12 unchanged). */
   householdsEnabled?: boolean;
+  /** V10.14 Corporate Sector & Firm Economics (needs National Systems; off = no corporate outlook layer, V10.0–V10.13 unchanged). */
+  corporateEconomicsEnabled?: boolean;
   v93StartingPackage?: string;
   v93RegionalOpening?: string;
   v93ContentThemes?: string[];
@@ -80973,6 +80977,7 @@ export function migrateSaveToV71Expansion(rawSave: any): SaveMigrationResult {
   if (migrated.gameState) migrated.gameState.publicFinance = sanitizePublicFinancePersisted(migrated.gameState.publicFinance);
   // V10.13: pre-V10.13 saves carry NO household-economy memory (null) — current living standards and domestic demand are derived on load.
   if (migrated.gameState) migrated.gameState.householdEconomy = migrated.gameState.householdEconomy ? sanitizeHouseholdEconomyPersisted(migrated.gameState.householdEconomy) : null;
+  if (migrated.gameState) migrated.gameState.corporateSectorEconomy = migrated.gameState.corporateSectorEconomy ? sanitizeCorporateSectorPersisted(migrated.gameState.corporateSectorEconomy) : null;
   if (migrated.gameState) migrated.gameState.diplomacyState = sanitizeDiplomacyState(migrated.gameState.diplomacyState || migrated.diplomacyState, migrated.gameState.diplomacy || migrated.diplomacy, Number(migrated.gameState.turnCounter || 0));
 
   // --- V7.1 EXPANSION RUNTIME STATE OBJECT HYDRATION ---
@@ -134060,7 +134065,7 @@ export function capNotificationHistory<T extends { read?: boolean; type?: string
  */
 export const V95_MATCH_SCOPED_SETTING_KEYS = [
   'v93ContentEnabled', 'v93StartingPackage', 'v93RegionalOpening', 'v93ContentThemes',
-  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'strategicCapitalEnabled'
+  'v93ContractAbundance', 'v93CrisisIntensity', 'v93RareEventFrequency', 'opponentGenomeId', 'nationalSystemsEnabled', 'industriesEnabled', 'infraNetworksEnabled', 'megaprojectsEnabled', 'nationalDevelopmentEnabled', 'innovationEnabled', 'systemicRiskEnabled', 'nationalPrioritiesEnabled', 'economicGeographyEnabled', 'workforceHumanCapitalEnabled', 'stateCapacityEnabled', 'publicFinanceEnabled', 'householdsEnabled', 'corporateEconomicsEnabled', 'strategicCapitalEnabled'
 ] as const;
 
 /**
@@ -136510,6 +136515,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v1011', label: 'V10.11 Adaptive Governance & State Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1011AdaptiveGovernanceSelfTests() },
   { id: 'v1012', label: 'V10.12 Public Finance & Fiscal Capacity', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1012PublicFinanceSelfTests() },
   { id: 'v1013', label: 'V10.13 Households & Living Standards', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1013HouseholdsLivingStandardsSelfTests() },
+  { id: 'v1014', label: 'V10.14 Corporate Sector & Firm Economics', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV1014CorporateSectorSelfTests() },
   { id: 'v101', label: 'V10.1 Industries & Supply Chains', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV101IndustriesSupplyChainsSelfTests() },
   { id: 'v100', label: 'V10 National Systems', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV100NationalSystemsSelfTests() },
   { id: 'v94', label: 'V9.4 Game Feel', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV94GameFeelPolishSelfTests() },
@@ -181925,6 +181931,679 @@ export function triggerJsonFileDownload(filename: string, data: unknown): boolea
 }
 
 // ============================================================================
+// ============================================================================
+// SECTION 20AG: V10.14 CORPORATE SECTOR & FIRM ECONOMICS
+// ============================================================================
+// Derived firm-sector interpretation: investment climate alignment, profitability outlook,
+// corporate confidence. Reads V10.1 industries, optional V10.9 strategic capital climate,
+// optional V10.13 domestic demand. Never mutates canonical money, inventory, prices, or legality.
+
+export const V1014_SCHEMA_VERSION = '10.14.0';
+
+export const V1014_LIMITS = {
+  history: 24,
+  evidence: 6,
+  hysteresisDeadband: 2.0,
+  maxRegions: 12
+} as const;
+
+export type CorporateClimateBand =
+  | 'distressed'
+  | 'cautious'
+  | 'neutral'
+  | 'supportive'
+  | 'expansionary';
+
+export type FirmProfitOutlookBand =
+  | 'contracting'
+  | 'weak'
+  | 'stable'
+  | 'improving'
+  | 'strong';
+
+export type CorporateConfidenceBand =
+  | 'fragile'
+  | 'low'
+  | 'balanced'
+  | 'confident'
+  | 'very_confident';
+
+export interface CorporateSectorEvidence {
+  label: string;
+  value: number;
+  source: string;
+}
+
+export interface RegionalCorporateOutlook {
+  regionId: string;
+  climate: CorporateClimateBand;
+  profitOutlook: FirmProfitOutlookBand;
+  confidence: CorporateConfidenceBand;
+  primaryConstraint: string | null;
+  score: number;
+  evidence: CorporateSectorEvidence[];
+}
+
+export interface NationalCorporateSectorSummary {
+  climate: CorporateClimateBand;
+  profitOutlook: FirmProfitOutlookBand;
+  confidence: CorporateConfidenceBand;
+  industryHealthScore: number;
+  capitalAlignmentScore: number;
+  demandSupportScore: number;
+  compositeScore: number;
+  dominantConstraint: string | null;
+  narrative: string;
+  evidence: CorporateSectorEvidence[];
+}
+
+export interface CorporateSectorHistoryEntry {
+  id: string;
+  turn: number;
+  kind: 'climate_shifted' | 'outlook_weakened' | 'outlook_strengthened' | 'confidence_shifted';
+  fromBand: string;
+  toBand: string;
+  summary: string;
+}
+
+export interface CorporateSectorPersisted {
+  schemaVersion: '10.14';
+  revision: number;
+  initializedTurn: number | null;
+  lastUpdatedTurn: number;
+  climateBands: Record<string, CorporateClimateBand>;
+  outlookBands: Record<string, FirmProfitOutlookBand>;
+  confidenceBands: Record<string, CorporateConfidenceBand>;
+  history: CorporateSectorHistoryEntry[];
+  inputHash: string;
+}
+
+export interface CorporateSectorState {
+  schemaVersion: '10.14';
+  revision: number;
+  enabled: boolean;
+  turn: number;
+  national: NationalCorporateSectorSummary;
+  regions: Record<string, RegionalCorporateOutlook>;
+  history: CorporateSectorHistoryEntry[];
+  inputHash: string;
+  computeMs: number;
+}
+
+export interface CorporateSectorInputs {
+  turn: number;
+  enabled: boolean;
+  industries: IndustriesSupplyChainsState | null;
+  strategicCapital: StrategicCapitalState | null;
+  householdEconomy: NationalHouseholdEconomyState | null;
+}
+
+const V1014_CLIMATE_RANK: Record<CorporateClimateBand, number> = {
+  distressed: 0,
+  cautious: 1,
+  neutral: 2,
+  supportive: 3,
+  expansionary: 4
+};
+
+const V1014_OUTLOOK_RANK: Record<FirmProfitOutlookBand, number> = {
+  contracting: 0,
+  weak: 1,
+  stable: 2,
+  improving: 3,
+  strong: 4
+};
+
+const V1014_CONF_RANK: Record<CorporateConfidenceBand, number> = {
+  fragile: 0,
+  low: 1,
+  balanced: 2,
+  confident: 3,
+  very_confident: 4
+};
+
+const V1014_CLIMATE_ORDER: CorporateClimateBand[] = ['distressed', 'cautious', 'neutral', 'supportive', 'expansionary'];
+const V1014_OUTLOOK_ORDER: FirmProfitOutlookBand[] = ['contracting', 'weak', 'stable', 'improving', 'strong'];
+const V1014_CONF_ORDER: CorporateConfidenceBand[] = ['fragile', 'low', 'balanced', 'confident', 'very_confident'];
+
+const v1014Clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, Number.isFinite(x) ? x : a));
+const v1014Round = (x: number) => Math.round((Number.isFinite(x) ? x : 0) * 10) / 10;
+
+export function createEmptyCorporateSectorPersisted(): CorporateSectorPersisted {
+  return {
+    schemaVersion: '10.14',
+    revision: 0,
+    initializedTurn: null,
+    lastUpdatedTurn: 0,
+    climateBands: {},
+    outlookBands: {},
+    confidenceBands: {},
+    history: [],
+    inputHash: ''
+  };
+}
+
+export function sanitizeCorporateSectorPersisted(raw: unknown, turn = 1): CorporateSectorPersisted {
+  const base = createEmptyCorporateSectorPersisted();
+  if (!raw || typeof raw !== 'object') return base;
+  const src = raw as Partial<CorporateSectorPersisted>;
+  const pickBand = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
+    typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
+  const climateBands: Record<string, CorporateClimateBand> = {};
+  const outlookBands: Record<string, FirmProfitOutlookBand> = {};
+  const confidenceBands: Record<string, CorporateConfidenceBand> = {};
+  if (src.climateBands && typeof src.climateBands === 'object') {
+    for (const [k, v] of Object.entries(src.climateBands)) {
+      climateBands[k] = pickBand(v, V1014_CLIMATE_ORDER, 'neutral');
+    }
+  }
+  if (src.outlookBands && typeof src.outlookBands === 'object') {
+    for (const [k, v] of Object.entries(src.outlookBands)) {
+      outlookBands[k] = pickBand(v, V1014_OUTLOOK_ORDER, 'stable');
+    }
+  }
+  if (src.confidenceBands && typeof src.confidenceBands === 'object') {
+    for (const [k, v] of Object.entries(src.confidenceBands)) {
+      confidenceBands[k] = pickBand(v, V1014_CONF_ORDER, 'balanced');
+    }
+  }
+  const history = Array.isArray(src.history)
+    ? src.history.slice(0, V1014_LIMITS.history).map((h, i) => ({
+        id: typeof (h as any)?.id === 'string' ? (h as any).id : `ce_hist_${turn}_${i}`,
+        turn: Math.max(0, Math.floor(Number((h as any)?.turn) || turn)),
+        kind: (['climate_shifted', 'outlook_weakened', 'outlook_strengthened', 'confidence_shifted'] as const).includes((h as any)?.kind)
+          ? (h as any).kind
+          : 'climate_shifted',
+        fromBand: String((h as any)?.fromBand || ''),
+        toBand: String((h as any)?.toBand || ''),
+        summary: String((h as any)?.summary || '').slice(0, 240)
+      }))
+    : [];
+  return {
+    schemaVersion: '10.14',
+    revision: Math.max(0, Math.floor(Number(src.revision) || 0)),
+    initializedTurn: src.initializedTurn === null || src.initializedTurn === undefined ? null : Math.max(0, Math.floor(Number(src.initializedTurn))),
+    lastUpdatedTurn: Math.max(0, Math.floor(Number(src.lastUpdatedTurn) || turn)),
+    climateBands,
+    outlookBands,
+    confidenceBands,
+    history,
+    inputHash: typeof src.inputHash === 'string' ? src.inputHash : ''
+  };
+}
+
+export function corporateSectorInputHash(inputs: CorporateSectorInputs): string {
+  const ind = inputs.industries;
+  const sc = inputs.strategicCapital;
+  const hh = inputs.householdEconomy;
+  const raw = JSON.stringify([
+    inputs.turn,
+    inputs.enabled,
+    ind ? [ind.revision, ind.lastUpdatedTurn, ind.national?.primaryIndustrialRisk, ind.national?.constrainedIndustries?.join(',')] : null,
+    sc ? [sc.revision, sc.investmentClimate?.overallClimate, sc.investmentClimate?.debtEnvironmentPressure] : null,
+    hh ? [hh.revision, hh.domesticDemand?.level, hh.national?.prosperity] : null
+  ]);
+  let h = 2166136261;
+  for (let k = 0; k < raw.length; k++) {
+    h ^= raw.charCodeAt(k);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
+function v1014BandFromScore(score: number, bands: Array<{ min: number; band: CorporateClimateBand }>): CorporateClimateBand {
+  for (let i = bands.length - 1; i >= 0; i--) {
+    if (score >= bands[i].min) return bands[i].band;
+  }
+  return bands[0]?.band || 'neutral';
+}
+
+function v1014OutlookFromScore(score: number): FirmProfitOutlookBand {
+  if (score < 25) return 'contracting';
+  if (score < 40) return 'weak';
+  if (score < 58) return 'stable';
+  if (score < 72) return 'improving';
+  return 'strong';
+}
+
+function v1014ConfidenceFromScore(score: number): CorporateConfidenceBand {
+  if (score < 22) return 'fragile';
+  if (score < 38) return 'low';
+  if (score < 55) return 'balanced';
+  if (score < 72) return 'confident';
+  return 'very_confident';
+}
+
+function v1014ApplyHysteresisClimate(prev: CorporateClimateBand | undefined, raw: CorporateClimateBand, score: number): CorporateClimateBand {
+  if (!prev || prev === raw) return raw;
+  const delta = V1014_CLIMATE_RANK[raw] - V1014_CLIMATE_RANK[prev];
+  if (Math.abs(delta) <= 1) return raw;
+  const deadband = V1014_LIMITS.hysteresisDeadband;
+  const thresholds: Record<CorporateClimateBand, number> = {
+    distressed: 18,
+    cautious: 32,
+    neutral: 48,
+    supportive: 62,
+    expansionary: 78
+  };
+  if (delta > 0 && score < thresholds[raw] + deadband) return prev;
+  if (delta < 0 && score > thresholds[prev] - deadband) return prev;
+  return raw;
+}
+
+function scoreIndustryHealth(ind: IndustriesSupplyChainsState | null): { score: number; constraint: string | null; evidence: CorporateSectorEvidence[] } {
+  if (!ind) return { score: 50, constraint: null, evidence: [{ label: 'Industry layer inactive', value: 50, source: 'v1014_default' }] };
+  const nat = ind.national;
+  const constrained = nat.constrainedIndustries?.length || 0;
+  const strong = nat.strongestIndustries?.length || 0;
+  const shortages = nat.shortages?.length || 0;
+  let score = 55 + strong * 6 - constrained * 7 - shortages * 5;
+  score = v1014Clamp(score, 5, 95);
+  const constraint = nat.primaryIndustrialRisk || (shortages > 0 ? `Supply shortages (${shortages})` : null);
+  return {
+    score,
+    constraint,
+    evidence: [
+      { label: 'Strong industries', value: strong, source: 'v101_industries' },
+      { label: 'Constrained industries', value: constrained, source: 'v101_industries' },
+      { label: 'Active shortages', value: shortages, source: 'v101_industries' }
+    ]
+  };
+}
+
+function scoreCapitalAlignment(sc: StrategicCapitalState | null): { score: number; evidence: CorporateSectorEvidence[] } {
+  if (!sc?.investmentClimate) {
+    return { score: 50, evidence: [{ label: 'Capital climate unavailable', value: 50, source: 'v1014_default' }] };
+  }
+  const ic = sc.investmentClimate;
+  const climateBoost: Record<string, number> = {
+    crisis_defensive: -18,
+    constrained: -10,
+    selective: 0,
+    opportunistic: 8,
+    expansionary: 14
+  };
+  const base = 52 + (climateBoost[ic.overallClimate] || 0);
+  const pressurePenalty = v1014Clamp((ic.debtEnvironmentPressure || 0) / 4, 0, 18);
+  const score = v1014Clamp(base - pressurePenalty + (ic.innovationOpportunity || 0) / 15, 8, 92);
+  return {
+    score,
+    evidence: [
+      { label: 'Investment climate', value: climateBoost[ic.overallClimate] || 0, source: 'v109_climate' },
+      { label: 'Debt environment pressure', value: ic.debtEnvironmentPressure || 0, source: 'v109_climate' }
+    ]
+  };
+}
+
+function scoreDemandSupport(hh: NationalHouseholdEconomyState | null): { score: number; evidence: CorporateSectorEvidence[] } {
+  if (!hh?.domesticDemand) {
+    return { score: 50, evidence: [{ label: 'Domestic demand unavailable', value: 50, source: 'v1014_default' }] };
+  }
+  const rank: Record<string, number> = {
+    contracting: 20,
+    soft: 32,
+    weak: 40,
+    moderate: 52,
+    strong: 68,
+    very_strong: 78,
+    surging: 88
+  };
+  const score = rank[hh.domesticDemand.level] ?? 50;
+  return {
+    score,
+    evidence: [{ label: 'Domestic demand band', value: score, source: 'v1013_households' }]
+  };
+}
+
+function buildRegionalOutlooks(
+  ind: IndustriesSupplyChainsState | null,
+  national: NationalCorporateSectorSummary,
+  persisted: CorporateSectorPersisted,
+  turn: number
+): Record<string, RegionalCorporateOutlook> {
+  const out: Record<string, RegionalCorporateOutlook> = {};
+  if (!ind?.regions) return out;
+  for (const [regionId, reg] of Object.entries(ind.regions).slice(0, V1014_LIMITS.maxRegions)) {
+    const inds = reg.industries || {};
+    const conditions = Object.values(inds).map((s) => s?.condition).filter(Boolean) as IndustryCondition[];
+    const constrained = conditions.filter((c) => c === 'constrained' || c === 'disrupted').length;
+    const strong = conditions.filter((c) => c === 'strong' || c === 'booming').length;
+    let score = national.compositeScore * 0.55 + strong * 8 - constrained * 9;
+    score = v1014Clamp(score, 5, 95);
+    const rawClimate = v1014BandFromScore(score, [
+      { min: 78, band: 'expansionary' },
+      { min: 62, band: 'supportive' },
+      { min: 45, band: 'neutral' },
+      { min: 28, band: 'cautious' },
+      { min: 0, band: 'distressed' }
+    ]);
+    const climate = v1014ApplyHysteresisClimate(persisted.climateBands[regionId], rawClimate, score);
+    const profitOutlook = v1014OutlookFromScore(score * 0.85 + national.demandSupportScore * 0.15);
+    const confidence = v1014ConfidenceFromScore((score + national.capitalAlignmentScore) / 2);
+    out[regionId] = {
+      regionId,
+      climate,
+      profitOutlook,
+      confidence,
+      primaryConstraint: reg.primaryIndustrialConstraint,
+      score: v1014Round(score),
+      evidence: [
+        { label: 'Regional strong industries', value: strong, source: 'v101_regional' },
+        { label: 'Regional constrained', value: constrained, source: 'v101_regional' }
+      ]
+    };
+  }
+  return out;
+}
+
+export function computeCorporateSectorEconomy(
+  inputs: CorporateSectorInputs,
+  persistedRaw: CorporateSectorPersisted | null | undefined,
+  _prevState: CorporateSectorState | null
+): { state: CorporateSectorState; persisted: CorporateSectorPersisted; derived: CorporateSectorHistoryEntry[] } {
+  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const persisted = sanitizeCorporateSectorPersisted(persistedRaw, inputs.turn);
+  const hash = corporateSectorInputHash(inputs);
+
+  if (!inputs.enabled) {
+    const empty: CorporateSectorState = {
+      schemaVersion: '10.14',
+      revision: persisted.revision,
+      enabled: false,
+      turn: inputs.turn,
+      national: {
+        climate: 'neutral',
+        profitOutlook: 'stable',
+        confidence: 'balanced',
+        industryHealthScore: 50,
+        capitalAlignmentScore: 50,
+        demandSupportScore: 50,
+        compositeScore: 50,
+        dominantConstraint: null,
+        narrative: 'Corporate sector interpretation disabled.',
+        evidence: []
+      },
+      regions: {},
+      history: persisted.history,
+      inputHash: hash,
+      computeMs: 0
+    };
+    return { state: empty, persisted: { ...persisted, inputHash: hash }, derived: [] };
+  }
+
+  if (persisted.inputHash === hash && persisted.initializedTurn !== null) {
+    const cached: CorporateSectorState = {
+      schemaVersion: '10.14',
+      revision: persisted.revision,
+      enabled: true,
+      turn: inputs.turn,
+      national: {
+        climate: persisted.climateBands.national || 'neutral',
+        profitOutlook: persisted.outlookBands.national || 'stable',
+        confidence: persisted.confidenceBands.national || 'balanced',
+        industryHealthScore: 50,
+        capitalAlignmentScore: 50,
+        demandSupportScore: 50,
+        compositeScore: 50,
+        dominantConstraint: null,
+        narrative: 'Corporate sector (cached bands).',
+        evidence: []
+      },
+      regions: {},
+      history: persisted.history,
+      inputHash: hash,
+      computeMs: 0
+    };
+    return { state: cached, persisted, derived: [] };
+  }
+
+  const indH = scoreIndustryHealth(inputs.industries);
+  const capH = scoreCapitalAlignment(inputs.strategicCapital);
+  const demH = scoreDemandSupport(inputs.householdEconomy);
+  const composite = v1014Clamp(indH.score * 0.45 + capH.score * 0.3 + demH.score * 0.25, 5, 95);
+  const rawClimate = v1014BandFromScore(composite, [
+    { min: 78, band: 'expansionary' },
+    { min: 62, band: 'supportive' },
+    { min: 45, band: 'neutral' },
+    { min: 28, band: 'cautious' },
+    { min: 0, band: 'distressed' }
+  ]);
+  const climate = v1014ApplyHysteresisClimate(persisted.climateBands.national, rawClimate, composite);
+  const profitOutlook = v1014OutlookFromScore(composite * 0.7 + demH.score * 0.3);
+  const confidence = v1014ConfidenceFromScore((composite + capH.score) / 2);
+  const national: NationalCorporateSectorSummary = {
+    climate,
+    profitOutlook,
+    confidence,
+    industryHealthScore: v1014Round(indH.score),
+    capitalAlignmentScore: v1014Round(capH.score),
+    demandSupportScore: v1014Round(demH.score),
+    compositeScore: v1014Round(composite),
+    dominantConstraint: indH.constraint,
+    narrative: `Corporate sector outlook: ${climate} climate, ${profitOutlook} profit outlook, ${confidence} confidence.`,
+    evidence: [...indH.evidence, ...capH.evidence, ...demH.evidence].slice(0, V1014_LIMITS.evidence)
+  };
+  const regions = buildRegionalOutlooks(inputs.industries, national, persisted, inputs.turn);
+  const derived: CorporateSectorHistoryEntry[] = [];
+  const nextPersisted: CorporateSectorPersisted = {
+    ...persisted,
+    revision: persisted.revision + 1,
+    initializedTurn: persisted.initializedTurn ?? inputs.turn,
+    lastUpdatedTurn: inputs.turn,
+    inputHash: hash,
+    climateBands: { ...persisted.climateBands, national: climate, ...Object.fromEntries(Object.entries(regions).map(([k, r]) => [k, r.climate])) },
+    outlookBands: { ...persisted.outlookBands, national: profitOutlook, ...Object.fromEntries(Object.entries(regions).map(([k, r]) => [k, r.profitOutlook])) },
+    confidenceBands: { ...persisted.confidenceBands, national: confidence, ...Object.fromEntries(Object.entries(regions).map(([k, r]) => [k, r.confidence])) },
+    history: persisted.history
+  };
+  if (persisted.climateBands.national && persisted.climateBands.national !== climate) {
+    derived.push({
+      id: `ce_climate_${inputs.turn}_${climate}`,
+      turn: inputs.turn,
+      kind: 'climate_shifted',
+      fromBand: persisted.climateBands.national,
+      toBand: climate,
+      summary: `National corporate climate shifted from ${persisted.climateBands.national} to ${climate}.`
+    });
+  }
+  if (persisted.outlookBands.national && V1014_OUTLOOK_RANK[profitOutlook] < V1014_OUTLOOK_RANK[persisted.outlookBands.national]) {
+    derived.push({
+      id: `ce_outlook_${inputs.turn}_down`,
+      turn: inputs.turn,
+      kind: 'outlook_weakened',
+      fromBand: persisted.outlookBands.national,
+      toBand: profitOutlook,
+      summary: `Firm profit outlook weakened to ${profitOutlook}.`
+    });
+  }
+  if (persisted.outlookBands.national && V1014_OUTLOOK_RANK[profitOutlook] > V1014_OUTLOOK_RANK[persisted.outlookBands.national]) {
+    derived.push({
+      id: `ce_outlook_${inputs.turn}_up`,
+      turn: inputs.turn,
+      kind: 'outlook_strengthened',
+      fromBand: persisted.outlookBands.national,
+      toBand: profitOutlook,
+      summary: `Firm profit outlook strengthened to ${profitOutlook}.`
+    });
+  }
+  nextPersisted.history = [...derived, ...nextPersisted.history].slice(0, V1014_LIMITS.history);
+  const computeMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+  const state: CorporateSectorState = {
+    schemaVersion: '10.14',
+    revision: nextPersisted.revision,
+    enabled: true,
+    turn: inputs.turn,
+    national,
+    regions,
+    history: nextPersisted.history,
+    inputHash: hash,
+    computeMs
+  };
+  return { state, persisted: nextPersisted, derived };
+}
+
+export function validateCorporateSectorState(state: CorporateSectorState | null | undefined): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  if (!state) return { valid: false, errors: ['null state'] };
+  if (!V1014_CLIMATE_ORDER.includes(state.national.climate)) errors.push('invalid national climate');
+  if (!V1014_OUTLOOK_ORDER.includes(state.national.profitOutlook)) errors.push('invalid profit outlook');
+  if (!V1014_CONF_ORDER.includes(state.national.confidence)) errors.push('invalid confidence');
+  return { valid: errors.length === 0, errors };
+}
+
+/** Fixture helper for self-tests and LAB (minimal industry snapshot). */
+export function makeV1014TestIndustries(partial?: Partial<IndustriesSupplyChainsState['national']>): IndustriesSupplyChainsState {
+  return {
+    schemaVersion: '10.1',
+    revision: 1,
+    regions: {
+      VIC: {
+        regionId: 'VIC',
+        name: 'Victoria',
+        industries: { manufacturing: { condition: 'constrained' } as IndustryState },
+        suppliedBy: [],
+        suppliesTo: [],
+        primaryIndustry: 'manufacturing',
+        primaryIndustrialConstraint: 'Input shortage',
+        industrialDiversity: 0.4,
+        diversityBand: 'mixed',
+        resilience: 'moderate',
+        revision: 1
+      }
+    },
+    supplies: {},
+    flows: [],
+    dependencies: [],
+    bottlenecks: [],
+    national: {
+      strongestIndustries: partial?.strongestIndustries || ['technology'],
+      constrainedIndustries: partial?.constrainedIndustries || ['manufacturing'],
+      shortages: partial?.shortages || ['energy'],
+      surpluses: partial?.surpluses || [],
+      criticalDependencies: partial?.criticalDependencies || [],
+      diversityBand: partial?.diversityBand || 'mixed',
+      primaryIndustrialRisk: partial?.primaryIndustrialRisk || 'Energy inputs tight',
+      primaryIndustrialOpportunity: partial?.primaryIndustrialOpportunity || null,
+      output: partial?.output || {},
+      topProducer: partial?.topProducer || {}
+    },
+    history: [],
+    hashes: {},
+    lastUpdatedTurn: 1,
+    computeMs: 1
+  } as IndustriesSupplyChainsState;
+}
+
+export function runV1014CorporateSectorSelfTests(): {
+  passed: number;
+  failed: number;
+  total: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const check = (id: string, name: string, cond: boolean, detail: string) => {
+    results.push({ id, name, passed: Boolean(cond), detail });
+  };
+
+  {
+    const r = computeCorporateSectorEconomy({ turn: 1, enabled: false, industries: null, strategicCapital: null, householdEconomy: null }, null, null);
+    check('ce01', 'Disabled inputs produce inert state', !r.state.enabled && r.state.national.narrative.includes('disabled'), 'enabled=false');
+  }
+  {
+    const ind = makeV1014TestIndustries();
+    const r = computeCorporateSectorEconomy({ turn: 2, enabled: true, industries: ind, strategicCapital: null, householdEconomy: null }, null, null);
+    check('ce02', 'Industry-only inputs produce valid national bands', validateCorporateSectorState(r.state).valid && r.state.national.compositeScore > 0, `composite=${r.state.national.compositeScore}`);
+  }
+  {
+    const s = sanitizeCorporateSectorPersisted({ climateBands: { national: 'not_a_band' } });
+    check('ce03', 'Sanitizer defaults unknown persisted blobs', s.climateBands.national === 'neutral' && s.schemaVersion === '10.14', 'neutral fallback');
+  }
+  {
+    const inp: CorporateSectorInputs = { turn: 3, enabled: true, industries: makeV1014TestIndustries(), strategicCapital: null, householdEconomy: null };
+    check('ce04', 'Input hash stable for identical inputs', corporateSectorInputHash(inp) === corporateSectorInputHash(inp), 'hash stable');
+  }
+  {
+    const ind = makeV1014TestIndustries({ strongestIndustries: ['technology', 'mining', 'energy'], constrainedIndustries: [], shortages: [] });
+    const r = computeCorporateSectorEconomy({ turn: 4, enabled: true, industries: ind, strategicCapital: null, householdEconomy: null }, null, null);
+    check('ce05', 'Strong industry snapshot yields supportive-or-better climate', V1014_CLIMATE_RANK[r.state.national.climate] >= V1014_CLIMATE_RANK.supportive, r.state.national.climate);
+  }
+  {
+    const ind = makeV1014TestIndustries({ constrainedIndustries: ['a', 'b', 'c'], shortages: ['energy', 'minerals'], primaryIndustrialRisk: 'Cascade risk' });
+    const r = computeCorporateSectorEconomy({ turn: 5, enabled: true, industries: ind, strategicCapital: null, householdEconomy: null }, null, null);
+    check('ce06', 'Heavy constraints yield cautious or distressed climate', V1014_CLIMATE_RANK[r.state.national.climate] <= V1014_CLIMATE_RANK.cautious, r.state.national.climate);
+  }
+  {
+    const r = computeCorporateSectorEconomy({ turn: 6, enabled: true, industries: makeV1014TestIndustries(), strategicCapital: null, householdEconomy: null }, null, null);
+    check('ce07', 'Regional outlooks emitted when industry regions present', Boolean(r.state.regions.VIC), `regions=${Object.keys(r.state.regions).join(',')}`);
+  }
+  {
+    const p = createEmptyCorporateSectorPersisted();
+    p.climateBands.national = 'expansionary';
+    const ind = makeV1014TestIndustries({ constrainedIndustries: ['x', 'y', 'z'], shortages: ['energy', 'minerals', 'agricultural_goods'] });
+    const r = computeCorporateSectorEconomy({ turn: 7, enabled: true, industries: ind, strategicCapital: null, householdEconomy: null }, p, null);
+    check('ce08', 'Climate transition recorded in derived history', r.derived.some((d) => d.kind === 'climate_shifted'), `derived=${r.derived.length}`);
+  }
+  {
+    const inp: CorporateSectorInputs = { turn: 8, enabled: true, industries: makeV1014TestIndustries(), strategicCapital: null, householdEconomy: null };
+    const a = computeCorporateSectorEconomy(inp, null, null);
+    const b = computeCorporateSectorEconomy(inp, null, null);
+    check('ce09', 'Deterministic recompute', JSON.stringify(a.state.national) === JSON.stringify(b.state.national), 'national summary match');
+  }
+  {
+    const r = computeCorporateSectorEconomy({ turn: 9, enabled: true, industries: makeV1014TestIndustries(), strategicCapital: null, householdEconomy: null }, null, null);
+    check('ce10', 'Persisted revision increments', r.persisted.revision >= 1 && r.persisted.initializedTurn === 9, `revision=${r.persisted.revision}`);
+  }
+  {
+    const inp: CorporateSectorInputs = { turn: 10, enabled: true, industries: makeV1014TestIndustries(), strategicCapital: null, householdEconomy: null };
+    const first = computeCorporateSectorEconomy(inp, null, null);
+    const second = computeCorporateSectorEconomy(inp, first.persisted, first.state);
+    check('ce11', 'Hash cache short-circuit', second.state.computeMs === 0 && second.derived.length === 0, 'cached path');
+  }
+  {
+    const bad = computeCorporateSectorEconomy({ turn: 11, enabled: true, industries: makeV1014TestIndustries(), strategicCapital: null, householdEconomy: null }, null, null).state;
+    (bad.national as any).climate = 'invalid';
+    check('ce12', 'Validator rejects tampered climate', !validateCorporateSectorState(bad).valid, 'invalid climate');
+  }
+  {
+    const r = computeCorporateSectorEconomy({ turn: 12, enabled: true, industries: makeV1014TestIndustries(), strategicCapital: null, householdEconomy: null }, null, null);
+    check('ce13', 'Evidence list bounded', r.state.national.evidence.length <= V1014_LIMITS.evidence, `evidence=${r.state.national.evidence.length}`);
+  }
+  {
+    const sanitized = sanitizeCorporateSectorPersisted({
+      history: Array.from({ length: 40 }, (_, i) => ({ id: `h${i}`, turn: i, kind: 'climate_shifted', fromBand: 'a', toBand: 'b', summary: 's' }))
+    });
+    check('ce14', 'History capped on sanitize', sanitized.history.length <= V1014_LIMITS.history, `len=${sanitized.history.length}`);
+  }
+  {
+    const e = createEmptyCorporateSectorPersisted();
+    check('ce15', 'Empty persisted creates schema 10.14', e.schemaVersion === '10.14' && e.revision === 0, `schema=${e.schemaVersion}`);
+  }
+  {
+    const p = createEmptyCorporateSectorPersisted();
+    p.outlookBands.national = 'strong';
+    const ind = makeV1014TestIndustries({ constrainedIndustries: ['a', 'b', 'c', 'd'], shortages: ['energy', 'minerals', 'agricultural_goods'] });
+    const r = computeCorporateSectorEconomy({ turn: 13, enabled: true, industries: ind, strategicCapital: null, householdEconomy: null }, p, null);
+    check('ce16', 'Outlook downgrade emits outlook_weakened', r.derived.some((d) => d.kind === 'outlook_weakened'), `derived=${r.derived.map((d) => d.kind).join(',')}`);
+  }
+  {
+    const payload = JSON.stringify(computeCorporateSectorEconomy({ turn: 14, enabled: true, industries: makeV1014TestIndustries(), strategicCapital: null, householdEconomy: null }, null, null).persisted);
+    check('ce17', 'Persisted JSON stays compact', payload.length < 12000, `bytes=${payload.length}`);
+  }
+  {
+    const r = computeCorporateSectorEconomy({ turn: 15, enabled: true, industries: null, strategicCapital: null, householdEconomy: null }, null, null);
+    check('ce18', 'Missing industries still yields neutral-ish composite', r.state.national.compositeScore >= 45 && r.state.national.compositeScore <= 55, `composite=${r.state.national.compositeScore}`);
+  }
+  {
+    check('ce19', 'Climate band order is complete', V1014_CLIMATE_ORDER.length === 5, String(V1014_CLIMATE_ORDER.length));
+  }
+  {
+    check('ce20', 'Schema version constant', V1014_SCHEMA_VERSION === '10.14.0', V1014_SCHEMA_VERSION);
+  }
+
+  const passed = results.filter((r) => r.passed).length;
+  return { passed, failed: results.length - passed, total: results.length, results };
+}
+
 // SECTION 21B: RELIABILITY UPGRADE — FOCUSED REGRESSION SELF-TESTS
 // ----------------------------------------------------------------------------
 // One check per substantive reliability fix (crash, accounting, lifecycle, determinism, gating).
