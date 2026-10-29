@@ -138,7 +138,7 @@ describe('scale wave round 29 — metaversal coalition continuity', () => {
       coalitionMetaversalContinuityStreakDays: 5,
     };
     const save = serializeStrategicGameplayState(state);
-    expect(save.version).toBe(44);
+    expect(save.version).toBe(45);
     expect(save.coalitionMetaversalContinuityStreakDays).toBe(5);
   });
 });

@@ -41,6 +41,7 @@ import { isArchonCoalitionEternity } from '../engine/coalition-archon-eternity.t
 import { isExarchCoalitionAscendancy } from '../engine/coalition-exarch-ascendancy.ts';
 import { isPrimarchCoalitionPerpetuity } from '../engine/coalition-primarch-perpetuity.ts';
 import { isPatriarchCoalitionEternity } from '../engine/coalition-patriarch-eternity.ts';
+import { isMatriarchCoalitionAscendancy } from '../engine/coalition-matriarch-ascendancy.ts';
 
 /** Outbound coalition telemetry for Agent 02 / Agent 05 assembly hooks (round 10+). */
 export interface ExternalCoalitionTurnSignals {
@@ -123,6 +124,8 @@ export interface ExternalCoalitionTurnSignals {
   coalitionPrimarchPerpetuityStreakDays: number;
   patriarchCoalitionEternity: boolean;
   coalitionPatriarchEternityStreakDays: number;
+  matriarchCoalitionAscendancy: boolean;
+  coalitionMatriarchAscendancyStreakDays: number;
 }
 
 export function buildExternalCoalitionTurnSignals(
@@ -210,6 +213,8 @@ export function buildExternalCoalitionTurnSignals(
     coalitionPrimarchPerpetuityStreakDays: state.coalitionPrimarchPerpetuityStreakDays ?? 0,
     patriarchCoalitionEternity: isPatriarchCoalitionEternity(state),
     coalitionPatriarchEternityStreakDays: state.coalitionPatriarchEternityStreakDays ?? 0,
+    matriarchCoalitionAscendancy: isMatriarchCoalitionAscendancy(state),
+    coalitionMatriarchAscendancyStreakDays: state.coalitionMatriarchAscendancyStreakDays ?? 0,
   };
 }
 
@@ -297,5 +302,7 @@ export function normalizeExternalCoalitionTurnSignals(
     coalitionPrimarchPerpetuityStreakDays: raw?.coalitionPrimarchPerpetuityStreakDays ?? 0,
     patriarchCoalitionEternity: raw?.patriarchCoalitionEternity ?? false,
     coalitionPatriarchEternityStreakDays: raw?.coalitionPatriarchEternityStreakDays ?? 0,
+    matriarchCoalitionAscendancy: raw?.matriarchCoalitionAscendancy ?? false,
+    coalitionMatriarchAscendancyStreakDays: raw?.coalitionMatriarchAscendancyStreakDays ?? 0,
   };
 }

@@ -438,3 +438,13 @@ export function patriarchEternityRankingBonus(
   if (streak >= action.minCoalitionPatriarchEternityStreakDays) return 39;
   return 2;
 }
+
+export function matriarchAscendancyRankingBonus(
+  state: StrategicGameplayState,
+  action: StrategicActionDefinition,
+): number {
+  if (action.minCoalitionMatriarchAscendancyStreakDays === undefined) return 0;
+  const streak = state.coalitionMatriarchAscendancyStreakDays ?? 0;
+  if (streak >= action.minCoalitionMatriarchAscendancyStreakDays) return 40;
+  return 2;
+}

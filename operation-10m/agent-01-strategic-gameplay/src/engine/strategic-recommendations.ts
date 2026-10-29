@@ -53,6 +53,7 @@ import {
   exarchAscendancyRankingBonus,
   primarchPerpetuityRankingBonus,
   patriarchEternityRankingBonus,
+  matriarchAscendancyRankingBonus,
 } from './coalition-balance.ts';
 import { scoreNationalPriorityAlignment, validateAction } from './validation.ts';
 
@@ -123,7 +124,8 @@ export function rankStrategicActions(
         archonEternityRankingBonus(state, action) +
         exarchAscendancyRankingBonus(state, action) +
         primarchPerpetuityRankingBonus(state, action) +
-        patriarchEternityRankingBonus(state, action),
+        patriarchEternityRankingBonus(state, action) +
+        matriarchAscendancyRankingBonus(state, action),
       alignmentBand: alignment?.band ?? 'unknown',
       blockerCodes: issues.map((i) => i.code),
     });
