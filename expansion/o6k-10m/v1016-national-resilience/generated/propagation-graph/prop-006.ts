@@ -1,0 +1,31 @@
+import type { V1016NresPropagationEdge } from '../../types/core.ts';
+
+/** Propagation graph shard 006 (supply shock cross-system coupling). */
+export const V1016_NRES_PROPAGATION_SHARD_006: readonly V1016NresPropagationEdge[] = [
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.372, lagTurns: 9, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.379, lagTurns: 10, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.386, lagTurns: 11, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.393, lagTurns: 9, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.4, lagTurns: 10, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.407, lagTurns: 11, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.414, lagTurns: 9, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.421, lagTurns: 10, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.428, lagTurns: 11, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.33, lagTurns: 9, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.337, lagTurns: 10, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.344, lagTurns: 11, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.351, lagTurns: 9, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.358, lagTurns: 10, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.365, lagTurns: 11, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.372, lagTurns: 9, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.379, lagTurns: 10, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.386, lagTurns: 11, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.393, lagTurns: 9, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.4, lagTurns: 10, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.407, lagTurns: 11, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.414, lagTurns: 9, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.421, lagTurns: 10, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.428, lagTurns: 11, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.33, lagTurns: 9, nodeId: 'node_06' },
+  { fromSystem: 'food', toSystem: 'freight', weight: 0.337, lagTurns: 10, nodeId: 'node_06' },
+];

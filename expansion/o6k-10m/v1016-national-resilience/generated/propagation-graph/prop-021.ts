@@ -1,0 +1,31 @@
+import type { V1016NresPropagationEdge } from '../../types/core.ts';
+
+/** Propagation graph shard 021 (supply shock cross-system coupling). */
+export const V1016_NRES_PROPAGATION_SHARD_021: readonly V1016NresPropagationEdge[] = [
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.232, lagTurns: 8, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.239, lagTurns: 9, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.246, lagTurns: 10, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.253, lagTurns: 8, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.26, lagTurns: 9, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.267, lagTurns: 10, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.274, lagTurns: 8, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.281, lagTurns: 9, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.288, lagTurns: 10, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.19, lagTurns: 8, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.197, lagTurns: 9, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.204, lagTurns: 10, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.211, lagTurns: 8, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.218, lagTurns: 9, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.225, lagTurns: 10, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.232, lagTurns: 8, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.239, lagTurns: 9, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.246, lagTurns: 10, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.253, lagTurns: 8, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.26, lagTurns: 9, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.267, lagTurns: 10, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.274, lagTurns: 8, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.281, lagTurns: 9, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.288, lagTurns: 10, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.19, lagTurns: 8, nodeId: 'node_21' },
+  { fromSystem: 'energy', toSystem: 'pharma', weight: 0.197, lagTurns: 9, nodeId: 'node_21' },
+];

@@ -1,0 +1,31 @@
+import type { V1016NresPropagationEdge } from '../../types/core.ts';
+
+/** Propagation graph shard 018 (supply shock cross-system coupling). */
+export const V1016_NRES_PROPAGATION_SHARD_018: readonly V1016NresPropagationEdge[] = [
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.771, lagTurns: 5, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.778, lagTurns: 6, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.785, lagTurns: 7, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.792, lagTurns: 5, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.799, lagTurns: 6, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.806, lagTurns: 7, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.813, lagTurns: 5, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.82, lagTurns: 6, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.827, lagTurns: 7, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.834, lagTurns: 5, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.841, lagTurns: 6, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.848, lagTurns: 7, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.75, lagTurns: 5, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.757, lagTurns: 6, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.764, lagTurns: 7, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.771, lagTurns: 5, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.778, lagTurns: 6, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.785, lagTurns: 7, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.792, lagTurns: 5, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.799, lagTurns: 6, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.806, lagTurns: 7, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.813, lagTurns: 5, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.82, lagTurns: 6, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.827, lagTurns: 7, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.834, lagTurns: 5, nodeId: 'node_18' },
+  { fromSystem: 'telecom', toSystem: 'water', weight: 0.841, lagTurns: 6, nodeId: 'node_18' },
+];

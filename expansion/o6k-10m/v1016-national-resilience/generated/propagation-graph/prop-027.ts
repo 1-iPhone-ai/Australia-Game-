@@ -1,0 +1,31 @@
+import type { V1016NresPropagationEdge } from '../../types/core.ts';
+
+/** Propagation graph shard 027 (supply shock cross-system coupling). */
+export const V1016_NRES_PROPAGATION_SHARD_027: readonly V1016NresPropagationEdge[] = [
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.484, lagTurns: 6, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.491, lagTurns: 7, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.498, lagTurns: 8, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.4, lagTurns: 6, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.407, lagTurns: 7, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.414, lagTurns: 8, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.421, lagTurns: 6, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.428, lagTurns: 7, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.435, lagTurns: 8, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.442, lagTurns: 6, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.449, lagTurns: 7, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.456, lagTurns: 8, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.463, lagTurns: 6, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.47, lagTurns: 7, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.477, lagTurns: 8, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.484, lagTurns: 6, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.491, lagTurns: 7, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.498, lagTurns: 8, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.4, lagTurns: 6, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.407, lagTurns: 7, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.414, lagTurns: 8, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.421, lagTurns: 6, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.428, lagTurns: 7, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.435, lagTurns: 8, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.442, lagTurns: 6, nodeId: 'node_03' },
+  { fromSystem: 'industrial', toSystem: 'energy', weight: 0.449, lagTurns: 7, nodeId: 'node_03' },
+];

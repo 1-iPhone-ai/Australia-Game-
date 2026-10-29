@@ -1,0 +1,31 @@
+import type { V1016NresPropagationEdge } from '../../types/core.ts';
+
+/** Propagation graph shard 024 (supply shock cross-system coupling). */
+export const V1016_NRES_PROPAGATION_SHARD_024: readonly V1016NresPropagationEdge[] = [
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.358, lagTurns: 3, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.365, lagTurns: 4, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.372, lagTurns: 5, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.379, lagTurns: 3, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.386, lagTurns: 4, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.393, lagTurns: 5, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.295, lagTurns: 3, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.302, lagTurns: 4, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.309, lagTurns: 5, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.316, lagTurns: 3, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.323, lagTurns: 4, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.33, lagTurns: 5, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.337, lagTurns: 3, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.344, lagTurns: 4, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.351, lagTurns: 5, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.358, lagTurns: 3, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.365, lagTurns: 4, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.372, lagTurns: 5, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.379, lagTurns: 3, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.386, lagTurns: 4, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.393, lagTurns: 5, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.295, lagTurns: 3, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.302, lagTurns: 4, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.309, lagTurns: 5, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.316, lagTurns: 3, nodeId: 'node_00' },
+  { fromSystem: 'trade', toSystem: 'telecom', weight: 0.323, lagTurns: 4, nodeId: 'node_00' },
+];
