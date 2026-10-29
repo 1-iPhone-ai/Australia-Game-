@@ -41,3 +41,7 @@ export { CalmRecoveryDayAdvanceHint } from './CalmRecoveryDayAdvanceHint.js';
 export { CalmRecoveryAutoApplyBanner } from './CalmRecoveryAutoApplyBanner.js';
 export { PhaseShellAttentionCoachStrip } from './PhaseShellAttentionCoachStrip.js';
 export { TextScaleDensityDayHintStrip } from './TextScaleDensityDayHintStrip.js';
+export { LegacyNavAutoRememberBanner } from './LegacyNavAutoRememberBanner.js';
+export { PhaseShellVisibilityDayCoachStrip } from './PhaseShellVisibilityDayCoachStrip.js';
+export { TextScaleDensityAutoApplyBanner } from './TextScaleDensityAutoApplyBanner.js';
+export { CalmRecoveryExpiryDayHintStrip } from './CalmRecoveryExpiryDayHintStrip.js';

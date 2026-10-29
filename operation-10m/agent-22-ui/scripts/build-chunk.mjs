@@ -79,6 +79,11 @@ const FILES = [
   'engine/calm-recovery-auto-apply-bridge.ts',
   'engine/phase-shell-attention-gate.ts',
   'engine/text-scale-density-day-hint.ts',
+  'engine/legacy-nav-auto-remember-bridge.ts',
+  'engine/phase-shell-visibility-day-coach.ts',
+  'engine/text-scale-density-auto-apply-bridge.ts',
+  'engine/calm-recovery-expiry-day-hint.ts',
+  'engine/round17-self-tests.ts',
   'engine/round16-self-tests.ts',
   'engine/legacy-access.ts',
   'engine/merge-with-v94-contextual-hiding.ts',
@@ -146,6 +151,10 @@ const FILES = [
   'react/CalmRecoveryAutoApplyBanner.tsx',
   'react/PhaseShellAttentionCoachStrip.tsx',
   'react/TextScaleDensityDayHintStrip.tsx',
+  'react/LegacyNavAutoRememberBanner.tsx',
+  'react/PhaseShellVisibilityDayCoachStrip.tsx',
+  'react/TextScaleDensityAutoApplyBanner.tsx',
+  'react/CalmRecoveryExpiryDayHintStrip.tsx',
 ];
 
 function stripModulePreamble(source) {
@@ -187,7 +196,7 @@ for (const rel of FILES) {
 }
 
 bodyParts.push(`export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';`);
-bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.16.0';`);
+bodyParts.push(`export const AGENT_22_MODULE_VERSION = '1.17.0';`);
 bodyParts.push('');
 bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -310,6 +319,11 @@ bodyParts.push(`export function runOp10mAgent22EvolvingUiSelfTests(): {
     check(\`agent22_round16_\${r.id}\`, r.name, r.passed, r.detail);
   }
 
+  const round17 = runAgent22Round17SelfTests();
+  for (const r of round17.results) {
+    check(\`agent22_round17_\${r.id}\`, r.name, r.passed, r.detail);
+  }
+
   const failed = results.filter(r => !r.passed).length;
   return {
     passed: results.length - failed,
@@ -336,7 +350,7 @@ const manifest = {
   contentSha256,
   chunkPath: 'operation-10m/modules/agent-22-ui/chunk.tsx',
   selfTestExport: 'runOp10mAgent22EvolvingUiSelfTests',
-  moduleVersion: '1.16.0',
+  moduleVersion: '1.17.0',
 };
 fs.writeFileSync(
   path.join(outDir, 'module.manifest.json'),

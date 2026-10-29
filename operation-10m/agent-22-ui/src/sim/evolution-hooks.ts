@@ -42,6 +42,13 @@ import { evaluateDayAdvanceCalmRecoveryHint } from '../engine/day-advance-calm-r
 import { applyCalmRecoveryFromDayAdvanceHint } from '../engine/calm-recovery-auto-apply-bridge.js';
 import { buildTextScaleDensityDayHint } from '../engine/text-scale-density-day-hint.js';
 import { planPhaseShellAttentionGate } from '../engine/phase-shell-attention-gate.js';
+import {
+  applyLegacyNavAutoRemember,
+  buildLegacyNavAutoRememberPlan,
+} from '../engine/legacy-nav-auto-remember-bridge.js';
+import { buildPhaseShellVisibilityDayCoach } from '../engine/phase-shell-visibility-day-coach.js';
+import { applyTextScaleDensityFromDayHint } from '../engine/text-scale-density-auto-apply-bridge.js';
+import { buildCalmRecoveryExpiryDayHint } from '../engine/calm-recovery-expiry-day-hint.js';
 import { assessCognitiveLoad } from '../engine/cognitive-load-governor.js';
 import type { V94StandardizedGamePhase } from '../adapters/v94-phase-bridge.js';
 import type { AccessibilitySettingsSnapshot } from '../types/accessibility.js';
@@ -92,7 +99,11 @@ export interface DayAdvanceUiEvolutionResult {
   calmRecoveryHintCopy: string | null;
   calmRecoveryAutoApplied: boolean;
   textScaleDensityDayHintCopy: string | null;
+  textScaleDensityAutoApplied: boolean;
   phaseShellAttentionCoachCopy: string | null;
+  phaseShellVisibilityDayCoachCopy: string | null;
+  legacyNavAutoRememberedCount: number;
+  calmRecoveryExpiryHintCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -101,6 +112,8 @@ export interface TickEvolvingUiDayAdvanceContext {
   phase?: V94StandardizedGamePhase;
   accessibility?: AccessibilitySettingsSnapshot;
   autoApplyCalmRecovery?: boolean;
+  autoApplyTextScaleDensity?: boolean;
+  autoRememberLegacyNav?: boolean;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -253,7 +266,13 @@ export function tickEvolvingUiOnDayAdvance(
     nextSignals.gameDay,
     { autoApply: context.autoApplyCalmRecovery !== false }
   );
-  const persistedAfterCalm = calmApply.persisted;
+  let persistedAfterCalm = calmApply.persisted;
+
+  const legacyRememberPlan = buildLegacyNavAutoRememberPlan(nextSignals, policy, persistedAfterCalm);
+  const legacyRememberApply = applyLegacyNavAutoRemember(persistedAfterCalm, legacyRememberPlan, {
+    autoRemember: context.autoRememberLegacyNav !== false,
+  });
+  persistedAfterCalm = legacyRememberApply.persisted;
 
   const accessibility = context.accessibility ?? DEFAULT_ACCESSIBILITY_SNAPSHOT;
   const textScaleDayHint = buildTextScaleDensityDayHint({
@@ -262,7 +281,18 @@ export function tickEvolvingUiOnDayAdvance(
     preferredDensity: persistedAfterCalm.preferredDensity ?? null,
   });
 
+  const textScaleDensityApply = applyTextScaleDensityFromDayHint(
+    persistedAfterCalm,
+    textScaleDayHint,
+    accessibility,
+    { autoApply: context.autoApplyTextScaleDensity !== false }
+  );
+  persistedAfterCalm = textScaleDensityApply.persisted;
+
+  const calmExpiryHint = buildCalmRecoveryExpiryDayHint(persistedAfterCalm, nextSignals.gameDay);
+
   let phaseShellAttentionCoachCopy: string | null = null;
+  let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
     const load = assessCognitiveLoad({
       signals: nextSignals,
@@ -276,6 +306,12 @@ export function tickEvolvingUiOnDayAdvance(
       gameDay: nextSignals.gameDay,
       simEvolutionBridgeRequested: newlyUnlockedPanelIds.length > 0,
       panelUnlockCoachRequested: newlyUnlockedPanelIds.length > 0,
+    }).coachCopy;
+
+    phaseShellVisibilityDayCoachCopy = buildPhaseShellVisibilityDayCoach({
+      phase: context.phase,
+      priorGameDay: priorSignals.gameDay,
+      nextGameDay: nextSignals.gameDay,
     }).coachCopy;
   }
 
@@ -298,7 +334,11 @@ export function tickEvolvingUiOnDayAdvance(
     calmRecoveryHintCopy: calmApply.coachCopy ?? calmHint.coachCopy,
     calmRecoveryAutoApplied: calmApply.applied,
     textScaleDensityDayHintCopy: textScaleDayHint.coachCopy,
+    textScaleDensityAutoApplied: textScaleDensityApply.applied,
     phaseShellAttentionCoachCopy,
+    phaseShellVisibilityDayCoachCopy,
+    legacyNavAutoRememberedCount: legacyRememberApply.rememberedCount,
+    calmRecoveryExpiryHintCopy: calmExpiryHint.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };

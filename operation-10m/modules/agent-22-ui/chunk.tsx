@@ -1,5 +1,5 @@
 // OP10M_MODULE_BEGIN agent-22-ui
-// content-sha256-prefix: 2cd3c49ad207073a
+// content-sha256-prefix: 4dea17e119514a82
 // Operation 10M — Agent 22 Evolving UI & Accessibility
 // Generated from operation-10m/agent-22-ui/src/ — regenerate: npm run build:agent22-chunk
 
@@ -882,7 +882,11 @@ export interface DayAdvanceUiEvolutionResult {
   calmRecoveryHintCopy: string | null;
   calmRecoveryAutoApplied: boolean;
   textScaleDensityDayHintCopy: string | null;
+  textScaleDensityAutoApplied: boolean;
   phaseShellAttentionCoachCopy: string | null;
+  phaseShellVisibilityDayCoachCopy: string | null;
+  legacyNavAutoRememberedCount: number;
+  calmRecoveryExpiryHintCopy: string | null;
   updatedPersisted: EvolvingUiPersistedState;
   visiblePanelCount: number;
 }
@@ -891,6 +895,8 @@ export interface TickEvolvingUiDayAdvanceContext {
   phase?: V94StandardizedGamePhase;
   accessibility?: AccessibilitySettingsSnapshot;
   autoApplyCalmRecovery?: boolean;
+  autoApplyTextScaleDensity?: boolean;
+  autoRememberLegacyNav?: boolean;
 }
 
 export function createDefaultEvolvingUiPersistedState(): EvolvingUiPersistedState {
@@ -1043,7 +1049,13 @@ export function tickEvolvingUiOnDayAdvance(
     nextSignals.gameDay,
     { autoApply: context.autoApplyCalmRecovery !== false }
   );
-  const persistedAfterCalm = calmApply.persisted;
+  let persistedAfterCalm = calmApply.persisted;
+
+  const legacyRememberPlan = buildLegacyNavAutoRememberPlan(nextSignals, policy, persistedAfterCalm);
+  const legacyRememberApply = applyLegacyNavAutoRemember(persistedAfterCalm, legacyRememberPlan, {
+    autoRemember: context.autoRememberLegacyNav !== false,
+  });
+  persistedAfterCalm = legacyRememberApply.persisted;
 
   const accessibility = context.accessibility ?? DEFAULT_ACCESSIBILITY_SNAPSHOT;
   const textScaleDayHint = buildTextScaleDensityDayHint({
@@ -1052,7 +1064,18 @@ export function tickEvolvingUiOnDayAdvance(
     preferredDensity: persistedAfterCalm.preferredDensity ?? null,
   });
 
+  const textScaleDensityApply = applyTextScaleDensityFromDayHint(
+    persistedAfterCalm,
+    textScaleDayHint,
+    accessibility,
+    { autoApply: context.autoApplyTextScaleDensity !== false }
+  );
+  persistedAfterCalm = textScaleDensityApply.persisted;
+
+  const calmExpiryHint = buildCalmRecoveryExpiryDayHint(persistedAfterCalm, nextSignals.gameDay);
+
   let phaseShellAttentionCoachCopy: string | null = null;
+  let phaseShellVisibilityDayCoachCopy: string | null = null;
   if (context.phase) {
     const load = assessCognitiveLoad({
       signals: nextSignals,
@@ -1066,6 +1089,12 @@ export function tickEvolvingUiOnDayAdvance(
       gameDay: nextSignals.gameDay,
       simEvolutionBridgeRequested: newlyUnlockedPanelIds.length > 0,
       panelUnlockCoachRequested: newlyUnlockedPanelIds.length > 0,
+    }).coachCopy;
+
+    phaseShellVisibilityDayCoachCopy = buildPhaseShellVisibilityDayCoach({
+      phase: context.phase,
+      priorGameDay: priorSignals.gameDay,
+      nextGameDay: nextSignals.gameDay,
     }).coachCopy;
   }
 
@@ -1088,7 +1117,11 @@ export function tickEvolvingUiOnDayAdvance(
     calmRecoveryHintCopy: calmApply.coachCopy ?? calmHint.coachCopy,
     calmRecoveryAutoApplied: calmApply.applied,
     textScaleDensityDayHintCopy: textScaleDayHint.coachCopy,
+    textScaleDensityAutoApplied: textScaleDensityApply.applied,
     phaseShellAttentionCoachCopy,
+    phaseShellVisibilityDayCoachCopy,
+    legacyNavAutoRememberedCount: legacyRememberApply.rememberedCount,
+    calmRecoveryExpiryHintCopy: calmExpiryHint.coachCopy,
     updatedPersisted: persistedAfterCalm,
     visiblePanelCount,
   };
@@ -4288,6 +4321,384 @@ export function buildTextScaleDensityDayHint(input: {
   };
 }
 
+// --- source: engine/legacy-nav-auto-remember-bridge.ts ---
+export interface LegacyNavAutoRememberPlan {
+  entries: LegacyNavAuditEntry[];
+  panelIdsToRemember: string[];
+  coachCopy: string | null;
+}
+
+export function buildLegacyNavAutoRememberPlan(
+  signals: ProgressionSignalSnapshot,
+  policy: EvolvingUiAccessPolicy,
+  persisted: EvolvingUiPersistedState
+): LegacyNavAutoRememberPlan {
+  const entries = auditLegacyNavTargets(signals, policy);
+  const remembered = new Set(persisted.rememberedPanelIds ?? []);
+  const panelIdsToRemember: string[] = [];
+
+  for (const entry of entries) {
+    if (!entry.hasPatch || !entry.progressionWouldHide) continue;
+    for (const panelId of entry.panelIds) {
+      if (remembered.has(panelId)) continue;
+      panelIdsToRemember.push(panelId);
+    }
+  }
+
+  const unique = [...new Set(panelIdsToRemember)];
+  let coachCopy: string | null = null;
+  if (unique.length) {
+    coachCopy = `${unique.length} legacy nav panels can be remembered so deep links stay reachable.`;
+  }
+
+  return { entries, panelIdsToRemember: unique, coachCopy };
+}
+
+export interface LegacyNavAutoRememberResult {
+  applied: boolean;
+  rememberedCount: number;
+  persisted: EvolvingUiPersistedState;
+  coachCopy: string | null;
+}
+
+/** Merges remembered panel ids for progression-hidden legacy nav targets when host opts in. */
+export function applyLegacyNavAutoRemember(
+  persisted: EvolvingUiPersistedState,
+  plan: LegacyNavAutoRememberPlan,
+  options?: { autoRemember?: boolean }
+): LegacyNavAutoRememberResult {
+  const autoRemember = options?.autoRemember !== false;
+
+  if (!plan.panelIdsToRemember.length) {
+    return { applied: false, rememberedCount: 0, persisted, coachCopy: plan.coachCopy };
+  }
+
+  if (!autoRemember) {
+    return {
+      applied: false,
+      rememberedCount: 0,
+      persisted,
+      coachCopy: plan.coachCopy,
+    };
+  }
+
+  const merged = [
+    ...new Set([...(persisted.rememberedPanelIds ?? []), ...plan.panelIdsToRemember]),
+  ];
+
+  return {
+    applied: true,
+    rememberedCount: plan.panelIdsToRemember.length,
+    persisted: { ...persisted, rememberedPanelIds: merged },
+    coachCopy: `Remembered ${plan.panelIdsToRemember.length} legacy nav panels for deep-link access.`,
+  };
+}
+
+// --- source: engine/phase-shell-visibility-day-coach.ts ---
+export interface PhaseShellVisibilityDayCoach {
+  phase: V94StandardizedGamePhase;
+  dayAdvanced: boolean;
+  coachCopy: string | null;
+  shellSummary: string;
+}
+
+export function buildPhaseShellVisibilityDayCoach(input: {
+  phase: V94StandardizedGamePhase;
+  priorGameDay: number;
+  nextGameDay: number;
+}): PhaseShellVisibilityDayCoach {
+  const plan = planPhaseShellVisibility(input.phase);
+  const shellSummary = phaseShellVisibilitySummary(plan);
+  const dayAdvanced = input.nextGameDay > input.priorGameDay;
+
+  let coachCopy: string | null = null;
+  if (dayAdvanced && plan.coachCopy) {
+    coachCopy = `Day ${input.nextGameDay}: ${plan.coachCopy}`;
+  } else if (dayAdvanced && input.nextGameDay <= 3) {
+    coachCopy = `Day ${input.nextGameDay}: phase shells show ${shellSummary}.`;
+  }
+
+  return {
+    phase: input.phase,
+    dayAdvanced,
+    coachCopy,
+    shellSummary,
+  };
+}
+
+// --- source: engine/text-scale-density-auto-apply-bridge.ts ---
+export interface TextScaleDensityAutoApplyResult {
+  applied: boolean;
+  persisted: EvolvingUiPersistedState;
+  coachCopy: string | null;
+}
+
+/** Applies recommended density from a day-advance text-scale hint when host opts into auto-apply. */
+export function applyTextScaleDensityFromDayHint(
+  persisted: EvolvingUiPersistedState,
+  hint: TextScaleDensityDayHint,
+  accessibility: AccessibilitySettingsSnapshot,
+  options?: { autoApply?: boolean }
+): TextScaleDensityAutoApplyResult {
+  const autoApply = options?.autoApply !== false;
+
+  if (!hint.shouldSuggestDensityChange || !hint.coachCopy) {
+    return { applied: false, persisted, coachCopy: hint.coachCopy };
+  }
+
+  const assessment = assessTextScaleReadability({
+    accessibility,
+    activeDensity: hint.activeDensity,
+  });
+
+  if (!autoApply) {
+    return { applied: false, persisted, coachCopy: hint.coachCopy };
+  }
+
+  if (assessment.recommendedDensity === persisted.preferredDensity) {
+    return { applied: false, persisted, coachCopy: hint.coachCopy };
+  }
+
+  const merged: EvolvingUiPersistedState = {
+    ...persisted,
+    preferredDensity: assessment.recommendedDensity,
+  };
+
+  return {
+    applied: true,
+    persisted: merged,
+    coachCopy: `Applied ${assessment.recommendedDensity} density to match your text scale.`,
+  };
+}
+
+// --- source: engine/calm-recovery-expiry-day-hint.ts ---
+export interface CalmRecoveryExpiryDayHint {
+  active: boolean;
+  expiresToday: boolean;
+  expiresTomorrow: boolean;
+  coachCopy: string | null;
+}
+
+export function buildCalmRecoveryExpiryDayHint(
+  persisted: EvolvingUiPersistedState,
+  gameDay: number
+): CalmRecoveryExpiryDayHint {
+  const untilDay = persisted.calmRecoveryUntilDay;
+  const active = isCalmRecoveryActive(persisted, gameDay);
+  const expiresToday = untilDay != null && gameDay + 1 === untilDay && active;
+  const expiresTomorrow = untilDay != null && gameDay + 2 === untilDay && active;
+
+  let coachCopy: string | null = null;
+  if (expiresToday) {
+    coachCopy = 'Calm recovery ends tomorrow — coaching surfaces return unless you extend it.';
+  } else if (expiresTomorrow) {
+    coachCopy = 'Calm recovery winds down in two days — plan for returning coach prompts.';
+  } else if (!active && untilDay != null && gameDay === untilDay) {
+    coachCopy = 'Calm recovery ended today — interface coaching is available again.';
+  }
+
+  return {
+    active,
+    expiresToday,
+    expiresTomorrow,
+    coachCopy,
+  };
+}
+
+// --- source: engine/round17-self-tests.ts ---
+export function runAgent22Round17SelfTests(): {
+  passed: number;
+  failed: number;
+  results: Array<{ id: string; name: string; passed: boolean; detail?: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail?: string }> = [];
+  const check = (id: string, name: string, passed: boolean, detail?: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  check(
+    'r17_legacy_remember_plan',
+    'hidden legacy nav targets yield remember plan',
+    (() => {
+      const plan = buildLegacyNavAutoRememberPlan(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState()
+      );
+      return plan.panelIdsToRemember.length >= 0 && Array.isArray(plan.entries);
+    })()
+  );
+
+  check(
+    'r17_legacy_remember_apply',
+    'auto-remember merges panel ids',
+    (() => {
+      const plan = buildLegacyNavAutoRememberPlan(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState()
+      );
+      if (!plan.panelIdsToRemember.length) return true;
+      const applied = applyLegacyNavAutoRemember(createDefaultEvolvingUiPersistedState(), plan);
+      return applied.applied && applied.rememberedCount === plan.panelIdsToRemember.length;
+    })()
+  );
+
+  check(
+    'r17_legacy_remember_copy',
+    'remember apply coach copy mentions legacy nav',
+    (() => {
+      const plan = buildLegacyNavAutoRememberPlan(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState()
+      );
+      if (!plan.panelIdsToRemember.length) return true;
+      const applied = applyLegacyNavAutoRemember(createDefaultEvolvingUiPersistedState(), plan);
+      return Boolean(applied.coachCopy?.toLowerCase().includes('legacy'));
+    })()
+  );
+
+  check(
+    'r17_phase_visibility_day',
+    'day advance phase visibility coach mentions day',
+    (() => {
+      const coach = buildPhaseShellVisibilityDayCoach({
+        phase: 'save_load',
+        priorGameDay: 1,
+        nextGameDay: 2,
+      });
+      return Boolean(coach.coachCopy?.includes('Day 2'));
+    })()
+  );
+
+  check(
+    'r17_phase_visibility_summary',
+    'visibility day coach exposes shell summary',
+    (() => {
+      const coach = buildPhaseShellVisibilityDayCoach({
+        phase: 'human_turn',
+        priorGameDay: 2,
+        nextGameDay: 3,
+      });
+      return coach.shellSummary.length > 0;
+    })()
+  );
+
+  check(
+    'r17_text_scale_auto_apply',
+    'auto-apply sets preferred density',
+    (() => {
+      const hint = buildTextScaleDensityDayHint({
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.25 },
+        preferredDensity: 'compact',
+      });
+      if (!hint.shouldSuggestDensityChange) return true;
+      const applied = applyTextScaleDensityFromDayHint(
+        createDefaultEvolvingUiPersistedState(),
+        hint,
+        { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.25 }
+      );
+      return applied.applied && applied.persisted.preferredDensity != null;
+    })()
+  );
+
+  check(
+    'r17_text_scale_auto_off',
+    'auto-apply off preserves persisted density',
+    (() => {
+      const hint = buildTextScaleDensityDayHint({
+        signals: { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.25 },
+        preferredDensity: 'compact',
+      });
+      const applied = applyTextScaleDensityFromDayHint(
+        { ...createDefaultEvolvingUiPersistedState(), preferredDensity: 'compact' },
+        hint,
+        { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.25 },
+        { autoApply: false }
+      );
+      return !applied.applied && applied.persisted.preferredDensity === 'compact';
+    })()
+  );
+
+  check(
+    'r17_calm_expiry_tomorrow',
+    'calm recovery expiry hint before last day',
+    (() => {
+      const hint = buildCalmRecoveryExpiryDayHint(
+        { ...createDefaultEvolvingUiPersistedState(), calmRecoveryUntilDay: 6 },
+        4
+      );
+      return hint.active && Boolean(hint.coachCopy?.toLowerCase().includes('calm'));
+    })()
+  );
+
+  check(
+    'r17_calm_expiry_ended',
+    'calm recovery ended today copy',
+    (() => {
+      const hint = buildCalmRecoveryExpiryDayHint(
+        { ...createDefaultEvolvingUiPersistedState(), calmRecoveryUntilDay: 5 },
+        5
+      );
+      return !hint.active && Boolean(hint.coachCopy?.includes('ended'));
+    })()
+  );
+
+  check(
+    'r17_tick_legacy_field',
+    'day advance exposes legacy nav auto-remember count',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        createDefaultEvolvingUiPersistedState(),
+        { autoRememberLegacyNav: false }
+      );
+      return typeof r.legacyNavAutoRememberedCount === 'number';
+    })()
+  );
+
+  check(
+    'r17_tick_text_scale_auto_field',
+    'day advance exposes text scale density auto-applied flag',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 1, turnCount: 1, interfaceLevel: 'simple' },
+        { gameDay: 2, turnCount: 2, interfaceLevel: 'simple' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        { ...createDefaultEvolvingUiPersistedState(), preferredDensity: 'compact' },
+        {
+          accessibility: { ...DEFAULT_ACCESSIBILITY_SNAPSHOT, textScaleMultiplier: 1.3 },
+          autoApplyTextScaleDensity: true,
+        }
+      );
+      return typeof r.textScaleDensityAutoApplied === 'boolean';
+    })()
+  );
+
+  check(
+    'r17_tick_calm_expiry_field',
+    'day advance exposes calm recovery expiry copy',
+    (() => {
+      const r = tickEvolvingUiOnDayAdvance(
+        { gameDay: 3, turnCount: 3, interfaceLevel: 'guided' },
+        { gameDay: 4, turnCount: 4, interfaceLevel: 'guided' },
+        DEFAULT_EVOLVING_UI_ACCESS_POLICY,
+        { ...createDefaultEvolvingUiPersistedState(), calmRecoveryUntilDay: 6 },
+        { autoApplyCalmRecovery: false }
+      );
+      return r.calmRecoveryExpiryHintCopy === null || typeof r.calmRecoveryExpiryHintCopy === 'string';
+    })()
+  );
+
+  const failed = results.filter(r => !r.passed).length;
+  return { passed: results.length - failed, failed, results };
+}
+
 // --- source: engine/round16-self-tests.ts ---
 export function runAgent22Round16SelfTests(): {
   passed: number;
@@ -7301,8 +7712,22 @@ export function SimulationUiEvolutionBridge({
       {result.textScaleDensityDayHintCopy ? (
         <div data-testid="sim-ui-evolution-text-scale-hint">{result.textScaleDensityDayHintCopy}</div>
       ) : null}
+      {result.textScaleDensityAutoApplied ? (
+        <div data-testid="sim-ui-evolution-text-scale-auto-applied">Text scale density auto-applied</div>
+      ) : null}
       {result.phaseShellAttentionCoachCopy ? (
         <div data-testid="sim-ui-evolution-phase-attention">{result.phaseShellAttentionCoachCopy}</div>
+      ) : null}
+      {result.phaseShellVisibilityDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-phase-visibility-day">{result.phaseShellVisibilityDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavAutoRememberedCount > 0 ? (
+        <div data-testid="sim-ui-evolution-legacy-remember">
+          Remembered {result.legacyNavAutoRememberedCount} legacy nav panels
+        </div>
+      ) : null}
+      {result.calmRecoveryExpiryHintCopy ? (
+        <div data-testid="sim-ui-evolution-calm-expiry">{result.calmRecoveryExpiryHintCopy}</div>
       ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
@@ -8670,8 +9095,123 @@ export function TextScaleDensityDayHintStrip({
   );
 }
 
+// --- source: react/LegacyNavAutoRememberBanner.tsx ---
+export interface LegacyNavAutoRememberBannerProps {
+  plan: LegacyNavAutoRememberPlan;
+  applied: boolean;
+  rememberedCount: number;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function LegacyNavAutoRememberBanner({
+  plan,
+  applied,
+  rememberedCount,
+  accessibility,
+}: LegacyNavAutoRememberBannerProps): React.ReactElement | null {
+  if (!plan.coachCopy && !applied) return null;
+
+  return (
+    <div
+      data-testid="legacy-nav-auto-remember"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-sky-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-applied={applied ? 'true' : 'false'}
+      data-count={rememberedCount}
+    >
+      {applied
+        ? `Remembered ${rememberedCount} legacy nav panels.`
+        : plan.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/PhaseShellVisibilityDayCoachStrip.tsx ---
+export interface PhaseShellVisibilityDayCoachStripProps {
+  coach: PhaseShellVisibilityDayCoach;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function PhaseShellVisibilityDayCoachStrip({
+  coach,
+  accessibility,
+}: PhaseShellVisibilityDayCoachStripProps): React.ReactElement | null {
+  if (!coach.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="phase-shell-visibility-day-coach"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-violet-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-phase={coach.phase}
+      data-summary={coach.shellSummary}
+    >
+      {coach.coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/TextScaleDensityAutoApplyBanner.tsx ---
+export interface TextScaleDensityAutoApplyBannerProps {
+  applied: boolean;
+  coachCopy: string | null;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function TextScaleDensityAutoApplyBanner({
+  applied,
+  coachCopy,
+  accessibility,
+}: TextScaleDensityAutoApplyBannerProps): React.ReactElement | null {
+  if (!applied && !coachCopy) return null;
+
+  return (
+    <div
+      data-testid="text-scale-density-auto-apply"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-emerald-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-applied={applied ? 'true' : 'false'}
+    >
+      {applied ? coachCopy ?? 'Density auto-applied for text scale.' : coachCopy}
+    </div>
+  );
+}
+
+// --- source: react/CalmRecoveryExpiryDayHintStrip.tsx ---
+export interface CalmRecoveryExpiryDayHintStripProps {
+  hint: CalmRecoveryExpiryDayHint;
+  accessibility: AccessibilitySettingsSnapshot;
+}
+
+export function CalmRecoveryExpiryDayHintStrip({
+  hint,
+  accessibility,
+}: CalmRecoveryExpiryDayHintStripProps): React.ReactElement | null {
+  if (!hint.coachCopy) return null;
+
+  return (
+    <div
+      data-testid="calm-recovery-expiry-day-hint"
+      role="status"
+      aria-live="polite"
+      className="text-xs border border-teal-400/35 rounded p-2"
+      style={mergeHighContrastChromeStyle(accessibility)}
+      data-expires-today={hint.expiresToday ? 'true' : 'false'}
+      data-expires-tomorrow={hint.expiresTomorrow ? 'true' : 'false'}
+    >
+      {hint.coachCopy}
+    </div>
+  );
+}
+
 export const AGENT_22_MODULE_ID = 'operation-10m/agent-22-ui';
-export const AGENT_22_MODULE_VERSION = '1.16.0';
+export const AGENT_22_MODULE_VERSION = '1.17.0';
 
 export function runOp10mAgent22EvolvingUiSelfTests(): {
   passed: number;
@@ -8792,6 +9332,11 @@ export function runOp10mAgent22EvolvingUiSelfTests(): {
   const round16 = runAgent22Round16SelfTests();
   for (const r of round16.results) {
     check(`agent22_round16_${r.id}`, r.name, r.passed, r.detail);
+  }
+
+  const round17 = runAgent22Round17SelfTests();
+  for (const r of round17.results) {
+    check(`agent22_round17_${r.id}`, r.name, r.passed, r.detail);
   }
 
   const failed = results.filter(r => !r.passed).length;

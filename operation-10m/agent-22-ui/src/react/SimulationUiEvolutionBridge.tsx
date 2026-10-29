@@ -67,8 +67,22 @@ export function SimulationUiEvolutionBridge({
       {result.textScaleDensityDayHintCopy ? (
         <div data-testid="sim-ui-evolution-text-scale-hint">{result.textScaleDensityDayHintCopy}</div>
       ) : null}
+      {result.textScaleDensityAutoApplied ? (
+        <div data-testid="sim-ui-evolution-text-scale-auto-applied">Text scale density auto-applied</div>
+      ) : null}
       {result.phaseShellAttentionCoachCopy ? (
         <div data-testid="sim-ui-evolution-phase-attention">{result.phaseShellAttentionCoachCopy}</div>
+      ) : null}
+      {result.phaseShellVisibilityDayCoachCopy ? (
+        <div data-testid="sim-ui-evolution-phase-visibility-day">{result.phaseShellVisibilityDayCoachCopy}</div>
+      ) : null}
+      {result.legacyNavAutoRememberedCount > 0 ? (
+        <div data-testid="sim-ui-evolution-legacy-remember">
+          Remembered {result.legacyNavAutoRememberedCount} legacy nav panels
+        </div>
+      ) : null}
+      {result.calmRecoveryExpiryHintCopy ? (
+        <div data-testid="sim-ui-evolution-calm-expiry">{result.calmRecoveryExpiryHintCopy}</div>
       ) : null}
       {result.legacyNavPatchCoverageCount > 0 ? (
         <div data-testid="sim-ui-evolution-legacy-nav-coverage">
