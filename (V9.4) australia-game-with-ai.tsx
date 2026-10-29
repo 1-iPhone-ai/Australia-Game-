@@ -202284,11 +202284,10 @@ function dispatchGameSettingsChange(
       addNotification('That sabotage effect is already active.', 'warning');
       return;
     }
-    const sabCost = Math.ceil(sabotage.cost * (typeof aggregateActiveEventEconomyModifiers === 'function' ? aggregateActiveEventEconomyModifiers(gameState.activeEvents, { national: true }).sabotageCost : 1));
-    if (player.money < sabCost) {
     const crisisEconomy = foldNationalCrisisEventEconomyModifiers(gameState.activeEvents);
-    const sabotageCost = Math.max(0, Math.round(sabotage.cost * crisisEconomy.sabotageCostMultiplier));
-    if (player.money < sabotageCost) {
+    const legacySab = Math.ceil(sabotage.cost * (typeof aggregateActiveEventEconomyModifiers === 'function' ? aggregateActiveEventEconomyModifiers(gameState.activeEvents, { national: true }).sabotageCost : 1));
+    const sabCost = Math.max(0, Math.round(legacySab * crisisEconomy.sabotageCostMultiplier));
+    if (player.money < sabCost) {
       addNotification('Not enough money for sabotage.', 'error');
       return;
     }
@@ -202301,9 +202300,7 @@ function dispatchGameSettingsChange(
       const successChance = 0.70 - sabotageResistance + attackerBonus;
       if (drawGameplayRandom('Sabotage') > successChance) {
         dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabCost });
-        commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotage.cost, success: false, turn: gameState.turnCounter, summary: `${player.name || 'Player'} attempted ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
-        dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotageCost });
-        commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotageCost, success: false, turn: gameState.turnCounter, summary: `${player.name || 'Player'} attempted ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
+        commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabCost, success: false, turn: gameState.turnCounter, summary: `${player.name || 'Player'} attempted ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
         addNotification(`Sabotage attempt failed! ${targetActor.name}'s regional standing resisted the attempt.`, 'warning', true);
         if (sabotageApCost > 0) {
           dispatchPlayer({ type: 'CONSUME_ACTION_POINTS', payload: { cost: sabotageApCost, actionId: 'sabotage' } });
@@ -202317,8 +202314,6 @@ function dispatchGameSettingsChange(
     }));
     dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabCost });
     commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabCost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} used ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
-    dispatchPlayer({ type: 'UPDATE_MONEY', payload: -sabotageCost });
-    commitMatchMemory({ actionType: 'sabotage', actorId: player.id || 'player', targetId: resolvedTargetId, regionId: targetActor.currentRegion, magnitude: sabotageCost, success: true, turn: gameState.turnCounter, summary: `${player.name || 'Player'} used ${sabotage.name} against ${targetActor.name}.`, stableKey: `human-sabotage-${gameState.turnCounter}-${player.id || 'player'}-${resolvedTargetId}-${sabotage.id}-u${player.actionsUsedThisTurn || 0}` });
     addNotification(`Sabotage used: ${sabotage.name}.`, 'warning', true);
     addNotification(`🤖 ${targetActor.name} is affected by ${sabotage.name}.`, 'ai', false);
     if (sabotageApCost > 0) {
@@ -217680,15 +217675,18 @@ function dispatchGameSettingsChange(
   // Crisis stage changes (timer or a player response) keep the stage's canonical modifiers in step.
   useEffect(() => {
     const chains = ((gameState as any).crisisChainState?.activeCrisisChains || []) as CrisisChain[];
-    const next = syncContentCrisisEvents(gameState.activeEvents || [], chains);
+    const syncedEvents = syncNationalCrisisStageEvents(syncContentCrisisEvents(gameState.activeEvents || [], chains), chains);
     const stab = syncCrisisStabilityModifiers((gameState as any).publicStabilityState || createDefaultPublicStabilityState(), chains);
     const stabChanged = JSON.stringify(stab.modifiers) !== JSON.stringify(((gameState as any).publicStabilityState || createDefaultPublicStabilityState()).modifiers);
-    if (next !== gameState.activeEvents || stabChanged) dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => ({
-      activeEvents: syncContentCrisisEvents(state.activeEvents || [], state.crisisChainState?.activeCrisisChains || []),
-      publicStabilityState: syncCrisisStabilityModifiers(state.publicStabilityState || createDefaultPublicStabilityState(), state.crisisChainState?.activeCrisisChains || [])
-    }) });
-    const next = syncNationalCrisisStageEvents(gameState.activeEvents || [], chains);
-    if (next !== gameState.activeEvents) dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => ({ activeEvents: syncNationalCrisisStageEvents(state.activeEvents || [], state.crisisChainState?.activeCrisisChains || []) }) });
+    if (syncedEvents !== gameState.activeEvents || stabChanged) {
+      dispatchGameState({ type: 'APPLY_CONTENT_STEP', payload: (state: any) => {
+        const c = state.crisisChainState?.activeCrisisChains || [];
+        return {
+          activeEvents: syncNationalCrisisStageEvents(syncContentCrisisEvents(state.activeEvents || [], c), c),
+          publicStabilityState: syncCrisisStabilityModifiers(state.publicStabilityState || createDefaultPublicStabilityState(), c),
+        };
+      } });
+    }
   }, [(gameState as any).crisisChainState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Competing infrastructure: funding one project closes its rival on the same site.
@@ -234320,8 +234318,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV62DynamicEvolutionaryUiSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
-            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runO111NationalCrisisSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
+            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runO111NationalCrisisSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV62DynamicEvolutionaryUiSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
