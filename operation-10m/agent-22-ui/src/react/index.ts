@@ -161,3 +161,7 @@ export { SeventhUnlockHeadlineDayCoachStrip } from './SeventhUnlockHeadlineDayCo
 export { PentDeferredQueueDayCoachStrip } from './PentDeferredQueueDayCoachStrip.js';
 export { PreviewPanelBreadthDayCoachStrip } from './PreviewPanelBreadthDayCoachStrip.js';
 export { PacingDeferredPairDayCoachStrip } from './PacingDeferredPairDayCoachStrip.js';
+export { EighthUnlockHeadlineDayCoachStrip } from './EighthUnlockHeadlineDayCoachStrip.js';
+export { HexDeferredQueueDayCoachStrip } from './HexDeferredQueueDayCoachStrip.js';
+export { HiddenPanelBreadthDayCoachStrip } from './HiddenPanelBreadthDayCoachStrip.js';
+export { PacingDeferredTripleDayCoachStrip } from './PacingDeferredTripleDayCoachStrip.js';
