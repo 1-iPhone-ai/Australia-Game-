@@ -239,3 +239,7 @@ export * from './bridge-v1029-replay-wave-round54-export.ts';
 export * from './bridge-v1030-integration-health-wave-round54-export.ts';
 export * from './scenario-wave54-integration-rank.ts';
 export * from './round54-self-tests.ts';
+export * from './bridge-v1031-replay-wave-round55-export.ts';
+export * from './bridge-v1032-integration-health-wave-round55-export.ts';
+export * from './scenario-wave55-integration-rank.ts';
+export * from './round55-self-tests.ts';

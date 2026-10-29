@@ -759,6 +759,8 @@ export interface MacroEconomyInputs {
   integrationHealthWave52Export?: any;
   replayWave53Export?: any;
   integrationHealthWave53Export?: any;
+  replayWave54Export?: any;
+  integrationHealthWave54Export?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */

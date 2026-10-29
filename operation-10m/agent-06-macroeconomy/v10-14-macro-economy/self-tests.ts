@@ -61,6 +61,7 @@ import { runAgent06Round51SelfTests } from './round51-self-tests.ts';
 import { runAgent06Round52SelfTests } from './round52-self-tests.ts';
 import { runAgent06Round53SelfTests } from './round53-self-tests.ts';
 import { runAgent06Round54SelfTests } from './round54-self-tests.ts';
+import { runAgent06Round55SelfTests } from './round55-self-tests.ts';
 
 export function runV1014_MACRO_MacroEconomySelfTests(): {
   passed: number;
@@ -417,6 +418,11 @@ export function runV1014_MACRO_MacroEconomySelfTests(): {
 
   const round54 = runAgent06Round54SelfTests();
   for (const r of round54.results) {
+    check(r.id, r.name, r.passed, r.detail);
+  }
+
+  const round55 = runAgent06Round55SelfTests();
+  for (const r of round55.results) {
     check(r.id, r.name, r.passed, r.detail);
   }
 
