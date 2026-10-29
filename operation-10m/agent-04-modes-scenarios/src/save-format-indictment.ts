@@ -145,6 +145,7 @@ export function attachIndictmentSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,

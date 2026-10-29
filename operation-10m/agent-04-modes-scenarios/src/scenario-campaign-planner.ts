@@ -117,6 +117,11 @@ import {
   sanitizeReversalSession,
 } from './save-format-reversal.js';
 import {
+  getMandamusScenarioAtCursor,
+  mandamusSessionSummary,
+  sanitizeMandamusSession,
+} from './save-format-mandamus.js';
+import {
   getCertiorariScenarioAtCursor,
   certiorariSessionSummary,
   sanitizeCertiorariSession,
@@ -221,6 +226,7 @@ import type {
   O10mQuashPhase,
   O10mSupersedePhase,
   O10mCertiorariPhase,
+  O10mMandamusPhase,
   O10mSiegePhase,
   O10mVoyageSegment,
   O10mModesPersistedState,
@@ -371,9 +377,31 @@ const emptyQueuePlan = {
   certiorariCursor: null as number | null,
   certiorariPhase: null as O10mCertiorariPhase | null,
   certiorariScore: null as number | null,
+  mandamusId: null as string | null,
+  mandamusCursor: null as number | null,
+  mandamusPhase: null as O10mMandamusPhase | null,
+  mandamusScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const mandamus = sanitizeMandamusSession(state.mandamusSession);
+  const mandamusScenario = getMandamusScenarioAtCursor(mandamus);
+  if (mandamus && mandamus.active && mandamusScenario) {
+    return {
+      kind: 'mandamus_step',
+      scenarioId: mandamusScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      mandamusId: mandamus.mandamusId,
+      mandamusCursor: mandamus.cursor,
+      mandamusPhase: mandamus.phaseTag,
+      mandamusScore: mandamus.mandamusScore,
+      reason: `Mandamus "${mandamus.label}" ${mandamus.phaseTag} phase ${mandamus.cursor + 1}/${mandamus.scenarioIds.length} (score ${mandamus.mandamusScore}).`,
+    };
+  }
+
   const certiorari = sanitizeCertiorariSession(state.certiorariSession);
   const certiorariScenario = getCertiorariScenarioAtCursor(certiorari);
   if (certiorari && certiorari.active && certiorariScenario) {
@@ -1142,6 +1170,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   quashActive: boolean;
   supersedeActive: boolean;
   certiorariActive: boolean;
+  mandamusActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -1186,6 +1215,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const quash = quashSessionSummary(state);
   const supersede = supersedeSessionSummary(state);
   const certiorari = certiorariSessionSummary(state);
+  const mandamus = mandamusSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -1228,6 +1258,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     quashActive: quash.active,
     supersedeActive: supersede.active,
     certiorariActive: certiorari.active,
+    mandamusActive: mandamus.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,

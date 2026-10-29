@@ -128,6 +128,7 @@ export function attachSupersedeSessionToState(
     ...state,
     supersedeSession: sanitized,
     certiorariSession: null,
+    mandamusSession: null,
     quashSession: null,
     setAsideSession: null,
     reinstatementSession: null,

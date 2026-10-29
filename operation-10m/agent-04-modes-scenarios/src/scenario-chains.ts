@@ -1436,6 +1436,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_mandamus_route',
+    title: 'Mandamus Route',
+    description:
+      'Three-phase mandamus arc with score accrual between legs — round-42 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_mandamus_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_mandamus_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File mandamus petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 520 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_mandamus_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mMandamusMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_mandamus_writ_finale',
+        title: 'Writ Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainMandamusRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));

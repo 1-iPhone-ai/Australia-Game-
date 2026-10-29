@@ -397,6 +397,7 @@ export type O10mSetAsidePhase = 'filing' | 'review' | 'setAside';
 export type O10mQuashPhase = 'filing' | 'review' | 'quash';
 export type O10mSupersedePhase = 'filing' | 'review' | 'supersede';
 export type O10mCertiorariPhase = 'filing' | 'review' | 'certiorari';
+export type O10mMandamusPhase = 'filing' | 'review' | 'mandamus';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -772,6 +773,17 @@ export interface O10mCertiorariSession {
   phaseTag: O10mCertiorariPhase;
 }
 
+/** Schema v42 — mandamus arc with score accrual between phases. */
+export interface O10mMandamusSession {
+  mandamusId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  mandamusScore: number;
+  phaseTag: O10mMandamusPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -796,6 +808,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'mandamus_step'
     | 'certiorari_step'
     | 'supersede_step'
     | 'quash_step'
@@ -984,6 +997,10 @@ export interface O10mCampaignPlan {
   certiorariCursor: number | null;
   certiorariPhase: O10mCertiorariPhase | null;
   certiorariScore: number | null;
+  mandamusId: string | null;
+  mandamusCursor: number | null;
+  mandamusPhase: O10mMandamusPhase | null;
+  mandamusScore: number | null;
   reason: string;
 }
 
@@ -1087,8 +1104,10 @@ export interface O10mModesPersistedState {
   quashSession?: O10mQuashSession | null;
   /** Schema v40 — active supersede arc (mutually exclusive with certiorari / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   supersedeSession?: O10mSupersedeSession | null;
-  /** Schema v41 — active certiorari arc (mutually exclusive with supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v41 — active certiorari arc (mutually exclusive with mandamus / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   certiorariSession?: O10mCertiorariSession | null;
+  /** Schema v42 — active mandamus arc (mutually exclusive with certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  mandamusSession?: O10mMandamusSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';
@@ -5613,6 +5632,103 @@ export const O10M_OPERATION_SCENARIOS: PresetScenario[] = [
     modifiers: [],
     youWillLearn: ['Certiorari finales', 'Score ledger', 'Unlock tokens'],
   },
+  {
+    id: 'o10m_mandamus_filing_docket',
+    title: 'Mandamus Filing Docket',
+    description: 'Open a mandamus arc with low-pressure score pacing before review.',
+    category: 'experimental',
+    difficulty: 'Easy',
+    complexity: 'Beginner',
+    forcedSeed: 100535,
+    startingMoney: 3900,
+    startingRegions: ['NT', 'QLD'],
+    badgeId: 'badge_o10m_mandamus_filing_docket',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100535),
+      o10mMandamusFilingDocket: true,
+      totalDays: 8,
+    },
+    objectives: [
+      {
+        id: 'o10m_mfd_obj_day',
+        label: 'Filing Window',
+        description: 'Reach day 3',
+        targetType: 'daysPassed',
+        targetValue: 3,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Mandamus arcs', 'Score pacing', 'Filing phase'],
+  },
+  {
+    id: 'o10m_mandamus_review_chamber',
+    title: 'Mandamus Review Chamber',
+    description: 'Mid mandamus review with accrued score bonus applied at start.',
+    category: 'challenge',
+    difficulty: 'Medium',
+    complexity: 'Intermediate',
+    forcedSeed: 100536,
+    startingMoney: 4450,
+    startingRegions: ['WA', 'SA'],
+    startingStanding: { WA: 72, SA: 70 },
+    badgeId: 'badge_o10m_mandamus_review_chamber',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100536),
+      regionalStandingEnabled: true,
+      o10mMandamusReviewChamber: true,
+      totalDays: 11,
+    },
+    objectives: [
+      {
+        id: 'o10m_mrc_obj_avg',
+        label: 'Review Threshold',
+        description: 'Average standing of 75',
+        targetType: 'multi_actor_standing_avg',
+        targetValue: 75,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Review chamber', 'Score carry', 'Phase transitions'],
+  },
+  {
+    id: 'o10m_mandamus_writ_finale',
+    title: 'Mandamus Writ Finale',
+    description: 'Finale mandamus stage — net worth gate with full score bonus at start.',
+    category: 'expert',
+    difficulty: 'Hard',
+    complexity: 'Advanced',
+    forcedSeed: 100537,
+    startingMoney: 4900,
+    startingRegions: ['ACT', 'NSW', 'VIC'],
+    badgeId: 'badge_o10m_mandamus_writ_finale',
+    unlockedByDefault: true,
+    author: 'Operation10M',
+    forcedSettings: {
+      ...deterministic(100537),
+      regionalStandingEnabled: true,
+      crisisChainEnabled: true,
+      o10mMandamusWritFinale: true,
+      totalDays: 14,
+    },
+    objectives: [
+      {
+        id: 'o10m_mwf_obj_net',
+        label: 'Writ Net Worth',
+        description: 'Reach $22,000 net worth',
+        targetType: 'netWorth',
+        targetValue: 22000,
+        isPrimary: true,
+      },
+    ],
+    modifiers: [],
+    youWillLearn: ['Mandamus finales', 'Score ledger', 'Unlock tokens'],
+  },
 ];
 
 export const O10M_SCENARIO_IDS = O10M_OPERATION_SCENARIOS.map(s => s.id);
@@ -7489,6 +7605,40 @@ export const O10M_SCENARIO_CHAINS: O10mScenarioChain[] = [
       },
     ],
   },
+  {
+    id: 'o10m_chain_mandamus_route',
+    title: 'Mandamus Route',
+    description:
+      'Three-phase mandamus arc with score accrual between legs — round-42 campaign path.',
+    completionBadgeId: 'badge_o10m_chain_mandamus_route',
+    steps: [
+      {
+        stepIndex: 0,
+        scenarioId: 'o10m_mandamus_filing_docket',
+        title: 'Filing Docket',
+        narrativeBridge: 'File mandamus petition before the review chamber.',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { startingMoneyDelta: 520 },
+      },
+      {
+        stepIndex: 1,
+        scenarioId: 'o10m_mandamus_review_chamber',
+        title: 'Review Chamber',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: {
+          standingDelta: { NSW: 6, VIC: 5 },
+          forcedSettingsPatch: { o10mMandamusMidfieldComplete: true },
+        },
+      },
+      {
+        stepIndex: 2,
+        scenarioId: 'o10m_mandamus_writ_finale',
+        title: 'Writ Finale',
+        requiresPrimaryVictory: true,
+        carryBonusOnComplete: { forcedSettingsPatch: { o10mChainMandamusRouteComplete: true } },
+      },
+    ],
+  },
 ];
 
 const CHAIN_BY_ID = new Map(O10M_SCENARIO_CHAINS.map(c => [c.id, c]));
@@ -8315,7 +8465,7 @@ export function summarizeContentAudit(report: O10mContentAuditReport): string {
 }
 
 // --- bundled from src/save-format.ts ---
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 41;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 42;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -8455,6 +8605,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
   };
 }
 
@@ -8515,6 +8666,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       quashSession: merged.quashSession ?? null,
       supersedeSession: merged.supersedeSession ?? null,
       certiorariSession: merged.certiorariSession ?? null,
+      mandamusSession: merged.mandamusSession ?? null,
     };
     return upgraded;
   }
@@ -8599,6 +8751,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     quashSession: sanitizeQuashSession(o.quashSession),
     supersedeSession: sanitizeSupersedeSession(o.supersedeSession),
     certiorariSession: sanitizeCertiorariSession(o.certiorariSession),
+    mandamusSession: sanitizeMandamusSession(o.mandamusSession),
   };
 }
 
@@ -8894,6 +9047,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Certiorari cursor out of range; clamp on next sanitize.');
   }
 
+  const mandamus = sanitizeMandamusSession(state.mandamusSession);
+  if (state.mandamusSession && !mandamus) {
+    warnings.push('Mandamus session failed sanitization; planner will ignore it.');
+  } else if (mandamus && mandamus.cursor >= mandamus.scenarioIds.length) {
+    warnings.push('Mandamus cursor out of range; clamp on next sanitize.');
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -9038,6 +9198,7 @@ const FINGERPRINT_KEYS: Array<keyof O10mModesPersistedState> = [
   'quashSession',
   'supersedeSession',
   'certiorariSession',
+  'mandamusSession',
 ];
 
 function stableStringify(value: unknown): string {
@@ -9577,6 +9738,7 @@ export function attachMarathonQueueToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -9694,6 +9856,7 @@ export function applyPostRunPersistedUpdates(
   turn: number,
 ): O10mModesPersistedState {
   let next = recordScenarioReplayEntry(state, run, turn);
+  next = advanceMandamusSessionAfterRun(next, run);
   next = advanceCertiorariSessionAfterRun(next, run);
   next = advanceSupersedeSessionAfterRun(next, run);
   next = advanceQuashSessionAfterRun(next, run);
@@ -9892,6 +10055,7 @@ export function attachGauntletSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     scenarioId,
     challengeModeIds,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
@@ -10155,6 +10319,7 @@ export function attachRelaySessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     scenarioId,
     baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
   };
@@ -10378,6 +10543,7 @@ export function attachCircuitSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     expeditionSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -10619,6 +10785,7 @@ export function attachExpeditionSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     circuitSession: null,
     marathonQueue: null,
     gauntletSession: null,
@@ -10858,6 +11025,7 @@ export function attachOdysseySessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     expeditionSession: null,
     circuitSession: null,
     marathonQueue: null,
@@ -11096,6 +11264,7 @@ export function attachPilgrimageSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     odysseySession: null,
     expeditionSession: null,
     circuitSession: null,
@@ -11335,6 +11504,7 @@ export function attachCaravanSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     pilgrimageSession: null,
     odysseySession: null,
     expeditionSession: null,
@@ -11568,6 +11738,7 @@ export function attachVoyageSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     caravanSession: null,
     pilgrimageSession: null,
     odysseySession: null,
@@ -11801,6 +11972,7 @@ export function attachSiegeSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     voyageSession: null,
     caravanSession: null,
     pilgrimageSession: null,
@@ -12034,6 +12206,7 @@ export function attachConvoySessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     siegeSession: null,
     voyageSession: null,
     caravanSession: null,
@@ -12267,6 +12440,7 @@ export function attachEscortSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     convoySession: null,
     siegeSession: null,
     voyageSession: null,
@@ -12509,6 +12683,7 @@ export function attachExtractionSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     escortSession: null,
     convoySession: null,
     siegeSession: null,
@@ -12759,6 +12934,7 @@ export function attachSubjectSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     extractionSession: null,
     escortSession: null,
     convoySession: null,
@@ -13009,6 +13185,7 @@ export function attachWitnessSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     subjectSession: null,
     extractionSession: null,
     escortSession: null,
@@ -13259,6 +13436,7 @@ export function attachTribunalSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     witnessSession: null,
     subjectSession: null,
     extractionSession: null,
@@ -13509,6 +13687,7 @@ export function attachIndictmentSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     tribunalSession: null,
     witnessSession: null,
     subjectSession: null,
@@ -13759,6 +13938,7 @@ export function attachAppealSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     indictmentSession: null,
     tribunalSession: null,
     witnessSession: null,
@@ -14009,6 +14189,7 @@ export function attachClemencySessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     appealSession: null,
     indictmentSession: null,
     tribunalSession: null,
@@ -14259,6 +14440,7 @@ export function attachPardonSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     clemencySession: null,
     appealSession: null,
     indictmentSession: null,
@@ -14509,6 +14691,7 @@ export function attachAmnestySessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     pardonSession: null,
     clemencySession: null,
     appealSession: null,
@@ -14759,6 +14942,7 @@ export function attachReprieveSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     amnestySession: null,
     pardonSession: null,
     clemencySession: null,
@@ -15009,6 +15193,7 @@ export function attachParoleSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     reprieveSession: null,
     amnestySession: null,
     pardonSession: null,
@@ -15259,6 +15444,7 @@ export function attachProbationSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     paroleSession: null,
     reprieveSession: null,
     amnestySession: null,
@@ -15509,6 +15695,7 @@ export function attachCommutationSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     probationSession: null,
     paroleSession: null,
     reprieveSession: null,
@@ -15759,6 +15946,7 @@ export function attachAcquittalSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     commutationSession: null,
     probationSession: null,
     paroleSession: null,
@@ -16009,6 +16197,7 @@ export function attachExonerationSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     acquittalSession: null,
     commutationSession: null,
     probationSession: null,
@@ -16259,6 +16448,7 @@ export function attachExpungementSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     exonerationSession: null,
     acquittalSession: null,
     commutationSession: null,
@@ -16509,6 +16699,7 @@ export function attachVacaturSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     expungementSession: null,
     exonerationSession: null,
     acquittalSession: null,
@@ -16759,6 +16950,7 @@ export function attachRemandSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     vacaturSession: null,
     expungementSession: null,
     exonerationSession: null,
@@ -17009,6 +17201,7 @@ export function attachReversalSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     remandSession: null,
     vacaturSession: null,
     expungementSession: null,
@@ -17259,6 +17452,7 @@ export function attachAnnulmentSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     reversalSession: null,
     remandSession: null,
     vacaturSession: null,
@@ -17511,6 +17705,7 @@ export function attachReinstatementSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     annulmentSession: null,
     reversalSession: null,
     remandSession: null,
@@ -17763,6 +17958,7 @@ export function attachSetAsideSessionToState(
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     reinstatementSession: null,
     annulmentSession: null,
     reversalSession: null,
@@ -18013,6 +18209,7 @@ export function attachQuashSessionToState(
     quashSession: sanitized,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
     setAsideSession: null,
     reinstatementSession: null,
     annulmentSession: null,
@@ -18265,6 +18462,7 @@ export function attachSupersedeSessionToState(
     ...state,
     supersedeSession: sanitized,
     certiorariSession: null,
+    mandamusSession: null,
     quashSession: null,
     setAsideSession: null,
     reinstatementSession: null,
@@ -18649,6 +18847,260 @@ export function certiorariSessionSummary(state: O10mModesPersistedState): {
   };
 }
 
+// --- bundled from src/save-format-mandamus.ts ---
+export const O10M_MANDAMUS_SCENARIO_CAP = 6;
+export const O10M_MANDAMUS_SCORE_CAP = 1080;
+export const O10M_MANDAMUS_SCORE_MONEY_CAP = 1160;
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+}
+
+const VALID_PHASES = new Set<O10mMandamusPhase>(['filing', 'review', 'mandamus']);
+
+export function unlockTokenForMandamusId(mandamusId: string): string | null {
+  if (!mandamusId.startsWith('o10m_mandamus_')) return null;
+  return `o10m_unlock_${mandamusId.slice('o10m_mandamus_'.length)}`;
+}
+
+export function mandamusPhaseForCursor(cursor: number, scenarioCount: number): O10mMandamusPhase {
+  const total = Math.max(1, scenarioCount);
+  const clamped = Math.min(Math.max(0, Math.floor(cursor)), total - 1);
+  if (clamped >= total - 1) return 'mandamus';
+  if (clamped >= Math.floor(total / 2)) return 'review';
+  return 'filing';
+}
+
+export function mandamusScoreFromRun(run: O10mRunSummary): number {
+  if (!run.primaryVictory) return 0;
+  const standingSlice = Math.min(18, Math.floor(run.maxRegionalStanding / 4));
+  return Math.min(141, Math.max(36, Math.floor(run.playerNetWorth / 126) + standingSlice));
+}
+
+export function sanitizeMandamusSession(raw: unknown): O10mMandamusSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const mandamusId =
+    typeof o.mandamusId === 'string' && o.mandamusId.startsWith('o10m_mandamus_')
+      ? o.mandamusId
+      : null;
+  if (!mandamusId) return null;
+  const label =
+    typeof o.label === 'string' && o.label.length > 0 ? o.label.slice(0, 72) : mandamusId;
+  const scenarioIds = Array.isArray(o.scenarioIds)
+    ? o.scenarioIds
+        .filter((id): id is string => typeof id === 'string' && id.startsWith('o10m_'))
+        .filter(id => findO10mScenario(id))
+        .slice(0, O10M_MANDAMUS_SCENARIO_CAP)
+    : [];
+  if (scenarioIds.length === 0) return null;
+  const cursorRaw = Math.floor(num(o.cursor, 0));
+  const cursor = Math.min(Math.max(0, cursorRaw), scenarioIds.length - 1);
+  const mandamusScore = Math.min(
+    O10M_MANDAMUS_SCORE_CAP,
+    Math.max(0, Math.floor(num(o.mandamusScore, 0))),
+  );
+  const phaseRaw = o.phaseTag;
+  const phaseTag =
+    typeof phaseRaw === 'string' && VALID_PHASES.has(phaseRaw as O10mMandamusPhase)
+      ? (phaseRaw as O10mMandamusPhase)
+      : mandamusPhaseForCursor(cursor, scenarioIds.length);
+  const active = o.active !== false;
+  return {
+    mandamusId,
+    label,
+    scenarioIds,
+    cursor,
+    active,
+    mandamusScore,
+    phaseTag,
+  };
+}
+
+export function createMandamusSession(params: {
+  mandamusId: string;
+  label: string;
+  scenarioIds: string[];
+}): { session: O10mMandamusSession | null; warnings: string[] } {
+  const warnings: string[] = [];
+  if (!params.mandamusId.startsWith('o10m_mandamus_')) {
+    return { session: null, warnings: ['Mandamus ids must start with o10m_mandamus_.'] };
+  }
+  const scenarioIds = params.scenarioIds.filter(id => {
+    if (!id.startsWith('o10m_')) {
+      warnings.push(`Skipped non-O10M scenario id ${id}.`);
+      return false;
+    }
+    if (!findO10mScenario(id)) {
+      warnings.push(`Skipped unknown scenario ${id}.`);
+      return false;
+    }
+    return true;
+  });
+  const trimmed = scenarioIds.slice(0, O10M_MANDAMUS_SCENARIO_CAP);
+  if (trimmed.length === 0) {
+    return {
+      session: null,
+      warnings: [...warnings, 'Mandamus arc requires at least one valid scenario.'],
+    };
+  }
+  return {
+    session: {
+      mandamusId: params.mandamusId,
+      label: params.label,
+      scenarioIds: trimmed,
+      cursor: 0,
+      active: true,
+      mandamusScore: 0,
+      phaseTag: mandamusPhaseForCursor(0, trimmed.length),
+    },
+    warnings,
+  };
+}
+
+export function attachMandamusSessionToState(
+  state: O10mModesPersistedState,
+  session: O10mMandamusSession,
+): O10mModesPersistedState {
+  const sanitized = sanitizeMandamusSession(session);
+  if (!sanitized) return state;
+  const scenarioId = sanitized.scenarioIds[sanitized.cursor] ?? null;
+  return {
+    ...state,
+    mandamusSession: sanitized,
+    certiorariSession: null,
+    supersedeSession: null,
+    quashSession: null,
+    setAsideSession: null,
+    reinstatementSession: null,
+    annulmentSession: null,
+    reversalSession: null,
+    remandSession: null,
+    vacaturSession: null,
+    expungementSession: null,
+    exonerationSession: null,
+    acquittalSession: null,
+    commutationSession: null,
+    probationSession: null,
+    paroleSession: null,
+    reprieveSession: null,
+    amnestySession: null,
+    pardonSession: null,
+    clemencySession: null,
+    appealSession: null,
+    indictmentSession: null,
+    tribunalSession: null,
+    witnessSession: null,
+    subjectSession: null,
+    extractionSession: null,
+    escortSession: null,
+    convoySession: null,
+    siegeSession: null,
+    voyageSession: null,
+    caravanSession: null,
+    pilgrimageSession: null,
+    odysseySession: null,
+    expeditionSession: null,
+    circuitSession: null,
+    marathonQueue: null,
+    gauntletSession: null,
+    relaySession: null,
+    scenarioId,
+    baseMode: state.baseMode === 'single' ? 'scenario' : state.baseMode,
+  };
+}
+
+export function clearMandamusSession(state: O10mModesPersistedState): O10mModesPersistedState {
+  return { ...state, mandamusSession: null };
+}
+
+export function getMandamusScenarioAtCursor(
+  session: O10mMandamusSession | null | undefined,
+): string | null {
+  const mandamus = sanitizeMandamusSession(session);
+  if (!mandamus || !mandamus.active) return null;
+  return mandamus.scenarioIds[mandamus.cursor] ?? null;
+}
+
+export function buildMandamusScenarioStartOverrides(
+  session: O10mMandamusSession | null | undefined,
+): {
+  startingMoneyDelta: number;
+  forcedSettingsPatch: Record<string, unknown>;
+} {
+  const mandamus = sanitizeMandamusSession(session);
+  if (!mandamus) {
+    return { startingMoneyDelta: 0, forcedSettingsPatch: {} };
+  }
+  const moneyBoost = Math.min(
+    O10M_MANDAMUS_SCORE_MONEY_CAP,
+    Math.floor(mandamus.mandamusScore * 0.87),
+  );
+  return {
+    startingMoneyDelta: moneyBoost,
+    forcedSettingsPatch: {
+      o10mActiveMandamusId: mandamus.mandamusId,
+      o10mActiveMandamusStep: mandamus.cursor,
+      o10mActiveMandamusPhase: mandamus.phaseTag,
+      o10mMandamusScore: mandamus.mandamusScore,
+    },
+  };
+}
+
+export function advanceMandamusSessionAfterRun(
+  state: O10mModesPersistedState,
+  run: O10mRunSummary,
+): O10mModesPersistedState {
+  const session = sanitizeMandamusSession(state.mandamusSession);
+  if (!session || !session.active) return state;
+  const atCursor = session.scenarioIds[session.cursor];
+  if (atCursor !== run.scenarioId) return state;
+  if (!run.primaryVictory) return state;
+
+  const mandamusScore = Math.min(
+    O10M_MANDAMUS_SCORE_CAP,
+    session.mandamusScore + mandamusScoreFromRun(run),
+  );
+  const atEnd = session.cursor >= session.scenarioIds.length - 1;
+  if (!atEnd) {
+    const cursor = session.cursor + 1;
+    const nextScenario = session.scenarioIds[cursor] ?? null;
+    return {
+      ...state,
+      mandamusSession: {
+        ...session,
+        cursor,
+        mandamusScore,
+        phaseTag: mandamusPhaseForCursor(cursor, session.scenarioIds.length),
+      },
+      scenarioId: nextScenario ?? state.scenarioId,
+    };
+  }
+
+  const token = unlockTokenForMandamusId(session.mandamusId);
+  let next: O10mModesPersistedState = {
+    ...state,
+    mandamusSession: { ...session, active: false, mandamusScore, phaseTag: 'mandamus' },
+  };
+  if (token) next = grantCatalogUnlockToken(next, token);
+  return next;
+}
+
+export function mandamusSessionSummary(state: O10mModesPersistedState): {
+  active: boolean;
+  cursor: number | null;
+  mandamusScore: number;
+  phase: O10mMandamusPhase | null;
+} {
+  const session = sanitizeMandamusSession(state.mandamusSession);
+  return {
+    active: session?.active === true,
+    cursor: session?.active ? session.cursor : null,
+    mandamusScore: session?.mandamusScore ?? 0,
+    phase: session?.active ? session.phaseTag : null,
+  };
+}
+
 // --- bundled from src/scenario-campaign-planner.ts ---
 const emptyQueuePlan = {
   marathonQueueId: null as string | null,
@@ -18795,9 +19247,31 @@ const emptyQueuePlan = {
   certiorariCursor: null as number | null,
   certiorariPhase: null as O10mCertiorariPhase | null,
   certiorariScore: null as number | null,
+  mandamusId: null as string | null,
+  mandamusCursor: null as number | null,
+  mandamusPhase: null as O10mMandamusPhase | null,
+  mandamusScore: null as number | null,
 };
 
 export function planNextCampaignAction(state: O10mModesPersistedState): O10mCampaignPlan {
+  const mandamus = sanitizeMandamusSession(state.mandamusSession);
+  const mandamusScenario = getMandamusScenarioAtCursor(mandamus);
+  if (mandamus && mandamus.active && mandamusScenario) {
+    return {
+      kind: 'mandamus_step',
+      scenarioId: mandamusScenario,
+      chainId: state.chainProgress?.chainId ?? null,
+      chainStepIndex: state.chainProgress?.activeStepIndex ?? null,
+      slotId: state.activeCampaignSlotId ?? null,
+      ...emptyQueuePlan,
+      mandamusId: mandamus.mandamusId,
+      mandamusCursor: mandamus.cursor,
+      mandamusPhase: mandamus.phaseTag,
+      mandamusScore: mandamus.mandamusScore,
+      reason: `Mandamus "${mandamus.label}" ${mandamus.phaseTag} phase ${mandamus.cursor + 1}/${mandamus.scenarioIds.length} (score ${mandamus.mandamusScore}).`,
+    };
+  }
+
   const certiorari = sanitizeCertiorariSession(state.certiorariSession);
   const certiorariScenario = getCertiorariScenarioAtCursor(certiorari);
   if (certiorari && certiorari.active && certiorariScenario) {
@@ -19566,6 +20040,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   quashActive: boolean;
   supersedeActive: boolean;
   certiorariActive: boolean;
+  mandamusActive: boolean;
   replayTracked: number;
   unlockTokens: number;
   nextPlan: O10mCampaignPlan;
@@ -19610,6 +20085,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
   const quash = quashSessionSummary(state);
   const supersede = supersedeSessionSummary(state);
   const certiorari = certiorariSessionSummary(state);
+  const mandamus = mandamusSessionSummary(state);
   const tokens = sanitizeCatalogUnlockTokens(state.catalogUnlockTokens);
   return {
     completedChains: state.completedChainIds.length,
@@ -19652,6 +20128,7 @@ export function campaignProgressSummary(state: O10mModesPersistedState): {
     quashActive: quash.active,
     supersedeActive: supersede.active,
     certiorariActive: certiorari.active,
+    mandamusActive: mandamus.active,
     replayTracked: (state.replayLedger ?? []).length,
     unlockTokens: tokens.length,
     nextPlan,
@@ -19670,7 +20147,7 @@ export function runAgent04ModesScenariosSelfTests(): {
 
   push('agent04_chunk_01', CANONICAL_GAME_MODE_SELECTIONS.length === 6, String(CANONICAL_GAME_MODE_SELECTIONS.length));
   push('agent04_chunk_02', O10M_OPERATION_SCENARIOS.length >= 25, String(O10M_OPERATION_SCENARIOS.length));
-  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 42, String(O10M_SCENARIO_CHAINS.length));
+  push('agent04_chunk_03', O10M_SCENARIO_CHAINS.length === 43, String(O10M_SCENARIO_CHAINS.length));
   push('agent04_chunk_04', O10M_SANDBOX_KNOB_PROFILES.length >= 4, String(O10M_SANDBOX_KNOB_PROFILES.length));
   push('agent04_chunk_08', O10M_CHALLENGE_MODES.length >= 5, String(O10M_CHALLENGE_MODES.length));
   const audit = runO10mContentAudit();
@@ -19994,16 +20471,24 @@ export function runAgent04ModesScenariosSelfTests(): {
   const certiorariState = certiorari ? attachCertiorariSessionToState(createEmptyO10mModesPersistedState(), certiorari) : null;
   push('agent04_chunk_49', certiorariState !== null && planNextCampaignAction(certiorariState!).kind === 'certiorari_step');
 
+  const mandamus = createMandamusSession({
+    mandamusId: 'o10m_mandamus_chunk_smoke',
+    label: 'Smoke',
+    scenarioIds: ['o10m_mandamus_filing_docket'],
+  }).session;
+  const mandamusState = mandamus ? attachMandamusSessionToState(createEmptyO10mModesPersistedState(), mandamus) : null;
+  push('agent04_chunk_50', mandamusState !== null && planNextCampaignAction(mandamusState!).kind === 'mandamus_step');
+
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
 }
 
 export const OP10M_AGENT04_MODULE_META = {
   moduleId: 'agent-04-modes-scenarios',
-  schemaVersion: 'op10m-agent04-v42',
+  schemaVersion: 'op10m-agent04-v43',
   touchesSaveFormat: true,
   saveGameStateKey: 'o10mModesProgress',
-  saveSchemaVersion: 41,
+  saveSchemaVersion: 42,
   integrationDoc: 'operation-10m/agent-04-modes-scenarios/INTEGRATION.md',
   slot: 'scenario-engine-extension',
 } as const;

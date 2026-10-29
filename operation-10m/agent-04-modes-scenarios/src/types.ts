@@ -393,6 +393,7 @@ export type O10mSetAsidePhase = 'filing' | 'review' | 'setAside';
 export type O10mQuashPhase = 'filing' | 'review' | 'quash';
 export type O10mSupersedePhase = 'filing' | 'review' | 'supersede';
 export type O10mCertiorariPhase = 'filing' | 'review' | 'certiorari';
+export type O10mMandamusPhase = 'filing' | 'review' | 'mandamus';
 
 /** Schema v8 — phased summit circuit with momentum accrual between legs. */
 export interface O10mCircuitSession {
@@ -768,6 +769,17 @@ export interface O10mCertiorariSession {
   phaseTag: O10mCertiorariPhase;
 }
 
+/** Schema v42 — mandamus arc with score accrual between phases. */
+export interface O10mMandamusSession {
+  mandamusId: string;
+  label: string;
+  scenarioIds: string[];
+  cursor: number;
+  active: boolean;
+  mandamusScore: number;
+  phaseTag: O10mMandamusPhase;
+}
+
 /** Schema v7 — sequential relay with accumulated carry between legs. */
 export interface O10mRelaySession {
   relayId: string;
@@ -792,6 +804,7 @@ export interface O10mGauntletSession {
 
 export interface O10mCampaignPlan {
   kind:
+    | 'mandamus_step'
     | 'certiorari_step'
     | 'supersede_step'
     | 'quash_step'
@@ -980,6 +993,10 @@ export interface O10mCampaignPlan {
   certiorariCursor: number | null;
   certiorariPhase: O10mCertiorariPhase | null;
   certiorariScore: number | null;
+  mandamusId: string | null;
+  mandamusCursor: number | null;
+  mandamusPhase: O10mMandamusPhase | null;
+  mandamusScore: number | null;
   reason: string;
 }
 
@@ -1083,8 +1100,10 @@ export interface O10mModesPersistedState {
   quashSession?: O10mQuashSession | null;
   /** Schema v40 — active supersede arc (mutually exclusive with certiorari / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   supersedeSession?: O10mSupersedeSession | null;
-  /** Schema v41 — active certiorari arc (mutually exclusive with supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  /** Schema v41 — active certiorari arc (mutually exclusive with mandamus / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
   certiorariSession?: O10mCertiorariSession | null;
+  /** Schema v42 — active mandamus arc (mutually exclusive with certiorari / supersede / quash / set-aside / reinstatement / annulment / reversal / remand / vacatur / expungement / exoneration / acquittal / commutation / probation / parole / reprieve / amnesty / pardon / clemency / appeal / indictment / tribunal / witness / subject / extraction / escort / convoy / siege / voyage / caravan / pilgrimage / odyssey / expedition / circuit / relay / gauntlet / marathon). */
+  mandamusSession?: O10mMandamusSession | null;
 }
 
 export type O10mModesSaveKind = 'autosave' | 'manual' | 'checkpoint';

@@ -41,6 +41,7 @@ import { sanitizeSetAsideSession } from './save-format-setaside.js';
 import { sanitizeQuashSession } from './save-format-quash.js';
 import { sanitizeSupersedeSession } from './save-format-supersede.js';
 import { sanitizeCertiorariSession } from './save-format-certiorari.js';
+import { sanitizeMandamusSession } from './save-format-mandamus.js';
 import { sanitizeObjectiveProgress } from './save-format-objective-sync.js';
 import { initializeChainProgress, validateChainStepSelection } from './scenario-chains.js';
 import { findO10mScenario } from './scenarios/o10m-presets.js';
@@ -59,7 +60,7 @@ import type {
 } from './types.js';
 import { isCanonicalGameModeSelection } from './canonical-modes.js';
 
-export const O10M_MODES_SAVE_SCHEMA_VERSION = 41;
+export const O10M_MODES_SAVE_SCHEMA_VERSION = 42;
 export const O10M_MODES_GAME_STATE_KEY = 'o10mModesProgress' as const;
 export const O10M_MODES_RUN_LOG_CAP = 24;
 
@@ -199,6 +200,7 @@ export function createEmptyO10mModesPersistedState(baseMode: GameModeSelection =
     quashSession: null,
     supersedeSession: null,
     certiorariSession: null,
+    mandamusSession: null,
   };
 }
 
@@ -259,6 +261,7 @@ export function migrateO10mModesPersistedState(raw: unknown): O10mModesPersisted
       quashSession: merged.quashSession ?? null,
       supersedeSession: merged.supersedeSession ?? null,
       certiorariSession: merged.certiorariSession ?? null,
+      mandamusSession: merged.mandamusSession ?? null,
     };
     return upgraded;
   }
@@ -343,6 +346,7 @@ export function sanitizeO10mModesPersistedState(raw: unknown): O10mModesPersiste
     quashSession: sanitizeQuashSession(o.quashSession),
     supersedeSession: sanitizeSupersedeSession(o.supersedeSession),
     certiorariSession: sanitizeCertiorariSession(o.certiorariSession),
+    mandamusSession: sanitizeMandamusSession(o.mandamusSession),
   };
 }
 
@@ -636,6 +640,13 @@ export function validateO10mModesPersistedForLoad(state: O10mModesPersistedState
     warnings.push('Certiorari session failed sanitization; planner will ignore it.');
   } else if (certiorari && certiorari.cursor >= certiorari.scenarioIds.length) {
     warnings.push('Certiorari cursor out of range; clamp on next sanitize.');
+  }
+
+  const mandamus = sanitizeMandamusSession(state.mandamusSession);
+  if (state.mandamusSession && !mandamus) {
+    warnings.push('Mandamus session failed sanitization; planner will ignore it.');
+  } else if (mandamus && mandamus.cursor >= mandamus.scenarioIds.length) {
+    warnings.push('Mandamus cursor out of range; clamp on next sanitize.');
   }
 
   return { ok: errors.length === 0, errors, warnings };
