@@ -23,6 +23,9 @@ const FILES = [
   'coordination-audit.ts',
   'coordination-reconcile.ts',
   'multi-agent-state.ts',
+  'team-boundary-guard.ts',
+  'layer-persistence.ts',
+  'dual-team-coordination.ts',
   'self-tests.ts',
 ];
 

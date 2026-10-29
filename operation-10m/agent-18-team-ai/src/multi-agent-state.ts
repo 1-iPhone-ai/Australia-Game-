@@ -20,10 +20,20 @@ import {
   detectIllegalSharedExclusiveTasks,
 } from './role-assignment-engine.ts';
 import {
+  decideTeamMultiAgentPersistence,
+  teamMultiAgentPersistSignature,
+} from './layer-persistence.ts';
+import {
+  assertTasksTeamScoped,
+  filterCrossTeamDirectives,
+  teamActorScope,
+} from './team-boundary-guard.ts';
+import {
   AGENT18_LIMITS,
   TeamMultiAgentEvaluation,
   TeamMultiAgentInputs,
   TeamMultiAgentLayerState,
+  TeamMultiAgentPersistenceDecision,
 } from './types.ts';
 
 const emptyCoordination = {
@@ -108,13 +118,7 @@ export function sanitizeTeamMultiAgentCoordinationState(
 }
 
 export function teamMultiAgentSignature(state: TeamMultiAgentLayerState): string {
-  return (
-    serializeCoordinationPlan(state.coordination) +
-    '::' +
-    state.roles.map(r => [r.actorId, r.primaryRole, r.exclusiveSlotId].join(':')).join(',') +
-    '::' +
-    JSON.stringify(state.meta.auditSummary)
-  );
+  return teamMultiAgentPersistSignature(state);
 }
 
 /**
@@ -136,7 +140,15 @@ export function evaluateTeamMultiAgentLayer(
   coordination.arbitrationLog.forEach(a => diagnostics.push(a.reason));
 
   const directiveConstraints = buildActorDirectiveConstraints(coordination, roles);
-  const proposals = inputs.directiveProposals || [];
+  const scope = teamActorScope(inputs);
+  diagnostics.push(...assertTasksTeamScoped(inputs, scope));
+
+  const rawProposals = inputs.directiveProposals || [];
+  const scoped = filterCrossTeamDirectives(rawProposals, scope);
+  scoped.rejected.forEach(r =>
+    diagnostics.push(`Rejected cross-team directive ${r.proposal.id}: ${r.reason}`),
+  );
+  const proposals = scoped.inTeam;
   const directiveResult = coordinateTeammateDirectives(proposals, coordination, roles);
   directiveResult.suppressed.forEach(s =>
     diagnostics.push(`Suppressed directive ${s.proposal.id}: ${s.reason}`),
@@ -204,11 +216,19 @@ export function evaluateTeamMultiAgentLayer(
     ...auditFindings.filter(f => f.severity !== 'info').map(f => f.message),
   ];
 
+  const persistence = decideTeamMultiAgentPersistence(
+    previous,
+    state,
+    previous ? teamMultiAgentPersistSignature(previous) : null,
+    0,
+  );
+
   return {
     state,
     blockedDuplicates: sharedIssues,
     coordinationIssues,
     auditFindings: state.auditFindings,
+    persistence,
   };
 }
 

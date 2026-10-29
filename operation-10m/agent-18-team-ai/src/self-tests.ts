@@ -1,4 +1,4 @@
-import { acceptHandoff, coordinationHealthScore, orchestrateTeamCoordination } from './coordination-orchestrator.ts';
+import { orchestrateTeamCoordination, coordinationHealthScore, acceptHandoff } from './coordination-orchestrator.ts';
 import {
   arbitrateRegionLead,
   buildMutexMapWithPriorityArbitration,
@@ -17,6 +17,17 @@ import {
   mergeReconcileThrashing,
   reconcileCoordinationPlans,
 } from './coordination-reconcile.ts';
+import { evaluateDualTeamMultiAgentLayers } from './dual-team-coordination.ts';
+import {
+  bumpPersistTracker,
+  decideTeamMultiAgentPersistence,
+  teamMultiAgentPersistSignature,
+} from './layer-persistence.ts';
+import {
+  auditCrossTeamMutexIsolation,
+  filterCrossTeamDirectives,
+  teamActorScope,
+} from './team-boundary-guard.ts';
 import {
   DuplicateActionGuard,
   buildActionFingerprint,
@@ -748,6 +759,104 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
     const base = reconcileCoordinationPlans(null, orchestrateTeamCoordination(0, baseInputs().tasks, assignTeamRolesWithSlots(baseInputs()).roles), 1);
     const merged = mergeReconcileThrashing(base, history);
     return merged.stable === false && merged.thrashingRegions.includes('NSW');
+  });
+
+  check(results, 'a18_boundary_cross_directive', 'Boundary: cross-team directive proposals rejected', () => {
+    const scope = teamActorScope(baseInputs());
+    const { rejected } = filterCrossTeamDirectives(
+      [{ id: 'x', actorId: 'enemy_bot', goalKind: 'travel', targetRegionId: null, taskId: null, priority: 1 }],
+      scope,
+    );
+    return rejected.length === 1 && rejected[0].reason.includes('cross_team');
+  });
+
+  check(results, 'a18_boundary_eval', 'Boundary: evaluate layer rejects out-of-team directive via diagnostics', () => {
+    const ev = evaluateTeamMultiAgentLayer(
+      {
+        ...baseInputs(),
+        directiveProposals: [
+          { id: 'bad', actorId: 'rival', goalKind: 'region_deposit', targetRegionId: 'NSW', taskId: null, priority: 1 },
+        ],
+      },
+      null,
+    );
+    return ev.state.diagnostics.some(d => d.includes('cross-team')) || JSON.stringify(ev.state.diagnostics);
+  });
+
+  check(results, 'a18_persist_unchanged', 'Persistence: identical evaluation skips commit', () => {
+    const a = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const d = decideTeamMultiAgentPersistence(a.state, a.state, teamMultiAgentPersistSignature(a.state), 0);
+    return d.commit === false && d.reason.includes('unchanged');
+  });
+
+  check(results, 'a18_persist_material', 'Persistence: first material state commits', () => {
+    const a = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const d = decideTeamMultiAgentPersistence(null, a.state, null, 0);
+    return d.commit === true || d.reason;
+  });
+
+  check(results, 'a18_persist_cap', 'Persistence: commit cap blocks excessive commits', () => {
+    const a = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const mutated = {
+      ...a.state,
+      coordination: {
+        ...a.state.coordination,
+        mutexRegions: { ...a.state.coordination.mutexRegions, TAS: 'mate' },
+      },
+    };
+    const d = decideTeamMultiAgentPersistence(
+      a.state,
+      mutated,
+      null,
+      AGENT18_LIMITS.maxCommitsPerTurn,
+    );
+    return d.commit === false && d.reason.includes('cap');
+  });
+
+  check(results, 'a18_persist_tracker', 'Persistence: bumpPersistTracker resets on new turn', () => {
+    const t1 = bumpPersistTracker({ turn: 1, commits: 2, lastSignature: 'a' }, 2, 'b', true);
+    return t1.turn === 2 && t1.commits === 1;
+  });
+
+  check(results, 'a18_dual_team', 'Dual team: friendly + enemy evaluate with separate byTeam states', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [
+        {
+          id: 'take_qld',
+          type: 'take_region',
+          label: 'Take QLD',
+          status: 'ready',
+          priority: 1,
+          assignedActorIds: ['ai1'],
+          regionId: 'QLD',
+          resourceRequirement: 500,
+          dependencies: [],
+        },
+      ],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      dual.enemy !== null &&
+      dual.byTeam.team_player &&
+      dual.byTeam.team_opponent &&
+      dual.isolationIssues.length === 0
+    ) || JSON.stringify({ issues: dual.isolationIssues });
+  });
+
+  check(results, 'a18_dual_mutex_overlap', 'Dual team: overlapping mutex regions flagged', () => {
+    const issues = auditCrossTeamMutexIsolation({ NSW: 'player' }, { NSW: 'ai1' });
+    return issues.length === 1 && /overlap/.test(issues[0]);
+  });
+
+  check(results, 'a18_eval_persistence_field', 'Layer evaluation exposes persistence decision', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    return typeof ev.persistence.commit === 'boolean' && Boolean(ev.persistence.signature);
   });
 
   return results;

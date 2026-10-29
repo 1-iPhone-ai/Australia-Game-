@@ -190,6 +190,13 @@ export interface TeamMultiAgentEvaluation {
   blockedDuplicates: string[];
   coordinationIssues: string[];
   auditFindings: CoordinationAuditFinding[];
+  persistence: TeamMultiAgentPersistenceDecision;
+}
+
+export interface TeamMultiAgentPersistenceDecision {
+  commit: boolean;
+  reason: string;
+  signature: string;
 }
 
 export interface TeammateDirectiveProposal {
@@ -233,6 +240,7 @@ export const AGENT18_LIMITS = {
   maxReservations: 24,
   maxAuditFindings: 16,
   maxSuppressedDirectives: 24,
+  maxCommitsPerTurn: 8,
   roleMinTurnsDefault: 2,
 } as const;
 

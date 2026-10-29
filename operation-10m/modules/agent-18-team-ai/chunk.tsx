@@ -194,6 +194,13 @@ export interface TeamMultiAgentEvaluation {
   blockedDuplicates: string[];
   coordinationIssues: string[];
   auditFindings: CoordinationAuditFinding[];
+  persistence: TeamMultiAgentPersistenceDecision;
+}
+
+export interface TeamMultiAgentPersistenceDecision {
+  commit: boolean;
+  reason: string;
+  signature: string;
 }
 
 export interface TeammateDirectiveProposal {
@@ -237,6 +244,7 @@ export const AGENT18_LIMITS = {
   maxReservations: 24,
   maxAuditFindings: 16,
   maxSuppressedDirectives: 24,
+  maxCommitsPerTurn: 8,
   roleMinTurnsDefault: 2,
 } as const;
 
@@ -1598,10 +1606,18 @@ export function summarizeArbitrationDemotions(log: PriorityArbitrationRecord[]):
   assignTeamRolesWithSlots,
   detectIllegalSharedExclusiveTasks,
 } from './role-assignment-engine.ts';
+  decideTeamMultiAgentPersistence,
+  teamMultiAgentPersistSignature,
+} from './layer-persistence.ts';
+  assertTasksTeamScoped,
+  filterCrossTeamDirectives,
+  teamActorScope,
+} from './team-boundary-guard.ts';
   AGENT18_LIMITS,
   TeamMultiAgentEvaluation,
   TeamMultiAgentInputs,
   TeamMultiAgentLayerState,
+  TeamMultiAgentPersistenceDecision,
 } from './types.ts';
 
 const emptyCoordination = {
@@ -1686,13 +1702,7 @@ export function sanitizeTeamMultiAgentCoordinationState(
 }
 
 export function teamMultiAgentSignature(state: TeamMultiAgentLayerState): string {
-  return (
-    serializeCoordinationPlan(state.coordination) +
-    '::' +
-    state.roles.map(r => [r.actorId, r.primaryRole, r.exclusiveSlotId].join(':')).join(',') +
-    '::' +
-    JSON.stringify(state.meta.auditSummary)
-  );
+  return teamMultiAgentPersistSignature(state);
 }
 
 /**
@@ -1714,7 +1724,15 @@ export function evaluateTeamMultiAgentLayer(
   coordination.arbitrationLog.forEach(a => diagnostics.push(a.reason));
 
   const directiveConstraints = buildActorDirectiveConstraints(coordination, roles);
-  const proposals = inputs.directiveProposals || [];
+  const scope = teamActorScope(inputs);
+  diagnostics.push(...assertTasksTeamScoped(inputs, scope));
+
+  const rawProposals = inputs.directiveProposals || [];
+  const scoped = filterCrossTeamDirectives(rawProposals, scope);
+  scoped.rejected.forEach(r =>
+    diagnostics.push(`Rejected cross-team directive ${r.proposal.id}: ${r.reason}`),
+  );
+  const proposals = scoped.inTeam;
   const directiveResult = coordinateTeammateDirectives(proposals, coordination, roles);
   directiveResult.suppressed.forEach(s =>
     diagnostics.push(`Suppressed directive ${s.proposal.id}: ${s.reason}`),
@@ -1782,11 +1800,19 @@ export function evaluateTeamMultiAgentLayer(
     ...auditFindings.filter(f => f.severity !== 'info').map(f => f.message),
   ];
 
+  const persistence = decideTeamMultiAgentPersistence(
+    previous,
+    state,
+    previous ? teamMultiAgentPersistSignature(previous) : null,
+    0,
+  );
+
   return {
     state,
     blockedDuplicates: sharedIssues,
     coordinationIssues,
     auditFindings: state.auditFindings,
+    persistence,
   };
 }
 
@@ -1795,6 +1821,202 @@ export function syncMultiAgentCoordinationForDirectives(
   stored: TeamMultiAgentLayerState | null,
 ): TeamMultiAgentLayerState {
   return evaluateTeamMultiAgentLayer(inputs, stored).state;
+}
+
+
+// --- source: team-boundary-guard.ts ---
+
+/** Actor ids allowed for this team's coordination slice (defaults to input actors). */
+export function teamActorScope(inputs: TeamMultiAgentInputs, explicitIds?: string[]): Set<string> {
+  if (explicitIds?.length) return new Set(explicitIds.map(String));
+  return new Set(inputs.actors.map(a => a.id));
+}
+
+export function filterCrossTeamDirectives(
+  proposals: TeammateDirectiveProposal[],
+  scope: Set<string>,
+): { inTeam: TeammateDirectiveProposal[]; rejected: Array<{ proposal: TeammateDirectiveProposal; reason: string }> } {
+  const inTeam: TeammateDirectiveProposal[] = [];
+  const rejected: Array<{ proposal: TeammateDirectiveProposal; reason: string }> = [];
+  proposals.forEach(p => {
+    if (scope.has(p.actorId)) inTeam.push(p);
+    else rejected.push({ proposal: p, reason: `cross_team_actor_${p.actorId}` });
+  });
+  return { inTeam, rejected };
+}
+
+export function assertTasksTeamScoped(
+  inputs: TeamMultiAgentInputs,
+  scope: Set<string>,
+): string[] {
+  const issues: string[] = [];
+  inputs.tasks.forEach(t => {
+    t.assignedActorIds.forEach(id => {
+      if (!scope.has(id)) {
+        issues.push(`Task ${t.id} assigns out-of-team actor ${id}`);
+      }
+    });
+  });
+  return issues;
+}
+
+export function regionsMutexDisjoint(
+  a: Record<string, string>,
+  b: Record<string, string>,
+): boolean {
+  return !Object.keys(a).some(regionId => b[regionId] !== undefined);
+}
+
+/** Enemy/friendly plans must not share mutex keys with different holders (isolation). */
+export function auditCrossTeamMutexIsolation(
+  friendlyMutex: Record<string, string>,
+  enemyMutex: Record<string, string>,
+): string[] {
+  if (regionsMutexDisjoint(friendlyMutex, enemyMutex)) return [];
+  const overlaps = Object.keys(friendlyMutex).filter(r => enemyMutex[r] !== undefined);
+  return overlaps.map(
+    r =>
+      `Cross-team mutex overlap on ${r} (friendly ${friendlyMutex[r]}, enemy ${enemyMutex[r]}) — expected disjoint team planning namespaces`,
+  );
+}
+
+
+// --- source: layer-persistence.ts ---
+
+export function teamMultiAgentPersistSignature(state: TeamMultiAgentLayerState): string {
+  return (
+    serializeCoordinationPlan(state.coordination) +
+    '::' +
+    state.roles.map(r => [r.actorId, r.primaryRole, r.exclusiveSlotId].join(':')).join(',') +
+    '::' +
+    JSON.stringify(state.meta.auditSummary)
+  );
+}
+
+/**
+ * Loop-safe persistence gate (mirrors Team OS commit throttling).
+ * Identical signatures skip; cap automatic commits per turn.
+ */
+export function decideTeamMultiAgentPersistence(
+  stored: TeamMultiAgentLayerState | null | undefined,
+  evaluated: TeamMultiAgentLayerState,
+  lastCommittedSignature: string | null,
+  commitsThisTurn: number,
+  maxCommitsPerTurn: number = AGENT18_LIMITS.maxCommitsPerTurn,
+): TeamMultiAgentPersistenceDecision {
+  const signature = teamMultiAgentPersistSignature(evaluated);
+  if (!stored) {
+    return { commit: true, reason: 'initial state', signature };
+  }
+  const prevSig = teamMultiAgentPersistSignature(stored);
+  if (signature === prevSig) {
+    return { commit: false, reason: 'signature unchanged', signature };
+  }
+  if (lastCommittedSignature === signature) {
+    return { commit: false, reason: 'already committed this signature', signature };
+  }
+  if (commitsThisTurn >= maxCommitsPerTurn) {
+    return { commit: false, reason: `commit cap (${maxCommitsPerTurn}/turn)`, signature };
+  }
+  return { commit: true, reason: 'material change', signature };
+}
+
+export interface PersistTracker {
+  turn: number;
+  commits: number;
+  lastSignature: string | null;
+}
+
+export function bumpPersistTracker(
+  tracker: PersistTracker,
+  turn: number,
+  signature: string | null,
+  committed: boolean,
+): PersistTracker {
+  if (tracker.turn !== turn) {
+    return { turn, commits: committed ? 1 : 0, lastSignature: committed ? signature : tracker.lastSignature };
+  }
+  return {
+    turn,
+    commits: committed ? tracker.commits + 1 : tracker.commits,
+    lastSignature: committed && signature ? signature : tracker.lastSignature,
+  };
+}
+
+
+// --- source: dual-team-coordination.ts ---
+  auditCrossTeamMutexIsolation,
+  assertTasksTeamScoped,
+  teamActorScope,
+} from './team-boundary-guard.ts';
+  TeamMultiAgentEvaluation,
+  TeamMultiAgentInputs,
+  TeamMultiAgentLayerState,
+} from './types.ts';
+
+export interface DualTeamMultiAgentResult {
+  friendly: TeamMultiAgentEvaluation;
+  enemy: TeamMultiAgentEvaluation | null;
+  isolationIssues: string[];
+  byTeam: Record<string, TeamMultiAgentLayerState>;
+}
+
+/**
+ * Evaluate friendly + optional enemy team layers with cross-team isolation checks.
+ * Planning-only: each team keeps its own mutex namespace (no shared state mutation).
+ */
+export function evaluateDualTeamMultiAgentLayers(
+  friendlyInputs: TeamMultiAgentInputs,
+  enemyInputs: TeamMultiAgentInputs | null,
+  storedByTeam: Record<string, TeamMultiAgentLayerState | null> = {},
+): DualTeamMultiAgentResult {
+  const friendlyScope = teamActorScope(friendlyInputs);
+  const boundaryIssues = assertTasksTeamScoped(friendlyInputs, friendlyScope);
+  const friendlyProposals = friendlyInputs.directiveProposals || [];
+  const friendly = evaluateTeamMultiAgentLayer(
+    {
+      ...friendlyInputs,
+      directiveProposals: friendlyProposals,
+    },
+    storedByTeam[friendlyInputs.teamId] ?? null,
+  );
+  friendly.coordinationIssues.push(...boundaryIssues);
+
+  if (!enemyInputs) {
+    return {
+      friendly,
+      enemy: null,
+      isolationIssues: boundaryIssues,
+      byTeam: { [friendlyInputs.teamId]: friendly.state },
+    };
+  }
+
+  const enemyScope = teamActorScope(enemyInputs);
+  const enemyBoundary = assertTasksTeamScoped(enemyInputs, enemyScope);
+  const enemy = evaluateTeamMultiAgentLayer(enemyInputs, storedByTeam[enemyInputs.teamId] ?? null);
+  enemy.coordinationIssues.push(...enemyBoundary);
+
+  const mutexIssues = auditCrossTeamMutexIsolation(
+    friendly.state.coordination.mutexRegions,
+    enemy.state.coordination.mutexRegions,
+  );
+
+  const crossActorIssues: string[] = [];
+  if ([...friendlyScope].some(id => enemyScope.has(id))) {
+    crossActorIssues.push('Friendly and enemy teams share actor ids — invalid isolation');
+  }
+
+  const isolationIssues = [...boundaryIssues, ...enemyBoundary, ...mutexIssues, ...crossActorIssues];
+
+  return {
+    friendly,
+    enemy,
+    isolationIssues,
+    byTeam: {
+      [friendlyInputs.teamId]: friendly.state,
+      [enemyInputs.teamId]: enemy.state,
+    },
+  };
 }
 
 
@@ -1813,6 +2035,14 @@ export function syncMultiAgentCoordinationForDirectives(
   mergeReconcileThrashing,
   reconcileCoordinationPlans,
 } from './coordination-reconcile.ts';
+  bumpPersistTracker,
+  decideTeamMultiAgentPersistence,
+  teamMultiAgentPersistSignature,
+} from './layer-persistence.ts';
+  auditCrossTeamMutexIsolation,
+  filterCrossTeamDirectives,
+  teamActorScope,
+} from './team-boundary-guard.ts';
   DuplicateActionGuard,
   buildActionFingerprint,
   detectDuplicateIntents,
@@ -2540,6 +2770,104 @@ export function runAgent18TeamMultiAgentSelfTests(): Agent18SelfTestResult[] {
     const base = reconcileCoordinationPlans(null, orchestrateTeamCoordination(0, baseInputs().tasks, assignTeamRolesWithSlots(baseInputs()).roles), 1);
     const merged = mergeReconcileThrashing(base, history);
     return merged.stable === false && merged.thrashingRegions.includes('NSW');
+  });
+
+  check(results, 'a18_boundary_cross_directive', 'Boundary: cross-team directive proposals rejected', () => {
+    const scope = teamActorScope(baseInputs());
+    const { rejected } = filterCrossTeamDirectives(
+      [{ id: 'x', actorId: 'enemy_bot', goalKind: 'travel', targetRegionId: null, taskId: null, priority: 1 }],
+      scope,
+    );
+    return rejected.length === 1 && rejected[0].reason.includes('cross_team');
+  });
+
+  check(results, 'a18_boundary_eval', 'Boundary: evaluate layer rejects out-of-team directive via diagnostics', () => {
+    const ev = evaluateTeamMultiAgentLayer(
+      {
+        ...baseInputs(),
+        directiveProposals: [
+          { id: 'bad', actorId: 'rival', goalKind: 'region_deposit', targetRegionId: 'NSW', taskId: null, priority: 1 },
+        ],
+      },
+      null,
+    );
+    return ev.state.diagnostics.some(d => d.includes('cross-team')) || JSON.stringify(ev.state.diagnostics);
+  });
+
+  check(results, 'a18_persist_unchanged', 'Persistence: identical evaluation skips commit', () => {
+    const a = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const d = decideTeamMultiAgentPersistence(a.state, a.state, teamMultiAgentPersistSignature(a.state), 0);
+    return d.commit === false && d.reason.includes('unchanged');
+  });
+
+  check(results, 'a18_persist_material', 'Persistence: first material state commits', () => {
+    const a = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const d = decideTeamMultiAgentPersistence(null, a.state, null, 0);
+    return d.commit === true || d.reason;
+  });
+
+  check(results, 'a18_persist_cap', 'Persistence: commit cap blocks excessive commits', () => {
+    const a = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    const mutated = {
+      ...a.state,
+      coordination: {
+        ...a.state.coordination,
+        mutexRegions: { ...a.state.coordination.mutexRegions, TAS: 'mate' },
+      },
+    };
+    const d = decideTeamMultiAgentPersistence(
+      a.state,
+      mutated,
+      null,
+      AGENT18_LIMITS.maxCommitsPerTurn,
+    );
+    return d.commit === false && d.reason.includes('cap');
+  });
+
+  check(results, 'a18_persist_tracker', 'Persistence: bumpPersistTracker resets on new turn', () => {
+    const t1 = bumpPersistTracker({ turn: 1, commits: 2, lastSignature: 'a' }, 2, 'b', true);
+    return t1.turn === 2 && t1.commits === 1;
+  });
+
+  check(results, 'a18_dual_team', 'Dual team: friendly + enemy evaluate with separate byTeam states', () => {
+    const friendly = baseInputs({ teamId: 'team_player' });
+    const enemy = baseInputs({
+      teamId: 'team_opponent',
+      actors: [
+        { id: 'ai1', name: 'Rival', isHuman: false, inRecovery: false, location: 'QLD', apRemaining: null, brainRole: null },
+      ],
+      tasks: [
+        {
+          id: 'take_qld',
+          type: 'take_region',
+          label: 'Take QLD',
+          status: 'ready',
+          priority: 1,
+          assignedActorIds: ['ai1'],
+          regionId: 'QLD',
+          resourceRequirement: 500,
+          dependencies: [],
+        },
+      ],
+      command: null,
+    });
+    const dual = evaluateDualTeamMultiAgentLayers(friendly, enemy);
+    return (
+      dual.enemy !== null &&
+      dual.byTeam.team_player &&
+      dual.byTeam.team_opponent &&
+      dual.isolationIssues.length === 0
+    ) || JSON.stringify({ issues: dual.isolationIssues });
+  });
+
+  check(results, 'a18_dual_mutex_overlap', 'Dual team: overlapping mutex regions flagged', () => {
+    const issues = auditCrossTeamMutexIsolation({ NSW: 'player' }, { NSW: 'ai1' });
+    return issues.length === 1 && /overlap/.test(issues[0]);
+  });
+
+  check(results, 'a18_eval_persistence_field', 'Layer evaluation exposes persistence decision', () => {
+    const ev = evaluateTeamMultiAgentLayer(baseInputs(), null);
+    return typeof ev.persistence.commit === 'boolean' && Boolean(ev.persistence.signature);
   });
 
   return results;
