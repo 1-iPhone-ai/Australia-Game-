@@ -163,3 +163,7 @@ export * from './convergence-synthesis-pressure-index.ts';
 export * from './synthesis-pressure-resonance-index.ts';
 export * from './pressure-resonance-convergence-index.ts';
 export { runAgent18TeamMultiAgentSelfTests, summarizeAgent18SelfTests } from './self-tests.ts';
+
+export * from './synthesis-convergence-harmony-index.ts';
+
+export * from './harmony-resonance-synthesis-index.ts';
