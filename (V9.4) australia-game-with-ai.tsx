@@ -263,8 +263,65 @@ export function recordTeamInstructionMemory(memories: AiMemoriesByActor, params:
   return applyCommittedActionToAiMemories(memories, { actionType: params.status === 'accepted' ? 'support_instruction' : type, actorId: params.actorId, targetId: params.targetId, regionId: params.regionId, turn: params.turn, summary: params.summary, stableKey: `instruction:${params.stableKey}` }, observers.length ? observers : (params.observers || []), { actorTeamId: params.teamId || null });
 }
 
+/** Agent 19 / V9.4: honest long vs short memory labels (rule-based, not ML). */
+export type AiMemoryHorizon = 'short_term_match' | 'long_term_prior' | 'team_directive';
+
+export interface AiMemoryInfluenceSlice {
+  horizon: AiMemoryHorizon;
+  delta: number;
+  reason: string;
+}
+
+export interface AiMemoryHorizonSnapshot {
+  shortTermEventCount: number;
+  shortTermRelationshipCount: number;
+  matchLearnedObservationCount: number;
+  longTermPriorBeliefCount: number;
+  longTermPriorActive: boolean;
+  qualityNote: string;
+  explainabilityDisclaimer: string;
+}
+
+const memActorLabel = (actorId: string) => (actorId === 'player' ? 'you' : actorId);
+
+/** Summarize what is match-local vs cross-match prior for inspection and decision traces. */
+export function buildAiMemoryHorizonSnapshot(
+  memory: AiActorMemory | null | undefined,
+  opts?: { persistentMemoryEnabled?: boolean }
+): AiMemoryHorizonSnapshot {
+  const m = memory || createEmptyAiActorMemory('');
+  let longTermPriorBeliefCount = 0;
+  let matchLearnedObservationCount = 0;
+  Object.values(m.opponentModels || {}).forEach(om => {
+    matchLearnedObservationCount += om.totalOpportunities || 0;
+    Object.values(om.beliefs || {}).forEach(b => {
+      if (b.source === 'persistent_prior' && b.confidence > 0.05) longTermPriorBeliefCount += 1;
+    });
+  });
+  const persistentOn = opts?.persistentMemoryEnabled === true;
+  const qualityNote = longTermPriorBeliefCount > 0 && persistentOn
+    ? 'Cross-match priors (saved on this device) nudge expectations; committed actions in this match still update relationships and observed tendencies.'
+    : matchLearnedObservationCount > 0 || m.events.length > 0
+      ? 'Only this match\'s committed events, relationship scores, and observed actions feed memory influence right now.'
+      : 'Memory influence is idle until committed actions are recorded this match.';
+  return {
+    shortTermEventCount: m.events.length,
+    shortTermRelationshipCount: Object.keys(m.relationships || {}).length,
+    matchLearnedObservationCount,
+    longTermPriorBeliefCount,
+    longTermPriorActive: persistentOn && longTermPriorBeliefCount > 0,
+    qualityNote,
+    explainabilityDisclaimer: 'Deterministic, capped score adjustments from stored facts — not a neural model. Memory never removes legal options.'
+  };
+}
+
+function pushMemorySlice(slices: AiMemoryInfluenceSlice[], horizon: AiMemoryHorizon, delta: number, reason: string) {
+  if (!delta || !reason) return;
+  slices.push({ horizon, delta: Math.round(delta * 100) / 100, reason });
+}
+
 /** Memory as a bounded scoring input (never a veto). Directives from the team plan add small bonuses. */
-export function applyAiMemoryInfluence<T extends { type?: string; score?: number; data?: any; plan?: any }>(decisions: T[], ctx: {
+export function applyAiMemoryInfluence<T extends { type?: string; score?: number; data?: any; plan?: any; memoryReasons?: string[]; memoryInfluence?: number; memoryInfluenceSlices?: AiMemoryInfluenceSlice[] }>(decisions: T[], ctx: {
   actorId: string;
   memory?: AiActorMemory | null;
   settings?: { aiMemoryEnabled?: boolean; aiMemoryInfluenceStrength?: number; aiStrategicLearningEnabled?: boolean; aiStrategicLearningStrength?: number; aiPersistentMemoryEnabled?: boolean };
@@ -276,6 +333,7 @@ export function applyAiMemoryInfluence<T extends { type?: string; score?: number
   const strengthRaw = memNum(ctx.settings?.aiMemoryInfluenceStrength, 1);
   const strength = Math.max(0, Math.min(2, strengthRaw > 2 ? strengthRaw / 100 : strengthRaw));
   const learning = ctx.settings?.aiStrategicLearningEnabled === false ? 0 : Math.max(0, Math.min(2, memNum(ctx.settings?.aiStrategicLearningStrength, 1)));
+  const persistentOn = ctx.settings?.aiPersistentMemoryEnabled === true;
   const directives = (ctx.activeDirectives || []).filter(d => !d.assignedActorId || d.assignedActorId === ctx.actorId);
   const mem = enabled ? ctx.memory || null : null;
   if (!mem && !directives.length) return decisions;
@@ -283,24 +341,87 @@ export function applyAiMemoryInfluence<T extends { type?: string; score?: number
     const data = d.data || {};
     const region: string | undefined = data.region || data.regionId || data.targetRegion || d.plan?.target;
     const target: string | undefined = data.targetActorId || data.targetId || data.target;
+    const baseScore = d.score || 0;
     let bonus = 0;
-    directives.forEach(dir => { if (dir.regionId && region === dir.regionId) bonus += 25; if (dir.targetActorId && target === dir.targetActorId) bonus += 15; });
+    const slices: AiMemoryInfluenceSlice[] = [];
+    directives.forEach(dir => {
+      if (dir.regionId && region === dir.regionId) {
+        const delta = 25;
+        bonus += delta;
+        pushMemorySlice(slices, 'team_directive', delta, `Team plan targets ${dir.regionId} (+${delta} score input).`);
+      }
+      if (dir.targetActorId && target === dir.targetActorId) {
+        const delta = 15;
+        bonus += delta;
+        pushMemorySlice(slices, 'team_directive', delta, `Team plan focuses on ${memActorLabel(dir.targetActorId)} (+${delta} score input).`);
+      }
+    });
     if (mem) {
-      const rel = target ? mem.relationships[resolveAiMemoryActorId(target)] : undefined;
+      const targetId = target ? resolveAiMemoryActorId(target) : '';
+      const rel = targetId ? mem.relationships[targetId] : undefined;
       const hostile = /sabotag|challenge|attack|steal/.test(String(d.type || ''));
       const helpful = /support|gift|fund|proposal|assist/.test(String(d.type || ''));
-      if (rel && hostile) bonus += ((rel.rivalry + rel.grievance) / 10 - rel.gratitude / 8) * strength * (ctx.personality?.hostilityReaction ?? 1);
-      if (rel && helpful) bonus += ((rel.trust - 50) / 5 + rel.gratitude / 10) * strength * (ctx.personality?.supportReaction ?? 1);
+      if (rel && hostile) {
+        const delta = ((rel.rivalry + rel.grievance) / 10 - rel.gratitude / 8) * strength * (ctx.personality?.hostilityReaction ?? 1);
+        bonus += delta;
+        pushMemorySlice(
+          slices,
+          'short_term_match',
+          delta,
+          `This match: rivalry ${rel.rivalry.toFixed(0)} and grievance ${rel.grievance.toFixed(0)} toward ${memActorLabel(targetId)} ${delta >= 0 ? 'favor' : 'discourage'} hostile options.`
+        );
+      }
+      if (rel && helpful) {
+        const delta = ((rel.trust - 50) / 5 + rel.gratitude / 10) * strength * (ctx.personality?.supportReaction ?? 1);
+        bonus += delta;
+        pushMemorySlice(
+          slices,
+          'short_term_match',
+          delta,
+          `This match: trust ${rel.trust.toFixed(0)} and gratitude ${rel.gratitude.toFixed(0)} toward ${memActorLabel(targetId)} ${delta >= 0 ? 'favor' : 'discourage'} supportive options.`
+        );
+      }
       if (learning && region) {
-        // Contest regions the most likely rival is focused on (learned from observation, not hidden data).
         const interest = Object.values(mem.opponentModels).reduce((s, m) => s + (m.regionalInterest[region] || 0), 0);
-        bonus += Math.min(20, interest * 3) * learning * 0.5;
+        const delta = Math.min(20, interest * 3) * learning * 0.5;
+        bonus += delta;
+        if (delta) {
+          pushMemorySlice(
+            slices,
+            'short_term_match',
+            delta,
+            `This match: observed rival focus on ${region} (${interest} logged actions) nudges contesting that region.`
+          );
+        }
+      }
+      if (persistentOn && targetId && hostile) {
+        const om = mem.opponentModels[targetId];
+        const priorAgg = om?.beliefs?.aggressive;
+        if (priorAgg && priorAgg.source === 'persistent_prior' && priorAgg.confidence >= 0.2 && (om.totalOpportunities || 0) < 6) {
+          const delta = Math.min(6, priorAgg.value * priorAgg.confidence * 8) * strength * 0.35;
+          bonus += delta;
+          pushMemorySlice(
+            slices,
+            'long_term_prior',
+            delta,
+            `Earlier matches (saved prior): expected ${memActorLabel(targetId)} to stay aggressive — small extra weight until this match observes more.`
+          );
+        }
       }
     }
     if (!bonus) return d;
-    return { ...d, score: Math.round(((d.score || 0) + bonus) * 100) / 100 };
+    const memoryInfluence = Math.round(bonus * 100) / 100;
+    const memoryReasons = slices.map(s => s.reason).slice(0, 5);
+    return {
+      ...d,
+      score: Math.round((baseScore + memoryInfluence) * 100) / 100,
+      memoryInfluence,
+      memoryReasons,
+      memoryInfluenceSlices: slices
+    };
   });
 }
+
 
 /** Negotiation: trust/gratitude lower the acceptance bar, grievance raises it; a shared threat helps. */
 export function computeNegotiationThresholdShift(rel: Partial<AiRelationship> | null | undefined, ctx: { dealAffordable?: boolean; thirdPartyThreat?: number }): { shift: number; reasons: string[] } {
@@ -322,6 +443,7 @@ export interface AiMemoryInspectionView {
   isRedacted: boolean;
   eventCount: number;
   influenceSummary: string | null;
+  horizonSnapshot: AiMemoryHorizonSnapshot;
   recentEvents: AiMemoryEvent[];
   relationships: AiRelationship[];
   majorGrievances?: AiMemoryEvent[];
@@ -332,7 +454,7 @@ export interface AiMemoryInspectionView {
 }
 
 /** Inspection respects authority: rivals' private beliefs stay hidden without Full Inspection. */
-export function getFilteredAiMemoryInspectionView(memory: AiActorMemory | null | undefined, opts: { viewerId?: string; viewerTeamId?: string | null; ownerTeamId?: string | null; teammateIds?: string[]; fullInspection?: boolean }): AiMemoryInspectionView {
+export function getFilteredAiMemoryInspectionView(memory: AiActorMemory | null | undefined, opts: { viewerId?: string; viewerTeamId?: string | null; ownerTeamId?: string | null; teammateIds?: string[]; fullInspection?: boolean; persistentMemoryEnabled?: boolean }): AiMemoryInspectionView {
   const m = memory || createEmptyAiActorMemory('');
   const ally = Boolean(opts.fullInspection) || Boolean(opts.viewerTeamId && opts.ownerTeamId && opts.viewerTeamId === opts.ownerTeamId);
   const redacted = !ally;
@@ -343,10 +465,12 @@ export function getFilteredAiMemoryInspectionView(memory: AiActorMemory | null |
     confidence: Math.max(0, ...Object.values(om.beliefs).map(b => b.confidence)), observationCount: om.totalOpportunities
   }));
   const strongest = rels.slice().sort((a, b) => (b.rivalry + b.grievance) - (a.rivalry + a.grievance))[0];
+  const horizonSnapshot = buildAiMemoryHorizonSnapshot(m, { persistentMemoryEnabled: opts.persistentMemoryEnabled });
   return {
     ownerActorId: m.ownerActorId,
     isRedacted: redacted,
     eventCount: m.events.length,
+    horizonSnapshot,
     influenceSummary: strongest && (strongest.rivalry + strongest.grievance) > 10 ? `Most wary of ${strongest.actorId} (rivalry ${strongest.rivalry}, grievance ${strongest.grievance}).` : m.events.length ? 'Memory is shaping choices only lightly so far.' : null,
     recentEvents: (redacted ? m.events.filter(e => Math.abs(e.valence) >= 0.3) : m.events).slice(-8).reverse(),
     relationships: redacted ? rels.filter(r => (opts.teammateIds || []).includes(r.actorId) || r.actorId === opts.viewerId) : rels,
@@ -874,6 +998,34 @@ export function runAiMemoryPhase61SelfTests() {
     ['p61_backup', 'Export → preview → import round-trips profiles', () => { const s = createMemoryStorage(); confirmEnableAndVerifyPersistentMemory(s); const prof = consolidateProfile(null, { subjectProfileId: HUMAN_PROFILE_ID, rivalIdentityId: 'rival:y', profileKey: 'rival:y|human_player', actorId: 'ai', outcome: 'draw', beliefs: {}, relationship: { trust: 50, respect: 50, rivalry: 0, reliability: 50, cooperation: 50 }, notable: [], observations: 0 }, { matchId: 'm2' }); savePersistentStore(commitMatchToStore(emptyPersistentStore(), prof, 'm2'), s, { generation: getPersistenceGeneration() }); const raw = JSON.stringify(exportPersistentMemoryBackup(s)); const t = createMemoryStorage(); const r = importPersistentMemoryBackup(raw, t, { confirmed: true, mode: 'replace' }); return r.ok && previewPersistentMemoryBackup(raw).profileCount === 1 && Object.keys(loadPersistentStore(t).profiles).length === 1 || JSON.stringify(r); }],
     ['p61_bad_backup', 'A corrupt backup is rejected without changes', () => !previewPersistentMemoryBackup('{not json').ok && !importPersistentMemoryBackup('{"profiles":{}}', createMemoryStorage(), { confirmed: true }).ok || 'accepted a bad backup'],
     ['p61_no_storage', 'No storage (sandboxed browser) never throws', () => { const r = confirmEnableAndVerifyPersistentMemory(null); return !r.verification.ok && loadPersistentStore(null).version === 1 || 'threw or enabled'; }]
+  ]);
+}
+
+export function runAiMemoryPhase7SelfTests() {
+  return memTests([
+    ['p7_horizon', 'Horizon snapshot separates match events from cross-match priors', () => {
+      let m = createFreshAiMemories(['ai']);
+      m = applyPriorsToFreshMemories(m, { ai: profileToPriorSeed({ profileId: 'p', actorId: 'ai', rivalIdentityId: 'r', subjectProfileId: HUMAN_PROFILE_ID, matchesObserved: 2, wins: 1, losses: 1, draws: 0, observationCount: 4, confidence: 0.5, aggressionPreference: 0.7, expansionPreference: 0.3, economicPreference: 0.25, cooperationPreference: 0.25, strategicTendencies: {}, relationshipHistory: { trust: 50, respect: 50, rivalry: 0, reliability: 50, cooperation: 50 }, notableMemories: [], preferredTeamCoordination: [], committedMatchIds: [], lastUpdatedAt: 0 }, 'player') });
+      const snap = buildAiMemoryHorizonSnapshot(m.ai, { persistentMemoryEnabled: true });
+      return snap.longTermPriorBeliefCount >= 1 && snap.shortTermEventCount === 0 && snap.explainabilityDisclaimer.includes('not a neural') || JSON.stringify(snap);
+    }],
+    ['p7_reasons', 'Memory influence attaches human-readable reasons for decision traces', () => {
+      let m = createFreshAiMemories(['ai']);
+      m = applyCommittedActionToAiMemories(m, { actionType: 'sabotage', actorId: 'player', targetId: 'ai', turn: 1, summary: 's', stableKey: 'i' }, MEM_OBS);
+      const out = applyAiMemoryInfluence([{ type: 'sabotage', score: 10, data: { targetActorId: 'player' } }], { actorId: 'ai', memory: m.ai });
+      const c = out[0] as { memoryReasons?: string[]; memoryInfluence?: number; score?: number };
+      return (c.memoryReasons || []).length > 0 && typeof c.memoryInfluence === 'number' && (c.score || 0) > 10 || JSON.stringify(c);
+    }],
+    ['p7_inspection', 'Inspection view includes horizon snapshot', () => {
+      const v = getFilteredAiMemoryInspectionView(createEmptyAiActorMemory('ai'), { persistentMemoryEnabled: false });
+      return v.horizonSnapshot && typeof v.horizonSnapshot.qualityNote === 'string' || 'missing horizon';
+    }],
+    ['p7_bounded', 'Memory influence still never removes decision options', () => {
+      let m = createFreshAiMemories(['ai']);
+      m = applyCommittedActionToAiMemories(m, { actionType: 'sabotage', actorId: 'player', targetId: 'ai', turn: 1, summary: 's', stableKey: 'b' }, MEM_OBS);
+      const out = applyAiMemoryInfluence([{ type: 'sabotage', score: 10, data: { targetActorId: 'player' } }, { type: 'sell', score: 10 }], { actorId: 'ai', memory: m.ai });
+      return out.length === 2 || `${out.length}`;
+    }]
   ]);
 }
 
@@ -55134,6 +55286,14 @@ export function runDeveloperTestSuite(
       errorMessage: result.detail
     })),
     ...runAiMemoryPhase61SelfTests().results.map((result): TestCaseResult => ({
+      id: `test_ai_memory_${result.id}`,
+      name: result.name,
+      category: 'ai_memory',
+      status: result.passed ? 'passed' : 'failed',
+      durationMs: 1,
+      errorMessage: result.detail
+    })),
+    ...runAiMemoryPhase7SelfTests().results.map((result): TestCaseResult => ({
       id: `test_ai_memory_${result.id}`,
       name: result.name,
       category: 'ai_memory',
@@ -136536,7 +136696,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'tuning', label: 'AI Tuning Lab', tier: 'full', section: 'Determinism', severity: 'MAJOR', run: () => runAiTuningLabSelfTests() },
   { id: 'memory', label: 'AI Memory (all phases)', tier: 'quick', section: 'Critical Invariants', severity: 'CRITICAL', run: () => [
     ...runAiMemoryPhase1SelfTests().results, ...runAiMemoryPhase2SelfTests().results, ...runAiMemoryPhase3SelfTests().results,
-    ...runAiMemoryPhase4SelfTests().results, ...runAiMemoryPhase5SelfTests().results, ...runAiMemoryPhase6SelfTests().results, ...runAiMemoryPhase61SelfTests().results
+    ...runAiMemoryPhase4SelfTests().results, ...runAiMemoryPhase5SelfTests().results, ...runAiMemoryPhase6SelfTests().results, ...runAiMemoryPhase61SelfTests().results, ...runAiMemoryPhase7SelfTests().results
   ] }
 ];
 
@@ -224348,7 +224508,8 @@ function dispatchGameSettingsChange(
                           viewerTeamId: player?.teamId,
                           ownerTeamId: inspectorActor?.teamId,
                           teammateIds: [viewerId, ...teammateIds],
-                          fullInspection: gameSettings.aiMemoryFullInspectionEnabled === true
+                          fullInspection: gameSettings.aiMemoryFullInspectionEnabled === true,
+                          persistentMemoryEnabled: gameSettings.aiPersistentMemoryEnabled === true
                         });
                         return (
                           <div className="space-y-3">
@@ -224356,6 +224517,15 @@ function dispatchGameSettingsChange(
                             {view.isRedacted && (
                               <div className="opacity-70">Private rival events, team-only intel, and hidden affect scores are redacted. Enable Full Inspection to reveal them.</div>
                             )}
+                            <div>
+                              <div className="font-semibold mb-1">Short vs long memory (explainability)</div>
+                              <div className="opacity-90 space-y-1">
+                                <div>Short-term (this match): {view.horizonSnapshot.shortTermEventCount} events, {view.horizonSnapshot.shortTermRelationshipCount} relationship tracks, {view.horizonSnapshot.matchLearnedObservationCount} observed rival actions.</div>
+                                <div>Long-term (saved priors): {view.horizonSnapshot.longTermPriorActive ? `${view.horizonSnapshot.longTermPriorBeliefCount} prior belief(s) active` : 'none loaded (persistence off or no priors)'}{view.isRedacted ? ' — rival prior detail hidden' : ''}.</div>
+                                <div className="opacity-80">{view.horizonSnapshot.qualityNote}</div>
+                                <div className="opacity-70 text-xs">{view.horizonSnapshot.explainabilityDisclaimer}</div>
+                              </div>
+                            </div>
                             {view.influenceSummary && (
                               <div>
                                 <div className="font-semibold mb-1">How this affects decisions</div>
