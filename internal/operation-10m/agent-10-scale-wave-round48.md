@@ -5,7 +5,7 @@ cursor:
 
 # Agent 10 — scale wave round 48 (O10-227)
 
-**Integration baseline:** **`4404bf0f`** · **Projected scale:** **2,684,235** · **Base commit:** `8af196ca` (round 47 gate) · **Gate commit:** _(post-push)_ · **Task:** O10-227  
+**Integration baseline:** **`4404bf0f`** · **Projected scale:** **2,684,235** · **Base commit:** `8af196ca` (round 47 gate) · **Gate commit:** **`0c504ab0`** · **Origin tip:** **`5fdfc54f`** · **Task:** O10-227  
 **Branch:** `op10m/agent-10-finance-inflation` · **PR:** [#339](https://github.com/1-iPhone-ai/Australia-Game-/pull/339) open  
 **Worker:** `bc-ed647a45-cf75-5d9b-9332-3162a998ba9e`
 
