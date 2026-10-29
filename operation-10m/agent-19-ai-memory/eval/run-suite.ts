@@ -193,6 +193,24 @@ import {
   auditMatchExplainabilityLaunchGate,
   matchExplainabilityLaunchAllowed,
 } from '../match-explainability-launch-gate.ts';
+import {
+  buildMatchExplainabilityOperationsBundle,
+  matchExplainabilityOperationsReady,
+} from '../match-explainability-operations-bundle.ts';
+import {
+  buildLaunchRecoveryOrchestrator,
+  launchRecoveryOrchestratorWithinCap,
+  AGENT19_LAUNCH_RECOVERY_ORCHESTRATOR_CAP,
+} from '../launch-recovery-orchestrator.ts';
+import {
+  buildSessionOperationsExportBundle,
+  sessionOperationsExportReady,
+} from '../session-operations-export-bundle.ts';
+import { auditReleaseLaunchBridge, releaseLaunchBridgeAligned } from '../release-launch-bridge.ts';
+import {
+  auditMatchExplainabilityProductionGate,
+  matchExplainabilityProductionAllowed,
+} from '../match-explainability-production-gate.ts';
 import type { MemoryEvalResult } from '../types.ts';
 
 type Case = [string, string, () => boolean | string];
@@ -2212,6 +2230,213 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityLaunchAllowed(report) && report.recoveryStepCount >= 1 || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r14_ops_ready',
+        'Operations bundle ready when launch and GI delivery pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const params = {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium' as const,
+            memoryInfluenceEnabled: true,
+          };
+          const ops = buildMatchExplainabilityOperationsBundle([pack], params);
+          return matchExplainabilityOperationsReady(ops) && ops.launchAllowed || JSON.stringify(ops);
+        },
+      ],
+      [
+        'a19_r14_launch_recovery_orchestrator',
+        'Launch recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({
+            turn: 2,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const params = {
+            memory: null,
+            currentTurn: 2,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium' as const,
+            memoryInfluenceEnabled: true,
+          };
+          const report = buildLaunchRecoveryOrchestrator([pack], params, false);
+          return (
+            report.launchBlocked &&
+            report.stepCount >= 1 &&
+            launchRecoveryOrchestratorWithinCap(report) &&
+            report.stepCount <= AGENT19_LAUNCH_RECOVERY_ORCHESTRATOR_CAP
+          ) || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r14_ops_export',
+        'Session operations export ready on healthy launch',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const params = {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium' as const,
+            memoryInfluenceEnabled: true,
+          };
+          const bundle = buildSessionOperationsExportBundle([pack], params);
+          return (
+            sessionOperationsExportReady(bundle) &&
+            bundle.operationsSchema === 'agent19.operations.v1' &&
+            bundle.launchAllowed
+          ) || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r14_release_launch_bridge',
+        'Release launch bridge aligned on GO path',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditReleaseLaunchBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return releaseLaunchBridgeAligned(report) && report.launchAllowed || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r14_production_gate_ok',
+        'Production gate allowed on full healthy stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditMatchExplainabilityProductionGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityProductionAllowed(report) && report.operationsExportReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r14_production_gate_block',
+        'Production gate blocked when launch NO-GO',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({
+            turn: 5,
+            memoryBefore: null,
+            memoryAfter: null,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const report = auditMatchExplainabilityProductionGate([pack], {
+            memory: null,
+            currentTurn: 5,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityProductionAllowed(report) && !report.operationsReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r14_launch_recovery_idle',
+        'Launch recovery orchestrator idle when GO',
+        () => {
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'a', score: 5 }];
+          const decisionsAfter = [
+            {
+              type: 'a',
+              score: 10,
+              memoryInfluence: 5,
+              memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 5, reason: 't' }],
+            },
+          ];
+          const pack = buildTurnExplainabilityPack({
+            turn: 1,
+            memoryBefore: mem,
+            memoryAfter: mem,
+            decisionsBefore,
+            decisionsAfter,
+          });
+          const params = {
+            memory: mem,
+            currentTurn: 1,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium' as const,
+            memoryInfluenceEnabled: true,
+          };
+          const launch = auditMatchExplainabilityLaunchGate([pack], params);
+          const report = buildLaunchRecoveryOrchestrator([pack], params, matchExplainabilityLaunchAllowed(launch));
+          return !report.launchBlocked && report.steps[0].includes('idle') || report.steps.join('|');
         },
       ],
     ]),
