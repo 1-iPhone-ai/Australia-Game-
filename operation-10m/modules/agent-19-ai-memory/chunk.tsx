@@ -7112,6 +7112,293 @@ export function charterRecoveryOrchestratorWithinCap(report: CharterRecoveryOrch
 }
 
 
+// --- source: match-explainability-pact-bundle.ts ---
+  auditMatchExplainabilityPactGate,
+  matchExplainabilityPactAllowed,
+} from './match-explainability-pact-gate.ts';
+  buildMatchExplainabilityCharterBundle,
+  matchExplainabilityCharterReady,
+} from './match-explainability-charter-bundle.ts';
+  buildSessionCharterExportBundle,
+  sessionCharterExportShipped,
+} from './session-charter-export-bundle.ts';
+
+export const AGENT19_PACT_NARRATIVE_CAP = 10;
+
+export interface MatchExplainabilityPactBundle {
+  pactReady: boolean;
+  pactAllowed: boolean;
+  charterReady: boolean;
+  charterExportShipped: boolean;
+  narrativeLines: string[];
+}
+
+type PactParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Pact bundle: pact gate and charter export must both be green. */
+export function buildMatchExplainabilityPactBundle(
+  packs: TurnExplainabilityPack[],
+  params: PactParams,
+): MatchExplainabilityPactBundle {
+  const pact = auditMatchExplainabilityPactGate(packs, params);
+  const charter = buildMatchExplainabilityCharterBundle(packs, params);
+  const charterExport = buildSessionCharterExportBundle(packs, params);
+  const pactAllowed = matchExplainabilityPactAllowed(pact);
+  const charterReady = matchExplainabilityCharterReady(charter);
+  const charterExportShipped = sessionCharterExportShipped(charterExport);
+  const pactReady = pactAllowed && charterReady && charterExportShipped;
+  const narrativeLines = [
+    `Match explainability pact bundle: ${pactReady ? 'READY' : 'PENDING'} (gate ${pactAllowed ? 'ok' : 'fail'}, charter ${charterReady ? 'ok' : 'fail'}).`,
+    ...pact.narrativeLines.slice(0, 2),
+    ...charter.narrativeLines.slice(0, 1),
+  ].slice(0, AGENT19_PACT_NARRATIVE_CAP);
+  return {
+    pactReady,
+    pactAllowed,
+    charterReady,
+    charterExportShipped,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityPactReady(bundle: MatchExplainabilityPactBundle): boolean {
+  return bundle.pactReady;
+}
+
+
+// --- source: session-pact-export-bundle.ts ---
+  buildSessionCharterExportBundle,
+  type SessionCharterExportBundle,
+} from './session-charter-export-bundle.ts';
+  buildMatchExplainabilityPactBundle,
+  matchExplainabilityPactReady,
+} from './match-explainability-pact-bundle.ts';
+
+export interface SessionPactExportBundle extends SessionCharterExportBundle {
+  pactReady: boolean;
+  pactSchema: string;
+}
+
+/** Pact export wraps charter export when pact bundle is ready. */
+export function buildSessionPactExportBundle(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): SessionPactExportBundle {
+  const base = buildSessionCharterExportBundle(packs, params);
+  const pact = buildMatchExplainabilityPactBundle(packs, params);
+  const pactReady = matchExplainabilityPactReady(pact);
+  const exports = pactReady ? base.exports : [];
+  return {
+    ...base,
+    exports,
+    pactReady,
+    pactSchema: 'agent19.pact.v1',
+    releaseReady: pactReady && base.releaseReady,
+    narrativeLines: [
+      ...base.narrativeLines.slice(0, 1),
+      `Pact export: ${pactReady ? 'SHIPPED' : 'EMPTY'} (${exports.length} record(s)).`,
+    ],
+  };
+}
+
+export function sessionPactExportShipped(bundle: SessionPactExportBundle): boolean {
+  return (
+    bundle.pactReady &&
+    bundle.exports.length > 0 &&
+    bundle.pactSchema === 'agent19.pact.v1'
+  );
+}
+
+
+// --- source: charter-pact-bridge.ts ---
+  buildMatchExplainabilityPactBundle,
+  matchExplainabilityPactReady,
+} from './match-explainability-pact-bundle.ts';
+  buildMatchExplainabilityCharterBundle,
+  matchExplainabilityCharterReady,
+} from './match-explainability-charter-bundle.ts';
+
+export interface CharterPactBridgeReport {
+  aligned: boolean;
+  pactReady: boolean;
+  charterReady: boolean;
+  narrativeLines: string[];
+}
+
+/** Pact-ready should match charter-ready when charter export stack passes. */
+export function auditCharterPactBridge(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): CharterPactBridgeReport {
+  const pact = buildMatchExplainabilityPactBundle(packs, params);
+  const charter = buildMatchExplainabilityCharterBundle(packs, params);
+  const pactReady = matchExplainabilityPactReady(pact);
+  const charterReady = matchExplainabilityCharterReady(charter);
+  const aligned = pactReady === charterReady;
+  const narrativeLines = [
+    `Charter/pact bridge: ${aligned ? 'ALIGNED' : 'CHECK'} (pact ${pactReady ? 'ok' : 'fail'}, charter ${charterReady ? 'ok' : 'fail'}).`,
+  ];
+  return { aligned, pactReady, charterReady, narrativeLines };
+}
+
+export function charterPactBridgeHealthy(report: CharterPactBridgeReport): boolean {
+  return report.pactReady && report.charterReady && report.aligned;
+}
+
+
+// --- source: match-explainability-treaty-gate.ts ---
+  buildMatchExplainabilityPactBundle,
+  matchExplainabilityPactReady,
+} from './match-explainability-pact-bundle.ts';
+  buildSessionPactExportBundle,
+  sessionPactExportShipped,
+} from './session-pact-export-bundle.ts';
+
+export interface MatchExplainabilityTreatyGateReport {
+  treatyAllowed: boolean;
+  pactReady: boolean;
+  pactExportShipped: boolean;
+  charterPactHealthy: boolean;
+  narrativeLines: string[];
+}
+
+/** Treaty gate: pact bundle + pact export + charter/pact bridge. */
+export function auditMatchExplainabilityTreatyGate(
+  packs: TurnExplainabilityPack[],
+  params: {
+    memory: AiActorMemory | null | undefined;
+    currentTurn: number;
+    relationship?: Partial<AiRelationship> | null;
+    decisionsByTurn: Array<{
+      before: MemoryInfluenceDecisionLike[];
+      after: MemoryInfluenceDecisionLike[];
+    }>;
+    minConfidenceBand?: ExplainabilityConfidenceBand;
+    memoryInfluenceEnabled?: boolean;
+  },
+): MatchExplainabilityTreatyGateReport {
+  const pact = buildMatchExplainabilityPactBundle(packs, params);
+  const pactExport = buildSessionPactExportBundle(packs, params);
+  const bridge = auditCharterPactBridge(packs, params);
+  const pactReady = matchExplainabilityPactReady(pact);
+  const pactExportShipped = sessionPactExportShipped(pactExport);
+  const charterPactHealthy = charterPactBridgeHealthy(bridge);
+  const treatyAllowed = pactReady && pactExportShipped && charterPactHealthy;
+  const narrativeLines = [
+    `Match explainability treaty: ${treatyAllowed ? 'ALLOWED' : 'DENIED'} (pact ${pactReady ? 'ok' : 'fail'}, export ${pactExportShipped ? 'ok' : 'fail'}).`,
+    ...pact.narrativeLines.slice(0, 2),
+    ...bridge.narrativeLines,
+  ];
+  return {
+    treatyAllowed,
+    pactReady,
+    pactExportShipped,
+    charterPactHealthy,
+    narrativeLines,
+  };
+}
+
+export function matchExplainabilityTreatyAllowed(report: MatchExplainabilityTreatyGateReport): boolean {
+  return report.treatyAllowed;
+}
+
+
+// --- source: pact-recovery-orchestrator.ts ---
+  auditMatchExplainabilityPactGate,
+  matchExplainabilityPactAllowed,
+} from './match-explainability-pact-gate.ts';
+
+export const AGENT19_PACT_RECOVERY_CAP = 10;
+
+export interface PactRecoveryOrchestratorReport {
+  pactBlocked: boolean;
+  stepCount: number;
+  steps: string[];
+  narrativeLines: string[];
+}
+
+type RecoveryParams = {
+  memory: AiActorMemory | null | undefined;
+  currentTurn: number;
+  relationship?: Partial<AiRelationship> | null;
+  decisionsByTurn: Array<{
+    before: MemoryInfluenceDecisionLike[];
+    after: MemoryInfluenceDecisionLike[];
+  }>;
+  minConfidenceBand?: ExplainabilityConfidenceBand;
+  memoryInfluenceEnabled?: boolean;
+};
+
+/** Recovery path when pact gate blocks treaty rollout. */
+export function buildPactRecoveryOrchestrator(
+  packs: TurnExplainabilityPack[],
+  params: RecoveryParams,
+): PactRecoveryOrchestratorReport {
+  const pact = auditMatchExplainabilityPactGate(packs, params);
+  const pactBlocked = !matchExplainabilityPactAllowed(pact);
+  const steps: string[] = [];
+  if (pactBlocked) {
+    if (!pact.charterReady) {
+      steps.push('Restore charter bundle: covenant and charter export must pass.');
+    }
+    if (!pact.charterExportShipped) {
+      steps.push('Emit session charter export before pact clearance.');
+    }
+    if (!pact.covenantCharterHealthy) {
+      steps.push('Reconcile covenant/charter bridge before pact.');
+    }
+    steps.push(...buildCharterRecoveryOrchestrator(packs, params).steps.slice(0, 3));
+    const charter = buildMatchExplainabilityCharterBundle(packs, params);
+    if (!charter.charterReady) {
+      steps.push('Re-run charter readiness checklist on turn packs.');
+    }
+  } else {
+    steps.push('Pact gate open — recovery orchestrator idle.');
+  }
+  const unique = [...new Set(steps)].slice(0, AGENT19_PACT_RECOVERY_CAP);
+  return {
+    pactBlocked,
+    stepCount: unique.length,
+    steps: unique,
+    narrativeLines: [`Pact recovery orchestrator: ${unique.length} step(s).`, ...unique.slice(0, 3)],
+  };
+}
+
+export function pactRecoveryOrchestratorWithinCap(report: PactRecoveryOrchestratorReport): boolean {
+  return report.stepCount <= AGENT19_PACT_RECOVERY_CAP;
+}
+
+
 // --- source: influence-audit.ts ---
 
 /** Per-decision cap documented in V9.4 influence (directives + learning + prior nudges). */
@@ -7512,6 +7799,18 @@ export function auditFindingsOk(findings: MemoryInfluenceAuditFinding[]): boolea
   auditMatchExplainabilityPactGate,
   matchExplainabilityPactAllowed,
 } from '../match-explainability-pact-gate.ts';
+  buildMatchExplainabilityPactBundle,
+  matchExplainabilityPactReady,
+} from '../match-explainability-pact-bundle.ts';
+  buildSessionPactExportBundle,
+  sessionPactExportShipped,
+} from '../session-pact-export-bundle.ts';
+  buildPactRecoveryOrchestrator,
+  pactRecoveryOrchestratorWithinCap,
+} from '../pact-recovery-orchestrator.ts';
+  auditMatchExplainabilityTreatyGate,
+  matchExplainabilityTreatyAllowed,
+} from '../match-explainability-treaty-gate.ts';
 
 type Case = [string, string, () => boolean | string];
 
@@ -11453,6 +11752,138 @@ export function runAgent19ModuleSelfTests(): { results: MemoryEvalResult[] } {
             memoryInfluenceEnabled: true,
           });
           return !matchExplainabilityPactAllowed(report) && !report.charterReady || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r28_pact_ready',
+        'Pact bundle ready when pact gate and charter export pass',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const params = { memory: mem, currentTurn: 1, relationship: rel, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const bundle = buildMatchExplainabilityPactBundle([pack], params);
+          return matchExplainabilityPactReady(bundle) && bundle.pactAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r28_pact_held',
+        'Pact bundle pending when pact gate fails',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 31, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const bundle = buildMatchExplainabilityPactBundle([pack], {
+            memory: null,
+            currentTurn: 31,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityPactReady(bundle) && !bundle.pactAllowed || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r28_pact_recovery',
+        'Pact recovery orchestrator lists steps when blocked',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 14, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const params = { memory: null, currentTurn: 14, decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }], minConfidenceBand: 'medium' as const, memoryInfluenceEnabled: true };
+          const report = buildPactRecoveryOrchestrator([pack], params);
+          return report.pactBlocked && pactRecoveryOrchestratorWithinCap(report) && report.stepCount >= 1 || report.steps.join('|');
+        },
+      ],
+      [
+        'a19_r28_charter_pact_bridge',
+        'Charter pact bridge healthy on full stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditCharterPactBridge([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return charterPactBridgeHealthy(report) && report.aligned || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r28_pact_export',
+        'Pact export shipped when pact ready',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const bundle = buildSessionPactExportBundle([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return sessionPactExportShipped(bundle) && bundle.pactSchema === 'agent19.pact.v1' || JSON.stringify(bundle);
+        },
+      ],
+      [
+        'a19_r28_treaty_gate_ok',
+        'Treaty gate allowed on healthy pact stack',
+        () => {
+          const rel = { actorId: 'player', trust: 85, grievance: 0, gratitude: 20, respect: 50, rivalry: 0, reliability: 50, cooperation: 50, threat: 0, lastUpdatedTurn: 1 };
+          const mem = createEmptyAiActorMemory('ai');
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [
+            { type: 'sell', score: 7, memoryInfluence: 2, memoryInfluenceSlices: [{ horizon: 'short_term_match', delta: 2, reason: 'trust from prior deal' }] },
+            { type: 'hold', score: 3 },
+          ];
+          const pack = buildTurnExplainabilityPack({ turn: 1, memoryBefore: mem, memoryAfter: mem, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityTreatyGate([pack], {
+            memory: mem,
+            currentTurn: 1,
+            relationship: rel,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return matchExplainabilityTreatyAllowed(report) && report.pactExportShipped || JSON.stringify(report);
+        },
+      ],
+      [
+        'a19_r28_treaty_gate_block',
+        'Treaty gate denied when pact pending',
+        () => {
+          const decisionsBefore = [{ type: 'sell', score: 5 }, { type: 'hold', score: 3 }];
+          const decisionsAfter = [{ type: 'sell', score: 7, memoryInfluence: 2 }];
+          const pack = buildTurnExplainabilityPack({ turn: 32, memoryBefore: null, memoryAfter: null, decisionsBefore, decisionsAfter });
+          const report = auditMatchExplainabilityTreatyGate([pack], {
+            memory: null,
+            currentTurn: 32,
+            decisionsByTurn: [{ before: decisionsBefore, after: decisionsAfter }],
+            minConfidenceBand: 'medium',
+            memoryInfluenceEnabled: true,
+          });
+          return !matchExplainabilityTreatyAllowed(report) && !report.pactReady || JSON.stringify(report);
         },
       ],
     ]),
