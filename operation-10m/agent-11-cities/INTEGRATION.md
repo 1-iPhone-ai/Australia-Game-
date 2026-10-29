@@ -33,6 +33,14 @@ All symbols are prefixed `OP10M_A11_` for grep-safe assembly.
 4. Persist infra slice under `gameState.op10mAgent11IntercityInfra` (`createEmptyOP10M_A11_InfraPersisted()`).
 5. Register `runOP10M_A11_SelfTests` in quick regression suite beside `runV1014_CITIES_CityRegionalIntercitySelfTests`.
 
+### Scale wave round 26 (schema `10m.a11.composite.25`)
+
+- **Regional collapse existence singularity point** — singularity seal × void annihilation × null-state lock (`op10mA11ComputeRegionalCollapseExistenceSingularityPoint`)
+- **Interregional void existence annihilation front** — void annihilation × singularity seal × void finalization (`op10mA11ComputeInterregionalVoidExistenceAnnihilationFront`)
+- **Settlement existential absolute zero lock** — null-state lock × singularity seal × obliteration threshold (`op10mA11ComputeSettlementExistentialAbsoluteZeroLock`)
+- **10-turn regression harness** — extended bounds for existence point, void front, absolute zero lock
+- Derived events: `collapse_existence_singularity_point`, `void_existence_annihilation_front`, `existential_absolute_zero_lock`
+
 ### Scale wave round 25 (schema `10m.a11.composite.24`)
 
 - **Regional ultimate collapse singularity seal** — absolute horizon lock × void finalization × obliteration threshold (`op10mA11ComputeRegionalUltimateCollapseSingularitySeal`)
