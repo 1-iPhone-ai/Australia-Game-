@@ -11,8 +11,10 @@ import type {
   ResearchSaveMigrationEntry,
   UnlockedResearchNode,
   ResearchSaveKind,
+  ResearchUnlockEvent,
 } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
+import { appendUnlockEvents, rebuildUnlockEventLogFromNodes, emptyUnlockEventLog } from './unlock-event-log.ts';
 import { INSTITUTION_UPGRADE_TIER_RANK } from './institution-upgrades.ts';
 
 export type { ResearchProgressSchemaVersion, ResearchBranchEmphasisState, ResearchProgramEmphasis } from './types.ts';
@@ -53,6 +55,10 @@ export interface ResearchProgressPersistedCore {
   sessionId: string;
   /** Monotonic counter incremented on each sealed write (round 4). */
   persistRevision: number;
+  /** Bounded unlock audit trail for replay / history (round 5). */
+  unlockEventLog: ResearchUnlockEvent[];
+  /** Last turn reconcileResearchProgressOnLoad sealed against disk (round 5). */
+  lastReconciledAtTurn: number;
 }
 
 export type { ResearchSaveMigrationEntry } from './types.ts';
@@ -60,6 +66,7 @@ export type { ResearchSaveMigrationEntry } from './types.ts';
 const LEGACY_V1 = 'op10m-agent03-v1' as const;
 const LEGACY_V2 = 'op10m-agent03-v2' as const;
 const LEGACY_V3 = 'op10m-agent03-v3' as const;
+const LEGACY_V4 = 'op10m-agent03-v4' as const;
 
 /** Keys that must never appear on persisted save blobs (Agent 25 guard). */
 export const RESEARCH_SAVE_DERIVED_KEYS = [
@@ -70,6 +77,8 @@ export const RESEARCH_SAVE_DERIVED_KEYS = [
   'lateGameDiffusion',
   'scaleWave',
   'commercialization',
+  'portfolioBalance',
+  'diffusionForecast',
 ] as const;
 
 function finalizeCoreForPersist(
@@ -90,6 +99,8 @@ function finalizeCoreForPersist(
     updatedAtTurn: partial.updatedAtTurn ?? partial.turn,
     sessionId: partial.sessionId ?? `o10m_r03_${partial.turn}_${partial.revision}`,
     persistRevision: partial.persistRevision ?? 0,
+    unlockEventLog: partial.unlockEventLog ?? emptyUnlockEventLog(),
+    lastReconciledAtTurn: partial.lastReconciledAtTurn ?? partial.turn,
   };
   return { ...draft, coreFingerprint: computePersistedCoreFingerprint(draft) };
 }
@@ -116,6 +127,8 @@ export function computePersistedCoreFingerprint(
     updatedAtTurn: core.updatedAtTurn,
     sessionId: core.sessionId,
     persistRevision: core.persistRevision,
+    unlockEventLog: core.unlockEventLog,
+    lastReconciledAtTurn: core.lastReconciledAtTurn,
   });
   for (let i = 0; i < payload.length; i++) {
     h ^= payload.charCodeAt(i);
@@ -163,6 +176,8 @@ function emptyCore(turn = 0): ResearchProgressPersistedCore {
     updatedAtTurn: turn,
     sessionId: `o10m_r03_${turn}_0`,
     persistRevision: 0,
+    unlockEventLog: emptyUnlockEventLog(),
+    lastReconciledAtTurn: turn,
   });
 }
 
@@ -241,6 +256,24 @@ function computeUnlockSeq(nodes: UnlockedResearchNode[]): number {
   return nodes.length;
 }
 
+function sanitizeUnlockEventLog(raw: unknown): ResearchUnlockEvent[] {
+  if (!Array.isArray(raw)) return emptyUnlockEventLog();
+  const out: ResearchUnlockEvent[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as ResearchUnlockEvent;
+    if (typeof o.nodeId !== 'string' || !RESEARCH_NODE_BY_ID[o.nodeId]) continue;
+    out.push({
+      seq: Number(o.seq) || out.length + 1,
+      turn: Number(o.turn) || 0,
+      nodeId: o.nodeId,
+      branchId: RESEARCH_NODE_BY_ID[o.nodeId].branchId,
+      hookIds: Array.isArray(o.hookIds) ? o.hookIds.map(String) : RESEARCH_NODE_BY_ID[o.nodeId].hookIds,
+    });
+  }
+  return out.sort((a, b) => a.seq - b.seq).slice(-64);
+}
+
 export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersistedCore | null {
   if (raw == null) return null;
   if (typeof raw !== 'object') return null;
@@ -250,6 +283,7 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
 
   if (ver === RESEARCH_PROGRESS_SCHEMA_VERSION) {
     const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
+    const eventLog = sanitizeUnlockEventLog(o.unlockEventLog);
     const draft = finalizeCoreForPersist({
       schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
       revision: Number(o.revision) || 0,
@@ -265,11 +299,38 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
       updatedAtTurn: Number(o.updatedAtTurn) || Number(o.turn) || 0,
       sessionId: typeof o.sessionId === 'string' ? o.sessionId : `o10m_r03_${Number(o.turn) || 0}`,
       persistRevision: Number(o.persistRevision) || 0,
+      unlockEventLog: eventLog.length ? eventLog : rebuildUnlockEventLogFromNodes(nodes),
+      lastReconciledAtTurn: Number(o.lastReconciledAtTurn) || Number(o.turn) || 0,
     });
     if (typeof o.coreFingerprint === 'string' && o.coreFingerprint !== draft.coreFingerprint) {
       return draft;
     }
     return draft;
+  }
+
+  if (ver === LEGACY_V4) {
+    const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
+    return upgradeToCurrentCore(
+      {
+        schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+        revision: Number(o.revision) || 0,
+        turn: Number(o.turn) || 0,
+        unlockedNodes: nodes,
+        institutionUpgrades: sanitizeInstitutionUpgrades(o.institutionUpgrades),
+        leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
+        unlockSeq: Number(o.unlockSeq) || computeUnlockSeq(nodes),
+        branchEmphasis: sanitizeBranchEmphasis(o.branchEmphasis),
+        emphasisRevision: Number(o.emphasisRevision) || 0,
+        migrationLog: Array.isArray(o.migrationLog) ? (o.migrationLog as ResearchSaveMigrationEntry[]) : [],
+        saveKind: (o.saveKind as ResearchSaveKind) || 'manual',
+        updatedAtTurn: Number(o.updatedAtTurn) || Number(o.turn) || 0,
+        sessionId: typeof o.sessionId === 'string' ? o.sessionId : `o10m_r03_${Number(o.turn) || 0}`,
+        persistRevision: Number(o.persistRevision) || 0,
+        unlockEventLog: rebuildUnlockEventLogFromNodes(nodes),
+        lastReconciledAtTurn: Number(o.turn) || 0,
+      },
+      LEGACY_V4
+    );
   }
 
   if (ver === LEGACY_V3) {
@@ -356,6 +417,8 @@ export function extractPersistedCore(state: ResearchProgressState): ResearchProg
     updatedAtTurn: state.updatedAtTurn ?? state.turn,
     sessionId: state.sessionId ?? `o10m_r03_${state.turn}_${state.revision ?? 0}`,
     persistRevision: state.persistRevision ?? 0,
+    unlockEventLog: state.unlockEventLog ?? emptyUnlockEventLog(),
+    lastReconciledAtTurn: state.lastReconciledAtTurn ?? state.turn,
   });
 }
 
@@ -384,6 +447,8 @@ export function hydrateResearchProgressCore(core: ResearchProgressPersistedCore 
     updatedAtTurn: core.updatedAtTurn,
     sessionId: core.sessionId,
     persistRevision: core.persistRevision,
+    unlockEventLog: core.unlockEventLog,
+    lastReconciledAtTurn: core.lastReconciledAtTurn,
     diffusion: V94_REGION_CODES.map(regionId => ({
       regionId,
       score: 0,
@@ -412,6 +477,13 @@ export function mergeComputedResearchState(
     (a, b) => a.unlockedTurn - b.unlockedTurn || a.nodeId.localeCompare(b.nodeId)
   );
   const newUnlocks = unlockedNodes.length - core.unlockedNodes.length;
+  const unlockEventLog = appendUnlockEvents(
+    core.unlockEventLog ?? emptyUnlockEventLog(),
+    core.unlockedNodes,
+    unlockedNodes,
+    computed.turn,
+    Math.max(core.unlockSeq, unlockedNodes.length)
+  );
   return {
     ...computed,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
@@ -427,6 +499,8 @@ export function mergeComputedResearchState(
     updatedAtTurn: core.updatedAtTurn,
     sessionId: core.sessionId,
     persistRevision: core.persistRevision,
+    unlockEventLog,
+    lastReconciledAtTurn: core.lastReconciledAtTurn,
   };
 }
 
@@ -478,6 +552,7 @@ export function assertResearchProgressSaveIntegrity(state: ResearchProgressState
   if (
     state.schemaVersion !== RESEARCH_PROGRESS_SCHEMA_VERSION &&
     state.schemaVersion !== LEGACY_V3 &&
+    state.schemaVersion !== LEGACY_V4 &&
     state.schemaVersion !== LEGACY_V1 &&
     state.schemaVersion !== LEGACY_V2
   ) {

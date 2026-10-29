@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v4' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v5' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v4'
   | 'op10m-agent03-v3'
   | 'op10m-agent03-v2'
   | 'op10m-agent03-v1';
@@ -193,6 +194,44 @@ export interface ResearchCommercializationReport {
   nationalExportScore: number;
 }
 
+export interface ResearchUnlockEvent {
+  seq: number;
+  turn: number;
+  nodeId: string;
+  branchId: ResearchBranchId;
+  hookIds: string[];
+}
+
+export interface ResearchPortfolioBalanceHint {
+  branchId: ResearchBranchId;
+  readinessGap: number;
+  currentEmphasis: ResearchProgramEmphasis;
+  suggestedEmphasis: ResearchProgramEmphasis;
+  priority: 'critical' | 'watch' | 'balanced';
+}
+
+export interface ResearchPortfolioBalanceReport {
+  active: boolean;
+  hints: ResearchPortfolioBalanceHint[];
+  nationalBalanceScore: number;
+}
+
+export interface ResearchDiffusionForecastProjection {
+  turn: number;
+  regionId: V94AustralianRegionCode;
+  projectedScore: number;
+  deltaFromNow: number;
+}
+
+export interface ResearchDiffusionForecast {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  peakRegionId: V94AustralianRegionCode | null;
+  peakProjectedScore: number;
+  projections: ResearchDiffusionForecastProjection[];
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -207,6 +246,8 @@ export interface ResearchProgressState {
   lateGameDiffusion: LateGameDiffusionReport | null;
   scaleWave: ResearchScaleWaveReport | null;
   commercialization?: ResearchCommercializationReport | null;
+  portfolioBalance?: ResearchPortfolioBalanceReport | null;
+  diffusionForecast?: ResearchDiffusionForecast | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -215,6 +256,8 @@ export interface ResearchProgressState {
   updatedAtTurn?: number;
   sessionId?: string;
   persistRevision?: number;
+  unlockEventLog?: ResearchUnlockEvent[];
+  lastReconciledAtTurn?: number;
 }
 
 export interface StrategyHookDefinition {

@@ -6,8 +6,9 @@ import {
   migrateResearchProgressSave,
   prepareResearchProgressForSave,
 } from './save-migration.ts';
-import type { ResearchProgressState } from './types.ts';
+import type { ResearchProgressState, ResearchUnlockEvent } from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
+import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -21,6 +22,18 @@ export interface ResearchReconcileContext {
   turn: number;
   /** When loading autosave behind manual checkpoint, prefer higher persistRevision. */
   preferHigherPersistRevision?: boolean;
+}
+
+function mergeUnlockEventLogs(
+  local: ResearchUnlockEvent[] | undefined,
+  remote: ResearchUnlockEvent[] | undefined
+): ResearchUnlockEvent[] {
+  const byKey = new Map<string, ResearchUnlockEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.nodeId}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq || a.nodeId.localeCompare(b.nodeId)).slice(-RESEARCH_UNLOCK_EVENT_LOG_CAP);
 }
 
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
@@ -100,6 +113,8 @@ export function mergeResearchPersistedCores(
     revision: Math.max(local.revision, remote.revision),
     emphasisRevision: Math.max(local.emphasisRevision, remote.emphasisRevision),
     migrationLog: [...(local.migrationLog ?? []), ...(remote.migrationLog ?? [])].slice(-32),
+    unlockEventLog: mergeUnlockEventLogs(local.unlockEventLog, remote.unlockEventLog),
+    lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
 
@@ -111,11 +126,22 @@ export function reconcileResearchProgressOnLoad(
   const diskCore = migrateResearchProgressSave(diskRaw);
   const computedCore = extractPersistedCore(computed);
   if (!diskCore) {
-    const persist = sealResearchProgressForSave(prepareResearchProgressForSave(computed), {
-      turn: ctx.turn,
-      saveKind: 'manual',
-    });
-    return { state: { ...computed, migrationLog: persist.migrationLog }, persist };
+    const persist = sealResearchProgressForSave(
+      { ...prepareResearchProgressForSave(computed), lastReconciledAtTurn: ctx.turn },
+      {
+        turn: ctx.turn,
+        saveKind: 'manual',
+      }
+    );
+    return {
+      state: {
+        ...computed,
+        migrationLog: persist.migrationLog,
+        lastReconciledAtTurn: persist.lastReconciledAtTurn,
+        unlockEventLog: persist.unlockEventLog,
+      },
+      persist,
+    };
   }
 
   const mergedCore = mergeResearchPersistedCores(diskCore, computedCore);
@@ -129,15 +155,28 @@ export function reconcileResearchProgressOnLoad(
     branchEmphasis: mergedCore.branchEmphasis,
     emphasisRevision: mergedCore.emphasisRevision,
     migrationLog: mergedCore.migrationLog,
+    unlockEventLog: mergedCore.unlockEventLog,
+    lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
 
-  const persist = sealResearchProgressForSave(extractPersistedCore(mergedState), {
-    turn: ctx.turn,
-    saveKind: mergedCore.saveKind,
-    sessionId: mergedCore.sessionId,
-  });
-  return { state: mergedState, persist };
+  const persist = sealResearchProgressForSave(
+    { ...extractPersistedCore(mergedState), lastReconciledAtTurn: ctx.turn },
+    {
+      turn: ctx.turn,
+      saveKind: mergedCore.saveKind,
+      sessionId: mergedCore.sessionId,
+    }
+  );
+  return {
+    state: {
+      ...mergedState,
+      persistRevision: persist.persistRevision,
+      lastReconciledAtTurn: persist.lastReconciledAtTurn,
+      unlockEventLog: persist.unlockEventLog,
+    },
+    persist,
+  };
 }
 
 export function exportResearchProgressCheckpointJson(core: ResearchProgressPersistedCore): string {

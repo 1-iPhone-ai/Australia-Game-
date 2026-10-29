@@ -36,6 +36,7 @@ import {
   importResearchProgressCheckpointJson,
   computeResearchCommercializationReport,
   runResearchProgressRegressionHarness,
+  projectResearchDiffusionHorizon,
   type Agent03SelfTestResult,
   type ResearchProgressInputs,
 } from '../src/index.ts';
@@ -431,7 +432,7 @@ tests.push(
 );
 
 tests.push(
-  test('save_v3_migrates_to_v4_with_lifecycle_fields', () => {
+  test('save_v3_migrates_to_v5_with_lifecycle_fields', () => {
     const v3 = {
       schemaVersion: 'op10m-agent03-v3',
       turn: 12,
@@ -449,6 +450,34 @@ tests.push(
     assert(core?.saveKind === 'manual');
     assert(typeof core?.sessionId === 'string');
     assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v3'));
+    assert(Array.isArray(core?.unlockEventLog));
+  })
+);
+
+tests.push(
+  test('save_v4_migrates_to_v5_with_unlock_event_log', () => {
+    const v4 = {
+      schemaVersion: 'op10m-agent03-v4',
+      turn: 8,
+      revision: 2,
+      unlockedNodes: [
+        { nodeId: 'df_t1_campus_foundation', branchId: 'digital_frontier', unlockedTurn: 3, anchorRegionId: 'ACT' },
+      ],
+      institutionUpgrades: [],
+      unlockSeq: 1,
+      branchEmphasis: [],
+      emphasisRevision: 0,
+      migrationLog: [],
+      saveKind: 'manual',
+      updatedAtTurn: 8,
+      sessionId: 'v4',
+      persistRevision: 1,
+      coreFingerprint: 'legacy',
+    };
+    const core = migrateResearchProgressSave(v4);
+    assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+    assert(core?.unlockEventLog.length === 1);
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v4'));
   })
 );
 
@@ -530,6 +559,53 @@ tests.push(
     const { persist } = applyResearchProgressSavePipeline(inputs, null);
     assert(persist.persistRevision >= 1);
     assert(persist.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
+  })
+);
+
+tests.push(
+  test('unlock_event_log_appends_on_first_unlock', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const state = computeResearchProgress(inputs, null);
+    assert((state.unlockEventLog?.length ?? 0) >= 1);
+    assert(state.unlockEventLog?.[0]?.nodeId === 'df_t1_campus_foundation');
+  })
+);
+
+tests.push(
+  test('portfolio_balance_report_active_with_spread', () => {
+    const inputs = baseInputs({
+      regions: [{ code: 'ACT', sectors: { research: 80, technology: 70 } }],
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const state = computeResearchProgress(inputs, null);
+    assert(state.portfolioBalance?.hints.length === 6);
+    assert(typeof state.portfolioBalance?.nationalBalanceScore === 'number');
+  })
+);
+
+tests.push(
+  test('diffusion_forecast_projects_future_turns', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const state = computeResearchProgress(inputs, null);
+    const forecast = state.diffusionForecast ?? projectResearchDiffusionHorizon(inputs, state, 4);
+    assert(forecast.active);
+    assert(forecast.projections.some(p => p.turn > inputs.turn));
+    assert((forecast.peakProjectedScore ?? 0) >= 0);
+  })
+);
+
+tests.push(
+  test('reconcile_sets_last_reconciled_turn', () => {
+    const inputs = baseInputs({
+      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
+    });
+    const computed = computeResearchProgress(inputs, null);
+    const { persist } = reconcileResearchProgressOnLoad({ turn: 15 }, null, computed);
+    assert(persist.lastReconciledAtTurn === 15);
   })
 );
 

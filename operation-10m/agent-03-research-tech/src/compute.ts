@@ -11,6 +11,11 @@ import {
   applyCommercializationReadinessNudge,
   computeResearchCommercializationReport,
 } from './commercialization-bridge.ts';
+import {
+  applyPortfolioBalanceReadinessNudge,
+  computeResearchPortfolioBalanceReport,
+} from './portfolio-advisor.ts';
+import { projectResearchDiffusionHorizon } from './diffusion-forecast.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -153,6 +158,8 @@ export function createEmptyResearchProgressState(turn = 0): ResearchProgressStat
     updatedAtTurn: turn,
     sessionId: `o10m_r03_${turn}_0`,
     persistRevision: 0,
+    unlockEventLog: [],
+    lastReconciledAtTurn: turn,
   };
 }
 
@@ -221,6 +228,20 @@ export function computeResearchProgress(
   });
   readinessByBranch = applyCommercializationReadinessNudge(readinessByBranch, commercialization);
 
+  const portfolioBalance = computeResearchPortfolioBalanceReport({
+    unlockedNodes,
+    readinessByBranch,
+    branchEmphasis: coreBase.branchEmphasis,
+    scaleWave,
+  });
+  readinessByBranch = applyPortfolioBalanceReadinessNudge(readinessByBranch, portfolioBalance);
+
+  const diffusionForecast = projectResearchDiffusionHorizon(inputs, {
+    diffusion,
+    unlockedNodes,
+    institutionUpgrades,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -235,6 +256,8 @@ export function computeResearchProgress(
     lateGameDiffusion,
     scaleWave,
     commercialization,
+    portfolioBalance,
+    diffusionForecast,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };

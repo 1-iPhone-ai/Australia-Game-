@@ -12,4 +12,7 @@ export * from './save-migration.ts';
 export * from './save-lifecycle.ts';
 export * from './commercialization-bridge.ts';
 export * from './regression-harness.ts';
+export * from './unlock-event-log.ts';
+export * from './portfolio-advisor.ts';
+export * from './diffusion-forecast.ts';
 export * from './compute.ts';
