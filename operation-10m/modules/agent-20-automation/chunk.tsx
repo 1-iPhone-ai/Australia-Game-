@@ -1,6 +1,6 @@
 // OP10M_MODULE_BEGIN agent-20-automation
-// OP10M_MANIFEST_SHA256: 1ff0a38a74c453993af143490f8bf62c7b43538b5f47eb3be2ec4c536a27e1be
-// OP10M_MODULE_VERSION: 10m.1.38.0-agent20
+// OP10M_MANIFEST_SHA256: 2179bc1081f07b514d57b6ad1960f78c6c97f2bff266d6a692543efd167caaa1
+// OP10M_MODULE_VERSION: 10m.1.39.0-agent20
 // Agent 20 — idle / automation / autonomous ops (generated; source: operation-10m/agent-20-automation/src/)
 
 // --- source: types.ts ---
@@ -16544,6 +16544,354 @@ export function runO10Agent20IdleGovernanceProgramWaveRound38CapstoneSelfTests()
 }
 
 
+// --- source: automation-idle-governance-program-wave-round38-capstone-compare.ts ---
+
+export interface O10IdleGovernanceProgramWaveRound38CapstoneCompareResult {
+  schema: '10m.agent20.idle-governance-program-wave-round38-capstone-compare.v1';
+  waveRound: number;
+  parityOk: boolean;
+  mismatches: string[];
+  summaryLine: string;
+}
+
+function compareRound38CapstoneFields(
+  baseline: O10IdleGovernanceProgramWaveRound38CapstoneResult,
+  candidate: O10IdleGovernanceProgramWaveRound38CapstoneResult
+): string[] {
+  const mismatches: string[] = [];
+  if (baseline.waveRound !== candidate.waveRound) mismatches.push(`wave_round ${baseline.waveRound} vs ${candidate.waveRound}`);
+  if (baseline.capstoneReady !== candidate.capstoneReady) {
+    mismatches.push(`capstone_ready ${baseline.capstoneReady} vs ${candidate.capstoneReady}`);
+  }
+  if (baseline.capstoneCompare.parityOk !== candidate.capstoneCompare.parityOk) {
+    mismatches.push('capstone_compare_parity');
+  }
+  if (baseline.round38Export.payload.round38Ready !== candidate.round38Export.payload.round38Ready) {
+    mismatches.push('round38_export_ready');
+  }
+  if (baseline.o10TaskId !== candidate.o10TaskId) mismatches.push('o10_task_id');
+  return mismatches;
+}
+
+/** Round-39 twin round-38 capstone compare (O10-209 ladder). */
+export function compareIdleGovernanceProgramWaveRound38Capstones(
+  baseline: O10IdleGovernanceProgramWaveRound38CapstoneResult,
+  candidate: O10IdleGovernanceProgramWaveRound38CapstoneResult
+): O10IdleGovernanceProgramWaveRound38CapstoneCompareResult {
+  const mismatches = compareRound38CapstoneFields(baseline, candidate);
+  const waveRound = baseline.waveRound;
+  const parityOk = mismatches.length === 0;
+  const summaryLine = [
+    'gov_program_wave_round38_capstone_compare',
+    `round=${waveRound}`,
+    `parity=${parityOk}`,
+    `mismatches=${mismatches.length}`,
+  ].join(' ');
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-round38-capstone-compare.v1',
+    waveRound,
+    parityOk,
+    mismatches,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveRound38CapstoneCompareSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean) => results.push({ id, name, passed });
+
+  const twin = (): O10IdleGovernanceProgramWaveRound38CapstoneResult => ({
+    schema: '10m.agent20.idle-governance-program-wave-round38-capstone.v1',
+    o10TaskId: 'O10-207',
+    waveRound: 38,
+    capstoneReady: true,
+    capstoneMarkdown: 'md',
+    summaryLine: 'c',
+    primaryRound37Capstone: {} as O10IdleGovernanceProgramWaveRound38CapstoneResult['primaryRound37Capstone'],
+    twinRound37Capstone: {} as O10IdleGovernanceProgramWaveRound38CapstoneResult['twinRound37Capstone'],
+    capstoneCompare: { parityOk: true } as O10IdleGovernanceProgramWaveRound38CapstoneResult['capstoneCompare'],
+    round38Export: { payload: { round38Ready: true } } as O10IdleGovernanceProgramWaveRound38CapstoneResult['round38Export'],
+  });
+
+  push('gov_prog_r38_cap_cmp_parity', 'identical round 38 capstones report parity', compareIdleGovernanceProgramWaveRound38Capstones(twin(), twin()).parityOk);
+  push(
+    'gov_prog_r38_cap_cmp_ready',
+    'capstone_ready drift surfaces mismatch',
+    !compareIdleGovernanceProgramWaveRound38Capstones(twin(), { ...twin(), capstoneReady: false }).parityOk
+  );
+  push(
+    'gov_prog_r38_cap_cmp_schema',
+    'round38 capstone compare schema marker',
+    compareIdleGovernanceProgramWaveRound38Capstones(twin(), twin()).schema ===
+      '10m.agent20.idle-governance-program-wave-round38-capstone-compare.v1'
+  );
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-round39-export.ts ---
+
+export interface O10IdleGovernanceProgramWaveRound39ExportPayload {
+  schema: '10m.agent20.idle-governance-program-wave-round39-export.v1';
+  waveRound: 39;
+  o10TaskId: 'O10-209';
+  projectedLocHint: number;
+  round39Ready: boolean;
+  wave39HookLines: string[];
+}
+
+export interface O10IdleGovernanceProgramWaveRound39ExportResult {
+  schema: '10m.agent20.idle-governance-program-wave-round39-export.v1';
+  waveRound: 39;
+  o10TaskId: 'O10-209';
+  round38Capstone: O10IdleGovernanceProgramWaveRound38CapstoneResult;
+  payload: O10IdleGovernanceProgramWaveRound39ExportPayload;
+  exportMarkdown: string;
+  summaryLine: string;
+}
+
+/** Round-39 / wave-39 export for O10-209 integration hooks. */
+export function exportIdleGovernanceProgramWaveRound39(
+  round38Capstone: O10IdleGovernanceProgramWaveRound38CapstoneResult,
+  projectedLocHint: number
+): O10IdleGovernanceProgramWaveRound39ExportResult {
+  const round39Ready = round38Capstone.capstoneReady;
+  const wave39HookLines = [
+    `O10_AGENT20_WAVE39 task=O10-209 round=39`,
+    `O10_AGENT20_WAVE39 loc_hint=${projectedLocHint}`,
+    `O10_AGENT20_WAVE39 round39_ready=${round39Ready}`,
+    `O10_AGENT20_WAVE39 prior_capstone=${round38Capstone.capstoneReady}`,
+    `O10_AGENT20_WAVE39 prior_task=${round38Capstone.o10TaskId}`,
+  ];
+  const payload: O10IdleGovernanceProgramWaveRound39ExportPayload = {
+    schema: '10m.agent20.idle-governance-program-wave-round39-export.v1',
+    waveRound: 39,
+    o10TaskId: 'O10-209',
+    projectedLocHint,
+    round39Ready,
+    wave39HookLines,
+  };
+  const exportMarkdown = [
+    '# Agent 20 scale wave round 39 export (O10-209)',
+    '',
+    ...wave39HookLines.map(line => `- ${line}`),
+    '',
+    round38Capstone.capstoneMarkdown,
+  ].join('\n');
+  const summaryLine = ['gov_program_wave_round39_export', 'task=O10-209', 'round=39', `ready=${round39Ready}`].join(' ');
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-round39-export.v1',
+    waveRound: 39,
+    o10TaskId: 'O10-209',
+    round38Capstone,
+    payload,
+    exportMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveRound39ExportSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean) => results.push({ id, name, passed });
+
+  const mockCap = (): O10IdleGovernanceProgramWaveRound38CapstoneResult => ({
+    schema: '10m.agent20.idle-governance-program-wave-round38-capstone.v1',
+    o10TaskId: 'O10-207',
+    waveRound: 38,
+    capstoneReady: true,
+    capstoneMarkdown: '# r38',
+    summaryLine: 's',
+    primaryRound37Capstone: {} as O10IdleGovernanceProgramWaveRound38CapstoneResult['primaryRound37Capstone'],
+    twinRound37Capstone: {} as O10IdleGovernanceProgramWaveRound38CapstoneResult['twinRound37Capstone'],
+    capstoneCompare: {} as O10IdleGovernanceProgramWaveRound38CapstoneResult['capstoneCompare'],
+    round38Export: {} as O10IdleGovernanceProgramWaveRound38CapstoneResult['round38Export'],
+  });
+
+  const exported = exportIdleGovernanceProgramWaveRound39(mockCap(), 2_082_720);
+  push(
+    'gov_prog_r39_export_o10',
+    'wave 39 export tags O10-209 and loc hint',
+    exported.o10TaskId === 'O10-209' &&
+      exported.payload.projectedLocHint === 2_082_720 &&
+      exported.payload.wave39HookLines.some(l => l.includes('O10-209'))
+  );
+  push(
+    'gov_prog_r39_export_schema',
+    'round 39 export schema marker',
+    exported.schema === '10m.agent20.idle-governance-program-wave-round39-export.v1'
+  );
+  return results;
+}
+
+
+// --- source: automation-idle-governance-program-wave-round39-capstone.ts ---
+  createEmptyIdleGovernanceProgramRegistry,
+  type O10IdleGovernanceProgramRegistry,
+} from './automation-idle-governance-program-registry.js';
+
+export interface O10IdleGovernanceProgramWaveRound39CapstoneResult {
+  schema: '10m.agent20.idle-governance-program-wave-round39-capstone.v1';
+  o10TaskId: 'O10-209';
+  waveRound: 39;
+  capstoneReady: boolean;
+  primaryRound38Capstone: ReturnType<typeof runIdleGovernanceProgramWaveRound38Capstone>;
+  twinRound38Capstone: ReturnType<typeof runIdleGovernanceProgramWaveRound38Capstone>;
+  capstoneCompare: ReturnType<typeof compareIdleGovernanceProgramWaveRound38Capstones>;
+  round39Export: ReturnType<typeof exportIdleGovernanceProgramWaveRound39>;
+  capstoneMarkdown: string;
+  summaryLine: string;
+}
+
+function registryFromRound39Primary(cap: O10IdleGovernanceProgramWaveRound39CapstoneResult): O10IdleGovernanceProgramRegistry {
+  return cap.primaryRound38Capstone.primaryRound37Capstone.primaryRound36Capstone.primaryRound35Capstone
+    .primaryRound34Capstone.primaryRound33Capstone.primaryRound32Capstone.primaryRound31Capstone.primaryRound30Capstone
+    .primaryRound29Capstone.primaryRound28Capstone.primaryRound27Capstone.primaryRound26Capstone.primaryEpoch.primarySeal
+    .primaryLanding.primaryDispatch.primaryCloseout.primaryGate.primaryExport.run.primaryGate.primaryCloseout.subject
+    .executive.director.operations.registry;
+}
+
+/** Round-39 / wave-39 capstone for O10-209 origin landing. */
+export function runIdleGovernanceProgramWaveRound39Capstone(
+  spec: O10IdleOpsWindowSpec,
+  rule: PortableHumanAutomationRule,
+  startTurn: number,
+  requestedCycles: number,
+  projectedLocHint: number,
+  priorRegistry: O10IdleGovernanceProgramRegistry = createEmptyIdleGovernanceProgramRegistry()
+): O10IdleGovernanceProgramWaveRound39CapstoneResult {
+  const waveRound = 39;
+  const primaryRound38Capstone = runIdleGovernanceProgramWaveRound38Capstone(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    projectedLocHint,
+    priorRegistry
+  );
+  const twinRound38Capstone = runIdleGovernanceProgramWaveRound38Capstone(
+    spec,
+    rule,
+    startTurn,
+    requestedCycles,
+    projectedLocHint,
+    priorRegistry
+  );
+  const capstoneCompare = compareIdleGovernanceProgramWaveRound38Capstones(
+    primaryRound38Capstone,
+    twinRound38Capstone
+  );
+  const round39Export = exportIdleGovernanceProgramWaveRound39(primaryRound38Capstone, projectedLocHint);
+  const capstoneReady =
+    capstoneCompare.parityOk && primaryRound38Capstone.capstoneReady && round39Export.payload.round39Ready;
+  const capstoneMarkdown = [
+    '# Agent 20 scale wave round 39 capstone (O10-209)',
+    '',
+    `- capstone_ready=${capstoneReady}`,
+    `- wave_round=${waveRound}`,
+    `- baseline_hint=${projectedLocHint}`,
+    `- ${capstoneCompare.summaryLine}`,
+    '',
+    round39Export.exportMarkdown,
+  ].join('\n');
+  const summaryLine = [
+    'gov_program_wave_round39_capstone',
+    'task=O10-209',
+    `round=${waveRound}`,
+    `ready=${capstoneReady}`,
+    round39Export.summaryLine,
+  ].join(' | ');
+  return {
+    schema: '10m.agent20.idle-governance-program-wave-round39-capstone.v1',
+    o10TaskId: 'O10-209',
+    waveRound,
+    capstoneReady,
+    primaryRound38Capstone,
+    twinRound38Capstone,
+    capstoneCompare,
+    round39Export,
+    capstoneMarkdown,
+    summaryLine,
+  };
+}
+
+export function runO10Agent20IdleGovernanceProgramWaveRound39CapstoneSelfTests(): O10SelfTestResult[] {
+  const results: O10SelfTestResult[] = [];
+  const push = (id: string, name: string, passed: boolean) => results.push({ id, name, passed });
+
+  const sampleRule: PortableHumanAutomationRule = {
+    id: 'cap39',
+    name: 'Round 39 capstone',
+    enabled: true,
+    authorityDisabled: false,
+    priority: 5,
+    activeFromDay: 0,
+    activeUntilDay: 99,
+    trigger: { type: 'turn_start' },
+    conditions: null,
+    limits: { maxRunsPerDay: 10, maxRunsTotal: null, cooldownTurns: 0 },
+    safety: { maxCostPerRun: null, minCashRemainingAfterRun: null, stopIfNoStateChangeCount: 5 },
+    stats: {
+      totalRuns: 0,
+      totalSuccesses: 0,
+      totalSkipped: 0,
+      totalFailed: 0,
+      lastRunDay: null,
+      lastRunTurn: null,
+      runsToday: 0,
+      runsTodayDay: -1,
+      consecutiveNoChangeCount: 0,
+      lastResultSummary: '',
+    },
+    actionType: 'wait',
+    resolvedCost: 0,
+    spendableCash: 100,
+  };
+
+  const calmSpec: O10IdleOpsWindowSpec = {
+    startTurn: 1,
+    startDay: 1,
+    turnCount: 2,
+    humanCommittedEvery: 1,
+    idleMsStart: 0,
+    idleMsStep: 0,
+    consecutiveIdleStart: 0,
+  };
+
+  const cap = runIdleGovernanceProgramWaveRound39Capstone(calmSpec, sampleRule, 1, 3, 2_082_720);
+  push(
+    'gov_prog_r39_capstone_calm',
+    'O10-209 wave 39 capstone ready on calm spec',
+    cap.capstoneReady && cap.o10TaskId === 'O10-209' && cap.waveRound === 39 && cap.capstoneMarkdown.includes('O10-209')
+  );
+
+  const cap2 = runIdleGovernanceProgramWaveRound39Capstone(
+    calmSpec,
+    sampleRule,
+    3,
+    2,
+    2_082_720,
+    registryFromRound39Primary(cap)
+  );
+  const rollup =
+    cap2.primaryRound38Capstone.primaryRound37Capstone.primaryRound36Capstone.primaryRound35Capstone
+      .primaryRound34Capstone.primaryRound33Capstone.primaryRound32Capstone.primaryRound31Capstone.primaryRound30Capstone
+      .primaryRound29Capstone.primaryRound28Capstone.primaryRound27Capstone.primaryRound26Capstone.primaryEpoch.primarySeal
+      .primaryLanding.primaryDispatch.primaryCloseout.primaryGate.primaryExport.run.primaryGate.primaryCloseout.subject
+      .executive.director.registryRollup;
+  push(
+    'gov_prog_r39_capstone_chain',
+    'chained wave 39 capstone accumulates registry',
+    rollup.entryCount === 2 && cap2.summaryLine.includes('O10-209')
+  );
+  push(
+    'gov_prog_r39_capstone_schema',
+    'round 39 capstone schema marker',
+    cap.schema === '10m.agent20.idle-governance-program-wave-round39-capstone.v1'
+  );
+  return results;
+}
+
+
 // --- source: index.ts ---
 
 
@@ -16693,6 +17041,9 @@ export function runO10Agent20ModuleSelfTests(): {
   results.push(...runO10Agent20IdleGovernanceProgramWaveRound37CapstoneCompareSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveRound38ExportSelfTests());
   results.push(...runO10Agent20IdleGovernanceProgramWaveRound38CapstoneSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveRound38CapstoneCompareSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveRound39ExportSelfTests());
+  results.push(...runO10Agent20IdleGovernanceProgramWaveRound39CapstoneSelfTests());
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };
 }
