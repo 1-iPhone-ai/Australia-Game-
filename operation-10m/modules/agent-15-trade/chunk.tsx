@@ -202,6 +202,8 @@ export interface GTELPersisted {
   bilateralLoopResumptionGateSmoothing?: number;
   resumedLoopContinuitySmoothing?: number;
   bilateralCycleRestartAcknowledgmentSmoothing?: number;
+  acknowledgedCyclePrimingSmoothing?: number;
+  bilateralCommitmentArcOpeningSmoothing?: number;
 }
 
 export interface GTELState {
@@ -269,6 +271,8 @@ export interface GTELState {
   bilateralLoopResumptionGate: GTELBilateralLoopResumptionGateSnapshot;
   resumedLoopContinuity: GTELResumedLoopContinuitySnapshot;
   bilateralCycleRestartAcknowledgment: GTELBilateralCycleRestartAcknowledgmentSnapshot;
+  acknowledgedCyclePriming: GTELAcknowledgedCyclePrimingSnapshot;
+  bilateralCommitmentArcOpening: GTELBilateralCommitmentArcOpeningSnapshot;
   inputHash: string;
 }
 
@@ -936,6 +940,26 @@ export interface GTELBilateralCycleRestartAcknowledgmentSnapshot {
   summary: string;
 }
 
+export type GTELAcknowledgedCyclePrimingBand = 'primed' | 'charging' | 'weak' | 'empty';
+
+export interface GTELAcknowledgedCyclePrimingSnapshot {
+  score: number;
+  band: GTELAcknowledgedCyclePrimingBand;
+  acknowledgmentSupport: number;
+  renewalFeed: number;
+  summary: string;
+}
+
+export type GTELBilateralCommitmentArcOpeningBand = 'opened' | 'unlocking' | 'latched' | 'sealed';
+
+export interface GTELBilateralCommitmentArcOpeningSnapshot {
+  score: number;
+  band: GTELBilateralCommitmentArcOpeningBand;
+  primingSupport: number;
+  readinessAnchor: number;
+  summary: string;
+}
+
 export interface GlobalTradeEconomyPanelProps {
   state: GTELState | null;
   theme?: { isDark?: boolean };
@@ -1135,6 +1159,8 @@ export function createEmptyGTELPersisted(): GTELPersisted {
     bilateralLoopResumptionGateSmoothing: 0.52,
     resumedLoopContinuitySmoothing: 0.52,
     bilateralCycleRestartAcknowledgmentSmoothing: 0.52,
+    acknowledgedCyclePrimingSmoothing: 0.52,
+    bilateralCommitmentArcOpeningSmoothing: 0.52,
   };
 }
 
@@ -1376,6 +1402,12 @@ export function sanitizeGTELPersisted(raw: unknown, turn = 1): GTELPersisted {
   base.resumedLoopContinuitySmoothing = sanitizeResumedLoopContinuitySmoothing(r.resumedLoopContinuitySmoothing);
   base.bilateralCycleRestartAcknowledgmentSmoothing = sanitizeBilateralCycleRestartAcknowledgmentSmoothing(
     r.bilateralCycleRestartAcknowledgmentSmoothing,
+  );
+  base.acknowledgedCyclePrimingSmoothing = sanitizeAcknowledgedCyclePrimingSmoothing(
+    r.acknowledgedCyclePrimingSmoothing,
+  );
+  base.bilateralCommitmentArcOpeningSmoothing = sanitizeBilateralCommitmentArcOpeningSmoothing(
+    r.bilateralCommitmentArcOpeningSmoothing,
   );
   return base;
 }
@@ -7136,6 +7168,18 @@ export function applyGlobalTradeHouseholdOverrides<T extends Record<string, any>
   bilateralCycleRestartAcknowledgmentGiNotes,
   bilateralCycleRestartAcknowledgmentWorldEvent,
 } from './bilateral-cycle-restart-acknowledgment.ts';
+  computeAcknowledgedCyclePrimingSnapshot,
+  acknowledgedCyclePrimingDomesticStress,
+  acknowledgedCyclePrimingExportScale,
+  acknowledgedCyclePrimingGiNotes,
+  acknowledgedCyclePrimingWorldEvent,
+} from './acknowledged-cycle-priming.ts';
+  computeBilateralCommitmentArcOpeningSnapshot,
+  bilateralCommitmentArcOpeningDomesticStressRelief,
+  bilateralCommitmentArcOpeningExportScale,
+  bilateralCommitmentArcOpeningGiNotes,
+  bilateralCommitmentArcOpeningWorldEvent,
+} from './bilateral-commitment-arc-opening.ts';
   deriveTradeAgreementModifiers,
   expireStaleAgreements,
   mergeCommodityDeltas,
@@ -7858,6 +7902,26 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
   const restartAckEvent = bilateralCycleRestartAcknowledgmentWorldEvent(bilateralCycleRestartAcknowledgment, turn);
   if (restartAckEvent) worldEvents.push(restartAckEvent);
 
+  const ackPrimingStep = computeAcknowledgedCyclePrimingSnapshot({
+    bilateralCycleRestartAcknowledgment,
+    capacityRenewalPriming,
+    persisted,
+  });
+  persisted = ackPrimingStep.persisted;
+  const acknowledgedCyclePriming = ackPrimingStep.snapshot;
+  const ackPrimingEvent = acknowledgedCyclePrimingWorldEvent(acknowledgedCyclePriming, turn);
+  if (ackPrimingEvent) worldEvents.push(ackPrimingEvent);
+
+  const arcOpeningStep = computeBilateralCommitmentArcOpeningSnapshot({
+    acknowledgedCyclePriming,
+    anchoredBookReadiness,
+    persisted,
+  });
+  persisted = arcOpeningStep.persisted;
+  const bilateralCommitmentArcOpening = arcOpeningStep.snapshot;
+  const arcOpeningEvent = bilateralCommitmentArcOpeningWorldEvent(bilateralCommitmentArcOpening, turn);
+  if (arcOpeningEvent) worldEvents.push(arcOpeningEvent);
+
   const financeScaledThroughput =
     Math.round(
       logistics.effectiveExportThroughput *
@@ -7901,6 +7965,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
         bilateralLoopResumptionGateExportScale(bilateralLoopResumptionGate) *
         resumedLoopContinuityExportScale(resumedLoopContinuity) *
         bilateralCycleRestartAcknowledgmentExportScale(bilateralCycleRestartAcknowledgment) *
+        acknowledgedCyclePrimingExportScale(acknowledgedCyclePriming) *
+        bilateralCommitmentArcOpeningExportScale(bilateralCommitmentArcOpening) *
         10,
     ) / 10;
 
@@ -7975,6 +8041,7 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       bilateralCycleReentryGateDomesticStressRelief(bilateralCycleReentryGate) +
       bilateralLoopResumptionGateDomesticStressRelief(bilateralLoopResumptionGate) +
       bilateralCycleRestartAcknowledgmentDomesticStressRelief(bilateralCycleRestartAcknowledgment) +
+      bilateralCommitmentArcOpeningDomesticStressRelief(bilateralCommitmentArcOpening) +
       exportCapacityDomesticStress(exportCapacity) +
       maritimeRiskDomesticStress(maritimeRisk) +
       enforcementMods.domesticStress +
@@ -7995,7 +8062,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
       tradeCycleSealVerificationDomesticStress(tradeCycleSealVerification) +
       capacityRenewalPrimingDomesticStress(capacityRenewalPriming) +
       cycleReentryStabilizationDomesticStress(cycleReentryStabilization) +
-      resumedLoopContinuityDomesticStress(resumedLoopContinuity),
+      resumedLoopContinuityDomesticStress(resumedLoopContinuity) +
+      acknowledgedCyclePrimingDomesticStress(acknowledgedCyclePriming),
     shockRegions: shock.regionIds,
   });
   domestic.summary = `${domestic.summary} ${summarizeDomesticConsequences(regionalImpacts)}`;
@@ -8060,6 +8128,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     persisted.bilateralLoopResumptionGateSmoothing,
     persisted.resumedLoopContinuitySmoothing,
     persisted.bilateralCycleRestartAcknowledgmentSmoothing,
+    persisted.acknowledgedCyclePrimingSmoothing,
+    persisted.bilateralCommitmentArcOpeningSmoothing,
   ]);
   persisted.revision += 1;
   persisted.lastProcessedTurn = turn;
@@ -8156,6 +8226,8 @@ export function advanceGlobalTradeEconomyTurn(input: GTELTurnInput): GTELTurnRes
     bilateralLoopResumptionGate,
     resumedLoopContinuity,
     bilateralCycleRestartAcknowledgment,
+    acknowledgedCyclePriming,
+    bilateralCommitmentArcOpening,
     inputHash,
   };
 
@@ -8231,6 +8303,8 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   lines.push(...bilateralLoopResumptionGateGiNotes(state.bilateralLoopResumptionGate));
   lines.push(...resumedLoopContinuityGiNotes(state.resumedLoopContinuity));
   lines.push(...bilateralCycleRestartAcknowledgmentGiNotes(state.bilateralCycleRestartAcknowledgment));
+  lines.push(...acknowledgedCyclePrimingGiNotes(state.acknowledgedCyclePriming));
+  lines.push(...bilateralCommitmentArcOpeningGiNotes(state.bilateralCommitmentArcOpening));
   if (state.logistics?.band === 'congested' || state.logistics?.band === 'tight') {
     lines.push(state.logistics.summary);
   }
@@ -8410,6 +8484,14 @@ export function buildGlobalTradeGi3Notes(state: import('./types.ts').GTELState |
   createEmptyBilateralCycleRestartAcknowledgmentSnapshot,
   bilateralCycleRestartAcknowledgmentExportScale,
 } from './bilateral-cycle-restart-acknowledgment.ts';
+  computeAcknowledgedCyclePrimingSnapshot,
+  createEmptyAcknowledgedCyclePrimingSnapshot,
+  acknowledgedCyclePrimingExportScale,
+} from './acknowledged-cycle-priming.ts';
+  computeBilateralCommitmentArcOpeningSnapshot,
+  createEmptyBilateralCommitmentArcOpeningSnapshot,
+  bilateralCommitmentArcOpeningExportScale,
+} from './bilateral-commitment-arc-opening.ts';
   validateScenarioShockCatalog,
   triggerCommodityShockScenario,
   COMMODITY_SHOCK_SCENARIOS,
@@ -9861,6 +9943,46 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralCycleRestartAcknowledgmentExportScale(acknowledged) >=
         bilateralCycleRestartAcknowledgmentExportScale(rejected),
       'expected acknowledgment scale lift',
+    );
+  });
+
+  ok('acknowledged cycle priming improves when restart is acknowledged', () => {
+    const ack = { ...createEmptyBilateralCycleRestartAcknowledgmentSnapshot(), score: 0.94, band: 'acknowledged' as const };
+    const priming = { ...createEmptyCapacityRenewalPrimingSnapshot(), score: 0.9, band: 'primed' as const };
+    const primed = computeAcknowledgedCyclePrimingSnapshot({
+      bilateralCycleRestartAcknowledgment: ack,
+      capacityRenewalPriming: priming,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const empty = computeAcknowledgedCyclePrimingSnapshot({
+      bilateralCycleRestartAcknowledgment: { ...ack, score: 0.1, band: 'rejected' },
+      capacityRenewalPriming: { ...priming, score: 0.08, band: 'starved' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(primed.score > empty.score, 'expected stronger ack priming when acknowledged');
+    gtelAssert(
+      acknowledgedCyclePrimingExportScale(primed) >= acknowledgedCyclePrimingExportScale(empty),
+      'expected ack priming scale lift',
+    );
+  });
+
+  ok('bilateral commitment arc opening improves when cycle priming is primed', () => {
+    const ackPriming = { ...createEmptyAcknowledgedCyclePrimingSnapshot(), score: 0.95, band: 'primed' as const };
+    const readiness = { ...createEmptyAnchoredBookReadinessSnapshot(), score: 0.92, band: 'ready' as const };
+    const opened = computeBilateralCommitmentArcOpeningSnapshot({
+      acknowledgedCyclePriming: ackPriming,
+      anchoredBookReadiness: readiness,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const sealed = computeBilateralCommitmentArcOpeningSnapshot({
+      acknowledgedCyclePriming: { ...ackPriming, score: 0.1, band: 'empty' },
+      anchoredBookReadiness: { ...readiness, score: 0.08, band: 'blocked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(opened.score > sealed.score, 'expected arc open when primed');
+    gtelAssert(
+      bilateralCommitmentArcOpeningExportScale(opened) >= bilateralCommitmentArcOpeningExportScale(sealed),
+      'expected arc opening scale lift',
     );
   });
 

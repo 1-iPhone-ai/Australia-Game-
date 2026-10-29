@@ -229,6 +229,16 @@ import {
   createEmptyBilateralCycleRestartAcknowledgmentSnapshot,
   bilateralCycleRestartAcknowledgmentExportScale,
 } from './bilateral-cycle-restart-acknowledgment.ts';
+import {
+  computeAcknowledgedCyclePrimingSnapshot,
+  createEmptyAcknowledgedCyclePrimingSnapshot,
+  acknowledgedCyclePrimingExportScale,
+} from './acknowledged-cycle-priming.ts';
+import {
+  computeBilateralCommitmentArcOpeningSnapshot,
+  createEmptyBilateralCommitmentArcOpeningSnapshot,
+  bilateralCommitmentArcOpeningExportScale,
+} from './bilateral-commitment-arc-opening.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1684,6 +1694,46 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
       bilateralCycleRestartAcknowledgmentExportScale(acknowledged) >=
         bilateralCycleRestartAcknowledgmentExportScale(rejected),
       'expected acknowledgment scale lift',
+    );
+  });
+
+  ok('acknowledged cycle priming improves when restart is acknowledged', () => {
+    const ack = { ...createEmptyBilateralCycleRestartAcknowledgmentSnapshot(), score: 0.94, band: 'acknowledged' as const };
+    const priming = { ...createEmptyCapacityRenewalPrimingSnapshot(), score: 0.9, band: 'primed' as const };
+    const primed = computeAcknowledgedCyclePrimingSnapshot({
+      bilateralCycleRestartAcknowledgment: ack,
+      capacityRenewalPriming: priming,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const empty = computeAcknowledgedCyclePrimingSnapshot({
+      bilateralCycleRestartAcknowledgment: { ...ack, score: 0.1, band: 'rejected' },
+      capacityRenewalPriming: { ...priming, score: 0.08, band: 'starved' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(primed.score > empty.score, 'expected stronger ack priming when acknowledged');
+    gtelAssert(
+      acknowledgedCyclePrimingExportScale(primed) >= acknowledgedCyclePrimingExportScale(empty),
+      'expected ack priming scale lift',
+    );
+  });
+
+  ok('bilateral commitment arc opening improves when cycle priming is primed', () => {
+    const ackPriming = { ...createEmptyAcknowledgedCyclePrimingSnapshot(), score: 0.95, band: 'primed' as const };
+    const readiness = { ...createEmptyAnchoredBookReadinessSnapshot(), score: 0.92, band: 'ready' as const };
+    const opened = computeBilateralCommitmentArcOpeningSnapshot({
+      acknowledgedCyclePriming: ackPriming,
+      anchoredBookReadiness: readiness,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const sealed = computeBilateralCommitmentArcOpeningSnapshot({
+      acknowledgedCyclePriming: { ...ackPriming, score: 0.1, band: 'empty' },
+      anchoredBookReadiness: { ...readiness, score: 0.08, band: 'blocked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(opened.score > sealed.score, 'expected arc open when primed');
+    gtelAssert(
+      bilateralCommitmentArcOpeningExportScale(opened) >= bilateralCommitmentArcOpeningExportScale(sealed),
+      'expected arc opening scale lift',
     );
   });
 

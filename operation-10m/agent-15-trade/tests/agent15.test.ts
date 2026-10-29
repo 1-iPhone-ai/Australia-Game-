@@ -47,7 +47,7 @@ test('integrated self-test bundle passes', () => {
   if (r.failed.length) {
     assert.fail(r.failed.join('\n'));
   }
-  assert.ok(r.passed >= 61);
+  assert.ok(r.passed >= 63);
 });
 
 test('turn 47 schedules shipping shock into persisted state', () => {
@@ -1263,5 +1263,49 @@ test('round 27: closed resumption weakens loop continuity vs resumed baseline', 
   });
   assert.ok(
     resumed.state.resumedLoopContinuity.score >= closed.state.resumedLoopContinuity.score - 0.14,
+  );
+});
+
+test('round 28: acknowledged cycle priming and commitment arc opening on state', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.acknowledgedCyclePrimingSmoothing = 0.55;
+  persisted.bilateralCommitmentArcOpeningSmoothing = 0.53;
+  const r = advanceGlobalTradeEconomyTurn({
+    turn: 73,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 100 } } },
+    persisted,
+  });
+  assert.ok(r.state.acknowledgedCyclePriming);
+  assert.ok(['primed', 'charging', 'weak', 'empty'].includes(r.state.acknowledgedCyclePriming.band));
+  assert.ok(r.state.bilateralCommitmentArcOpening);
+  assert.ok(['opened', 'unlocking', 'latched', 'sealed'].includes(r.state.bilateralCommitmentArcOpening.band));
+  assert.ok(r.persisted.acknowledgedCyclePrimingSmoothing != null);
+  assert.ok(r.persisted.bilateralCommitmentArcOpeningSmoothing != null);
+  const notes = buildGlobalTradeGi3Notes(r.state);
+  assert.ok(notes.some(n => /Acknowledged cycle priming/i.test(n)));
+  assert.ok(notes.some(n => /Bilateral commitment arc opening/i.test(n)));
+});
+
+test('round 28: rejected restart acknowledgment weakens priming vs acknowledged baseline', () => {
+  let persisted = createEmptyGTELPersisted();
+  persisted.bilateralCycleRestartAcknowledgmentSmoothing = 0.92;
+  persisted.capacityRenewalPrimingSmoothing = 0.86;
+  const acknowledged = advanceGlobalTradeEconomyTurn({
+    turn: 74,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'healthy', exportedCapacity: 85 } } },
+    persisted: { ...persisted },
+  });
+  persisted.bilateralCycleRestartAcknowledgmentSmoothing = 0.1;
+  persisted.capacityRenewalPrimingSmoothing = 0.08;
+  const rejected = advanceGlobalTradeEconomyTurn({
+    turn: 74,
+    diplomacyState: { deals: [] },
+    nationalSystems: { national: { trade: { condition: 'critical', exportedCapacity: 230 } } },
+    persisted: { ...persisted },
+  });
+  assert.ok(
+    acknowledged.state.acknowledgedCyclePriming.score >= rejected.state.acknowledgedCyclePriming.score - 0.14,
   );
 });
