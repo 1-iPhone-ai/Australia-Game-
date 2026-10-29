@@ -1,7 +1,7 @@
 # Agent 03 — Integration Contract (Research / Technology / Progression)
 
 **Module root:** `operation-10m/agent-03-research-tech/`  
-**Schema version:** `op10m-agent03-v7` (readiness milestone log + branch readiness snapshot persisted; integration risk outlook derived, v6 migration)  
+**Schema version:** `op10m-agent03-v8` (integration risk log + scale-wave snapshot persisted; adoption horizon outlook derived, v7 migration)  
 **Owner:** Agent 03 (content + pure engine). **Assembly:** Agent 25 only.
 
 ## Purpose
@@ -35,9 +35,9 @@ gameState.researchProgress: ResearchProgressPersistedCore | null;
 
 Use `prepareResearchProgressForSave(state)` before write; on load `applyResearchProgressSavePipeline(inputs, raw)` or `computeResearchProgressFromSave`.
 
-**v7 persisted core** adds bounded `readinessMilestoneLog` and `readinessBranchSnapshot` on top of v6 (`emphasisChangeLog`, `institutionTierSnapshot`, v5 unlock audit). Derived `portfolioBalance`, `diffusionForecast`, `synergyOutlook`, and `integrationRiskOutlook` recomputed each turn.
+**v8 persisted core** adds bounded `integrationRiskLog` and `scaleWaveSnapshot` on top of v7 (`readinessMilestoneLog`, `readinessBranchSnapshot`, v6 emphasis/institution digest, v5 unlock audit). Derived `portfolioBalance`, `diffusionForecast`, `synergyOutlook`, `integrationRiskOutlook`, and `adoptionHorizonOutlook` recomputed each turn.
 
-Legacy `op10m-agent03-v6`, `op10m-agent03-v5`, `op10m-agent03-v4`, `op10m-agent03-v3`, `op10m-agent03-v2`, and `op10m-agent03-v1` migrate via `migrateResearchProgressSave()`.
+Legacy `op10m-agent03-v7`, `op10m-agent03-v6`, `op10m-agent03-v5`, `op10m-agent03-v4`, `op10m-agent03-v3`, `op10m-agent03-v2`, and `op10m-agent03-v1` migrate via `migrateResearchProgressSave()`.
 
 ### Input wiring
 

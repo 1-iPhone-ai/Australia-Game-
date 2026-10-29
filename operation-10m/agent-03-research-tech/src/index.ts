@@ -21,4 +21,8 @@ export * from './synergy-outlook.ts';
 export * from './readiness-milestone-log.ts';
 export * from './readiness-branch-snapshot.ts';
 export * from './integration-risk-outlook.ts';
+export * from './integration-risk-log.ts';
+export * from './integration-risk-snapshot.ts';
+export * from './scale-wave-snapshot.ts';
+export * from './adoption-horizon-outlook.ts';
 export * from './compute.ts';

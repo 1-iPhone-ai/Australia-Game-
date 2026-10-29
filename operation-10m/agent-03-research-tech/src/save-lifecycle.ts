@@ -6,14 +6,22 @@ import {
   migrateResearchProgressSave,
   prepareResearchProgressForSave,
 } from './save-migration.ts';
-import type { ResearchProgressState, ResearchUnlockEvent, ResearchEmphasisChangeEvent } from './types.ts';
+import type {
+  ResearchProgressState,
+  ResearchUnlockEvent,
+  ResearchEmphasisChangeEvent,
+  ResearchReadinessMilestoneEvent,
+  ResearchIntegrationRiskEvent,
+} from './types.ts';
 import { RESEARCH_PROGRESS_SCHEMA_VERSION } from './types.ts';
 import { RESEARCH_UNLOCK_EVENT_LOG_CAP } from './unlock-event-log.ts';
 import { RESEARCH_EMPHASIS_CHANGE_LOG_CAP } from './emphasis-change-log.ts';
 import { computeInstitutionTierSnapshot, mergeInstitutionTierSnapshots } from './institution-tier-snapshot.ts';
 import { RESEARCH_READINESS_MILESTONE_LOG_CAP } from './readiness-milestone-log.ts';
-import { computeReadinessBranchSnapshot, mergeReadinessBranchSnapshots } from './readiness-branch-snapshot.ts';
-import type { ResearchReadinessMilestoneEvent } from './types.ts';
+import { mergeReadinessBranchSnapshots } from './readiness-branch-snapshot.ts';
+import { RESEARCH_INTEGRATION_RISK_LOG_CAP } from './integration-risk-log.ts';
+import { mergeIntegrationRiskSnapshots } from './integration-risk-snapshot.ts';
+import { mergeScaleWaveSnapshots } from './scale-wave-snapshot.ts';
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
@@ -63,6 +71,18 @@ function mergeReadinessMilestoneLogs(
     byKey.set(key, ev);
   }
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_READINESS_MILESTONE_LOG_CAP);
+}
+
+function mergeIntegrationRiskLogs(
+  local: ResearchIntegrationRiskEvent[] | undefined,
+  remote: ResearchIntegrationRiskEvent[] | undefined
+): ResearchIntegrationRiskEvent[] {
+  const byKey = new Map<string, ResearchIntegrationRiskEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.band}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_INTEGRATION_RISK_LOG_CAP);
 }
 
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
@@ -156,6 +176,14 @@ export function mergeResearchPersistedCores(
         local.readinessBranchSnapshot ?? undefined,
         remote.readinessBranchSnapshot ?? undefined
       ) ?? null,
+    integrationRiskLog: mergeIntegrationRiskLogs(local.integrationRiskLog, remote.integrationRiskLog),
+    integrationRiskSnapshot:
+      mergeIntegrationRiskSnapshots(
+        local.integrationRiskSnapshot ?? undefined,
+        remote.integrationRiskSnapshot ?? undefined
+      ) ?? null,
+    scaleWaveSnapshot:
+      mergeScaleWaveSnapshots(local.scaleWaveSnapshot ?? undefined, remote.scaleWaveSnapshot ?? undefined) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -185,6 +213,9 @@ export function reconcileResearchProgressOnLoad(
         institutionTierSnapshot: persist.institutionTierSnapshot,
         readinessMilestoneLog: persist.readinessMilestoneLog,
         readinessBranchSnapshot: persist.readinessBranchSnapshot,
+        integrationRiskLog: persist.integrationRiskLog,
+        integrationRiskSnapshot: persist.integrationRiskSnapshot,
+        scaleWaveSnapshot: persist.scaleWaveSnapshot,
       },
       persist,
     };
@@ -206,6 +237,9 @@ export function reconcileResearchProgressOnLoad(
     institutionTierSnapshot: mergedCore.institutionTierSnapshot,
     readinessMilestoneLog: mergedCore.readinessMilestoneLog,
     readinessBranchSnapshot: mergedCore.readinessBranchSnapshot,
+    integrationRiskLog: mergedCore.integrationRiskLog,
+    integrationRiskSnapshot: mergedCore.integrationRiskSnapshot,
+    scaleWaveSnapshot: mergedCore.scaleWaveSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -228,6 +262,9 @@ export function reconcileResearchProgressOnLoad(
       institutionTierSnapshot: persist.institutionTierSnapshot,
       readinessMilestoneLog: persist.readinessMilestoneLog,
       readinessBranchSnapshot: persist.readinessBranchSnapshot,
+      integrationRiskLog: persist.integrationRiskLog,
+      integrationRiskSnapshot: persist.integrationRiskSnapshot,
+      scaleWaveSnapshot: persist.scaleWaveSnapshot,
     },
     persist,
   };

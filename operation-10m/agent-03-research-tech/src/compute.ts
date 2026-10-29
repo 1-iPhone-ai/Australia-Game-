@@ -18,6 +18,7 @@ import {
 import { projectResearchDiffusionHorizon } from './diffusion-forecast.ts';
 import { computeResearchSynergyOutlook } from './synergy-outlook.ts';
 import { computeResearchIntegrationRiskOutlook } from './integration-risk-outlook.ts';
+import { computeResearchAdoptionHorizonOutlook } from './adoption-horizon-outlook.ts';
 import { branchNodeTopologicalOrder, evaluateNodePrerequisites } from './prerequisites.ts';
 import { resolveActiveStrategyHooks, STRATEGY_HOOK_BY_ID } from './strategy-hooks.ts';
 import {
@@ -260,6 +261,14 @@ export function computeResearchProgress(
     institutionTierSnapshot: coreBase.institutionTierSnapshot ?? null,
   });
 
+  const adoptionHorizonOutlook = computeResearchAdoptionHorizonOutlook(inputs, {
+    diffusionForecast,
+    scaleWave,
+    synergyOutlook,
+    diffusion,
+    integrationRiskOutlook,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -278,6 +287,7 @@ export function computeResearchProgress(
     diffusionForecast,
     synergyOutlook,
     integrationRiskOutlook,
+    adoptionHorizonOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };

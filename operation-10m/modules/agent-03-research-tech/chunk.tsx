@@ -293,12 +293,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v7' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v8' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v7'
   | 'op10m-agent03-v6'
   | 'op10m-agent03-v5'
   | 'op10m-agent03-v4'
@@ -431,6 +432,44 @@ export interface ResearchIntegrationRiskOutlook {
   links: ResearchIntegrationRiskLink[];
 }
 
+export type ResearchIntegrationRiskBand = 40 | 60 | 80;
+
+export interface ResearchIntegrationRiskEvent {
+  seq: number;
+  turn: number;
+  band: ResearchIntegrationRiskBand;
+  nationalRiskScore: number;
+  criticalBranchCount: number;
+  phase: 'escalation' | 'de-escalation';
+}
+
+export interface ResearchIntegrationRiskSnapshot {
+  capturedAtTurn: number;
+  nationalRiskScore: number;
+  criticalBranchCount: number;
+  peakRiskBand: ResearchIntegrationRiskBand | 0;
+  digest: string;
+}
+
+export interface ResearchScaleWaveSnapshot {
+  capturedAtTurn: number;
+  tier5UnlockCount: number;
+  crossBranchSynergyScore: number;
+  transferLinkCount: number;
+  dominantCapabilityCluster: V94EmergingCapabilityId | null;
+  digest: string;
+}
+
+export interface ResearchAdoptionHorizonOutlook {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  nationalAdoptionScore: number;
+  projectedAdoptionScore: number;
+  peakRegionId: V94AustralianRegionCode | null;
+  synergyContribution: number;
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -449,6 +488,7 @@ export interface ResearchProgressState {
   diffusionForecast?: ResearchDiffusionForecast | null;
   synergyOutlook?: ResearchSynergyOutlook | null;
   integrationRiskOutlook?: ResearchIntegrationRiskOutlook | null;
+  adoptionHorizonOutlook?: ResearchAdoptionHorizonOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -463,6 +503,9 @@ export interface ResearchProgressState {
   institutionTierSnapshot?: ResearchInstitutionTierSnapshot | null;
   readinessMilestoneLog?: ResearchReadinessMilestoneEvent[];
   readinessBranchSnapshot?: ResearchReadinessBranchSnapshot | null;
+  integrationRiskLog?: ResearchIntegrationRiskEvent[];
+  integrationRiskSnapshot?: ResearchIntegrationRiskSnapshot | null;
+  scaleWaveSnapshot?: ResearchScaleWaveSnapshot | null;
 }
 
 export interface StrategyHookDefinition {
@@ -2639,6 +2682,200 @@ export function computeResearchIntegrationRiskOutlook(
   };
 }
 
+// --- bundled from src/integration-risk-log.ts ---
+export const RESEARCH_INTEGRATION_RISK_LOG_CAP = 32;
+
+export const RESEARCH_INTEGRATION_RISK_BANDS: ResearchIntegrationRiskBand[] = [40, 60, 80];
+
+export function emptyIntegrationRiskLog(): ResearchIntegrationRiskEvent[] {
+  return [];
+}
+
+function highestLoggedBand(
+  log: ResearchIntegrationRiskEvent[],
+  phase: ResearchIntegrationRiskEvent['phase']
+): ResearchIntegrationRiskBand {
+  let best = 0;
+  for (const ev of log) {
+    if (ev.phase !== phase) continue;
+    if (ev.band > best) best = ev.band;
+  }
+  return best as ResearchIntegrationRiskBand;
+}
+
+export function rebuildIntegrationRiskLogFromSnapshot(
+  snapshot: ResearchIntegrationRiskSnapshot | null,
+  outlook: ResearchIntegrationRiskOutlook,
+  turn: number
+): ResearchIntegrationRiskEvent[] {
+  if (!snapshot) return emptyIntegrationRiskLog();
+  return appendIntegrationRiskEvents(emptyIntegrationRiskLog(), snapshot, outlook, turn);
+}
+
+export function appendIntegrationRiskEvents(
+  previousLog: ResearchIntegrationRiskEvent[],
+  previousSnapshot: ResearchIntegrationRiskSnapshot | null,
+  outlook: ResearchIntegrationRiskOutlook,
+  turn: number
+): ResearchIntegrationRiskEvent[] {
+  const score = Math.round(Math.min(100, Math.max(0, outlook.nationalRiskScore)));
+  const priorScore = previousSnapshot?.nationalRiskScore ?? 0;
+  const appended: ResearchIntegrationRiskEvent[] = [];
+  let nextSeq = previousLog.length > 0 ? Math.max(...previousLog.map(e => e.seq)) + 1 : 1;
+
+  if (score > priorScore) {
+    const floor = Math.max(highestLoggedBand(previousLog, 'escalation'), previousSnapshot?.peakRiskBand ?? 0);
+    for (const band of RESEARCH_INTEGRATION_RISK_BANDS) {
+      if (band <= floor) continue;
+      if (score < band) break;
+      appended.push({
+        seq: nextSeq++,
+        turn,
+        band,
+        nationalRiskScore: score,
+        criticalBranchCount: outlook.criticalBranchCount,
+        phase: 'escalation',
+      });
+    }
+  } else if (score < priorScore) {
+    const ceiling =
+      previousSnapshot?.peakRiskBand ??
+      (highestLoggedBand(previousLog, 'escalation') || RESEARCH_INTEGRATION_RISK_BANDS[RESEARCH_INTEGRATION_RISK_BANDS.length - 1]);
+    for (const band of [...RESEARCH_INTEGRATION_RISK_BANDS].reverse()) {
+      if (band > ceiling) continue;
+      if (score > band) break;
+      if (priorScore < band) continue;
+      appended.push({
+        seq: nextSeq++,
+        turn,
+        band,
+        nationalRiskScore: score,
+        criticalBranchCount: outlook.criticalBranchCount,
+        phase: 'de-escalation',
+      });
+    }
+  }
+
+  if (appended.length === 0) return previousLog.slice(-RESEARCH_INTEGRATION_RISK_LOG_CAP);
+  return [...previousLog, ...appended].slice(-RESEARCH_INTEGRATION_RISK_LOG_CAP);
+}
+
+// --- bundled from src/integration-risk-snapshot.ts ---
+/** Compact persisted digest of integration risk for replay / merge guards (round 8). */
+export function computeIntegrationRiskSnapshot(
+  outlook: ResearchIntegrationRiskOutlook,
+  turn: number
+): ResearchIntegrationRiskSnapshot {
+  const nationalRiskScore = Math.round(Math.min(100, Math.max(0, outlook.nationalRiskScore)));
+  let peakRiskBand = 0;
+  for (const band of RESEARCH_INTEGRATION_RISK_BANDS) {
+    if (nationalRiskScore >= band) peakRiskBand = band;
+  }
+  const payload = `t${turn}|s${nationalRiskScore}|c${outlook.criticalBranchCount}|l${outlook.links.length}`;
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < payload.length; i++) {
+    h ^= payload.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return {
+    capturedAtTurn: turn,
+    nationalRiskScore,
+    criticalBranchCount: outlook.criticalBranchCount,
+    peakRiskBand: peakRiskBand as ResearchIntegrationRiskSnapshot['peakRiskBand'],
+    digest: h.toString(36),
+  };
+}
+
+export function mergeIntegrationRiskSnapshots(
+  local: ResearchIntegrationRiskSnapshot | undefined,
+  remote: ResearchIntegrationRiskSnapshot | undefined
+): ResearchIntegrationRiskSnapshot | undefined {
+  if (!local && !remote) return undefined;
+  if (!local) return remote;
+  if (!remote) return local;
+  return local.capturedAtTurn >= remote.capturedAtTurn ? local : remote;
+}
+
+// --- bundled from src/scale-wave-snapshot.ts ---
+/** Compact persisted digest of scale-wave posture at seal (round 8). */
+export function computeScaleWaveSnapshot(
+  report: ResearchScaleWaveReport | null,
+  turn: number
+): ResearchScaleWaveSnapshot | null {
+  if (!report) return null;
+  const tier5UnlockCount = report.tier5UnlockCount;
+  const crossBranchSynergyScore = report.crossBranchSynergyScore;
+  const transferLinkCount = report.technologyTransferLinks.length;
+  const payload = `t${turn}|5:${tier5UnlockCount}|sy:${crossBranchSynergyScore}|xl:${transferLinkCount}|${report.dominantCapabilityCluster ?? 'none'}`;
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < payload.length; i++) {
+    h ^= payload.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return {
+    capturedAtTurn: turn,
+    tier5UnlockCount,
+    crossBranchSynergyScore,
+    transferLinkCount,
+    dominantCapabilityCluster: report.dominantCapabilityCluster,
+    digest: h.toString(36),
+  };
+}
+
+export function mergeScaleWaveSnapshots(
+  local: ResearchScaleWaveSnapshot | undefined,
+  remote: ResearchScaleWaveSnapshot | undefined
+): ResearchScaleWaveSnapshot | undefined {
+  if (!local && !remote) return undefined;
+  if (!local) return remote;
+  if (!remote) return local;
+  return local.capturedAtTurn >= remote.capturedAtTurn ? local : remote;
+}
+
+// --- bundled from src/adoption-horizon-outlook.ts ---
+/** Deterministic national adoption projection (read-only, round 8). */
+export function computeResearchAdoptionHorizonOutlook(
+  inputs: ResearchProgressInputs,
+  ctx: Pick<
+    ResearchProgressState,
+    'diffusionForecast' | 'scaleWave' | 'synergyOutlook' | 'diffusion' | 'integrationRiskOutlook'
+  >
+): ResearchAdoptionHorizonOutlook {
+  const forecast = ctx.diffusionForecast;
+  const scaleWave = ctx.scaleWave;
+  const synergy = ctx.synergyOutlook;
+  const horizonTurns = forecast?.horizonTurns ?? 6;
+  const integratedRegions = (ctx.diffusion ?? []).filter(c => c.level === 'integrated').length;
+  const peakRegionId = forecast?.peakRegionId ?? null;
+  const peakProjected = forecast?.peakProjectedScore ?? 0;
+  const synergyContribution = Math.round(
+    (scaleWave?.crossBranchSynergyScore ?? 0) * 0.35 + (synergy?.projectedSynergyScore ?? 0) * 0.15
+  );
+  const riskPenalty = Math.round((ctx.integrationRiskOutlook?.nationalRiskScore ?? 0) * 0.12);
+  const nationalAdoptionScore = Math.min(
+    100,
+    Math.round(integratedRegions * 8 + peakProjected * 100 + synergyContribution * 0.2 - riskPenalty)
+  );
+  const growthPerTurn = Math.min(
+    6,
+    Math.round((scaleWave?.technologyTransferLinks.length ?? 0) * 1.5 + (synergy?.activeMultiBranchCount ?? 0))
+  );
+  const projectedAdoptionScore = Math.min(
+    100,
+    Math.round(nationalAdoptionScore + growthPerTurn * horizonTurns + peakProjected * 40)
+  );
+
+  return {
+    active: inputs.turn >= 8 || nationalAdoptionScore > 0 || (scaleWave?.active ?? false),
+    baseTurn: inputs.turn,
+    horizonTurns,
+    nationalAdoptionScore,
+    projectedAdoptionScore,
+    peakRegionId,
+    synergyContribution,
+  };
+}
+
 // --- bundled from src/save-migration.ts ---
 export function defaultBranchEmphasis(): ResearchBranchEmphasisState[] {
   return RESEARCH_BRANCHES.map(b => ({
@@ -2687,6 +2924,12 @@ export interface ResearchProgressPersistedCore {
   readinessMilestoneLog: ResearchReadinessMilestoneEvent[];
   /** Branch readiness digest at last persist seal (round 7). */
   readinessBranchSnapshot: ResearchReadinessBranchSnapshot | null;
+  /** Bounded integration-risk band audit trail (round 8). */
+  integrationRiskLog: ResearchIntegrationRiskEvent[];
+  /** Integration risk digest at last persist seal (round 8). */
+  integrationRiskSnapshot: ResearchIntegrationRiskSnapshot | null;
+  /** Scale-wave digest at last persist seal (round 8). */
+  scaleWaveSnapshot: ResearchScaleWaveSnapshot | null;
 }
 
 
@@ -2696,6 +2939,7 @@ const LEGACY_V3 = 'op10m-agent03-v3' as const;
 const LEGACY_V4 = 'op10m-agent03-v4' as const;
 const LEGACY_V5 = 'op10m-agent03-v5' as const;
 const LEGACY_V6 = 'op10m-agent03-v6' as const;
+const LEGACY_V7 = 'op10m-agent03-v7' as const;
 
 /** Keys that must never appear on persisted save blobs (Agent 25 guard). */
 export const RESEARCH_SAVE_DERIVED_KEYS = [
@@ -2710,6 +2954,7 @@ export const RESEARCH_SAVE_DERIVED_KEYS = [
   'diffusionForecast',
   'synergyOutlook',
   'integrationRiskOutlook',
+  'adoptionHorizonOutlook',
 ] as const;
 
 function finalizeCoreForPersist(
@@ -2736,6 +2981,9 @@ function finalizeCoreForPersist(
     institutionTierSnapshot: partial.institutionTierSnapshot ?? null,
     readinessMilestoneLog: partial.readinessMilestoneLog ?? emptyReadinessMilestoneLog(),
     readinessBranchSnapshot: partial.readinessBranchSnapshot ?? null,
+    integrationRiskLog: partial.integrationRiskLog ?? emptyIntegrationRiskLog(),
+    integrationRiskSnapshot: partial.integrationRiskSnapshot ?? null,
+    scaleWaveSnapshot: partial.scaleWaveSnapshot ?? null,
   };
   return { ...draft, coreFingerprint: computePersistedCoreFingerprint(draft) };
 }
@@ -2768,6 +3016,9 @@ export function computePersistedCoreFingerprint(
     institutionTierSnapshot: core.institutionTierSnapshot,
     readinessMilestoneLog: core.readinessMilestoneLog,
     readinessBranchSnapshot: core.readinessBranchSnapshot,
+    integrationRiskLog: core.integrationRiskLog,
+    integrationRiskSnapshot: core.integrationRiskSnapshot,
+    scaleWaveSnapshot: core.scaleWaveSnapshot,
   });
   for (let i = 0; i < payload.length; i++) {
     h ^= payload.charCodeAt(i);
@@ -2784,6 +3035,9 @@ function upgradeToCurrentCore(
     institutionTierSnapshot?: ResearchInstitutionTierSnapshot | null;
     readinessMilestoneLog?: ResearchReadinessMilestoneEvent[];
     readinessBranchSnapshot?: ResearchReadinessBranchSnapshot | null;
+    integrationRiskLog?: ResearchIntegrationRiskEvent[];
+    integrationRiskSnapshot?: ResearchIntegrationRiskSnapshot | null;
+    scaleWaveSnapshot?: ResearchScaleWaveSnapshot | null;
     unlockEventLog?: ResearchUnlockEvent[];
     lastReconciledAtTurn?: number;
   },
@@ -2811,6 +3065,9 @@ function upgradeToCurrentCore(
       base.readinessMilestoneLog ??
       rebuildReadinessMilestoneLogFromSnapshot(base.readinessBranchSnapshot ?? null, base.turn),
     readinessBranchSnapshot: base.readinessBranchSnapshot ?? null,
+    integrationRiskLog: base.integrationRiskLog ?? emptyIntegrationRiskLog(),
+    integrationRiskSnapshot: base.integrationRiskSnapshot ?? null,
+    scaleWaveSnapshot: base.scaleWaveSnapshot ?? null,
     unlockEventLog: base.unlockEventLog ?? rebuildUnlockEventLogFromNodes(base.unlockedNodes ?? []),
     lastReconciledAtTurn: base.lastReconciledAtTurn ?? base.turn,
   });
@@ -2842,6 +3099,9 @@ function emptyCore(turn = 0): ResearchProgressPersistedCore {
     institutionTierSnapshot: null,
     readinessMilestoneLog: emptyReadinessMilestoneLog(),
     readinessBranchSnapshot: null,
+    integrationRiskLog: emptyIntegrationRiskLog(),
+    integrationRiskSnapshot: null,
+    scaleWaveSnapshot: null,
   });
 }
 
@@ -3013,6 +3273,54 @@ function sanitizeReadinessBranchSnapshot(raw: unknown, turn: number): ResearchRe
   };
 }
 
+function sanitizeIntegrationRiskLog(raw: unknown): ResearchIntegrationRiskEvent[] {
+  if (!Array.isArray(raw)) return emptyIntegrationRiskLog();
+  const bands = new Set([40, 60, 80]);
+  const out: ResearchIntegrationRiskEvent[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as ResearchIntegrationRiskEvent;
+    if (!bands.has(Number(o.band))) continue;
+    if (o.phase !== 'escalation' && o.phase !== 'de-escalation') continue;
+    out.push({
+      seq: Number(o.seq) || out.length + 1,
+      turn: Number(o.turn) || 0,
+      band: o.band,
+      nationalRiskScore: Number(o.nationalRiskScore) || 0,
+      criticalBranchCount: Number(o.criticalBranchCount) || 0,
+      phase: o.phase,
+    });
+  }
+  return out.sort((a, b) => a.seq - b.seq).slice(-RESEARCH_INTEGRATION_RISK_LOG_CAP);
+}
+
+function sanitizeIntegrationRiskSnapshot(raw: unknown, turn: number): ResearchIntegrationRiskSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as ResearchIntegrationRiskSnapshot;
+  if (typeof o.digest !== 'string') return null;
+  return {
+    capturedAtTurn: Number(o.capturedAtTurn) || turn,
+    nationalRiskScore: Number(o.nationalRiskScore) || 0,
+    criticalBranchCount: Number(o.criticalBranchCount) || 0,
+    peakRiskBand: (Number(o.peakRiskBand) || 0) as ResearchIntegrationRiskSnapshot['peakRiskBand'],
+    digest: o.digest,
+  };
+}
+
+function sanitizeScaleWaveSnapshot(raw: unknown, turn: number): ResearchScaleWaveSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as ResearchScaleWaveSnapshot;
+  if (typeof o.digest !== 'string') return null;
+  return {
+    capturedAtTurn: Number(o.capturedAtTurn) || turn,
+    tier5UnlockCount: Number(o.tier5UnlockCount) || 0,
+    crossBranchSynergyScore: Number(o.crossBranchSynergyScore) || 0,
+    transferLinkCount: Number(o.transferLinkCount) || 0,
+    dominantCapabilityCluster: o.dominantCapabilityCluster ?? null,
+    digest: o.digest,
+  };
+}
+
 function snapshotFromUpgrades(
   upgrades: InstitutionUpgradeState[],
   turn: number
@@ -3061,11 +3369,62 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
         ? sanitizeReadinessMilestoneLog(o.readinessMilestoneLog)
         : emptyReadinessMilestoneLog(),
       readinessBranchSnapshot: sanitizeReadinessBranchSnapshot(o.readinessBranchSnapshot, turn),
+      integrationRiskLog: sanitizeIntegrationRiskLog(o.integrationRiskLog).length
+        ? sanitizeIntegrationRiskLog(o.integrationRiskLog)
+        : emptyIntegrationRiskLog(),
+      integrationRiskSnapshot: sanitizeIntegrationRiskSnapshot(o.integrationRiskSnapshot, turn),
+      scaleWaveSnapshot: sanitizeScaleWaveSnapshot(o.scaleWaveSnapshot, turn),
     });
     if (typeof o.coreFingerprint === 'string' && o.coreFingerprint !== draft.coreFingerprint) {
       return draft;
     }
     return draft;
+  }
+
+  if (ver === LEGACY_V7) {
+    const nodes = sanitizeUnlockedNodes(o.unlockedNodes);
+    const upgrades = sanitizeInstitutionUpgrades(o.institutionUpgrades);
+    const turn = Number(o.turn) || 0;
+    const branchEmphasis = sanitizeBranchEmphasis(o.branchEmphasis);
+    const emphasisRevision = Number(o.emphasisRevision) || 0;
+    const institutionTierSnapshot =
+      sanitizeInstitutionTierSnapshot(o.institutionTierSnapshot, turn) ??
+      snapshotFromUpgrades(upgrades, turn);
+    const readinessBranchSnapshot = sanitizeReadinessBranchSnapshot(o.readinessBranchSnapshot, turn);
+    return upgradeToCurrentCore(
+      {
+        schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
+        revision: Number(o.revision) || 0,
+        turn,
+        unlockedNodes: nodes,
+        institutionUpgrades: upgrades,
+        leadingResearchRegion: (o.leadingResearchRegion as ResearchProgressPersistedCore['leadingResearchRegion']) ?? null,
+        unlockSeq: Number(o.unlockSeq) || computeUnlockSeq(nodes),
+        branchEmphasis,
+        emphasisRevision,
+        migrationLog: Array.isArray(o.migrationLog) ? (o.migrationLog as ResearchSaveMigrationEntry[]) : [],
+        saveKind: (o.saveKind as ResearchSaveKind) || 'manual',
+        updatedAtTurn: Number(o.updatedAtTurn) || turn,
+        sessionId: typeof o.sessionId === 'string' ? o.sessionId : `o10m_r03_${turn}`,
+        persistRevision: Number(o.persistRevision) || 0,
+        unlockEventLog: sanitizeUnlockEventLog(o.unlockEventLog).length
+          ? sanitizeUnlockEventLog(o.unlockEventLog)
+          : rebuildUnlockEventLogFromNodes(nodes),
+        lastReconciledAtTurn: Number(o.lastReconciledAtTurn) || turn,
+        emphasisChangeLog: sanitizeEmphasisChangeLog(o.emphasisChangeLog).length
+          ? sanitizeEmphasisChangeLog(o.emphasisChangeLog)
+          : rebuildEmphasisChangeLogFromBranchEmphasis(branchEmphasis, emphasisRevision, turn),
+        institutionTierSnapshot,
+        readinessMilestoneLog: sanitizeReadinessMilestoneLog(o.readinessMilestoneLog).length
+          ? sanitizeReadinessMilestoneLog(o.readinessMilestoneLog)
+          : rebuildReadinessMilestoneLogFromSnapshot(readinessBranchSnapshot, turn),
+        readinessBranchSnapshot,
+        integrationRiskLog: emptyIntegrationRiskLog(),
+        integrationRiskSnapshot: null,
+        scaleWaveSnapshot: null,
+      },
+      LEGACY_V7
+    );
   }
 
   if (ver === LEGACY_V6) {
@@ -3103,6 +3462,9 @@ export function migrateResearchProgressSave(raw: unknown): ResearchProgressPersi
         institutionTierSnapshot,
         readinessMilestoneLog: emptyReadinessMilestoneLog(),
         readinessBranchSnapshot: null,
+        integrationRiskLog: emptyIntegrationRiskLog(),
+        integrationRiskSnapshot: null,
+        scaleWaveSnapshot: null,
       },
       LEGACY_V6
     );
@@ -3256,6 +3618,9 @@ export function extractPersistedCore(state: ResearchProgressState): ResearchProg
       computeInstitutionTierSnapshot(state.institutionUpgrades, state.turn),
     readinessMilestoneLog: state.readinessMilestoneLog ?? emptyReadinessMilestoneLog(),
     readinessBranchSnapshot: state.readinessBranchSnapshot ?? null,
+    integrationRiskLog: state.integrationRiskLog ?? emptyIntegrationRiskLog(),
+    integrationRiskSnapshot: state.integrationRiskSnapshot ?? null,
+    scaleWaveSnapshot: state.scaleWaveSnapshot ?? null,
   });
 }
 
@@ -3290,6 +3655,9 @@ export function hydrateResearchProgressCore(core: ResearchProgressPersistedCore 
     institutionTierSnapshot: core.institutionTierSnapshot,
     readinessMilestoneLog: core.readinessMilestoneLog,
     readinessBranchSnapshot: core.readinessBranchSnapshot,
+    integrationRiskLog: core.integrationRiskLog,
+    integrationRiskSnapshot: core.integrationRiskSnapshot,
+    scaleWaveSnapshot: core.scaleWaveSnapshot,
     diffusion: V94_REGION_CODES.map(regionId => ({
       regionId,
       score: 0,
@@ -3325,6 +3693,21 @@ export function mergeComputedResearchState(
     computed.turn,
     Math.max(core.unlockSeq, unlockedNodes.length)
   );
+  const integrationRiskOutlook =
+    computed.integrationRiskOutlook ??
+    ({
+      active: false,
+      baseTurn: computed.turn,
+      nationalRiskScore: 0,
+      criticalBranchCount: 0,
+      links: [],
+    } as const);
+  const integrationRiskLog = appendIntegrationRiskEvents(
+    core.integrationRiskLog ?? emptyIntegrationRiskLog(),
+    core.integrationRiskSnapshot ?? null,
+    integrationRiskOutlook,
+    computed.turn
+  );
   return {
     ...computed,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
@@ -3351,6 +3734,9 @@ export function mergeComputedResearchState(
       computed.turn
     ),
     readinessBranchSnapshot: computeReadinessBranchSnapshot(computed.readinessByBranch, computed.turn),
+    integrationRiskLog,
+    integrationRiskSnapshot: computeIntegrationRiskSnapshot(integrationRiskOutlook, computed.turn),
+    scaleWaveSnapshot: computeScaleWaveSnapshot(computed.scaleWave, computed.turn),
   };
 }
 
@@ -3499,6 +3885,18 @@ function mergeReadinessMilestoneLogs(
   return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_READINESS_MILESTONE_LOG_CAP);
 }
 
+function mergeIntegrationRiskLogs(
+  local: ResearchIntegrationRiskEvent[] | undefined,
+  remote: ResearchIntegrationRiskEvent[] | undefined
+): ResearchIntegrationRiskEvent[] {
+  const byKey = new Map<string, ResearchIntegrationRiskEvent>();
+  for (const ev of [...(local ?? []), ...(remote ?? [])]) {
+    const key = `${ev.seq}:${ev.band}:${ev.phase}`;
+    byKey.set(key, ev);
+  }
+  return [...byKey.values()].sort((a, b) => a.seq - b.seq).slice(-RESEARCH_INTEGRATION_RISK_LOG_CAP);
+}
+
 function stableCoreSnapshot(core: ResearchProgressPersistedCore): Record<string, unknown> {
   const { coreFingerprint, ...rest } = core;
   void coreFingerprint;
@@ -3590,6 +3988,14 @@ export function mergeResearchPersistedCores(
         local.readinessBranchSnapshot ?? undefined,
         remote.readinessBranchSnapshot ?? undefined
       ) ?? null,
+    integrationRiskLog: mergeIntegrationRiskLogs(local.integrationRiskLog, remote.integrationRiskLog),
+    integrationRiskSnapshot:
+      mergeIntegrationRiskSnapshots(
+        local.integrationRiskSnapshot ?? undefined,
+        remote.integrationRiskSnapshot ?? undefined
+      ) ?? null,
+    scaleWaveSnapshot:
+      mergeScaleWaveSnapshots(local.scaleWaveSnapshot ?? undefined, remote.scaleWaveSnapshot ?? undefined) ?? null,
     lastReconciledAtTurn: Math.max(local.lastReconciledAtTurn ?? 0, remote.lastReconciledAtTurn ?? 0),
   });
 }
@@ -3619,6 +4025,9 @@ export function reconcileResearchProgressOnLoad(
         institutionTierSnapshot: persist.institutionTierSnapshot,
         readinessMilestoneLog: persist.readinessMilestoneLog,
         readinessBranchSnapshot: persist.readinessBranchSnapshot,
+        integrationRiskLog: persist.integrationRiskLog,
+        integrationRiskSnapshot: persist.integrationRiskSnapshot,
+        scaleWaveSnapshot: persist.scaleWaveSnapshot,
       },
       persist,
     };
@@ -3640,6 +4049,9 @@ export function reconcileResearchProgressOnLoad(
     institutionTierSnapshot: mergedCore.institutionTierSnapshot,
     readinessMilestoneLog: mergedCore.readinessMilestoneLog,
     readinessBranchSnapshot: mergedCore.readinessBranchSnapshot,
+    integrationRiskLog: mergedCore.integrationRiskLog,
+    integrationRiskSnapshot: mergedCore.integrationRiskSnapshot,
+    scaleWaveSnapshot: mergedCore.scaleWaveSnapshot,
     lastReconciledAtTurn: ctx.turn,
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
   };
@@ -3662,6 +4074,9 @@ export function reconcileResearchProgressOnLoad(
       institutionTierSnapshot: persist.institutionTierSnapshot,
       readinessMilestoneLog: persist.readinessMilestoneLog,
       readinessBranchSnapshot: persist.readinessBranchSnapshot,
+      integrationRiskLog: persist.integrationRiskLog,
+      integrationRiskSnapshot: persist.integrationRiskSnapshot,
+      scaleWaveSnapshot: persist.scaleWaveSnapshot,
     },
     persist,
   };
@@ -3958,6 +4373,14 @@ export function computeResearchProgress(
     institutionTierSnapshot: coreBase.institutionTierSnapshot ?? null,
   });
 
+  const adoptionHorizonOutlook = computeResearchAdoptionHorizonOutlook(inputs, {
+    diffusionForecast,
+    scaleWave,
+    synergyOutlook,
+    diffusion,
+    integrationRiskOutlook,
+  });
+
   const computed: ResearchProgressState = {
     schemaVersion: RESEARCH_PROGRESS_SCHEMA_VERSION,
     revision: coreBase.revision,
@@ -3976,6 +4399,7 @@ export function computeResearchProgress(
     diffusionForecast,
     synergyOutlook,
     integrationRiskOutlook,
+    adoptionHorizonOutlook,
     unlockSeq: coreBase.unlockSeq,
     branchEmphasis: coreBase.branchEmphasis,
   };
@@ -4073,7 +4497,7 @@ export function runAgent03ResearchTechSelfTests(): {
   const state = computeResearchProgress(inputs, createEmptyResearchProgressState());
   push('agent03_chunk_04', state.unlockedNodes.some(u => u.nodeId === 'df_t1_campus_foundation'));
   push('agent03_chunk_05', (state.institutionUpgrades?.length ?? 0) >= 6, String(state.institutionUpgrades?.length));
-  push('agent03_chunk_06', OP10M_AGENT03_MODULE_META.schemaVersion === 'op10m-agent03-v7');
+  push('agent03_chunk_06', OP10M_AGENT03_MODULE_META.schemaVersion === 'op10m-agent03-v8');
   const saved = prepareResearchProgressForSave(state);
   push('agent03_chunk_07', validatePersistedCoreForWrite(saved).length === 0);
 
@@ -4089,15 +4513,17 @@ export function runAgent03ResearchSaveFormatSelfTests(): {
   const results: Array<{ id: string; passed: boolean; detail?: string }> = [];
   const push = (id: string, passed: boolean, detail?: string) => results.push({ id, passed, detail });
   const v2 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v2', turn: 1, revision: 0, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [] });
-  push('savefmt_v2_to_v7', v2?.schemaVersion === 'op10m-agent03-v7');
+  push('savefmt_v2_to_v8', v2?.schemaVersion === 'op10m-agent03-v8');
   const v3 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v3', turn: 2, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], coreFingerprint: 'x' });
-  push('savefmt_v3_to_v7', v3?.schemaVersion === 'op10m-agent03-v7' && (v3?.persistRevision ?? 0) === 0);
+  push('savefmt_v3_to_v8', v3?.schemaVersion === 'op10m-agent03-v8' && (v3?.persistRevision ?? 0) === 0);
   const v4 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v4', turn: 3, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], persistRevision: 2, saveKind: 'manual', updatedAtTurn: 3, sessionId: 'x' });
-  push('savefmt_v4_to_v7', v4?.schemaVersion === 'op10m-agent03-v7' && Array.isArray(v4?.unlockEventLog));
+  push('savefmt_v4_to_v8', v4?.schemaVersion === 'op10m-agent03-v8' && Array.isArray(v4?.unlockEventLog));
   const v5 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v5', turn: 4, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 1, migrationLog: [], persistRevision: 1, saveKind: 'manual', updatedAtTurn: 4, sessionId: 'x', unlockEventLog: [], lastReconciledAtTurn: 4 });
-  push('savefmt_v5_to_v7', v5?.schemaVersion === 'op10m-agent03-v7' && Array.isArray(v5?.emphasisChangeLog));
+  push('savefmt_v5_to_v8', v5?.schemaVersion === 'op10m-agent03-v8' && Array.isArray(v5?.emphasisChangeLog));
   const v6 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v6', turn: 5, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], persistRevision: 1, saveKind: 'manual', updatedAtTurn: 5, sessionId: 'x', unlockEventLog: [], lastReconciledAtTurn: 5, emphasisChangeLog: [], institutionTierSnapshot: { capturedAtTurn: 5, tiers: {}, digest: 'd', nationalIntegrationCount: 0, strategicOrAboveCount: 0 } });
-  push('savefmt_v6_to_v7', v6?.schemaVersion === 'op10m-agent03-v7' && Array.isArray(v6?.readinessMilestoneLog));
+  push('savefmt_v6_to_v8', v6?.schemaVersion === 'op10m-agent03-v8' && Array.isArray(v6?.readinessMilestoneLog));
+  const v7 = migrateResearchProgressSave({ schemaVersion: 'op10m-agent03-v7', turn: 6, revision: 1, unlockedNodes: [], institutionUpgrades: [], unlockSeq: 0, branchEmphasis: [], emphasisRevision: 0, migrationLog: [], persistRevision: 1, saveKind: 'manual', updatedAtTurn: 6, sessionId: 'x', unlockEventLog: [], lastReconciledAtTurn: 6, emphasisChangeLog: [], institutionTierSnapshot: { capturedAtTurn: 6, tiers: {}, digest: 'd', nationalIntegrationCount: 0, strategicOrAboveCount: 0 }, readinessMilestoneLog: [], readinessBranchSnapshot: null });
+  push('savefmt_v7_to_v8', v7?.schemaVersion === 'op10m-agent03-v8' && Array.isArray(v7?.integrationRiskLog));
   push('savefmt_foreign', detectForeignSaveFields({ diffusion: [] }).includes('diffusion'));
   const failed = results.filter(r => !r.passed).length;
   return { passed: results.length - failed, failed, results };
@@ -4105,8 +4531,8 @@ export function runAgent03ResearchSaveFormatSelfTests(): {
 
 export const OP10M_AGENT03_MODULE_META = {
   moduleId: 'agent-03-research-tech',
-  schemaVersion: 'op10m-agent03-v7',
-  saveFormatVersion: 7,
+  schemaVersion: 'op10m-agent03-v8',
+  saveFormatVersion: 8,
   touchesSaveFormat: true,
   proposedGameStateField: 'researchProgress',
   integrationDoc: 'operation-10m/agent-03-research-tech/INTEGRATION.md',

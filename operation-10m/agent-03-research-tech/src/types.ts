@@ -162,12 +162,13 @@ export interface ResearchBranchEmphasisState {
   setTurn: number;
 }
 
-export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v7' as const;
+export const RESEARCH_PROGRESS_SCHEMA_VERSION = 'op10m-agent03-v8' as const;
 
 export type ResearchSaveKind = 'manual' | 'autosave' | 'checkpoint';
 
 export type ResearchProgressSchemaVersion =
   | typeof RESEARCH_PROGRESS_SCHEMA_VERSION
+  | 'op10m-agent03-v7'
   | 'op10m-agent03-v6'
   | 'op10m-agent03-v5'
   | 'op10m-agent03-v4'
@@ -300,6 +301,44 @@ export interface ResearchIntegrationRiskOutlook {
   links: ResearchIntegrationRiskLink[];
 }
 
+export type ResearchIntegrationRiskBand = 40 | 60 | 80;
+
+export interface ResearchIntegrationRiskEvent {
+  seq: number;
+  turn: number;
+  band: ResearchIntegrationRiskBand;
+  nationalRiskScore: number;
+  criticalBranchCount: number;
+  phase: 'escalation' | 'de-escalation';
+}
+
+export interface ResearchIntegrationRiskSnapshot {
+  capturedAtTurn: number;
+  nationalRiskScore: number;
+  criticalBranchCount: number;
+  peakRiskBand: ResearchIntegrationRiskBand | 0;
+  digest: string;
+}
+
+export interface ResearchScaleWaveSnapshot {
+  capturedAtTurn: number;
+  tier5UnlockCount: number;
+  crossBranchSynergyScore: number;
+  transferLinkCount: number;
+  dominantCapabilityCluster: V94EmergingCapabilityId | null;
+  digest: string;
+}
+
+export interface ResearchAdoptionHorizonOutlook {
+  active: boolean;
+  baseTurn: number;
+  horizonTurns: number;
+  nationalAdoptionScore: number;
+  projectedAdoptionScore: number;
+  peakRegionId: V94AustralianRegionCode | null;
+  synergyContribution: number;
+}
+
 export interface ResearchProgressState {
   schemaVersion: ResearchProgressSchemaVersion;
   revision: number;
@@ -318,6 +357,7 @@ export interface ResearchProgressState {
   diffusionForecast?: ResearchDiffusionForecast | null;
   synergyOutlook?: ResearchSynergyOutlook | null;
   integrationRiskOutlook?: ResearchIntegrationRiskOutlook | null;
+  adoptionHorizonOutlook?: ResearchAdoptionHorizonOutlook | null;
   unlockSeq: number;
   branchEmphasis?: ResearchBranchEmphasisState[];
   emphasisRevision?: number;
@@ -332,6 +372,9 @@ export interface ResearchProgressState {
   institutionTierSnapshot?: ResearchInstitutionTierSnapshot | null;
   readinessMilestoneLog?: ResearchReadinessMilestoneEvent[];
   readinessBranchSnapshot?: ResearchReadinessBranchSnapshot | null;
+  integrationRiskLog?: ResearchIntegrationRiskEvent[];
+  integrationRiskSnapshot?: ResearchIntegrationRiskSnapshot | null;
+  scaleWaveSnapshot?: ResearchScaleWaveSnapshot | null;
 }
 
 export interface StrategyHookDefinition {

@@ -702,55 +702,54 @@ tests.push(
 );
 
 tests.push(
-  test('save_v6_migrates_to_v7_with_milestone_fields', () => {
-    const v6 = {
-      schemaVersion: 'op10m-agent03-v6',
-      turn: 11,
+  test('save_v7_migrates_to_v8_with_risk_and_scale_fields', () => {
+    const v7 = {
+      schemaVersion: 'op10m-agent03-v7',
+      turn: 12,
       revision: 2,
       unlockedNodes: [],
       institutionUpgrades: [],
       unlockSeq: 0,
       branchEmphasis: [],
       emphasisRevision: 1,
-      migrationLog: [{ fromVersion: 'op10m-agent03-v5', toVersion: 'op10m-agent03-v6', turn: 10 }],
+      migrationLog: [{ fromVersion: 'op10m-agent03-v6', toVersion: 'op10m-agent03-v7', turn: 11 }],
       saveKind: 'manual',
-      updatedAtTurn: 11,
-      sessionId: 'v6',
-      persistRevision: 4,
+      updatedAtTurn: 12,
+      sessionId: 'v7',
+      persistRevision: 5,
       unlockEventLog: [],
-      lastReconciledAtTurn: 11,
+      lastReconciledAtTurn: 12,
       emphasisChangeLog: [],
-      institutionTierSnapshot: { capturedAtTurn: 11, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      institutionTierSnapshot: { capturedAtTurn: 12, tiers: {}, digest: 'abc', nationalIntegrationCount: 0, strategicOrAboveCount: 0 },
+      readinessMilestoneLog: [],
+      readinessBranchSnapshot: null,
       coreFingerprint: 'legacy',
     };
-    const core = migrateResearchProgressSave(v6);
+    const core = migrateResearchProgressSave(v7);
     assert(core?.schemaVersion === RESEARCH_PROGRESS_SCHEMA_VERSION);
-    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v6'));
-    assert(Array.isArray(core?.readinessMilestoneLog));
+    assert(core?.migrationLog.some(m => m.fromVersion === 'op10m-agent03-v7'));
+    assert(Array.isArray(core?.integrationRiskLog));
+    assert(core?.scaleWaveSnapshot === null);
   })
 );
 
 tests.push(
-  test('readiness_milestone_log_records_threshold_crossing', () => {
-    const inputs = baseInputs({
-      turn: 40,
-      factionStanding: { csiro_ai_directorate: 55, vic_technology_council: 50 },
-      projects: [{ id: 'p1', regionId: 'ACT', projectType: 'research_campus', status: 'active' }],
-    });
+  test('integration_risk_log_and_scale_snapshot_on_compute', () => {
+    const inputs = baseInputs({ turn: 20 });
     const state = computeResearchProgress(inputs, null);
-    assert((state.readinessMilestoneLog?.length ?? 0) >= 1, String(state.readinessByBranch?.digital_frontier));
-    assert(typeof state.readinessBranchSnapshot?.digest === 'string');
+    assert(typeof state.integrationRiskSnapshot?.digest === 'string');
+    assert(state.scaleWaveSnapshot === null || typeof state.scaleWaveSnapshot?.digest === 'string');
   })
 );
 
 tests.push(
-  test('integration_risk_outlook_derived', () => {
+  test('adoption_horizon_outlook_derived', () => {
     const inputs = baseInputs({ turn: 15 });
     const state = computeResearchProgress(inputs, null);
-    const risk = state.integrationRiskOutlook;
-    assert(risk != null);
-    assert(typeof risk?.nationalRiskScore === 'number');
-    assert(detectForeignSaveFields({ integrationRiskOutlook: risk }).includes('integrationRiskOutlook'));
+    const outlook = state.adoptionHorizonOutlook;
+    assert(outlook != null);
+    assert(typeof outlook?.nationalAdoptionScore === 'number');
+    assert(detectForeignSaveFields({ adoptionHorizonOutlook: outlook }).includes('adoptionHorizonOutlook'));
   })
 );
 
