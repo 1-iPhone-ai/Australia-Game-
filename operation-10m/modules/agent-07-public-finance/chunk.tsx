@@ -3063,6 +3063,243 @@ export function allocateIntergovernmentalGrants(
 }
 
 
+// --- source: statutory-balances/types.ts ---
+export const STATUTORY_BALANCES_SCHEMA = 'op10m-agent07-statutory-balances-v1';
+
+export interface StatutoryBalanceBand {
+  id: 'operating' | 'fiscal' | 'net_debt_anchor';
+  label: string;
+  balancePoints: number;
+  anchorPoints: number;
+  withinAnchor: boolean;
+  warnOnly: boolean;
+}
+
+export interface StatutoryBalancesReport {
+  schemaVersion: string;
+  turn: number;
+  bands: StatutoryBalanceBand[];
+  netOperatingBalance: number;
+  fiscalBalance: number;
+  netDebtToCapacityRatio: number;
+  allWithinSoftAnchors: boolean;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: statutory-balances/compute.ts ---
+
+const OPERATING_ANCHOR_FLOOR = -8;
+const FISCAL_ANCHOR_FLOOR = -14;
+const NET_DEBT_RATIO_CEILING = 0.72;
+
+export function buildStatutoryBalancesReport(turn: number, v1012: V1012FiscalSnapshot): StatutoryBalancesReport {
+  const revenueBase = v1012.revenueCapacity * 0.42;
+  const operatingOutlays =
+    revenueBase * 0.38 + v1012.maintenanceLoad * 0.55 + Math.max(0, -v1012.fiscalHeadroom) * 0.25;
+  const netOperatingBalance = Math.round((revenueBase - operatingOutlays + v1012.fiscalHeadroom * 0.6) * 10) / 10;
+
+  const capitalNet = v1012.debtEnabled ? v1012.debtLevel * 0.04 - v1012.debtServiceLoad * 0.15 : 0;
+  const fiscalBalance = Math.round((netOperatingBalance - capitalNet) * 10) / 10;
+
+  const netDebtToCapacityRatio =
+    v1012.revenueCapacity > 0
+      ? Math.round((v1012.debtLevel / v1012.revenueCapacity) * 1000) / 1000
+      : 0;
+
+  const bands: StatutoryBalanceBand[] = [
+    {
+      id: 'operating',
+      label: 'Net operating balance',
+      balancePoints: netOperatingBalance,
+      anchorPoints: OPERATING_ANCHOR_FLOOR,
+      withinAnchor: netOperatingBalance >= OPERATING_ANCHOR_FLOOR || v1012.pressure === 'critical',
+      warnOnly: true
+    },
+    {
+      id: 'fiscal',
+      label: 'Fiscal balance (incl. capital net)',
+      balancePoints: fiscalBalance,
+      anchorPoints: FISCAL_ANCHOR_FLOOR,
+      withinAnchor: fiscalBalance >= FISCAL_ANCHOR_FLOOR || v1012.pressure === 'critical',
+      warnOnly: true
+    },
+    {
+      id: 'net_debt_anchor',
+      label: 'Net debt to capacity ratio',
+      balancePoints: netDebtToCapacityRatio,
+      anchorPoints: NET_DEBT_RATIO_CEILING,
+      withinAnchor: netDebtToCapacityRatio <= NET_DEBT_RATIO_CEILING || !v1012.debtEnabled,
+      warnOnly: false
+    }
+  ];
+
+  const warnings: string[] = [];
+  if (!bands[0].withinAnchor) {
+    warnings.push(`Operating balance ${netOperatingBalance} below soft floor ${OPERATING_ANCHOR_FLOOR}.`);
+  }
+  if (!bands[2].withinAnchor) {
+    warnings.push(`Net debt ratio ${netDebtToCapacityRatio} exceeds anchor ${NET_DEBT_RATIO_CEILING}.`);
+  }
+  if (v1012.sustainability === 'fragile' && fiscalBalance < -6) {
+    warnings.push('Fragile sustainability with deeply negative fiscal balance.');
+  }
+
+  const allWithinSoftAnchors = bands.every(b => b.withinAnchor);
+  const narrative = allWithinSoftAnchors
+    ? `Statutory balances within anchors (NOB ${netOperatingBalance}, FB ${fiscalBalance}).`
+    : `Statutory balance pressure: NOB ${netOperatingBalance}, FB ${fiscalBalance}, debt/cap ${netDebtToCapacityRatio}.`;
+
+  return {
+    schemaVersion: STATUTORY_BALANCES_SCHEMA,
+    turn,
+    bands,
+    netOperatingBalance,
+    fiscalBalance,
+    netDebtToCapacityRatio,
+    allWithinSoftAnchors,
+    narrative,
+    warnings
+  };
+}
+
+
+// --- source: cost-recovery-pricing/types.ts ---
+export const COST_RECOVERY_SCHEMA = 'op10m-agent07-cost-recovery-v1';
+
+export type UserChargeCategory =
+  | 'water_sewerage'
+  | 'road_tolling'
+  | 'regulatory_licensing'
+  | 'hospital_copayment'
+  | 'university_contribution';
+
+export interface CostRecoveryLine {
+  category: UserChargeCategory;
+  label: string;
+  fullCostPoints: number;
+  recoveredPoints: number;
+  recoveryRatio: number;
+  policyTargetRatio: number;
+  withinTarget: boolean;
+}
+
+export interface CostRecoveryStatement {
+  schemaVersion: string;
+  turn: number;
+  lines: CostRecoveryLine[];
+  aggregateFullCost: number;
+  aggregateRecovered: number;
+  weightedRecoveryRatio: number;
+  withinPortfolioTarget: boolean;
+  underRecoveryCount: number;
+  narrative: string;
+  warnings: string[];
+}
+
+
+// --- source: cost-recovery-pricing/compute.ts ---
+
+const BASE_LINES: Omit<CostRecoveryLine, 'recoveredPoints' | 'recoveryRatio' | 'withinTarget'>[] = [
+  {
+    category: 'water_sewerage',
+    label: 'Urban water & sewerage',
+    fullCostPoints: 14,
+    policyTargetRatio: 0.75
+  },
+  {
+    category: 'road_tolling',
+    label: 'Major road tolling',
+    fullCostPoints: 9,
+    policyTargetRatio: 0.55
+  },
+  {
+    category: 'regulatory_licensing',
+    label: 'Regulatory licensing fees',
+    fullCostPoints: 6,
+    policyTargetRatio: 0.85
+  },
+  {
+    category: 'hospital_copayment',
+    label: 'Hospital copayments (selected services)',
+    fullCostPoints: 11,
+    policyTargetRatio: 0.35
+  },
+  {
+    category: 'university_contribution',
+    label: 'Higher education student contributions',
+    fullCostPoints: 16,
+    policyTargetRatio: 0.42
+  }
+];
+
+function pressureRecoveryScale(v1012: V1012FiscalSnapshot): number {
+  if (v1012.revenuePolicy === 'revenue_focused') return 1.08;
+  if (v1012.pressure === 'critical') return 0.82;
+  if (v1012.pressure === 'strained') return 0.92;
+  return 1;
+}
+
+export function buildCostRecoveryStatement(turn: number, v1012: V1012FiscalSnapshot): CostRecoveryStatement {
+  const scale = pressureRecoveryScale(v1012);
+  const headroomAdj = v1012.fiscalHeadroom < 0 ? 0.94 : 1;
+
+  const lines: CostRecoveryLine[] = BASE_LINES.map(row => {
+    const jitter = ((turn + row.fullCostPoints) % 7) * 0.005;
+    const recoveryRatio = Math.min(
+      1,
+      Math.round((row.policyTargetRatio * scale * headroomAdj + jitter) * 1000) / 1000
+    );
+    const recoveredPoints = Math.round(row.fullCostPoints * recoveryRatio * 10) / 10;
+    const withinTarget = recoveryRatio >= row.policyTargetRatio * 0.85 || v1012.pressure === 'critical';
+    return {
+      ...row,
+      recoveredPoints,
+      recoveryRatio,
+      withinTarget
+    };
+  });
+
+  const aggregateFullCost = lines.reduce((s, l) => s + l.fullCostPoints, 0);
+  const aggregateRecovered = lines.reduce((s, l) => s + l.recoveredPoints, 0);
+  const weightedRecoveryRatio =
+    aggregateFullCost > 0
+      ? Math.round((aggregateRecovered / aggregateFullCost) * 1000) / 1000
+      : 0;
+
+  const underRecoveryCount = lines.filter(l => !l.withinTarget).length;
+  const portfolioFloor = v1012.revenuePolicy === 'revenue_focused' ? 0.48 : 0.42;
+  const withinPortfolioTarget =
+    weightedRecoveryRatio >= portfolioFloor || v1012.pressure === 'critical';
+
+  const warnings: string[] = [];
+  if (underRecoveryCount >= 2 && v1012.fiscalHeadroom < 4) {
+    warnings.push(`${underRecoveryCount} charge lines under recovery target with limited headroom.`);
+  }
+  if (!withinPortfolioTarget) {
+    warnings.push(`Portfolio recovery ${weightedRecoveryRatio} below floor ${portfolioFloor}.`);
+  }
+
+  const narrative = withinPortfolioTarget
+    ? `Cost recovery portfolio at ${(weightedRecoveryRatio * 100).toFixed(1)}% of full cost.`
+    : `Cost recovery shortfall: weighted ratio ${weightedRecoveryRatio}.`;
+
+  return {
+    schemaVersion: COST_RECOVERY_SCHEMA,
+    turn,
+    lines,
+    aggregateFullCost,
+    aggregateRecovered,
+    weightedRecoveryRatio,
+    withinPortfolioTarget,
+    underRecoveryCount,
+    narrative,
+    warnings
+  };
+}
+
+
 // --- source: infrastructure-financing/types.ts ---
 export const INFRA_FINANCING_SCHEMA = 'op10m-agent07-infra-financing-v1';
 
@@ -4801,6 +5038,33 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   });
   const riskRegister = buildFiscalRiskRegister(turn, v1012);
   const igGrants = allocateIntergovernmentalGrants(turn, v1012);
+  const statutory = buildStatutoryBalancesReport(turn, v1012);
+  const costRecovery = buildCostRecoveryStatement(turn, v1012);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn,
+    v1012,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const issuance = executeIssuanceCalendar(turn, v1012);
+  const programPerf = reviewProgramPerformance(turn, v1012);
+  const infraSummary = summarizeInfrastructureFinancing(
+    turn,
+    [
+      {
+        projectId: 'consolidated_infra_a',
+        title: 'Consolidated corridor',
+        regionIds: ['national'],
+        capitalPoints: 10,
+        maintenancePointsPerTurn: 1,
+        strategicWeight: 0.5,
+        preferredVehicle: 'sovereign_bond_series'
+      }
+    ],
+    v1012,
+    state.budget
+  );
 
   checks.push({
     id: 'CF01',
@@ -4900,13 +5164,55 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `rate=${igGrants.performancePassRate}`
   });
 
+  checks.push({
+    id: 'CF15',
+    label: 'Statutory balances within soft anchors',
+    passed: statutory.allWithinSoftAnchors,
+    detail: `nob=${statutory.netOperatingBalance}, fb=${statutory.fiscalBalance}`
+  });
+
+  checks.push({
+    id: 'CF16',
+    label: 'Cost recovery portfolio meets floor',
+    passed: costRecovery.withinPortfolioTarget,
+    detail: `weighted=${costRecovery.weightedRecoveryRatio}`
+  });
+
+  checks.push({
+    id: 'CF17',
+    label: 'Fiscal rules compliant or critical override',
+    passed: fiscalRules.allCompliant || v1012.pressure === 'critical',
+    detail: `breaches=${fiscalRules.breachCount}`
+  });
+
+  checks.push({
+    id: 'CF18',
+    label: 'Sovereign issuance without liquidity shortfall',
+    passed: !issuance.liquidityShortfall || !v1012.debtEnabled,
+    detail: `issued=${issuance.totalIssued}/${issuance.totalScheduled}`
+  });
+
+  checks.push({
+    id: 'CF19',
+    label: 'Program performance aggregate feedback bounded',
+    passed: programPerf.aggregateFeedbackPoints >= -8 || v1012.pressure === 'critical',
+    detail: `feedback=${programPerf.aggregateFeedbackPoints}, atRisk=${programPerf.programsAtRisk}`
+  });
+
+  checks.push({
+    id: 'CF20',
+    label: 'Infrastructure portfolio feasible under consolidated envelope',
+    passed: infraSummary.plans.every(p => p.feasible) || v1012.pressure === 'critical',
+    detail: `capital=${infraSummary.aggregateCapital}, service=${infraSummary.aggregateServiceLoad}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 12
+    layerCount: 18
   };
 }
 
@@ -6786,12 +7092,12 @@ export function runConsolidatedFiscalSelfTests(): {
 
   const healthy = buildConsolidatedFiscalReport(7, snap({}));
   record('CF-T01', 'Healthy baseline all layers pass', healthy.allPassed, `${healthy.checks.filter(c => c.passed).length}/${healthy.checks.length}`);
-  record('CF-T02', 'Twelve fiscal layers integrated', healthy.layerCount === 12, `layers=${healthy.layerCount}`);
+  record('CF-T02', 'Eighteen fiscal layers integrated', healthy.layerCount === 18, `layers=${healthy.layerCount}`);
 
   record(
     'CF-T03',
     'Strained snapshot runs full check suite',
-    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 14,
+    buildConsolidatedFiscalReport(7, snap({ fiscalHeadroom: -3, pressure: 'strained' })).checks.length === 20,
     'ok'
   );
 
@@ -6803,9 +7109,9 @@ export function runConsolidatedFiscalSelfTests(): {
 
   record(
     'CF-T05',
-    'CF01–CF14 ids present',
+    'CF01–CF20 ids present',
     healthy.checks.map(c => c.id).join(',') ===
-      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14',
+      'CF01,CF02,CF03,CF04,CF05,CF06,CF07,CF08,CF09,CF10,CF11,CF12,CF13,CF14,CF15,CF16,CF17,CF18,CF19,CF20',
     'ok'
   );
 
@@ -7328,6 +7634,108 @@ export function runIntergovernmentalGrantsSelfTests(): {
   const critical = allocateIntergovernmentalGrants(11, snap({ pressure: 'critical', fiscalHeadroom: -12, maintenanceLoad: 20, debtServiceLoad: 24, sustainability: 'fragile' }));
   record('IG05', 'Critical snapshot triggers clawbacks', critical.totalClawback > healthy.totalClawback, `${critical.totalClawback} vs ${healthy.totalClawback}`);
   record('IG06', 'Performance pass rate drops under stress', critical.performancePassRate < healthy.performancePassRate, `rate=${critical.performancePassRate}`);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: statutory-balances/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 12,
+    revenueCapacity: partial.revenueCapacity ?? 68,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 9,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 6,
+    debtLevel: partial.debtLevel ?? 24,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 5,
+    commitmentCount: partial.commitmentCount ?? 4,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runStatutoryBalancesSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const healthy = buildStatutoryBalancesReport(12, snap({}));
+  record('SB01', 'Three statutory bands reported', healthy.bands.length === 3, 'ok');
+  record('SB02', 'Healthy snapshot within soft anchors', healthy.allWithinSoftAnchors, healthy.narrative);
+  record('SB03', 'Net debt ratio bounded', healthy.netDebtToCapacityRatio <= 0.72, `ratio=${healthy.netDebtToCapacityRatio}`);
+
+  const levered = buildStatutoryBalancesReport(
+    12,
+    snap({ debtLevel: 58, debtServiceLoad: 19, fiscalHeadroom: -2, pressure: 'strained' })
+  );
+  record('SB04', 'High debt triggers anchor breach or warn', levered.warnings.length > 0, levered.warnings[0] ?? 'none');
+
+  const critical = buildStatutoryBalancesReport(
+    12,
+    snap({ pressure: 'critical', fiscalHeadroom: -20, debtLevel: 70, maintenanceLoad: 22 })
+  );
+  record('SB05', 'Critical override on operating anchor', critical.bands[0].withinAnchor, `nob=${critical.netOperatingBalance}`);
+
+  record('SB06', 'Schema version set', healthy.schemaVersion.includes('statutory-balances'), healthy.schemaVersion);
+
+  const passed = results.filter(r => r.passed).length;
+  return { passed, total: results.length, allPassed: passed === results.length, results };
+}
+
+
+// --- source: cost-recovery-pricing/self-tests.ts ---
+
+function snap(partial: Partial<V1012FiscalSnapshot>): V1012FiscalSnapshot {
+  return {
+    turn: partial.turn ?? 13,
+    revenueCapacity: partial.revenueCapacity ?? 65,
+    fiscalHeadroom: partial.fiscalHeadroom ?? 6,
+    pressure: partial.pressure ?? 'healthy',
+    sustainability: partial.sustainability ?? 'stable',
+    debtServiceLoad: partial.debtServiceLoad ?? 8,
+    debtLevel: partial.debtLevel ?? 26,
+    debtEnabled: partial.debtEnabled ?? true,
+    maintenanceLoad: partial.maintenanceLoad ?? 6,
+    commitmentCount: partial.commitmentCount ?? 3,
+    revenuePolicy: partial.revenuePolicy ?? 'balanced',
+    reservePolicy: partial.reservePolicy ?? 'standard'
+  };
+}
+
+export function runCostRecoveryPricingSelfTests(): {
+  passed: number;
+  total: number;
+  allPassed: boolean;
+  results: Array<{ id: string; name: string; passed: boolean; detail: string }>;
+} {
+  const results: Array<{ id: string; name: string; passed: boolean; detail: string }> = [];
+  const record = (id: string, name: string, passed: boolean, detail: string) => {
+    results.push({ id, name, passed, detail });
+  };
+
+  const healthy = buildCostRecoveryStatement(13, snap({}));
+  record('CR01', 'Five user-charge lines', healthy.lines.length === 5, 'ok');
+  record('CR02', 'Weighted ratio in valid range', healthy.weightedRecoveryRatio > 0 && healthy.weightedRecoveryRatio <= 1, `w=${healthy.weightedRecoveryRatio}`);
+  record('CR03', 'Healthy meets portfolio target', healthy.withinPortfolioTarget, healthy.narrative);
+
+  const revenueFocus = buildCostRecoveryStatement(13, snap({ revenuePolicy: 'revenue_focused', fiscalHeadroom: 10 }));
+  record('CR04', 'Revenue-focused policy lifts recovery', revenueFocus.weightedRecoveryRatio >= healthy.weightedRecoveryRatio, `${revenueFocus.weightedRecoveryRatio} vs ${healthy.weightedRecoveryRatio}`);
+
+  const critical = buildCostRecoveryStatement(13, snap({ pressure: 'critical', fiscalHeadroom: -15 }));
+  record('CR05', 'Critical pressure overrides portfolio target', critical.withinPortfolioTarget, 'ok');
+
+  record('CR06', 'Aggregate recovered <= full cost', healthy.aggregateRecovered <= healthy.aggregateFullCost, `${healthy.aggregateRecovered}/${healthy.aggregateFullCost}`);
 
   const passed = results.filter(r => r.passed).length;
   return { passed, total: results.length, allPassed: passed === results.length, results };

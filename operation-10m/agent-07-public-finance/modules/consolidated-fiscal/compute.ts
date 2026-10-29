@@ -11,6 +11,12 @@ import { assessContingentLiabilities } from '../contingent-liabilities/compute';
 import { scoreFiscalTransparencyIndex } from '../fiscal-transparency/compute';
 import { buildFiscalRiskRegister } from '../fiscal-risk-register/compute';
 import { allocateIntergovernmentalGrants } from '../intergovernmental-grants/compute';
+import { buildStatutoryBalancesReport } from '../statutory-balances/compute';
+import { buildCostRecoveryStatement } from '../cost-recovery-pricing/compute';
+import { assessFiscalRulesFramework } from '../fiscal-rules/compute';
+import { executeIssuanceCalendar } from '../sovereign-issuance/compute';
+import { reviewProgramPerformance } from '../program-performance/compute';
+import { summarizeInfrastructureFinancing } from '../infrastructure-financing/compute';
 import type { V1012FiscalSnapshot } from '../fiscal-outcomes/types';
 
 export const CONSOLIDATED_FISCAL_SCHEMA = 'op10m-agent07-consolidated-v1';
@@ -53,6 +59,33 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
   });
   const riskRegister = buildFiscalRiskRegister(turn, v1012);
   const igGrants = allocateIntergovernmentalGrants(turn, v1012);
+  const statutory = buildStatutoryBalancesReport(turn, v1012);
+  const costRecovery = buildCostRecoveryStatement(turn, v1012);
+  const contingencyFlex = state.budget.lines.find(l => l.category === 'contingency')?.flexPoints ?? 0;
+  const fiscalRules = assessFiscalRulesFramework({
+    turn,
+    v1012,
+    envelopeContingencyPoints: contingencyFlex,
+    forwardSpendingGrowth: 2
+  });
+  const issuance = executeIssuanceCalendar(turn, v1012);
+  const programPerf = reviewProgramPerformance(turn, v1012);
+  const infraSummary = summarizeInfrastructureFinancing(
+    turn,
+    [
+      {
+        projectId: 'consolidated_infra_a',
+        title: 'Consolidated corridor',
+        regionIds: ['national'],
+        capitalPoints: 10,
+        maintenancePointsPerTurn: 1,
+        strategicWeight: 0.5,
+        preferredVehicle: 'sovereign_bond_series'
+      }
+    ],
+    v1012,
+    state.budget
+  );
 
   checks.push({
     id: 'CF01',
@@ -152,12 +185,54 @@ export function buildConsolidatedFiscalReport(turn: number, v1012: V1012FiscalSn
     detail: `rate=${igGrants.performancePassRate}`
   });
 
+  checks.push({
+    id: 'CF15',
+    label: 'Statutory balances within soft anchors',
+    passed: statutory.allWithinSoftAnchors,
+    detail: `nob=${statutory.netOperatingBalance}, fb=${statutory.fiscalBalance}`
+  });
+
+  checks.push({
+    id: 'CF16',
+    label: 'Cost recovery portfolio meets floor',
+    passed: costRecovery.withinPortfolioTarget,
+    detail: `weighted=${costRecovery.weightedRecoveryRatio}`
+  });
+
+  checks.push({
+    id: 'CF17',
+    label: 'Fiscal rules compliant or critical override',
+    passed: fiscalRules.allCompliant || v1012.pressure === 'critical',
+    detail: `breaches=${fiscalRules.breachCount}`
+  });
+
+  checks.push({
+    id: 'CF18',
+    label: 'Sovereign issuance without liquidity shortfall',
+    passed: !issuance.liquidityShortfall || !v1012.debtEnabled,
+    detail: `issued=${issuance.totalIssued}/${issuance.totalScheduled}`
+  });
+
+  checks.push({
+    id: 'CF19',
+    label: 'Program performance aggregate feedback bounded',
+    passed: programPerf.aggregateFeedbackPoints >= -8 || v1012.pressure === 'critical',
+    detail: `feedback=${programPerf.aggregateFeedbackPoints}, atRisk=${programPerf.programsAtRisk}`
+  });
+
+  checks.push({
+    id: 'CF20',
+    label: 'Infrastructure portfolio feasible under consolidated envelope',
+    passed: infraSummary.plans.every(p => p.feasible) || v1012.pressure === 'critical',
+    detail: `capital=${infraSummary.aggregateCapital}, service=${infraSummary.aggregateServiceLoad}`
+  });
+
   const allPassed = checks.every(c => c.passed);
   return {
     schemaVersion: CONSOLIDATED_FISCAL_SCHEMA,
     turn,
     checks,
     allPassed,
-    layerCount: 12
+    layerCount: 18
   };
 }

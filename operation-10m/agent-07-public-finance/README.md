@@ -23,6 +23,12 @@ National **budget envelopes**, **revenue** (tax instruments + ledger), **soverei
 | Fiscal transparency | `modules/fiscal-transparency/` | Disclosure tier index for budget papers and open data |
 | Infrastructure financing | `modules/infrastructure-financing/` | Pay-go vs debt capital stacks (with self-tests) |
 
+### Scale wave round 6
+
+- **statutory-balances/** — net operating balance, fiscal balance, net debt-to-capacity anchors
+- **cost-recovery-pricing/** — user-charge portfolio recovery ratios (water, tolls, licensing, copayments)
+- **consolidated-fiscal/** — CF15–CF20 wiring rules, issuance, program performance, infra portfolio; `layerCount` **18**
+
 ### Scale wave round 4
 
 - **multi-year-framework/** — category expenditure ceilings, forward bands, parameter-settings growth
