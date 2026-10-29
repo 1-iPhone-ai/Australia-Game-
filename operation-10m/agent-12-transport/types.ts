@@ -261,8 +261,14 @@ export type InlandRailExpressPolicy = 'baseline' | 'deploy';
 
 export type SpaceLaunchLogisticsPolicy = 'baseline' | 'expand';
 
+export type RareEarthMagnetExportPolicy = 'baseline' | 'accelerate';
+
+export type TransTasmanReeferExpressPolicy = 'baseline' | 'surge';
+
+export type ZeroEmissionTruckCorridorPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/19';
+  schemaVersion: 'agent12/20';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -381,6 +387,14 @@ export interface TransportInfrastructureState {
   spaceLaunchLogisticsShare: number;
   nationalSpaceLaunchLogisticsThroughputIndex: number;
   spaceLaunchLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalRareEarthMagnetExportIndex: number;
+  rareEarthMagnetExportByRegion: Record<AuRegionCode, number>;
+  transTasmanReeferExpressShare: number;
+  nationalTransTasmanReeferExpressIndex: number;
+  transTasmanReeferExpressByRegion: Record<AuRegionCode, number>;
+  zeroEmissionTruckCorridorShare: number;
+  nationalZeroEmissionTruckCorridorThroughputIndex: number;
+  zeroEmissionTruckCorridorThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -428,6 +442,9 @@ export interface TransportInfrastructureOptions {
   lithiumBrineExportPolicy?: LithiumBrineExportPolicy;
   inlandRailExpressPolicy?: InlandRailExpressPolicy;
   spaceLaunchLogisticsPolicy?: SpaceLaunchLogisticsPolicy;
+  rareEarthMagnetExportPolicy?: RareEarthMagnetExportPolicy;
+  transTasmanReeferExpressPolicy?: TransTasmanReeferExpressPolicy;
+  zeroEmissionTruckCorridorPolicy?: ZeroEmissionTruckCorridorPolicy;
 }
 
 export interface V94ProjectSnapshot {

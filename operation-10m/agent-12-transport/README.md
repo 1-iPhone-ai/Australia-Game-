@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 19
+
+- Schema **`agent12/20`**: rare-earth magnet export throughput, trans-Tasman reefer express readiness, zero-emission truck corridor share (`rareEarthMagnetExportPolicy`, `transTasmanReeferExpressPolicy`, `zeroEmissionTruckCorridorPolicy`)
+- Catalog: **273** assets, **71** corridors, **113** scenarios
+- Systems: `network/rare-earth-magnet-export-index.ts`, `operations/trans-tasman-reefer-express-index.ts`, `productivity/zero-emission-truck-corridor-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 18
 
 - Schema **`agent12/19`**: lithium brine export throughput, inland rail express readiness, space launch logistics share (`lithiumBrineExportPolicy`, `inlandRailExpressPolicy`, `spaceLaunchLogisticsPolicy`)

@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/19' &&
+      infra.schemaVersion === 'agent12/20' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -126,8 +126,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalLithiumBrineExportIndex >= 6 &&
       infra.nationalInlandRailExpressIndex >= 10 &&
       infra.spaceLaunchLogisticsShare >= 0.03 &&
-      infra.nationalSpaceLaunchLogisticsThroughputIndex >= 1.5,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} lithium=${infra.nationalLithiumBrineExportIndex.toFixed(1)} inland=${infra.nationalInlandRailExpressIndex.toFixed(1)} launch=${infra.nationalSpaceLaunchLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalSpaceLaunchLogisticsThroughputIndex >= 1.5 &&
+      infra.nationalRareEarthMagnetExportIndex >= 6 &&
+      infra.nationalTransTasmanReeferExpressIndex >= 8 &&
+      infra.zeroEmissionTruckCorridorShare >= 0.034 &&
+      infra.nationalZeroEmissionTruckCorridorThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} rareEarth=${infra.nationalRareEarthMagnetExportIndex.toFixed(1)} reefer=${infra.nationalTransTasmanReeferExpressIndex.toFixed(1)} zet=${infra.nationalZeroEmissionTruckCorridorThroughputIndex.toFixed(1)}`,
   });
 
   return results;

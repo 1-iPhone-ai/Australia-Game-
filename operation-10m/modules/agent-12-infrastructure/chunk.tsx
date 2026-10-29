@@ -265,8 +265,14 @@ export type InlandRailExpressPolicy = 'baseline' | 'deploy';
 
 export type SpaceLaunchLogisticsPolicy = 'baseline' | 'expand';
 
+export type RareEarthMagnetExportPolicy = 'baseline' | 'accelerate';
+
+export type TransTasmanReeferExpressPolicy = 'baseline' | 'surge';
+
+export type ZeroEmissionTruckCorridorPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/19';
+  schemaVersion: 'agent12/20';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -385,6 +391,14 @@ export interface TransportInfrastructureState {
   spaceLaunchLogisticsShare: number;
   nationalSpaceLaunchLogisticsThroughputIndex: number;
   spaceLaunchLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalRareEarthMagnetExportIndex: number;
+  rareEarthMagnetExportByRegion: Record<AuRegionCode, number>;
+  transTasmanReeferExpressShare: number;
+  nationalTransTasmanReeferExpressIndex: number;
+  transTasmanReeferExpressByRegion: Record<AuRegionCode, number>;
+  zeroEmissionTruckCorridorShare: number;
+  nationalZeroEmissionTruckCorridorThroughputIndex: number;
+  zeroEmissionTruckCorridorThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -432,6 +446,9 @@ export interface TransportInfrastructureOptions {
   lithiumBrineExportPolicy?: LithiumBrineExportPolicy;
   inlandRailExpressPolicy?: InlandRailExpressPolicy;
   spaceLaunchLogisticsPolicy?: SpaceLaunchLogisticsPolicy;
+  rareEarthMagnetExportPolicy?: RareEarthMagnetExportPolicy;
+  transTasmanReeferExpressPolicy?: TransTasmanReeferExpressPolicy;
+  zeroEmissionTruckCorridorPolicy?: ZeroEmissionTruckCorridorPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -1248,6 +1265,48 @@ export const TRANSPORT_CORRIDORS_ROUND18: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round19.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND19: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_qld_rare_earth_chain',
+    name: 'WA–QLD Rare-Earth Chain',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'QLD'],
+    requiredTagsByRegion: {
+      WA: ['rare_earth', 'magnet_export', 'ndfeb_supply'],
+      QLD: ['rare_earth', 'magnet_export', 'ndfeb_supply'],
+    },
+    productivitySynergyPoints: 6.3,
+    logisticsRelief: 0.037,
+  },
+  {
+    id: 'corr_tas_vic_trans_tasman_reefer',
+    name: 'TAS–VIC Trans-Tasman Reefer',
+    networkKind: 'freight',
+    regionSequence: ['TAS', 'VIC'],
+    requiredTagsByRegion: {
+      TAS: ['trans_tasman', 'reefer_express', 'cold_chain_sea'],
+      VIC: ['trans_tasman', 'reefer_express', 'cold_chain_sea'],
+    },
+    productivitySynergyPoints: 5.7,
+    logisticsRelief: 0.031,
+  },
+  {
+    id: 'corr_nsw_sa_zero_emission_truck_spine',
+    name: 'NSW–SA Zero-Emission Truck Spine',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'SA'],
+    requiredTagsByRegion: {
+      NSW: ['zero_emission_truck', 'electric_freight_corridor', 'battery_electric_haul'],
+      SA: ['zero_emission_truck', 'electric_freight_corridor', 'battery_electric_haul'],
+    },
+    productivitySynergyPoints: 6.0,
+    logisticsRelief: 0.034,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -1413,6 +1472,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND16,
   ...TRANSPORT_CORRIDORS_ROUND17,
   ...TRANSPORT_CORRIDORS_ROUND18,
+  ...TRANSPORT_CORRIDORS_ROUND19,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -2453,6 +2513,62 @@ export const TRANSPORT_SCENARIOS_ROUND18: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round19.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND19: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_magnet_export_surge',
+    label: 'WA Magnet Export Surge',
+    description: 'Rare-earth export rush overloads Geraldton bulk and magnet yards.',
+    targetRegions: ['WA', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_tas_reefer_bass_delay',
+    label: 'Tasman Reefer Bass Delay',
+    description: 'Bass Strait weather delays Devonport reefer sailings.',
+    targetRegions: ['TAS', 'VIC'],
+    networkKind: 'freight',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port', 'logistics'],
+  },
+  {
+    id: 'scn_sa_zet_charging_peak',
+    label: 'SA ZET Charging Peak',
+    description: 'Holiday peak strains Sturt zero-emission charging hubs.',
+    targetRegions: ['SA', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.21,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['road', 'logistics'],
+  },
+  {
+    id: 'scn_qld_magnet_rail_possession',
+    label: 'Queensland Magnet Rail Possession',
+    description: 'Track possession cuts Townsville magnet feed capacity.',
+    targetRegions: ['QLD', 'WA'],
+    networkKind: 'freight',
+    utilizationAdd: 0.19,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail'],
+  },
+  {
+    id: 'scn_vic_reefer_cold_chain_stress',
+    label: 'Victoria Reefer Cold-Chain Stress',
+    description: 'Heatwave strains Melbourne reefer pre-cool capacity.',
+    targetRegions: ['VIC', 'TAS'],
+    networkKind: 'freight',
+    utilizationAdd: 0.2,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['logistics', 'road'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -2632,6 +2748,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND16,
   ...TRANSPORT_SCENARIOS_ROUND17,
   ...TRANSPORT_SCENARIOS_ROUND18,
+  ...TRANSPORT_SCENARIOS_ROUND19,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -7429,6 +7546,233 @@ export const SCALE_WAVE_ROUND18_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round19-assets.ts ---
+
+export const ROUND19_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_mount_weld_magnet_haul',
+    category: 'road',
+    name: 'Mount Weld Magnet Haul Road',
+    description: 'Rare-earth concentrate road to Geraldton export.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['rare_earth', 'magnet_export', 'ndfeb_supply', 'mining'],
+    laneKilometres: 58,
+    designSpeedKmh: 92,
+    freightShare: 0.42,
+    urbanShare: 0.06,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_doomadgee_magnet_feed',
+    category: 'road',
+    name: 'Doomadgee Magnet Feed',
+    description: 'North Queensland rare-earth road to Townsville bulk.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 4.0,
+    strategicNetworks: ['trade'],
+    tags: ['rare_earth', 'magnet_export', 'ndfeb_supply'],
+    laneKilometres: 44,
+    designSpeedKmh: 88,
+    freightShare: 0.37,
+    urbanShare: 0.04,
+    tollRoad: false,
+  },
+  {
+    id: 'road_tas_devonport_reefer_feed',
+    category: 'road',
+    name: 'Devonport Reefer Feed',
+    description: 'Cold-chain road feed to Bass Strait reefer terminals.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 3.7,
+    strategicNetworks: ['freight'],
+    tags: ['trans_tasman', 'reefer_express', 'cold_chain_sea', 'regional'],
+    laneKilometres: 36,
+    designSpeedKmh: 85,
+    freightShare: 0.31,
+    urbanShare: 0.22,
+    tollRoad: false,
+  },
+  {
+    id: 'road_sa_sturt_zet_corridor',
+    category: 'road',
+    name: 'Sturt Zero-Emission Truck Corridor',
+    description: 'Battery-electric heavy haul on Adelaide–Port Augusta spine.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NSW'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['freight'],
+    tags: ['zero_emission_truck', 'electric_freight_corridor', 'battery_electric_haul', 'transcontinental'],
+    laneKilometres: 48,
+    designSpeedKmh: 95,
+    freightShare: 0.38,
+    urbanShare: 0.11,
+    tollRoad: true,
+  },
+];
+
+export const ROUND19_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_geraldton_magnet_rail',
+    category: 'rail',
+    name: 'Geraldton Magnet Export Rail',
+    description: 'Rare-earth bulk rail to magnet export berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.3,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['rare_earth', 'magnet_export', 'ndfeb_supply', 'heavy_haul'],
+    trackKilometres: 320,
+    dualTrackShare: 0.48,
+    electrifiedShare: 0.18,
+    designFreightTonnesPerYear: 16_500_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_vic_melbourne_reefer_rail',
+    category: 'rail',
+    name: 'Melbourne Reefer Express Rail',
+    description: 'Reefer container rail to Port of Melbourne Bass handoff.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['freight'],
+    tags: ['trans_tasman', 'reefer_express', 'cold_chain_sea', 'intermodal'],
+    trackKilometres: 52,
+    dualTrackShare: 0.64,
+    electrifiedShare: 0.72,
+    designFreightTonnesPerYear: 9_800_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_hume_zet_spine',
+    category: 'rail',
+    name: 'Hume Zero-Emission Intermodal Spine',
+    description: 'Electric truck–rail intermodal on Hume feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC', 'SA'],
+    baseProductivityPoints: 4.8,
+    strategicNetworks: ['freight'],
+    tags: ['zero_emission_truck', 'electric_freight_corridor', 'battery_electric_haul', 'intercapital'],
+    trackKilometres: 180,
+    dualTrackShare: 0.55,
+    electrifiedShare: 0.62,
+    designFreightTonnesPerYear: 11_200_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND19_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_geraldton_magnet',
+    category: 'port',
+    name: 'Geraldton Rare-Earth Export',
+    description: 'NdFeB magnet concentrate and oxide export berths.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['trade'],
+    tags: ['rare_earth', 'magnet_export', 'ndfeb_supply', 'bulk'],
+    berthCount: 3,
+    maxDraftMetres: 13.0,
+    teuCapacityPerYear: 140_000,
+    automationLevel: 1,
+    bulkShare: 0.64,
+  },
+  {
+    id: 'port_tas_devonport_reefer',
+    category: 'port',
+    name: 'Devonport Reefer Express Terminal',
+    description: 'Trans-Tasman cold-chain reefer and ferry handoff.',
+    hostRegion: 'TAS',
+    servedRegions: ['TAS', 'VIC'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['trans_tasman', 'reefer_express', 'cold_chain_sea', 'island'],
+    berthCount: 2,
+    maxDraftMetres: 11.5,
+    teuCapacityPerYear: 110_000,
+    automationLevel: 1,
+    bulkShare: 0.08,
+  },
+  {
+    id: 'port_sa_port_augusta_zet',
+    category: 'port',
+    name: 'Port Augusta ZET Logistics Berth',
+    description: 'Zero-emission truck staging at Spencer Gulf.',
+    hostRegion: 'SA',
+    servedRegions: ['SA', 'NSW'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight'],
+    tags: ['zero_emission_truck', 'electric_freight_corridor', 'battery_electric_haul'],
+    berthCount: 2,
+    maxDraftMetres: 12.0,
+    teuCapacityPerYear: 88_000,
+    automationLevel: 0,
+    bulkShare: 0.24,
+  },
+];
+
+export const ROUND19_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_wa_kwinana_magnet_yard',
+    category: 'logistics',
+    name: 'Kwinana Magnet Staging Yard',
+    description: 'Rare-earth oxide and magnet module consolidation.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['rare_earth', 'magnet_export', 'ndfeb_supply'],
+    warehouseSqm: 108_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 49,
+  },
+  {
+    id: 'log_vic_melbourne_reefer_dc',
+    category: 'logistics',
+    name: 'Melbourne Reefer DC',
+    description: 'Trans-Tasman reefer pre-cool and cross-dock.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'TAS'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight'],
+    tags: ['trans_tasman', 'reefer_express', 'cold_chain_sea'],
+    warehouseSqm: 86_000,
+    coldChainCapable: true,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 71,
+  },
+  {
+    id: 'log_nsw_goulburn_zet_hub',
+    category: 'logistics',
+    name: 'Goulburn ZET Charging Hub',
+    description: 'Battery-electric truck charging and freight stores.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC', 'SA'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['freight'],
+    tags: ['zero_emission_truck', 'electric_freight_corridor', 'battery_electric_haul'],
+    warehouseSqm: 62_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 55,
+  },
+];
+
+export const SCALE_WAVE_ROUND19_ASSETS = [
+  ...ROUND19_ROADS,
+  ...ROUND19_RAIL,
+  ...ROUND19_PORTS,
+  ...ROUND19_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -7455,6 +7799,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND16_ASSETS,
     ...SCALE_WAVE_ROUND17_ASSETS,
     ...SCALE_WAVE_ROUND18_ASSETS,
+    ...SCALE_WAVE_ROUND19_ASSETS,
   ];
 }
 
@@ -8454,6 +8799,62 @@ export function lithiumBrineExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.042 : 0;
   const normalized = (index - 6) / 100;
   return clamp(1 + normalized * 0.049 + policyBoost, 0.93, 1.11);
+}
+
+
+// --- source: network/rare-earth-magnet-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RareEarthMagnetExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 rare-earth magnet export throughput by region. */
+export function computeRareEarthMagnetExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'rare_earth' || t === 'magnet_export' || t === 'ndfeb_supply',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 720 + asset.freightShare * 3.8;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 10_500_000 + asset.trackKilometres / 580;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.7 + asset.bulkShare * 5.8;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 102_000 + (asset.coldChainCapable ? 1.2 : 0.5);
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRareEarthMagnetExportIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.45 + max * 0.55, 5, 76) * 10) / 10;
+}
+
+export function rareEarthMagnetExportProductivityMultiplier(
+  index: number,
+  policy: RareEarthMagnetExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.043 : 0;
+  const normalized = (index - 6) / 100;
+  return clamp(1 + normalized * 0.048 + policyBoost, 0.93, 1.11);
 }
 
 
@@ -9530,6 +9931,91 @@ export function inlandRailExpressProductivityMultiplier(
 ): number {
   const bias = policy === 'deploy' ? 1.023 : 1;
   return (1 + (share - 0.06) * 0.034) * bias;
+}
+
+
+// --- source: operations/trans-tasman-reefer-express-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type TransTasmanReeferExpressPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 trans-Tasman reefer express throughput by region. */
+export function computeTransTasmanReeferExpressByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 6])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'trans_tasman' || t === 'reefer_express' || t === 'cold_chain_sea',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.0 + asset.teuCapacityPerYear / 260_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 76_000 + (asset.coldChainCapable ? 2.4 : 0.6);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 640;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 12_000_000;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.035 - stress * 0.03), 4, 88) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalTransTasmanReeferExpressIndex(byRegion: Record<AuRegionCode, number>): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.48 + max * 0.52, 6, 84) * 10) / 10;
+}
+
+export function computeTransTasmanReeferExpressShare(
+  operationalAssets: TransportAsset[],
+  policy: TransTasmanReeferExpressPolicy = 'baseline',
+): number {
+  let reeferUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('reefer_express') || asset.tags.includes('cold_chain_sea')) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.4;
+        reeferUnits += asset.berthCount * 1.05;
+      }
+      if (asset.category === 'logistics' && asset.coldChainCapable) {
+        totalUnits += asset.warehouseSqm / 80_000;
+        reeferUnits += asset.warehouseSqm / 80_000 * 0.74;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.034;
+  const policyBoost = policy === 'surge' ? 0.033 : 0;
+  return Math.round(clamp(reeferUnits / totalUnits + policyBoost, 0.032, 0.34) * 1000) / 1000;
+}
+
+export function transTasmanReeferExpressProductivityMultiplier(
+  share: number,
+  policy: TransTasmanReeferExpressPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.024 : 1;
+  return (1 + (share - 0.055) * 0.033) * bias;
 }
 
 
@@ -10829,6 +11315,96 @@ export function nationalSpaceLaunchLogisticsThroughputIndex(
 }
 
 
+// --- source: productivity/zero-emission-truck-corridor-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type TransportAsset,
+  type ZeroEmissionTruckCorridorPolicy,
+} from '../types.ts';
+
+/** 0–1 share of road freight on zero-emission truck corridors. */
+export function computeZeroEmissionTruckCorridorShare(
+  operationalAssets: TransportAsset[],
+  policy: ZeroEmissionTruckCorridorPolicy = 'baseline',
+): number {
+  let zetUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.category === 'road') {
+      const zetTagged = asset.tags.some(
+        (t) =>
+          t === 'zero_emission_truck' ||
+          t === 'electric_freight_corridor' ||
+          t === 'battery_electric_haul',
+      );
+      const units = asset.laneKilometres / 260 + asset.freightShare * 2.2;
+      totalUnits += units + 0.8;
+      if (zetTagged) zetUnits += (units + 0.8) * 0.79;
+    }
+    if (asset.category === 'logistics' && asset.tags.includes('battery_electric_haul')) {
+      totalUnits += asset.warehouseSqm / 90_000;
+      zetUnits += asset.warehouseSqm / 90_000 * 0.61;
+    }
+  }
+
+  if (totalUnits <= 0) return 0.036;
+  const policyBoost = policy === 'expand' ? 0.035 : 0;
+  return Math.round(clamp(zetUnits / totalUnits + policyBoost, 0.034, 0.37) * 1000) / 1000;
+}
+
+export function zeroEmissionTruckCorridorProductivityMultiplier(
+  share: number,
+  policy: ZeroEmissionTruckCorridorPolicy,
+): number {
+  const bias = policy === 'expand' ? 1.023 : 1;
+  return (1 + (share - 0.065) * 0.031) * bias;
+}
+
+export function computeZeroEmissionTruckCorridorThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'zero_emission_truck' ||
+          t === 'electric_freight_corridor' ||
+          t === 'battery_electric_haul',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 380 + asset.freightShare * 3.2;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 94_000;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 18_000_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalZeroEmissionTruckCorridorThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 2, 56) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -11207,6 +11783,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalSpaceLaunchLogisticsThroughputIndex,
   spaceLaunchLogisticsProductivityMultiplier,
 } from './space-launch-logistics-index.ts';
+  computeRareEarthMagnetExportByRegion,
+  nationalRareEarthMagnetExportIndex,
+  rareEarthMagnetExportProductivityMultiplier,
+} from '../network/rare-earth-magnet-export-index.ts';
+  computeTransTasmanReeferExpressByRegion,
+  computeTransTasmanReeferExpressShare,
+  nationalTransTasmanReeferExpressIndex,
+  transTasmanReeferExpressProductivityMultiplier,
+} from '../operations/trans-tasman-reefer-express-index.ts';
+  computeZeroEmissionTruckCorridorShare,
+  computeZeroEmissionTruckCorridorThroughputByRegion,
+  nationalZeroEmissionTruckCorridorThroughputIndex,
+  zeroEmissionTruckCorridorProductivityMultiplier,
+} from './zero-emission-truck-corridor-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -11911,6 +12501,34 @@ export function computeTransportInfrastructureState(
     spaceLaunchLogisticsShare,
     options?.spaceLaunchLogisticsPolicy ?? 'baseline',
   );
+  const rareEarthMagnetExportByRegion = computeRareEarthMagnetExportByRegion(ops);
+  const nationalRareEarthMagnet = nationalRareEarthMagnetExportIndex(rareEarthMagnetExportByRegion);
+  const rareEarthMult = rareEarthMagnetExportProductivityMultiplier(
+    nationalRareEarthMagnet,
+    options?.rareEarthMagnetExportPolicy ?? 'baseline',
+  );
+  const transTasmanReeferExpressByRegion = computeTransTasmanReeferExpressByRegion(ops, networkStress);
+  const nationalTransTasmanReefer = nationalTransTasmanReeferExpressIndex(transTasmanReeferExpressByRegion);
+  const transTasmanReeferExpressShare = computeTransTasmanReeferExpressShare(
+    ops,
+    options?.transTasmanReeferExpressPolicy ?? 'baseline',
+  );
+  const reeferMult = transTasmanReeferExpressProductivityMultiplier(
+    transTasmanReeferExpressShare,
+    options?.transTasmanReeferExpressPolicy ?? 'baseline',
+  );
+  const zeroEmissionTruckCorridorThroughputByRegion = computeZeroEmissionTruckCorridorThroughputByRegion(ops);
+  const nationalZeroEmissionTruck = nationalZeroEmissionTruckCorridorThroughputIndex(
+    zeroEmissionTruckCorridorThroughputByRegion,
+  );
+  const zeroEmissionTruckCorridorShare = computeZeroEmissionTruckCorridorShare(
+    ops,
+    options?.zeroEmissionTruckCorridorPolicy ?? 'baseline',
+  );
+  const zetMult = zeroEmissionTruckCorridorProductivityMultiplier(
+    zeroEmissionTruckCorridorShare,
+    options?.zeroEmissionTruckCorridorPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -11922,6 +12540,9 @@ export function computeTransportInfrastructureState(
     const lithiumBoost = (lithiumBrineExportByRegion[code] - 5) * 0.0048;
     const inlandExpressBoost = (inlandRailExpressByRegion[code] - 10) * 0.0044;
     const spaceLaunchBoost = (spaceLaunchLogisticsThroughputByRegion[code] - 1) * 0.0046;
+    const rareEarthBoost = (rareEarthMagnetExportByRegion[code] - 5) * 0.0047;
+    const reeferBoost = (transTasmanReeferExpressByRegion[code] - 8) * 0.0043;
+    const zetBoost = (zeroEmissionTruckCorridorThroughputByRegion[code] - 2) * 0.0045;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -11932,7 +12553,10 @@ export function computeTransportInfrastructureState(
         airportBoost +
         lithiumBoost +
         inlandExpressBoost +
-        spaceLaunchBoost) *
+        spaceLaunchBoost +
+        rareEarthBoost +
+        reeferBoost +
+        zetBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -11941,7 +12565,10 @@ export function computeTransportInfrastructureState(
       airportExpressMult *
       lithiumMult *
       inlandExpressMult *
-      spaceLaunchMult;
+      spaceLaunchMult *
+      rareEarthMult *
+      reeferMult *
+      zetMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -11973,7 +12600,10 @@ export function computeTransportInfrastructureState(
     nationalAirportExpress * 0.013 +
     nationalLithiumBrine * 0.012 +
     nationalInlandRailExpress * 0.012 +
-    nationalSpaceLaunch * 0.011;
+    nationalSpaceLaunch * 0.011 +
+    nationalRareEarthMagnet * 0.011 +
+    nationalTransTasmanReefer * 0.01 +
+    nationalZeroEmissionTruck * 0.01;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -11988,7 +12618,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/19',
+    schemaVersion: 'agent12/20',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -12107,6 +12737,14 @@ export function computeTransportInfrastructureState(
     spaceLaunchLogisticsShare,
     nationalSpaceLaunchLogisticsThroughputIndex: nationalSpaceLaunch,
     spaceLaunchLogisticsThroughputByRegion,
+    nationalRareEarthMagnetExportIndex: nationalRareEarthMagnet,
+    rareEarthMagnetExportByRegion,
+    transTasmanReeferExpressShare,
+    nationalTransTasmanReeferExpressIndex: nationalTransTasmanReefer,
+    transTasmanReeferExpressByRegion,
+    zeroEmissionTruckCorridorShare,
+    nationalZeroEmissionTruckCorridorThroughputIndex: nationalZeroEmissionTruck,
+    zeroEmissionTruckCorridorThroughputByRegion,
     computeMs,
   };
 }
@@ -12189,7 +12827,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/19' &&
+      infra.schemaVersion === 'agent12/20' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -12247,8 +12885,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalLithiumBrineExportIndex >= 6 &&
       infra.nationalInlandRailExpressIndex >= 10 &&
       infra.spaceLaunchLogisticsShare >= 0.03 &&
-      infra.nationalSpaceLaunchLogisticsThroughputIndex >= 1.5,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} lithium=${infra.nationalLithiumBrineExportIndex.toFixed(1)} inland=${infra.nationalInlandRailExpressIndex.toFixed(1)} launch=${infra.nationalSpaceLaunchLogisticsThroughputIndex.toFixed(1)}`,
+      infra.nationalSpaceLaunchLogisticsThroughputIndex >= 1.5 &&
+      infra.nationalRareEarthMagnetExportIndex >= 6 &&
+      infra.nationalTransTasmanReeferExpressIndex >= 8 &&
+      infra.zeroEmissionTruckCorridorShare >= 0.034 &&
+      infra.nationalZeroEmissionTruckCorridorThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} rareEarth=${infra.nationalRareEarthMagnetExportIndex.toFixed(1)} reefer=${infra.nationalTransTasmanReeferExpressIndex.toFixed(1)} zet=${infra.nationalZeroEmissionTruckCorridorThroughputIndex.toFixed(1)}`,
   });
 
   return results;

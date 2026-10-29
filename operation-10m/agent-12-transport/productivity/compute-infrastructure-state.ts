@@ -262,6 +262,23 @@ import {
   nationalSpaceLaunchLogisticsThroughputIndex,
   spaceLaunchLogisticsProductivityMultiplier,
 } from './space-launch-logistics-index.ts';
+import {
+  computeRareEarthMagnetExportByRegion,
+  nationalRareEarthMagnetExportIndex,
+  rareEarthMagnetExportProductivityMultiplier,
+} from '../network/rare-earth-magnet-export-index.ts';
+import {
+  computeTransTasmanReeferExpressByRegion,
+  computeTransTasmanReeferExpressShare,
+  nationalTransTasmanReeferExpressIndex,
+  transTasmanReeferExpressProductivityMultiplier,
+} from '../operations/trans-tasman-reefer-express-index.ts';
+import {
+  computeZeroEmissionTruckCorridorShare,
+  computeZeroEmissionTruckCorridorThroughputByRegion,
+  nationalZeroEmissionTruckCorridorThroughputIndex,
+  zeroEmissionTruckCorridorProductivityMultiplier,
+} from './zero-emission-truck-corridor-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -967,6 +984,34 @@ export function computeTransportInfrastructureState(
     spaceLaunchLogisticsShare,
     options?.spaceLaunchLogisticsPolicy ?? 'baseline',
   );
+  const rareEarthMagnetExportByRegion = computeRareEarthMagnetExportByRegion(ops);
+  const nationalRareEarthMagnet = nationalRareEarthMagnetExportIndex(rareEarthMagnetExportByRegion);
+  const rareEarthMult = rareEarthMagnetExportProductivityMultiplier(
+    nationalRareEarthMagnet,
+    options?.rareEarthMagnetExportPolicy ?? 'baseline',
+  );
+  const transTasmanReeferExpressByRegion = computeTransTasmanReeferExpressByRegion(ops, networkStress);
+  const nationalTransTasmanReefer = nationalTransTasmanReeferExpressIndex(transTasmanReeferExpressByRegion);
+  const transTasmanReeferExpressShare = computeTransTasmanReeferExpressShare(
+    ops,
+    options?.transTasmanReeferExpressPolicy ?? 'baseline',
+  );
+  const reeferMult = transTasmanReeferExpressProductivityMultiplier(
+    transTasmanReeferExpressShare,
+    options?.transTasmanReeferExpressPolicy ?? 'baseline',
+  );
+  const zeroEmissionTruckCorridorThroughputByRegion = computeZeroEmissionTruckCorridorThroughputByRegion(ops);
+  const nationalZeroEmissionTruck = nationalZeroEmissionTruckCorridorThroughputIndex(
+    zeroEmissionTruckCorridorThroughputByRegion,
+  );
+  const zeroEmissionTruckCorridorShare = computeZeroEmissionTruckCorridorShare(
+    ops,
+    options?.zeroEmissionTruckCorridorPolicy ?? 'baseline',
+  );
+  const zetMult = zeroEmissionTruckCorridorProductivityMultiplier(
+    zeroEmissionTruckCorridorShare,
+    options?.zeroEmissionTruckCorridorPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -978,6 +1023,9 @@ export function computeTransportInfrastructureState(
     const lithiumBoost = (lithiumBrineExportByRegion[code] - 5) * 0.0048;
     const inlandExpressBoost = (inlandRailExpressByRegion[code] - 10) * 0.0044;
     const spaceLaunchBoost = (spaceLaunchLogisticsThroughputByRegion[code] - 1) * 0.0046;
+    const rareEarthBoost = (rareEarthMagnetExportByRegion[code] - 5) * 0.0047;
+    const reeferBoost = (transTasmanReeferExpressByRegion[code] - 8) * 0.0043;
+    const zetBoost = (zeroEmissionTruckCorridorThroughputByRegion[code] - 2) * 0.0045;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -988,7 +1036,10 @@ export function computeTransportInfrastructureState(
         airportBoost +
         lithiumBoost +
         inlandExpressBoost +
-        spaceLaunchBoost) *
+        spaceLaunchBoost +
+        rareEarthBoost +
+        reeferBoost +
+        zetBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -997,7 +1048,10 @@ export function computeTransportInfrastructureState(
       airportExpressMult *
       lithiumMult *
       inlandExpressMult *
-      spaceLaunchMult;
+      spaceLaunchMult *
+      rareEarthMult *
+      reeferMult *
+      zetMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1029,7 +1083,10 @@ export function computeTransportInfrastructureState(
     nationalAirportExpress * 0.013 +
     nationalLithiumBrine * 0.012 +
     nationalInlandRailExpress * 0.012 +
-    nationalSpaceLaunch * 0.011;
+    nationalSpaceLaunch * 0.011 +
+    nationalRareEarthMagnet * 0.011 +
+    nationalTransTasmanReefer * 0.01 +
+    nationalZeroEmissionTruck * 0.01;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1044,7 +1101,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/19',
+    schemaVersion: 'agent12/20',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -1163,6 +1220,14 @@ export function computeTransportInfrastructureState(
     spaceLaunchLogisticsShare,
     nationalSpaceLaunchLogisticsThroughputIndex: nationalSpaceLaunch,
     spaceLaunchLogisticsThroughputByRegion,
+    nationalRareEarthMagnetExportIndex: nationalRareEarthMagnet,
+    rareEarthMagnetExportByRegion,
+    transTasmanReeferExpressShare,
+    nationalTransTasmanReeferExpressIndex: nationalTransTasmanReefer,
+    transTasmanReeferExpressByRegion,
+    zeroEmissionTruckCorridorShare,
+    nationalZeroEmissionTruckCorridorThroughputIndex: nationalZeroEmissionTruck,
+    zeroEmissionTruckCorridorThroughputByRegion,
     computeMs,
   };
 }
