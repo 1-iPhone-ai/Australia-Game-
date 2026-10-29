@@ -30,6 +30,11 @@ import {
 } from './composite-recompute.ts';
 import { op10mA11NationalPrimateIndex, op10mA11ComputeUrbanHierarchy } from './urban-hierarchy.ts';
 import { op10mA11BuildRegionalLinkageMatrix } from './regional-linkage-matrix.ts';
+import {
+  op10mA11ComputeCorridorFlows,
+  op10mA11MaxCorridorFlow,
+} from './urban-corridor-flow.ts';
+import { op10mA11AnalyzeLinkageHubs } from './linkage-hub-centrality.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -324,6 +329,54 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_22',
     composite2.state.revision === composite.state.revision + 1,
     `revision ${composite.state.revision}→${composite2.state.revision}`,
+  );
+
+  const flows = op10mA11ComputeCorridorFlows({
+    cities: sampleCities,
+    links: infraLinks,
+    linkages: linkMatrix,
+  });
+  push(
+    out,
+    'a11_23',
+    flows.length >= 1 && op10mA11MaxCorridorFlow(flows) >= 40 && flows[0].band !== 'light',
+    `peak flow ${op10mA11MaxCorridorFlow(flows)} (${flows[0]?.band})`,
+  );
+
+  const hubs = op10mA11AnalyzeLinkageHubs(linkMatrix);
+  push(
+    out,
+    'a11_24',
+    hubs.length === 8 && hubs.every((h) => h.narrative.includes('linkage role')),
+    `top hub ${hubs[0]?.regionId} (${hubs[0]?.role})`,
+  );
+
+  push(
+    out,
+    'a11_25',
+    composite.state.corridorFlows.length >= 1 && composite.state.linkageHubs.length === 8,
+    `flows ${composite.state.corridorFlows.length}`,
+  );
+
+  push(
+    out,
+    'a11_26',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.2',
+    composite.state.schemaVersion,
+  );
+
+  push(
+    out,
+    'a11_27',
+    composite.derived.some((d) => d.kind === 'corridor_flow_surge' || d.kind === 'linkage_hub_overload'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_28',
+    composite.state.corridorFlows[0].explanation.includes('corridor'),
+    composite.state.corridorFlows[0]?.band ?? 'none',
   );
 
   return out;

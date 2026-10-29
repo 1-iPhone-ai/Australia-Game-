@@ -215,7 +215,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.1' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.2' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -224,7 +224,10 @@ export type OP10M_A11_LinkageBand = 'weak' | 'moderate' | 'strong' | 'structural
 export type OP10M_A11_CompositeDerivedKind =
   | 'primate_concentration_risk'
   | 'regional_linkage_fragility'
-  | 'integrated_relief_priority';
+  | 'integrated_relief_priority'
+  | 'corridor_flow_surge'
+  | 'linkage_hub_overload'
+  | 'peripheral_isolation_deepening';
 
 export interface OP10M_A11_UrbanHierarchyRow {
   regionId: OP10M_A11_RegionId;
@@ -241,6 +244,28 @@ export interface OP10M_A11_RegionalLinkageEdge {
   strength: number;
   band: OP10M_A11_LinkageBand;
   viaLinks: number;
+}
+
+export type OP10M_A11_FlowPressureBand = 'light' | 'moderate' | 'heavy' | 'surge';
+
+export interface OP10M_A11_CorridorFlowRow {
+  fromRegion: OP10M_A11_RegionId;
+  toRegion: OP10M_A11_RegionId;
+  flowPressure: number;
+  band: OP10M_A11_FlowPressureBand;
+  growthGradient: number;
+  explanation: string;
+}
+
+export type OP10M_A11_HubRole = 'peripheral' | 'connector' | 'regional_hub' | 'national_hub';
+
+export interface OP10M_A11_LinkageHubProfile {
+  regionId: OP10M_A11_RegionId;
+  degree: number;
+  weightedCentrality: number;
+  role: OP10M_A11_HubRole;
+  isolationScore: number;
+  narrative: string;
 }
 
 export interface OP10M_A11_ReliefPlaybookItem {
@@ -272,9 +297,12 @@ export interface OP10M_A11_CompositeState {
   infra: OP10M_A11_InfraState;
   hierarchy: OP10M_A11_UrbanHierarchyRow[];
   linkages: OP10M_A11_RegionalLinkageEdge[];
+  corridorFlows: OP10M_A11_CorridorFlowRow[];
+  linkageHubs: OP10M_A11_LinkageHubProfile[];
   reliefPlaybook: OP10M_A11_ReliefPlaybookItem[];
   fragilityIndex: number;
   nationalPrimateIndex: number;
+  maxCorridorFlow: number;
   summary: string;
   inputHash: string;
 }
@@ -286,5 +314,6 @@ export interface OP10M_A11_CompositePersisted {
   urban: OP10M_A11_Persisted;
   infra: OP10M_A11_InfraPersisted;
   lastFragilityIndex: number;
+  lastMaxCorridorFlow: number;
   inputHash: string;
 }

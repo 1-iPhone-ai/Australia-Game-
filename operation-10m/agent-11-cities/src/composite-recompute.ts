@@ -24,6 +24,16 @@ import {
   type OP10M_A11_RegionId,
 } from './types.ts';
 import { op10mA11ComputeUrbanHierarchy, op10mA11NationalPrimateIndex } from './urban-hierarchy.ts';
+import {
+  op10mA11ComputeCorridorFlows,
+  op10mA11MaxCorridorFlow,
+  op10mA11SurgeCorridors,
+} from './urban-corridor-flow.ts';
+import {
+  op10mA11AnalyzeLinkageHubs,
+  op10mA11DeeplyIsolatedRegions,
+  op10mA11OverloadedHubs,
+} from './linkage-hub-centrality.ts';
 
 export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePersisted {
   return {
@@ -33,6 +43,7 @@ export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePe
     urban: createEmptyOP10M_A11_Persisted(),
     infra: createEmptyOP10M_A11_InfraPersisted(),
     lastFragilityIndex: 0,
+    lastMaxCorridorFlow: 0,
     inputHash: '',
   };
 }
@@ -43,6 +54,8 @@ export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState
   if (state.schemaVersion !== OP10M_A11_COMPOSITE_SCHEMA_VERSION) errs.push('composite schema mismatch');
   if (state.fragilityIndex < 0 || state.fragilityIndex > 100) errs.push('fragility out of range');
   if (state.hierarchy.length !== 8) errs.push('hierarchy row count');
+  if (state.linkageHubs.length !== 8) errs.push('hub profile count');
+  if (state.maxCorridorFlow < 0 || state.maxCorridorFlow > 100) errs.push('max corridor flow');
   return errs;
 }
 
@@ -82,6 +95,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
   const hierarchy = op10mA11ComputeUrbanHierarchy(inputs.urban.cities);
   const nationalPrimateIndex = op10mA11NationalPrimateIndex(hierarchy);
   const linkages = op10mA11BuildRegionalLinkageMatrix(inputs.infra.links);
+  const corridorFlows = op10mA11ComputeCorridorFlows({
+    cities: inputs.urban.cities,
+    links: inputs.infra.links,
+    linkages,
+  });
+  const maxCorridorFlow = op10mA11MaxCorridorFlow(corridorFlows);
+  const linkageHubs = op10mA11AnalyzeLinkageHubs(linkages);
   const fragilityIndex = op10mA11LinkageFragilityIndex(linkages, infraOut.state.corridorStressIndex);
   const weakRegions = op10mA11RegionsWithWeakLinkage(linkages);
   const reliefPlaybook = op10mA11BuildReliefPlaybook({
@@ -121,15 +141,51 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     );
   }
 
+  const surge = op10mA11SurgeCorridors(corridorFlows);
+  if (surge.length) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'corridor_flow_surge',
+      [...new Set(surge.flatMap((s) => [s.fromRegion, s.toRegion]))],
+      `Corridor flow surge on ${surge.length} regional pair(s); peak pressure ${maxCorridorFlow.toFixed(1)}.`,
+      maxCorridorFlow >= 72 ? 'major' : 'meaningful',
+    );
+  }
+
+  const overloaded = op10mA11OverloadedHubs(linkageHubs);
+  if (overloaded.length) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'linkage_hub_overload',
+      overloaded.map((h) => h.regionId),
+      `Linkage hubs under load: ${overloaded.map((h) => h.regionId).join(', ')}.`,
+    );
+  }
+
+  const isolated = op10mA11DeeplyIsolatedRegions(linkageHubs);
+  if (isolated.length >= 2) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'peripheral_isolation_deepening',
+      isolated,
+      `Peripheral isolation deepening for ${isolated.join(', ')}.`,
+      'minor',
+    );
+  }
+
   base.revision += 1;
   base.urban = urbanOut.persisted;
   base.infra = infraOut.persisted;
   base.lastFragilityIndex = fragilityIndex;
+  base.lastMaxCorridorFlow = maxCorridorFlow;
   base.inputHash = op10mA11HashInputs({
     turn: inputs.urban.turn,
     cityCount: inputs.urban.cities.length,
     regionKeys: 'composite',
-    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}`,
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}`,
   });
 
   const state: OP10M_A11_CompositeState = {
@@ -140,10 +196,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     infra: infraOut.state,
     hierarchy,
     linkages,
+    corridorFlows,
+    linkageHubs,
     reliefPlaybook,
     fragilityIndex,
     nationalPrimateIndex,
-    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}.`,
+    maxCorridorFlow,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}.`,
     inputHash: base.inputHash,
   };
 

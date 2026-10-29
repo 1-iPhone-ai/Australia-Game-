@@ -27,6 +27,8 @@ const FILES = [
   'regional-linkage-matrix.ts',
   'relief-playbook.ts',
   'composite-recompute.ts',
+  'urban-corridor-flow.ts',
+  'linkage-hub-centrality.ts',
   'self-tests.ts',
 ];
 

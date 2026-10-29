@@ -11,4 +11,6 @@ export * from './urban-hierarchy.ts';
 export * from './regional-linkage-matrix.ts';
 export * from './relief-playbook.ts';
 export * from './composite-recompute.ts';
+export * from './urban-corridor-flow.ts';
+export * from './linkage-hub-centrality.ts';
 export * from './self-tests.ts';

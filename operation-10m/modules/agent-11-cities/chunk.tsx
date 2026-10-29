@@ -219,7 +219,7 @@ export interface OP10M_A11_InfraPersisted {
 }
 
 /** Composite cities/regions depth slice (scale wave). */
-export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.1' as const;
+export const OP10M_A11_COMPOSITE_SCHEMA_VERSION = '10m.a11.composite.2' as const;
 
 export type OP10M_A11_PrimateBand = 'decentralized' | 'balanced' | 'concentrated' | 'hyper_concentrated';
 
@@ -228,7 +228,10 @@ export type OP10M_A11_LinkageBand = 'weak' | 'moderate' | 'strong' | 'structural
 export type OP10M_A11_CompositeDerivedKind =
   | 'primate_concentration_risk'
   | 'regional_linkage_fragility'
-  | 'integrated_relief_priority';
+  | 'integrated_relief_priority'
+  | 'corridor_flow_surge'
+  | 'linkage_hub_overload'
+  | 'peripheral_isolation_deepening';
 
 export interface OP10M_A11_UrbanHierarchyRow {
   regionId: OP10M_A11_RegionId;
@@ -245,6 +248,28 @@ export interface OP10M_A11_RegionalLinkageEdge {
   strength: number;
   band: OP10M_A11_LinkageBand;
   viaLinks: number;
+}
+
+export type OP10M_A11_FlowPressureBand = 'light' | 'moderate' | 'heavy' | 'surge';
+
+export interface OP10M_A11_CorridorFlowRow {
+  fromRegion: OP10M_A11_RegionId;
+  toRegion: OP10M_A11_RegionId;
+  flowPressure: number;
+  band: OP10M_A11_FlowPressureBand;
+  growthGradient: number;
+  explanation: string;
+}
+
+export type OP10M_A11_HubRole = 'peripheral' | 'connector' | 'regional_hub' | 'national_hub';
+
+export interface OP10M_A11_LinkageHubProfile {
+  regionId: OP10M_A11_RegionId;
+  degree: number;
+  weightedCentrality: number;
+  role: OP10M_A11_HubRole;
+  isolationScore: number;
+  narrative: string;
 }
 
 export interface OP10M_A11_ReliefPlaybookItem {
@@ -276,9 +301,12 @@ export interface OP10M_A11_CompositeState {
   infra: OP10M_A11_InfraState;
   hierarchy: OP10M_A11_UrbanHierarchyRow[];
   linkages: OP10M_A11_RegionalLinkageEdge[];
+  corridorFlows: OP10M_A11_CorridorFlowRow[];
+  linkageHubs: OP10M_A11_LinkageHubProfile[];
   reliefPlaybook: OP10M_A11_ReliefPlaybookItem[];
   fragilityIndex: number;
   nationalPrimateIndex: number;
+  maxCorridorFlow: number;
   summary: string;
   inputHash: string;
 }
@@ -290,6 +318,7 @@ export interface OP10M_A11_CompositePersisted {
   urban: OP10M_A11_Persisted;
   infra: OP10M_A11_InfraPersisted;
   lastFragilityIndex: number;
+  lastMaxCorridorFlow: number;
   inputHash: string;
 }
 
@@ -1391,6 +1420,14 @@ export function op10mA11BuildReliefPlaybook(args: {
   type OP10M_A11_CompositeState,
   type OP10M_A11_RegionId,
 } from './types.ts';
+  op10mA11ComputeCorridorFlows,
+  op10mA11MaxCorridorFlow,
+  op10mA11SurgeCorridors,
+} from './urban-corridor-flow.ts';
+  op10mA11AnalyzeLinkageHubs,
+  op10mA11DeeplyIsolatedRegions,
+  op10mA11OverloadedHubs,
+} from './linkage-hub-centrality.ts';
 
 export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePersisted {
   return {
@@ -1400,6 +1437,7 @@ export function createEmptyOP10M_A11_CompositePersisted(): OP10M_A11_CompositePe
     urban: createEmptyOP10M_A11_Persisted(),
     infra: createEmptyOP10M_A11_InfraPersisted(),
     lastFragilityIndex: 0,
+    lastMaxCorridorFlow: 0,
     inputHash: '',
   };
 }
@@ -1410,6 +1448,8 @@ export function validateOP10M_A11_CompositeState(state: OP10M_A11_CompositeState
   if (state.schemaVersion !== OP10M_A11_COMPOSITE_SCHEMA_VERSION) errs.push('composite schema mismatch');
   if (state.fragilityIndex < 0 || state.fragilityIndex > 100) errs.push('fragility out of range');
   if (state.hierarchy.length !== 8) errs.push('hierarchy row count');
+  if (state.linkageHubs.length !== 8) errs.push('hub profile count');
+  if (state.maxCorridorFlow < 0 || state.maxCorridorFlow > 100) errs.push('max corridor flow');
   return errs;
 }
 
@@ -1449,6 +1489,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
   const hierarchy = op10mA11ComputeUrbanHierarchy(inputs.urban.cities);
   const nationalPrimateIndex = op10mA11NationalPrimateIndex(hierarchy);
   const linkages = op10mA11BuildRegionalLinkageMatrix(inputs.infra.links);
+  const corridorFlows = op10mA11ComputeCorridorFlows({
+    cities: inputs.urban.cities,
+    links: inputs.infra.links,
+    linkages,
+  });
+  const maxCorridorFlow = op10mA11MaxCorridorFlow(corridorFlows);
+  const linkageHubs = op10mA11AnalyzeLinkageHubs(linkages);
   const fragilityIndex = op10mA11LinkageFragilityIndex(linkages, infraOut.state.corridorStressIndex);
   const weakRegions = op10mA11RegionsWithWeakLinkage(linkages);
   const reliefPlaybook = op10mA11BuildReliefPlaybook({
@@ -1488,15 +1535,51 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     );
   }
 
+  const surge = op10mA11SurgeCorridors(corridorFlows);
+  if (surge.length) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'corridor_flow_surge',
+      [...new Set(surge.flatMap((s) => [s.fromRegion, s.toRegion]))],
+      `Corridor flow surge on ${surge.length} regional pair(s); peak pressure ${maxCorridorFlow.toFixed(1)}.`,
+      maxCorridorFlow >= 72 ? 'major' : 'meaningful',
+    );
+  }
+
+  const overloaded = op10mA11OverloadedHubs(linkageHubs);
+  if (overloaded.length) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'linkage_hub_overload',
+      overloaded.map((h) => h.regionId),
+      `Linkage hubs under load: ${overloaded.map((h) => h.regionId).join(', ')}.`,
+    );
+  }
+
+  const isolated = op10mA11DeeplyIsolatedRegions(linkageHubs);
+  if (isolated.length >= 2) {
+    pushCompositeDerived(
+      derivedRaw,
+      inputs.urban.turn,
+      'peripheral_isolation_deepening',
+      isolated,
+      `Peripheral isolation deepening for ${isolated.join(', ')}.`,
+      'minor',
+    );
+  }
+
   base.revision += 1;
   base.urban = urbanOut.persisted;
   base.infra = infraOut.persisted;
   base.lastFragilityIndex = fragilityIndex;
+  base.lastMaxCorridorFlow = maxCorridorFlow;
   base.inputHash = op10mA11HashInputs({
     turn: inputs.urban.turn,
     cityCount: inputs.urban.cities.length,
     regionKeys: 'composite',
-    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}`,
+    nationalGrowth: `${fragilityIndex}:${nationalPrimateIndex}:${maxCorridorFlow}`,
   });
 
   const state: OP10M_A11_CompositeState = {
@@ -1507,10 +1590,13 @@ export function recomputeOP10M_A11_CitiesRegionsComposite(
     infra: infraOut.state,
     hierarchy,
     linkages,
+    corridorFlows,
+    linkageHubs,
     reliefPlaybook,
     fragilityIndex,
     nationalPrimateIndex,
-    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}.`,
+    maxCorridorFlow,
+    summary: `${urbanOut.state.summary} ${infraOut.state.summary} Fragility ${fragilityIndex}; primate ${nationalPrimateIndex}; peak flow ${maxCorridorFlow}.`,
     inputHash: base.inputHash,
   };
 
@@ -1529,6 +1615,153 @@ export function buildOP10M_A11_CompositeInputsFromFixtures(
     urban: buildOP10M_A11_InputsFromFixtures({ turn: partial.turn, ...partial.urban }),
     infra: buildOP10M_A11_InfraInputsFromFixtures({ turn: partial.turn, ...partial.infra }),
   };
+}
+
+
+// --- source: urban-corridor-flow.ts ---
+  OP10M_A11_CORE_REGIONS,
+  type OP10M_A11_CityGrowthSlice,
+  type OP10M_A11_FlowPressureBand,
+  type OP10M_A11_IntercityLinkSlice,
+  type OP10M_A11_RegionId,
+  type OP10M_A11_CorridorFlowRow,
+  type OP10M_A11_RegionalLinkageEdge,
+} from './types.ts';
+
+function flowBand(pressure: number): OP10M_A11_FlowPressureBand {
+  if (pressure < 28) return 'light';
+  if (pressure < 48) return 'moderate';
+  if (pressure < 68) return 'heavy';
+  return 'surge';
+}
+
+function regionUrbanPulse(cities: OP10M_A11_CityGrowthSlice[], rid: OP10M_A11_RegionId): number {
+  const rows = cities.filter((c) => c.regionId === rid);
+  if (!rows.length) return 45;
+  return rows.reduce((a, c) => a + c.growthScore, 0) / rows.length;
+}
+
+export function op10mA11ComputeCorridorFlows(args: {
+  cities: OP10M_A11_CityGrowthSlice[];
+  links: OP10M_A11_IntercityLinkSlice[];
+  linkages: OP10M_A11_RegionalLinkageEdge[];
+}): OP10M_A11_CorridorFlowRow[] {
+  const pulse = {} as Record<OP10M_A11_RegionId, number>;
+  for (const rid of OP10M_A11_CORE_REGIONS) pulse[rid] = regionUrbanPulse(args.cities, rid);
+
+  const linkageByKey = new Map<string, OP10M_A11_RegionalLinkageEdge>();
+  for (const l of args.linkages) {
+    linkageByKey.set([l.fromRegion, l.toRegion].sort().join('::'), l);
+  }
+
+  const acc = new Map<string, { pressure: number; gradient: number; n: number }>();
+
+  for (const link of args.links) {
+    if (link.regionA === link.regionB) continue;
+    const key = [link.regionA, link.regionB].sort().join('::');
+    const grad = Math.abs(pulse[link.regionA] - pulse[link.regionB]);
+    const util = link.utilization;
+    const healthDrag =
+      link.health === 'severed' ? 0.2 : link.health === 'degraded' ? 0.65 : link.health === 'operational' ? 0.9 : 1;
+    const add = op10mA11Clamp(util * 0.58 * healthDrag + grad * 0.38 + (link.strategic ? 12 : 0));
+    const prev = acc.get(key) || { pressure: 0, gradient: 0, n: 0 };
+    prev.pressure += add;
+    prev.gradient = Math.max(prev.gradient, grad);
+    prev.n += 1;
+    acc.set(key, prev);
+  }
+
+  const out: OP10M_A11_CorridorFlowRow[] = [];
+  for (const [key, val] of acc) {
+    const [fromRegion, toRegion] = key.split('::') as [OP10M_A11_RegionId, OP10M_A11_RegionId];
+    const linkage = linkageByKey.get(key);
+    const linkageBoost = linkage ? linkage.strength * 0.08 : 0;
+    const flowPressure = op10mA11Clamp(val.pressure / Math.max(1, val.n) + linkageBoost);
+    const band = flowBand(flowPressure);
+    out.push({
+      fromRegion,
+      toRegion,
+      flowPressure: op10mA11Round(flowPressure),
+      band,
+      growthGradient: op10mA11Round(val.gradient),
+      explanation: `${fromRegion}↔${toRegion} corridor ${band} (pressure ${op10mA11Round(flowPressure)}, gradient ${op10mA11Round(val.gradient)}).`,
+    });
+  }
+
+  return out.sort((a, b) => b.flowPressure - a.flowPressure);
+}
+
+export function op10mA11MaxCorridorFlow(flows: OP10M_A11_CorridorFlowRow[]): number {
+  if (!flows.length) return 0;
+  return Math.max(...flows.map((f) => f.flowPressure));
+}
+
+export function op10mA11SurgeCorridors(flows: OP10M_A11_CorridorFlowRow[]): OP10M_A11_CorridorFlowRow[] {
+  return flows.filter((f) => f.band === 'surge' || f.band === 'heavy');
+}
+
+
+// --- source: linkage-hub-centrality.ts ---
+  OP10M_A11_CORE_REGIONS,
+  type OP10M_A11_HubRole,
+  type OP10M_A11_LinkageHubProfile,
+  type OP10M_A11_RegionId,
+  type OP10M_A11_RegionalLinkageEdge,
+} from './types.ts';
+
+function hubRole(weighted: number, degree: number): OP10M_A11_HubRole {
+  if (weighted >= 62 && degree >= 4) return 'national_hub';
+  if (weighted >= 42 && degree >= 3) return 'regional_hub';
+  if (degree >= 2) return 'connector';
+  return 'peripheral';
+}
+
+export function op10mA11AnalyzeLinkageHubs(
+  linkages: OP10M_A11_RegionalLinkageEdge[],
+): OP10M_A11_LinkageHubProfile[] {
+  const degree = {} as Record<OP10M_A11_RegionId, number>;
+  const weight = {} as Record<OP10M_A11_RegionId, number>;
+  for (const rid of OP10M_A11_CORE_REGIONS) {
+    degree[rid] = 0;
+    weight[rid] = 0;
+  }
+
+  for (const edge of linkages) {
+    degree[edge.fromRegion] += 1;
+    degree[edge.toRegion] += 1;
+    weight[edge.fromRegion] += edge.strength;
+    weight[edge.toRegion] += edge.strength;
+  }
+
+  const maxWeight = Math.max(...OP10M_A11_CORE_REGIONS.map((r) => weight[r]), 1);
+
+  return OP10M_A11_CORE_REGIONS.map((regionId) => {
+    const deg = degree[regionId];
+    const weightedCentrality = op10mA11Clamp((weight[regionId] / maxWeight) * 100);
+    const role = hubRole(weightedCentrality, deg);
+    const isolationScore = op10mA11Clamp(100 - weightedCentrality * 0.75 - deg * 6);
+    return {
+      regionId,
+      degree: deg,
+      weightedCentrality: op10mA11Round(weightedCentrality),
+      role,
+      isolationScore: op10mA11Round(isolationScore),
+      narrative: `${regionId} linkage role ${role} (degree ${deg}, isolation ${op10mA11Round(isolationScore)}).`,
+    };
+  }).sort((a, b) => b.weightedCentrality - a.weightedCentrality);
+}
+
+export function op10mA11OverloadedHubs(hubs: OP10M_A11_LinkageHubProfile[]): OP10M_A11_LinkageHubProfile[] {
+  return hubs.filter(
+    (h) =>
+      (h.role === 'national_hub' || h.role === 'regional_hub') &&
+      h.weightedCentrality >= 55 &&
+      h.degree >= 3,
+  );
+}
+
+export function op10mA11DeeplyIsolatedRegions(hubs: OP10M_A11_LinkageHubProfile[]): OP10M_A11_RegionId[] {
+  return hubs.filter((h) => h.isolationScore >= 72 && h.role === 'peripheral').map((h) => h.regionId);
 }
 
 
@@ -1555,6 +1788,9 @@ export function buildOP10M_A11_CompositeInputsFromFixtures(
   recomputeOP10M_A11_CitiesRegionsComposite,
   validateOP10M_A11_CompositeState,
 } from './composite-recompute.ts';
+  op10mA11ComputeCorridorFlows,
+  op10mA11MaxCorridorFlow,
+} from './urban-corridor-flow.ts';
 
 function push(out: OP10M_A11_SelfTestResult[], id: string, passed: boolean, detail: string) {
   out.push({ id, passed, detail });
@@ -1849,6 +2085,54 @@ export function runOP10M_A11_SelfTests(): OP10M_A11_SelfTestResult[] {
     'a11_22',
     composite2.state.revision === composite.state.revision + 1,
     `revision ${composite.state.revision}→${composite2.state.revision}`,
+  );
+
+  const flows = op10mA11ComputeCorridorFlows({
+    cities: sampleCities,
+    links: infraLinks,
+    linkages: linkMatrix,
+  });
+  push(
+    out,
+    'a11_23',
+    flows.length >= 1 && op10mA11MaxCorridorFlow(flows) >= 40 && flows[0].band !== 'light',
+    `peak flow ${op10mA11MaxCorridorFlow(flows)} (${flows[0]?.band})`,
+  );
+
+  const hubs = op10mA11AnalyzeLinkageHubs(linkMatrix);
+  push(
+    out,
+    'a11_24',
+    hubs.length === 8 && hubs.every((h) => h.narrative.includes('linkage role')),
+    `top hub ${hubs[0]?.regionId} (${hubs[0]?.role})`,
+  );
+
+  push(
+    out,
+    'a11_25',
+    composite.state.corridorFlows.length >= 1 && composite.state.linkageHubs.length === 8,
+    `flows ${composite.state.corridorFlows.length}`,
+  );
+
+  push(
+    out,
+    'a11_26',
+    composite.state.maxCorridorFlow > 0 && composite.state.schemaVersion === '10m.a11.composite.2',
+    composite.state.schemaVersion,
+  );
+
+  push(
+    out,
+    'a11_27',
+    composite.derived.some((d) => d.kind === 'corridor_flow_surge' || d.kind === 'linkage_hub_overload'),
+    composite.derived.map((d) => d.kind).join(', '),
+  );
+
+  push(
+    out,
+    'a11_28',
+    composite.state.corridorFlows[0].explanation.includes('corridor'),
+    composite.state.corridorFlows[0]?.band ?? 'none',
   );
 
   return out;
