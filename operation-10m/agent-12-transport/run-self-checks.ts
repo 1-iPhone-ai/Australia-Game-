@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/49' &&
+      infra.schemaVersion === 'agent12/50' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -237,8 +237,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalGreenHydrogenElectrolyzerExportIndex >= 5 &&
       infra.nationalRemoteOrganTransplantSupplyStagingIndex >= 6 &&
       infra.portShorePowerColdIroningLogisticsShare >= 0.03 &&
-      infra.nationalPortShorePowerColdIroningLogisticsThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)}`,
+      infra.nationalPortShorePowerColdIroningLogisticsThroughputIndex >= 2 &&
+      infra.nationalAdvancedSemiconductorPackagingExportIndex >= 5 &&
+      infra.nationalRemoteBurnUnitSupplyStagingIndex >= 6 &&
+      infra.portWindAssistedShipBerthingLogisticsShare >= 0.03 &&
+      infra.nationalPortWindAssistedShipBerthingLogisticsThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} eWaste=${infra.nationalEWasteCriticalMineralsRecoveryExportIndex.toFixed(1)} oncology=${infra.nationalRegionalOncologyRadiotherapySupplyStagingIndex.toFixed(1)} tug=${infra.nationalPortAutonomousTugBerthingLogisticsThroughputIndex.toFixed(1)} h2=${infra.nationalGreenHydrogenElectrolyzerExportIndex.toFixed(1)} semi=${infra.nationalAdvancedSemiconductorPackagingExportIndex.toFixed(1)}`,
   });
 
   return results;

@@ -771,6 +771,23 @@ import {
   nationalPortShorePowerColdIroningLogisticsThroughputIndex,
   portShorePowerColdIroningLogisticsProductivityMultiplier,
 } from './port-shore-power-cold-ironing-logistics-index.ts';
+import {
+  computeAdvancedSemiconductorPackagingExportByRegion,
+  advancedSemiconductorPackagingExportProductivityMultiplier,
+  nationalAdvancedSemiconductorPackagingExportIndex,
+} from '../network/advanced-semiconductor-packaging-export-index.ts';
+import {
+  computeRemoteBurnUnitSupplyStagingByRegion,
+  computeRemoteBurnUnitSupplyStagingShare,
+  nationalRemoteBurnUnitSupplyStagingIndex,
+  remoteBurnUnitSupplyStagingProductivityMultiplier,
+} from '../operations/remote-burn-unit-supply-staging-index.ts';
+import {
+  computePortWindAssistedShipBerthingLogisticsShare,
+  computePortWindAssistedShipBerthingLogisticsThroughputByRegion,
+  nationalPortWindAssistedShipBerthingLogisticsThroughputIndex,
+  portWindAssistedShipBerthingLogisticsProductivityMultiplier,
+} from './port-wind-assisted-ship-berthing-logistics-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -2345,6 +2362,41 @@ export function computeTransportInfrastructureState(
     portShorePowerColdIroningLogisticsShare,
     options?.portShorePowerColdIroningLogisticsPolicy ?? 'baseline',
   );
+  const advancedSemiconductorPackagingExportByRegion =
+    computeAdvancedSemiconductorPackagingExportByRegion(ops);
+  const nationalSemiconductor = nationalAdvancedSemiconductorPackagingExportIndex(
+    advancedSemiconductorPackagingExportByRegion,
+  );
+  const semiconductorMult = advancedSemiconductorPackagingExportProductivityMultiplier(
+    nationalSemiconductor,
+    options?.advancedSemiconductorPackagingExportPolicy ?? 'baseline',
+  );
+  const remoteBurnUnitSupplyStagingByRegion = computeRemoteBurnUnitSupplyStagingByRegion(
+    ops,
+    networkStress,
+  );
+  const nationalBurnUnit = nationalRemoteBurnUnitSupplyStagingIndex(remoteBurnUnitSupplyStagingByRegion);
+  const remoteBurnUnitSupplyStagingShare = computeRemoteBurnUnitSupplyStagingShare(
+    ops,
+    options?.remoteBurnUnitSupplyStagingPolicy ?? 'baseline',
+  );
+  const burnUnitMult = remoteBurnUnitSupplyStagingProductivityMultiplier(
+    remoteBurnUnitSupplyStagingShare,
+    options?.remoteBurnUnitSupplyStagingPolicy ?? 'baseline',
+  );
+  const portWindAssistedShipBerthingLogisticsThroughputByRegion =
+    computePortWindAssistedShipBerthingLogisticsThroughputByRegion(ops);
+  const nationalWindBerthing = nationalPortWindAssistedShipBerthingLogisticsThroughputIndex(
+    portWindAssistedShipBerthingLogisticsThroughputByRegion,
+  );
+  const portWindAssistedShipBerthingLogisticsShare = computePortWindAssistedShipBerthingLogisticsShare(
+    ops,
+    options?.portWindAssistedShipBerthingLogisticsPolicy ?? 'baseline',
+  );
+  const windBerthingMult = portWindAssistedShipBerthingLogisticsProductivityMultiplier(
+    portWindAssistedShipBerthingLogisticsShare,
+    options?.portWindAssistedShipBerthingLogisticsPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -2446,6 +2498,9 @@ export function computeTransportInfrastructureState(
     const greenH2Boost = (greenHydrogenElectrolyzerExportByRegion[code] - 5) * 0.002;
     const organTransplantBoost = (remoteOrganTransplantSupplyStagingByRegion[code] - 6) * 0.0016;
     const shorePowerBoost = (portShorePowerColdIroningLogisticsThroughputByRegion[code] - 2) * 0.0012;
+    const semiconductorBoost = (advancedSemiconductorPackagingExportByRegion[code] - 5) * 0.0019;
+    const burnUnitBoost = (remoteBurnUnitSupplyStagingByRegion[code] - 6) * 0.0015;
+    const windBerthingBoost = (portWindAssistedShipBerthingLogisticsThroughputByRegion[code] - 2) * 0.0011;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -2546,7 +2601,10 @@ export function computeTransportInfrastructureState(
         autonomousTugBoost +
         greenH2Boost +
         organTransplantBoost +
-        shorePowerBoost) *
+        shorePowerBoost +
+        semiconductorBoost +
+        burnUnitBoost +
+        windBerthingBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -2645,7 +2703,10 @@ export function computeTransportInfrastructureState(
       autonomousTugMult *
       greenH2Mult *
       organTransplantMult *
-      shorePowerMult;
+      shorePowerMult *
+      semiconductorMult *
+      burnUnitMult *
+      windBerthingMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -2767,7 +2828,10 @@ export function computeTransportInfrastructureState(
     nationalAutonomousTug * 0.003 +
     nationalGreenH2 * 0.003 +
     nationalOrganTransplant * 0.003 +
-    nationalShorePower * 0.003;
+    nationalShorePower * 0.003 +
+    nationalSemiconductor * 0.003 +
+    nationalBurnUnit * 0.003 +
+    nationalWindBerthing * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -2782,7 +2846,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/49',
+    schemaVersion: 'agent12/50',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -3140,6 +3204,14 @@ export function computeTransportInfrastructureState(
     portShorePowerColdIroningLogisticsShare,
     nationalPortShorePowerColdIroningLogisticsThroughputIndex: nationalShorePower,
     portShorePowerColdIroningLogisticsThroughputByRegion,
+    nationalAdvancedSemiconductorPackagingExportIndex: nationalSemiconductor,
+    advancedSemiconductorPackagingExportByRegion,
+    remoteBurnUnitSupplyStagingShare,
+    nationalRemoteBurnUnitSupplyStagingIndex: nationalBurnUnit,
+    remoteBurnUnitSupplyStagingByRegion,
+    portWindAssistedShipBerthingLogisticsShare,
+    nationalPortWindAssistedShipBerthingLogisticsThroughputIndex: nationalWindBerthing,
+    portWindAssistedShipBerthingLogisticsThroughputByRegion,
     computeMs,
   };
 }

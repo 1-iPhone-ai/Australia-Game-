@@ -1,0 +1,89 @@
+import {
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type RemoteBurnUnitSupplyStagingPolicy,
+  type TransportAsset,
+} from '../types.ts';
+import { clamp } from '../productivity/formulas.ts';
+
+/** 0–100 remote burn-unit supply staging readiness by region. */
+export function computeRemoteBurnUnitSupplyStagingByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) =>
+          t === 'remote_burn_unit_supply' ||
+          t === 'burn_care_staging' ||
+          t === 'trauma_logistics',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 53_000 + (asset.coldChainCapable ? 1.33 : 0.72);
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 388;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.81;
+    }
+    if (asset.category === 'rail' && 'passengerCapable' in asset && asset.passengerCapable) {
+      byRegion[asset.hostRegion] += asset.trackKilometres / 226;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.021 - stress * 0.016), 5, 74) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalRemoteBurnUnitSupplyStagingIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 72) * 10) / 10;
+}
+
+export function computeRemoteBurnUnitSupplyStagingShare(
+  operationalAssets: TransportAsset[],
+  policy: RemoteBurnUnitSupplyStagingPolicy = 'baseline',
+): number {
+  let burnUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('remote_burn_unit_supply') || asset.tags.includes('trauma_logistics')) {
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 49_000;
+        burnUnits += (asset.warehouseSqm / 49_000) * 0.53;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 352;
+        burnUnits += (asset.laneKilometres / 352) * 0.45;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.03;
+  const policyBoost = policy === 'surge' ? 0.018 : 0;
+  return Math.round(clamp(burnUnits / totalUnits + policyBoost, 0.028, 0.18) * 1000) / 1000;
+}
+
+export function remoteBurnUnitSupplyStagingProductivityMultiplier(
+  share: number,
+  policy: RemoteBurnUnitSupplyStagingPolicy,
+): number {
+  const bias = policy === 'surge' ? 1.01 : 1;
+  return (1 + (share - 0.04) * 0.016) * bias;
+}

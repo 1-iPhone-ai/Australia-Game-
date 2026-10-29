@@ -441,8 +441,14 @@ export type RemoteOrganTransplantSupplyStagingPolicy = 'baseline' | 'surge';
 
 export type PortShorePowerColdIroningLogisticsPolicy = 'baseline' | 'expand';
 
+export type AdvancedSemiconductorPackagingExportPolicy = 'baseline' | 'accelerate';
+
+export type RemoteBurnUnitSupplyStagingPolicy = 'baseline' | 'surge';
+
+export type PortWindAssistedShipBerthingLogisticsPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/49';
+  schemaVersion: 'agent12/50';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -800,6 +806,14 @@ export interface TransportInfrastructureState {
   portShorePowerColdIroningLogisticsShare: number;
   nationalPortShorePowerColdIroningLogisticsThroughputIndex: number;
   portShorePowerColdIroningLogisticsThroughputByRegion: Record<AuRegionCode, number>;
+  nationalAdvancedSemiconductorPackagingExportIndex: number;
+  advancedSemiconductorPackagingExportByRegion: Record<AuRegionCode, number>;
+  remoteBurnUnitSupplyStagingShare: number;
+  nationalRemoteBurnUnitSupplyStagingIndex: number;
+  remoteBurnUnitSupplyStagingByRegion: Record<AuRegionCode, number>;
+  portWindAssistedShipBerthingLogisticsShare: number;
+  nationalPortWindAssistedShipBerthingLogisticsThroughputIndex: number;
+  portWindAssistedShipBerthingLogisticsThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -937,6 +951,9 @@ export interface TransportInfrastructureOptions {
   greenHydrogenElectrolyzerExportPolicy?: GreenHydrogenElectrolyzerExportPolicy;
   remoteOrganTransplantSupplyStagingPolicy?: RemoteOrganTransplantSupplyStagingPolicy;
   portShorePowerColdIroningLogisticsPolicy?: PortShorePowerColdIroningLogisticsPolicy;
+  advancedSemiconductorPackagingExportPolicy?: AdvancedSemiconductorPackagingExportPolicy;
+  remoteBurnUnitSupplyStagingPolicy?: RemoteBurnUnitSupplyStagingPolicy;
+  portWindAssistedShipBerthingLogisticsPolicy?: PortWindAssistedShipBerthingLogisticsPolicy;
 }
 
 export interface V94ProjectSnapshot {
