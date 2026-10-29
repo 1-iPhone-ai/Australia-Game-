@@ -174,5 +174,6 @@ export * from './resonance-harmony-convergence-index.ts';
 
 export * from './harmony-resonance-convergence-stack-index.ts';
 export * from './triadic-harmony-resonance-convergence-stack-index.ts';
+export * from './quaternary-harmony-resonance-convergence-stack-index.ts';
 
 export * from './resonance-harmony-convergence-stack-index.ts';
