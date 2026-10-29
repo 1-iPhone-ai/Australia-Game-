@@ -409,6 +409,22 @@ import {
   wardenAccordBlocksOverseer,
 } from '../planning/warden-accord.ts';
 import {
+  buildAgent17SentinelshipIndex,
+  sentinelshipIndexBlocksSentinel,
+} from '../planning/sentinelship-index.ts';
+import {
+  buildAgent17SentinelAccord,
+  sentinelAccordBlocksWarden,
+} from '../planning/sentinel-accord.ts';
+import {
+  buildAgent17WatchershipIndex,
+  watchershipIndexBlocksWatch,
+} from '../planning/watchership-index.ts';
+import {
+  buildAgent17WatchAccord,
+  watchAccordBlocksSentinel,
+} from '../planning/watch-accord.ts';
+import {
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -3035,6 +3051,63 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const watchershipIndex = depthEval.snapshot.planningDepth?.watchershipIndex;
+  goalResults.push(
+    result(
+      'G17-172',
+      !!watchershipIndex &&
+        watchershipIndex.mandates.length >= 5 &&
+        watchershipIndex.watchershipScore >= 0 &&
+        watchershipIndex.watchershipScore <= 100 &&
+        (watchershipIndex.band === 'engaged' ||
+          watchershipIndex.band === 'tentative' ||
+          watchershipIndex.band === 'revoked'),
+      `mandates=${watchershipIndex?.mandates.length} score=${watchershipIndex?.watchershipScore}`
+    )
+  );
+
+  const watchAccord = depthEval.snapshot.planningDepth?.watchAccord;
+  goalResults.push(
+    result(
+      'G17-173',
+      !!watchAccord &&
+        watchAccord.directives.length >= 5 &&
+        watchAccord.watchScore >= 0 &&
+        watchAccord.watchScore <= 100,
+      `directives=${watchAccord?.directives.length} score=${watchAccord?.watchScore}`
+    )
+  );
+
+  const revokedSentinelship = buildAgent17SentinelshipIndex({
+    wardenAccord: vacatedWarden,
+    wardenshipIndex: revokedWardenship,
+  });
+  const vacatedSentinel = buildAgent17SentinelAccord({
+    sentinelshipIndex: revokedSentinelship,
+    wardenAccord: vacatedWarden,
+    wardenshipIndex: revokedWardenship,
+  });
+  const revokedWatchership = buildAgent17WatchershipIndex({
+    sentinelAccord: vacatedSentinel,
+    sentinelshipIndex: revokedSentinelship,
+  });
+  const vacatedWatch = buildAgent17WatchAccord({
+    watchershipIndex: revokedWatchership,
+    sentinelAccord: vacatedSentinel,
+    sentinelshipIndex: revokedSentinelship,
+  });
+  goalResults.push(
+    result(
+      'G17-174',
+      wardenAccordBlocksOverseer(vacatedWarden) ||
+        sentinelshipIndexBlocksSentinel(revokedSentinelship) ||
+        sentinelAccordBlocksWarden(vacatedSentinel) ||
+        watchershipIndexBlocksWatch(revokedWatchership) ||
+        watchAccordBlocksSentinel(vacatedWatch),
+      `${revokedWatchership.band}/${vacatedWatch.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -3236,6 +3309,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-169',
     'G17-170',
     'G17-171',
+    'G17-172',
+    'G17-173',
+    'G17-174',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

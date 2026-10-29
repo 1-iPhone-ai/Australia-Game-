@@ -287,6 +287,8 @@ export interface Agent17PlanningDepthSnapshot {
   wardenAccord: Agent17WardenAccordSnapshot;
   sentinelshipIndex: Agent17SentinelshipIndexSnapshot;
   sentinelAccord: Agent17SentinelAccordSnapshot;
+  watchershipIndex: Agent17WatchershipIndexSnapshot;
+  watchAccord: Agent17WatchAccordSnapshot;
   catalogDepth: { templateCount: number; deepTemplateCount: number; maxStepCount: number };
 }
 
@@ -1981,6 +1983,38 @@ export interface Agent17SentinelAccordSnapshot {
   directives: Agent17SentinelDirective[];
   sentinelshipBand: Agent17SentinelshipIndexSnapshot['band'];
   sentinelSeated: boolean;
+  headline: string;
+}
+
+export interface Agent17WatchershipMandate {
+  id: string;
+  label: string;
+  engaged: boolean;
+  weight: number;
+}
+
+export interface Agent17WatchershipIndexSnapshot {
+  watchershipScore: number;
+  band: 'engaged' | 'tentative' | 'revoked';
+  mandates: Agent17WatchershipMandate[];
+  sentinelBand: Agent17SentinelAccordSnapshot['band'];
+  watchershipEngaged: boolean;
+  headline: string;
+}
+
+export interface Agent17WatchDirective {
+  id: string;
+  label: string;
+  seated: boolean;
+  weight: number;
+}
+
+export interface Agent17WatchAccordSnapshot {
+  watchScore: number;
+  band: 'seated' | 'interim' | 'vacated';
+  directives: Agent17WatchDirective[];
+  watchershipBand: Agent17WatchershipIndexSnapshot['band'];
+  watchSeated: boolean;
   headline: string;
 }
 
@@ -14015,6 +14049,203 @@ export function sentinelAccordBlocksWarden(
 }
 
 
+// --- source: planning/watchership-index.ts ---
+  Agent17SentinelAccordSnapshot,
+  Agent17SentinelshipIndexSnapshot,
+  Agent17WatchershipIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17WatchershipIndexInputs {
+  sentinelAccord: Agent17SentinelAccordSnapshot;
+  sentinelshipIndex: Agent17SentinelshipIndexSnapshot;
+}
+
+export function buildAgent17WatchershipIndex(
+  inputs: Agent17WatchershipIndexInputs
+): Agent17WatchershipIndexSnapshot {
+  const mandates: Agent17WatchershipIndexSnapshot['mandates'] = [];
+
+  mandates.push({
+    id: 'sentinel_seated',
+    label: 'Sentinel accord sentinel-seated',
+    engaged:
+      inputs.sentinelAccord.sentinelSeated &&
+      !sentinelshipIndexBlocksSentinel(inputs.sentinelshipIndex),
+    weight: 30,
+  });
+
+  mandates.push({
+    id: 'sentinelship_engaged',
+    label: 'Sentinelship index engaged',
+    engaged: inputs.sentinelshipIndex.sentinelshipEngaged,
+    weight: 25,
+  });
+
+  mandates.push({
+    id: 'sentinel_band',
+    label: 'Sentinel seated or interim',
+    engaged:
+      inputs.sentinelAccord.band === 'seated' || inputs.sentinelAccord.band === 'interim',
+    weight: 20,
+  });
+
+  mandates.push({
+    id: 'sentinelship_score',
+    label: 'Sentinelship score headroom',
+    engaged: inputs.sentinelshipIndex.sentinelshipScore >= 40,
+    weight: 15,
+  });
+
+  mandates.push({
+    id: 'sentinel_score',
+    label: 'Sentinel score headroom',
+    engaged: inputs.sentinelAccord.sentinelScore >= 2,
+    weight: 10,
+  });
+
+  const weighted = mandates.reduce(
+    (n, m) => n + (m.engaged ? 100 : 1) * (m.weight / 100),
+    0
+  );
+  const totalWeight = mandates.reduce((n, m) => n + m.weight, 0);
+  const watchershipScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const revokedSignals =
+    sentinelAccordBlocksWarden(inputs.sentinelAccord) ||
+    sentinelshipIndexBlocksSentinel(inputs.sentinelshipIndex);
+
+  const band: Agent17WatchershipIndexSnapshot['band'] = revokedSignals
+    ? 'revoked'
+    : watchershipScore >= 43 &&
+        inputs.sentinelshipIndex.band === 'engaged' &&
+        inputs.sentinelAccord.band === 'seated'
+      ? 'engaged'
+      : 'tentative';
+
+  const watchershipEngaged =
+    band === 'engaged' &&
+    inputs.sentinelAccord.sentinelSeated &&
+    !sentinelshipIndexBlocksSentinel(inputs.sentinelshipIndex);
+
+  return {
+    watchershipScore,
+    band,
+    mandates,
+    sentinelBand: inputs.sentinelAccord.band,
+    watchershipEngaged,
+    headline: `Watchership ${band} (${watchershipScore}/100) · ${mandates.filter(m => m.engaged).length}/${mandates.length} mandates`,
+  };
+}
+
+export function watchershipIndexBlocksWatch(
+  snapshot: Agent17WatchershipIndexSnapshot
+): boolean {
+  return snapshot.band === 'revoked' || !snapshot.watchershipEngaged;
+}
+
+
+// --- source: planning/watch-accord.ts ---
+  Agent17SentinelAccordSnapshot,
+  Agent17SentinelshipIndexSnapshot,
+  Agent17WatchAccordSnapshot,
+  Agent17WatchershipIndexSnapshot,
+} from '../types/command-center-types.ts';
+
+export interface Agent17WatchAccordInputs {
+  watchershipIndex: Agent17WatchershipIndexSnapshot;
+  sentinelAccord: Agent17SentinelAccordSnapshot;
+  sentinelshipIndex: Agent17SentinelshipIndexSnapshot;
+}
+
+export function buildAgent17WatchAccord(
+  inputs: Agent17WatchAccordInputs
+): Agent17WatchAccordSnapshot {
+  const directives: Agent17WatchAccordSnapshot['directives'] = [];
+
+  directives.push({
+    id: 'watchership_engaged',
+    label: 'Watchership index watchership-engaged',
+    seated:
+      inputs.watchershipIndex.watchershipEngaged &&
+      !watchershipIndexBlocksWatch(inputs.watchershipIndex),
+    weight: 30,
+  });
+
+  directives.push({
+    id: 'watchership_band',
+    label: 'Watchership engaged or tentative',
+    seated:
+      inputs.watchershipIndex.band === 'engaged' ||
+      inputs.watchershipIndex.band === 'tentative',
+    weight: 25,
+  });
+
+  directives.push({
+    id: 'sentinel_clear',
+    label: 'Sentinel accord not blocking warden',
+    seated: !sentinelAccordBlocksWarden(inputs.sentinelAccord),
+    weight: 20,
+  });
+
+  directives.push({
+    id: 'sentinelship_band',
+    label: 'Sentinelship engaged',
+    seated: inputs.sentinelshipIndex.band === 'engaged',
+    weight: 15,
+  });
+
+  directives.push({
+    id: 'watchership_score',
+    label: 'Watchership score headroom',
+    seated: inputs.watchershipIndex.watchershipScore >= 2,
+    weight: 10,
+  });
+
+  const weighted = directives.reduce(
+    (n, d) => n + (d.seated ? 100 : 1) * (d.weight / 100),
+    0
+  );
+  const totalWeight = directives.reduce((n, d) => n + d.weight, 0);
+  const watchScore = Math.max(
+    0,
+    Math.min(100, Math.round((weighted / Math.max(1, totalWeight)) * 100))
+  );
+
+  const vacatedSignals =
+    watchershipIndexBlocksWatch(inputs.watchershipIndex) ||
+    sentinelAccordBlocksWarden(inputs.sentinelAccord);
+
+  const band: Agent17WatchAccordSnapshot['band'] = vacatedSignals
+    ? 'vacated'
+    : watchScore >= 43 &&
+        inputs.watchershipIndex.band === 'engaged' &&
+        inputs.sentinelAccord.band === 'seated'
+      ? 'seated'
+      : 'interim';
+
+  const watchSeated =
+    band === 'seated' &&
+    inputs.watchershipIndex.watchershipEngaged &&
+    !watchershipIndexBlocksWatch(inputs.watchershipIndex);
+
+  return {
+    watchScore,
+    band,
+    directives,
+    watchershipBand: inputs.watchershipIndex.band,
+    watchSeated,
+    headline: `Watch ${band} (${watchScore}/100) · ${directives.filter(d => d.seated).length}/${directives.length} directives`,
+  };
+}
+
+export function watchAccordBlocksSentinel(snapshot: Agent17WatchAccordSnapshot): boolean {
+  return snapshot.band === 'vacated' || !snapshot.watchSeated;
+}
+
+
 // --- source: planning/planning-orchestrator.ts ---
   Acc17CommandCenterOpsState,
   Acc17DelegateTargetKind,
@@ -14626,6 +14857,8 @@ export function buildAgent17PlanningDepthSnapshot(
   });
   const sentinelshipIndex = buildAgent17SentinelshipIndex({ wardenAccord, wardenshipIndex });
   const sentinelAccord = buildAgent17SentinelAccord({ sentinelshipIndex, wardenAccord, wardenshipIndex });
+  const watchershipIndex = buildAgent17WatchershipIndex({ sentinelAccord, sentinelshipIndex });
+  const watchAccord = buildAgent17WatchAccord({ watchershipIndex, sentinelAccord, sentinelshipIndex });
   return {
     ...core,
     intentQueue,
@@ -14731,6 +14964,8 @@ export function buildAgent17PlanningDepthSnapshot(
     wardenAccord,
     sentinelshipIndex,
     sentinelAccord,
+    watchershipIndex,
+    watchAccord,
   };
 }
 
@@ -16222,7 +16457,6 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Suspended superintendent or revoked oversight yields overseerAccordBlocksSuperintendent.',
     severity: 'major',
   },
-,
   {
     id: 'G17-169',
     title: 'Wardenship index on planning depth',
@@ -16244,6 +16478,29 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     category: 'integration',
     acceptance:
       'Vacated overseer or revoked wardenship yields wardenAccordBlocksOverseer.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-172',
+    title: 'Watchership index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'watchershipIndex reports watchershipScore 0–100 with engaged/tentative/revoked band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-173',
+    title: 'Watch accord directives complete',
+    category: 'telemetry',
+    acceptance: 'watchAccord exposes ≥5 directives and watchScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-174',
+    title: 'Vacated sentinel suspends watch accord',
+    category: 'integration',
+    acceptance:
+      'Vacated sentinel or revoked watchership yields watchAccordBlocksSentinel.',
     severity: 'major',
   },
 ];
@@ -16556,6 +16813,18 @@ export function listAgent17GoalIds(): string[] {
   buildAgent17WardenAccord,
   wardenAccordBlocksOverseer,
 } from '../planning/warden-accord.ts';
+  buildAgent17SentinelshipIndex,
+  sentinelshipIndexBlocksSentinel,
+} from '../planning/sentinelship-index.ts';
+  buildAgent17SentinelAccord,
+  sentinelAccordBlocksWarden,
+} from '../planning/sentinel-accord.ts';
+  buildAgent17WatchershipIndex,
+  watchershipIndexBlocksWatch,
+} from '../planning/watchership-index.ts';
+  buildAgent17WatchAccord,
+  watchAccordBlocksSentinel,
+} from '../planning/watch-accord.ts';
   Agent17RollbackController,
   createAgent17RollbackController,
 } from '../rollback/rollback-controller.ts';
@@ -19182,6 +19451,63 @@ export function verifyAgent17Goals(ctx: GoalVerificationContext): Agent17Validat
     )
   );
 
+  const watchershipIndex = depthEval.snapshot.planningDepth?.watchershipIndex;
+  goalResults.push(
+    result(
+      'G17-172',
+      !!watchershipIndex &&
+        watchershipIndex.mandates.length >= 5 &&
+        watchershipIndex.watchershipScore >= 0 &&
+        watchershipIndex.watchershipScore <= 100 &&
+        (watchershipIndex.band === 'engaged' ||
+          watchershipIndex.band === 'tentative' ||
+          watchershipIndex.band === 'revoked'),
+      `mandates=${watchershipIndex?.mandates.length} score=${watchershipIndex?.watchershipScore}`
+    )
+  );
+
+  const watchAccord = depthEval.snapshot.planningDepth?.watchAccord;
+  goalResults.push(
+    result(
+      'G17-173',
+      !!watchAccord &&
+        watchAccord.directives.length >= 5 &&
+        watchAccord.watchScore >= 0 &&
+        watchAccord.watchScore <= 100,
+      `directives=${watchAccord?.directives.length} score=${watchAccord?.watchScore}`
+    )
+  );
+
+  const revokedSentinelship = buildAgent17SentinelshipIndex({
+    wardenAccord: vacatedWarden,
+    wardenshipIndex: revokedWardenship,
+  });
+  const vacatedSentinel = buildAgent17SentinelAccord({
+    sentinelshipIndex: revokedSentinelship,
+    wardenAccord: vacatedWarden,
+    wardenshipIndex: revokedWardenship,
+  });
+  const revokedWatchership = buildAgent17WatchershipIndex({
+    sentinelAccord: vacatedSentinel,
+    sentinelshipIndex: revokedSentinelship,
+  });
+  const vacatedWatch = buildAgent17WatchAccord({
+    watchershipIndex: revokedWatchership,
+    sentinelAccord: vacatedSentinel,
+    sentinelshipIndex: revokedSentinelship,
+  });
+  goalResults.push(
+    result(
+      'G17-174',
+      wardenAccordBlocksOverseer(vacatedWarden) ||
+        sentinelshipIndexBlocksSentinel(revokedSentinelship) ||
+        sentinelAccordBlocksWarden(vacatedSentinel) ||
+        watchershipIndexBlocksWatch(revokedWatchership) ||
+        watchAccordBlocksSentinel(vacatedWatch),
+      `${revokedWatchership.band}/${vacatedWatch.band}`
+    )
+  );
+
   void buildAgent17ResilienceScorecard(
     depthEval.ops,
     baseState,
@@ -19383,6 +19709,9 @@ export function validateGoalRegistryCoverage(): { ok: boolean; missing: string[]
     'G17-169',
     'G17-170',
     'G17-171',
+    'G17-172',
+    'G17-173',
+    'G17-174',
   ]);
   const missing = AGENT17_GOAL_REGISTRY.filter(g => !verifiedIds.has(g.id)).map(g => g.id);
   return { ok: missing.length === 0, missing };

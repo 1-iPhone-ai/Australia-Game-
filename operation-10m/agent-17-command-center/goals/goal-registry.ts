@@ -1201,7 +1201,6 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
       'Suspended superintendent or revoked oversight yields overseerAccordBlocksSuperintendent.',
     severity: 'major',
   },
-,
   {
     id: 'G17-169',
     title: 'Wardenship index on planning depth',
@@ -1223,6 +1222,29 @@ export const AGENT17_GOAL_REGISTRY: Agent17GoalDefinition[] = [
     category: 'integration',
     acceptance:
       'Vacated overseer or revoked wardenship yields wardenAccordBlocksOverseer.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-172',
+    title: 'Watchership index on planning depth',
+    category: 'telemetry',
+    acceptance:
+      'watchershipIndex reports watchershipScore 0–100 with engaged/tentative/revoked band.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-173',
+    title: 'Watch accord directives complete',
+    category: 'telemetry',
+    acceptance: 'watchAccord exposes ≥5 directives and watchScore 0–100.',
+    severity: 'major',
+  },
+  {
+    id: 'G17-174',
+    title: 'Vacated sentinel suspends watch accord',
+    category: 'integration',
+    acceptance:
+      'Vacated sentinel or revoked watchership yields watchAccordBlocksSentinel.',
     severity: 'major',
   },
 ];
