@@ -110,6 +110,9 @@ export function createAdvisoryOpsFixtureSnapshot(
     auditStrainIndex: 0,
     controlIntegrityScore: 100,
     governanceStabilityScore: 100,
+    assuranceStrainIndex: 0,
+    evidenceIntegrityScore: 100,
+    governanceConfidenceScore: 100,
     ...overrides,
   };
   if (snap.objectiveTargetRegion && !snap.objectiveRegion) {
