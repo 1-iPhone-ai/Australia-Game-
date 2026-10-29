@@ -5,6 +5,7 @@ import type { Agent24ReplayScaleWaveWave23IntegrationHandoffReport } from './rep
 import {
   O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
   O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA,
+  O6K_AGENT24_WAVE25_INTEGRATION_BASELINE_SHA,
 } from './replay-scale-wave-integration-closeout.ts';
 
 export interface Agent24ReplayScaleWaveWave23IntegrationVerificationIssue {
@@ -115,8 +116,8 @@ export function runAgent24ReplayScaleWaveWave23IntegrationVerificationSelfTests(
   const fullChunksVerification = {
     reportId: 'fcv',
     matchId: 'self',
-    waveRound: 24,
-    fullChunksBaselineSha: O6K_AGENT24_WAVE24_INTEGRATION_BASELINE_SHA,
+    waveRound: 25,
+    fullChunksBaselineSha: O6K_AGENT24_WAVE25_INTEGRATION_BASELINE_SHA,
     verified: true,
     issueCount: 0,
     issues: [],
@@ -127,7 +128,7 @@ export function runAgent24ReplayScaleWaveWave23IntegrationVerificationSelfTests(
   const exportGate = {
     reportId: 'eg',
     matchId: 'self',
-    waveRound: 24,
+    waveRound: 25,
     exportAllowed: true,
     blockerCount: 0,
     blockers: [],
@@ -137,7 +138,7 @@ export function runAgent24ReplayScaleWaveWave23IntegrationVerificationSelfTests(
   const integrationHandoff = {
     reportId: 'ih',
     matchId: 'self',
-    waveRound: 24,
+    waveRound: 25,
     integrationBaselineSha: O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
     handoffComplete: true,
     checkpointCount: 3,
@@ -161,7 +162,7 @@ export function runAgent24ReplayScaleWaveWave23IntegrationVerificationSelfTests(
         report.verified &&
         report.integrationBaselineSha === O6K_AGENT24_WAVE23_INTEGRATION_BASELINE_SHA,
     },
-    { name: 'wave_round_pinned', passed: report.waveRound === 24 },
+    { name: 'wave_round_pinned', passed: report.waveRound === 25 },
     {
       name: 'deterministic_fingerprint',
       passed:
