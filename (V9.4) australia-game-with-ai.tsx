@@ -128229,6 +128229,131 @@ export function runRegionalFactions2SelfTests(): V9SelfTestResult[] {
 
 
 // ============================================================================
+// CROSS-GAMEPLAY INTEGRATION (V9.4) — Division B pipeline → PLAY moment
+// ============================================================================
+// Read-only bridge from core gameplay systems (turn/day lifecycle, progression objectives,
+// activity-ledger expectations, deferred diplomacy) into V9 Gameplay Cohesion. Never executes,
+// never mutates authority, never saved. Identical wire inputs → identical snapshot.
+
+export type CrossGameplayDelayedKind = 'diplomacy' | 'ledger' | 'turn' | 'progression';
+
+export interface CrossGameplayDelayedItem {
+  id: string;
+  turnsLeft: number;
+  text: string;
+  kind: CrossGameplayDelayedKind;
+}
+
+export interface CrossGameplaySnapshot {
+  lifecyclePhase: GamePhase;
+  daysRemaining: number;
+  matchProgressPct: number;
+  progressionBeat: string | null;
+  pendingLedgerExpectations: number;
+  turnPipelineNote: string | null;
+  delayed: CrossGameplayDelayedItem[];
+}
+
+export interface CrossGameplayWireInput {
+  turn: number;
+  day: number;
+  totalDays: number;
+  ledgerEvents?: GameActivityLedgerEvent[];
+  diplomacyObservations?: Array<{ id: string; kind: string; text: string }>;
+  objectiveTitle?: string | null;
+  campaignChapterTitle?: string | null;
+  apRemaining?: number | null;
+  apFinite?: boolean;
+  playerActionsPerDay?: number;
+  actionsUsedThisTurn?: number;
+}
+
+export function buildCrossGameplaySnapshot(w: CrossGameplayWireInput): CrossGameplaySnapshot {
+  const totalDays = Math.max(1, Number(w.totalDays) || 1);
+  const day = Math.max(1, Number(w.day) || 1);
+  const lifecyclePhase = getGamePhase(day, totalDays);
+  const daysRemaining = Math.max(0, totalDays - day);
+  const matchProgressPct = Math.min(100, Math.round((day / totalDays) * 100));
+  const progressionBeat = w.objectiveTitle || w.campaignChapterTitle || null;
+  const pendingLedgerExpectations = (w.ledgerEvents || []).filter(e => e.expectation && !e.expectation.evaluated).length;
+  const delayed: CrossGameplayDelayedItem[] = [];
+  (w.diplomacyObservations || []).forEach(o => {
+    if (o.kind === 'delayed' || /decide next turn|will decide next turn/i.test(o.text)) {
+      delayed.push({ id: `dn_${o.id}`, turnsLeft: 1, text: o.text.replace(/\.$/, ''), kind: 'diplomacy' });
+    }
+  });
+  if (pendingLedgerExpectations > 0) {
+    delayed.push({
+      id: 'ledger_expectations',
+      turnsLeft: 1,
+      text: `${pendingLedgerExpectations} recorded expectation${pendingLedgerExpectations === 1 ? '' : 's'} still resolving`,
+      kind: 'ledger'
+    });
+  }
+  const apTotal = Math.max(1, Number(w.playerActionsPerDay) || 3);
+  const apUsed = Math.max(0, Number(w.actionsUsedThisTurn) || 0);
+  let turnPipelineNote: string | null = null;
+  if (w.apFinite !== false && w.apRemaining !== null && w.apRemaining !== undefined) {
+    turnPipelineNote = `${apUsed} / ${apTotal} actions used this turn`;
+    if (w.apRemaining <= 0 && apUsed < apTotal) turnPipelineNote = 'Turn pipeline: no actions remaining';
+  }
+  return { lifecyclePhase, daysRemaining, matchProgressPct, progressionBeat, pendingLedgerExpectations, turnPipelineNote, delayed };
+}
+
+export function crossGameplaySignature(s: CrossGameplaySnapshot | null): string {
+  if (!s) return 'none';
+  return v9Hash([s.lifecyclePhase, s.daysRemaining, s.progressionBeat, s.pendingLedgerExpectations, s.turnPipelineNote, s.delayed.map(d => [d.id, d.turnsLeft, d.kind])]);
+}
+
+export function runCrossGameplayIntegrationSelfTests(): V9SelfTestResult[] {
+  const results: V9SelfTestResult[] = [];
+  const check = (id: string, name: string, fn: () => boolean | string) => {
+    try { const out = fn(); results.push({ id, name, passed: out === true, detail: out === true ? 'ok' : String(out || 'failed') }); }
+    catch (e) { results.push({ id, name, passed: false, detail: e instanceof Error ? e.message : String(e) }); }
+  };
+  const J = (v: unknown) => JSON.stringify(v);
+  check('cgi_lifecycle', 'Lifecycle phase and days remaining derive from canonical getGamePhase', () => {
+    const s = buildCrossGameplaySnapshot({ turn: 4, day: 25, totalDays: 30 });
+    return (s.lifecyclePhase === 'late' && s.daysRemaining === 5 && s.matchProgressPct === 83) || J(s);
+  });
+  check('cgi_ledger_delayed', 'Unresolved ledger expectations surface as delayed turn-1 items', () => {
+    const s = buildCrossGameplaySnapshot({
+      turn: 3, day: 3, totalDays: 30,
+      ledgerEvents: [{ id: 'e1', category: 'economy', severity: 'info', message: 'test', expectation: { evaluated: false, expectedCashDelta: 100 } } as GameActivityLedgerEvent]
+    });
+    return (s.pendingLedgerExpectations === 1 && s.delayed.some(d => d.kind === 'ledger')) || J(s);
+  });
+  check('cgi_diplomacy_delayed', 'Deferred diplomacy observations merge into delayed items', () => {
+    const s = buildCrossGameplaySnapshot({
+      turn: 5, day: 5, totalDays: 30,
+      diplomacyObservations: [{ id: 'd1', kind: 'delayed', text: 'Riley will decide next turn.' }]
+    });
+    return (s.delayed.length === 1 && s.delayed[0].kind === 'diplomacy') || J(s.delayed);
+  });
+  check('cgi_cohesion_upcoming', 'Cohesion PLAY upcoming includes cross-gameplay delayed consequences', () => {
+    const snap = buildCrossGameplaySnapshot({ turn: 2, day: 2, totalDays: 30, diplomacyObservations: [{ id: 'd1', kind: 'delayed', text: 'Answer pending next turn.' }] });
+    const c = resolveV9GameplayCohesion(createV9CohesionFixture({ crossGameplay: snap }));
+    return c.upcoming.some(u => /Answer pending/.test(u.text)) || J(c.upcoming);
+  });
+  check('cgi_cohesion_status_late', 'Late match adds lifecycle status when strip has room', () => {
+    const snap = buildCrossGameplaySnapshot({ turn: 10, day: 28, totalDays: 30 });
+    const c = resolveV9GameplayCohesion(createV9CohesionFixture({ crossGameplay: snap, day: 28, totalDays: 30 }));
+    return c.status.some(s => /Late phase/.test(s.text)) || J(c.status);
+  });
+  check('cgi_deterministic', 'Identical wire inputs → identical snapshot signature', () => {
+    const w = { turn: 1, day: 4, totalDays: 30, objectiveTitle: 'Secure Queensland Logistics' };
+    const a = buildCrossGameplaySnapshot(w);
+    const b = buildCrossGameplaySnapshot(JSON.parse(J(w)));
+    return (crossGameplaySignature(a) === crossGameplaySignature(b) && J(a) === J(b)) || 'non-deterministic';
+  });
+  return results;
+}
+
+if (typeof window !== 'undefined') {
+  (window as any).runCrossGameplayIntegrationSelfTests = runCrossGameplayIntegrationSelfTests;
+}
+
+// ============================================================================
 // SECTION 20L: V9 GAMEPLAY COHESION — ONE GAME • ONE MOMENT • ONE CLEAR NEXT DECISION
 // ============================================================================
 // A pure, read-only PRESENTATION projection. It composes structured outputs that the canonical systems
@@ -128268,6 +128393,7 @@ export interface V9CohesionInputs {
   focusRegion: string | null;
   pendingApprovals: number;
   lastBriefTurn: number | null;
+  crossGameplay: CrossGameplaySnapshot | null;
 }
 
 export interface V9CohesionRecommendation { candidateId: string; label: string; icon: string; why: string; cost: string; helps: string | null; risk: string | null; strength: 'Strong recommendation' | 'Worth considering' | 'Uncertain'; provenance: string[]; alternativeNote: string | null }
@@ -128280,7 +128406,7 @@ export interface V9Cohesion {
   situation: string[] | null;
   recommended: V9CohesionRecommendation | null;
   useful: Array<{ candidateId: string; label: string; icon: string; why: string; cost: string }>;
-  upcoming: Array<{ id: string; turnsLeft: number; text: string; kind: 'diplomacy' | 'faction' | 'contract' | 'crisis' | 'strategy' }>;
+  upcoming: Array<{ id: string; turnsLeft: number; text: string; kind: 'diplomacy' | 'faction' | 'contract' | 'crisis' | 'strategy' | 'progression' | 'delayed' }>;
   commitments: Array<{ id: string; text: string; due: string }>;
   status: Array<{ id: string; icon: string; text: string; tone: 'good' | 'warn' | 'bad' | 'info' }>;
   team: { mission: string; lines: string[]; issue: string | null } | null;
@@ -128307,7 +128433,7 @@ const v9Simple = (p: V9Presentation) => p === 'simple' || p === 'guided';
 
 /** Compact signature: only rebuild presentation when one of these changes (never the whole game state). */
 export function v9CohesionSignature(i: V9CohesionInputs): string {
-  return v9Hash([i.turn, i.day, i.isHumanTurn, i.currentActorName, i.control.owner, i.control.copilotHoldsControl, i.ap.remaining, Math.round(i.cash), i.win.value, i.transit, i.presentation, i.critical?.label, i.objective && [i.objective.id, i.objective.completed, i.objective.next], i.strategy && [i.strategy.phaseIndex, i.strategy.onTrack, i.strategy.nextMove?.label, i.strategy.notices.length], i.actions.recommendedId, i.actions.ranked.slice(0, 8).map(c => [c.id, c.legal, Math.round(c.relevance)]), i.background?.nextMove?.label, i.background?.intervention?.key, i.events.map(e => e.id), i.diplomacy.map(d => d.id), i.factions.requests.map(r => [r.id, r.committed]), i.factions.commitments.map(c => c.id), i.factions.dilemma?.id, i.contracts.map(c => [c.id, c.turnsLeft]), i.crises.map(c => [c.id, c.stage]), i.team?.issue, i.focusRegion, i.pendingApprovals, i.lastBriefTurn]);
+  return v9Hash([i.turn, i.day, i.isHumanTurn, i.currentActorName, i.control.owner, i.control.copilotHoldsControl, i.ap.remaining, Math.round(i.cash), i.win.value, i.transit, i.presentation, i.critical?.label, i.objective && [i.objective.id, i.objective.completed, i.objective.next], i.strategy && [i.strategy.phaseIndex, i.strategy.onTrack, i.strategy.nextMove?.label, i.strategy.notices.length], i.actions.recommendedId, i.actions.ranked.slice(0, 8).map(c => [c.id, c.legal, Math.round(c.relevance)]), i.background?.nextMove?.label, i.background?.intervention?.key, i.events.map(e => e.id), i.diplomacy.map(d => d.id), i.factions.requests.map(r => [r.id, r.committed]), i.factions.commitments.map(c => c.id), i.factions.dilemma?.id, i.contracts.map(c => [c.id, c.turnsLeft]), i.crises.map(c => [c.id, c.stage]), i.team?.issue, i.focusRegion, i.pendingApprovals, i.lastBriefTurn, crossGameplaySignature(i.crossGameplay)]);
 }
 
 /** Relevance of a world event to THIS player's plan (world importance and personal importance both count). */
@@ -128417,6 +128543,8 @@ export function resolveV9GameplayCohesion(i: V9CohesionInputs): V9Cohesion {
     else if (i.objective?.blocked && !(focus.detail || '').includes('blocked')) lines.push(`${i.objective.title} is currently blocked.`);
     const rival = Object.values(i.regions).find(r => r.rivalPressure);
     if (rival) lines.push(`Rival pressure is concentrated on ${rival.name}.`);
+    if (i.crossGameplay?.progressionBeat && !lines.some(l => v9Similar(l, i.crossGameplay!.progressionBeat!))) lines.unshift(`Progression focus: ${i.crossGameplay.progressionBeat}.`);
+    if (i.crossGameplay?.turnPipelineNote && i.isHumanTurn) lines.push(i.crossGameplay.turnPipelineNote);
     situation = lines.length ? lines.slice(0, 3) : [`${focus.title} — no major changes since your last turn.`];
   }
   const { recommended, useful } = v9ResolveRecommendation(i);
@@ -128426,7 +128554,8 @@ export function resolveV9GameplayCohesion(i: V9CohesionInputs): V9Cohesion {
   i.factions.commitments.forEach(c => upcoming.push({ id: c.id, turnsLeft: Math.max(0, c.due - i.turn), text: `${c.faction}: ${c.promise}`, kind: 'faction' }));
   i.factions.requests.filter(r => !r.committed && (r.urgent || (i.strategy?.regions || []).includes(r.regionId) || i.regions[r.regionId]?.heldByYou)).forEach(r => upcoming.push({ id: r.id, turnsLeft: Math.max(0, r.deadline - i.turn), text: `${r.faction} asks: ${r.title}`, kind: 'faction' }));
   i.contracts.filter(c => c.active && c.turnsLeft !== null && c.turnsLeft <= 3).forEach(c => upcoming.push({ id: c.id, turnsLeft: c.turnsLeft!, text: `${c.title} deadline`, kind: 'contract' }));
-  const upcomingSorted = upcoming.filter(u => u.turnsLeft <= 3 || u.kind === 'faction').sort((a, b) => a.turnsLeft - b.turnsLeft || a.id.localeCompare(b.id)).filter((u, k, arr) => arr.findIndex(x => v9Similar(x.text, u.text)) === k).slice(0, simple ? 2 : 4);
+  (i.crossGameplay?.delayed || []).forEach(d => upcoming.push({ id: d.id, turnsLeft: d.turnsLeft, text: d.text, kind: d.kind === 'progression' ? 'progression' : 'delayed' }));
+  const upcomingSorted = upcoming.filter(u => u.turnsLeft <= 3 || u.kind === 'faction' || u.kind === 'delayed' || u.kind === 'progression').sort((a, b) => a.turnsLeft - b.turnsLeft || a.id.localeCompare(b.id)).filter((u, k, arr) => arr.findIndex(x => v9Similar(x.text, u.text)) === k).slice(0, simple ? 2 : 4);
   const commitments = i.factions.commitments.map(c => ({ id: c.id, text: `${c.faction}: ${c.promise}`, due: c.due - i.turn <= 0 ? 'due now' : `due in ${c.due - i.turn} turn${c.due - i.turn === 1 ? '' : 's'}` }));
   // ---- Strategic status strip (≤4, dynamically chosen) ----
   const status: V9Cohesion['status'] = [];
@@ -128434,6 +128563,7 @@ export function resolveV9GameplayCohesion(i: V9CohesionInputs): V9Cohesion {
   if (i.strategy?.cashTarget && i.cash < i.strategy.cashTarget) status.push({ id: 'cash', icon: '⚠', text: `Cash ${v9Money(i.strategy.cashTarget - i.cash)} below target`, tone: 'warn' });
   const nextDue = upcomingSorted[0]; if (nextDue && status.length < 4) status.push({ id: `due_${nextDue.id}`, icon: '⏳', text: `${nextDue.text.slice(0, 40)} · ${nextDue.turnsLeft <= 0 ? 'now' : `${nextDue.turnsLeft}t`}`, tone: nextDue.turnsLeft <= 1 ? 'warn' : 'info' });
   const rivalHot = Object.entries(i.regions).find(([code, r]) => r.rivalPressure && !(i.strategy?.regions || []).includes(code)); if (rivalHot && status.length < 4) status.push({ id: `riv_${rivalHot[0]}`, icon: '🔴', text: `${rivalHot[0]} rival pressure high`, tone: 'bad' });
+  const cg = i.crossGameplay; if (cg && status.length < 4 && (cg.lifecyclePhase === 'late' || cg.daysRemaining <= 3)) status.push({ id: 'cgi_lifecycle', icon: '⏳', text: `Late phase · ${cg.daysRemaining} day${cg.daysRemaining === 1 ? '' : 's'} left`, tone: cg.daysRemaining <= 2 ? 'warn' : 'info' });
   // ---- Team (compact) ----
   const team: V9Cohesion['team'] = i.team ? { mission: i.team.mission, lines: [...(i.team.you ? [`You — ${i.team.you}`] : []), ...i.team.mates.slice(0, simple ? 1 : 3).map(m => `${m.name} — ${m.focus}`)], issue: i.team.issue } : null;
   // ---- Waiting for another actor (observable only) ----
@@ -128445,6 +128575,7 @@ export function resolveV9GameplayCohesion(i: V9CohesionInputs): V9Cohesion {
   if (you && i.ap.finite && (i.ap.remaining || 0) > 0 && recommended) endTurnWarnings.push(`${i.ap.remaining} action${i.ap.remaining === 1 ? '' : 's'} unused`);
   upcomingSorted.filter(u => u.turnsLeft <= 1).slice(0, 2).forEach(u => endTurnWarnings.push(`${u.text} — ${u.turnsLeft <= 0 ? 'expires this turn' : 'due next turn'}`));
   if (decision) endTurnWarnings.push(`Unresolved: ${decision.title}`);
+  if (you && (i.crossGameplay?.pendingLedgerExpectations || 0) > 0) endTurnWarnings.push(`${i.crossGameplay!.pendingLedgerExpectations} expectation${i.crossGameplay!.pendingLedgerExpectations === 1 ? '' : 's'} still resolving`);
   // ---- Attention (1–3 things) ----
   const att: Array<{ id: string; cls: V9AttentionClass; text: string; w: number }> = [];
   if (decision) att.push({ id: 'decision', cls: 'critical', text: decision.title, w: 100 });
@@ -128783,7 +128914,7 @@ export function createV9CohesionFixture(o: Partial<V9CohesionInputs> = {}): V9Co
     strategy: null, actions: { recommendedId: null, ranked: [] }, background: null, events: [], diplomacy: [],
     factions: { requests: [], commitments: [], dilemma: null, regionNotes: {} }, contracts: [], crises: [], team: null,
     regions: { QLD: { name: 'Queensland', momentum: 'Growing', identity: 'Logistics hub', risk: null, need: null, heldByYou: true, rivalPressure: false }, NSW: { name: 'New South Wales', momentum: 'Stable', identity: 'Finance centre', risk: null, need: null, heldByYou: false, rivalPressure: true } },
-    focusRegion: 'QLD', pendingApprovals: 0, lastBriefTurn: null, ...o
+    focusRegion: 'QLD', pendingApprovals: 0, lastBriefTurn: null, crossGameplay: null, ...o
   };
 }
 
@@ -136516,6 +136647,7 @@ export const V95_EXISTING_SUITES: V95SuiteSpec[] = [
   { id: 'v93', label: 'V9.3 Content', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV93ContentReplayabilitySelfTests() },
   { id: 'v92', label: 'V9.2 Guided Learning', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runV9GuidedLearningSelfTests() },
   { id: 'v91', label: 'V9.1 Strategic Balance', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runStrategicDepthBalanceSelfTests() },
+  { id: 'cgi', label: 'Cross-Gameplay Integration', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runCrossGameplayIntegrationSelfTests() },
   { id: 'v9c', label: 'V9 Cohesion', tier: 'quick', section: 'System Regression', severity: 'MAJOR', run: () => runV9GameplayCohesionSelfTests() },
   { id: 'v9x', label: 'V9 Experience', tier: 'quick', section: 'UI Recovery', severity: 'MAJOR', run: () => runV9ExperienceSelfTests() },
   { id: 'rf2', label: 'Regional Factions', tier: 'full', section: 'System Regression', severity: 'MAJOR', run: () => runRegionalFactions2SelfTests() },
@@ -214821,6 +214953,26 @@ function dispatchGameSettingsChange(
     const att = intentLayerComputed.attention;
     const obj = intentLayerComputed.objective;
     const control = playerControlState;
+    const campaignChapterTitle = (() => {
+      const camp = (gameState as any).campaignState;
+      if (!camp || camp.isCampaignCompleted) return null;
+      const chapters = typeof PRESET_CAMPAIGN_CHAPTERS !== 'undefined' ? PRESET_CAMPAIGN_CHAPTERS : [];
+      const ch = chapters.find((c: any) => c.id === camp.currentChapterId) || chapters[camp.chapterIndex || 0];
+      return ch?.title || null;
+    })();
+    const crossGameplay = buildCrossGameplaySnapshot({
+      turn: dnRound,
+      day: Number(gameState.day || 1),
+      totalDays: Number(gameSettings.totalDays || 0),
+      ledgerEvents: gameSettings.gameActivityLedgerEnabled ? (gameState.gameActivityLedger?.events || []) : [],
+      diplomacyObservations: dnObservations,
+      objectiveTitle: obj?.title || null,
+      campaignChapterTitle,
+      apRemaining: v9ApFinite ? v9ApRemaining : null,
+      apFinite: v9ApFinite,
+      playerActionsPerDay: Number(gameSettings.playerActionsPerDay || 3),
+      actionsUsedThisTurn: Number(player?.actionsUsedThisTurn || 0)
+    });
     return {
       turn: dnRound, day: Number(gameState.day || 1), totalDays: Number(gameSettings.totalDays || 0), teamMode: isTeamMode,
       isHumanTurn: isPlayerTurnForCoPilot, currentActorName: v9CurrentActorName, actorStatus: isPlayerTurnForCoPilot ? null
@@ -214853,7 +215005,8 @@ function dispatchGameSettingsChange(
       team: isTeamMode && tc ? { mission: tc.mission.label, you: (() => { const a = tc.assignments.find(x => x.actorId === 'player' || x.actorId === pid); const r = tc.roles.find(x => x.actorId === 'player' || x.actorId === pid); return a ? `${a.focus}${a.regionId ? ` · ${a.regionId}` : ''}` : r ? r.responsibility || String(r.primaryRole) : null; })(), mates: (tc.assignments.some(x => x.actorId !== 'player' && x.actorId !== pid) ? tc.assignments.filter(x => x.actorId !== 'player' && x.actorId !== pid).map(x => ({ name: getActorDisplayName(x.actorId), focus: `${x.focus}${x.regionId ? ` · ${x.regionId}` : ''}` })) : tc.roles.filter(x => x.actorId !== 'player' && x.actorId !== pid).map(x => ({ name: getActorDisplayName(x.actorId), focus: x.responsibility || String(x.primaryRole) }))), issue: ['blocked', 'needs_decision', 'recovering'].includes(String(teamOsView?.evaluation.health.health)) ? teamOsView!.evaluation.health.reason : null } : null,
       regions, focusRegion: lrFocusRegion || (player?.currentRegion ? String(player.currentRegion) : null),
       pendingApprovals: uiState.activeCoPilotProposal && !uiState.showCoPilotProposalModal ? 1 : 0,
-      lastBriefTurn: v9BriefSeenTurn
+      lastBriefTurn: v9BriefSeenTurn,
+      crossGameplay
     };
   }, [srEnabled, srFocus, icEnabled, icFocus, mpEnabled, mpPersisted, mpWorld, nsState, scState, inState, player, lrViewerKeys, swrInputs.ownerNames, gi3Live, lrState, lrInputs, swrEnabled, swrState, dnRound, rfState, rfInputs, bgLive, teamOsView, gameSettings, isTeamMode, gameState.day, gameState.selectedMode, gameState.isAiThinking, currentActor, intentLayerComputed, playerControlState, isPlayerTurnForCoPilot, v9CurrentActorName, v9ApFinite, v9ApRemaining, v9ActionSetView, dnObservations, lrFocusRegion, uiState.activeCoPilotProposal, uiState.showCoPilotProposalModal, v9BriefSeenTurn, getCompetitiveMetricValue, formatWinMetricValue, getActorDisplayName]);
   const v9CohesionSig = v9CohesionSignature(v9CohesionInputs);
@@ -231565,7 +231718,7 @@ function dispatchGameSettingsChange(
           technicalRows={v9TechnicalRows()}
           interfaceLevelLabel={String(getIntentPresentationLevel(gameSettings)).replace(/^./, c => c.toUpperCase())}
           onRunSelfTests={() => {
-            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
+            const sync = isolateLabSelfTestRun(() => [...runV9ExperienceSelfTests(), ...runGameIntelligence2SelfTests(), ...runGameIntelligence21SelfTests(), ...runTeamIntelligence2SelfTests(), ...runTeamOsScenarioSelfTests(), ...runGameIntelligence3SelfTests(), ...runBackgroundAISelfTests(), ...runSettingsIntelligence2SelfTests(), ...runCrossGameplayIntegrationSelfTests(), ...runV9GameplayCohesionSelfTests(), ...runStrategicDepthBalanceSelfTests(), ...runV9GuidedLearningSelfTests(), ...runV93ContentReplayabilitySelfTests(), ...runV94GameFeelPolishSelfTests(), ...runV95ReleaseReadinessSelfTests({ stressTurns: 30 })]);
             setV9SelfTestResults(sync);
             void Promise.all([runGameIntelligence2AsyncSelfTests(), runGameIntelligence21AsyncSelfTests()]).then(([extra, extra21]) => setV9SelfTestResults([...sync, ...extra, ...extra21]));
           }}
