@@ -27,6 +27,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   includeInflationEnergyStress?: boolean;
   includeEventsCompaniesStress?: boolean;
   includeTurnsTransportStress?: boolean;
+  includeResearchPopulationStress?: boolean;
 }): MacroRegressionHarnessResult {
   const turns = Math.max(5, Math.min(48, Math.floor(options?.turns ?? 24)));
   const scenarioId = options?.scenarioId ?? 'baseline_soft_landing';
@@ -36,6 +37,7 @@ export function runMacroEconomyRegressionHarness(options?: {
   const includeInflationEnergyStress = Boolean(options?.includeInflationEnergyStress);
   const includeEventsCompaniesStress = Boolean(options?.includeEventsCompaniesStress);
   const includeTurnsTransportStress = Boolean(options?.includeTurnsTransportStress);
+  const includeResearchPopulationStress = Boolean(options?.includeResearchPopulationStress);
   const shockIds = macroStressScenarioShockIds(scenarioId);
   const checks: MacroRegressionCheck[] = [];
   let persisted: MacroEconomyPersisted | null = null;
@@ -115,6 +117,20 @@ export function runMacroEconomyRegressionHarness(options?: {
             throughputBand: t % 7 === 0 ? 'constrained' : 'ample',
             investmentPipeline: { band: t % 9 === 0 ? 'active' : 'steady' }
           }
+        : undefined,
+      researchTech: includeResearchPopulationStress
+        ? {
+            pipelineBand: t % 6 === 0 ? 'stalled' : 'strong',
+            adoptionBand: t % 7 === 0 ? 'fragmented' : 'scaling',
+            fundingBand: t % 8 === 0 ? 'cut' : 'expansionary'
+          }
+        : undefined,
+      population: includeResearchPopulationStress
+        ? {
+            growthBand: t % 5 === 0 ? 'stagnant' : 'strong',
+            dependencyBand: t % 6 === 0 ? 'elevated' : 'favorable',
+            netMigrationBand: t % 9 === 0 ? 'outflow' : 'strong_inflow'
+          }
         : undefined
     });
     const { state, persisted: nextP } = computeNationalMacroEconomy(inputs, persisted, prev);
@@ -175,8 +191,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionCoherence.coherenceIndex)
     });
     checks.push({
-      id: 'sixteen_transmission_layers',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 16,
+      id: 'eighteen_transmission_layers',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 18,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -187,8 +203,8 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionConcentration.concentrationIndex)
     });
     checks.push({
-      id: 'sixteen_transmission_layers_events',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 16,
+      id: 'eighteen_transmission_layers_events',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 18,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }
@@ -199,8 +215,20 @@ export function runMacroEconomyRegressionHarness(options?: {
       detail: String(prev.transmissionAsymmetry.asymmetryIndex)
     });
     checks.push({
-      id: 'sixteen_transmission_layers_turns',
-      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 16,
+      id: 'eighteen_transmission_layers_turns',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 18,
+      detail: String(prev.transmissionReport?.layers?.length ?? 0)
+    });
+  }
+  if (includeResearchPopulationStress && prev) {
+    checks.push({
+      id: 'transmission_volatility_finite',
+      passed: Number.isFinite(prev.transmissionVolatility.volatilityIndex),
+      detail: String(prev.transmissionVolatility.volatilityIndex)
+    });
+    checks.push({
+      id: 'eighteen_transmission_layers_research',
+      passed: (prev.transmissionReport?.layers?.length ?? 0) >= 18,
       detail: String(prev.transmissionReport?.layers?.length ?? 0)
     });
   }

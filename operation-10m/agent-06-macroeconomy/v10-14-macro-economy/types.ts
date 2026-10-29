@@ -101,11 +101,14 @@ export interface NationalMacroEconomyState {
   companiesSpilloverSummary: string | null;
   turnsSpilloverSummary: string | null;
   transportSpilloverSummary: string | null;
+  researchSpilloverSummary: string | null;
+  populationSpilloverSummary: string | null;
   capacitySnapshot: MacroCapacitySnapshot;
   transmissionBalance: MacroTransmissionBalanceSnapshot;
   transmissionCoherence: MacroTransmissionCoherenceSnapshot;
   transmissionConcentration: MacroTransmissionConcentrationSnapshot;
   transmissionAsymmetry: MacroTransmissionAsymmetrySnapshot;
+  transmissionVolatility: MacroTransmissionVolatilitySnapshot;
   transmissionReport: MacroTransmissionReport;
   stressIndex: MacroStressIndexSnapshot;
   policyStance: MacroPolicyStanceSnapshot;
@@ -219,6 +222,15 @@ export interface MacroTransmissionAsymmetrySnapshot {
   summary: string;
 }
 
+export type MacroTransmissionVolatilityBand = 'stable' | 'moderate' | 'elevated' | 'turbulent';
+
+export interface MacroTransmissionVolatilitySnapshot {
+  volatilityIndex: number;
+  band: MacroTransmissionVolatilityBand;
+  layerSpread: number;
+  summary: string;
+}
+
 export type MacroStressBand = 'calm' | 'elevated' | 'acute';
 
 export interface MacroStressIndexSnapshot {
@@ -286,6 +298,12 @@ export interface MacroEconomyInputs {
   transportInfrastructure?: any;
   infrastructure?: any;
   nationalInfrastructure?: any;
+  researchTech?: any;
+  research?: any;
+  nationalResearch?: any;
+  population?: any;
+  demographics?: any;
+  nationalPopulation?: any;
   highInflationScenarioActive?: boolean;
   creditShockActive?: boolean;
   /** Additional catalog shock ids (see catalog/cyclical-shocks.ts). Legacy flags merge in. */

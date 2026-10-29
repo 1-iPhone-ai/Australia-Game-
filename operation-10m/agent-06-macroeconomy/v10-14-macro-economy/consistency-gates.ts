@@ -304,5 +304,39 @@ export function evaluateMacroConsistencyGates(
       summary: 'Restrictive transmission skew aligns with macro downturn — downside reinforcement elevated.'
     });
   }
+  const rs: any = inputs.researchTech ?? inputs.research ?? inputs.nationalResearch;
+  const pipeline = String(rs?.pipelineBand ?? rs?.techPipeline?.band ?? '');
+  if (
+    (pipeline === 'stalled' || pipeline === 'blocked' || pipeline === 'weak') &&
+    (state.productivityBand === 'strong' || state.productivityBand === 'leading')
+  ) {
+    gates.push({
+      id: 'research_productivity_divergence',
+      triggered: true,
+      severity: 'info',
+      summary: 'Strong macro productivity read conflicts with weak research pipeline — tech drag may be latent.'
+    });
+  }
+  const pop: any = inputs.population ?? inputs.demographics ?? inputs.nationalPopulation;
+  const growth = String(pop?.growthBand ?? pop?.populationGrowth?.band ?? '');
+  if (
+    (growth === 'contracting' || growth === 'critical' || growth === 'stagnant') &&
+    (state.investmentClimate === 'active' || state.investmentClimate === 'overheating')
+  ) {
+    gates.push({
+      id: 'population_investment_tension',
+      triggered: true,
+      severity: 'warn',
+      summary: 'Weak demographic momentum coexists with overheating investment read — sustainability risk elevated.'
+    });
+  }
+  if (state.transmissionVolatility?.band === 'turbulent' || state.transmissionVolatility?.band === 'elevated') {
+    gates.push({
+      id: 'transmission_volatility_elevated',
+      triggered: true,
+      severity: 'info',
+      summary: 'Elevated cross-layer transmission volatility — composite macro scores may swing turn-to-turn.'
+    });
+  }
   return gates;
 }

@@ -72,6 +72,12 @@ export const MACRO_STRESS_SCENARIO_CATALOG: MacroStressScenario[] = [
     label: 'Turns & transport stress',
     shockIds: ['global_slowdown', 'commodity_bust'],
     description: 'Temporal cadence stall with logistics connectivity stress (harness overlay).'
+  },
+  {
+    id: 'research_population_stress',
+    label: 'Research & population stress',
+    shockIds: ['global_slowdown', 'credit_contraction'],
+    description: 'Weak research pipeline with demographic drag (harness overlay).'
   }
 ];
 

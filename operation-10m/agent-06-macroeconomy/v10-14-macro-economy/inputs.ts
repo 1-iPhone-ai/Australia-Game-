@@ -39,6 +39,12 @@ export function buildMacroEconomyInputs(params: any): MacroEconomyInputs {
       params?.gameState?.transportInfrastructureState,
     infrastructure: params?.infrastructure,
     nationalInfrastructure: params?.nationalInfrastructure ?? params?.nationalSystems?.infrastructure,
+    researchTech: params?.researchTech ?? params?.gameState?.researchTechState ?? params?.nationalSystems?.researchTech,
+    research: params?.research,
+    nationalResearch: params?.nationalResearch,
+    population: params?.population ?? params?.gameState?.populationState ?? params?.nationalSystems?.population,
+    demographics: params?.demographics,
+    nationalPopulation: params?.nationalPopulation,
     highInflationScenarioActive: Boolean(params?.highInflationScenarioActive || gset.selectedScenarioId === 'high_inflation'),
     creditShockActive: Boolean(params?.creditShockActive)
   };
