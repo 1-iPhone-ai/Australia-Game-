@@ -355,8 +355,14 @@ export type FloodLeveeRailProtectionPolicy = 'baseline' | 'harden';
 
 export type PortZeroEmissionDrayagePolicy = 'baseline' | 'expand';
 
+export type TitaniumSpongeExportPolicy = 'baseline' | 'accelerate';
+
+export type HeatwaveRailSpeedRestrictionPolicy = 'baseline' | 'relax';
+
+export type AutomatedLivestockExportYardPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/34';
+  schemaVersion: 'agent12/35';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -594,6 +600,14 @@ export interface TransportInfrastructureState {
   portZeroEmissionDrayageShare: number;
   nationalPortZeroEmissionDrayageThroughputIndex: number;
   portZeroEmissionDrayageThroughputByRegion: Record<AuRegionCode, number>;
+  nationalTitaniumSpongeExportIndex: number;
+  titaniumSpongeExportByRegion: Record<AuRegionCode, number>;
+  heatwaveRailSpeedRestrictionShare: number;
+  nationalHeatwaveRailSpeedRestrictionIndex: number;
+  heatwaveRailSpeedRestrictionByRegion: Record<AuRegionCode, number>;
+  automatedLivestockExportYardShare: number;
+  nationalAutomatedLivestockExportYardThroughputIndex: number;
+  automatedLivestockExportYardThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -686,6 +700,9 @@ export interface TransportInfrastructureOptions {
   greenIronPelletExportPolicy?: GreenIronPelletExportPolicy;
   floodLeveeRailProtectionPolicy?: FloodLeveeRailProtectionPolicy;
   portZeroEmissionDrayagePolicy?: PortZeroEmissionDrayagePolicy;
+  titaniumSpongeExportPolicy?: TitaniumSpongeExportPolicy;
+  heatwaveRailSpeedRestrictionPolicy?: HeatwaveRailSpeedRestrictionPolicy;
+  automatedLivestockExportYardPolicy?: AutomatedLivestockExportYardPolicy;
 }
 
 export interface V94ProjectSnapshot {
@@ -2131,6 +2148,48 @@ export const TRANSPORT_CORRIDORS_ROUND33: TransportCorridorDefinition[] = [
 ];
 
 
+// --- source: catalog/corridors-round34.ts ---
+
+export const TRANSPORT_CORRIDORS_ROUND34: TransportCorridorDefinition[] = [
+  {
+    id: 'corr_wa_sa_titanium_sponge',
+    name: 'WA–SA Titanium Sponge',
+    networkKind: 'trade',
+    regionSequence: ['WA', 'SA'],
+    requiredTagsByRegion: {
+      WA: ['titanium_sponge_export', 'defense_aero_feed', 'critical_metal_rail'],
+      SA: ['titanium_sponge_export', 'defense_aero_feed', 'critical_metal_rail'],
+    },
+    productivitySynergyPoints: 6.0,
+    logisticsRelief: 0.037,
+  },
+  {
+    id: 'corr_nsw_sa_heatwave_rail',
+    name: 'NSW–SA Heatwave Rail',
+    networkKind: 'freight',
+    regionSequence: ['NSW', 'SA'],
+    requiredTagsByRegion: {
+      NSW: ['heatwave_rail_caution', 'thermal_track_limit', 'summer_freight_hold'],
+      SA: ['heatwave_rail_caution', 'thermal_track_limit', 'summer_freight_hold'],
+    },
+    productivitySynergyPoints: 5.8,
+    logisticsRelief: 0.032,
+  },
+  {
+    id: 'corr_qld_nt_livestock_export',
+    name: 'QLD–NT Livestock Export',
+    networkKind: 'trade',
+    regionSequence: ['QLD', 'NT'],
+    requiredTagsByRegion: {
+      QLD: ['auto_livestock_yard', 'export_quarantine_staging', 'cattle_rail_loadout'],
+      NT: ['auto_livestock_yard', 'export_quarantine_staging', 'cattle_rail_loadout'],
+    },
+    productivitySynergyPoints: 5.7,
+    logisticsRelief: 0.031,
+  },
+];
+
+
 // --- source: catalog/corridors-catalog.ts ---
 
 export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
@@ -2311,6 +2370,7 @@ export const TRANSPORT_CORRIDORS: TransportCorridorDefinition[] = [
   ...TRANSPORT_CORRIDORS_ROUND31,
   ...TRANSPORT_CORRIDORS_ROUND32,
   ...TRANSPORT_CORRIDORS_ROUND33,
+  ...TRANSPORT_CORRIDORS_ROUND34,
 ];
 
 export function corridorsByNetwork(): Record<StrategicNetworkKind, TransportCorridorDefinition[]> {
@@ -4135,6 +4195,62 @@ export const TRANSPORT_SCENARIOS_ROUND32: TransportStressScenario[] = [
 ];
 
 
+// --- source: catalog/scenarios-round33.ts ---
+
+export const TRANSPORT_SCENARIOS_ROUND33: TransportStressScenario[] = [
+  {
+    id: 'scn_wa_green_pellet_surge',
+    label: 'WA Green Pellet Surge',
+    description: 'Decarb steel demand overloads Hedland pellet berths.',
+    targetRegions: ['WA', 'QLD'],
+    networkKind: 'trade',
+    utilizationAdd: 0.26,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'rail'],
+  },
+  {
+    id: 'scn_qld_gladstone_pellet_delay',
+    label: 'Gladstone Pellet Delay',
+    description: 'Maintenance cuts DRI feed export slots.',
+    targetRegions: ['QLD', 'WA'],
+    networkKind: 'trade',
+    utilizationAdd: 0.23,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['port'],
+  },
+  {
+    id: 'scn_nsw_inland_flood_rail',
+    label: 'NSW Inland Flood Rail',
+    description: 'River flood strains Hunter levee protection.',
+    targetRegions: ['NSW', 'QLD'],
+    networkKind: 'freight',
+    utilizationAdd: 0.27,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['rail', 'road'],
+  },
+  {
+    id: 'scn_qld_levee_overtop',
+    label: 'Queensland Levee Overtop',
+    description: 'Heavy rain tests Rockhampton flood hardening.',
+    targetRegions: ['QLD', 'NSW'],
+    networkKind: 'freight',
+    utilizationAdd: 0.24,
+    conditionPenaltySteps: 1,
+    affectedCategories: ['logistics', 'road'],
+  },
+  {
+    id: 'scn_vic_port_drayage_peak',
+    label: 'Victoria Port Drayage Peak',
+    description: 'Container peak exhausts West Gate e-truck bays.',
+    targetRegions: ['VIC', 'NSW'],
+    networkKind: 'trade',
+    utilizationAdd: 0.22,
+    conditionPenaltySteps: 0,
+    affectedCategories: ['port', 'logistics'],
+  },
+];
+
+
 // --- source: catalog/scenarios-catalog.ts ---
 
 /** Scale-wave scenario library — measurable utilization + condition penalties. */
@@ -4329,6 +4445,7 @@ export const TRANSPORT_STRESS_SCENARIOS: TransportStressScenario[] = [
   ...TRANSPORT_SCENARIOS_ROUND31,
   ...TRANSPORT_SCENARIOS_ROUND32,
   ...TRANSPORT_SCENARIOS_ROUND33,
+  ...TRANSPORT_SCENARIOS_ROUND34,
 ];
 
 export function getScenarioById(id: string): TransportStressScenario | undefined {
@@ -12356,6 +12473,233 @@ export const SCALE_WAVE_ROUND32_ASSETS = [
 ];
 
 
+// --- source: catalog/scale-wave-round33-assets.ts ---
+
+export const ROUND33_ROADS: RoadSegmentAsset[] = [
+  {
+    id: 'road_wa_karratha_pellet_haul',
+    category: 'road',
+    name: 'Karratha Green Pellet Haul',
+    description: 'WA decarbonised bulk pellet road feed.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['green_pellet_export', 'dri_feed_stock', 'decarb_bulk_rail'],
+    laneKilometres: 44,
+    designSpeedKmh: 87,
+    freightShare: 0.42,
+    urbanShare: 0.03,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_gladstone_pellet_feed',
+    category: 'road',
+    name: 'Gladstone Pellet Feed',
+    description: 'QLD DRI feed stock road to export berths.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade'],
+    tags: ['green_pellet_export', 'dri_feed_stock', 'decarb_bulk_rail'],
+    laneKilometres: 26,
+    designSpeedKmh: 83,
+    freightShare: 0.34,
+    urbanShare: 0.12,
+    tollRoad: false,
+  },
+  {
+    id: 'road_nsw_dubbo_flood_levee',
+    category: 'road',
+    name: 'Dubbo Flood Levee Access',
+    description: 'NSW inland flood routing and levee rail feed.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 4.2,
+    strategicNetworks: ['freight'],
+    tags: ['flood_levee_rail', 'river_crossing_harden', 'inland_flood_routing'],
+    laneKilometres: 34,
+    designSpeedKmh: 84,
+    freightShare: 0.31,
+    urbanShare: 0.09,
+    tollRoad: false,
+  },
+  {
+    id: 'road_qld_rockhampton_flood_harden',
+    category: 'road',
+    name: 'Rockhampton Flood Harden Road',
+    description: 'QLD river crossing hardened freight access.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.1,
+    strategicNetworks: ['freight', 'trade'],
+    tags: ['flood_levee_rail', 'river_crossing_harden', 'inland_flood_routing'],
+    laneKilometres: 28,
+    designSpeedKmh: 81,
+    freightShare: 0.27,
+    urbanShare: 0.14,
+    tollRoad: false,
+  },
+];
+
+export const ROUND33_RAIL: RailCorridorAsset[] = [
+  {
+    id: 'rail_wa_pilbara_pellet_rail',
+    category: 'rail',
+    name: 'Pilbara Green Pellet Rail',
+    description: 'WA decarb bulk pellet export corridor.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.5,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['green_pellet_export', 'dri_feed_stock', 'decarb_bulk_rail'],
+    trackKilometres: 112,
+    dualTrackShare: 0.45,
+    electrifiedShare: 0.2,
+    designFreightTonnesPerYear: 8_200_000,
+    passengerCapable: false,
+  },
+  {
+    id: 'rail_nsw_hunter_flood_levee',
+    category: 'rail',
+    name: 'Hunter Flood Levee Rail',
+    description: 'NSW flood-protected bulk and passenger freight line.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'QLD'],
+    baseProductivityPoints: 5.0,
+    strategicNetworks: ['freight'],
+    tags: ['flood_levee_rail', 'river_crossing_harden', 'inland_flood_routing'],
+    trackKilometres: 58,
+    dualTrackShare: 0.51,
+    electrifiedShare: 0.57,
+    designFreightTonnesPerYear: 4_800_000,
+    passengerCapable: true,
+  },
+  {
+    id: 'rail_nsw_port_kembla_drayage_feed',
+    category: 'rail',
+    name: 'Port Kembla Drayage Feed',
+    description: 'NSW zero-emission port gate rail shuttle.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.7,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['zero_emission_drayage', 'port_gate_electric', 'short_haul_e_truck'],
+    trackKilometres: 22,
+    dualTrackShare: 0.55,
+    electrifiedShare: 0.62,
+    designFreightTonnesPerYear: 2_900_000,
+    passengerCapable: true,
+  },
+];
+
+export const ROUND33_PORTS: PortAsset[] = [
+  {
+    id: 'port_wa_port_hedland_pellet',
+    category: 'port',
+    name: 'Port Hedland Green Pellet',
+    description: 'WA green iron pellet bulk export.',
+    hostRegion: 'WA',
+    servedRegions: ['WA', 'QLD'],
+    baseProductivityPoints: 5.9,
+    strategicNetworks: ['trade'],
+    tags: ['green_pellet_export', 'dri_feed_stock', 'decarb_bulk_rail', 'bulk'],
+    berthCount: 4,
+    maxDraftMetres: 16.2,
+    teuCapacityPerYear: 130_000,
+    automationLevel: 2,
+    bulkShare: 0.74,
+  },
+  {
+    id: 'port_qld_gladstone_pellet_export',
+    category: 'port',
+    name: 'Gladstone Pellet Export',
+    description: 'QLD DRI feed stock deep-water export.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'WA'],
+    baseProductivityPoints: 5.4,
+    strategicNetworks: ['trade'],
+    tags: ['green_pellet_export', 'dri_feed_stock', 'decarb_bulk_rail'],
+    berthCount: 3,
+    maxDraftMetres: 14.5,
+    teuCapacityPerYear: 168_000,
+    automationLevel: 2,
+    bulkShare: 0.62,
+  },
+  {
+    id: 'port_vic_westgate_zero_drayage',
+    category: 'port',
+    name: 'West Gate Zero Drayage Port',
+    description: 'Victorian electric short-haul port gate moves.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 5.1,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['zero_emission_drayage', 'port_gate_electric', 'short_haul_e_truck'],
+    berthCount: 3,
+    maxDraftMetres: 12.8,
+    teuCapacityPerYear: 240_000,
+    automationLevel: 3,
+    bulkShare: 0.15,
+  },
+];
+
+export const ROUND33_LOGISTICS: LogisticsNodeAsset[] = [
+  {
+    id: 'log_qld_rockhampton_flood_stores',
+    category: 'logistics',
+    name: 'Rockhampton Flood Stores',
+    description: 'QLD inland flood routing consolidation.',
+    hostRegion: 'QLD',
+    servedRegions: ['QLD', 'NSW'],
+    baseProductivityPoints: 4.5,
+    strategicNetworks: ['freight'],
+    tags: ['flood_levee_rail', 'river_crossing_harden', 'inland_flood_routing'],
+    warehouseSqm: 58_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail'],
+    lastMileCoveragePct: 48,
+  },
+  {
+    id: 'log_nsw_port_kembla_e_drayage_yard',
+    category: 'logistics',
+    name: 'Port Kembla E-Drayage Yard',
+    description: 'NSW port gate electric truck staging.',
+    hostRegion: 'NSW',
+    servedRegions: ['NSW', 'VIC'],
+    baseProductivityPoints: 4.6,
+    strategicNetworks: ['trade'],
+    tags: ['zero_emission_drayage', 'port_gate_electric', 'short_haul_e_truck'],
+    warehouseSqm: 52_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'rail', 'port'],
+    lastMileCoveragePct: 66,
+  },
+  {
+    id: 'log_vic_laverton_zero_drayage_dc',
+    category: 'logistics',
+    name: 'Laverton Zero Drayage DC',
+    description: 'Victorian short-haul e-truck port logistics.',
+    hostRegion: 'VIC',
+    servedRegions: ['VIC', 'NSW'],
+    baseProductivityPoints: 4.4,
+    strategicNetworks: ['trade', 'freight'],
+    tags: ['zero_emission_drayage', 'port_gate_electric', 'short_haul_e_truck'],
+    warehouseSqm: 48_000,
+    coldChainCapable: false,
+    intermodalLinks: ['road', 'port'],
+    lastMileCoveragePct: 72,
+  },
+];
+
+export const SCALE_WAVE_ROUND33_ASSETS = [
+  ...ROUND33_ROADS,
+  ...ROUND33_RAIL,
+  ...ROUND33_PORTS,
+  ...ROUND33_LOGISTICS,
+];
+
+
 // --- source: catalog/all-catalog.ts ---
 
 export function getAgent12TransportCatalog(): TransportAsset[] {
@@ -12397,6 +12741,7 @@ export function getAgent12TransportCatalog(): TransportAsset[] {
     ...SCALE_WAVE_ROUND31_ASSETS,
     ...SCALE_WAVE_ROUND32_ASSETS,
     ...SCALE_WAVE_ROUND33_ASSETS,
+    ...SCALE_WAVE_ROUND34_ASSETS,
   ];
 }
 
@@ -14196,6 +14541,64 @@ export function vanadiumFlowBatteryExportProductivityMultiplier(
   const policyBoost = policy === 'accelerate' ? 0.035 : 0;
   const normalized = (index - 5) / 100;
   return clamp(1 + normalized * 0.04 + policyBoost, 0.93, 1.1);
+}
+
+
+// --- source: network/green-iron-pellet-export-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type GreenIronPelletExportPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 green iron pellet and DRI feed export throughput by region. */
+export function computeGreenIronPelletExportByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    const tagged = asset.tags.some(
+      (t) => t === 'green_pellet_export' || t === 'dri_feed_stock' || t === 'decarb_bulk_rail',
+    );
+    if (!tagged) continue;
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 2.15 + asset.bulkShare * 4.7;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 80_000 + asset.intermodalLinks.length * 0.73;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 525;
+    }
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 8_800_000;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalGreenIronPelletExportIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.47 + max * 0.53, 5, 75) * 10) / 10;
+}
+
+export function greenIronPelletExportProductivityMultiplier(
+  index: number,
+  policy: GreenIronPelletExportPolicy = 'baseline',
+): number {
+  const policyBoost = policy === 'accelerate' ? 0.036 : 0;
+  const normalized = (index - 5) / 100;
+  return clamp(1 + normalized * 0.041 + policyBoost, 0.93, 1.1);
 }
 
 
@@ -16458,6 +16861,93 @@ export function bushfireEvacuationRailBridgeProductivityMultiplier(
 ): number {
   const bias = policy === 'surge' ? 1.022 : 1;
   return (1 + (share - 0.051) * 0.026) * bias;
+}
+
+
+// --- source: operations/flood-levee-rail-protection-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type FloodLeveeRailProtectionPolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–100 flood levee rail protection readiness by region. */
+export function computeFloodLeveeRailProtectionByRegion(
+  operationalAssets: TransportAsset[],
+  networkStress = 0.5,
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 5])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'flood_levee_rail' || t === 'river_crossing_harden' || t === 'inland_flood_routing',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'rail' && 'designFreightTonnesPerYear' in asset) {
+      byRegion[asset.hostRegion] += asset.designFreightTonnesPerYear / 13_800_000 + asset.trackKilometres / 220;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 540;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 78_000;
+    }
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 0.9;
+    }
+  }
+
+  const stress = clamp(networkStress, 0.05, 1.1);
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code] * (1.042 - stress * 0.025), 5, 79) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalFloodLeveeRailProtectionIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.5 + max * 0.5, 6, 77) * 10) / 10;
+}
+
+export function computeFloodLeveeRailProtectionShare(
+  operationalAssets: TransportAsset[],
+  policy: FloodLeveeRailProtectionPolicy = 'baseline',
+): number {
+  let protectedUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (asset.tags.includes('flood_levee_rail') || asset.tags.includes('river_crossing_harden')) {
+      if (asset.category === 'rail' && 'trackKilometres' in asset) {
+        totalUnits += asset.trackKilometres / 88;
+        protectedUnits += (asset.trackKilometres / 88) * 0.6;
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 500;
+        protectedUnits += (asset.laneKilometres / 500) * 0.54;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.036;
+  const policyBoost = policy === 'harden' ? 0.028 : 0;
+  return Math.round(clamp(protectedUnits / totalUnits + policyBoost, 0.035, 0.27) * 1000) / 1000;
+}
+
+export function floodLeveeRailProtectionProductivityMultiplier(
+  share: number,
+  policy: FloodLeveeRailProtectionPolicy,
+): number {
+  const bias = policy === 'harden' ? 1.021 : 1;
+  return (1 + (share - 0.053) * 0.027) * bias;
 }
 
 
@@ -18951,6 +19441,98 @@ export function nationalAutomatedGrainSiloRailLoadoutThroughputIndex(
 }
 
 
+// --- source: productivity/port-zero-emission-drayage-index.ts ---
+  AU_REGION_CODES,
+  type AuRegionCode,
+  type PortZeroEmissionDrayagePolicy,
+  type TransportAsset,
+} from '../types.ts';
+
+/** 0–1 share of port gate moves using zero-emission drayage. */
+export function computePortZeroEmissionDrayageShare(
+  operationalAssets: TransportAsset[],
+  policy: PortZeroEmissionDrayagePolicy = 'baseline',
+): number {
+  let zeroUnits = 0;
+  let totalUnits = 0;
+
+  for (const asset of operationalAssets) {
+    if (
+      asset.tags.some(
+        (t) => t === 'zero_emission_drayage' || t === 'port_gate_electric' || t === 'short_haul_e_truck',
+      )
+    ) {
+      if (asset.category === 'port') {
+        totalUnits += asset.berthCount * 1.4 + asset.teuCapacityPerYear / 300_000;
+        zeroUnits +=
+          (asset.berthCount * 1.4 + asset.teuCapacityPerYear / 300_000) *
+          (asset.automationLevel >= 2 ? 0.58 : 0.42);
+      }
+      if (asset.category === 'road' && 'laneKilometres' in asset) {
+        totalUnits += asset.laneKilometres / 420;
+        zeroUnits += (asset.laneKilometres / 420) * 0.52;
+      }
+      if (asset.category === 'logistics') {
+        totalUnits += asset.warehouseSqm / 64_000;
+        zeroUnits += (asset.warehouseSqm / 64_000) * 0.5;
+      }
+    }
+  }
+
+  if (totalUnits <= 0) return 0.039;
+  const policyBoost = policy === 'expand' ? 0.031 : 0;
+  return Math.round(clamp(zeroUnits / totalUnits + policyBoost, 0.038, 0.3) * 1000) / 1000;
+}
+
+export function portZeroEmissionDrayageProductivityMultiplier(
+  share: number,
+  policy: PortZeroEmissionDrayagePolicy,
+): number {
+  const bias = policy === 'expand' ? 1.023 : 1;
+  return (1 + (share - 0.06) * 0.028) * bias;
+}
+
+export function computePortZeroEmissionDrayageThroughputByRegion(
+  operationalAssets: TransportAsset[],
+): Record<AuRegionCode, number> {
+  const byRegion = Object.fromEntries(AU_REGION_CODES.map((c) => [c, 0])) as Record<AuRegionCode, number>;
+
+  for (const asset of operationalAssets) {
+    if (
+      !asset.tags.some(
+        (t) => t === 'zero_emission_drayage' || t === 'port_gate_electric' || t === 'short_haul_e_truck',
+      )
+    ) {
+      continue;
+    }
+
+    if (asset.category === 'port') {
+      byRegion[asset.hostRegion] += asset.berthCount * 1.85 + asset.teuCapacityPerYear / 280_000;
+    }
+    if (asset.category === 'logistics') {
+      byRegion[asset.hostRegion] += asset.warehouseSqm / 67_000;
+    }
+    if (asset.category === 'road' && 'laneKilometres' in asset) {
+      byRegion[asset.hostRegion] += asset.laneKilometres / 400;
+    }
+  }
+
+  for (const code of AU_REGION_CODES) {
+    byRegion[code] = Math.round(clamp(byRegion[code], 0, 100) * 10) / 10;
+  }
+  return byRegion;
+}
+
+export function nationalPortZeroEmissionDrayageThroughputIndex(
+  byRegion: Record<AuRegionCode, number>,
+): number {
+  const values = AU_REGION_CODES.map((c) => byRegion[c]);
+  const avg = values.reduce((s, v) => s + v, 0) / AU_REGION_CODES.length;
+  const max = Math.max(...values);
+  return Math.round(clamp(avg * 0.51 + max * 0.49, 2, 56) * 10) / 10;
+}
+
+
 // --- source: productivity/compute-national-productivity.ts ---
   AU_REGION_CODES,
   type AuRegionCode,
@@ -19538,6 +20120,20 @@ export function formatRegionalProductivitySummary(region: RegionalTransportProdu
   nationalPortZeroEmissionDrayageThroughputIndex,
   portZeroEmissionDrayageProductivityMultiplier,
 } from './port-zero-emission-drayage-index.ts';
+  computeTitaniumSpongeExportByRegion,
+  nationalTitaniumSpongeExportIndex,
+  titaniumSpongeExportProductivityMultiplier,
+} from '../network/titanium-sponge-export-index.ts';
+  computeHeatwaveRailSpeedRestrictionByRegion,
+  computeHeatwaveRailSpeedRestrictionShare,
+  heatwaveRailSpeedRestrictionProductivityMultiplier,
+  nationalHeatwaveRailSpeedRestrictionIndex,
+} from '../operations/heatwave-rail-speed-restriction-index.ts';
+  computeAutomatedLivestockExportYardShare,
+  computeAutomatedLivestockExportYardThroughputByRegion,
+  automatedLivestockExportYardProductivityMultiplier,
+  nationalAutomatedLivestockExportYardThroughputIndex,
+} from './automated-livestock-export-yard-index.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
   if (band === 'low') return -0.06;
@@ -20661,6 +21257,35 @@ export function computeTransportInfrastructureState(
     portZeroEmissionDrayageShare,
     options?.portZeroEmissionDrayagePolicy ?? 'baseline',
   );
+  const titaniumSpongeExportByRegion = computeTitaniumSpongeExportByRegion(ops);
+  const nationalTitaniumSponge = nationalTitaniumSpongeExportIndex(titaniumSpongeExportByRegion);
+  const titaniumSpongeMult = titaniumSpongeExportProductivityMultiplier(
+    nationalTitaniumSponge,
+    options?.titaniumSpongeExportPolicy ?? 'baseline',
+  );
+  const heatwaveRailSpeedRestrictionByRegion = computeHeatwaveRailSpeedRestrictionByRegion(ops, networkStress);
+  const nationalHeatwaveRail = nationalHeatwaveRailSpeedRestrictionIndex(heatwaveRailSpeedRestrictionByRegion);
+  const heatwaveRailSpeedRestrictionShare = computeHeatwaveRailSpeedRestrictionShare(
+    ops,
+    options?.heatwaveRailSpeedRestrictionPolicy ?? 'baseline',
+  );
+  const heatwaveRailMult = heatwaveRailSpeedRestrictionProductivityMultiplier(
+    heatwaveRailSpeedRestrictionShare,
+    options?.heatwaveRailSpeedRestrictionPolicy ?? 'baseline',
+  );
+  const automatedLivestockExportYardThroughputByRegion =
+    computeAutomatedLivestockExportYardThroughputByRegion(ops);
+  const nationalLivestockYard = nationalAutomatedLivestockExportYardThroughputIndex(
+    automatedLivestockExportYardThroughputByRegion,
+  );
+  const automatedLivestockExportYardShare = computeAutomatedLivestockExportYardShare(
+    ops,
+    options?.automatedLivestockExportYardPolicy ?? 'baseline',
+  );
+  const livestockYardMult = automatedLivestockExportYardProductivityMultiplier(
+    automatedLivestockExportYardShare,
+    options?.automatedLivestockExportYardPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -20717,6 +21342,9 @@ export function computeTransportInfrastructureState(
     const greenPelletBoost = (greenIronPelletExportByRegion[code] - 5) * 0.0035;
     const floodLeveeBoost = (floodLeveeRailProtectionByRegion[code] - 6) * 0.0031;
     const zeroDrayageBoost = (portZeroEmissionDrayageThroughputByRegion[code] - 2) * 0.0027;
+    const titaniumSpongeBoost = (titaniumSpongeExportByRegion[code] - 5) * 0.0034;
+    const heatwaveRailBoost = (heatwaveRailSpeedRestrictionByRegion[code] - 6) * 0.003;
+    const livestockYardBoost = (automatedLivestockExportYardThroughputByRegion[code] - 2) * 0.0026;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -21238,7 +21866,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/34' &&
+      infra.schemaVersion === 'agent12/35' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -21352,8 +21980,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalVanadiumFlowBatteryExportIndex >= 5 &&
       infra.nationalBushfireEvacuationRailBridgeIndex >= 6 &&
       infra.automatedGrainSiloRailLoadoutShare >= 0.03 &&
-      infra.nationalAutomatedGrainSiloRailLoadoutThroughputIndex >= 1.9,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} vanadium=${infra.nationalVanadiumFlowBatteryExportIndex.toFixed(1)} evac=${infra.nationalBushfireEvacuationRailBridgeIndex.toFixed(1)} grain=${infra.nationalAutomatedGrainSiloRailLoadoutThroughputIndex.toFixed(1)}`,
+      infra.nationalAutomatedGrainSiloRailLoadoutThroughputIndex >= 1.9 &&
+      infra.nationalGreenIronPelletExportIndex >= 5 &&
+      infra.nationalFloodLeveeRailProtectionIndex >= 6 &&
+      infra.portZeroEmissionDrayageShare >= 0.03 &&
+      infra.nationalPortZeroEmissionDrayageThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} pellet=${infra.nationalGreenIronPelletExportIndex.toFixed(1)} levee=${infra.nationalFloodLeveeRailProtectionIndex.toFixed(1)} drayage=${infra.nationalPortZeroEmissionDrayageThroughputIndex.toFixed(1)}`,
   });
 
   return results;

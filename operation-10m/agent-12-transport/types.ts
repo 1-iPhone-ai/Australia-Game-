@@ -351,8 +351,14 @@ export type FloodLeveeRailProtectionPolicy = 'baseline' | 'harden';
 
 export type PortZeroEmissionDrayagePolicy = 'baseline' | 'expand';
 
+export type TitaniumSpongeExportPolicy = 'baseline' | 'accelerate';
+
+export type HeatwaveRailSpeedRestrictionPolicy = 'baseline' | 'relax';
+
+export type AutomatedLivestockExportYardPolicy = 'baseline' | 'expand';
+
 export interface TransportInfrastructureState {
-  schemaVersion: 'agent12/34';
+  schemaVersion: 'agent12/35';
   turn: number;
   productivity: NationalTransportProductivityReport;
   activeCorridors: CorridorActivation[];
@@ -590,6 +596,14 @@ export interface TransportInfrastructureState {
   portZeroEmissionDrayageShare: number;
   nationalPortZeroEmissionDrayageThroughputIndex: number;
   portZeroEmissionDrayageThroughputByRegion: Record<AuRegionCode, number>;
+  nationalTitaniumSpongeExportIndex: number;
+  titaniumSpongeExportByRegion: Record<AuRegionCode, number>;
+  heatwaveRailSpeedRestrictionShare: number;
+  nationalHeatwaveRailSpeedRestrictionIndex: number;
+  heatwaveRailSpeedRestrictionByRegion: Record<AuRegionCode, number>;
+  automatedLivestockExportYardShare: number;
+  nationalAutomatedLivestockExportYardThroughputIndex: number;
+  automatedLivestockExportYardThroughputByRegion: Record<AuRegionCode, number>;
   computeMs: number;
 }
 
@@ -682,6 +696,9 @@ export interface TransportInfrastructureOptions {
   greenIronPelletExportPolicy?: GreenIronPelletExportPolicy;
   floodLeveeRailProtectionPolicy?: FloodLeveeRailProtectionPolicy;
   portZeroEmissionDrayagePolicy?: PortZeroEmissionDrayagePolicy;
+  titaniumSpongeExportPolicy?: TitaniumSpongeExportPolicy;
+  heatwaveRailSpeedRestrictionPolicy?: HeatwaveRailSpeedRestrictionPolicy;
+  automatedLivestockExportYardPolicy?: AutomatedLivestockExportYardPolicy;
 }
 
 export interface V94ProjectSnapshot {

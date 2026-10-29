@@ -68,7 +68,7 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
   results.push({
     id: 'infrastructure_state_v9',
     ok:
-      infra.schemaVersion === 'agent12/34' &&
+      infra.schemaVersion === 'agent12/35' &&
       infra.corridorSynergyPoints > 0 &&
       infra.activeCorridors.some((c) => c.active) &&
       infra.scenarioStackFactor >= 1 &&
@@ -186,8 +186,12 @@ export function runAgent12TransportSelfChecks(): SelfCheckResult[] {
       infra.nationalGreenIronPelletExportIndex >= 5 &&
       infra.nationalFloodLeveeRailProtectionIndex >= 6 &&
       infra.portZeroEmissionDrayageShare >= 0.03 &&
-      infra.nationalPortZeroEmissionDrayageThroughputIndex >= 2,
-    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} pellet=${infra.nationalGreenIronPelletExportIndex.toFixed(1)} levee=${infra.nationalFloodLeveeRailProtectionIndex.toFixed(1)} drayage=${infra.nationalPortZeroEmissionDrayageThroughputIndex.toFixed(1)}`,
+      infra.nationalPortZeroEmissionDrayageThroughputIndex >= 2 &&
+      infra.nationalTitaniumSpongeExportIndex >= 5 &&
+      infra.nationalHeatwaveRailSpeedRestrictionIndex >= 6 &&
+      infra.automatedLivestockExportYardShare >= 0.03 &&
+      infra.nationalAutomatedLivestockExportYardThroughputIndex >= 2,
+    detail: `synergy=${infra.corridorSynergyPoints.toFixed(1)} titanium=${infra.nationalTitaniumSpongeExportIndex.toFixed(1)} heatwave=${infra.nationalHeatwaveRailSpeedRestrictionIndex.toFixed(1)} livestock=${infra.nationalAutomatedLivestockExportYardThroughputIndex.toFixed(1)}`,
   });
 
   return results;

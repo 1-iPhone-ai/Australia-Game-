@@ -27,6 +27,13 @@ npm run build:agent12-chunk
 
 Generated assembly artifact: `operation-10m/modules/agent-12-infrastructure/chunk.tsx` (`OP10M_MODULE_BEGIN agent-12-infrastructure`).
 
+## Scale wave round 34
+
+- Schema **`agent12/35`**: titanium sponge export throughput, heatwave rail speed-restriction readiness, automated livestock export yard share (`titaniumSpongeExportPolicy`, `heatwaveRailSpeedRestrictionPolicy`, `automatedLivestockExportYardPolicy`)
+- Catalog: **471** assets, **116** corridors, **188** scenarios
+- Systems: `network/titanium-sponge-export-index.ts`, `operations/heatwave-rail-speed-restriction-index.ts`, `productivity/automated-livestock-export-yard-index.ts`
+- Verify: `npm run test:agent12`, `npm run build:agent12-chunk`
+
 ## Scale wave round 33
 
 - Schema **`agent12/34`**: green iron pellet export throughput, flood levee rail protection readiness, port zero-emission drayage share (`greenIronPelletExportPolicy`, `floodLeveeRailProtectionPolicy`, `portZeroEmissionDrayagePolicy`)

@@ -516,6 +516,23 @@ import {
   nationalPortZeroEmissionDrayageThroughputIndex,
   portZeroEmissionDrayageProductivityMultiplier,
 } from './port-zero-emission-drayage-index.ts';
+import {
+  computeTitaniumSpongeExportByRegion,
+  nationalTitaniumSpongeExportIndex,
+  titaniumSpongeExportProductivityMultiplier,
+} from '../network/titanium-sponge-export-index.ts';
+import {
+  computeHeatwaveRailSpeedRestrictionByRegion,
+  computeHeatwaveRailSpeedRestrictionShare,
+  heatwaveRailSpeedRestrictionProductivityMultiplier,
+  nationalHeatwaveRailSpeedRestrictionIndex,
+} from '../operations/heatwave-rail-speed-restriction-index.ts';
+import {
+  computeAutomatedLivestockExportYardShare,
+  computeAutomatedLivestockExportYardThroughputByRegion,
+  automatedLivestockExportYardProductivityMultiplier,
+  nationalAutomatedLivestockExportYardThroughputIndex,
+} from './automated-livestock-export-yard-index.ts';
 import type { SeasonalDemandBand } from '../types.ts';
 
 function seasonalFreightUtilizationDelta(band?: SeasonalDemandBand): number {
@@ -1640,6 +1657,35 @@ export function computeTransportInfrastructureState(
     portZeroEmissionDrayageShare,
     options?.portZeroEmissionDrayagePolicy ?? 'baseline',
   );
+  const titaniumSpongeExportByRegion = computeTitaniumSpongeExportByRegion(ops);
+  const nationalTitaniumSponge = nationalTitaniumSpongeExportIndex(titaniumSpongeExportByRegion);
+  const titaniumSpongeMult = titaniumSpongeExportProductivityMultiplier(
+    nationalTitaniumSponge,
+    options?.titaniumSpongeExportPolicy ?? 'baseline',
+  );
+  const heatwaveRailSpeedRestrictionByRegion = computeHeatwaveRailSpeedRestrictionByRegion(ops, networkStress);
+  const nationalHeatwaveRail = nationalHeatwaveRailSpeedRestrictionIndex(heatwaveRailSpeedRestrictionByRegion);
+  const heatwaveRailSpeedRestrictionShare = computeHeatwaveRailSpeedRestrictionShare(
+    ops,
+    options?.heatwaveRailSpeedRestrictionPolicy ?? 'baseline',
+  );
+  const heatwaveRailMult = heatwaveRailSpeedRestrictionProductivityMultiplier(
+    heatwaveRailSpeedRestrictionShare,
+    options?.heatwaveRailSpeedRestrictionPolicy ?? 'baseline',
+  );
+  const automatedLivestockExportYardThroughputByRegion =
+    computeAutomatedLivestockExportYardThroughputByRegion(ops);
+  const nationalLivestockYard = nationalAutomatedLivestockExportYardThroughputIndex(
+    automatedLivestockExportYardThroughputByRegion,
+  );
+  const automatedLivestockExportYardShare = computeAutomatedLivestockExportYardShare(
+    ops,
+    options?.automatedLivestockExportYardPolicy ?? 'baseline',
+  );
+  const livestockYardMult = automatedLivestockExportYardProductivityMultiplier(
+    automatedLivestockExportYardShare,
+    options?.automatedLivestockExportYardPolicy ?? 'baseline',
+  );
 
   for (const code of AU_REGION_CODES) {
     const offshoreBoost = (offshoreWindLogisticsByRegion[code] - 5) * 0.0053;
@@ -1696,6 +1742,9 @@ export function computeTransportInfrastructureState(
     const greenPelletBoost = (greenIronPelletExportByRegion[code] - 5) * 0.0035;
     const floodLeveeBoost = (floodLeveeRailProtectionByRegion[code] - 6) * 0.0031;
     const zeroDrayageBoost = (portZeroEmissionDrayageThroughputByRegion[code] - 2) * 0.0027;
+    const titaniumSpongeBoost = (titaniumSpongeExportByRegion[code] - 5) * 0.0034;
+    const heatwaveRailBoost = (heatwaveRailSpeedRestrictionByRegion[code] - 6) * 0.003;
+    const livestockYardBoost = (automatedLivestockExportYardThroughputByRegion[code] - 2) * 0.0026;
     productivity.byRegion[code].productivityIndexBonus =
       (productivity.byRegion[code].productivityIndexBonus +
         offshoreBoost +
@@ -1751,7 +1800,10 @@ export function computeTransportInfrastructureState(
         grainSiloAutoBoost +
         greenPelletBoost +
         floodLeveeBoost +
-        zeroDrayageBoost) *
+        zeroDrayageBoost +
+        titaniumSpongeBoost +
+        heatwaveRailBoost +
+        livestockYardBoost) *
       offshoreMult *
       batteryMult *
       cruiseMult *
@@ -1805,7 +1857,10 @@ export function computeTransportInfrastructureState(
       grainSiloAutoMult *
       greenPelletMult *
       floodLeveeMult *
-      zeroDrayageMult;
+      zeroDrayageMult *
+      titaniumSpongeMult *
+      heatwaveRailMult *
+      livestockYardMult;
   }
   productivity.nationalProductivityIndexBonus =
     AU_REGION_CODES.reduce((s, c) => s + productivity.byRegion[c].productivityIndexBonus, 0) +
@@ -1882,7 +1937,10 @@ export function computeTransportInfrastructureState(
     nationalGrainSiloAuto * 0.003 +
     nationalGreenPellet * 0.003 +
     nationalFloodLevee * 0.003 +
-    nationalZeroDrayage * 0.003;
+    nationalZeroDrayage * 0.003 +
+    nationalTitaniumSponge * 0.003 +
+    nationalHeatwaveRail * 0.003 +
+    nationalLivestockYard * 0.003;
 
   const projectedBacklogNextTurn = projectMaintenanceBacklogNextTurn(
     options?.maintenanceBacklogByAssetId,
@@ -1897,7 +1955,7 @@ export function computeTransportInfrastructureState(
     (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 + productivity.computeMs;
 
   return {
-    schemaVersion: 'agent12/34',
+    schemaVersion: 'agent12/35',
     turn: baseInputs.turn,
     productivity,
     activeCorridors: corridorActivations,
@@ -2135,6 +2193,14 @@ export function computeTransportInfrastructureState(
     portZeroEmissionDrayageShare,
     nationalPortZeroEmissionDrayageThroughputIndex: nationalZeroDrayage,
     portZeroEmissionDrayageThroughputByRegion,
+    nationalTitaniumSpongeExportIndex: nationalTitaniumSponge,
+    titaniumSpongeExportByRegion,
+    heatwaveRailSpeedRestrictionShare,
+    nationalHeatwaveRailSpeedRestrictionIndex: nationalHeatwaveRail,
+    heatwaveRailSpeedRestrictionByRegion,
+    automatedLivestockExportYardShare,
+    nationalAutomatedLivestockExportYardThroughputIndex: nationalLivestockYard,
+    automatedLivestockExportYardThroughputByRegion,
     computeMs,
   };
 }
