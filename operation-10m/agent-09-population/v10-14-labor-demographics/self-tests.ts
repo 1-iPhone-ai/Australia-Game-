@@ -242,9 +242,14 @@ import { computeNationalCareTenacityCouplingBrief } from './care-tenacity-coupli
 import { computeNationalTenacityResilienceOutlook } from './tenacity-resilience-outlook';
 import { computeNationalSubjectTenacityReadinessBrief } from './subject-tenacity-readiness-brief';
 import { computeNationalWorkforceTenacityDepthIndex } from './national-workforce-tenacity-depth-index';
+import { computeNationalTenacityPerseveranceCouplingBrief } from './tenacity-perseverance-coupling-brief';
+import { computeNationalPerseveranceResilienceOutlook } from './perseverance-resilience-outlook';
+import { computeNationalSubjectPerseveranceReadinessBrief } from './subject-perseverance-readiness-brief';
+import { computeNationalWorkforcePerseveranceDepthIndex } from './national-workforce-perseverance-depth-index';
 import {
   tenacityEaseForRegion
 } from './catalog/workforce-tenacity-levers';
+import { perseveranceEaseForRegion } from './catalog/workforce-perseverance-levers';
 import { REGIONAL_MIGRATION_CORRIDORS, summarizeCorridorExposure } from './catalog/regional-migration-corridors';
 import { appendLaborAuditHistory, buildLaborTurnAuditEntry } from './labor-turn-audit';
 import { runLaborStressScenario } from './scenario-runner';
@@ -3023,6 +3028,77 @@ export function runV1014LaborDemographicsSelfTests(): {
     'tenacity depth steward note'
   );
   check('R4716', tenacityEaseForRegion('NSW', 'technology') > 0, 'tenacity ease for region');
+
+  check('R4801', Boolean(r1.state.tenacityPerseveranceCouplingBrief?.band), 'tenacity perseverance on state');
+  check(
+    'R4802',
+    (r1.state.tenacityPerseveranceCouplingBrief?.tenacityDrag ?? 0) >= 0,
+    'tenacity perseverance drag'
+  );
+  check('R4803', Boolean(r1.state.perseveranceResilienceOutlook?.band), 'perseverance resilience on state');
+  check(
+    'R4804',
+    (r1.state.perseveranceResilienceOutlook?.tenacityDrag ?? 0) >= 0,
+    'perseverance resilience tenacity drag'
+  );
+  check('R4805', Boolean(r1.state.subjectPerseveranceReadinessBrief?.band), 'subject perseverance on state');
+  check(
+    'R4806',
+    Boolean(r1.state.nationalWorkforcePerseveranceDepthIndex?.band),
+    'workforce perseverance depth on state'
+  );
+  check(
+    'R4807',
+    detectLaborDemographicsQuery('tenacity perseverance coupling') === 'tenacity_perseverance_coupling',
+    'GI tenacity perseverance detect'
+  );
+  check(
+    'R4808',
+    detectLaborDemographicsQuery('perseverance resilience') === 'perseverance_resilience',
+    'GI perseverance resilience detect'
+  );
+  check(
+    'R4809',
+    detectLaborDemographicsQuery('subject perseverance readiness') === 'subject_perseverance_readiness',
+    'GI subject perseverance detect'
+  );
+  check(
+    'R4810',
+    detectLaborDemographicsQuery('workforce perseverance depth') === 'workforce_perseverance_depth',
+    'GI workforce perseverance depth detect'
+  );
+  check(
+    'R4811',
+    answerLaborDemographicsQuestion(r1.state, 'workforce_perseverance_depth').headline.length > 5,
+    'GI workforce perseverance depth answer'
+  );
+  const tenacityPerseveranceOnly = computeNationalTenacityPerseveranceCouplingBrief(
+    r1.state,
+    r1.state.nationalWorkforceTenacityDepthIndex
+  );
+  check('R4812', tenacityPerseveranceOnly.summary.length > 10, 'tenacity perseverance standalone summary');
+  const perseveranceResilienceOnly = computeNationalPerseveranceResilienceOutlook(
+    r1.state,
+    r1.state.tenacityResilienceOutlook
+  );
+  check('R4813', perseveranceResilienceOnly.band.length > 3, 'perseverance resilience band string');
+  const subjectPerseveranceOnly = computeNationalSubjectPerseveranceReadinessBrief(
+    r1.state,
+    r1.state.subjectTenacityReadinessBrief,
+    r1.state.nationalWorkforceTenacityDepthIndex
+  );
+  check('R4814', subjectPerseveranceOnly.perseveranceDrag >= 0, 'subject perseverance drag');
+  check(
+    'R4815',
+    computeNationalWorkforcePerseveranceDepthIndex(
+      rHhBad.state,
+      rHhBad.state.tenacityPerseveranceCouplingBrief,
+      rHhBad.state.perseveranceResilienceOutlook,
+      rHhBad.state.subjectPerseveranceReadinessBrief
+    ).stewardNote.length > 8,
+    'perseverance depth steward note'
+  );
+  check('R4816', perseveranceEaseForRegion('NSW', 'technology') > 0, 'perseverance ease for region');
 
   for (let i = 19; i <= 50; i++) {
     const ok = validateLaborDemographicsState(r1.state).valid && r1.state.industryLinks.length <= V1014_LABOR_LIMITS.maxIndustryLinks;

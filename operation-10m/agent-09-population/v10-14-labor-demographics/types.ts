@@ -357,6 +357,10 @@ export interface NationalLaborDemographicsState {
   tenacityResilienceOutlook?: NationalTenacityResilienceOutlook;
   subjectTenacityReadinessBrief?: NationalSubjectTenacityReadinessBrief;
   nationalWorkforceTenacityDepthIndex?: NationalWorkforceTenacityDepthIndex;
+  tenacityPerseveranceCouplingBrief?: NationalTenacityPerseveranceCouplingBrief;
+  perseveranceResilienceOutlook?: NationalPerseveranceResilienceOutlook;
+  subjectPerseveranceReadinessBrief?: NationalSubjectPerseveranceReadinessBrief;
+  nationalWorkforcePerseveranceDepthIndex?: NationalWorkforcePerseveranceDepthIndex;
 }
 
 export type MigrationShockKind =
@@ -2321,6 +2325,54 @@ export interface NationalWorkforceTenacityDepthIndex {
   tenacityIndex: number;
   band: WorkforceTenacityDepthBand;
   tenacityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type TenacityPerseveranceCouplingBand = 'decoupled' | 'strained' | 'amplified' | 'elevated';
+
+export interface NationalTenacityPerseveranceCouplingBrief {
+  turn: number;
+  couplingIndex: number;
+  band: TenacityPerseveranceCouplingBand;
+  tenacityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type PerseveranceResilienceBand = 'ebbing' | 'patchy' | 'rising' | 'fortified';
+
+export interface NationalPerseveranceResilienceOutlook {
+  turn: number;
+  resilienceIndex: number;
+  band: PerseveranceResilienceBand;
+  tenacityDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type SubjectPerseveranceReadinessBand =
+  | 'below_perseverance'
+  | 'approaching'
+  | 'perseverance_ready'
+  | 'tenacity_locked';
+
+export interface NationalSubjectPerseveranceReadinessBrief {
+  turn: number;
+  perseveranceIndex: number;
+  band: SubjectPerseveranceReadinessBand;
+  perseveranceDrag: number;
+  summary: string;
+  stewardNote: string;
+}
+
+export type WorkforcePerseveranceDepthBand = 'fragile' | 'thin' | 'elevated' | 'perseverance';
+
+export interface NationalWorkforcePerseveranceDepthIndex {
+  turn: number;
+  perseveranceIndex: number;
+  band: WorkforcePerseveranceDepthBand;
+  perseveranceDrag: number;
   summary: string;
   stewardNote: string;
 }

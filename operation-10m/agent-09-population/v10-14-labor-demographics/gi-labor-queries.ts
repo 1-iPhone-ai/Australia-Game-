@@ -175,7 +175,11 @@ export type LaborGiQueryTopic =
   | 'care_tenacity_coupling'
   | 'tenacity_resilience'
   | 'subject_tenacity_readiness'
-  | 'workforce_tenacity_depth';
+  | 'workforce_tenacity_depth'
+  | 'tenacity_perseverance_coupling'
+  | 'perseverance_resilience'
+  | 'subject_perseverance_readiness'
+  | 'workforce_perseverance_depth';
 
 export interface LaborGiAnswer {
   topic: LaborGiQueryTopic;
@@ -243,6 +247,7 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(endurance flexibility|endurance-flexibility coupling)/.test(q)) return 'endurance_flexibility_coupling';
   if (/\b(inclusion resilience|inclusion labor resilience)/.test(q)) return 'inclusion_resilience';
   if (/\b(subject commit readiness|commit readiness subject)/.test(q)) return 'subject_commit_readiness';
+  if (/\b(workforce perseverance depth|perseverance depth index labor)/.test(q)) return 'workforce_perseverance_depth';
   if (/\b(workforce tenacity depth|tenacity depth index labor)/.test(q)) return 'workforce_tenacity_depth';
   if (/\b(workforce tenacity|tenacity index labor)/.test(q)) return 'workforce_tenacity';
   if (/\b(tenacity care|tenacity-care coupling)/.test(q)) return 'tenacity_care_coupling';
@@ -376,6 +381,9 @@ export function detectLaborDemographicsQuery(raw: string): LaborGiQueryTopic | n
   if (/\b(care tenacity|care-tenacity coupling)/.test(q)) return 'care_tenacity_coupling';
   if (/\b(tenacity resilience)/.test(q)) return 'tenacity_resilience';
   if (/\b(subject tenacity readiness)/.test(q)) return 'subject_tenacity_readiness';
+  if (/\b(tenacity perseverance|tenacity-perseverance coupling)/.test(q)) return 'tenacity_perseverance_coupling';
+  if (/\b(perseverance resilience)/.test(q)) return 'perseverance_resilience';
+  if (/\b(subject perseverance readiness)/.test(q)) return 'subject_perseverance_readiness';
   if (/\b(labor market tight|market tightness|tightness brief)/.test(q)) return 'labor_tightness';
   if (/\b(hybrid participation|remote friction|work from home friction)/.test(q)) return 'hybrid_participation';
   if (/\b(migration shock|shock.*migrat)/.test(q)) return 'migration_shocks';
@@ -1770,6 +1778,38 @@ export function answerLaborDemographicsQuestion(
         fact: `Tenacity band ${state.nationalWorkforceTenacityDepthIndex?.band ?? 'unknown'}; tenacity drag ${Math.round(state.nationalWorkforceTenacityDepthIndex?.tenacityDrag ?? 0)}.`,
         inference: state.nationalWorkforceTenacityDepthIndex?.stewardNote || state.summary,
         projection: 'Tenacity depth synthesizes care-tenacity coupling, resilience, and subject tenacity.'
+      };
+    case 'tenacity_perseverance_coupling':
+      return {
+        topic,
+        headline: state.tenacityPerseveranceCouplingBrief?.summary || 'Tenacity-perseverance coupling unavailable.',
+        fact: `Coupling band ${state.tenacityPerseveranceCouplingBrief?.band ?? 'unknown'}; tenacity drag ${Math.round(state.tenacityPerseveranceCouplingBrief?.tenacityDrag ?? 0)}.`,
+        inference: state.tenacityPerseveranceCouplingBrief?.stewardNote || state.outlook,
+        projection: 'Coupling links workforce tenacity depth with perseverance levers — bounded indices only.'
+      };
+    case 'perseverance_resilience':
+      return {
+        topic,
+        headline: state.perseveranceResilienceOutlook?.summary || 'Perseverance resilience unavailable.',
+        fact: `Resilience band ${state.perseveranceResilienceOutlook?.band ?? 'unknown'}; tenacity drag ${Math.round(state.perseveranceResilienceOutlook?.tenacityDrag ?? 0)}.`,
+        inference: state.perseveranceResilienceOutlook?.stewardNote || state.outlook,
+        projection: 'Resilience outlook tracks tenacity resilience against perseverance levers for wave 48 depth.'
+      };
+    case 'subject_perseverance_readiness':
+      return {
+        topic,
+        headline: state.subjectPerseveranceReadinessBrief?.summary || 'Subject perseverance readiness unavailable.',
+        fact: `Perseverance band ${state.subjectPerseveranceReadinessBrief?.band ?? 'unknown'}; perseverance drag ${Math.round(state.subjectPerseveranceReadinessBrief?.perseveranceDrag ?? 0)}.`,
+        inference: state.subjectPerseveranceReadinessBrief?.stewardNote || state.summary,
+        projection: 'Subject perseverance readiness gates subject tenacity against tenacity depth for O10-227 wave 48.'
+      };
+    case 'workforce_perseverance_depth':
+      return {
+        topic,
+        headline: state.nationalWorkforcePerseveranceDepthIndex?.summary || 'Workforce perseverance depth unavailable.',
+        fact: `Perseverance band ${state.nationalWorkforcePerseveranceDepthIndex?.band ?? 'unknown'}; perseverance drag ${Math.round(state.nationalWorkforcePerseveranceDepthIndex?.perseveranceDrag ?? 0)}.`,
+        inference: state.nationalWorkforcePerseveranceDepthIndex?.stewardNote || state.summary,
+        projection: 'Perseverance depth synthesizes tenacity-perseverance coupling, resilience, and subject perseverance.'
       };
     default:
       return {
