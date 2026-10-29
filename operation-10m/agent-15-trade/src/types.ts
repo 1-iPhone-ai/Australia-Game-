@@ -186,6 +186,8 @@ export interface GTELPersisted {
   anchoredBookReadinessSmoothing?: number;
   /** Smoothed bilateral throughput certification score (0–1). */
   bilateralThroughputCertificationSmoothing?: number;
+  certifiedThroughputSustainmentSmoothing?: number;
+  bilateralCapacityHandoffGateSmoothing?: number;
 }
 
 export interface GTELState {
@@ -241,6 +243,8 @@ export interface GTELState {
   forwardBookAnchorStabilization: GTELForwardBookAnchorStabilizationSnapshot;
   anchoredBookReadiness: GTELAnchoredBookReadinessSnapshot;
   bilateralThroughputCertification: GTELBilateralThroughputCertificationSnapshot;
+  certifiedThroughputSustainment: GTELCertifiedThroughputSustainmentSnapshot;
+  bilateralCapacityHandoffGate: GTELBilateralCapacityHandoffGateSnapshot;
   inputHash: string;
 }
 
@@ -785,6 +789,26 @@ export interface GTELBilateralThroughputCertificationSnapshot {
   band: GTELBilateralThroughputCertificationBand;
   readinessSupport: number;
   logisticsClearance: number;
+  summary: string;
+}
+
+export type GTELCertifiedThroughputSustainmentBand = 'sustained' | 'holding' | 'fading' | 'exhausted';
+
+export interface GTELCertifiedThroughputSustainmentSnapshot {
+  score: number;
+  band: GTELCertifiedThroughputSustainmentBand;
+  certificationSupport: number;
+  anchorLift: number;
+  summary: string;
+}
+
+export type GTELBilateralCapacityHandoffGateBand = 'open' | 'queued' | 'throttled' | 'closed';
+
+export interface GTELBilateralCapacityHandoffGateSnapshot {
+  score: number;
+  band: GTELBilateralCapacityHandoffGateBand;
+  sustainmentSupport: number;
+  readinessLift: number;
   summary: string;
 }
 

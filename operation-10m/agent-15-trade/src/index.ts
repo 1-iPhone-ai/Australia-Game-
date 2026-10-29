@@ -49,5 +49,7 @@ export * from './trade-settlement-continuity.ts';
 export * from './forward-book-anchor-stabilization.ts';
 export * from './anchored-book-readiness.ts';
 export * from './bilateral-throughput-certification.ts';
+export * from './certified-throughput-sustainment.ts';
+export * from './bilateral-capacity-handoff-gate.ts';
 export * from './commodity-shock-scenarios.ts';
 export * from './self-tests.ts';

@@ -169,6 +169,16 @@ import {
   createEmptyBilateralThroughputCertificationSnapshot,
   bilateralThroughputCertificationExportScale,
 } from './bilateral-throughput-certification.ts';
+import {
+  computeCertifiedThroughputSustainmentSnapshot,
+  createEmptyCertifiedThroughputSustainmentSnapshot,
+  certifiedThroughputSustainmentExportScale,
+} from './certified-throughput-sustainment.ts';
+import {
+  computeBilateralCapacityHandoffGateSnapshot,
+  createEmptyBilateralCapacityHandoffGateSnapshot,
+  bilateralCapacityHandoffGateExportScale,
+} from './bilateral-capacity-handoff-gate.ts';
 import { createEmptyTradeFinanceSnapshot } from './trade-finance.ts';
 import { GTEL_PARTNER_DEFS, GTEL_COMMODITIES } from './constants.ts';
 import {
@@ -1383,6 +1393,46 @@ export function runAgent15GlobalTradeLinkageSelfTests(): { passed: number; faile
     gtelAssert(
       bilateralThroughputCertificationExportScale(certified) >= bilateralThroughputCertificationExportScale(rejected),
       'expected certification scale lift',
+    );
+  });
+
+  ok('certified throughput sustainment improves when certification is certified', () => {
+    const certification = { ...createEmptyBilateralThroughputCertificationSnapshot(), score: 0.82, band: 'certified' as const, readinessSupport: 0.14 };
+    const anchor = { ...createEmptyForwardBookAnchorStabilizationSnapshot(), score: 0.76, band: 'locked' as const };
+    const sustained = computeCertifiedThroughputSustainmentSnapshot({
+      bilateralThroughputCertification: certification,
+      forwardBookAnchorStabilization: anchor,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const exhausted = computeCertifiedThroughputSustainmentSnapshot({
+      bilateralThroughputCertification: { ...certification, score: 0.24, band: 'rejected', readinessSupport: -0.08 },
+      forwardBookAnchorStabilization: { ...anchor, score: 0.22, band: 'unmoored' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(sustained.score > exhausted.score, 'expected stronger sustainment when certified');
+    gtelAssert(
+      certifiedThroughputSustainmentExportScale(sustained) >= certifiedThroughputSustainmentExportScale(exhausted),
+      'expected sustainment scale lift',
+    );
+  });
+
+  ok('bilateral capacity handoff gate opens when sustainment is sustained and readiness ready', () => {
+    const sustainment = { ...createEmptyCertifiedThroughputSustainmentSnapshot(), score: 0.84, band: 'sustained' as const };
+    const readiness = { ...createEmptyAnchoredBookReadinessSnapshot(), score: 0.8, band: 'ready' as const };
+    const open = computeBilateralCapacityHandoffGateSnapshot({
+      certifiedThroughputSustainment: sustainment,
+      anchoredBookReadiness: readiness,
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    const closed = computeBilateralCapacityHandoffGateSnapshot({
+      certifiedThroughputSustainment: { ...sustainment, score: 0.26, band: 'exhausted' },
+      anchoredBookReadiness: { ...readiness, score: 0.24, band: 'blocked' },
+      persisted: createEmptyGTELPersisted(),
+    }).snapshot;
+    gtelAssert(open.score > closed.score, 'expected open handoff when sustained');
+    gtelAssert(
+      bilateralCapacityHandoffGateExportScale(open) >= bilateralCapacityHandoffGateExportScale(closed),
+      'expected handoff scale lift',
     );
   });
 
